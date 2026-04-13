@@ -66,8 +66,8 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     comptime kv_block_layout = Layout.row_major[6]()
     var kv_block_runtime_layout = RuntimeLayout[kv_block_layout].row_major(
@@ -96,11 +96,9 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
         UInt32(max_full_context_length),
     )
 
-    var q_shape = IndexList[3](
-        total_length, num_kv_heads, Int(kv_params.head_size)
-    )
+    var q_shape = IndexList[3](total_length, num_kv_heads, kv_params.head_size)
     comptime q_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_kv_heads, Int(kv_params.head_size)
+        UNKNOWN_VALUE, num_kv_heads, kv_params.head_size
     )
     var q_runtime_layout = RuntimeLayout[q_layout].row_major(q_shape)
     var q_managed = ManagedLayoutTensor[dtype, q_layout](q_runtime_layout, ctx)
@@ -116,11 +114,9 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
                     # Calculate expected value
                     var global_token_idx = current_offset + token_idx
                     var expected_linear_idx = (
-                        global_token_idx
-                        * num_kv_heads
-                        * Int(kv_params.head_size)
-                        + head_idx * Int(kv_params.head_size)
-                        + Int(head_dim_idx)
+                        global_token_idx * num_kv_heads * kv_params.head_size
+                        + head_idx * kv_params.head_size
+                        + head_dim_idx
                     )
                     q_tensor[
                         global_token_idx, head_idx, head_dim_idx
@@ -167,11 +163,9 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
                     # Calculate expected value
                     var global_token_idx = current_offset + token_idx
                     var expected_linear_idx = (
-                        global_token_idx
-                        * num_kv_heads
-                        * Int(kv_params.head_size)
-                        + head_idx * Int(kv_params.head_size)
-                        + Int(head_dim_idx)
+                        global_token_idx * num_kv_heads * kv_params.head_size
+                        + head_idx * kv_params.head_size
+                        + head_dim_idx
                     )
                     var expected_value = Float32(expected_linear_idx)
 
@@ -181,7 +175,7 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
                         batch_idx,
                         head_idx,
                         cache_token_idx,
-                        Int(head_dim_idx),
+                        head_dim_idx,
                     )
                     # Verify the values match
                     assert_almost_equal(
@@ -240,8 +234,8 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     comptime kv_block_layout = Layout.row_major[6]()
     var kv_block_runtime_layout = RuntimeLayout[kv_block_layout].row_major(
@@ -280,10 +274,10 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
         batch_size,
         max_seq_length_batch,
         num_kv_heads,
-        Int(kv_params.head_size),
+        kv_params.head_size,
     )
     comptime q_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_kv_heads, Int(kv_params.head_size)
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_kv_heads, kv_params.head_size
     )
     var q_runtime_layout = RuntimeLayout[q_layout].row_major(q_shape)
     var q_managed = ManagedLayoutTensor[dtype, q_layout](q_runtime_layout, ctx)
@@ -297,10 +291,10 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
                         batch_idx
                         * max_seq_length_batch
                         * num_kv_heads
-                        * Int(kv_params.head_size)
-                        + token_idx * num_kv_heads * Int(kv_params.head_size)
-                        + head_idx * Int(kv_params.head_size)
-                        + Int(head_dim_idx)
+                        * kv_params.head_size
+                        + token_idx * num_kv_heads * kv_params.head_size
+                        + head_idx * kv_params.head_size
+                        + head_dim_idx
                     )
                     q_tensor[
                         batch_idx, token_idx, head_idx, head_dim_idx
@@ -363,10 +357,10 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
                         batch_idx
                         * max_seq_length_batch
                         * num_kv_heads
-                        * Int(kv_params.head_size)
-                        + token_idx * num_kv_heads * Int(kv_params.head_size)
-                        + head_idx * Int(kv_params.head_size)
-                        + Int(head_dim_idx)
+                        * kv_params.head_size
+                        + token_idx * num_kv_heads * kv_params.head_size
+                        + head_idx * kv_params.head_size
+                        + head_dim_idx
                     )
                     var expected_value = Float32(expected_linear_idx)
 
@@ -375,7 +369,7 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
                         batch_idx,
                         head_idx,
                         cache_token_idx,
-                        Int(head_dim_idx),
+                        head_dim_idx,
                     )
 
                     assert_almost_equal(

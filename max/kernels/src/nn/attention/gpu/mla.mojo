@@ -246,7 +246,7 @@ def flare_mla_decoding[
         ]._get_detail_str[description_fn](),
         task_id=Int(ctx.id()),
     ):
-        comptime kv_num_heads = Int(cache_t.kv_params.num_heads)
+        comptime kv_num_heads = cache_t.kv_params.num_heads
 
         var max_prompt_len: Int
         var num_keys = Int(k.max_context_length())
@@ -1593,8 +1593,8 @@ def flare_mla_prefill[
         )
         var k_rope_operand = KVCacheMHAOperand(k_rope)
 
-        comptime kv_num_heads = Int(cache_t.kv_params.num_heads)
-        comptime cache_depth = Int(cache_t.kv_params.head_size)
+        comptime kv_num_heads = cache_t.kv_params.num_heads
+        comptime cache_depth = cache_t.kv_params.head_size
         comptime q_depth = type_of(q).static_shape[rank - 1]
 
         # BN = 64 for nvidia, 128 in the only supported BN for amd

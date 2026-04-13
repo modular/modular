@@ -283,16 +283,16 @@ def run_test_sparse[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     # Allocate KV cache on host.
@@ -310,7 +310,7 @@ def run_test_sparse[
     # Fill the KV cache blocks with the sparse layout:
     #   [nope: 512 FP8 bytes] [rope: 64 BF16 = 128 bytes]
     # Token stride in the KV cache = head_size = 640 FP8 slots.
-    var tok_stride = Int(kv_params.head_size)  # 640 FP8 slots
+    var tok_stride = kv_params.head_size  # 640 FP8 slots
 
     # Build lookup table with SHUFFLED page mapping.
     # Instead of identity (page i -> page i), we use a deterministic
@@ -359,8 +359,8 @@ def run_test_sparse[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
     for bi in range(batch_size):
         for t in range(num_keys):
@@ -904,18 +904,18 @@ def run_test_sparse_blockscale[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
-    var tok_stride = Int(kv_params.head_size)  # 640 FP8 slots per token
+    var tok_stride = kv_params.head_size  # 640 FP8 slots per token
 
     # -----------------------------------------------------------------------
     # Allocate KV cache blocks and zero-initialize
@@ -977,7 +977,7 @@ def run_test_sparse_blockscale[
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
+        * kv_params.num_heads
         * scales_per_token
     )
     var scales_host = alloc[Scalar[DType.float32]](scales_elems)
@@ -990,18 +990,18 @@ def run_test_sparse_blockscale[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
+        * kv_params.num_heads
         * scales_per_token
     )
-    var scale_tok_stride = Int(kv_params.num_heads) * scales_per_token
+    var scale_tok_stride = kv_params.num_heads * scales_per_token
 
     # Page stride for blocks
     var page_stride_elems = (
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     # -----------------------------------------------------------------------
@@ -1179,7 +1179,7 @@ def run_test_sparse_blockscale[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
+        kv_params.num_heads,
         scales_per_token,
     )
     var scales_lt = LayoutTensor[DType.float32, Layout.row_major[6]()](
@@ -1494,18 +1494,18 @@ def run_test_sparse_variable_topk[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
-    var tok_stride = Int(kv_params.head_size)  # 640 FP8 slots per token
+    var tok_stride = kv_params.head_size  # 640 FP8 slots per token
 
     # -----------------------------------------------------------------------
     # Allocate KV cache blocks and zero-initialize
@@ -1556,8 +1556,8 @@ def run_test_sparse_variable_topk[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     # -----------------------------------------------------------------------
@@ -2039,16 +2039,16 @@ def run_test_sparse_attn_sink[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[kv_type]](block_elems)
@@ -2059,7 +2059,7 @@ def run_test_sparse_attn_sink[
     var k_bf16_host = alloc[Scalar[q_type]](k_bf16_total)
     randn[q_type](k_bf16_host, k_bf16_total, mean=0.0, standard_deviation=0.5)
 
-    var tok_stride = Int(kv_params.head_size)
+    var tok_stride = kv_params.head_size
 
     # Build shuffled page mapping.
     var lut_size = batch_size * max_pages_per_batch
@@ -2082,8 +2082,8 @@ def run_test_sparse_attn_sink[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
     for bi in range(batch_size):
         for t in range(num_keys):
@@ -2485,13 +2485,13 @@ def run_test_sparse_extra_kv[
         num_heads=KV_NUM_HEADS, head_size=KV_HEAD_SIZE, is_mla=True
     )
     comptime kv_dim2 = 1  # MLA: is_mla=True => dim[1]=1
-    var tok_stride = Int(kv_params.head_size)  # 640 FP8 slots per token
+    var tok_stride = kv_params.head_size  # 640 FP8 slots per token
     var page_stride_elems = (
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     # -----------------------------------------------------------------------
@@ -2515,16 +2515,16 @@ def run_test_sparse_extra_kv[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[kv_type]](block_elems)
@@ -2615,16 +2615,16 @@ def run_test_sparse_extra_kv[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var extra_block_elems = (
         extra_total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var extra_blocks_host = alloc[Scalar[kv_type]](extra_block_elems)
@@ -3225,18 +3225,18 @@ def run_test_sparse_topk_clamping[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
-    var tok_stride = Int(kv_params.head_size)  # 640 FP8 slots per token
+    var tok_stride = kv_params.head_size  # 640 FP8 slots per token
 
     # -----------------------------------------------------------------------
     # Allocate KV cache blocks and zero-initialize
@@ -3287,8 +3287,8 @@ def run_test_sparse_topk_clamping[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     # -----------------------------------------------------------------------

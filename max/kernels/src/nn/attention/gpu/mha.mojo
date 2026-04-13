@@ -422,7 +422,7 @@ def flash_attention[
         comptime head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info]()
         comptime flash_attention_applicable = flash_attention_hw_supported[dtype]() and head_depth_known and head_depth_supported and not naive_kernel
         # fmt: on
-        comptime kv_num_heads = Int(cache_t.kv_params.num_heads)
+        comptime kv_num_heads = cache_t.kv_params.num_heads
 
         var k_operand = KVCacheMHAOperand(k)
         var v_operand = KVCacheMHAOperand(v)

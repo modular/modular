@@ -1264,7 +1264,7 @@ def _flash_attention_kv_cache[
     comptime num_heads = Int(q.layout.shape[2])
     comptime head_size = cache_t.kv_params.head_size
     comptime output_shape = IndexList[4](
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, Int(head_size)
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, head_size
     )
 
     @always_inline
@@ -1383,8 +1383,8 @@ def _flash_attention_kv_cache[
     ].run(
         num_batches,
         num_heads,
-        Int(depth_dim),
-        Int(num_kv_heads),
+        depth_dim,
+        num_kv_heads,
         max_seq_len,
         scale,
         sink_weights,
@@ -1559,7 +1559,7 @@ def flash_attention_kv_cache[
     comptime num_heads = Int(q.layout.shape[q.rank - 2])
     comptime head_size = cache_t.kv_params.head_size
     comptime output_shape = IndexList[4](
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, Int(head_size)
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, head_size
     )
 
     _flash_attention_kv_cache[

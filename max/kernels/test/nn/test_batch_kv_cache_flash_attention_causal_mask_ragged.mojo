@@ -89,11 +89,9 @@ def execute_ragged_flash_attention[
 
     comptime layout_3d = Layout.row_major[3]()
     var q_ragged = LayoutTensor[dtype, layout_3d](
-        alloc[Scalar[dtype]](
-            total_length * num_q_heads * Int(kv_params.head_size)
-        ),
+        alloc[Scalar[dtype]](total_length * num_q_heads * kv_params.head_size),
         RuntimeLayout[layout_3d].row_major(
-            IndexList[3](total_length, num_q_heads, Int(kv_params.head_size))
+            IndexList[3](total_length, num_q_heads, kv_params.head_size)
         ),
     )
     random(q_ragged)
@@ -101,17 +99,14 @@ def execute_ragged_flash_attention[
     comptime layout_4d = Layout.row_major[4]()
     var q_padded = LayoutTensor[dtype, layout_4d](
         alloc[Scalar[dtype]](
-            batch_size
-            * max_prompt_length
-            * num_q_heads
-            * Int(kv_params.head_size)
+            batch_size * max_prompt_length * num_q_heads * kv_params.head_size
         ),
         RuntimeLayout[layout_4d].row_major(
             IndexList[4](
                 batch_size,
                 max_prompt_length,
                 num_q_heads,
-                Int(kv_params.head_size),
+                kv_params.head_size,
             )
         ),
     )
@@ -128,33 +123,28 @@ def execute_ragged_flash_attention[
         memcpy(
             dest=padded_ptr,
             src=ragged_ptr,
-            count=unpadded_seq_len * num_q_heads * Int(kv_params.head_size),
+            count=unpadded_seq_len * num_q_heads * kv_params.head_size,
         )
 
     # initialize reference output
     var ref_output = LayoutTensor[dtype, layout_4d](
         alloc[Scalar[dtype]](
-            batch_size
-            * max_prompt_length
-            * num_q_heads
-            * Int(kv_params.head_size)
+            batch_size * max_prompt_length * num_q_heads * kv_params.head_size
         ),
         RuntimeLayout[layout_4d].row_major(
             IndexList[4](
                 batch_size,
                 max_prompt_length,
                 num_q_heads,
-                Int(kv_params.head_size),
+                kv_params.head_size,
             )
         ),
     ).fill(0)
 
     var test_output = LayoutTensor[dtype, layout_3d](
-        alloc[Scalar[dtype]](
-            total_length * num_q_heads * Int(kv_params.head_size)
-        ),
+        alloc[Scalar[dtype]](total_length * num_q_heads * kv_params.head_size),
         RuntimeLayout[layout_3d].row_major(
-            IndexList[3](total_length, num_q_heads, Int(kv_params.head_size))
+            IndexList[3](total_length, num_q_heads, kv_params.head_size)
         ),
     ).fill(0)
 
@@ -166,8 +156,8 @@ def execute_ragged_flash_attention[
             * 2
             * num_layers
             * max_seq_len_cache
-            * Int(kv_params.num_heads)
-            * Int(kv_params.head_size)
+            * kv_params.num_heads
+            * kv_params.head_size
         ),
         RuntimeLayout[layout_6d].row_major(
             IndexList[6](
@@ -175,8 +165,8 @@ def execute_ragged_flash_attention[
                 2,
                 num_layers,
                 max_seq_len_cache,
-                Int(kv_params.num_heads),
-                Int(kv_params.head_size),
+                kv_params.num_heads,
+                kv_params.head_size,
             )
         ),
     )
@@ -261,8 +251,8 @@ def execute_ragged_flash_attention[
                 for hd in range(kv_params.head_size):
                     try:
                         assert_almost_equal(
-                            ref_out[bs, s, h, Int(hd)][0],
-                            test_out[ragged_offset + s, h, Int(hd)][0],
+                            ref_out[bs, s, h, hd][0],
+                            test_out[ragged_offset + s, h, hd][0],
                         )
                     except e:
                         print(
@@ -271,8 +261,8 @@ def execute_ragged_flash_attention[
                             s,
                             h,
                             hd,
-                            ref_out[bs, s, h, Int(hd)][0],
-                            test_out[ragged_offset + s, h, Int(hd)][0],
+                            ref_out[bs, s, h, hd][0],
+                            test_out[ragged_offset + s, h, hd][0],
                         )
                         raise e^
 

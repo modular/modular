@@ -94,7 +94,7 @@ def test_decode_kv_cache[
     comptime row_offsets_layout = Layout(UNKNOWN_VALUE)
     comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     comptime q_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+        UNKNOWN_VALUE, num_q_heads, kv_params.head_size
     )
     comptime kv_block_6d_layout = Layout.row_major[6]()
     comptime paged_lut_layout = Layout.row_major[2]()
@@ -126,7 +126,7 @@ def test_decode_kv_cache[
     # Q (random, ragged)
     var q = ManagedLayoutTensor[dtype, q_layout](
         RuntimeLayout[q_layout].row_major(
-            IndexList[3](total_length, num_q_heads, Int(kv_params.head_size))
+            IndexList[3](total_length, num_q_heads, kv_params.head_size)
         ),
         ctx,
     )
@@ -135,7 +135,7 @@ def test_decode_kv_cache[
     # Output
     var output = ManagedLayoutTensor[dtype, q_layout](
         RuntimeLayout[q_layout].row_major(
-            IndexList[3](total_length, num_q_heads, Int(kv_params.head_size))
+            IndexList[3](total_length, num_q_heads, kv_params.head_size)
         ),
         ctx,
     )
@@ -149,8 +149,8 @@ def test_decode_kv_cache[
                 2,
                 num_layers,
                 max_full_context_length,
-                Int(kv_params.num_heads),
-                Int(kv_params.head_size),
+                kv_params.num_heads,
+                kv_params.head_size,
             )
         ),
         ctx,
@@ -192,7 +192,7 @@ def test_decode_kv_cache[
     var out_host = output.tensor()
     var actual_hash = compute_hash(
         out_host.ptr,
-        total_length * num_q_heads * Int(kv_params.head_size),
+        total_length * num_q_heads * kv_params.head_size,
     )
     print("HASH:", actual_hash)
 

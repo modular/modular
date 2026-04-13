@@ -5596,9 +5596,7 @@ struct MLAIndexerRaggedFloat8Paged:
         comptime head_dim = Int(k_blocks.static_spec.shape_tuple[5])
         comptime k_num_heads = Int(k_blocks.static_spec.shape_tuple[4])
         comptime is_mla = Int(k_blocks.static_spec.shape_tuple[1]) == 1
-        comptime kv_params = KVCacheStaticParams(
-            UInt(k_num_heads), UInt(head_dim), is_mla
-        )
+        comptime kv_params = KVCacheStaticParams(k_num_heads, head_dim, is_mla)
         comptime assert quantization_granularity >= depth, (
             "quantization_granularity must be >= depth for MLA (one scale per"
             " token per head)"
@@ -7808,9 +7806,7 @@ struct Struct_mla_decode_ragged_paged_scaled:
         comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
         comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
         comptime kv_num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
-        comptime kv_params = KVCacheStaticParams(
-            UInt(kv_num_heads), UInt(head_dim), True
-        )
+        comptime kv_params = KVCacheStaticParams(kv_num_heads, head_dim, True)
 
         var kv_collection = generic_get_paged_cache_with_scales[
             kv_dtype,
@@ -9343,9 +9339,7 @@ struct Struct_kv_cache_store_k_scales_paged:
         comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
         comptime num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
         comptime is_mla = Int(kv_blocks.static_spec.shape_tuple[1]) == 1
-        comptime kv_params = KVCacheStaticParams(
-            UInt(num_heads), UInt(head_dim), is_mla
-        )
+        comptime kv_params = KVCacheStaticParams(num_heads, head_dim, is_mla)
 
         var k_collection = generic_get_paged_cache_with_scales[
             cache_dtype,

@@ -95,9 +95,7 @@ def execute_kv_cache_ragged_flash_attention[
     var num_blocks = batch_size * 2
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
-        ),
+        KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
     ]
 
     debug_assert(

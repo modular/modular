@@ -166,7 +166,7 @@ def execute_matmul_kv_cache_ragged[
     For example, in cross attention the sequence would be from a sequence of
     patch embeddings of an image.
     """
-    comptime hidden_size = num_q_heads * Int(kv_params.head_size)
+    comptime hidden_size = num_q_heads * kv_params.head_size
     comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
     comptime num_blocks = 32
 
@@ -202,16 +202,14 @@ def execute_matmul_kv_cache_ragged[
     var max_seq_length_batch = init_result[4]
 
     # Define layouts
-    comptime weight_layout = Layout.row_major(
-        2 * Int(kv_hidden_size), hidden_size
-    )
+    comptime weight_layout = Layout.row_major(2 * kv_hidden_size, hidden_size)
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     comptime kv_block_layout = Layout.row_major[6]()
 
     # Initialize the weights.
-    var weight_size = 2 * Int(kv_hidden_size) * hidden_size
+    var weight_size = 2 * kv_hidden_size * hidden_size
     var weight_host_ptr = alloc[Scalar[dtype]](weight_size)
-    var weight_shape = IndexList[2](2 * Int(kv_hidden_size), hidden_size)
+    var weight_shape = IndexList[2](2 * kv_hidden_size, hidden_size)
     var weight_host = LayoutTensor[dtype, weight_layout](
         weight_host_ptr,
         RuntimeLayout[weight_layout].row_major(weight_shape),
@@ -223,13 +221,11 @@ def execute_matmul_kv_cache_ragged[
 
     # Initialize reference output.
     var padded_batch_dim = batch_size * max_seq_length_batch
-    var ref_output_size = padded_batch_dim * 2 * Int(kv_hidden_size)
+    var ref_output_size = padded_batch_dim * 2 * kv_hidden_size
     var ref_output_host_ptr = alloc[Scalar[dtype]](ref_output_size)
-    var ref_output_shape = IndexList[2](
-        padded_batch_dim, 2 * Int(kv_hidden_size)
-    )
+    var ref_output_shape = IndexList[2](padded_batch_dim, 2 * kv_hidden_size)
     comptime ref_output_layout = Layout.row_major(
-        UNKNOWN_VALUE, 2 * Int(kv_hidden_size)
+        UNKNOWN_VALUE, 2 * kv_hidden_size
     )
     var ref_output_host = LayoutTensor[dtype, ref_output_layout](
         ref_output_host_ptr,
@@ -255,16 +251,16 @@ def execute_matmul_kv_cache_ragged[
         * 2
         * num_layers
         * max_seq_length_cache
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
     var kv_block_shape = IndexList[6](
         num_blocks,
         2,
         num_layers,
         max_seq_length_cache,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var kv_block = ManagedLayoutTensor[dtype, kv_block_layout](
         RuntimeLayout[kv_block_layout].row_major(kv_block_shape),
@@ -385,9 +381,11 @@ def execute_matmul_kv_cache_ragged[
         prompt_len = prompt_lens[bs]
         for s in range(prompt_len):
             for k_dim in range(kv_hidden_size):
-                head_idx, head_dim_idx = divmod(k_dim, kv_params.head_size)
+                head_idx, head_dim_idx = divmod(
+                    UInt(k_dim), UInt(kv_params.head_size)
+                )
                 assert_almost_equal(
-                    ref_output_host[bs * max_seq_length_batch + s, Int(k_dim)],
+                    ref_output_host[bs * max_seq_length_batch + s, k_dim],
                     k_cache_host.load[width=1](
                         bs,
                         Int(head_idx),
@@ -398,11 +396,13 @@ def execute_matmul_kv_cache_ragged[
                 )
 
             for v_dim in range(kv_hidden_size):
-                head_idx, head_dim_idx = divmod(v_dim, kv_params.head_size)
+                head_idx, head_dim_idx = divmod(
+                    UInt(v_dim), UInt(kv_params.head_size)
+                )
                 assert_almost_equal(
                     ref_output_host[
                         bs * max_seq_length_batch + s,
-                        Int(kv_hidden_size + v_dim),
+                        kv_hidden_size + v_dim,
                     ],
                     v_cache_host.load[width=1](
                         bs,
@@ -439,7 +439,7 @@ def execute_matmul_k_cache_ragged[
     layer_idx: Int,
     ctx: DeviceContext,
 ) raises:
-    comptime hidden_size = num_q_heads * Int(kv_params.head_size)
+    comptime hidden_size = num_q_heads * kv_params.head_size
     comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
 
     comptime num_paged_blocks = 32
@@ -455,10 +455,8 @@ def execute_matmul_k_cache_ragged[
     # Define layouts
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     comptime kv_block_layout = Layout.row_major[6]()
-    comptime weight_layout = Layout.row_major(Int(kv_hidden_size), hidden_size)
-    comptime ref_output_layout = Layout.row_major(
-        UNKNOWN_VALUE, Int(kv_hidden_size)
-    )
+    comptime weight_layout = Layout.row_major(kv_hidden_size, hidden_size)
+    comptime ref_output_layout = Layout.row_major(UNKNOWN_VALUE, kv_hidden_size)
     comptime hidden_state_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
 
     var kv_block_size = (
@@ -466,16 +464,16 @@ def execute_matmul_k_cache_ragged[
         * 2
         * num_layers
         * page_size
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
     var kv_block_shape = IndexList[6](
         num_paged_blocks,
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var kv_block = ManagedLayoutTensor[dtype, kv_block_layout](
         RuntimeLayout[kv_block_layout].row_major(kv_block_shape),
@@ -525,8 +523,8 @@ def execute_matmul_k_cache_ragged[
     var init_max_seq_length_batch = init_result[4]
 
     # Initialize the weights.
-    var weight_size = Int(kv_hidden_size) * hidden_size
-    var weight_shape = IndexList[2](Int(kv_hidden_size), hidden_size)
+    var weight_size = kv_hidden_size * hidden_size
+    var weight_shape = IndexList[2](kv_hidden_size, hidden_size)
     var weight_host_ptr = alloc[Scalar[dtype]](weight_size)
     var weight_host = LayoutTensor[dtype, weight_layout](
         weight_host_ptr,
@@ -540,8 +538,8 @@ def execute_matmul_k_cache_ragged[
     # Initialize reference output.
     var padded_batch_dim = batch_size * init_max_seq_length_batch
     max_seq_length_batch = init_max_seq_length_batch
-    var ref_output_size = padded_batch_dim * Int(kv_hidden_size)
-    var ref_output_shape = IndexList[2](padded_batch_dim, Int(kv_hidden_size))
+    var ref_output_size = padded_batch_dim * kv_hidden_size
+    var ref_output_shape = IndexList[2](padded_batch_dim, kv_hidden_size)
     var ref_output_host_ptr = alloc[Scalar[dtype]](ref_output_size)
     var ref_output_host = LayoutTensor[dtype, ref_output_layout](
         ref_output_host_ptr,
@@ -606,9 +604,11 @@ def execute_matmul_k_cache_ragged[
         prompt_len = prompt_lens[bs]
         for s in range(prompt_len):
             for k_dim in range(kv_hidden_size):
-                head_idx, head_dim_idx = divmod(k_dim, kv_params.head_size)
+                head_idx, head_dim_idx = divmod(
+                    UInt(k_dim), UInt(kv_params.head_size)
+                )
                 assert_almost_equal(
-                    ref_output_host[bs * max_seq_length_batch + s, Int(k_dim)],
+                    ref_output_host[bs * max_seq_length_batch + s, k_dim],
                     k_cache_host.load[width=1](
                         bs,
                         Int(head_idx),
@@ -650,9 +650,9 @@ def generic_assert_output_equals[
 ) raises:
     comptime assert cache_t.dtype == dtype, "type mismatch"
     comptime kv_params = cache_t.kv_params
-    comptime hidden_size = num_q_heads * Int(kv_params.head_size)
+    comptime hidden_size = num_q_heads * kv_params.head_size
     comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
-    comptime fused_hidden_size = 2 * Int(kv_hidden_size) + hidden_size
+    comptime fused_hidden_size = 2 * kv_hidden_size + hidden_size
     comptime ref_output_layout = Layout.row_major(
         UNKNOWN_VALUE, fused_hidden_size
     )
@@ -698,12 +698,14 @@ def generic_assert_output_equals[
                     raise e^
 
             for k_dim in range(kv_hidden_size):
-                head_idx, head_dim_idx = divmod(k_dim, kv_params.head_size)
+                head_idx, head_dim_idx = divmod(
+                    UInt(k_dim), UInt(kv_params.head_size)
+                )
                 try:
                     assert_almost_equal(
                         ref_output_host[
                             bs * max_seq_length_batch + s,
-                            hidden_size + Int(k_dim),
+                            hidden_size + k_dim,
                         ],
                         k_cache.load[width=1](
                             bs,
@@ -718,12 +720,14 @@ def generic_assert_output_equals[
                     raise e^
 
             for v_dim in range(kv_hidden_size):
-                head_idx, head_dim_idx = divmod(v_dim, kv_params.head_size)
+                head_idx, head_dim_idx = divmod(
+                    UInt(v_dim), UInt(kv_params.head_size)
+                )
                 try:
                     assert_almost_equal(
                         ref_output_host[
                             bs * max_seq_length_batch + s,
-                            hidden_size + Int(kv_hidden_size + v_dim),
+                            hidden_size + kv_hidden_size + v_dim,
                         ],
                         v_cache.load[width=1](
                             bs,
@@ -768,9 +772,9 @@ def generic_execute_fused_qkv_cache_ragged[
       - Tuple containing ref_output_device, ref_output_shape,
         test_output_device, test_output_shape.
     """
-    comptime hidden_size = num_q_heads * Int(kv_params.head_size)
+    comptime hidden_size = num_q_heads * kv_params.head_size
     comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
-    comptime fused_hidden_size = (2 * Int(kv_hidden_size)) + hidden_size
+    comptime fused_hidden_size = (2 * kv_hidden_size) + hidden_size
     comptime num_blocks = 32
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     comptime weight_layout = Layout.row_major(fused_hidden_size, hidden_size)
@@ -935,16 +939,16 @@ def execute_paged_fused_qkv_matmul[
         * 2
         * num_layers
         * page_size
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
     var kv_block_shape = IndexList[6](
         num_paged_blocks,
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var kv_block = ManagedLayoutTensor[dtype, kv_block_layout](
         RuntimeLayout[kv_block_layout].row_major(kv_block_shape),
@@ -1066,16 +1070,16 @@ def execute_cont_batch_fused_qkv_matmul[
         * 2
         * num_layers
         * max_seq_length_cache
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
     var kv_block_shape = IndexList[6](
         num_blocks,
         2,
         num_layers,
         max_seq_length_cache,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var kv_block_host_ptr = alloc[Scalar[dtype]](kv_block_size)
     var kv_block_device = ctx.enqueue_create_buffer[dtype](kv_block_size)

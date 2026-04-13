@@ -175,11 +175,11 @@ __extension Attention:
                 num_stages=Self.num_stages,
             ](v_tile, self.smem_manager.get_v_ptr[v_tile.dtype]())
 
-            comptime cache_group = self.num_heads // Int(cache_num_heads)
+            comptime cache_group = self.num_heads // cache_num_heads
             comptime rope_depth = q_depth - Int(Self.depth)
 
             # Build k_rope TileTensor with RuntimeInt valid_rows.
-            comptime _k_rope_stride0 = Int(cache_num_heads * cache_depth)
+            comptime _k_rope_stride0 = cache_num_heads * cache_depth
             comptime KRopeTileLayout = MixedLayout[
                 TypeListOf[
                     type=CoordLike,

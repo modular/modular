@@ -50,10 +50,10 @@ def execute_test[
     head_size: Int = 128,
 ](ctx: DeviceContext) raises:
     comptime kv_params = KVCacheStaticParams(
-        num_heads=UInt(num_kv_heads), head_size=UInt(head_size)
+        num_heads=num_kv_heads, head_size=head_size
     )
     comptime dtype = DType.bfloat16
-    comptime head_dim = Int(kv_params.head_size)
+    comptime head_dim = kv_params.head_size
     comptime num_paged_blocks = 64
     comptime page_size = 128
     var num_layers = 1
@@ -88,8 +88,8 @@ def execute_test[
         2,
         UNKNOWN_VALUE,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     comptime freqs_tile_layout = row_major[max_seq_len, head_dim]()
 
@@ -98,8 +98,8 @@ def execute_test[
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var kv_block_runtime_layout = RuntimeLayout[kv_block_layout].row_major(
         kv_block_shape
@@ -394,8 +394,8 @@ def execute_test[
     ctx.synchronize()
     var nl = num_layers
     var ps = page_size
-    var nh = Int(kv_params.num_heads)
-    var hd = Int(kv_params.head_size)
+    var nh = kv_params.num_heads
+    var hd = kv_params.head_size
     var inner = nl * ps * nh * hd
     var v_mismatches = 0
     for block in range(num_paged_blocks):

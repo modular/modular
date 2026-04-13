@@ -510,8 +510,8 @@ def mla_fused_rope_rmsnorm_quantization[
     comptime assert (
         q_rope_output.rank == 3 and q_rope.rank == 3
     ), "q_rope_output and q_rope must be rank 3"
-    comptime assert rope_dim + kv_norm_dim == Int(
-        collection_t.kv_params.head_size
+    comptime assert (
+        rope_dim + kv_norm_dim == collection_t.kv_params.head_size
     ), "rope_dim + kv_norm_dim must be equal to kvcache head_size"
 
     # Default block size used by the `elementwise` function on Blackwell.
@@ -1107,7 +1107,7 @@ def mla_decode_branch_fp8[
     comptime qk_rope_head_dim = freqs_cis.static_shape[1]
     comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
     comptime v_head_dim = output.static_shape[2]
-    comptime k_cache_dim = Int(kv_params.head_size)
+    comptime k_cache_dim = kv_params.head_size
 
     comptime assert (
         w_uk.shape_known and w_uv.shape_known
@@ -1785,7 +1785,7 @@ def mla_decode_branch_bf16[
     comptime qk_rope_head_dim = freqs_cis.static_shape[1]
     comptime qk_nope_head_dim = q_head_dim - qk_rope_head_dim
     comptime v_head_dim = output.static_shape[2]
-    comptime k_cache_dim = Int(kv_params.head_size)
+    comptime k_cache_dim = kv_params.head_size
 
     comptime assert (
         w_uk.shape_known and w_uv.shape_known

@@ -73,20 +73,18 @@ def execute_ragged_flash_attention[
 
     # Q ragged tensors
     comptime q_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+        UNKNOWN_VALUE, num_q_heads, kv_params.head_size
     )
     var true_ce_q_size = (
-        true_ce_total_length * num_q_heads * Int(kv_params.head_size)
+        true_ce_total_length * num_q_heads * kv_params.head_size
     )
     var mixed_ce_q_size = (
-        mixed_ce_total_length * num_q_heads * Int(kv_params.head_size)
+        mixed_ce_total_length * num_q_heads * kv_params.head_size
     )
 
     var true_ce_q_ragged = ManagedLayoutTensor[type, q_layout](
         RuntimeLayout[q_layout].row_major(
-            IndexList[3](
-                true_ce_total_length, num_q_heads, Int(kv_params.head_size)
-            )
+            IndexList[3](true_ce_total_length, num_q_heads, kv_params.head_size)
         ),
         ctx,
     )
@@ -96,7 +94,7 @@ def execute_ragged_flash_attention[
     var mixed_ce_q_ragged = ManagedLayoutTensor[type, q_layout](
         RuntimeLayout[q_layout].row_major(
             IndexList[3](
-                mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
+                mixed_ce_total_length, num_q_heads, kv_params.head_size
             )
         ),
         ctx,
@@ -110,7 +108,7 @@ def execute_ragged_flash_attention[
         mixed_ce_cache_lengths_table.input_row_offsets.host_ptr
     )
 
-    var head_stride = num_q_heads * Int(kv_params.head_size)
+    var head_stride = num_q_heads * kv_params.head_size
     for bs_idx in range(batch_size):
         mixed_ce_prompt_len = mixed_ce_prompt_lens[bs_idx]
 
@@ -137,7 +135,7 @@ def execute_ragged_flash_attention[
     var mixed_ce_output = ManagedLayoutTensor[type, q_layout](
         RuntimeLayout[q_layout].row_major(
             IndexList[3](
-                mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
+                mixed_ce_total_length, num_q_heads, kv_params.head_size
             )
         ),
         ctx,
@@ -146,9 +144,7 @@ def execute_ragged_flash_attention[
 
     var true_ce_output = ManagedLayoutTensor[type, q_layout](
         RuntimeLayout[q_layout].row_major(
-            IndexList[3](
-                true_ce_total_length, num_q_heads, Int(kv_params.head_size)
-            )
+            IndexList[3](true_ce_total_length, num_q_heads, kv_params.head_size)
         ),
         ctx,
     )
@@ -161,8 +157,8 @@ def execute_ragged_flash_attention[
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var kv_block_paged = ManagedLayoutTensor[type, kv_layout](
         RuntimeLayout[kv_layout].row_major(kv_shape), ctx
@@ -238,10 +234,10 @@ def execute_ragged_flash_attention[
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
                     true_ce_val = true_ce_output_host[
-                        true_ce_ragged_offset + s, h, Int(hd)
+                        true_ce_ragged_offset + s, h, hd
                     ]
                     mixed_ce_val = mixed_ce_output_host[
-                        mixed_ce_ragged_offset + s, h, Int(hd)
+                        mixed_ce_ragged_offset + s, h, hd
                     ]
                     try:
                         assert_almost_equal(

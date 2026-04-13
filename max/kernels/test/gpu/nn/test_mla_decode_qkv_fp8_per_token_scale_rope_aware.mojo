@@ -265,16 +265,16 @@ def run_test[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[fp8_type]](block_elems)
@@ -289,10 +289,10 @@ def run_test[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
-    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+    var _tok_stride = kv_params.num_heads * kv_params.head_size
 
     var cur_page = 0
     for bi in range(batch_size):
@@ -322,7 +322,7 @@ def run_test[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
+        kv_params.num_heads,
         head_dim_gran,
     )
     var scales_elems = (
@@ -330,7 +330,7 @@ def run_test[
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
+        * kv_params.num_heads
         * head_dim_gran
     )
     var scales_host = alloc[Scalar[DType.float32]](scales_elems)
@@ -339,11 +339,7 @@ def run_test[
         scales_host[i] = nan[DType.float32]()
     # Then set valid token scales to 1.0
     var _scale_page_stride = (
-        kv_dim2
-        * NUM_LAYERS
-        * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * head_dim_gran
+        kv_dim2 * NUM_LAYERS * PAGE_SIZE * kv_params.num_heads * head_dim_gran
     )
     var _cur_page_s = 0
     for bi in range(batch_size):
@@ -356,7 +352,7 @@ def run_test[
             for tok_in_page in range(valid_toks):
                 var offset = (
                     _cur_page_s * _scale_page_stride
-                    + tok_in_page * Int(kv_params.num_heads) * head_dim_gran
+                    + tok_in_page * kv_params.num_heads * head_dim_gran
                 )
                 scales_host[offset] = Scalar[DType.float32](1.0)
             _cur_page_s += 1
@@ -855,16 +851,16 @@ def run_test_with_scales[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[fp8_type]](block_elems)
@@ -879,10 +875,10 @@ def run_test_with_scales[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
-    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+    var _tok_stride = kv_params.num_heads * kv_params.head_size
 
     var cur_page = 0
     for bi in range(batch_size):
@@ -909,7 +905,7 @@ def run_test_with_scales[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
+        kv_params.num_heads,
         head_dim_gran,
     )
     var scales_elems = (
@@ -917,7 +913,7 @@ def run_test_with_scales[
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
+        * kv_params.num_heads
         * head_dim_gran
     )
     var scales_host = alloc[Scalar[DType.float32]](scales_elems)
@@ -930,11 +926,7 @@ def run_test_with_scales[
     # Fill valid token slots with non-trivial per-token scales.
     # scale(token) = palette[(page * PAGE_SIZE + tok_in_page) * 3]
     var scale_page_stride = (
-        kv_dim2
-        * NUM_LAYERS
-        * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * head_dim_gran
+        kv_dim2 * NUM_LAYERS * PAGE_SIZE * kv_params.num_heads * head_dim_gran
     )
     cur_page = 0
     for bi in range(batch_size):
@@ -947,7 +939,7 @@ def run_test_with_scales[
             for tok_in_page in range(valid_toks):
                 var offset = (
                     cur_page * scale_page_stride
-                    + tok_in_page * Int(kv_params.num_heads) * head_dim_gran
+                    + tok_in_page * kv_params.num_heads * head_dim_gran
                 )
                 var global_tok = pg * PAGE_SIZE + tok_in_page
                 scales_host[offset] = _scale_palette(
@@ -987,14 +979,14 @@ def run_test_with_scales[
                 # Get sigma_KV[t] for this token
                 var s_offset = (
                     cur_page * scale_page_stride
-                    + tok_in_page * Int(kv_params.num_heads) * head_dim_gran
+                    + tok_in_page * kv_params.num_heads * head_dim_gran
                 )
                 var sigma_kv_t = scales_host[s_offset]
 
                 # Divide K_rope BF16 values by sigma_KV[t]
                 var tok_fp8_base = (
                     cur_page * _page_stride
-                    + tok_in_page * Int(kv_params.num_heads) * PHYSICAL_DIM
+                    + tok_in_page * kv_params.num_heads * PHYSICAL_DIM
                 )
                 for kh in range(KV_NUM_HEADS):
                     var rope_ptr = (
@@ -1293,7 +1285,7 @@ def run_test_with_scales[
             # Get sigma_KV[t] for this token from the scales host array.
             var scale_offset = (
                 physical_page * scale_page_stride
-                + tok_in_page * Int(kv_params.num_heads) * head_dim_gran
+                + tok_in_page * kv_params.num_heads * head_dim_gran
             )
             var sigma_kv_t = scales_host[scale_offset]
 

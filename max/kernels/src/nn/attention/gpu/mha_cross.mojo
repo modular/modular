@@ -272,7 +272,7 @@ def mha_cross_gpu_naive[
     comptime num_heads = config.num_heads
     comptime depth = config.depth
     comptime kv_num_heads = cache_t.kv_params.num_heads
-    comptime group = config.num_heads // Int(kv_num_heads)
+    comptime group = config.num_heads // kv_num_heads
     var kv_max_seq_len = Int(k.max_prompt_length())
     var batch_size = Int(q_input_row_offsets.dim[0]()) - 1
     var max_cache_size = Int(k.max_context_length())

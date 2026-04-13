@@ -439,8 +439,8 @@ struct KVCacheMHAOperand[
         ],
     ) raises:
         # Forward to the underlying cache's implementation
-        comptime assert depth == Int(
-            Self.cache_t.kv_params.head_size
+        comptime assert (
+            depth == Self.cache_t.kv_params.head_size
         ), "depth must match kv_params.head_size"
         comptime assert (
             BK % swizzle_granularity[Self.dtype, swizzle_mode]()

@@ -63,10 +63,10 @@ def test_paged_ragged_attention[
     comptime row_offsets_layout = Layout(UNKNOWN_VALUE)
     comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     comptime q_ragged_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+        UNKNOWN_VALUE, num_q_heads, kv_params.head_size
     )
     comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+        UNKNOWN_VALUE, num_q_heads, kv_params.head_size
     )
     comptime paged_lut_layout = Layout.row_major[2]()
     comptime kv_block_6d_layout = Layout.row_major[6]()
@@ -74,10 +74,10 @@ def test_paged_ragged_attention[
     var row_offsets_shape = IndexList[1](batch_size + 1)
     var cache_lengths_shape = IndexList[1](batch_size)
     var q_ragged_shape = IndexList[3](
-        total_length, num_q_heads, Int(kv_params.head_size)
+        total_length, num_q_heads, kv_params.head_size
     )
     var output_shape = IndexList[3](
-        total_length, num_q_heads, Int(kv_params.head_size)
+        total_length, num_q_heads, kv_params.head_size
     )
 
     var row_offsets_rl = RuntimeLayout[row_offsets_layout].row_major(
@@ -116,8 +116,8 @@ def test_paged_ragged_attention[
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var paged_lut_shape = IndexList[2](
         batch_size, ceildiv(max_full_context_length, page_size)

@@ -65,8 +65,8 @@ def _rope_split_store_ragged[
     """
     comptime kv_params = cache_t.kv_params
     comptime kv_type = cache_t.dtype
-    comptime head_size = Int(kv_params.head_size)
-    comptime num_kv_heads = Int(kv_params.num_heads)
+    comptime head_size = kv_params.head_size
+    comptime num_kv_heads = kv_params.num_heads
 
     comptime assert qkv.flat_rank == 2, "qkv must be rank 2"
     comptime assert q_output.flat_rank == 2, "q_output must be rank 2"
@@ -91,7 +91,6 @@ def _rope_split_store_ragged[
     @parameter
     @__copy_capture(
         q_dim,
-        k_dim,
         qk_offset,
         combined_dim,
         batch_size,
@@ -167,7 +166,7 @@ def _rope_split_store_ragged[
             if col < qk_offset:
                 # K region: apply rope, store to k_cache.
                 var kv_col = col - q_dim
-                var hi, di = divmod(UInt(kv_col), kv_params.head_size)
+                var hi, di = divmod(UInt(kv_col), UInt(kv_params.head_size))
                 var cl = k_cache.cache_length(bi)
                 var pos = cl + ti
 
@@ -231,7 +230,7 @@ def _rope_split_store_ragged[
             var qkv_base = global_token_idx * combined_dim + col
             var val = (qkv_ptr + qkv_base).load[width=simd_width]()
             var v_col = col - qk_offset
-            var hi, di = divmod(UInt(v_col), kv_params.head_size)
+            var hi, di = divmod(UInt(v_col), UInt(kv_params.head_size))
             var cl = v_cache.value().cache_length(bi)
             v_cache.value().store(
                 bi,

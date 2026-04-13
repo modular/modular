@@ -71,10 +71,10 @@ def execute_flash_attention[
 
     # Define layouts for q tensor
     comptime q_static_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, kv_params.head_size
     )
     var q_shape = IndexList[4](
-        batch_size, max_prompt_len, num_q_heads, Int(kv_params.head_size)
+        batch_size, max_prompt_len, num_q_heads, kv_params.head_size
     )
     var q_runtime_layout = RuntimeLayout[q_static_layout].row_major(q_shape)
 
@@ -95,10 +95,10 @@ def execute_flash_attention[
 
     # Define layouts for output tensors
     comptime output_static_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, kv_params.head_size
     )
     var output_shape = IndexList[4](
-        batch_size, max_prompt_len, num_q_heads, Int(kv_params.head_size)
+        batch_size, max_prompt_len, num_q_heads, kv_params.head_size
     )
     var output_runtime_layout = RuntimeLayout[output_static_layout].row_major(
         output_shape
@@ -131,8 +131,8 @@ def execute_flash_attention[
         2,
         num_layers,
         max_seq_len,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var kv_block_runtime_layout = RuntimeLayout[
         kv_block_static_layout
@@ -207,8 +207,8 @@ def execute_flash_attention[
         max_prompt_len,
         max_context_len,
         num_q_heads,  # TODO fix this for GQA
-        Int(kv_params.head_size),
-        num_q_heads // Int(kv_params.num_heads),
+        kv_params.head_size,
+        num_q_heads // kv_params.num_heads,
         ctx,
     )
 
@@ -221,8 +221,8 @@ def execute_flash_attention[
             for h in range(Int(num_q_heads)):
                 for hd in range(kv_params.head_size):
                     assert_almost_equal(
-                        ref_out_tensor[bs, s, h, Int(hd)],
-                        test_out_tensor[bs, s, h, Int(hd)],
+                        ref_out_tensor[bs, s, h, hd],
+                        test_out_tensor[bs, s, h, hd],
                         atol=1e-5,
                         rtol=rtol,
                     )

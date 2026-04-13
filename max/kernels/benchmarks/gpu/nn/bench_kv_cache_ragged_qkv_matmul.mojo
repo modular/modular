@@ -75,9 +75,7 @@ def execute_kv_cache_ragged_matmul[
 ) raises:
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
-        ),
+        KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
     ]
 
     comptime hidden_size = num_q_heads * head_dim

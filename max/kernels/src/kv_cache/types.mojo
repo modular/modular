@@ -143,18 +143,18 @@ def _make_cache_tt[
 
 
 struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
-    var num_heads: UInt
-    var head_size: UInt
+    var num_heads: Int
+    var head_size: Int
     var is_mla: Bool
 
     def __init__(
-        out self, num_heads: UInt, head_size: UInt, is_mla: Bool = False
+        out self, num_heads: Int, head_size: Int, is_mla: Bool = False
     ):
         """
         Initialize KVCacheStaticParams.
         Args:
-            num_heads (UInt): Number of attention heads.
-            head_size (UInt): Size of each attention head.
+            num_heads (Int): Number of attention heads.
+            head_size (Int): Size of each attention head.
             is_mla (Bool, optional): Whether to use Multi-Linear Attention (MLA) mode.
                 If true, we only store k cache. If False, we store k and v cache.
                 Defaults to False.
@@ -355,7 +355,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         *,
         BN: Int,
         BK: Int = padded_depth[
-            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+            Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
@@ -373,7 +373,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         *,
         BN: Int,
         BK: Int = padded_depth[
-            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+            Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
     ](self, ctx: DeviceContext) raises -> RaggedTMA3DTile[
         Self.dtype,
@@ -544,8 +544,8 @@ struct ContinuousBatchingKVCache[
     comptime blocks_shape = IntTuple(
         UNKNOWN_VALUE,
         UNKNOWN_VALUE,
-        Int(Self.kv_params.num_heads),
-        Int(Self.kv_params.head_size),
+        Self.kv_params.num_heads,
+        Self.kv_params.head_size,
     )
     comptime blocks_layout = Layout.row_major(Self.blocks_shape)
 
@@ -591,10 +591,10 @@ struct ContinuousBatchingKVCache[
         self, block_idx: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
     ) -> DynamicCoord[DType.int64, 4]:
         assert (
-            UInt(head_idx) < Self.kv_params.num_heads
+            head_idx < Self.kv_params.num_heads
         ), "KVCache head_idx out of range"
         assert (
-            UInt(head_dim_idx) < Self.kv_params.head_size
+            head_dim_idx < Self.kv_params.head_size
         ), "KVCache head_dim_idx is out of range"
         assert tok_idx < Int(
             self.blocks.dim[1]()
@@ -619,11 +619,11 @@ struct ContinuousBatchingKVCache[
         comptime assert (
             not self.quantization_enabled
         ), "ContinuousBatchingKVCache does not support quantization"
-        assert Int(blocks.dim[2]()) == Int(
-            Self.kv_params.num_heads
+        assert (
+            Int(blocks.dim[2]()) == Self.kv_params.num_heads
         ), "blocks.dim[2]() must be equal to kv_params.num_heads"
-        assert Int(blocks.dim[3]()) == Int(
-            Self.kv_params.head_size
+        assert (
+            Int(blocks.dim[3]()) == Self.kv_params.head_size
         ), "blocks.dim[3]() must be equal to kv_params.head_size"
 
         self.blocks = blocks
@@ -782,7 +782,7 @@ struct ContinuousBatchingKVCache[
         *,
         BN: Int,
         BK: Int = padded_depth[
-            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+            Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
@@ -810,8 +810,8 @@ struct ContinuousBatchingKVCache[
         comptime smem_dim = IndexList[3](BN, 1, BK)
         comptime gmem_dim = IndexList[3](
             UNKNOWN_VALUE,
-            Int(Self.kv_params.num_heads),
-            Int(Self.kv_params.head_size),
+            Self.kv_params.num_heads,
+            Self.kv_params.head_size,
         )
         return create_split_tma[smem_dim, gmem_dim, swizzle_mode](
             ctx, self.blocks.ptr, Int(rows)
@@ -889,7 +889,7 @@ struct ContinuousBatchingKVCache[
         *,
         BN: Int,
         BK: Int = padded_depth[
-            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+            Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
     ](
         self,
@@ -908,11 +908,11 @@ struct ContinuousBatchingKVCache[
         var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
             self.blocks.dim[1]()
         )
-        tma = type_of(tma).create[depth=Int(Self.kv_params.head_size)](
+        tma = type_of(tma).create[depth=Self.kv_params.head_size](
             ctx,
             self.blocks.ptr,
             rows=Int(rows),
-            middle_dim=Int(Self.kv_params.num_heads),
+            middle_dim=Self.kv_params.num_heads,
         )
 
     @always_inline
@@ -1048,14 +1048,14 @@ struct PagedKVCache[
     comptime blocks_shape = IntTuple(
         UNKNOWN_VALUE,
         Self.page_size,
-        Int(Self.kv_params.num_heads),
-        Int(Self.kv_params.head_size),
+        Self.kv_params.num_heads,
+        Self.kv_params.head_size,
     )
     comptime blocks_strides = IntTuple(
         # Runtime value: 2 * num_layers * page_size * num_heads * head_size
         UNKNOWN_VALUE,
-        Int(Self.kv_params.num_heads) * Int(Self.kv_params.head_size),
-        Int(Self.kv_params.head_size),
+        Self.kv_params.num_heads * Self.kv_params.head_size,
+        Self.kv_params.head_size,
         1,
     )
     comptime blocks_layout = Layout(Self.blocks_shape, Self.blocks_strides)
@@ -1091,7 +1091,7 @@ struct PagedKVCache[
 
     # Number of quantization scale values per token.
     comptime head_dim_granularity = ceildiv(
-        Int(Self.kv_params.head_size),
+        Self.kv_params.head_size,
         Self.quantization_granularity,
     )
     comptime scales_tt_layout = RowMajorLayout[
@@ -1099,7 +1099,7 @@ struct PagedKVCache[
             type=CoordLike,
             RuntimeInt[DType.int64],
             ComptimeInt[Self.page_size],
-            ComptimeInt[Int(Self.kv_params.num_heads)],
+            ComptimeInt[Self.kv_params.num_heads],
             ComptimeInt[Self.head_dim_granularity],
         ]()
     ]
@@ -1131,11 +1131,11 @@ struct PagedKVCache[
         assert (
             Int(blocks.dim[1]()) == Self.page_size
         ), "blocks.dim[1]() must be equal to page_size"
-        assert Int(blocks.dim[2]()) == Int(
-            Self.kv_params.num_heads
+        assert (
+            Int(blocks.dim[2]()) == Self.kv_params.num_heads
         ), "blocks.dim[2]() must be equal to kv_params.num_heads"
-        assert Int(blocks.dim[3]()) == Int(
-            Self.kv_params.head_size
+        assert (
+            Int(blocks.dim[3]()) == Self.kv_params.head_size
         ), "blocks.dim[3]() must be equal to kv_params.head_size"
 
         self.blocks = blocks
@@ -1217,7 +1217,7 @@ struct PagedKVCache[
         *,
         BN: Int,
         BK: Int = padded_depth[
-            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+            Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
@@ -1247,8 +1247,8 @@ struct PagedKVCache[
         comptime smem_dim = IndexList[3](BN, 1, BK)
         comptime gmem_dim = IndexList[3](
             UNKNOWN_VALUE,
-            Int(Self.kv_params.num_heads),
-            Int(Self.kv_params.head_size),
+            Self.kv_params.num_heads,
+            Self.kv_params.head_size,
         )
         return create_split_tma[smem_dim, gmem_dim, swizzle_mode](
             ctx, self.blocks.ptr, Int(rows)
@@ -1326,7 +1326,7 @@ struct PagedKVCache[
         *,
         BN: Int,
         BK: Int = padded_depth[
-            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+            Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
     ](
         self,
@@ -1345,11 +1345,11 @@ struct PagedKVCache[
         var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
             Self.page_size
         )
-        tma = type_of(tma).create[depth=Int(Self.kv_params.head_size)](
+        tma = type_of(tma).create[depth=Self.kv_params.head_size](
             ctx,
             self.blocks.ptr,
             rows=Int(rows),
-            middle_dim=Int(Self.kv_params.num_heads),
+            middle_dim=Self.kv_params.num_heads,
         )
 
     @always_inline
@@ -1400,7 +1400,7 @@ struct PagedKVCache[
         comptime smem_dim = IndexList[3](BN, 1, BK)
         comptime gmem_dim = IndexList[3](
             UNKNOWN_VALUE,
-            Int(Self.kv_params.num_heads),
+            Self.kv_params.num_heads,
             bf16_row_stride,
         )
         tma = create_split_tma[smem_dim, gmem_dim, swizzle_mode](
@@ -1455,13 +1455,13 @@ struct PagedKVCache[
         self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
     ) -> DynamicCoord[DType.int64, 4]:
         debug_assert(
-            UInt(head_idx) < Self.kv_params.num_heads,
+            head_idx < Self.kv_params.num_heads,
             "KVCache head_idx out of range (",
             head_idx,
             ")",
         )
         assert (
-            UInt(head_dim_idx) < Self.kv_params.head_size
+            head_dim_idx < Self.kv_params.head_size
         ), "KVCache head_dim_idx is out of range"
 
         var lut_block_index, tok_in_block_idx = divmod(tok_idx, self.page_size)
@@ -1492,7 +1492,7 @@ struct PagedKVCache[
         head_dim_idx: Int,
     ) -> DynamicCoord[DType.int64, 4]:
         debug_assert(
-            UInt(head_idx) < Self.kv_params.num_heads,
+            head_idx < Self.kv_params.num_heads,
             "KVCache head_idx out of range (",
             head_idx,
             ")",
@@ -1757,8 +1757,8 @@ struct ContinuousBatchingKVCacheCollection[
         UNKNOWN_VALUE,
         UNKNOWN_VALUE,
         UNKNOWN_VALUE,
-        Int(Self.kv_params.num_heads),
-        Int(Self.kv_params.head_size),
+        Self.kv_params.num_heads,
+        Self.kv_params.head_size,
     )
     comptime blocks_layout = Layout.row_major(Self.blocks_shape)
     comptime blocks_tt_layout = LTToTTLayout[Self.blocks_layout]
@@ -1887,8 +1887,8 @@ struct PagedKVCacheCollection[
         2 if not Self.kv_params.is_mla else 1,
         UNKNOWN_VALUE,
         Self.page_size,
-        Int(Self.kv_params.num_heads),
-        Int(Self.kv_params.head_size),
+        Self.kv_params.num_heads,
+        Self.kv_params.head_size,
     )
     comptime blocks_layout = Layout.row_major(Self.blocks_shape)
     comptime blocks_tt_layout = LTToTTLayout[Self.blocks_layout]
@@ -1898,7 +1898,7 @@ struct PagedKVCacheCollection[
 
     # Match PagedKVCache.head_dim_granularity.
     comptime head_dim_granularity = ceildiv(
-        Int(Self.kv_params.head_size),
+        Self.kv_params.head_size,
         Self.CacheType.quantization_granularity,
     )
     # Define scales tensor with shape [total_num_blocks, 2, num_layers, page_size, num_heads, granularity]
@@ -1907,7 +1907,7 @@ struct PagedKVCacheCollection[
         2 if not Self.kv_params.is_mla else 1,
         UNKNOWN_VALUE,  # num_layers
         Self.page_size,  # page_size
-        Int(Self.kv_params.num_heads),  # num_heads
+        Self.kv_params.num_heads,  # num_heads
         Self.head_dim_granularity,  # scales per token
     )
     comptime scales_layout = Layout.row_major(Self.scales_shape)

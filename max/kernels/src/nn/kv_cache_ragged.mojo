@@ -835,7 +835,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
 
     var q_dim = output.dim[1]()
     var k_dim = kv_params.head_size * kv_params.num_heads
-    var qk_offset = q_dim + Int(k_dim)
+    var qk_offset = q_dim + k_dim
     var batch_size = input_row_offsets.dim[0]() - 1
 
     if batch_size == 0:
@@ -876,12 +876,12 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
             if idx[1] < qk_offset:
                 cache = k_cache
                 h_idx, hd_idx = divmod(
-                    UInt(idx[1]) - UInt(q_dim), kv_params.head_size
+                    UInt(idx[1]) - UInt(q_dim), UInt(kv_params.head_size)
                 )
             else:
                 cache = v_cache.value()
                 h_idx, hd_idx = divmod(
-                    UInt(idx[1]) - UInt(qk_offset), kv_params.head_size
+                    UInt(idx[1]) - UInt(qk_offset), UInt(kv_params.head_size)
                 )
 
         var cache_length = cache.cache_length(batch_idx)
@@ -969,7 +969,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
 
     var q_dim = output.dim[1]()
     var k_dim = kv_params.head_size * kv_params.num_heads
-    var qk_offset = q_dim + Int(k_dim)
+    var qk_offset = q_dim + k_dim
     var batch_size = input_row_offsets.dim[0]() - 1
 
     if batch_size == 0:
@@ -1005,12 +1005,12 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
         if idx[1] < qk_offset:
             cache = k_cache
             h_idx, hd_idx = divmod(
-                UInt(idx[1]) - UInt(q_dim), kv_params.head_size
+                UInt(idx[1]) - UInt(q_dim), UInt(kv_params.head_size)
             )
         else:
             cache = v_cache
             h_idx, hd_idx = divmod(
-                UInt(idx[1]) - UInt(qk_offset), kv_params.head_size
+                UInt(idx[1]) - UInt(qk_offset), UInt(kv_params.head_size)
             )
 
         var cache_length = cache.cache_length(batch_idx)
@@ -1112,7 +1112,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
 
     var q_dim = output.dim[1]()
     var k_dim = kv_params.head_size * kv_params.num_heads
-    var qk_offset = q_dim + Int(k_dim)
+    var qk_offset = q_dim + k_dim
     var batch_size = input_row_offsets.dim[0]() - 1
 
     if batch_size == 0:
@@ -1192,12 +1192,12 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             if idx[1] < qk_offset:
                 cache = k_cache
                 h_idx, hd_idx = divmod(
-                    UInt(idx[1]) - UInt(q_dim), kv_params.head_size
+                    UInt(idx[1]) - UInt(q_dim), UInt(kv_params.head_size)
                 )
             else:
                 cache = v_cache.value()
                 h_idx, hd_idx = divmod(
-                    UInt(idx[1]) - UInt(qk_offset), kv_params.head_size
+                    UInt(idx[1]) - UInt(qk_offset), UInt(kv_params.head_size)
                 )
 
         var cache_length = cache.cache_length(batch_idx)
@@ -1292,7 +1292,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
 
     var q_dim = output.dim[1]()
     var k_dim = kv_params.head_size * kv_params.num_heads
-    var qk_offset = q_dim + Int(k_dim)
+    var qk_offset = q_dim + k_dim
     var batch_size = input_row_offsets.dim[0]() - 1
 
     if batch_size == 0:
@@ -1337,12 +1337,12 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
             if idx[1] < qk_offset:
                 cache = k_cache
                 h_idx, hd_idx = divmod(
-                    UInt(idx[1]) - UInt(q_dim), kv_params.head_size
+                    UInt(idx[1]) - UInt(q_dim), UInt(kv_params.head_size)
                 )
             else:
                 cache = v_cache.value()
                 h_idx, hd_idx = divmod(
-                    UInt(idx[1]) - UInt(qk_offset), kv_params.head_size
+                    UInt(idx[1]) - UInt(qk_offset), UInt(kv_params.head_size)
                 )
 
         var cache_length = cache.cache_length(batch_idx)
@@ -1820,14 +1820,16 @@ def _matmul_kv_cache_ragged_impl[
         )
         token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
 
-        if idx[1] < Int(k_offset):
+        if idx[1] < k_offset:
             # Write this element to the K cache.
             cache = k_cache
-            h_idx, hd_idx = divmod(UInt(idx[1]), kv_params.head_size)
+            h_idx, hd_idx = divmod(UInt(idx[1]), UInt(kv_params.head_size))
         else:
             # Otherwise, write this element to the V cache.
             cache = v_cache
-            h_idx, hd_idx = divmod(UInt(idx[1]) - k_offset, kv_params.head_size)
+            h_idx, hd_idx = divmod(
+                UInt(idx[1]) - UInt(k_offset), UInt(kv_params.head_size)
+            )
 
         cache_length = cache.cache_length(batch_idx)
         cache_token_idx = token_idx + cache_length
@@ -2025,7 +2027,7 @@ def _matmul_k_cache_ragged_impl[
         )
         token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
 
-        h_idx, hd_idx = divmod(UInt(idx[1]), kv_params.head_size)
+        h_idx, hd_idx = divmod(UInt(idx[1]), UInt(kv_params.head_size))
 
         cache_length = k_cache.cache_length(batch_idx)
         cache_token_idx = token_idx + cache_length
@@ -2200,7 +2202,7 @@ def _matmul_k_cache_ragged_scale_impl[
             UInt32(global_token_idx) - input_row_offsets[batch_idx]
         )
 
-        var h_idx, hd_idx = divmod(UInt(idx[1]), kv_params.head_size)
+        var h_idx, hd_idx = divmod(UInt(idx[1]), UInt(kv_params.head_size))
 
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
@@ -2495,7 +2497,7 @@ def _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
 
         # Write this element to the K or V cache.
         cache = k_or_v_cache
-        h_idx, hd_idx = divmod(UInt(idx[1]), kv_params.head_size)
+        h_idx, hd_idx = divmod(UInt(idx[1]), UInt(kv_params.head_size))
 
         cache_length = cache.cache_length(batch_idx)
         cache_token_idx = token_idx + cache_length
@@ -3604,7 +3606,7 @@ def generic_kv_cache_radd_dispatch[
     comptime assert (
         a.layout.shape[1] != UNKNOWN_VALUE
     ), "Input tensor must have known shape in last dim"
-    comptime assert Int(a.layout.shape[1]) == Int(hidden_size * 2), (
+    comptime assert Int(a.layout.shape[1]) == hidden_size * 2, (
         "Mismatch in hidden size between input "
         + String(Int(a.layout.shape[1]))
         + " and KV tensors "
@@ -3634,16 +3636,18 @@ def generic_kv_cache_radd_dispatch[
 
         var cache: collection_t.CacheType
         var corrected_dim: UInt
-        if idx[1] < Int(hidden_size):
+        if idx[1] < hidden_size:
             cache = k_cache
             corrected_dim = UInt(idx[1])
         else:
             cache = v_cache
-            corrected_dim = UInt(idx[1] - Int(hidden_size))
+            corrected_dim = UInt(idx[1] - hidden_size)
 
         var h_idx: UInt
         var hd_idx: UInt
-        h_idx, hd_idx = divmod(corrected_dim, collection_t.kv_params.head_size)
+        h_idx, hd_idx = divmod(
+            corrected_dim, UInt(collection_t.kv_params.head_size)
+        )
 
         var cache_length = cache.cache_length(Int(corrected_batch_idx))
         var cache_token_idx = tok_idx + cache_length
@@ -3852,7 +3856,7 @@ def kv_cache_2m_iadd_dispatch[
     comptime assert (
         kv.layout.shape[1] != UNKNOWN_VALUE
     ), "Input tensor must have known shape in last dim"
-    comptime assert Int(kv.layout.shape[1]) == Int(hidden_size), (
+    comptime assert Int(kv.layout.shape[1]) == hidden_size, (
         "Mismatch in hidden size between input "
         + String(Int(kv.layout.shape[1]))
         + " and KV tensors "
@@ -3888,7 +3892,9 @@ def kv_cache_2m_iadd_dispatch[
 
         var h_idx: UInt
         var hd_idx: UInt
-        h_idx, hd_idx = divmod(UInt(idx[1]), collection_t.kv_params.head_size)
+        h_idx, hd_idx = divmod(
+            UInt(idx[1]), UInt(collection_t.kv_params.head_size)
+        )
 
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = tok_idx + cache_length
