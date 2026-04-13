@@ -742,8 +742,8 @@ struct SMemTileArrayWithLayout[
 # TODO: This type should correctly propagate mutability.
 struct SMemTileArray[
     dtype: DType,
-    shape_types: TypeList[type=CoordLike, ...],
-    stride_types: TypeList[type=CoordLike, ...],
+    shape_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
     num_tiles: Int,
     alignment: Int = 128,
 ](TrivialRegisterPassable):

@@ -154,7 +154,7 @@ def test_variadic_contains() raises:
 
 def test_variadic_contains_empty() raises:
     comptime variadic = TypeList[
-        type=Writable, Variadic.empty_of_trait[Writable]
+        Trait=Writable, Variadic.empty_of_trait[Writable]
     ]
     assert_equal(variadic.size, 0)
     comptime ContainsWritable = Variadic.contains[Trait=Writable, ...]

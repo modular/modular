@@ -46,7 +46,7 @@ comptime _UnknownTileLayout[rank: Int] = TileLayout[
 
 
 comptime _RowMajorTileLayout[
-    shape_types: TypeList[type=CoordLike, ...]
+    shape_types: TypeList[Trait=CoordLike, ...]
 ] = TileLayout[
     shape_types=shape_types,
     stride_types=_RowMajor[*shape_types],

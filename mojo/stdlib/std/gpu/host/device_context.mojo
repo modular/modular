@@ -3809,7 +3809,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     @always_inline
     def compile_function[
         func_type: TrivialRegisterPassable,
-        declared_arg_types: TypeList[type=AnyType, ...],
+        declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: func_type,
         signature_func: def(* args: * declared_arg_types) thin -> None,
@@ -3888,7 +3888,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def compile_function_experimental[
-        declared_arg_types: TypeList[type=AnyType, ...],
+        declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) thin -> None,
         *,
@@ -3964,7 +3964,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     @always_inline
     def compile_function[
         func_type: TrivialRegisterPassable,
-        declared_arg_types: TypeList[type=AnyType, ...],
+        declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: func_type,
         signature_func: def(* args: * declared_arg_types) capturing -> None,
@@ -4044,7 +4044,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def compile_function_experimental[
-        declared_arg_types: TypeList[type=AnyType, ...],
+        declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) capturing -> None,
         *,
@@ -4567,7 +4567,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     @always_inline
     def enqueue_function[
         func_type: TrivialRegisterPassable,
-        declared_arg_types: TypeList[type=AnyType, ...],
+        declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: func_type,
         signature_func: def(* args: * declared_arg_types) thin -> None,
@@ -4700,7 +4700,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     @parameter
     @always_inline
     def enqueue_function_experimental[
-        declared_arg_types: TypeList[type=AnyType, ...],
+        declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
@@ -4824,7 +4824,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     @always_inline
     def enqueue_function[
         func_type: TrivialRegisterPassable,
-        declared_arg_types: TypeList[type=AnyType, ...],
+        declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: func_type,
         signature_func: def(* args: * declared_arg_types) capturing -> None,
@@ -5067,7 +5067,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     @parameter
     @always_inline
     def enqueue_function_experimental[
-        declared_arg_types: TypeList[type=AnyType, ...],
+        declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: def(* args: * declared_arg_types) capturing -> None,
         *actual_arg_types: DevicePassable,

@@ -922,7 +922,7 @@ struct TileTensor[
 
     @always_inline("nodebug")
     def tile[
-        tile_shape_types: TypeList[type=CoordLike, ...],
+        tile_shape_types: TypeList[Trait=CoordLike, ...],
         //,
     ](
         self, tile_shape: Coord[tile_shape_types], coordinates: Coord
@@ -2660,8 +2660,8 @@ def _distribute_with_offset[
 @always_inline("nodebug")
 def _tile[
     dtype: DType,
-    coord_types: TypeList[type=CoordLike, ...],
-    tile_shape_types: TypeList[type=CoordLike, ...],
+    coord_types: TypeList[Trait=CoordLike, ...],
+    tile_shape_types: TypeList[Trait=CoordLike, ...],
     //,
 ](
     data_layout_tensor: TileTensor[
@@ -2742,8 +2742,8 @@ def _tile[
 @always_inline("nodebug")
 def _tile_with_offset[
     dtype: DType,
-    coord_types: TypeList[type=CoordLike, ...],
-    tile_shape_types: TypeList[type=CoordLike, ...],
+    coord_types: TypeList[Trait=CoordLike, ...],
+    tile_shape_types: TypeList[Trait=CoordLike, ...],
     //,
 ](
     data_layout_tensor: TileTensor[
@@ -2812,7 +2812,7 @@ def _tile_with_offset[
 @always_inline("nodebug")
 def _tile[
     dtype: DType,
-    coord_types: TypeList[type=CoordLike, ...],
+    coord_types: TypeList[Trait=CoordLike, ...],
     tile_shape_types: Variadic.TypesOfTrait[CoordLike],
     //,
     *,
@@ -2874,8 +2874,8 @@ def _tile[
 @always_inline("nodebug")
 def _tile_with_offset[
     dtype: DType,
-    coord_types: TypeList[type=CoordLike, ...],
-    tile_shape_types: TypeList[type=CoordLike, ...],
+    coord_types: TypeList[Trait=CoordLike, ...],
+    tile_shape_types: TypeList[Trait=CoordLike, ...],
     //,
     *,
     stride_layout: TensorLayout,
@@ -2940,7 +2940,7 @@ def _tile_with_offset[
 @always_inline("nodebug")
 def _vectorize[
     dtype: DType,
-    vector_shape_types: TypeList[type=CoordLike, ...],
+    vector_shape_types: TypeList[Trait=CoordLike, ...],
     //,
 ](
     data_layout_tensor: TileTensor[dtype, ...],
@@ -3099,7 +3099,7 @@ comptime _SliceMapper[
 
 comptime _Slice[
     slices: Variadic.ValuesOfType[ContiguousSlice],
-    element_types: TypeList[type=CoordLike, ...],
+    element_types: TypeList[Trait=CoordLike, ...],
 ] = TypeList[
     _MapVariadicAndIdxToType[
         To=CoordLike,
@@ -3140,8 +3140,8 @@ comptime _SelectKeptShapeReducer[
 
 
 comptime _SelectKeptShape[
-    index_types: TypeList[type=CoordLike, ...],
-    shape_types: TypeList[type=CoordLike, ...],
+    index_types: TypeList[Trait=CoordLike, ...],
+    shape_types: TypeList[Trait=CoordLike, ...],
 ] = TypeList[
     _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[CoordLike],
@@ -3170,8 +3170,8 @@ comptime _SelectKeptStrideReducer[
 
 
 comptime _SelectKeptStride[
-    index_types: TypeList[type=CoordLike, ...],
-    stride_types: TypeList[type=CoordLike, ...],
+    index_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
 ] = TypeList[
     _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[CoordLike],
@@ -3211,8 +3211,8 @@ comptime _IsRowMajorHelper[
 
 
 comptime _IsRowMajor[
-    shape_types: TypeList[type=CoordLike, ...],
-    stride_types: TypeList[type=CoordLike, ...],
+    shape_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
 ] = Coord[
     _IsRowMajorHelper[shape_types.values, stride_types.values]
 ].static_product == (

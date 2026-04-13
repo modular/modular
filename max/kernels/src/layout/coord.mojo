@@ -414,7 +414,7 @@ comptime All = _All()
 
 
 @fieldwise_init("implicit")
-struct Coord[element_types: TypeList[type=CoordLike, ...]](
+struct Coord[element_types: TypeList[Trait=CoordLike, ...]](
     CoordLike, Sized, Writable
 ):
     """A struct representing tuple-like data with compile-time and runtime elements.
@@ -1259,7 +1259,7 @@ def idx2crd[
 
 
 def coord_to_int_tuple[
-    element_types: TypeList[type=CoordLike, ...],
+    element_types: TypeList[Trait=CoordLike, ...],
     //,
 ](value: Coord[element_types]) -> IntTuple:
     """Convert a `Coord` to an `IntTuple`, preserving the nested structure.
@@ -1294,7 +1294,7 @@ def coord_to_int_tuple[
 
 @always_inline
 def coord_to_index_list[
-    element_types: TypeList[type=CoordLike, ...]
+    element_types: TypeList[Trait=CoordLike, ...]
 ](value: Coord[element_types]) -> IndexList[value.rank]:
     """Convert a flat `Coord` to an `IndexList`.
 
@@ -1500,7 +1500,7 @@ comptime _FlattenedOffsets[
 
 
 def _get_flattened_helper[
-    element_types: TypeList[type=CoordLike, ...],
+    element_types: TypeList[Trait=CoordLike, ...],
     //,
     flat_idx: Int,
     current_offset: Int,
@@ -1531,7 +1531,7 @@ def _get_flattened_helper[
 
 
 def _get_flattened[
-    element_types: TypeList[type=CoordLike, ...],
+    element_types: TypeList[Trait=CoordLike, ...],
     //,
     flat_idx: Int,
 ](tuple: Coord[element_types]) -> Int:
@@ -1697,7 +1697,7 @@ All elements (ComptimeInt, RuntimeInt of any dtype) are converted to RuntimeInt[
 
 
 comptime _CoordToDynamic[
-    dtype: DType, element_types: TypeList[type=CoordLike, ...]
+    dtype: DType, element_types: TypeList[Trait=CoordLike, ...]
 ] = TypeList[
     _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[CoordLike],
@@ -2164,8 +2164,8 @@ comptime _MultiplyReducer[
 
 
 comptime _Multiply[
-    Lhs: TypeList[type=CoordLike, ...],
-    Rhs: TypeList[type=CoordLike, ...],
+    Lhs: TypeList[Trait=CoordLike, ...],
+    Rhs: TypeList[Trait=CoordLike, ...],
 ] = TypeList[
     _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[CoordLike],
@@ -2230,8 +2230,8 @@ comptime _DivideReducer[
 
 
 comptime _Divide[
-    Lhs: TypeList[type=CoordLike, ...],
-    Rhs: TypeList[type=CoordLike, ...],
+    Lhs: TypeList[Trait=CoordLike, ...],
+    Rhs: TypeList[Trait=CoordLike, ...],
 ] = TypeList[
     _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[CoordLike],
@@ -2261,8 +2261,8 @@ comptime _CeilDivReducer[
 
 
 comptime _CeilDiv[
-    Lhs: TypeList[type=CoordLike, ...],
-    Rhs: TypeList[type=CoordLike, ...],
+    Lhs: TypeList[Trait=CoordLike, ...],
+    Rhs: TypeList[Trait=CoordLike, ...],
 ] = TypeList[
     _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[CoordLike],

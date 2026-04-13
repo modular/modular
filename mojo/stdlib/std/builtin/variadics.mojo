@@ -441,7 +441,7 @@ struct Variadic:
 
 
 struct TypeList[
-    type: type_of(AnyType), //, values: _MLIR.KGENTypeListType[type]
+    Trait: type_of(AnyType), //, values: _MLIR.KGENTypeListType[Trait]
 ](Sized, TrivialRegisterPassable):
     """A compile-time list of types conforming to a common trait.
 
@@ -449,7 +449,7 @@ struct TypeList[
     such as reversing, filtering, slicing, mapping, and membership testing.
 
     Parameters:
-        type: The trait that all types in the list must conform to.
+        Trait: The trait that all types in the list must conform to.
         values: The types in the list.
 
     Examples:
@@ -459,7 +459,7 @@ struct TypeList[
     from std.sys.intrinsics import _type_is_eq
 
     # Create a type list
-    comptime tl = TypeList[type=AnyType, Int, String, Float64]()
+    comptime tl = TypeList[Trait=AnyType, Int, String, Float64]()
 
     # Query size
     assert_equal(tl.size, 3)
@@ -492,7 +492,7 @@ struct TypeList[
         `, `,
         idx._mlir_value,
         `> : `,
-        +Self.type,
+        +Self.Trait,
     ]
     """Gets a type at the given index.
 
@@ -512,7 +512,7 @@ struct TypeList[
     ](
         self,
         out result: TypeList[
-            type=dst_trait,
+            Trait=dst_trait,
             __mlir_attr[
                 `#kgen.upcast<`,
                 Self.values,
@@ -534,7 +534,7 @@ struct TypeList[
     comptime splat[
         Trait: type_of(AnyType), //, count: Int, type: Trait
     ] = TypeList[
-        type=Trait,
+        Trait=Trait,
         Variadic.tabulate_type[
             Trait=Trait, ToT=type, count, _SplatTypeTabulator[Trait, type, _]
         ],
@@ -549,17 +549,17 @@ struct TypeList[
 
     comptime reverse = TypeList[
         _MapVariadicAndIdxToType[
-            To=Self.type,
+            To=Self.Trait,
             ParamListType=Self.values,
-            Mapper=_ReversedVariadic[Self.type, ...],
+            Mapper=_ReversedVariadic[Self.Trait, ...],
         ]
     ]
     """Returns this type list in reverse order."""
 
-    comptime contains[type: Self.type] = _ReduceVariadicAndIdxToValue[
+    comptime contains[type: Self.Trait] = _ReduceVariadicAndIdxToValue[
         BaseVal=Variadic.values[False],
         ParamListType=Self.values,
-        Reducer=_ContainsReducer[Trait=Self.type, Type=type, ...],
+        Reducer=_ContainsReducer[Trait=Self.Trait, Type=type, ...],
     ][0]
     """Checks if a type is contained in this type list.
 
@@ -570,12 +570,12 @@ struct TypeList[
     comptime map[
         To: type_of(AnyType),
         //,
-        Mapper: _TypeToTypeGenerator[Self.type, To],
+        Mapper: _TypeToTypeGenerator[Self.Trait, To],
     ] = TypeList[
         _ReduceVariadicAndIdxToVariadic[
             BaseVal=Variadic.empty_of_trait[To],
             ParamListType=Self.values,
-            Reducer=_MapTypeToTypeReducer[Self.type, To, Mapper, ...],
+            Reducer=_MapTypeToTypeReducer[Self.Trait, To, Mapper, ...],
         ],
     ]
     """Maps types to new types using a mapper.
@@ -594,9 +594,9 @@ struct TypeList[
         end: Int where start <= end <= Self.size = Self.size,
     ] = TypeList[
         _ReduceVariadicAndIdxToVariadic[
-            BaseVal=Variadic.empty_of_trait[Self.type],
+            BaseVal=Variadic.empty_of_trait[Self.Trait],
             ParamListType=Self.values,
-            Reducer=_SliceReducer[Self.type, start, end, ...],
+            Reducer=_SliceReducer[Self.Trait, start, end, ...],
         ]
     ]
     """Extracts a contiguous subsequence from the type list.
@@ -613,12 +613,12 @@ struct TypeList[
     """
 
     comptime filter[
-        predicate: _TypePredicateGenerator[Self.type],
+        predicate: _TypePredicateGenerator[Self.Trait],
     ] = TypeList[
         _ReduceVariadicAndIdxToVariadic[
-            BaseVal=Variadic.empty_of_trait[Self.type],
+            BaseVal=Variadic.empty_of_trait[Self.Trait],
             ParamListType=Self.values,
-            Reducer=_FilterReducer[Self.type, predicate, ...],
+            Reducer=_FilterReducer[Self.Trait, predicate, ...],
         ]
     ]
     """Filters types based on a predicate.
@@ -641,7 +641,7 @@ struct TypeList[
 
 
 comptime TypeListOf[type: type_of(AnyType), //, *values: type] = TypeList[
-    type=type, values.values
+    Trait=type, values.values
 ]
 """A compile-time type list with some elements, uninstantiated.
 

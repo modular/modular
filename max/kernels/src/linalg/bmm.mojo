@@ -113,7 +113,7 @@ def _get_batch_dims[
 
 @always_inline
 def _slice_types[
-    stride_types: TypeList[type=CoordLike, ...], n_dims: Int
+    stride_types: TypeList[Trait=CoordLike, ...], n_dims: Int
 ]() -> Variadic.TypesOfTrait[CoordLike]:
     """
     Slice the last n_dims dimensions of the Coord element types.
@@ -127,14 +127,14 @@ def _slice_types[
 
 @always_inline
 def _slice_types_tl[
-    stride_types: TypeList[type=CoordLike, ...], n_dims: Int
-]() -> TypeList[type=CoordLike, _slice_types[stride_types, n_dims]()]:
+    stride_types: TypeList[Trait=CoordLike, ...], n_dims: Int
+]() -> TypeList[Trait=CoordLike, _slice_types[stride_types, n_dims]()]:
     return {}
 
 
 @always_inline
 def _shape_types_to_3d[
-    shape_types: TypeList[type=CoordLike, ...]
+    shape_types: TypeList[Trait=CoordLike, ...]
 ]() -> Variadic.TypesOfTrait[CoordLike]:
     """
     Reshape the shape types to 3D. The last two dimensions stay the same. The

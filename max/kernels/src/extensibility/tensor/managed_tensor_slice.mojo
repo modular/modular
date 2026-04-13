@@ -1897,8 +1897,8 @@ def view_copy_impl[
 
 
 def _shape_types_compatible[
-    x_types: TypeList[type=CoordLike, ...],
-    y_types: TypeList[type=CoordLike, ...],
+    x_types: TypeList[Trait=CoordLike, ...],
+    y_types: TypeList[Trait=CoordLike, ...],
     rank: Int,
 ]() -> Bool:
     comptime for i in range(rank):

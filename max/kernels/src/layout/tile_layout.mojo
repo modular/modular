@@ -140,8 +140,8 @@ trait TensorLayout(TrivialRegisterPassable):
     comptime __shape_types: Variadic.TypesOfTrait[CoordLike]
     comptime __stride_types: Variadic.TypesOfTrait[CoordLike]
 
-    comptime _shape_types: TypeList[type=CoordLike, Self.__shape_types]
-    comptime _stride_types: TypeList[type=CoordLike, Self.__stride_types]
+    comptime _shape_types: TypeList[Trait=CoordLike, Self.__shape_types]
+    comptime _stride_types: TypeList[Trait=CoordLike, Self.__stride_types]
 
     def shape[i: Int](self) -> Self._shape_types[i]:
         """Returns the i-th shape dimension.
@@ -278,7 +278,7 @@ trait TensorLayout(TrivialRegisterPassable):
         ...
 
 
-comptime RowMajorLayout[shape_types: TypeList[type=CoordLike, ...]] = Layout[
+comptime RowMajorLayout[shape_types: TypeList[Trait=CoordLike, ...]] = Layout[
     shape_types, _RowMajor[*shape_types]
 ]
 """A `Layout` with row-major (C-order) strides computed from the shape.
@@ -289,8 +289,8 @@ Parameters:
 
 
 struct Layout[
-    shape_types: TypeList[type=CoordLike, ...],
-    stride_types: TypeList[type=CoordLike, ...],
+    shape_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
 ](ImplicitlyCopyable, TensorLayout, TrivialRegisterPassable, Writable):
     """A layout that supports mixed compile-time and runtime dimensions.
 
@@ -732,7 +732,7 @@ def _type_to_int_tuple[T: CoordLike]() -> IntTuple:
         return _types_to_int_tuple[TypeList[T.ParamListType]()]()
 
 
-def _types_to_int_tuple[Types: TypeList[type=CoordLike, ...]]() -> IntTuple:
+def _types_to_int_tuple[Types: TypeList[Trait=CoordLike, ...]]() -> IntTuple:
     """Convert variadic CoordLike types to an IntTuple.
 
     Uses direct IntTuple construction (no append) for rank 1-2.
@@ -951,7 +951,7 @@ def row_major[*idxs: Int]() -> RowMajorLayout[_IntToComptimeInt[*idxs]]:
 # ===----------------------------------------------------------------------=== #
 
 
-comptime ColMajorLayout[shape_types: TypeList[type=CoordLike, ...]] = Layout[
+comptime ColMajorLayout[shape_types: TypeList[Trait=CoordLike, ...]] = Layout[
     shape_types, _ColMajor[*shape_types]
 ]
 """A `Layout` with column-major (Fortran-order) strides computed from the shape.
@@ -1192,7 +1192,7 @@ def zipped_divide[
 
 comptime ZippedDivideLayout[
     LayoutType: TensorLayout,
-    tile: TypeList[type=CoordLike, ...],
+    tile: TypeList[Trait=CoordLike, ...],
 ] = Layout[
     TypeListOf[
         type=CoordLike,
@@ -2201,7 +2201,7 @@ the same length and all element pairs are weakly compatible."""
 
 comptime WeaklyCompatible[
     L: TensorLayout,
-    C: TypeList[type=CoordLike, ...],
+    C: TypeList[Trait=CoordLike, ...],
 ] = _WeaklyCompatible[L._shape_types.values, C.values]
 """Check structural compatibility between a layout's shape and coordinate types.
 
