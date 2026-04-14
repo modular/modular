@@ -25,6 +25,8 @@ managed and destroyed in Mojo:
 These traits are built into Mojo and do not need to be imported.
 """
 
+from std.builtin.variadics import _MLIR
+
 # ===----------------------------------------------------------------------=== #
 #  AnyType
 # ===----------------------------------------------------------------------=== #
@@ -195,6 +197,9 @@ trait ImplicitlyDestructible:
 
 
 comptime __SomeImpl[Trait: type_of(AnyType), T: Trait] = T
+comptime __SomeTypeListImpl[
+    Trait: type_of(AnyType), values: _MLIR.KGENTypeListType[Trait]
+] = TypeList[Trait=Trait, values]()
 
 comptime Some[Trait: type_of(AnyType)] = __SomeImpl[Trait, ...]
 """An alias allowing users to tersely express that a function argument is an
@@ -216,4 +221,25 @@ def foo(x: Some[Intable]) -> Int:
 
 Parameters:
     Trait: The trait or trait composition that the argument type must implement.
+"""
+
+comptime SomeTypeList[Trait: type_of(AnyType)] = __SomeTypeListImpl[Trait, ...]
+"""An alias allowing users to tersely express that a function argument is a
+list of types that implement a trait or trait composition. This is particularly
+useful for variadic packs.
+
+For example, instead of writing
+
+```mojo
+def foo[*arg_types: Copyable](*args: *arg_types) -> Int: ...
+```
+
+one can write:
+
+```mojo
+def foo(*args: *SomeTypeList[Copyable]) -> Int: ...
+```
+
+Parameters:
+    Trait: The trait or trait composition that the argument types must implement.
 """

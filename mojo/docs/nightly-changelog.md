@@ -60,6 +60,14 @@ This version is still a work in progress.
   forwarder(1, "hello", 3.14)  # prints each value on a separate line
   ```
 
+- Heterogenous variadic packs can now be specified with a `SomeType` helper
+  function. These two are equivalent:
+
+  ```mojo
+  def foo[*arg_types: Copyable](*args: *arg_types) -> Int: ...
+  def foo(*args: *SomeTypeList[Copyable]) -> Int: ...
+  ```
+
 ## Language changes
 
 - Variadic parameters lists are now passed instead of `ParameterList` and
