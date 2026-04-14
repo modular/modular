@@ -4,10 +4,7 @@ package(default_visibility = ["//KGEN:consumers"])
 
 modular_cc_binary(
     name = "kgen-opt",
-    srcs = glob([
-        "*.cpp",
-        "*.h",
-    ]),
+    srcs = glob(["*.cpp"]),
     linkopts = select({
         "@platforms//os:linux": [
             "-Wl,--export-dynamic-symbol=__jit_debug_*",
@@ -16,7 +13,6 @@ modular_cc_binary(
         "//conditions:default": [],
     }),
     deps = [
-        "//Config",
         "//Init",
         "//KGEN:Compiler",
         "//KGEN:CompilerRT",
@@ -36,8 +32,6 @@ modular_cc_binary(
         "//Support:Context",
         "//Support:Globals",
         "//Support:MDialect",
-        "@llvm-project//llvm:Plugins",
-        "@llvm-project//llvm:Support",
         "@llvm-project//mlir:MlirOptLib",
     ],
 )
