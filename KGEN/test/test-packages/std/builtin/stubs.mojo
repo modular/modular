@@ -102,9 +102,15 @@ trait Iterable:
         ...
 
 
-# Implement the 'Some' helper.
+# Implement the 'Some' and 'SomeTypeList' helper.
 comptime __SomeImpl[Trait: type_of(AnyType), T: Trait] = T
 comptime Some[Trait: type_of(AnyType)] = __SomeImpl[Trait, ...]
+
+comptime __SomeTypeListImpl[
+    Trait: type_of(AnyType), values: _MLIR.KGENTypeListType[Trait]
+] = TypeList[Trait=Trait, values]()
+comptime SomeTypeList[Trait: type_of(AnyType)] = __SomeTypeListImpl[Trait, ...]
+
 
 # ===----------------------------------------------------------------------=== #
 # Builtin Types
