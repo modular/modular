@@ -73,35 +73,32 @@ struct Tensor[
 
     def rand(self) raises -> Self:
         with self.buffer.map_to_host() as host_buffer:
-            rand(host_buffer.unsafe_ptr(), Self.size)
+            rand(host_buffer.as_span())
             return self
 
     def iota(self) raises -> Self:
         with self.buffer.map_to_host() as host_buffer:
-            iota(host_buffer.unsafe_ptr(), Self.size)
+            iota(host_buffer.as_span())
             return self
 
     def fill(self, value: Scalar[Self.dtype]) raises -> Self:
         with self.buffer.map_to_host() as host_buffer:
-            var ptr = host_buffer.unsafe_ptr()
             for i in range(Self.size):
-                ptr[i] = value
+                host_buffer[i] = value
             return self
 
     def custom_fill_a(self, M: Int, K: Int) raises -> Self:
         with self.buffer.map_to_host() as host_buffer:
-            var ptr = host_buffer.unsafe_ptr()
             for i in range(M):
                 for j in range(K):
-                    ptr[i * K + j] = Scalar[Self.dtype](i)
+                    host_buffer[i * K + j] = Scalar[Self.dtype](i)
             return self
 
     def custom_fill_b(self, K: Int, N: Int) raises -> Self:
         with self.buffer.map_to_host() as host_buffer:
-            var ptr = host_buffer.unsafe_ptr()
             for i in range(K):
                 for j in range(N):
-                    ptr[i * N + j] = Scalar[Self.dtype](j)
+                    host_buffer[i * N + j] = Scalar[Self.dtype](j)
             return self
 
 

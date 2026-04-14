@@ -51,7 +51,7 @@ def bench_concat[
     var input0_host_buffer = ctx.enqueue_create_host_buffer[type](size0)
     var input0_device_buffer = ctx.enqueue_create_buffer[type](size0)
     ctx.synchronize()
-    randn(input0_host_buffer.unsafe_ptr(), size0)
+    randn(input0_host_buffer.as_span())
     ctx.enqueue_copy(input0_device_buffer, input0_host_buffer)
     name += String(shape0)
     out_axis += shape0[axis]
@@ -62,7 +62,7 @@ def bench_concat[
     var input1_host_buffer = ctx.enqueue_create_host_buffer[type](size1)
     var input1_device_buffer = ctx.enqueue_create_buffer[type](size1)
     ctx.synchronize()
-    randn(input1_host_buffer.unsafe_ptr(), size1)
+    randn(input1_host_buffer.as_span())
     ctx.enqueue_copy(input1_device_buffer, input1_host_buffer)
     name += String(shape1)
     out_axis += shape1[axis]
@@ -75,7 +75,7 @@ def bench_concat[
     var output_host_buffer = ctx.enqueue_create_host_buffer[type](output_size)
     var output_device_buffer = ctx.enqueue_create_buffer[type](output_size)
     ctx.synchronize()
-    randn(output_host_buffer.unsafe_ptr(), output_size)
+    randn(output_host_buffer.as_span())
     ctx.enqueue_copy(output_device_buffer, output_host_buffer)
 
     # Create TileTensors with dynamic layouts

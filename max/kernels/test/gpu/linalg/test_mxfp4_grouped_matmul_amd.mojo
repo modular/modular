@@ -116,11 +116,9 @@ def test_mxfp4_grouped_matmul[
             N * scale_K
         )
         for j in range(N * packed_K):
-            bp_hbuf.unsafe_ptr()[j] = b_packed_host[
-                expert_id * N * packed_K + j
-            ]
+            bp_hbuf[j] = b_packed_host[expert_id * N * packed_K + j]
         for j in range(N * scale_K):
-            bs_hbuf.unsafe_ptr()[j] = rebind[Scalar[DType.float8_e8m0fnu]](
+            bs_hbuf[j] = rebind[Scalar[DType.float8_e8m0fnu]](
                 b_scales_host[expert_id * N * scale_K + j]
             )
         ctx.enqueue_copy(bp_dev, bp_hbuf)
@@ -140,7 +138,7 @@ def test_mxfp4_grouped_matmul[
             num_tokens * K
         )
         for j in range(num_tokens * K):
-            a_hbuf.unsafe_ptr()[j] = a_host[token_start * K + j]
+            a_hbuf[j] = a_host[token_start * K + j]
         ctx.enqueue_copy(a_dev, a_hbuf)
 
         var a_fp8_dev = ctx.enqueue_create_buffer[fp8_type](num_tokens * K)
@@ -172,7 +170,7 @@ def test_mxfp4_grouped_matmul[
         ctx.synchronize()
 
         for j in range(num_tokens * N):
-            c_ref_host[token_start * N + j] = c_hbuf.unsafe_ptr()[j]
+            c_ref_host[token_start * N + j] = c_hbuf[j]
 
         _ = bp_dev^
         _ = bs_dev^
@@ -203,16 +201,14 @@ def test_mxfp4_grouped_matmul[
         num_experts * N * packed_K
     )
     for j in range(num_experts * N * packed_K):
-        bp_hbuf.unsafe_ptr()[j] = b_packed_host[j]
+        bp_hbuf[j] = b_packed_host[j]
     ctx.enqueue_copy(b_packed_dev, bp_hbuf)
 
     var bs_hbuf = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
         num_experts * N * scale_K
     )
     for j in range(num_experts * N * scale_K):
-        bs_hbuf.unsafe_ptr()[j] = rebind[Scalar[DType.float8_e8m0fnu]](
-            b_scales_host[j]
-        )
+        bs_hbuf[j] = rebind[Scalar[DType.float8_e8m0fnu]](b_scales_host[j])
     ctx.enqueue_copy(b_scales_dev, bs_hbuf)
 
     ctx.enqueue_copy(a_offsets_dev, a_offsets_host)
@@ -262,7 +258,7 @@ def test_mxfp4_grouped_matmul[
     var num_mismatches = 0
 
     for i in range(total_tokens * N):
-        var got = c_host.unsafe_ptr()[i].cast[DType.float32]()
+        var got = c_host[i].cast[DType.float32]()
         var expected = c_ref_host[i].cast[DType.float32]()
         var magnitude = max(abs(got), abs(expected))
         if magnitude < Float32(1.0):
@@ -347,11 +343,9 @@ def test_dequant_all_experts[
         num_experts * N * scale_K
     )
     for i in range(num_experts * N * packed_K):
-        bp_hbuf.unsafe_ptr()[i] = bp_host[i]
+        bp_hbuf[i] = bp_host[i]
     for i in range(num_experts * N * scale_K):
-        bs_hbuf.unsafe_ptr()[i] = rebind[Scalar[DType.float8_e8m0fnu]](
-            bs_host[i]
-        )
+        bs_hbuf[i] = rebind[Scalar[DType.float8_e8m0fnu]](bs_host[i])
     ctx.enqueue_copy(bp_dev, bp_hbuf)
     ctx.enqueue_copy(bs_dev, bs_hbuf)
     ctx.synchronize()
@@ -396,8 +390,8 @@ def test_dequant_all_experts[
 
     var mismatches = 0
     for i in range(N * K):
-        var batched = all_host.unsafe_ptr()[i]
-        var single = single_host.unsafe_ptr()[i]
+        var batched = all_host[i]
+        var single = single_host[i]
         if rebind[UInt8](batched) != rebind[UInt8](single):
             if mismatches < 5:
                 print("    DEQUANT MISMATCH at", i)

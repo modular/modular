@@ -24,6 +24,7 @@ from std.sys import (
     simd_width_of,
     size_of,
 )
+from std.memory.unsafe_pointer import unsafe_cast
 from std.sys.intrinsics import PrefetchOptions, readfirstlane
 
 import std.gpu.memory as gpu_memory
@@ -517,13 +518,24 @@ struct LayoutTensor[
         )
 
     @always_inline
+    @doc_hidden
+    def __init__(
+        out self,
+        unsafe_ptr: OptionalUnsafePointer[
+            Scalar[Self.dtype],
+            Self.origin,
+            address_space=Self.address_space,
+        ],
+    ):
+        self = Self(unsafe_ptr._unsafe_nullable())
+
+    @always_inline
     def __init__(
         out self,
         unsafe_ptr: UnsafePointer[
             Scalar[Self.dtype],
+            Self.origin,
             address_space=Self.address_space,
-            origin=Self.origin,
-            ...,
         ],
     ):
         """Create a `LayoutTensor` with an `UnsafePointer`.
@@ -549,13 +561,25 @@ struct LayoutTensor[
         self.runtime_element_layout = {}
 
     @always_inline
+    @doc_hidden
+    def __init__(
+        out self,
+        unsafe_ptr: OptionalUnsafePointer[
+            Scalar[Self.dtype],
+            Self.origin,
+            address_space=Self.address_space,
+        ],
+        runtime_layout: RuntimeLayout[Self.layout, ...],
+    ):
+        self = Self(unsafe_ptr._unsafe_nullable(), runtime_layout)
+
+    @always_inline
     def __init__(
         out self,
         unsafe_ptr: UnsafePointer[
             Scalar[Self.dtype],
+            Self.origin,
             address_space=Self.address_space,
-            origin=Self.origin,
-            ...,
         ],
         runtime_layout: RuntimeLayout[Self.layout, ...],
     ):
@@ -582,13 +606,30 @@ struct LayoutTensor[
         self.runtime_element_layout = {}
 
     @always_inline
+    @doc_hidden
+    def __init__(
+        out self,
+        unsafe_ptr: OptionalUnsafePointer[
+            Scalar[Self.dtype],
+            Self.origin,
+            address_space=Self.address_space,
+        ],
+        runtime_layout: RuntimeLayout[Self.layout, ...],
+        element_runtime_layout: RuntimeLayout[Self.element_layout, ...],
+    ):
+        self = Self(
+            unsafe_ptr._unsafe_nullable(),
+            runtime_layout,
+            element_runtime_layout,
+        )
+
+    @always_inline
     def __init__(
         out self,
         unsafe_ptr: UnsafePointer[
             Scalar[Self.dtype],
-            address_space=Self.address_space,
             origin=Self.origin,
-            ...,
+            address_space=Self.address_space,
         ],
         runtime_layout: RuntimeLayout[Self.layout, ...],
         element_runtime_layout: RuntimeLayout[Self.element_layout, ...],
@@ -708,9 +749,7 @@ struct LayoutTensor[
             host_buffer: Contains the underlying data to point to.
         """
         self = Self.GenericLayoutTensorType(
-            host_buffer.unsafe_ptr()
-            .mut_cast[Self.mut]()
-            .unsafe_origin_cast[Self.origin]()
+            unsafe_cast[origin=Self.origin](host_buffer.unsafe_ptr()),
         )
 
     @always_inline
@@ -759,9 +798,7 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the `LayoutTensor`.
         """
         self = Self.GenericLayoutTensorType(
-            host_buffer.unsafe_ptr()
-            .mut_cast[Self.mut]()
-            .unsafe_origin_cast[Self.origin](),
+            unsafe_cast[origin=Self.origin](host_buffer.unsafe_ptr()),
             runtime_layout,
         )
 
@@ -810,9 +847,7 @@ struct LayoutTensor[
             element_runtime_layout: The runtime layout of each element.
         """
         self = Self.GenericLayoutTensorType(
-            host_buffer.unsafe_ptr()
-            .mut_cast[Self.mut]()
-            .unsafe_origin_cast[Self.origin](),
+            unsafe_cast[origin=Self.origin](host_buffer.unsafe_ptr()),
             runtime_layout,
             element_runtime_layout,
         )

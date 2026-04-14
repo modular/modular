@@ -76,7 +76,7 @@ def test_mxfp4_matmul[
         N * scale_K
     )
     for i in range(N * scale_K):
-        bs_hbuf.unsafe_ptr()[i] = rebind[Scalar[DType.float8_e8m0fnu]](
+        bs_hbuf[i] = rebind[Scalar[DType.float8_e8m0fnu]](
             UInt8(random_ui64(125, 129))
         )
     ctx.enqueue_copy(b_scales_device, bs_hbuf)
@@ -143,8 +143,8 @@ def test_mxfp4_matmul[
     var max_rel_err = Float32(0.0)
 
     for i in range(M * N):
-        var got = c_host.unsafe_ptr()[i].cast[DType.float32]()
-        var expected = c_ref_host.unsafe_ptr()[i].cast[DType.float32]()
+        var got = c_host[i].cast[DType.float32]()
+        var expected = c_ref_host[i].cast[DType.float32]()
         var magnitude = max(abs(got), abs(expected))
         if magnitude < Float32(1.0):
             continue
@@ -210,7 +210,7 @@ def test_mxfp4_matmul_e2e[
         N * scale_K
     )
     for i in range(N * scale_K):
-        bs_hbuf.unsafe_ptr()[i] = rebind[Scalar[DType.float8_e8m0fnu]](
+        bs_hbuf[i] = rebind[Scalar[DType.float8_e8m0fnu]](
             UInt8(random_ui64(125, 129))
         )
 
@@ -283,8 +283,8 @@ def test_mxfp4_matmul_e2e[
     var num_mismatches = 0
 
     for i in range(M * N):
-        var got = c_host.unsafe_ptr()[i].cast[DType.float32]()
-        var expected = c_ref_host.unsafe_ptr()[i].cast[DType.float32]()
+        var got = c_host[i].cast[DType.float32]()
+        var expected = c_ref_host[i].cast[DType.float32]()
 
         var magnitude = max(abs(got), abs(expected))
         if magnitude < Float32(1.0):
@@ -345,11 +345,9 @@ def test_dequant_only[N: Int, K: Int](ctx: DeviceContext) raises:
         N * scale_K
     )
     for i in range(N * packed_K):
-        bp_hbuf.unsafe_ptr()[i] = b_packed_host[i]
+        bp_hbuf[i] = b_packed_host[i]
     for i in range(N * scale_K):
-        bs_hbuf.unsafe_ptr()[i] = rebind[Scalar[DType.float8_e8m0fnu]](
-            b_scales_host[i]
-        )
+        bs_hbuf[i] = rebind[Scalar[DType.float8_e8m0fnu]](b_scales_host[i])
     ctx.enqueue_copy(bp_device, bp_hbuf)
     ctx.enqueue_copy(bs_device, bs_hbuf)
     ctx.synchronize()
@@ -370,7 +368,7 @@ def test_dequant_only[N: Int, K: Int](ctx: DeviceContext) raises:
     var mismatches = 0
     for row in range(N):
         for col in range(K):
-            var got = out_hbuf.unsafe_ptr()[row * K + col].cast[DType.float32]()
+            var got = out_hbuf[row * K + col].cast[DType.float32]()
             var packed_col = col // 2
             var packed_byte = b_packed_host[row * packed_K + packed_col]
             var nibble_shift = UInt8((col % 2) * 4)
@@ -433,7 +431,7 @@ def test_fp8_kernel_vs_blas[
         N * scale_K
     )
     for i in range(N * scale_K):
-        bs_hbuf.unsafe_ptr()[i] = rebind[Scalar[DType.float8_e8m0fnu]](
+        bs_hbuf[i] = rebind[Scalar[DType.float8_e8m0fnu]](
             UInt8(random_ui64(125, 129))
         )
     ctx.enqueue_copy(b_scales, bs_hbuf)
@@ -484,8 +482,8 @@ def test_fp8_kernel_vs_blas[
     var num_mismatches = 0
 
     for i in range(M * N):
-        var got = c_k_host.unsafe_ptr()[i].cast[DType.float32]()
-        var expected = c_b_host.unsafe_ptr()[i].cast[DType.float32]()
+        var got = c_k_host[i].cast[DType.float32]()
+        var expected = c_b_host[i].cast[DType.float32]()
 
         var magnitude = max(abs(got), abs(expected))
         if magnitude < Float32(1.0):

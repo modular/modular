@@ -621,7 +621,7 @@ def compare_equal[
     gpu_ctx.synchronize()
 
     # Access the result from the host buffer
-    var host_max_relative_error = host_buffer.unsafe_ptr()[0]
+    var host_max_relative_error = host_buffer[0]
     print("Maximum relative error:", host_max_relative_error)
 
     # Print the two tensors if print_results is True

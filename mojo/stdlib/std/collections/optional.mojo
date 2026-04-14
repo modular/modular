@@ -246,16 +246,12 @@ struct Optional[T: Movable](
         out self: Optional[
             UnsafePointer[
                 nullable.type,
-                AnyOrigin[mut=False],
+                nullable.origin,
                 address_space=nullable.address_space,
             ]
         ],
     ):
-        self = {
-            value = nullable.as_immutable().unsafe_origin_cast[
-                AnyOrigin[mut=False]
-            ]()
-        }
+        self = {value = nullable}
 
     @always_inline
     @implicit
@@ -271,6 +267,27 @@ struct Optional[T: Movable](
         ],
     ):
         self = {value = nullable.unsafe_origin_cast[AnyOrigin[mut=True]]()}
+
+    @always_inline
+    @implicit
+    @doc_hidden
+    def __init__[
+        __disambiguate: NoneType = None
+    ](
+        nullable: UnsafePointer[...],
+        out self: Optional[
+            UnsafePointer[
+                nullable.type,
+                AnyOrigin[mut=False],
+                address_space=nullable.address_space,
+            ]
+        ],
+    ):
+        self = {
+            value = nullable.as_immutable().unsafe_origin_cast[
+                AnyOrigin[mut=False]
+            ]()
+        }
 
     # TODO(MOCO-3640): Remove once the compiler can synthesize copy
     # constructors through variadic conditional conformances
@@ -779,6 +796,15 @@ struct Optional[T: Movable](
             return self.unsafe_value()[].copy()
         else:
             return None
+
+    @always_inline("nodebug")
+    def _unsafe_nullable[
+        U: AnyType, origin: Origin, address_space: AddressSpace
+    ](
+        self: Optional[UnsafePointer[U, origin, address_space=address_space]],
+        out result: type_of(self).T,
+    ):
+        result = UnsafePointer(to=self).bitcast[type_of(result)]()[]
 
 
 # ===-----------------------------------------------------------------------===#

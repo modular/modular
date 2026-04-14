@@ -160,7 +160,7 @@ def test_mla_index_fp8_paged_variable_lengths[
         k_shape.flattened_length()
     )
     with k_block_device.map_to_host() as k_block_host:
-        rand(k_block_host.unsafe_ptr(), k_shape.flattened_length())
+        rand(k_block_host.as_span())
 
     # K scale blocks
     comptime head_dim_granularity = 1
@@ -176,7 +176,7 @@ def test_mla_index_fp8_paged_variable_lengths[
         ks_shape.flattened_length()
     )
     with ks_block_device.map_to_host() as ks_block_host:
-        rand(ks_block_host.unsafe_ptr(), ks_shape.flattened_length())
+        rand(ks_block_host.as_span())
 
     # Page lookup tables
     comptime paged_lut_layout = Layout.row_major[2]()

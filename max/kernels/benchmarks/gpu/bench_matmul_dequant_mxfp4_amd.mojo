@@ -88,7 +88,7 @@ def _fill_random_mxfp4_data[
         N * scale_K
     )
     for i in range(N * scale_K):
-        bs_hbuf.unsafe_ptr()[i] = bitcast[DType.float8_e8m0fnu](UInt8(127))
+        bs_hbuf[i] = bitcast[DType.float8_e8m0fnu](UInt8(127))
     ctx.enqueue_copy(b_scales_device, bs_hbuf)
     ctx.synchronize()
 
@@ -153,8 +153,8 @@ def verify_mxfp4_matmul[
     var sum_abs_diff = Float64(0.0)
     var sum_abs_ref = Float64(0.0)
     for i in range(M * N):
-        var got = c_host.unsafe_ptr()[i].cast[DType.float64]()
-        var exp = c_ref_host.unsafe_ptr()[i].cast[DType.float64]()
+        var got = c_host[i].cast[DType.float64]()
+        var exp = c_ref_host[i].cast[DType.float64]()
         sum_abs_diff += abs(got - exp)
         sum_abs_ref += abs(exp)
 
@@ -190,7 +190,7 @@ def bench_dequant_mxfp4[
         N * scale_K
     )
     for i in range(N * scale_K):
-        bs_hbuf.unsafe_ptr()[i] = bitcast[DType.float8_e8m0fnu](UInt8(127))
+        bs_hbuf[i] = bitcast[DType.float8_e8m0fnu](UInt8(127))
     ctx.enqueue_copy(b_scales_device, bs_hbuf)
     ctx.synchronize()
 

@@ -127,7 +127,7 @@ def bench_mxfp4_grouped_matmul[
         num_experts * N * scale_K
     )
     for i in range(num_experts * N * scale_K):
-        bs_hbuf.unsafe_ptr()[i] = bitcast[DType.float8_e8m0fnu](UInt8(127))
+        bs_hbuf[i] = bitcast[DType.float8_e8m0fnu](UInt8(127))
     ctx.enqueue_copy(b_scales_device, bs_hbuf)
 
     # Setup offsets and expert ids on host, copy to device
@@ -292,9 +292,7 @@ def bench_mxfp4_grouped_matmul[
             ctx.synchronize()
 
             for j in range(num_tokens * N):
-                c_ref_host_slice.unsafe_ptr()[
-                    token_start * N + j
-                ] = c_expert_host.unsafe_ptr()[j]
+                c_ref_host_slice[token_start * N + j] = c_expert_host[j]
 
             ctx.enqueue_copy(c_ref_device, c_ref_host_slice)
             ctx.synchronize()
@@ -316,8 +314,8 @@ def bench_mxfp4_grouped_matmul[
         var sum_abs_diff = Float64(0.0)
         var sum_abs_ref = Float64(0.0)
         for i in range(total_tokens * N):
-            var got = c_host.unsafe_ptr()[i].cast[DType.float64]()
-            var exp = c_ref_host.unsafe_ptr()[i].cast[DType.float64]()
+            var got = c_host[i].cast[DType.float64]()
+            var exp = c_ref_host[i].cast[DType.float64]()
             sum_abs_diff += abs(got - exp)
             sum_abs_ref += abs(exp)
 
@@ -368,7 +366,7 @@ def bench_dequant_all_experts[
         num_experts * N * scale_K
     )
     for i in range(num_experts * N * scale_K):
-        bs_hbuf.unsafe_ptr()[i] = bitcast[DType.float8_e8m0fnu](UInt8(127))
+        bs_hbuf[i] = bitcast[DType.float8_e8m0fnu](UInt8(127))
     ctx.enqueue_copy(b_scales_dev, bs_hbuf)
     ctx.synchronize()
 

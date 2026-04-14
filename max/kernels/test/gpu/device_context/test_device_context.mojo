@@ -118,7 +118,7 @@ def test_print(ctx: DeviceContext) raises:
     var host_buffer = ctx.enqueue_create_host_buffer[DType.uint16](size)
     ctx.synchronize()
 
-    iota(host_buffer.unsafe_ptr(), size)
+    iota(host_buffer.as_span())
 
     var expected_host = (
         "HostBuffer([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])"
@@ -138,7 +138,7 @@ def test_print(ctx: DeviceContext) raises:
     var large_buffer = ctx.enqueue_create_host_buffer[DType.float32](large_size)
     ctx.synchronize()
 
-    iota(large_buffer.unsafe_ptr(), large_size)
+    iota(large_buffer.as_span())
 
     var expected_large = (
         "HostBuffer([0.0, 1.0, 2.0, ..., 998.0, 999.0, 1000.0])"

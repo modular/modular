@@ -468,7 +468,7 @@ struct ManagedTensorSlice[
 
     def __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        ptr: OptionalUnsafePointer[mut=True, Scalar[Self.dtype], _],
         slices: InlineArray[Slice, Self.rank],
         slicer_spec: RuntimeTensorSpec[Self.dtype, Self.rank],
     ):
@@ -514,7 +514,7 @@ struct ManagedTensorSlice[
         comptime for i in range(Self.rank):
             strides[i] = step[i] * slicer_strides[i]
 
-        self._ptr = ptr + start_offset
+        self._ptr = ptr._unsafe_nullable() + start_offset
         self._spec = slice_spec
         self._runtime_strides = strides
         self.in_fusion = Self._sentinel_in_fusion()
@@ -523,7 +523,7 @@ struct ManagedTensorSlice[
 
     def __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.dtype], origin=MutAnyOrigin],
+        ptr: OptionalUnsafePointer[Scalar[Self.dtype], AnyOrigin[mut=True]],
         spec: RuntimeTensorSpec[Self.dtype, Self.rank],
         strides: IndexList[Self.rank],
     ):
@@ -534,7 +534,7 @@ struct ManagedTensorSlice[
         instances, but instead use the ones provided by the MAX inference
         engine.
         """
-        self._ptr = ptr
+        self._ptr = ptr._unsafe_nullable()
         self._spec = spec
         self._runtime_strides = strides
         self.in_fusion = Self._sentinel_in_fusion()
@@ -543,7 +543,7 @@ struct ManagedTensorSlice[
 
     def __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        ptr: OptionalUnsafePointer[Scalar[Self.dtype], AnyOrigin[mut=True]],
         shape: IndexList[Self.rank],
     ):
         """Initializes a ManagedTensorSlice from a pointer and shape.
@@ -552,7 +552,7 @@ struct ManagedTensorSlice[
         instances, but instead use the ones provided by the MAX inference
         engine.
         """
-        self._ptr = ptr
+        self._ptr = ptr._unsafe_nullable()
         self._spec = RuntimeTensorSpec[Self.dtype, Self.rank](shape)
         self._runtime_strides = shape.get_row_major_strides()
         self.in_fusion = Self._sentinel_in_fusion()
@@ -561,7 +561,7 @@ struct ManagedTensorSlice[
 
     def __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        ptr: OptionalUnsafePointer[Scalar[Self.dtype], AnyOrigin[mut=True]],
         shape: IndexList[Self.rank],
         strides: IndexList[Self.rank],
     ):
@@ -571,7 +571,7 @@ struct ManagedTensorSlice[
         instances, but instead use the ones provided by the MAX inference
         engine.
         """
-        self._ptr = ptr
+        self._ptr = ptr._unsafe_nullable()
         self._spec = RuntimeTensorSpec[Self.dtype, Self.rank](shape)
         self._runtime_strides = strides
         self.in_fusion = Self._sentinel_in_fusion()

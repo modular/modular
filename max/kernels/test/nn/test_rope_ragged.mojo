@@ -174,18 +174,25 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() raises -> None:
                     + head_idx * head_dim  # head offset
                 )
                 # Verify unroped region: First (head_dim - rope_dim) elements should remain unchanged
+                var unroped_len = head_dim - rope_dim
                 assert_almost_equal(
-                    q_out_host_buffer.unsafe_ptr() + base_offset,
-                    q_host_buffer.unsafe_ptr() + base_offset,
-                    head_dim - rope_dim,
+                    q_out_host_buffer.as_span()[
+                        base_offset : base_offset + unroped_len
+                    ],
+                    q_host_buffer.as_span()[
+                        base_offset : base_offset + unroped_len
+                    ],
                 )
 
                 # Verify roped region: Last rope_dim elements should match expected output
                 roped_offset = base_offset + (head_dim - rope_dim)
                 assert_almost_equal(
-                    q_out_host_buffer.unsafe_ptr() + roped_offset,
-                    expected_q_out_host_buffer.unsafe_ptr() + roped_offset,
-                    rope_dim,
+                    q_out_host_buffer.as_span()[
+                        roped_offset : roped_offset + rope_dim
+                    ],
+                    expected_q_out_host_buffer.as_span()[
+                        roped_offset : roped_offset + rope_dim
+                    ],
                 )
 
 
