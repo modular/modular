@@ -38,12 +38,13 @@ class DeepseekV3NextNConfig(DeepseekV3Config):
         # Call parent validation first
         super().__post_init__()
 
-        # NextN requires data parallel degree to exactly match device count
+        # NextN supports DP attention (dp == num_devices) or TP attention
+        # (dp == 1), matching the base DeepseekV3Config validation.
         num_devices = len(self.devices)
-        if self.data_parallel_degree != num_devices:
+        if self.data_parallel_degree not in (1, num_devices):
             raise ValueError(
                 f"DeepseekV3 NextN requires data_parallel_degree ({self.data_parallel_degree}) "
-                f"to exactly match the number of devices ({num_devices})."
+                f"to be 1 (TP attention) or equal to the number of devices ({num_devices})."
             )
 
     @staticmethod
@@ -60,10 +61,6 @@ class DeepseekV3NextNConfig(DeepseekV3Config):
         one layer's worth of KV pairs.
         """
         data_parallel_degree = pipeline_config.model.data_parallel_degree
-        if len(devices) != data_parallel_degree:
-            raise ValueError(
-                f"Number of devices {len(devices)} must match data parallel degree: {data_parallel_degree}"
-            )
         return kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=1,

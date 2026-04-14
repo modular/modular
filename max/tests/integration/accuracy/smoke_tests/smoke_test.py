@@ -171,6 +171,23 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
             "--max-num-steps 1"
         ),
     },
+    "nvidia/kimi-k2.5-nvfp4__eagle_tp": {
+        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
+        "max_serve_args": (
+            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
+            "--draft-trust-remote-code "
+            "--draft-devices gpu:0,1,2,3,4,5,6,7 "
+            "--draft-data-parallel-degree 1 "
+            "--draft-quantization-encoding bfloat16 "
+            "--speculative-method eagle "
+            "--num-speculative-tokens 2 "
+            "--kv-cache-format float8_e4m3fn "
+            "--device-memory-utilization 0.75 "
+            "--max-batch-input-tokens 4096 "
+            "--max-length 163840 "
+            "--max-num-steps 1"
+        ),
+    },
 }
 
 

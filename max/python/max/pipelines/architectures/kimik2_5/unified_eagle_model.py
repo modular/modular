@@ -183,6 +183,14 @@ class Eagle3KimiK25Unified(Module):
         device0 = devices[0]
         hidden_dim = self.draft.config.hidden_size
 
+        # In TP mode each device processes a subset of attention heads.
+        use_tp_ep = self.draft.config.data_parallel_degree == 1 and n_devs > 1
+        num_heads_per_dev = (
+            self.draft.config.num_attention_heads // n_devs
+            if use_tp_ep
+            else self.draft.config.num_attention_heads
+        )
+
         last_idx = merged_offsets[1:] - 1
         num_draft_sentinel_gpu = (
             ops.shape_to_tensor([draft_tokens.shape[1]])
@@ -258,7 +266,7 @@ class Eagle3KimiK25Unified(Module):
                     q_max_seq_len=ops.constant(
                         1, DType.int64, DeviceRef.CPU()
                     ).broadcast_to([1]),
-                    num_heads=self.draft.config.num_attention_heads,
+                    num_heads=num_heads_per_dev,
                     device=devices[i],
                 ).to(devices[i])
 
