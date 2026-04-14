@@ -4541,6 +4541,14 @@ def mxfp4_dequant(
     return result
 
 
+def _is_sm10x_gpu() -> bool:
+    """Checks if the current accelerator is NVIDIA SM100+ (Blackwell)."""
+    try:
+        return accelerator_architecture_name().startswith("sm_10")
+    except Exception:
+        return False
+
+
 def quantize_dynamic_block_scaled_fp4(
     input: TensorValue,
     tensor_sf: TensorValue | float,
@@ -4552,13 +4560,18 @@ def quantize_dynamic_block_scaled_fp4(
 
     Args:
         input: The input tensor to quantize. Shape: [seq_len, hidden_size]
-        tensor_sf: The tensor-wise scale factor (inverted as per quantization kernel requirement).
+        tensor_sf: The tensor-wise scale factor (inverted as per
+            quantization kernel requirement).
         sf_vector_size: The block size for the scaling factors.
+            16 for NVFP4, 32 for MXFP4.
         out_type: The type of the output tensor.
         scales_type: The type of the scales tensor.
+            ``float8_e4m3fn`` for NVFP4, ``float8_e8m0fnu`` for MXFP4.
 
     Returns:
-        The quantized tensor in [seq_len, hidden_size // 2] layout and the scales in [ceildiv(seq_len, 128), ceildiv(hidden_size, sf_vector_size * 4), 32, 4, 4] layout.
+        The quantized tensor and scales. Scales layout depends on hardware:
+        rank-5 interleaved on NVIDIA SM100, rank-2 ``[M, K // sf_vector_size]``
+        otherwise.
     """
     if input.rank != 2:
         raise ValueError("input tensor must be rank 2 tensor")
@@ -4569,28 +4582,45 @@ def quantize_dynamic_block_scaled_fp4(
     if out_type not in (DType.uint8,):
         raise ValueError("out_type must be uint8 (fp4-e2m1fnX2)")
 
-    if scales_type not in (DType.float8_e4m3fn,):
-        raise ValueError("scales_type must be float8_e4m3fn for NVFP4")
-
-    if sf_vector_size != 16:
-        raise ValueError("sf_vector_size must be 16 for NVFP4")
-
-    if int(input.shape[1]) % (sf_vector_size // 2) != 0:
+    if scales_type not in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
         raise ValueError(
-            "input.shape[1] must be a multiple of (sf_vector_size // 2)"
+            "scales_type must be float8_e4m3fn (NVFP4) or"
+            " float8_e8m0fnu (MXFP4)"
         )
 
-    SF_ATOM_M = [32, 4]
-    SF_ATOM_K = 4
-    SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
-    SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
+    if sf_vector_size not in (16, 32):
+        raise ValueError("sf_vector_size must be 16 (NVFP4) or 32 (MXFP4)")
 
-    # scales tensor shape: [ceildiv(M, SF_MN_GROUP_SIZE), ceildiv(N, sf_vector_size * 4), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K]
-    scales_dim_0 = ceildiv(input.shape[0], Dim(SF_MN_GROUP_SIZE))
-    scales_dim_1 = ceildiv(input.shape[1], Dim(SF_K_GROUP_SIZE))
-    scales_dim_2 = SF_ATOM_M[0]
-    scales_dim_3 = SF_ATOM_M[1]
-    scales_dim_4 = SF_ATOM_K
+    # MXFP4 (sf_vector_size=32) requires K % 32 because the kernel's
+    # 4-thread cooperative scale reduction operates on 32-element groups.
+    # NVFP4 (sf_vector_size=16) only requires K % 8.
+    k_alignment = (
+        sf_vector_size if sf_vector_size == 32 else sf_vector_size // 2
+    )
+    if int(input.shape[1]) % k_alignment != 0:
+        raise ValueError(f"input.shape[1] must be a multiple of {k_alignment}")
+
+    if _is_sm10x_gpu():
+        # SM100 TCGEN05: rank-5 interleaved scales layout.
+        SF_ATOM_M = [32, 4]
+        SF_ATOM_K = 4
+        SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+        SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
+        scales_shape: list[Dim | int] = [
+            ceildiv(input.shape[0], Dim(SF_MN_GROUP_SIZE)),
+            ceildiv(input.shape[1], Dim(SF_K_GROUP_SIZE)),
+            SF_ATOM_M[0],
+            SF_ATOM_M[1],
+            SF_ATOM_K,
+        ]
+    else:
+        # Default: rank-2 scales [M, K // sf_vector_size].
+        # TODO: 2D is a proxy for CDNA4. The optimized layout is likely
+        # 6D (32x32 tiles) or 7D (16x16 tiles).
+        scales_shape = [
+            input.shape[0],
+            ceildiv(input.shape[1], Dim(sf_vector_size)),
+        ]
 
     tensor_sf_value: TensorValue
     if isinstance(tensor_sf, float):
@@ -4609,19 +4639,13 @@ def quantize_dynamic_block_scaled_fp4(
                 dtype=out_type,
                 shape=[
                     input.shape[0],
-                    input.shape[1] // 2,
-                ],  # each output element (uint8) is 2 fp4-e2m1fn values
+                    input.shape[1] // 2,  # each uint8 packs 2 fp4 values
+                ],
                 device=input.device,
             ),
             TensorType(
                 dtype=scales_type,
-                shape=[
-                    scales_dim_0,
-                    scales_dim_1,
-                    scales_dim_2,
-                    scales_dim_3,
-                    scales_dim_4,
-                ],
+                shape=scales_shape,
                 device=input.device,
             ),
         ],

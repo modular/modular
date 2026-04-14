@@ -100,6 +100,7 @@ from linalg.fp4_quantization import (
     block_scaled_matmul,
     quantize_dynamic_block_scaled,
     block_scales_interleave,
+    quantize_mxfp4_amd,
 )
 from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
 from linalg.mxfp4_dequant import dequant_mxfp4
@@ -9103,11 +9104,12 @@ struct Struct_quantize_dynamic_block_scaled:
         scales_type: DType,
         in_dtype: DType,
         //,
+        scales_rank: Int,
         SF_VECTOR_SIZE: Int,
         target: StaticString,
     ](
         output: OutputTensor[dtype=out_dtype, rank=2, ...],
-        scales: OutputTensor[dtype=scales_type, rank=5, ...],
+        scales: OutputTensor[dtype=scales_type, rank=scales_rank, ...],
         input: InputTensor[dtype=in_dtype, rank=2, ...],
         tensor_sf: Float32,
         context: DeviceContextPtr,

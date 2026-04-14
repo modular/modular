@@ -208,6 +208,8 @@ def test_dynamic_block_scaled_1d1d_matmul_fp4() -> None:
 
 def test_quantize_dynamic_block_scaled_fp4() -> None:
     """Tests quantize_dynamic_block_scaled_fp4 with valid inputs."""
+    from max.nn.kernels import _is_sm10x_gpu
+
     device = DeviceRef.CPU()
     with Graph(
         "quantize_dynamic_block_scaled_fp4",
@@ -224,8 +226,39 @@ def test_quantize_dynamic_block_scaled_fp4() -> None:
         )
         assert quantized_output.shape == [129, 68]
         assert quantized_output.dtype == DType.uint8
-        assert scales.shape == [2, 3, 32, 4, 4]
         assert scales.dtype == DType.float8_e4m3fn
+        if _is_sm10x_gpu():
+            assert scales.shape == [2, 3, 32, 4, 4]
+        else:
+            assert scales.shape == [129, 9]
+
+
+def test_quantize_mxfp4() -> None:
+    """Tests quantize_dynamic_block_scaled_fp4 with MXFP4 params."""
+    from max.nn.kernels import _is_sm10x_gpu
+
+    device = DeviceRef.CPU()
+    with Graph(
+        "quantize_mxfp4",
+        input_types=[
+            TensorType(DType.bfloat16, shape=(128, 128), device=device),
+        ],
+    ) as graph:
+        (input,) = (inp.tensor for inp in graph.inputs)
+
+        quantized_output, scales = quantize_dynamic_block_scaled_fp4(
+            input,
+            1.0,
+            sf_vector_size=32,
+            scales_type=DType.float8_e8m0fnu,
+        )
+        assert quantized_output.shape == [128, 64]
+        assert quantized_output.dtype == DType.uint8
+        assert scales.dtype == DType.float8_e8m0fnu
+        if _is_sm10x_gpu():
+            assert scales.shape == [1, 1, 32, 4, 4]
+        else:
+            assert scales.shape == [128, 4]
 
 
 def test_block_scales_interleave() -> None:
