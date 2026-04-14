@@ -11,7 +11,6 @@ lit_tests(
         ],
         exclude = [
             "**/inputs/**",
-            "doc/test_std_mock/**/*.mojo",
             "package/test_package/**/*.mojo",
             "package/test_package_with_main/**/*.mojo",
             "package/test_package_moco_773/**/*.mojo",
@@ -24,7 +23,8 @@ lit_tests(
         "//utils/mblack",
     ] + glob([
         "**/inputs/**",
-        "doc/test_std_mock/**/*.mojo",
+        # test_package/ is also copied to KGEN/test/kgen-doc/test_package/.
+        # Keep both trees in sync when adding or modifying package fixture files.
         "package/test_package/**/*.mojo",
         "package/test_package_with_main/**/*.mojo",
         "package/test_package_moco_773/**/*.mojo",
