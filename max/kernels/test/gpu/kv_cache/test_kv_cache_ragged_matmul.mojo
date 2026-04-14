@@ -13,6 +13,7 @@
 
 from std.collections import Set
 from std.random import random_ui64, seed
+from std.math.uutils import udivmod
 
 from std.gpu.host import DeviceBuffer, DeviceContext
 from kv_cache.types import (
@@ -381,24 +382,20 @@ def execute_matmul_kv_cache_ragged[
         prompt_len = prompt_lens[bs]
         for s in range(prompt_len):
             for k_dim in range(kv_hidden_size):
-                head_idx, head_dim_idx = divmod(
-                    UInt(k_dim), UInt(kv_params.head_size)
-                )
+                var head_idx, head_dim_idx = udivmod(k_dim, kv_params.head_size)
                 assert_almost_equal(
                     ref_output_host[bs * max_seq_length_batch + s, k_dim],
                     k_cache_host.load[width=1](
                         bs,
-                        Int(head_idx),
+                        head_idx,
                         cache_sizes[bs] + s,
-                        Int(head_dim_idx),
+                        head_dim_idx,
                     ),
                     rtol=rtol,
                 )
 
             for v_dim in range(kv_hidden_size):
-                head_idx, head_dim_idx = divmod(
-                    UInt(v_dim), UInt(kv_params.head_size)
-                )
+                var head_idx, head_dim_idx = udivmod(v_dim, kv_params.head_size)
                 assert_almost_equal(
                     ref_output_host[
                         bs * max_seq_length_batch + s,
@@ -406,9 +403,9 @@ def execute_matmul_kv_cache_ragged[
                     ],
                     v_cache_host.load[width=1](
                         bs,
-                        Int(head_idx),
+                        head_idx,
                         cache_sizes[bs] + s,
-                        Int(head_dim_idx),
+                        head_dim_idx,
                     ),
                     rtol=rtol,
                 )
@@ -604,16 +601,14 @@ def execute_matmul_k_cache_ragged[
         prompt_len = prompt_lens[bs]
         for s in range(prompt_len):
             for k_dim in range(kv_hidden_size):
-                head_idx, head_dim_idx = divmod(
-                    UInt(k_dim), UInt(kv_params.head_size)
-                )
+                var head_idx, head_dim_idx = udivmod(k_dim, kv_params.head_size)
                 assert_almost_equal(
                     ref_output_host[bs * max_seq_length_batch + s, k_dim],
                     k_cache_host.load[width=1](
                         bs,
-                        Int(head_idx),
+                        head_idx,
                         cache_sizes[bs] + s,
-                        Int(head_dim_idx),
+                        head_dim_idx,
                     ),
                     rtol=rtol,
                 )
@@ -698,9 +693,7 @@ def generic_assert_output_equals[
                     raise e^
 
             for k_dim in range(kv_hidden_size):
-                head_idx, head_dim_idx = divmod(
-                    UInt(k_dim), UInt(kv_params.head_size)
-                )
+                var head_idx, head_dim_idx = udivmod(k_dim, kv_params.head_size)
                 try:
                     assert_almost_equal(
                         ref_output_host[
@@ -709,9 +702,9 @@ def generic_assert_output_equals[
                         ],
                         k_cache.load[width=1](
                             bs,
-                            Int(head_idx),
+                            head_idx,
                             k_cache.cache_length(bs) + s,
-                            Int(head_dim_idx),
+                            head_dim_idx,
                         ).cast[dtype](),
                         rtol=rtol,
                     )
@@ -720,9 +713,7 @@ def generic_assert_output_equals[
                     raise e^
 
             for v_dim in range(kv_hidden_size):
-                head_idx, head_dim_idx = divmod(
-                    UInt(v_dim), UInt(kv_params.head_size)
-                )
+                var head_idx, head_dim_idx = udivmod(v_dim, kv_params.head_size)
                 try:
                     assert_almost_equal(
                         ref_output_host[
@@ -731,9 +722,9 @@ def generic_assert_output_equals[
                         ],
                         v_cache.load[width=1](
                             bs,
-                            Int(head_idx),
+                            head_idx,
                             v_cache.cache_length(bs) + s,
-                            Int(head_dim_idx),
+                            head_dim_idx,
                         ).cast[dtype](),
                         rtol=rtol,
                     )

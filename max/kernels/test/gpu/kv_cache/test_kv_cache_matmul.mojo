@@ -13,6 +13,7 @@
 
 from std.collections import Set
 from std.random import random_ui64, seed
+from std.math.uutils import udivmod
 
 from std.gpu.host import DeviceContext
 from kv_cache.types import (
@@ -243,23 +244,19 @@ def execute_fused_qkv_matmul[
                 )
 
             for k_dim in range(kv_hidden_size):
-                head_idx, head_dim_idx = divmod(
-                    UInt(k_dim), UInt(kv_params.head_size)
-                )
+                head_idx, head_dim_idx = udivmod(k_dim, kv_params.head_size)
                 assert_almost_equal(
                     ref_output_host[bs * prompt_len + s, hidden_size + k_dim],
                     k_cache_host.load[width=1](
                         bs,
-                        Int(head_idx),
+                        head_idx,
                         cache_sizes[bs] + s,
-                        Int(head_dim_idx),
+                        head_dim_idx,
                     ),
                 )
 
             for v_dim in range(kv_hidden_size):
-                head_idx, head_dim_idx = divmod(
-                    UInt(v_dim), UInt(kv_params.head_size)
-                )
+                head_idx, head_dim_idx = udivmod(v_dim, kv_params.head_size)
                 assert_almost_equal(
                     ref_output_host[
                         bs * prompt_len + s,
@@ -267,9 +264,9 @@ def execute_fused_qkv_matmul[
                     ],
                     v_cache_host.load[width=1](
                         bs,
-                        Int(head_idx),
+                        head_idx,
                         cache_sizes[bs] + s,
-                        Int(head_dim_idx),
+                        head_dim_idx,
                     ),
                 )
 

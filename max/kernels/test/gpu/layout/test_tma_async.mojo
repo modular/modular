@@ -69,7 +69,7 @@ def tma_ragged_store_kernel[
         alignment=128,
     ].stack_allocation()
 
-    var seq_idx = UInt(block_idx.x)
+    var seq_idx = block_idx.x
     var sequence_length = sequence_lengths[seq_idx]
 
     if thread_idx.x == 0:

@@ -251,16 +251,13 @@ def execute_ragged_flash_attention[
                         0,
                     )
                 )
-                var dest_byte_offset = UInt(Int(dest)) - UInt(
-                    Int(kv_block_paged.ptr)
+                var dest_byte_offset = Int(dest) - Int(kv_block_paged.ptr)
+                var src_byte_offset = Int(src) - Int(kv_block_continuous.ptr)
+                var dest_len = (
+                    kv_block_paged.size() * size_of[kv_block_paged.dtype]()
+                    - dest_byte_offset
                 )
-                var src_byte_offset = UInt(Int(src)) - UInt(
-                    Int(kv_block_continuous.ptr)
-                )
-                var dest_len = kv_block_paged.size() * size_of[
-                    kv_block_paged.dtype
-                ]() - Int(dest_byte_offset)
-                var src_len = kv_block_continuous.size() - Int(src_byte_offset)
+                var src_len = kv_block_continuous.size() - src_byte_offset
                 memcpy(
                     dest=dest,
                     src=src,

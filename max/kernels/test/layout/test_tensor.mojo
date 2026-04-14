@@ -1255,7 +1255,7 @@ def test_split():
 #            ](tile_4x4)
 #            print(tile_4x4_cache)
 #
-#            for th_id in range(UInt(4)):
+#            for th_id in range(4):
 #                print("----fragments-data[", th_id, "]----")
 #                var tile_2x2 = tile_4x4.distribute[Layout.row_major(2, 2)](
 #                    th_id

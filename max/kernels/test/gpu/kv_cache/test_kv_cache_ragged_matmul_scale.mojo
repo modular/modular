@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.math.uutils import udivmod
 from std.random import random_ui64, seed
 
 from std.gpu.host import DeviceBuffer, DeviceContext
@@ -383,17 +384,15 @@ def execute_matmul_k_cache_ragged_scale[
         var prompt_len = prompt_lens[bs]
         for s in range(prompt_len):
             for k_dim in range(kv_hidden_size):
-                var head_idx, head_dim_idx = divmod(
-                    UInt(k_dim), UInt(kv_params.head_size)
-                )
+                var head_idx, head_dim_idx = divmod(k_dim, kv_params.head_size)
                 var a = ref_output_host[
                     Int(input_row_offsets_host_ptr[bs]) + s, k_dim
                 ]
                 var b = k_cache_host.load[width=1](
                     bs,
-                    Int(head_idx),
+                    head_idx,
                     cache_sizes[bs] + s,
-                    Int(head_dim_idx),
+                    head_dim_idx,
                 )
                 assert_almost_equal(a, b, atol=atol, rtol=rtol)
 
