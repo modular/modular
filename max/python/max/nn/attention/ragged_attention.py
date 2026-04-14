@@ -22,11 +22,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
 
 from ..clamp import clamp
-from ..kernels import (
-    flash_attention_ragged,
-    store_k_cache_ragged,
-    store_v_cache_ragged,
-)
+from ..kernels import flash_attention_ragged, fused_qkv_ragged_matmul
 from ..kv_cache import (
     KVCacheParams,
     PagedCacheValues,
@@ -186,24 +182,19 @@ class RaggedAttention(Module):
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
-        # QKV matmul.
-        wqkv = self.wqkv
-        qkv = x @ wqkv.T
+        # Call into fused qkv ragged matmul.
+        xq = fused_qkv_ragged_matmul(
+            self.kv_params,
+            input=x,
+            wqkv=self.wqkv,
+            input_row_offsets=kwargs["input_row_offsets"],
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
+            n_heads=self.n_heads,
+        )
 
-        # Split into Q, K, V and store K/V to cache.
-        head_dim = self.kv_params.head_dim
-        q_dim = self.n_heads * head_dim
-        kv_dim = self.kv_params.n_kv_heads * head_dim
-        x_q, x_k, x_v = ops.split(qkv, [q_dim, kv_dim, kv_dim], axis=-1)
-        x_k = x_k.reshape((-1, self.kv_params.n_kv_heads, head_dim))
-        x_v = x_v.reshape((-1, self.kv_params.n_kv_heads, head_dim))
-        store_k_cache_ragged(
-            kv_collection, x_k, kwargs["input_row_offsets"], layer_idx
-        )
-        store_v_cache_ragged(
-            kv_collection, x_v, kwargs["input_row_offsets"], layer_idx
-        )
-        xq = x_q.reshape((-1, self.n_heads, head_dim))
+        # Reshape for flash attention.
+        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Calculate Flash Attention.
         attn_out = flash_attention_ragged(

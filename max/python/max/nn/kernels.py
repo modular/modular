@@ -44,6 +44,7 @@ from .kv_cache import (
     PagedCacheValues,
     attention_dispatch_metadata,
 )
+from .no_opaque_kernels import PagedKVCacheTensorsNoOpaque
 
 _MHA_MASK_VARIANT_TO_ATTENTION_MASK = {
     MHAMaskVariant.CAUSAL_MASK: AttentionMaskVariant.CAUSAL_MASK,
@@ -256,9 +257,6 @@ def rope_split_store_ragged(
     layer_idx: TensorValue,
     n_heads: int,
     interleaved: bool = True,
-    position_ids: TensorValue | None = None,
-    mrope_section: list[int] | None = None,
-    fuse: bool = True,
 ) -> TensorValue:
     """Apply rope to Q and K from flat QKV buffer, store K/V to cache.
 
@@ -274,15 +272,6 @@ def rope_split_store_ragged(
         layer_idx: Layer index.
         n_heads: Number of query attention heads.
         interleaved: Whether freqs_cis uses interleaved (re, im) format.
-        position_ids: Optional ragged 2D array of position IDs. If None,
-            defaults to cache_length + token_idx for each token. When
-            ``num_sections > 1``, ``mrope_section`` must be provided.
-            Shape: [num_sections, total_seq_len].
-        mrope_section: Optional list of ints indicating the section of the
-            head_dim to apply RoPE to. Must be used with ``position_ids``.
-        fuse: If True (default), emit a single fused custom op. If False,
-            emit separate split, rope, and store ops for testing graph
-            compiler fusion.
 
     Returns:
         Roped Q output [total_seq_len, n_heads * head_dim].
@@ -311,71 +300,16 @@ def rope_split_store_ragged(
 
     output_dim = n_heads * kv_params.head_dim
 
-    if not fuse:
-        return _rope_split_store_ragged_unfused(
-            kv_params=kv_params,
-            qkv=qkv,
-            input_row_offsets=input_row_offsets,
-            freqs_cis=freqs_cis,
-            kv_collection=kv_collection,
-            layer_idx=layer_idx,
-            n_heads=n_heads,
-            interleaved=interleaved,
-        )
-
-    parameters: dict[str, bool | int | str | DType] = {
-        "interleaved": interleaved,
-    }
-
-    if mrope_section is not None and position_ids is None:
-        raise ValueError("mrope_section requires position_ids to be provided")
-
-    if position_ids is not None:
-        if position_ids.dtype != DType.uint32:
-            raise ValueError(
-                "expected position_ids to have dtype uint32, was"
-                f" {position_ids.dtype}"
-            )
-        if position_ids.rank != 2:
-            raise ValueError(
-                f"expected position_ids to be 2D, got rank {position_ids.rank}"
-            )
-        if mrope_section is not None:
-            if len(mrope_section) != position_ids.shape[0]:
-                raise ValueError(
-                    f"expected mrope_section to have length"
-                    f" {position_ids.shape[0]}, was {len(mrope_section)}"
-                )
-            scaled = [x * 2 for x in mrope_section]
-            prefix_sums = [sum(scaled[: i + 1]) for i in range(len(scaled))]
-            parameters["mrope_section"] = "_".join(str(x) for x in prefix_sums)
-        else:
-            parameters["mrope_section"] = ""
-
-    if position_ids is not None:
-        op_name = "mo.rope_split_store.ragged.paged.with_position_id"
-        values = [
-            qkv,
-            input_row_offsets,
-            freqs_cis,
-            *kv_collection,
-            position_ids,
-            layer_idx,
-        ]
-    else:
-        op_name = "mo.rope_split_store.ragged.paged"
-        values = [
-            qkv,
-            input_row_offsets,
-            freqs_cis,
-            *kv_collection,
-            layer_idx,
-        ]
-
     return ops.inplace_custom(
-        op_name,
+        "mo.rope_split_store.ragged.paged",
         device=qkv.device,
-        values=values,
+        values=[
+            qkv,
+            input_row_offsets,
+            freqs_cis,
+            *kv_collection,
+            layer_idx,
+        ],
         out_types=[
             TensorType(
                 dtype=qkv.dtype,
@@ -383,121 +317,8 @@ def rope_split_store_ragged(
                 device=qkv.device,
             )
         ],
-        parameters=parameters,
+        parameters={"interleaved": interleaved},
     )[0].tensor
-
-
-def store_k_scale_cache_ragged(
-    kv_collection: PagedCacheValues,
-    x_k_scale: TensorValue,
-    input_row_offsets: TensorValue,
-    layer_idx: TensorValue,
-    quantization_granularity: int,
-) -> None:
-    """Store key scale tensor into the paged KV cache."""
-    if kv_collection.kv_scales is None:
-        raise ValueError(
-            "kv_collection.kv_scales is None, expected a buffer value"
-        )
-    ops.inplace_custom(
-        "mo.kv_cache.store_k_scales.paged.ragged",
-        device=x_k_scale.device,
-        values=[
-            x_k_scale,
-            kv_collection.kv_blocks,
-            kv_collection.cache_lengths,
-            kv_collection.lookup_table,
-            input_row_offsets,
-            kv_collection.max_lengths,
-            kv_collection.kv_scales,
-            layer_idx,
-        ],
-        parameters={
-            "quantization_granularity": quantization_granularity,
-        },
-    )
-
-
-def _rope_split_store_ragged_unfused(
-    kv_params: KVCacheParams,
-    qkv: TensorValue,
-    input_row_offsets: TensorValue,
-    freqs_cis: TensorValue,
-    kv_collection: PagedCacheValues,
-    layer_idx: TensorValue,
-    n_heads: int,
-    interleaved: bool,
-) -> TensorValue:
-    """Unfused rope + split + store for testing graph compiler fusion.
-
-    Emits separate slice, rope, and store ops instead of a single fused
-    custom op, so the graph compiler can attempt to fuse them.
-    """
-    head_dim = kv_params.head_dim
-    n_kv_heads = kv_params.n_kv_heads
-    q_dim = n_heads * head_dim
-    kv_dim = n_kv_heads * head_dim
-
-    # Split QKV into Q, K, V.
-    x_q, x_k, x_v = ops.split(qkv, [q_dim, kv_dim, kv_dim], axis=-1)
-
-    # Reshape to [total_seq_len, num_heads, head_dim] for rope.
-    x_q = x_q.reshape((-1, n_heads, head_dim))
-    x_k = x_k.reshape((-1, n_kv_heads, head_dim))
-    x_v = x_v.reshape((-1, n_kv_heads, head_dim))
-
-    # Apply RoPE to Q and K individually.
-    xq_rope = rope_ragged(
-        x_q,
-        input_row_offsets,
-        kv_collection.cache_lengths,
-        freqs_cis,
-        interleaved=interleaved,
-    )
-    xk_rope = rope_ragged(
-        x_k,
-        input_row_offsets,
-        kv_collection.cache_lengths,
-        freqs_cis,
-        interleaved=interleaved,
-    )
-
-    # Store K and V to cache individually.
-    kv_blocks = kv_collection.kv_blocks
-    cache_lengths = kv_collection.cache_lengths
-    lookup_table = kv_collection.lookup_table
-    max_lengths = kv_collection.max_lengths
-    ops.inplace_custom(
-        "mo.kv_cache.store.paged.ragged",
-        device=xk_rope.device,
-        values=[
-            xk_rope,
-            kv_blocks,
-            cache_lengths,
-            lookup_table,
-            input_row_offsets,
-            max_lengths,
-            layer_idx,
-        ],
-        parameters={"key_or_value": 0},
-    )
-    ops.inplace_custom(
-        "mo.kv_cache.store.paged.ragged",
-        device=x_v.device,
-        values=[
-            x_v,
-            kv_blocks,
-            cache_lengths,
-            lookup_table,
-            input_row_offsets,
-            max_lengths,
-            layer_idx,
-        ],
-        parameters={"key_or_value": 1},
-    )
-
-    # Return flat roped Q [total_seq_len, n_heads * head_dim].
-    return xq_rope.reshape((-1, q_dim))
 
 
 def _fused_qkv_ragged_matmul_scaled_float8(
@@ -1918,7 +1739,7 @@ def mla_fp8_index_top_k(
     q: TensorValue,
     q_s: TensorValue,
     input_row_offsets: TensorValue,
-    k_collection: PagedCacheValues,
+    k_collection: PagedKVCacheTensorsNoOpaque,
     layer_idx: TensorValue,
     top_k: int,
     quantization_granularity: int,
@@ -1960,8 +1781,8 @@ def mla_fp8_index_top_k(
         device=q.device,
     )
     _validate_argument_tensor(
-        "k_collection.kv_blocks",
-        k_collection.kv_blocks,
+        "k_collection.blocks",
+        k_collection.blocks,
         dtype=DType.float8_e4m3fn,
         rank=6,
         device=q.device,

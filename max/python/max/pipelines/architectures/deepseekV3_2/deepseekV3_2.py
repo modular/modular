@@ -47,6 +47,7 @@ from max.nn.kv_cache import (
 )
 from max.nn.layer import LayerList, Module
 from max.nn.linear import ColumnParallelLinear
+from max.nn.no_opaque_kernels import PagedKVCacheTensorsNoOpaque
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -324,14 +325,12 @@ class DeepseekV3_2DecoderLayer(Module):
         ]
 
         indexer_kv_collections = [
-            PagedCacheValues(
-                kv_blocks=indexer_kv_blocks[i],
-                cache_lengths=indexer_kv_cache_lengths[i],
-                lookup_table=indexer_kv_lookup_table[i],
-                max_lengths=indexer_kv_max_lengths[i],
-                kv_scales=indexer_kv_cache_scales[i]
-                if indexer_kv_cache_scales
-                else None,
+            PagedKVCacheTensorsNoOpaque(
+                indexer_kv_blocks[i],
+                indexer_kv_cache_lengths[i],
+                indexer_kv_lookup_table[i],
+                indexer_kv_max_lengths[i],
+                indexer_kv_cache_scales[i] if indexer_kv_cache_scales else None,
             )
             for i in range(len(indexer_kv_blocks))
         ]

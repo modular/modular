@@ -24,14 +24,16 @@ from max.nn.attention import MHAMaskVariant
 from max.nn.attention.attention_with_rope import _compute_shard_range
 from max.nn.kernels import (
     flash_attention_ragged,
-    rope_split_store_ragged,
+    fused_qk_ragged_rope,
+    fused_qkv_ragged_matmul,
+    rms_norm_key_cache,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantConfig
-from max.nn.quant_ops import quantized_matmul
+from max.nn.quant_ops import quantized_fused_qkv_matmul
 from max.nn.rotary_embedding import RotaryEmbedding
 
 
@@ -358,52 +360,68 @@ class Qwen3Attention(Module, Shardable):
         """
         total_seq_len = x.shape[0]
         wqkv = self.wqkv
-        head_dim = self.kv_params.head_dim
-        q_dim = head_dim * self.n_heads
-        kv_dim = head_dim * self.num_key_value_heads
 
-        # QKV projection
+        # FP8 path: dynamic quantize input then fused scaled matmul (BF16 input + FP8 weights).
+        # Scale tensors are cast to float32 in the weight adapter; FP8 kernels require float32.
         if (
             self.quant_config is not None
             and self.q_proj.weight.dtype.is_float8()
         ):
-            qkv = quantized_matmul(
-                x,
-                wqkv,
-                weight_scale=self._qkv_weight_scale(),
-                input_scale=None,
+            xq = quantized_fused_qkv_matmul(
+                kv_params=self.kv_params,
+                x=x,
+                wqkv=wqkv,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                input_row_offsets=input_row_offsets,
+                n_heads=self.n_heads,
                 quant_config=self.quant_config,
+                weight_scale=self._qkv_weight_scale(),
+                bias=self.wqkv_bias,
             )
         else:
-            qkv = x @ wqkv.T
-        if self.wqkv_bias is not None:
-            qkv = qkv + self.wqkv_bias.to(x.device)
+            xq = fused_qkv_ragged_matmul(
+                self.kv_params,
+                input=x,
+                wqkv=wqkv,
+                bias=self.wqkv_bias,
+                input_row_offsets=input_row_offsets,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                n_heads=self.n_heads,
+            )
 
-        # Split into Q, K, V
-        x_q, x_k, x_v = ops.split(qkv, [q_dim, kv_dim, kv_dim], axis=-1)
+        # Apply QK norm to query and key states before RoPE (Qwen3-specific)
+        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
+        xq = self.q_norm(xq)
 
-        # Per-head QK norm (Qwen3-specific)
-        x_q = self.q_norm(x_q.reshape((-1, self.n_heads, head_dim))).reshape(
-            (-1, q_dim)
-        )
-        x_k = self.k_norm(
-            x_k.reshape((-1, self.num_key_value_heads, head_dim))
-        ).reshape((-1, kv_dim))
-
-        # Re-concat and apply RoPE + KV cache store
-        qkv = ops.concat((x_q, x_k, x_v), axis=-1)
-        freqs_cis = ops.cast(freqs_cis, qkv.dtype).to(qkv.device)
-        xq = rope_split_store_ragged(
+        # Apply K norm in-place on the KV cache
+        rms_norm_key_cache(
             self.kv_params,
-            qkv,
+            kv_collection=kv_collection,
+            gamma=self.k_norm.weight.cast(self.kv_params.dtype).to(
+                self.devices[0]
+            ),
+            epsilon=self.qk_norm_eps,
+            layer_idx=layer_idx,
+            total_seq_len=total_seq_len,
+            input_row_offsets=input_row_offsets,
+            weight_offset=0.0,
+            multiply_before_cast=False,
+            per_head_norm=True,
+        )
+
+        # Apply rotary embedding
+        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
+        xq = fused_qk_ragged_rope(
+            self.kv_params,
+            xq,
             input_row_offsets,
-            freqs_cis,
             kv_collection,
+            freqs_cis,
             layer_idx,
-            n_heads=self.n_heads,
             interleaved=self.rope.interleaved,
         )
-        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Calculate Flash Attention
         # NOTE: Qwen3 never uses sliding window pattern

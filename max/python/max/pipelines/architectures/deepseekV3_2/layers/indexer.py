@@ -29,11 +29,13 @@ from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import (
     mla_fp8_index_top_k,
     quantize_dynamic_scaled_float8,
-    rope_ragged,
-    store_k_cache_ragged,
-    store_k_scale_cache_ragged,
 )
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.no_opaque_kernels import (
+    PagedKVCacheTensorsNoOpaque,
+    rope_no_opaque,
+    store_k_cache,
+    store_k_scale_cache,
+)
 
 from .transforms import HadamardTransform
 
@@ -119,7 +121,7 @@ class Indexer(Module):
         qr: TensorValue,
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
-        indexer_k_collection: PagedCacheValues,
+        indexer_k_collection: PagedKVCacheTensorsNoOpaque,
         layer_idx: TensorValue,
         mask_variant: MHAMaskVariant = MHAMaskVariant.NULL_MASK,
     ) -> TensorValue:
@@ -144,7 +146,7 @@ class Indexer(Module):
         assert self.rope_head_dim == self.head_dim - self.rope_head_dim
         q_pe, q_nope = ops.chunk(q, chunks=2, axis=-1)
 
-        q_pe = rope_ragged(
+        q_pe = rope_no_opaque(
             q_pe,
             input_row_offsets,
             indexer_k_collection.cache_lengths,
@@ -159,7 +161,7 @@ class Indexer(Module):
         assert self.rope_head_dim == self.head_dim - self.rope_head_dim
         k_pe, k_nope = ops.chunk(k, chunks=2, axis=-1)
         k_pe = ops.squeeze(
-            rope_ragged(
+            rope_no_opaque(
                 ops.unsqueeze(k_pe, axis=-2),
                 input_row_offsets,
                 indexer_k_collection.cache_lengths,
@@ -176,13 +178,13 @@ class Indexer(Module):
         q_fp8, q_scale = act_quant(q, self.float8_config)
         k_fp8, k_scale = act_quant(k, self.float8_config)
 
-        store_k_cache_ragged(
+        store_k_cache(
             indexer_k_collection,
             ops.unsqueeze(k_fp8, axis=1),
             input_row_offsets,
             layer_idx,
         )
-        store_k_scale_cache_ragged(
+        store_k_scale_cache(
             indexer_k_collection,
             ops.unsqueeze(k_scale, axis=1).cast(DType.float32),
             input_row_offsets,

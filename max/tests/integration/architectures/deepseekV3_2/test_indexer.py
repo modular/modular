@@ -35,11 +35,8 @@ from max.nn import (
     WeightScaleSpec,
 )
 from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kv_cache import (
-    KVCacheParams,
-    KVCacheQuantizationConfig,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, KVCacheQuantizationConfig
+from max.nn.no_opaque_kernels import PagedKVCacheTensorsNoOpaque
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
@@ -300,8 +297,8 @@ def run_max_indexer(
         qr_in = graph.inputs[1].tensor
         input_row_offsets_in = graph.inputs[2].tensor
 
-        indexer_k_collection = PagedCacheValues(
-            kv_blocks=graph.inputs[3].buffer,
+        indexer_k_collection = PagedKVCacheTensorsNoOpaque(
+            blocks=graph.inputs[3].buffer,
             cache_lengths=graph.inputs[4].tensor,
             lookup_table=graph.inputs[5].tensor,
             max_lengths=graph.inputs[6].tensor,

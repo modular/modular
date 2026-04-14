@@ -19,16 +19,16 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kernels import (
-    store_k_cache_padded,
-    store_k_cache_ragged,
-    store_k_scale_cache_ragged,
-)
+from max.nn.kernels import store_k_cache_padded, store_k_cache_ragged
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     KVCacheQuantizationConfig,
     PagedCacheValues,
+)
+from max.nn.no_opaque_kernels import (
+    PagedKVCacheTensorsNoOpaque,
+    store_k_scale_cache,
 )
 from test_common.context_utils import create_text_context
 
@@ -316,8 +316,8 @@ def test_store_k_scale_cache_executes() -> None:
         max_lengths_in = graph.inputs[5].tensor
         kv_scales_in = graph.inputs[6].buffer if len(graph.inputs) > 6 else None
 
-        kv_collection = PagedCacheValues(
-            kv_blocks=blocks_in,
+        kv_collection = PagedKVCacheTensorsNoOpaque(
+            blocks=blocks_in,
             cache_lengths=cache_lengths_in,
             lookup_table=lookup_table_in,
             max_lengths=max_lengths_in,
@@ -325,7 +325,7 @@ def test_store_k_scale_cache_executes() -> None:
         )
 
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
-        store_k_scale_cache_ragged(
+        store_k_scale_cache(
             kv_collection,
             x_k_scale_in,
             input_row_offsets_in,
