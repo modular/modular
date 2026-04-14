@@ -84,6 +84,7 @@ Image generation
    ImageMetadata
    PixelGenerationContext
    PixelGenerationInputs
+   VideoContentPart
 
 Context and sampling
 --------------------
