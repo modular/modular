@@ -175,6 +175,10 @@ struct MLA_SM100_Decode_QKV_FP8[
             Int32(Self.config.num_threads)
         )
     )
+    @__name(
+        t"sm100_mla_decode_qkv_fp8_{Self.q_type}_{Self.kv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
+        mangle=True,
+    )
     def kernel(
         # Q TMA is FP8 with SWIZZLE_64B (same as KV)
         q_tma: QOTMATile[

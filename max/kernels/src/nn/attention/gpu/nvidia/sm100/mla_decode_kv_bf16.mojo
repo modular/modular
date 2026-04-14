@@ -168,6 +168,10 @@ struct MLA_SM100_Decode_KV_BF16[
         )
     )
     @__llvm_metadata(`nvvm.minctasm`=Int(1))
+    @__name(
+        t"sm100_mla_decode_kv_bf16_{Self.q_type}_{Self.kv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
+        mangle=True,
+    )
     def kernel(
         q_tma: QOTMATile[
             dtype=Self.q_type,

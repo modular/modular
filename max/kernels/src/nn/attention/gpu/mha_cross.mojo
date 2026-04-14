@@ -30,6 +30,7 @@ from std.utils.numerics import get_accum_type
 
 
 @always_inline
+@__name(t"mha_cross_bmm0_{q_type}_{p_type}", mangle=True)
 def _bmm0_bs[
     QLayoutType: TensorLayout,
     KVLayoutType: TensorLayout,
@@ -138,6 +139,7 @@ def _bmm0_bs[
 
 
 @always_inline
+@__name(t"mha_cross_bmm1_{output_type}_{p_type}", mangle=True)
 def _bmm1_bs[
     QLayoutType: TensorLayout,
     KVLayoutType: TensorLayout,

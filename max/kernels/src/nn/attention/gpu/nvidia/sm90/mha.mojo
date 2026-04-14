@@ -854,6 +854,10 @@ def _mha_sm90_enqueue[
         Int32(config.num_threads[True]())
     )
 )
+@__name(
+    t"sm90_mha_depth{config.depth}_{KVLUTType.dtype}_{output_type}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
+    mangle=True,
+)
 def _mha_sm90[
     KVLUTType: MHAOperand,
     output_type: DType,

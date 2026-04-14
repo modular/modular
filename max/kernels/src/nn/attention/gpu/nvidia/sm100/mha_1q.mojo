@@ -1868,6 +1868,10 @@ def _mha_sm100_enqueue[
     )
 )
 @__llvm_metadata(`nvvm.minctasm`=Int(1))
+@__name(
+    t"sm100_mha_1q_depth{config.depth}_{KVLUTType.dtype}_{output_type}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
+    mangle=True,
+)
 def _mha_sm100[
     KVLUTType: MHAOperand,
     output_type: DType,

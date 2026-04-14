@@ -1539,6 +1539,10 @@ def get_waves_per_eu(depth: Int) -> Int:
         Int32(config.num_threads())
     )
 )
+@__name(
+    t"mha_depth{config.depth}_{q_type}_{output_type}_{ragged}_{is_shared_kv}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
+    mangle=True,
+)
 def mha[
     q_type: DType,
     k_t: MHAOperand,
@@ -1756,6 +1760,10 @@ def mha[
     )
 )
 @always_inline
+@__name(
+    t"mha_single_batch_depth{config.depth}_{q_type}_{output_type}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
+    mangle=True,
+)
 def mha_single_batch[
     q_type: DType,
     k_t: MHAOperand,
@@ -2473,6 +2481,10 @@ def mha_single_batch[
     )
 )
 @always_inline
+@__name(
+    t"mha_single_batch_pipelined_depth{config.depth}_{q_type}_{output_type}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
+    mangle=True,
+)
 def mha_single_batch_pipelined[
     q_type: DType,
     k_t: MHAOperand,
@@ -3148,6 +3160,10 @@ def mha_single_batch_pipelined[
 @__llvm_metadata(`rocdl.waves_per_eu`=Int(4))
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(
+    t"mha_decoding_depth{depth}_{q_type}_{output_type}_{BM}x{BN}x{BK}_{ragged}_nqh{num_heads}_nkvh{num_heads // group}",
+    mangle=True,
 )
 def mha_decoding[
     q_type: DType,
@@ -4626,6 +4642,7 @@ def mha_decoding_single_batch_pipelined[
     )
 
 
+@__name(t"mha_splitk_reduce_{intermediate_type}_{output_type}", mangle=True)
 def mha_splitk_reduce[
     intermediate_type: DType,
     output_type: DType,
@@ -4935,6 +4952,7 @@ def mha_gpu_naive[
 
 @always_inline
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=_NAIVE_BMM_BLOCK_TUPLE)
+@__name(t"mha_bmm0_{q_type}_{p_type}_{ragged}", mangle=True)
 def _bmm0_bs[
     q_type: DType,
     k_t: MHAOperand,
@@ -5068,6 +5086,7 @@ def _bmm0_bs[
 
 @always_inline
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=_NAIVE_BMM_BLOCK_TUPLE)
+@__name(t"mha_bmm1_{output_type}_{p_type}_{ragged}", mangle=True)
 def _bmm1_bs[
     output_type: DType,
     p_type: DType,

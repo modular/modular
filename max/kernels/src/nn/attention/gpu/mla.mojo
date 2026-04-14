@@ -716,6 +716,10 @@ def flare_mla_decoding_dispatch[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
+@__name(
+    t"mla_decoding_{q_type}_{output_type}_{BM}x{BN}x{BK}_{ragged}_nqh{num_heads}_nkvh{num_heads // group}",
+    mangle=True,
+)
 def mla_decoding[
     q_type: DType,
     k_t: MHAOperand,
@@ -2256,6 +2260,10 @@ def flare_mla_prefill_dispatch[
         Int32(config.num_threads())
     )
 )
+@__name(
+    t"mla_prefill_{q_type}_{output_type}_{q_depth}_{cache_depth}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
+    mangle=True,
+)
 def mla_prefill[
     q_type: DType,
     k_t: MHAOperand,
@@ -3218,6 +3226,7 @@ def mla_prefill_plan[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
+@__name(t"mla_prefill_plan", mangle=True)
 def mla_prefill_plan_kernel[
     BufferRowOffsetsLayoutType: TensorLayout,
     CacheOffsetsLayoutType: TensorLayout,

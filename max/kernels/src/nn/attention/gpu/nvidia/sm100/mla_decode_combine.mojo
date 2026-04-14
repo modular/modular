@@ -149,6 +149,10 @@ struct CombineParams[
 # ===----------------------------------------------------------------------=== #
 # Main Combine Kernel - Optimized version matching FlashMLA pattern
 # ===----------------------------------------------------------------------=== #
+@__name(
+    t"sm100_mla_decode_combine_{output_type}_{accum_type}_{num_splits}_{ragged}",
+    mangle=True,
+)
 def mla_combine_kernel[
     output_type: DType,
     accum_type: DType,
