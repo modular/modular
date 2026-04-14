@@ -28,16 +28,14 @@ from max.graph import (
 from max.nn.attention import MHAMaskVariant, num_heads_for_device
 from max.nn.kernels import (
     flash_attention_ragged,
-    fused_qk_ragged_rope,
-    fused_qkv_ragged_matmul,
     quantize_static_scaled_float8,
-    rms_norm_key_cache,
+    rope_split_store_ragged,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.quant_config import QuantConfig
-from max.nn.quant_ops import quantized_fused_qkv_matmul
+from max.nn.quant_ops import quantized_matmul
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 
@@ -242,64 +240,55 @@ class Gemma3Attention(Module, Shardable):
             self.layer_idx, DType.uint32, device=DeviceRef.CPU()
         )
 
+        head_dim = self.kv_params.head_dim
+        q_dim = self.q_weight_dim
+        kv_dim = self.kv_weight_dim
+        num_kv_heads = kv_dim // head_dim
+
+        # QKV projection
+        wqkv = self.wqkv
         if self.quant_config:
-            xq = quantized_fused_qkv_matmul(
-                kv_params=self.kv_params,
-                x=x,
-                wqkv=self.wqkv,
-                kv_collection=kv_collection,
-                layer_idx=layer_idx,
-                input_row_offsets=kwargs["input_row_offsets"],
-                n_heads=self.n_heads,
-                quant_config=self.quant_config,
+            qkv = quantized_matmul(
+                x,
+                wqkv,
                 weight_scale=self.qkv_weight_scale,
                 input_scale=self.qkv_input_scale,
-                bias=self.wqkv_bias,
+                quant_config=self.quant_config,
             )
         else:
-            # Call into fused qkv ragged matmul.
-            xq = fused_qkv_ragged_matmul(
-                self.kv_params,
-                input=x,
-                wqkv=self.wqkv,
-                bias=self.wqkv_bias,
-                input_row_offsets=kwargs["input_row_offsets"],
-                kv_collection=kv_collection,
-                layer_idx=layer_idx,
-                n_heads=self.n_heads,
-            )
-        # Apply rope.
-        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
+            qkv = x @ wqkv.T
+        if self.wqkv_bias is not None:
+            qkv = qkv + self.wqkv_bias.to(x.device)
 
-        # Apply QK norm to query and key states.
-        xq = self.q_norm(xq)
-        rms_norm_key_cache(
-            self.kv_params,
-            kv_collection=kv_collection,
-            gamma=self.k_norm.weight.cast(self.kv_params.dtype).to(
-                self.devices[0]
-            ),
-            epsilon=self.qk_norm_eps,
-            layer_idx=layer_idx,
-            total_seq_len=total_seq_len,
-            input_row_offsets=kwargs["input_row_offsets"],
-            weight_offset=1.0,
+        # Split into Q, K, V
+        x_q, x_k, x_v = ops.split(qkv, [q_dim, kv_dim, kv_dim], axis=-1)
+
+        # Per-head QK norm
+        x_q = self.q_norm(x_q.reshape((-1, self.n_heads, head_dim))).reshape(
+            (-1, q_dim)
+        )
+        x_k = self.k_norm(x_k.reshape((-1, num_kv_heads, head_dim))).reshape(
+            (-1, kv_dim)
         )
 
-        # Apply rotary embedding.
+        # Re-concat and apply RoPE + KV cache store
+        qkv = ops.concat((x_q, x_k, x_v), axis=-1)
+
         use_local = bool((self.layer_idx + 1) % self.sliding_window_pattern)
         rope = self.rope_local if use_local else self.rope_global
 
-        freqs_cis = ops.cast(rope.freqs_cis, xq.dtype).to(xq.device)
-        xq = fused_qk_ragged_rope(
+        freqs_cis = ops.cast(rope.freqs_cis, qkv.dtype).to(qkv.device)
+        xq = rope_split_store_ragged(
             self.kv_params,
-            xq,
+            qkv,
             kwargs["input_row_offsets"],
-            kv_collection,
             freqs_cis,
+            kv_collection,
             layer_idx,
+            n_heads=self.n_heads,
             interleaved=rope.interleaved,
         )
+        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Calculate Flash Attention.
         mask_variant = (
