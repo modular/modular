@@ -80,7 +80,10 @@ pkg_files(
 
 pkg_files(
     name = "internal-docs",
-    srcs = glob(["internal/**"]),
+    srcs = glob(
+        ["internal/**"],
+        allow_empty = True,
+    ),
     prefix = "mojo",
     strip_prefix = strip_prefix.from_pkg(""),
     tags = ["manual"],
