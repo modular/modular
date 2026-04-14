@@ -277,12 +277,12 @@ def _amdgpu_matmul_config_from_block_shape[
 ](block_shape: IndexList[2]) -> MatmulConfig[
     a_type, b_type, c_type, transpose_b
 ]:
-    comptime max_num_warps: UInt = 4
+    comptime max_num_warps: Int = 4
 
     var block_m = block_shape[0]
     var block_n = block_shape[1]
     var block_k = _bk_base[a_type, True]()
-    var num_warps: UInt = 1
+    var num_warps: Int = 1
     var num_warp_k_partitions: Int = 1
 
     # TODO(KERN-2432): Merge these configurations into the below logic.
@@ -1185,7 +1185,7 @@ def multistage_gemm[
                         c,
                         a,
                         b,
-                        grid_dim=config.grid_dim(UInt(M), UInt(N)),
+                        grid_dim=config.grid_dim(M, N),
                         block_dim=config.block_dim(),
                     )
             else:
@@ -1207,7 +1207,7 @@ def multistage_gemm[
                         c,
                         a,
                         b,
-                        grid_dim=config.grid_dim(UInt(M), UInt(N)),
+                        grid_dim=config.grid_dim(M, N),
                         block_dim=config.block_dim(),
                     )
         else:
@@ -1226,7 +1226,7 @@ def multistage_gemm[
                 c,
                 a,
                 b,
-                grid_dim=config.grid_dim(UInt(M), UInt(N)),
+                grid_dim=config.grid_dim(M, N),
                 block_dim=config.block_dim(),
             )
 
@@ -1246,7 +1246,7 @@ def multistage_gemm[
             c,
             a,
             b,
-            grid_dim=config.grid_dim(UInt(M), UInt(N)),
+            grid_dim=config.grid_dim(M, N),
             block_dim=config.block_dim(),
             shared_mem_bytes=config.shared_mem_usage(),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -1328,7 +1328,7 @@ def multistage_gemm[
                 tensor_b,
                 tensor_work_space,
                 runtime_config.num_k_partitions,
-                grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
+                grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
             )
         else:
@@ -1338,7 +1338,7 @@ def multistage_gemm[
                 tensor_b,
                 tensor_work_space,
                 runtime_config.num_k_partitions,
-                grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
+                grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -1454,7 +1454,7 @@ def multistage_gemm[
                         c,
                         a,
                         b,
-                        grid_dim=config.grid_dim(UInt(M), UInt(N)),
+                        grid_dim=config.grid_dim(M, N),
                         block_dim=config.block_dim(),
                     )
             else:
@@ -1476,7 +1476,7 @@ def multistage_gemm[
                         c,
                         a,
                         b,
-                        grid_dim=config.grid_dim(UInt(M), UInt(N)),
+                        grid_dim=config.grid_dim(M, N),
                         block_dim=config.block_dim(),
                     )
         else:
@@ -1495,7 +1495,7 @@ def multistage_gemm[
                 c,
                 a,
                 b,
-                grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
+                grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
             )
 
@@ -1516,7 +1516,7 @@ def multistage_gemm[
             c,
             a,
             b,
-            grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
+            grid_dim=runtime_config.grid_dim(M, N),
             block_dim=runtime_config.block_dim(),
             shared_mem_bytes=runtime_config.shared_mem_usage(),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(

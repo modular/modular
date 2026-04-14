@@ -507,16 +507,16 @@ def naive_batched_matmul_kernel[
         and a_tensor.flat_rank == 3
         and b_tensor.flat_rank == 3
     )
-    var batch_size = UInt(c_tensor.dim(0))
-    var m = UInt(c_tensor.dim(1))
-    var n = UInt(c_tensor.dim(2))
-    var k = UInt(a_tensor.dim(2))
+    var batch_size = Int(c_tensor.dim(0))
+    var m = Int(c_tensor.dim(1))
+    var n = Int(c_tensor.dim(2))
+    var k = Int(a_tensor.dim(2))
 
     var x = global_idx.x
     var y = global_idx.y
     var z = block_idx.z
 
-    if UInt(z) >= batch_size or UInt(x) >= n or UInt(y) >= m:
+    if z >= batch_size or x >= n or y >= m:
         return
     var val = Scalar[accum_type](0)
 
@@ -790,7 +790,7 @@ def _batched_matmul_gpu[
             elementwise_epilogue_fn,
         ]
 
-        var grid_dim = kernels.ampere_128x128_4.grid_dim(UInt(m), UInt(n))
+        var grid_dim = kernels.ampere_128x128_4.grid_dim(m, n)
 
         ctx.enqueue_function[batched_matmul_type, batched_matmul_type](
             c_tensor_reshaped,
@@ -1067,7 +1067,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    num_threads: UInt = 128,
+    num_threads: Int = 128,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
@@ -1082,7 +1082,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     b_scales_tensor: LayoutTensor[
         b_scales_type, b_scales_layout, ImmutAnyOrigin
     ],
-    num_iters: UInt,
+    num_iters: Int,
 ):
     comptime c_2d_layout: Layout = _2D_layout[c_layout]
     comptime b_scales_2d_layout: Layout = _2D_layout[b_scales_layout]
@@ -1144,7 +1144,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         transpose_b=True,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
-        num_threads=Int(num_threads),
+        num_threads=num_threads,
         elementwise_lambda_fn=Optional[matmul_elementwise_epilogue_type](
             elementwise_epilogue_fn_wrapper
         ) if elementwise_lambda_fn else None,
@@ -1154,7 +1154,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         c,
         a_scales_tma_op,
         b_scales,
-        Int(num_iters),
+        num_iters,
     )
 
 
@@ -1327,7 +1327,7 @@ def bmm_sm100_blockwise_scaled_fp8[
         c,
         a_scales_tma_op,
         b_scales,
-        UInt(ceildiv(K, BK)),
+        ceildiv(K, BK),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,

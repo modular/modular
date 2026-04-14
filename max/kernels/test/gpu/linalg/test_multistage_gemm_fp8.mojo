@@ -109,7 +109,7 @@ def test_fp8_multistage_gemm[
         c_tt,
         a_tt,
         b_tt,
-        grid_dim=config.grid_dim(UInt(M), UInt(N)),
+        grid_dim=config.grid_dim(M, N),
         block_dim=config.block_dim(),
         shared_mem_bytes=config.shared_mem_usage(),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(

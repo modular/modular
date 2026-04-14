@@ -520,7 +520,7 @@ def multistage_qgemm_kernel[
     comptime repack_tile = Index(64, 16)
     comptime group_bytes = group_size // 2 + 2
 
-    var M = UInt(c.dim[0]())
+    var M = c.dim[0]()
     comptime N = Int(b_layout.shape[0])
     comptime K = Int(b_layout.shape[1]) // group_bytes * group_size
 
@@ -755,7 +755,7 @@ def multistage_qgemm_kernel[
             comptime alignment = align_of[SIMD[c_type, src_simd_width_y]]()
             var m = (Int(thread_offset) + dst_idx) // N
             var n = (Int(thread_offset) + dst_idx) % N
-            if UInt(m) < M and UInt(n) < UInt(N):
+            if m < M and n < N:
                 var vec = (c_reg_frag.ptr + src_idx).load[
                     width=src_simd_width_y,
                     alignment=align_of[SIMD[c_type, src_simd_width_y]](),
@@ -765,7 +765,7 @@ def multistage_qgemm_kernel[
                     epilogue[alignment=alignment]((m, n), vec)
                 else:
                     comptime for j in range(dst_simd_width_x):
-                        if UInt(m + j) < M:
+                        if m + j < M:
                             epilogue[alignment=alignment](
                                 (m + j, n), vec[j].cast[c_type]()
                             )
@@ -840,7 +840,7 @@ def multistage_qgemm_kernel[
                 var m = (Int(thread_offset) + dst_idx) // N
                 var n = (Int(thread_offset) + dst_idx) % N
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
-                if UInt(m) < M and UInt(n) < UInt(N):
+                if m < M and n < N:
                     epilogue[alignment=alignment](
                         (m, n),
                         accum_smem_warp_tile.ptr.load[
@@ -1490,7 +1490,7 @@ def multistage_gemm_q[
                         c,
                         a,
                         b,
-                        grid_dim=adjusted_config.grid_dim(UInt(M), UInt(N)),
+                        grid_dim=adjusted_config.grid_dim(M, N),
                         block_dim=adjusted_config.block_dim(),
                         shared_mem_bytes=adjusted_smem,
                         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -1518,7 +1518,7 @@ def multistage_gemm_q[
         c,
         a,
         b,
-        grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
+        grid_dim=runtime_config.grid_dim(M, N),
         block_dim=runtime_config.block_dim(),
         shared_mem_bytes=smem_usage,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(

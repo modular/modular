@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_up, ceildiv
+from std.math.uutils import ufloordiv
 from std.gpu import (
     block_idx,
     thread_idx,
@@ -731,8 +732,8 @@ def quantize_dynamic_scaled_async_fp4_kernel[
     input_swizzle_mode: TensorMapSwizzle,
     output_swizzle_mode: TensorMapSwizzle,
     scales_swizzle_mode: TensorMapSwizzle,
-    SF_VECTOR_SIZE: UInt,
-    NUM_PIPELINES_STAGES: UInt,
+    SF_VECTOR_SIZE: Int,
+    NUM_PIPELINES_STAGES: Int,
 ](
     input_tma_op: TMATensorTile[
         input_dtype, input_tile_rank, input_tile_shape, input_desc_shape
@@ -761,7 +762,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
 
     comptime input_smem_tile_size = _idx_product[
         input_tile_rank, input_tile_shape
-    ]() * Int(NUM_PIPELINES_STAGES)
+    ]() * NUM_PIPELINES_STAGES
     comptime output_smem_tile_size = _idx_product[
         output_tile_rank, output_tile_shape
     ]()
@@ -769,13 +770,13 @@ def quantize_dynamic_scaled_async_fp4_kernel[
         scales_tile_rank, scales_tile_shape
     ]()
 
-    comptime SF_K_GROUP_SIZE: UInt = SF_VECTOR_SIZE * SF_ATOM_K
+    comptime SF_K_GROUP_SIZE: Int = SF_VECTOR_SIZE * Int(SF_ATOM_K)
     comptime STAGE_GROUP_SIZE = SF_K_GROUP_SIZE // NUM_PIPELINES_STAGES
 
     comptime assert (
         STAGE_GROUP_SIZE == 64
         and NUM_PIPELINES_STAGES == 1
-        and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE
+        and SF_VECTOR_SIZE == Int(NVFP4_SF_VECTOR_SIZE)
     ), (
         "STAGE_GROUP_SIZE must be 64 and NUM_PIPELINES_STAGES must be 1 and"
         " SF_VECTOR_SIZE must be 16"
@@ -832,7 +833,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
         comptime for idx in range(NUM_PIPELINES_STAGES):
             tma_mbar[idx].init()
 
-    var tma_phase = SIMD[DType.uint32, Int(NUM_PIPELINES_STAGES)](0)
+    var tma_phase = SIMD[DType.uint32, NUM_PIPELINES_STAGES](0)
 
     barrier()
 
@@ -853,10 +854,8 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                         smem_tile,
                         tma_mbar[iter_idx],
                         (
-                            Int(
-                                (UInt(block_idx.y) * SF_K_GROUP_SIZE)
-                                + (iter_idx * STAGE_GROUP_SIZE)
-                            ),
+                            (block_idx.y * SF_K_GROUP_SIZE)
+                            + (iter_idx * STAGE_GROUP_SIZE),
                             block_idx.x * SF_MN_GROUP_SIZE,
                         ),
                     )
@@ -867,21 +866,19 @@ def quantize_dynamic_scaled_async_fp4_kernel[
             comptime for iter_idx in range(NUM_PIPELINES_STAGES):
                 var smem_tile = input_smem.next(iter_idx)[]
 
-                tma_mbar[iter_idx].wait(tma_phase[Int(iter_idx)])
+                tma_mbar[iter_idx].wait(tma_phase[iter_idx])
                 var quantized_elements = SIMD[DType.uint32, 8]()
 
                 comptime for group_idx in range(
                     STAGE_GROUP_SIZE // SF_VECTOR_SIZE
                 ):
-                    var group_elements = SIMD[
-                        input_dtype, Int(SF_VECTOR_SIZE)
-                    ]()
+                    var group_elements = SIMD[input_dtype, SF_VECTOR_SIZE]()
 
                     comptime for col_idx in range(SF_VECTOR_SIZE // 8):
                         var swizzle_offset = (
-                            local_row_idx * Int(STAGE_GROUP_SIZE)
-                            + Int(group_idx * SF_VECTOR_SIZE)
-                            + Int(col_idx * 8)
+                            local_row_idx * STAGE_GROUP_SIZE
+                            + (group_idx * SF_VECTOR_SIZE)
+                            + col_idx * 8
                         )
 
                         comptime input_swizzle = make_swizzle[
@@ -894,7 +891,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                         ](swizzle_idx)
 
                         group_elements = group_elements.insert[
-                            offset=Int(col_idx * 8)
+                            offset=col_idx * 8
                         ](temp)
 
                     var group_max = (
@@ -907,8 +904,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                     var fp8_scale_factor = scale_factor.cast[scales_dtype]()
 
                     scale_factors[
-                        Int(iter_idx) * Int(NUM_PIPELINES_STAGES)
-                        + Int(group_idx)
+                        iter_idx * NUM_PIPELINES_STAGES + group_idx
                     ] = fp8_scale_factor
 
                     var output_scale = Float32(0.0)
@@ -923,7 +919,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                             8, offset=slice_idx * 8
                         ]()
                         quantized_elements[
-                            Int(group_idx) * 2 + slice_idx
+                            group_idx * 2 + slice_idx
                         ] = cast_fp32_to_fp4e2m1(
                             slice_elements.cast[DType.float32]() * output_scale
                         )
@@ -935,19 +931,16 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                     comptime output_swizzle = make_swizzle[
                         output_dtype, output_swizzle_mode
                     ]()
-                    var swizzle_offset = local_row_idx * Int(
-                        STAGE_GROUP_SIZE // 2
-                    ) + idx * Int(SF_VECTOR_SIZE)
+                    var swizzle_offset = (
+                        local_row_idx * ufloordiv(STAGE_GROUP_SIZE, 2)
+                        + idx * SF_VECTOR_SIZE
+                    )
                     var output_swizzle_idx = output_swizzle(swizzle_offset)
                     output_smem.ptr.store[
-                        alignment=align_of[
-                            SIMD[output_dtype, Int(SF_VECTOR_SIZE)]
-                        ]()
+                        alignment=align_of[SIMD[output_dtype, SF_VECTOR_SIZE]]()
                     ](
                         output_swizzle_idx,
-                        bitcast[output_dtype, Int(SF_VECTOR_SIZE)](
-                            slice_elements
-                        ),
+                        bitcast[output_dtype, SF_VECTOR_SIZE](slice_elements),
                     )
 
                 scales_smem.ptr.store[
@@ -976,7 +969,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                 output_tma_op.async_store(
                     output_smem,
                     StaticTuple[UInt32, 2](
-                        UInt32(UInt(block_idx.y) * (SF_K_GROUP_SIZE) // 2),
+                        UInt32(ufloordiv(block_idx.y * SF_K_GROUP_SIZE, 2)),
                         UInt32(block_idx.x) * UInt32(SF_MN_GROUP_SIZE),
                     ),
                 )
@@ -1120,8 +1113,8 @@ def quantize_dynamic_scaled_fp4_async[
         input_swizzle_mode,
         output_swizzle_mode,
         scales_swizzle_mode,
-        UInt(SF_VECTOR_SIZE),
-        NUM_PIPELINES_STAGES=UInt(NUM_PIPELINES_STAGES),
+        SF_VECTOR_SIZE,
+        NUM_PIPELINES_STAGES=NUM_PIPELINES_STAGES,
     ]
 
     ctx.enqueue_function[kernel, kernel, dump_asm=False](

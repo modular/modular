@@ -210,7 +210,7 @@ def multistage_mma[
     next_op_b_iter_alignment: Int = align_of[b_type](),
     next_op_b_layout_int_type: DType = DType.int64,
     next_op_b_linear_idx_type: DType = DType.int64,
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](
     c: LayoutTensor[
         mut=True, c_type, c_layout, address_space=AddressSpace.LOCAL, ...
@@ -374,12 +374,12 @@ def multistage_mma[
     comptime MMA_M = mma_shape[0]
     comptime MMA_N = mma_shape[1]
     comptime MMA_K = mma_shape[2]
-    comptime num_k_mmas = UInt(BK // MMA_K)
-    comptime num_k_mma_iters: UInt = num_k_mmas // k_group_size
+    comptime num_k_mmas = BK // MMA_K
+    comptime num_k_mma_iters: Int = num_k_mmas // k_group_size
     comptime num_m_mmas = WM // MMA_M
     comptime num_n_mmas = WN // MMA_N
     comptime assert (
-        num_k_mmas % UInt(2 * Int(k_group_size)) == 0
+        num_k_mmas % (2 * k_group_size) == 0
     ), "num_k_mmas must be an integer multiple of 2*k_group_size"
 
     comptime accum_type = get_accum_type[a_type]()
@@ -388,10 +388,10 @@ def multistage_mma[
     comptime b_frag_size = frag_size[1]
     comptime c_frag_size = frag_size[2]
 
-    comptime num_reg_tiles = 2 * Int(k_group_size)
+    comptime num_reg_tiles = 2 * k_group_size
     # Register tiles.
     comptime a_reg_layout = Layout.row_major(
-        2 * Int(k_group_size) * num_m_mmas, a_frag_size
+        2 * k_group_size * num_m_mmas, a_frag_size
     )
     var a_reg_tiles = (
         LayoutTensor[
@@ -401,11 +401,11 @@ def multistage_mma[
             address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
-        .split[2 * Int(k_group_size)]()
+        .split[2 * k_group_size]()
     )
 
     comptime b_reg_layout = Layout.row_major(
-        2 * Int(k_group_size) * num_n_mmas, b_frag_size
+        2 * k_group_size * num_n_mmas, b_frag_size
     )
     var b_reg_tiles = (
         LayoutTensor[
@@ -416,7 +416,7 @@ def multistage_mma[
         ]
         .stack_allocation()
         .vectorize[1, b_frag_size]()
-        .split[2 * Int(k_group_size)]()
+        .split[2 * k_group_size]()
     )
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
@@ -435,7 +435,7 @@ def multistage_mma[
         a_type, a_warp_tile.stride[0]()
     ]() if swizzle_a else Optional[Swizzle]()
 
-    comptime for i in range(Int(k_group_size)):
+    comptime for i in range(k_group_size):
         comptime if a_iter.address_space == AddressSpace.LOCAL:
             # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
             # Need to cast address space because it's not known at parse time to be LOCAL.
@@ -870,7 +870,7 @@ def multistage_gemm_kernel[
         num_threads_per_warp_k_part,
         num_pipeline_stages,
         transpose_b,
-        k_group_size=UInt(config.k_group_size),
+        k_group_size=config.k_group_size,
         swizzle_a=is_nvidia_gpu(),
     ](
         c_reg_tile,

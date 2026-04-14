@@ -224,7 +224,7 @@ def load_AB_SFA_SFB[
     mma_shape: IndexList[3],
     num_sf_k_tiles: Int,
     cta_group: Int = 1,
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](
     a_tma_op: TMATensorTile[a_type, a_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_rank, b_tile_shape, b_desc_shape],
@@ -275,7 +275,7 @@ def load_AB_SFA_SFB[
             + sfa_expected_bytes
             + sfb_expected_bytes
         )
-    ) * Int(k_group_size)
+    ) * k_group_size
 
     comptime a_tma_load_size = _idx_product[a_rank, a_desc_shape]()
     comptime b_tma_load_size = _idx_product[b_rank, b_desc_shape]()
@@ -423,7 +423,7 @@ def consumer_main_loop[
     SFB_NUM_COLS: Int,
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](
     tmem_addr: UInt32,
     sfa_tmem: UInt32,
@@ -928,7 +928,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         mma_shape=config.mma_shape,
                         num_sf_k_tiles=config.num_sf_k_tiles,
                         cta_group=config.cta_group,
-                        k_group_size=UInt(config.k_group_size),
+                        k_group_size=config.k_group_size,
                     ](
                         a_tma_op,
                         b_tma_op,
@@ -1048,7 +1048,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                             SFB_NUM_COLS=SFB_NUM_COLS,
                             cta_group=config.cta_group,
                             cluster_shape=config.cluster_shape,
-                            k_group_size=UInt(config.k_group_size),
+                            k_group_size=config.k_group_size,
                         ](
                             tmem_offset,
                             sfa_tmem,

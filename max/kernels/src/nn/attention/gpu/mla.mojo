@@ -2826,7 +2826,7 @@ def mla_prefill_single_batch[
             swizzle_a=True,
             prefetch_init=False,
             static_num_iters=q_depth // BK,
-            k_group_size=UInt(config.k_group_size),
+            k_group_size=config.k_group_size,
         ](
             p_reg_tile,
             q_smem_iter,
@@ -3013,7 +3013,7 @@ def mla_prefill_single_batch[
                 swizzle_a=True,
                 prefetch_init=False,
                 static_num_iters=ufloordiv(BN, BK),
-                k_group_size=UInt(config.k_group_size),
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_smem_iter,
@@ -3045,7 +3045,7 @@ def mla_prefill_single_batch[
                 swizzle_a=False,
                 prefetch_init=False,
                 static_num_iters=ufloordiv(BN, BK),
-                k_group_size=UInt(config.k_group_size),
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_reg_iter,

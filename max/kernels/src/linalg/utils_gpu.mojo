@@ -13,6 +13,7 @@
 
 from std.hashlib.hasher import Hasher
 from std.math import ceildiv
+from std.math.uutils import uceildiv
 from std.sys import (
     get_defined_int,
     get_defined_bool,
@@ -44,7 +45,7 @@ def block_swizzle(
 
 @always_inline
 def _block_swizzle_by_scale[
-    scale0: UInt
+    scale0: Int
 ](block_idx: IndexList[2, ...], grid_dim: type_of(block_idx)) -> type_of(
     block_idx
 ):
@@ -214,10 +215,10 @@ struct MatmulConfig[
             self.num_warp_k_partitions,
         )
 
-    def grid_dim(self, m: UInt, n: UInt) -> IndexList[3]:
+    def grid_dim(self, m: Int, n: Int) -> IndexList[3]:
         return Index(
-            Int(ceildiv(n, UInt(self.block_tile_shape[1]))),
-            Int(ceildiv(m, UInt(self.block_tile_shape[0]))),
+            uceildiv(n, self.block_tile_shape[1]),
+            uceildiv(m, self.block_tile_shape[0]),
             self.num_k_partitions,
         )
 

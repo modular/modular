@@ -2164,7 +2164,7 @@ def mha_single_batch[
             swizzle_a=True,
             prefetch_init=False,
             static_num_iters=ufloordiv(depth, BK),
-            k_group_size=UInt(config.k_group_size),
+            k_group_size=config.k_group_size,
         ](
             p_reg_tile,
             q_smem_iter,
@@ -2342,7 +2342,7 @@ def mha_single_batch[
                 swizzle_a=True,
                 prefetch_init=False,
                 static_num_iters=ufloordiv(BN, BK),
-                k_group_size=UInt(config.k_group_size),
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_smem_iter,
@@ -2374,7 +2374,7 @@ def mha_single_batch[
                 swizzle_a=False,
                 prefetch_init=False,
                 static_num_iters=ufloordiv(BN, BK),
-                k_group_size=UInt(config.k_group_size),
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_reg_iter,
@@ -2819,7 +2819,7 @@ def mha_single_batch_pipelined[
                 next_op_b_iter_masked=type_of(v_gmem_iter).masked,
                 next_op_b_layout_int_type=type_of(v_gmem_iter).layout_int_type,
                 next_op_b_linear_idx_type=type_of(v_gmem_iter).linear_idx_type,
-                k_group_size=UInt(config.k_group_size),
+                k_group_size=config.k_group_size,
             ](
                 p_reg_tile,
                 q_gmem_iter,
@@ -2850,7 +2850,7 @@ def mha_single_batch_pipelined[
                 next_op_b_iter_masked=type_of(v_gmem_iter).masked,
                 next_op_b_layout_int_type=type_of(v_gmem_iter).layout_int_type,
                 next_op_b_linear_idx_type=type_of(v_gmem_iter).linear_idx_type,
-                k_group_size=UInt(config.k_group_size),
+                k_group_size=config.k_group_size,
             ](
                 p_reg_tile,
                 # Pass shared memory iterator to hint not loading from global memory.
@@ -3013,7 +3013,7 @@ def mha_single_batch_pipelined[
                 False,  # transpose_b
                 swizzle_a=True,
                 prefetch_init=False,
-                k_group_size=UInt(config.k_group_size),
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_smem_iter,
@@ -3042,7 +3042,7 @@ def mha_single_batch_pipelined[
                 swizzle_a=True,
                 static_num_iters=ufloordiv(BN, BK),
                 prefetch_init=False,
-                k_group_size=UInt(config.k_group_size),
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_reg_iter,
