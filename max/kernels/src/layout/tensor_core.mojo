@@ -137,6 +137,8 @@ comptime shape_32x32x8 = IndexList[3](32, 32, 8)
 """AMDGPU tensor core shape 32x32x8."""
 comptime shape_32x32x16 = IndexList[3](32, 32, 16)
 """AMDGPU tensor core shape 32x32x16."""
+comptime shape_32x32x64 = IndexList[3](32, 32, 64)
+"""AMDGPU tensor core shape 32x32x64."""
 
 
 def _get_a_k_group_size[a: Layout, shape: IndexList[3]]() -> Int:
@@ -227,7 +229,7 @@ struct TensorCore[
             get_amd_fp8_dtype(),
             get_amd_bf8_dtype(),
         )
-        and Self.shape == shape_16x16x32
+        and Self.shape in (shape_16x16x32, shape_32x32x64)
     )
     """Whether float8 is supported for this tensor core configuration."""
     comptime supported_fp64 = Self.in_type == DType.float64 and Self.out_type == DType.float64 and (

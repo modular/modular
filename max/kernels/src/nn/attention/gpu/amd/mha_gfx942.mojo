@@ -78,6 +78,12 @@ struct MHAAttentionConfig[token_gen: Bool, config: MHAConfig, group: Int](
     @staticmethod
     @always_inline
     def get_mma_shape() -> IndexList[3]:
+        # FP8: prefill uses 32x32x64 scaled MFMA, decoding uses 16x16x32.
+        comptime if Self.config.dtype.is_float8():
+            return IndexList[3](
+                32, 32, 64
+            ) if not Self.token_gen else IndexList[3](16, 16, 32)
+
         comptime wider_mfma_supported = (
             _cdna_4_or_newer() and Self.config.depth != 64
         )
@@ -121,7 +127,7 @@ __extension Attention:
     def mha_prefill_gfx942(
         mut self,
     ):
-        comptime assert Self.BK == 32, "BK must be 32"
+        comptime assert Self.BK == 32 or Self.BK == 64, "BK must be 32 or 64"
 
         @always_inline
         @parameter
@@ -248,7 +254,7 @@ __extension Attention:
         ],
         num_partitions: Int,
     ):
-        comptime assert Self.BK == 32, "BK must be 32"
+        comptime assert Self.BK == 32 or Self.BK == 64, "BK must be 32 or 64"
 
         @always_inline
         @parameter

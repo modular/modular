@@ -15,7 +15,7 @@ from std.math import ceildiv
 from std.math.uutils import umod
 from std.sys import simd_width_of, llvm_intrinsic, get_defined_bool
 from std.sys.intrinsics import readfirstlane, _type_is_eq
-from std.gpu import WARP_SIZE
+from std.gpu import WARP_SIZE, lane_id
 from std.gpu import warp_id as get_warp_id
 from std.gpu.sync import (
     AMDScheduleBarrierMask,
@@ -32,6 +32,7 @@ from layout import (
 from layout.tile_layout import row_major as tt_row_major
 from layout.layout import blocked_product
 from layout.swizzle import Swizzle
+from layout.tensor_core import num_matrix_reg
 from .mma import TiledMmaOp
 from std.memory import bitcast
 from nn.attention.mha_mask import TileMaskStatus, CausalMask
@@ -40,7 +41,11 @@ from nn.attention.mha_operand import MHAOperand
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 from .mha_gfx942 import Attention
-from .utils import load_b, load_b_tr, copy_dram_to_sram_lds
+from .utils import (
+    load_b,
+    load_b_tr,
+    copy_dram_to_sram_lds,
+)
 
 
 # Note: this is a experimental implementation of MHA for gfx950.
@@ -205,7 +210,10 @@ struct KVBuffer[
         Self.WN if Self.transpose else Self.depth, Self.MMA_N
     )
     comptime num_k_mmas2 = ceildiv(Self.BK, Self.MMA_K * Self.k_group_size)
-    comptime simd_width = simd_width_of[Self.kv_t.dtype]()
+    # B-operand fragment size per lane: reg[MMA_K, MMA_N] * k_group_size.
+    comptime input_frag_size = num_matrix_reg[
+        Self.MMA_K, Self.MMA_N
+    ]() * Self.k_group_size
     comptime num_k_tiles = ceildiv(
         Self.depth if Self.transpose else Self.WN, Self.BK
     )
@@ -232,7 +240,8 @@ struct KVBuffer[
     comptime MMATileType = LayoutTensor[
         Self.kv_t.dtype,
         Layout.row_major(
-            Self.num_mmas * Self.num_k_mmas2 * Self.num_k_tiles, Self.simd_width
+            Self.num_mmas * Self.num_k_mmas2 * Self.num_k_tiles,
+            Self.input_frag_size,
         ),
         MutAnyOrigin,
         address_space=AddressSpace.LOCAL,
@@ -375,7 +384,7 @@ struct KVBuffer[
 
     comptime _total_rows = Self.num_mmas * Self.num_k_mmas2 * Self.num_k_tiles
     comptime _rows_per_k_tile = Self.num_mmas * Self.num_k_mmas2
-    comptime _layout = tt_row_major[Self._total_rows, Self.simd_width]()
+    comptime _layout = tt_row_major[Self._total_rows, Self.input_frag_size]()
 
     @always_inline
     def mma_subtile[
@@ -383,7 +392,7 @@ struct KVBuffer[
         bk_tile_idx: Int,
     ](self) -> TileTensor[
         Self.kv_t.dtype,
-        type_of(tt_row_major[Self.num_mmas, Self.simd_width]()),
+        type_of(tt_row_major[Self.num_mmas, Self.input_frag_size]()),
         MutAnyOrigin,
         address_space=AddressSpace.LOCAL,
     ]:
@@ -398,14 +407,14 @@ struct KVBuffer[
         return rebind[
             TileTensor[
                 Self.kv_t.dtype,
-                type_of(tt_row_major[Self.num_mmas, Self.simd_width]()),
+                type_of(tt_row_major[Self.num_mmas, Self.input_frag_size]()),
                 MutAnyOrigin,
                 address_space=AddressSpace.LOCAL,
             ]
         ](
-            full.tile[Self._rows_per_k_tile, Self.simd_width](
+            full.tile[Self._rows_per_k_tile, Self.input_frag_size](
                 bk_tile_idx, 0
-            ).tile[Self.num_mmas, Self.simd_width](k_mma_tile_idx, 0)
+            ).tile[Self.num_mmas, Self.input_frag_size](k_mma_tile_idx, 0)
         )
 
     @always_inline
@@ -416,8 +425,78 @@ struct KVBuffer[
 
     @always_inline
     def load_from_shared(self, buffer: Int):
-        comptime for bk_tile in range(Self.num_k_tiles):
-            self.load_from_shared[bk_tile](buffer)
+        comptime if not Self.transpose and Self.kv_t.dtype.is_float8():
+            # TODO: This FP8 V gather path is a temporary workaround.
+            # We will revisit and clean this up with a proper abstraction.
+            # FP8 V gather: read vertically from [BN, depth] SMEM
+            # following the MFMA C-output column permutation so
+            # that V's K-position mapping matches P's in the PV
+            # MFMA (both operands use the same register-index-to-K
+            # mapping).
+            #
+            # C-output column pattern for [32,32] MFMA, per lane:
+            #   hw0: cols [0,1,2,3, 8,9,10,11, 16,17,18,19, 24,25,26,27]
+            #   hw1: cols [4,5,6,7, 12,13,14,15, 20,21,22,23, 28,29,30,31]
+            # For 64-key P (lo.join(hi) of two [32,32] tiles):
+            #   positions 0-15: keys 0..27 subset (lo)
+            #   positions 16-31: keys 32..59 subset (hi)
+            comptime kv_type = Self.kv_t.dtype
+            comptime BN_ = Self.BN
+            comptime BK_ = Self.BK
+            comptime MMA_M_ = Self.mma_shape[0]
+            comptime num_depth_tiles = Self.depth // MMA_M_
+
+            var lid = lane_id()
+            var hw_offset = Int(lid >= 32) * 4
+            var v_base = self.smem_ptr + buffer * Self.smem_stage_size
+
+            var reg_vec = self.mma_tile.vectorize[1, Self.input_frag_size]()
+
+            comptime for dt in range(num_depth_tiles):
+                var d = dt * MMA_M_ + Int(lid % 32)
+                var blk = d // BK_
+                var d_in_blk = d % BK_
+                var base_addr = blk * BN_ * BK_ + d_in_blk
+
+                @parameter
+                def gather4_lo[g: Int]() -> SIMD[kv_type, 4]:
+                    var off = (g * 8 + hw_offset) * BK_
+                    var ab = v_base[base_addr + off].join(
+                        v_base[base_addr + off + BK_]
+                    )
+                    var cd = v_base[base_addr + off + 2 * BK_].join(
+                        v_base[base_addr + off + 3 * BK_]
+                    )
+                    return rebind[SIMD[kv_type, 4]](ab.join(cd))
+
+                var lo = (
+                    gather4_lo[0]()
+                    .join(gather4_lo[1]())
+                    .join(gather4_lo[2]().join(gather4_lo[3]()))
+                )
+
+                @parameter
+                def gather4_hi[g: Int]() -> SIMD[kv_type, 4]:
+                    var off = (32 + g * 8 + hw_offset) * BK_
+                    var ab = v_base[base_addr + off].join(
+                        v_base[base_addr + off + BK_]
+                    )
+                    var cd = v_base[base_addr + off + 2 * BK_].join(
+                        v_base[base_addr + off + 3 * BK_]
+                    )
+                    return rebind[SIMD[kv_type, 4]](ab.join(cd))
+
+                var hi = (
+                    gather4_hi[0]()
+                    .join(gather4_hi[1]())
+                    .join(gather4_hi[2]().join(gather4_hi[3]()))
+                )
+
+                var joined = lo.join(hi)
+                reg_vec[dt, 0] = rebind[type_of(reg_vec[dt, 0])](joined)
+        else:
+            comptime for bk_tile in range(Self.num_k_tiles):
+                self.load_from_shared[bk_tile](buffer)
 
     @always_inline
     def load_from_shared[bk_tile: Int](self, buffer: Int):
@@ -439,8 +518,8 @@ struct KVBuffer[
             )
 
             self.mma_tile.split[Self.num_k_tiles]()[bk_tile].vectorize[
-                1, Self.simd_width
-            ]().copy_from(load_b_tile.vectorize[1, Self.simd_width]())
+                1, Self.input_frag_size
+            ]().copy_from(load_b_tile.vectorize[1, Self.input_frag_size]())
 
         else:
             comptime MMA_M = Self.mma_shape[0]
@@ -461,7 +540,7 @@ struct KVBuffer[
                         ]()[k]
                     )
                     .stack_allocation()
-                    .vectorize[1, Self.simd_width]()
+                    .vectorize[1, Self.input_frag_size]()
                 )
 
                 comptime for i in range(Self.depth // MMA_M):
@@ -486,7 +565,7 @@ struct KVBuffer[
                         load_b_tr[Self.mma_shape](tile)
                     )
                 var mma_tile = self.get_mma_tile[k, bk_tile]()
-                mma_tile.vectorize[1, Self.simd_width]().copy_from(frags)
+                mma_tile.vectorize[1, Self.input_frag_size]().copy_from(frags)
 
 
 __extension Attention:
@@ -626,317 +705,6 @@ __extension Attention:
         self.softmax.update_output(self.out_reg_buffer.reg_tile)
 
     @always_inline
-    def mha_prefill_experimental_old(mut self):
-        comptime assert Self.BK == 32, "BK must be 32"
-        comptime assert (
-            Self.depth == 64 or Self.depth == 128 or Self.depth == 256
-        ), "depth must be 64, 128, or 256"
-
-        comptime num_threads = config.num_threads()
-        var warp_id = UInt32(
-            readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
-        )
-        var high_warps = warp_id // 4
-        var k_buffer = KVBuffer[
-            mma_shape=Self.mma_shape,
-            k_group_size=Self.k_group_size,
-            swizzle=Swizzle(3, 0, 4) if Self.mma_shape[0]
-            == 32 else Optional[Swizzle](None),
-            BN=Self.BN,
-            WN=Self.WN,
-            BK=Self.BK,
-            num_threads=Self.num_threads,
-            depth=Self.depth,
-            kv_num_heads=Self.num_heads // Self.group,
-            transpose=True,
-        ](
-            self.k,
-            self.batch_idx,
-            self.kv_head_idx(),
-            self.smem_manager.get_k_ptr[type_of(self.k).dtype](),
-            self.num_keys,
-            warp_id,
-        )
-
-        var v_buffer = KVBuffer[
-            mma_shape=Self.mma_shape,
-            k_group_size=Self.k_group_size,
-            swizzle=None,
-            BN=Self.BN,
-            WN=Self.WN,
-            BK=Self.BK,
-            num_threads=Self.num_threads,
-            depth=Self.depth,
-            kv_num_heads=Self.num_heads // Self.group,
-            transpose=False,
-        ](
-            self.v,
-            self.batch_idx,
-            self.kv_head_idx(),
-            self.smem_manager.get_v_ptr[type_of(self.v).dtype](),
-            self.num_keys,
-            warp_id,
-        )
-
-        comptime accum_type = get_accum_type[type_of(self.k).dtype]()
-        comptime simd_width = simd_width_of[Self.q_type]()
-
-        @always_inline
-        @parameter
-        def mma_qk[stage: Int]():
-            comptime MmaOp = TiledMmaOp[
-                accum_type,
-                q_type,
-                Self.mma_shape,
-                group_size=Self.k_group_size,
-                transpose_b=True,
-            ]
-            self.zero_p_buffer[stage]()
-
-            comptime for i in range(Self.depth // Self.BK):
-                comptime for k_mma in range(Self.num_k_mmas2):
-                    MmaOp.mma[swap_a_b=Self.swap_a_b](
-                        self.q_buffer.mma_tile[Int(i), Int(k_mma)](),
-                        k_buffer.mma_subtile[Int(k_mma), Int(i)](),
-                        self.p_reg_buffer.stage_tile[stage](),
-                    )
-
-        @always_inline
-        @parameter
-        def mma_pv[stage: Int]():
-            comptime PVMmaOp = TiledMmaOp[
-                accum_type,
-                q_type,
-                Self.mma_shape,
-                group_size=Self.k_group_size,
-                transpose_b=True,
-            ]
-
-            comptime for i in range(Self.BN // Self.BK):
-                comptime for k_mma in range(v_buffer.num_k_mmas2):
-                    PVMmaOp.mma[swap_a_b=Self.swap_a_b](
-                        self.p_reg_buffer.mma_tile[Int(i), k_mma, stage](),
-                        v_buffer.mma_subtile[k_mma, Int(i)](),
-                        self.out_reg_buffer.reg_tile,
-                    )
-
-        # The pipeline follows the scheduling pattern in the paper "HipKittens: Fast and Furious AMD Kernels"
-        # paper:https://arxiv.org/abs/2511.08083
-        # code reference: https://github.com/HazyResearch/HipKittens
-
-        _ = k_buffer.load_from_dram[0]()
-        block_sync_lds_direct_load[vmcnt=0]()
-        barrier[schedule_barrier_after=False]()
-
-        _ = k_buffer.load_from_dram[1]()
-        _ = v_buffer.load_from_dram[0]()
-        k_buffer.load_from_shared(0)
-        schedule_barrier()
-        block_sync_lds[lgkmcnt=0]()
-        block_sync_lds_direct_load[vmcnt=v_buffer.vm_instrs_per_load]()
-        barrier[schedule_barrier_after=False]()
-
-        mma_qk[0]()
-        self.online_softmax_step_0[0]()
-        schedule_barrier()
-
-        # stagger warps
-        if high_warps == 1:
-            barrier[schedule_barrier_after=False]()
-
-        k_buffer.load_from_shared(1)
-        _ = k_buffer.load_from_dram[0]()
-        _ = v_buffer.load_from_dram[1]()
-        block_sync_lds[lgkmcnt=0]()
-        block_sync_lds_direct_load[
-            vmcnt=k_buffer.vm_instrs_per_load + v_buffer.vm_instrs_per_load
-        ]()
-        barrier[schedule_barrier_after=False]()
-
-        comptime break_mask = False
-
-        @always_inline
-        @parameter
-        def loop_over_kvcache[tile_size: Int](end: UInt32):
-            # barrier()
-            # TODO: enable skipping this for other masks, this is not required for the causal mask but will help with other masks
-            # if self.mask_skip_and_advance(self.kv_tile_start_row):
-            #     k_buffer.kv_cache_iter.increment()
-            #     v_buffer.kv_cache_iter.increment()
-            #     return
-            mma_qk[1]()
-            self.online_softmax_step_1[0]()
-            self.online_softmax_update_output()
-            scheduling_hints_qk[1]()
-
-            barrier()
-
-            _ = k_buffer.load_from_dram[1]()
-            v_buffer.load_from_shared(0)
-            block_sync_lds[lgkmcnt=0]()
-            block_sync_lds_direct_load[
-                vmcnt=k_buffer.vm_instrs_per_load + v_buffer.vm_instrs_per_load
-            ]()
-
-            barrier()
-
-            set_priority[1]()
-
-            comptime if break_mask:
-                self.apply_mask[1]()
-            mma_pv[0]()
-            self.online_softmax_step_0[1, mask=not break_mask]()
-            scheduling_hints_pv[2]()
-            set_priority[0]()
-            barrier()
-
-            _ = v_buffer.load_from_dram[0]()
-            k_buffer.load_from_shared(0)
-            block_sync_lds[lgkmcnt=0]()
-            block_sync_lds_direct_load[
-                vmcnt=k_buffer.vm_instrs_per_load + v_buffer.vm_instrs_per_load
-            ]()
-            barrier()
-
-            mma_qk[0]()
-            self.online_softmax_step_1[1]()
-            self.online_softmax_update_output()
-            scheduling_hints_qk[3]()
-            barrier()
-
-            _ = k_buffer.load_from_dram[0]()
-            v_buffer.load_from_shared(1)
-            block_sync_lds[lgkmcnt=0]()
-            block_sync_lds_direct_load[
-                vmcnt=k_buffer.vm_instrs_per_load + v_buffer.vm_instrs_per_load
-            ]()
-
-            barrier()
-
-            set_priority[1]()
-
-            comptime if break_mask:
-                self.apply_mask[0]()
-            mma_pv[1]()
-            self.online_softmax_step_0[0, mask=not break_mask]()
-
-            scheduling_hints_pv[4]()
-            set_priority[0]()
-            barrier()
-
-            _ = v_buffer.load_from_dram[1]()
-            k_buffer.load_from_shared(1)
-            block_sync_lds[lgkmcnt=0]()
-            block_sync_lds_direct_load[
-                vmcnt=k_buffer.vm_instrs_per_load + v_buffer.vm_instrs_per_load
-            ]()
-            barrier()
-
-        var iter_end: Int
-
-        comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()
-
-        comptime if is_causal_mask:
-            # for causal mask we can exit early depending on the q_tile_idx
-            var num_tiles_causal = ceildiv(
-                (self.q_tile_idx() + 1) * Self.BM + self.start_pos,
-                Self.BN,
-            )
-            var num_tiles = ceildiv(self.num_keys, Self.BN)
-            num_tiles_causal = min(num_tiles_causal, num_tiles)
-            iter_end = max((num_tiles_causal - 1) * Self.BN, 0)
-        else:
-            iter_end = max(self.num_keys - Self.BN, 0)
-
-        for _ in range(
-            UInt32(3 * Self.BN),
-            UInt32(iter_end),
-            UInt32(Self.BN * 2),
-        ):
-            var end = min(
-                self.kv_start_row + UInt32(2 * Self.BN),
-                UInt32(self.num_keys),
-            )
-            loop_over_kvcache[Self.BN](end)
-
-        mma_qk[1]()
-        self.online_softmax_step_1[0]()
-        self.online_softmax_update_output()
-        self.online_softmax_step_0[1]()
-        self.online_softmax_step_1[1]()
-        barrier()
-
-        _ = k_buffer.load_from_dram[1]()
-        v_buffer.load_from_shared(0)
-        block_sync_lds[lgkmcnt=0]()
-        block_sync_lds_direct_load[
-            vmcnt=k_buffer.vm_instrs_per_load + v_buffer.vm_instrs_per_load
-        ]()
-        barrier()
-
-        mma_pv[0]()
-        self.online_softmax_update_output()
-        barrier()
-
-        _ = v_buffer.load_from_dram[0]()
-        k_buffer.load_from_shared(0)
-        block_sync_lds[lgkmcnt=0]()
-        block_sync_lds_direct_load[
-            vmcnt=k_buffer.vm_instrs_per_load + v_buffer.vm_instrs_per_load
-        ]()
-        barrier()
-
-        mma_qk[0]()
-        self.online_softmax_step_0[0]()
-        self.online_softmax_step_1[0]()
-        barrier()
-
-        v_buffer.load_from_shared(1)
-        block_sync_lds[lgkmcnt=0]()
-        block_sync_lds_direct_load[vmcnt=v_buffer.vm_instrs_per_load]()
-        barrier()
-
-        mma_pv[1]()
-        self.online_softmax_update_output()
-        barrier()
-
-        _ = v_buffer.load_from_dram[1]()
-        k_buffer.load_from_shared(1)
-        block_sync_lds[lgkmcnt=0]()
-        block_sync_lds_direct_load[vmcnt=v_buffer.vm_instrs_per_load]()
-        barrier()
-
-        mma_qk[1]()
-        barrier()
-
-        v_buffer.load_from_shared(0)
-        block_sync_lds[lgkmcnt=0]()
-        block_sync_lds_direct_load[vmcnt=0]()
-        barrier()
-
-        mma_pv[0]()
-        self.online_softmax_full[1]()
-        barrier()
-
-        v_buffer.load_from_shared(1)
-        block_sync_lds[lgkmcnt=0]()
-        barrier()
-
-        mma_pv[1]()
-
-        barrier()
-
-        self.out_reg_buffer.apply_softmax_denominator(
-            self.softmax.rowsum_tensor
-        )
-
-        if high_warps == 0:
-            barrier[
-                schedule_barrier_after=False, schedule_barrier_before=False
-            ]()
-        self.store_output()
-
-    @always_inline
     def mha_prefill_gfx950(mut self):
         """Double-buffered gfx950 MHA with V-load-later optimization.
 
@@ -945,20 +713,34 @@ __extension Attention:
         loaded just before PV matmul (not during K load) to reduce peak
         VGPR usage by ~21, enabling double-buffer without spills.
         """
-        comptime assert Self.BK == 32, "BK must be 32"
+        comptime assert Self.BK == 32 or Self.BK == 64, "BK must be 32 or 64"
         comptime assert (
             Self.depth == 64
             or Self.depth == 128
             or Self.depth == 256
             or Self.depth == 512
         ), "depth must be 64, 128, 256, or 512"
+        comptime assert not Self.q_type.is_float8() or (
+            Self.depth == 128 or Self.depth == 256
+        ), "fp8 only supports depth=128 or 256"
+        comptime assert (
+            Self.depth % Self.BK == 0
+        ), "depth must be a multiple of BK"
+        comptime assert Self.BN % Self.BK == 0, "BN must be a multiple of BK"
         # Pre-scale Q by default for depth<=128 to eliminate per-element
         # scale multiply from the softmax hot loop. Disabled for depth>128
         # to work around LLVM Machine Instruction Scheduler crash (isReg
         # assertion in RewriteMFMAFormStage).
+        # Disable Q pre-scaling for fp8: quantization back to fp8 loses
+        # too much precision.
         comptime prescale_q = get_defined_bool[
             "PRESCALE_Q", True
-        ]() and Self.depth <= 128
+        ]() and Self.depth <= 128 and not Self.q_type.is_float8()
+
+        comptime k_swizzle = (
+            Swizzle(3, 0, 4) if Self.mma_shape[0]
+            == 32 else Optional[Swizzle](None)
+        )
 
         var warp_id = UInt32(
             readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
@@ -966,8 +748,7 @@ __extension Attention:
         var k_buffer = KVBuffer[
             mma_shape=Self.mma_shape,
             k_group_size=Self.k_group_size,
-            swizzle=Swizzle(3, 0, 4) if Self.mma_shape[0]
-            == 32 else Optional[Swizzle](None),
+            swizzle=k_swizzle,
             BN=Self.BN,
             WN=Self.WN,
             BK=Self.BK,
@@ -1021,8 +802,8 @@ __extension Attention:
             comptime for i in range(Self.depth // Self.BK):
                 comptime for k_mma in range(Self.num_k_mmas2):
                     MmaOp.mma[swap_a_b=Self.swap_a_b](
-                        self.q_buffer.mma_tile[Int(i), Int(k_mma)](),
-                        k_buffer.mma_subtile[Int(k_mma), Int(i)](),
+                        self.q_buffer.mma_tile[i, k_mma](),
+                        k_buffer.mma_subtile[k_mma, i](),
                         self.p_reg_buffer.stage_tile[0](),
                     )
 
@@ -1040,8 +821,8 @@ __extension Attention:
             comptime for i in range(Self.BN // Self.BK):
                 comptime for k_mma in range(v_buffer.num_k_mmas2):
                     PVMmaOp.mma[swap_a_b=Self.swap_a_b](
-                        self.p_reg_buffer.mma_tile[Int(i), k_mma, 0](),
-                        v_buffer.mma_subtile[k_mma, Int(i)](),
+                        self.p_reg_buffer.mma_tile[i, k_mma, 0](),
+                        v_buffer.mma_subtile[k_mma, i](),
                         self.out_reg_buffer.reg_tile,
                     )
 
@@ -1154,9 +935,11 @@ __extension Attention:
                 schedule_barrier_before=False,
                 schedule_barrier_after=False,
             ]()
+
             v_buffer.load_from_shared(slot)
 
             self.online_softmax_update_output()
+
             mma_pv()
 
         # Main loop: process tiles in pairs (double-buffered).

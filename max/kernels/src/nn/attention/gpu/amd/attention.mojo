@@ -314,11 +314,20 @@ struct Attention[
 
     comptime swap_a_b = True
     comptime use_exp2 = True
-    # we want to load 16B of data for each fragment so k_group_size is set such that
-    # k_group_size * num_matrix_fragments * size_of[Self.q_type]() = 16B
-    comptime k_group_size: Int = 16 // (
-        num_matrix_reg[Self.mma_shape[0], Self.mma_shape[2]]()
-        * size_of[Self.q_type]()
+    # We want to load 16B of data for each fragment so k_group_size is set
+    # such that k_group_size * num_matrix_fragments * size_of[q_type]() = 16B.
+    # Capped at 1 minimum and BK//MMA_K maximum to avoid exceeding tile bounds.
+    # On gfx950 this evaluates to 1; on gfx942 it can be 2.
+    comptime k_group_size: Int = max(
+        1,
+        min(
+            16
+            // (
+                num_matrix_reg[Self.mma_shape[0], Self.mma_shape[2]]()
+                * size_of[Self.q_type]()
+            ),
+            Self.BK // Self.mma_shape[2],
+        ),
     )
 
     comptime num_k_mmas2: Int = ceildiv(

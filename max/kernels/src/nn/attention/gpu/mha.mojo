@@ -268,7 +268,8 @@ struct MHADecodeDispatchMetadata(TrivialRegisterPassable):
 
 def flash_attention_hw_supported[qkv_type: DType]() -> Bool:
     return has_nvidia_gpu_accelerator() or (
-        qkv_type == DType.bfloat16 and has_amd_gpu_accelerator()
+        (qkv_type == DType.bfloat16 or qkv_type.is_float8())
+        and has_amd_gpu_accelerator()
     )
 
 
@@ -374,8 +375,10 @@ def flash_attention[
         q.dtype == cache_t.dtype == output.dtype
     ), "Q, K, V, output should have same type."
     comptime assert (
-        q.dtype == DType.float32 or q.dtype.is_half_float()
-    ), "Only support single and half precision."
+        q.dtype == DType.float32
+        or q.dtype.is_half_float()
+        or (q.dtype.is_float8() and has_amd_gpu_accelerator())
+    ), "Only support single, half, and float8 (AMD only) precision."
 
     # TODO docstring
     @always_inline
@@ -1345,6 +1348,7 @@ def flash_attention[
 def flash_attention[
     mask_t: MHAMask,
     dtype: DType,
+    output_type: DType,
     q_tt_layout: TensorLayout,
     k_tt_layout: TensorLayout,
     v_tt_layout: TensorLayout,
@@ -1362,7 +1366,7 @@ def flash_attention[
 ](
     output: TileTensor[
         mut=True,
-        dtype,
+        output_type,
         output_tt_layout,
         address_space=AddressSpace.GENERIC,
         ...,
@@ -1451,8 +1455,10 @@ def flash_attention_ragged[
     ), "Q, K, V, output should have same type."
 
     comptime assert (
-        q.dtype == DType.float32 or q.dtype.is_half_float()
-    ), "Only support single and half precision."
+        q.dtype == DType.float32
+        or q.dtype.is_half_float()
+        or (q.dtype.is_float8() and has_amd_gpu_accelerator())
+    ), "Only support single, half, and float8 (AMD only) precision."
 
     # Runtime dimensions.
     # For ragged inputs: [total_seq_len, num_heads, head_dim]
@@ -1725,8 +1731,10 @@ def mha[
             # ranges (no FULL_MASK gaps in the middle).  This holds for
             # CausalMask but NOT for OrMask-based masks like
             # ChunkedCausalMask, which can have interior FULL_MASK tiles.
+            # FP8 does not yet support the structured path.
             comptime use_structured = (
                 config.depth <= 256
+                and not config.dtype.is_float8()
                 and not get_defined_bool["MHA_NO_STRUCTURED", False]()
                 and _type_is_eq[mask_t, CausalMask]()
             )

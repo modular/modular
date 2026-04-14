@@ -20,7 +20,6 @@ _EXTRA_CONSTRAINTS = {
     "test_conv_transposed_cudnn.mojo": ["//:nvidia_gpu"],
     "test_irfft.mojo": ["//:nvidia_gpu"],
     "test_flash_attention_amd.mojo": ["//:amd_gpu"],
-    "test_mha_causal_mask_amd.mojo": ["//:amd_gpu"],  # FIXME: KERN-1448, KERN-1437, KERN-1429
     "test_mha_sink_weights_amd.mojo": ["//:amd_gpu"],
     "test_mha_operand_tma.mojo": select({
         "//:h100_gpu": [],
@@ -240,6 +239,7 @@ _FILECHECK_TESTS = [
         ["**/*.mojo"],
         exclude = _FILECHECK_TESTS + [
             "test_mha_causal_mask.mojo",
+            "test_mha_causal_mask_amd.mojo",
         ],
     )
 ]
@@ -304,4 +304,39 @@ _MHA_CAUSAL_MASK_DEPTHS = {
         ],
     )
     for depth, constraints in _MHA_CAUSAL_MASK_DEPTHS.items()
+]
+
+# test_mha_causal_mask_amd.mojo split by dtype via -D USE_FP8.
+# FP8 is prefill-only on AMD.
+_MHA_CAUSAL_MASK_AMD_DTYPES = {
+    "bf16": [],
+    "fp8": [
+        "-D",
+        "USE_FP8=True",
+    ],
+}
+
+[
+    mojo_test(
+        name = "test_mha_causal_mask_amd_{}.mojo.test".format(dtype),
+        size = "large",
+        srcs = ["test_mha_causal_mask_amd.mojo"],
+        copts = copts,
+        exec_properties = {
+            "test.resources:gpu-memory": "3",
+        },
+        tags = ["gpu"],
+        target_compatible_with = [
+            "//:has_gpu",
+            "//:amd_gpu",
+        ],
+        deps = [
+            "//max:internal_utils",
+            "//max:linalg",
+            "//max:nn",
+            "//max:testdata",
+            "@mojo//:std",
+        ],
+    )
+    for dtype, copts in _MHA_CAUSAL_MASK_AMD_DTYPES.items()
 ]
