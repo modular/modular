@@ -505,12 +505,12 @@ class WanTransformer(CompiledComponent):
                 self._get_cached_weight_registries(state_dict)
             )
 
-            self._model.pre._load(pre_registry)
-            for compiled_block, block_registry in zip(
+            self._model.pre.reload(pre_registry)
+            for compiled_block, compiled_reg in zip(
                 self._model.blocks, block_registries, strict=True
             ):
-                compiled_block._load(block_registry)
-            self._model.post._load(post_registry)
+                compiled_block.reload(compiled_reg)
+            self._model.post.reload(post_registry)
 
     def _try_dual_load(self) -> bool:
         """Try to compile secondary transformer on GPU if VRAM sufficient."""

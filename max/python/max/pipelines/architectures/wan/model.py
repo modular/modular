@@ -394,12 +394,12 @@ class WanTransformerModel(ComponentModel):
                 self._get_cached_weight_registries(state_dict)
             )
 
-            self.model.pre._load(pre_registry)
-            for compiled_block, block_registry in zip(
+            self.model.pre.reload(pre_registry)
+            for compiled_block, compiled_reg in zip(
                 self.model.blocks, block_registries, strict=True
             ):
-                compiled_block._load(block_registry)
-            self.model.post._load(post_registry)
+                compiled_block.reload(compiled_reg)
+            self.model.post.reload(post_registry)
 
     def load_model(  # type: ignore[override]
         self,

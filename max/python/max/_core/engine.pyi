@@ -275,7 +275,7 @@ class Model:
           path: The filename where the mef is exported to.
         """
 
-    def _load(self, weights_registry: Mapping[str, Any]) -> None: ...
+    def reload(self, weights_registry: Mapping[str, Any]) -> None: ...
 
 class InferenceSession:
     """
@@ -311,6 +311,9 @@ class InferenceSession:
                 which lets the runtime choose automatically.
         """
 
+    def _load_all(
+        self, compiled: Model, weights_registry: Mapping[str, Any]
+    ) -> list[Model]: ...
     def compile_from_path(
         self,
         model_path: str | os.PathLike,
