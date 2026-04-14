@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.runtime.asyncrt import create_task
+from std.runtime.asyncrt import create_raising_task, create_task
 
-from std.testing import TestSuite
+from std.testing import assert_equal, TestSuite
 
 
 # CHECK-LABEL: test_runtime_task
@@ -53,6 +53,21 @@ def test_runtime_taskgroup() raises:
     var t1 = create_task(run_as_group())
     # CHECK: 6
     print(t0.wait() + t1.wait())
+
+
+# CHECK-LABEL: test_runtime_unified_async_memory_result_raises
+def test_runtime_unified_async_memory_result_raises() raises:
+    print("== test_runtime_unified_async_memory_result_raises")
+    var prefix = String("hello")
+
+    async def build_message() raises unified {mut prefix} -> String:
+        return prefix + String(" world")
+
+    var task = create_raising_task(build_message())
+    var result = task^.wait()
+    # CHECK: hello world
+    print(result)
+    assert_equal(result, "hello world")
 
 
 def main() raises:
