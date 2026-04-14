@@ -66,7 +66,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     def __add__(
         self, rhs: StringLiteral
     ) -> StringLiteral[
