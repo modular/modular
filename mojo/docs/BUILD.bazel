@@ -38,8 +38,10 @@ genrule(
   mkdir -p mojosite/docs
   mv docs_tmp/* mojosite/docs/
   rm -rf docs_tmp
+  rm -f mojosite/docs/redirects.js
   cp -r internal_tmp/* mojosite/
   rm -rf internal_tmp
+  mv mojosite/redirects.js mojosite/docs/redirects.js
 
   # Generate final output
   cd mojosite
