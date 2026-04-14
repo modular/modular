@@ -75,10 +75,12 @@ class DenoiseStep(Module):
             [latent_image_ids, image_latent_ids], axis=1
         )
 
-        # Cast timestep and guidance to model dtype (accepted as float32
-        # to avoid bfloat16 NumPy gymnastics on the host side).
-        timestep = ops.cast(timestep, self._dtype)
-        guidance = ops.cast(guidance, self._dtype)
+        # Keep timestep and guidance as float32 here.  The transformer
+        # multiplies by 1000.0 *before* casting to model dtype
+        # (flux2.py:628-629), so leaving them in float32 avoids bf16
+        # rounding on the raw sigma which shifts the x1000 result by
+        # up to 4 ulps for smaller sigmas — matching the precision path
+        # used by diffusers/torch.
 
         # Transformer forward.
         (noise_pred,) = self.transformer(
@@ -132,11 +134,11 @@ class DenoiseStep(Module):
                 shape=["batch", "text_seq_len", joint_attention_dim],
                 device=self._device,
             ),
-            # timestep: (B,) float32 — cast to model dtype in-graph
+            # timestep: (B,) float32 — transformer casts after x1000
             TensorType(DType.float32, shape=["batch"], device=self._device),
             # dt: (1,) float32
             TensorType(DType.float32, shape=[1], device=self._device),
-            # guidance: (B,) float32 — cast to model dtype in-graph
+            # guidance: (B,) float32 — transformer casts after x1000
             TensorType(DType.float32, shape=["batch"], device=self._device),
             # latent_image_ids: (B, image_seq_len, 4)
             TensorType(
