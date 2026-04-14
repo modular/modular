@@ -419,6 +419,8 @@ class ExchangeMetadataResult:
     bytes_per_page: int
     total_num_pages: int
     base_addr: int
+    hostname: str = ""
+    backend: str = ""
 
 
 def build_exchange_metadata_request(
@@ -455,4 +457,6 @@ def parse_exchange_metadata_response(data: bytes) -> ExchangeMetadataResult:
         bytes_per_page=meta.bytes_per_page,
         total_num_pages=meta.total_num_pages,
         base_addr=meta.base_addr,
+        hostname=meta.hostname,
+        backend=meta.backend,
     )

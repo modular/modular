@@ -42,18 +42,22 @@ class ExchangeMetadataRequest(_message.Message):
     def __init__(self, agent_metadata: _Optional[bytes] = ..., bytes_per_page: _Optional[int] = ...) -> None: ...
 
 class ExchangeMetadataResponse(_message.Message):
-    __slots__ = ("agent_metadata", "agent_name", "bytes_per_page", "total_num_pages", "base_addr")
+    __slots__ = ("agent_metadata", "agent_name", "bytes_per_page", "total_num_pages", "base_addr", "hostname", "backend")
     AGENT_METADATA_FIELD_NUMBER: _ClassVar[int]
     AGENT_NAME_FIELD_NUMBER: _ClassVar[int]
     BYTES_PER_PAGE_FIELD_NUMBER: _ClassVar[int]
     TOTAL_NUM_PAGES_FIELD_NUMBER: _ClassVar[int]
     BASE_ADDR_FIELD_NUMBER: _ClassVar[int]
+    HOSTNAME_FIELD_NUMBER: _ClassVar[int]
+    ACTIVE_BACKEND_FIELD_NUMBER: _ClassVar[int]
     agent_metadata: bytes
     agent_name: str
     bytes_per_page: int
     total_num_pages: int
     base_addr: int
-    def __init__(self, agent_metadata: _Optional[bytes] = ..., agent_name: _Optional[str] = ..., bytes_per_page: _Optional[int] = ..., total_num_pages: _Optional[int] = ..., base_addr: _Optional[int] = ...) -> None: ...
+    hostname: str
+    backend: str
+    def __init__(self, agent_metadata: _Optional[bytes] = ..., agent_name: _Optional[str] = ..., bytes_per_page: _Optional[int] = ..., total_num_pages: _Optional[int] = ..., base_addr: _Optional[int] = ..., hostname: _Optional[str] = ..., backend: _Optional[str] = ...) -> None: ...
 
 class BlockSequence(_message.Message):
     __slots__ = ("parent_seq_hash", "seq_hashes")

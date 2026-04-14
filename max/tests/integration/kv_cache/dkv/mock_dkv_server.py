@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+import socket
 import threading
 from collections.abc import Sequence
 
@@ -53,13 +54,24 @@ class MockDKVServer:
         address: The ZMQ endpoint to bind on.
     """
 
-    def __init__(self, address: str) -> None:
+    def __init__(
+        self,
+        address: str,
+        *,
+        mock_hostname: str = "",
+        mock_backend: str = "",
+    ) -> None:
         self._address = address
         self._bound_address: str | None = None
         self._ready_event = threading.Event()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
+
+        # ExchangeMetadata response fields. Default to local hostname
+        # and empty backend to match legacy (pre-EFA) behavior.
+        self._mock_hostname = mock_hostname or socket.gethostname()
+        self._mock_backend = mock_backend
 
         # Configurable behavior
         self._error_response: str | None = None
@@ -373,6 +385,8 @@ class MockDKVServer:
             bytes_per_page=req.bytes_per_page or _DEFAULT_BLOCK_SIZE,
             total_num_pages=64,
             base_addr=0x1000,
+            hostname=self._mock_hostname,
+            backend=self._mock_backend,
         )
         resp = RpcResponse(exchange_metadata=meta)
         return resp.SerializeToString()
