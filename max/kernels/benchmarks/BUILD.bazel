@@ -75,6 +75,10 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),  # Requires NVIDIA GPU warp primitives
     "gpu/bench_cp_async_bulk.mojo": ["//:b200_gpu"],  # cp.async.bulk requires SM100+ architecture
+    "gpu/comm/bench_scatter.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: GEN-535
 }
 
 _CPU_TESTS = glob(
