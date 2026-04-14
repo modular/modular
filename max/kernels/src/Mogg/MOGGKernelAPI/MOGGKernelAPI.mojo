@@ -243,6 +243,7 @@ from nn.normalization import (
     rms_norm,
     rms_norm_fused_fp8,
     rms_norm_fused_residual_add,
+    rms_norm_rope_gpu,
 )
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
 from nn.pad_gpu import pad_constant as pad_constant_gpu
@@ -3350,6 +3351,104 @@ struct ReduceRMSNorm:
         gamma: InputTensor[dtype=dtype, rank=1, ...],
         epsilon: Scalar[dtype=dtype],
         weight_offset: Scalar[dtype=dtype],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("mo.reduce.rms_norm.RoPE")
+struct ReduceRMSNormRoPE:
+    """Fuses RMS normalization and Rotary Position Embedding (RoPE) into one operation.
+
+    Computes per-row RMS normalization scaled by `weight`, then applies RoPE to
+    the normalized values using the provided cosine and sine tables.  The last
+    dimension of the input must be an even number.
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        cos_sin_dtype: DType,
+        rank: Int,
+        target: StaticString,
+        multiply_before_cast: Bool = True,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        weight: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        cos_vals: FusedInputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+        sin_vals: FusedInputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def cos_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
+            return cos_vals._fused_load[width=width](
+                rebind[IndexList[cos_vals.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def sin_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
+            return sin_vals._fused_load[width=width](
+                rebind[IndexList[sin_vals.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: Int, alignment: Int
+        ](coords: IndexList[rank], val: SIMD[dtype, width]):
+            output._lambda_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        rms_norm_rope_gpu[
+            input_fn,
+            cos_fn,
+            sin_fn,
+            output_fn,
+            multiply_before_cast,
+        ](
+            input.shape(),
+            weight.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            cos_vals.to_tile_tensor[DType.int64](),
+            sin_vals.to_tile_tensor[DType.int64](),
+            ctx.get_device_context(),
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        cos_sin_dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        weight: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        cos_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+        sin_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
     ) -> IndexList[rank]:
         return input.shape()
 

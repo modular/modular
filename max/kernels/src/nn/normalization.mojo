@@ -2337,6 +2337,673 @@ def rms_norm_fused_residual_add_cpu[
     intermediate_buffer_ptr.free()
 
 
+# ===-----------------------------------------------------------------------===#
+# RMS Norm + RoPE (fused)
+# ===-----------------------------------------------------------------------===#
+
+
+def _rms_norm_rope_gpu_warp_tiling[
+    mut: Bool,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+    input_dtype: DType,
+    cos_sin_dtype: DType,
+    //,
+    simd_width: Int,
+    max_warps_per_block: Int,
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
+        input_dtype, width
+    ],
+    cos_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
+        cos_sin_dtype, width
+    ],
+    sin_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
+        cos_sin_dtype, width
+    ],
+    output_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int, val: SIMD[input_dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+](
+    gamma: TileTensor[input_dtype, LayoutType, origin],
+    epsilon: Scalar[input_dtype],
+    weight_offset: Scalar[input_dtype],
+    num_cols: Int,
+):
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime align = align_of[SIMD[input_dtype, simd_width]]()
+    comptime accum_type = get_accum_type[input_dtype]()
+
+    # Shared memory to store raw (un-normalized) input values so threads can
+    # read the "paired" element (col ± half_cols) for RoPE and re-normalize
+    # it on-the-fly.  Storing raw input avoids the risk of exceeding the
+    # shared-memory budget that could arise from storing normalized values in
+    # a different precision.
+    var shared_input = external_memory[
+        Scalar[input_dtype],
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[SIMD[input_dtype, simd_width]](),
+        name="rms_norm_rope_normed",
+    ]()
+
+    var eps_accum = epsilon.cast[accum_type]()
+    var weight_offset_accum = weight_offset.cast[accum_type]()
+
+    var vec_data = SIMD[accum_type, simd_width](0)
+    var tid = thread_idx.x
+    var row = block_idx.x
+    var idx = tid * simd_width
+
+    with PDL():
+        var gamma_val = SIMD[input_dtype, simd_width](0)
+        if idx < num_cols:
+            vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
+            gamma_val = gamma.load[width=simd_width, alignment=align](
+                Coord(Idx(idx))
+            )
+
+        # Compute RMS norm factor.
+        var thread_m2: Scalar[accum_type] = (vec_data**2).reduce_add()
+        var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
+            thread_m2
+        )
+        var norm_factor = rsqrt(
+            (row_m2 / Scalar[accum_type](num_cols)) + eps_accum
+        )
+
+        # Compute normed value in registers and store raw input to shared
+        # memory for paired-element access during the RoPE step.
+        var norm_val: SIMD[input_dtype, simd_width] = 0
+        if idx < num_cols:
+            comptime if multiply_before_cast:
+                var gamma_accum = (
+                    gamma_val.cast[accum_type]() + weight_offset_accum
+                )
+                norm_val = (vec_data * norm_factor * gamma_accum).cast[
+                    input_dtype
+                ]()
+            else:
+                norm_val = (vec_data * norm_factor).cast[input_dtype]() * (
+                    gamma_val + weight_offset
+                )
+            shared_input.store[alignment=align](
+                idx, vec_data.cast[input_dtype]()
+            )
+
+        barrier()
+
+        # Apply RoPE: result[col] = normed[col]*cos[col] + rotated[col]*sin[col]
+        # where rotated[col] = -normed[col+half] for col < half, else normed[col-half].
+        # The paired normed value is recomputed from the raw input in shared memory.
+        if idx < num_cols:
+            var half_cols = num_cols // 2
+            var cos_val = cos_fn[simd_width](row, idx).cast[accum_type]()
+            var sin_val = sin_fn[simd_width](row, idx).cast[accum_type]()
+            var normed_col = norm_val.cast[accum_type]()
+
+            # Since half_cols % simd_width == 0 (guaranteed by dispatch), all
+            # simd_width elements belong entirely to one half.
+            var paired_idx = (
+                idx + half_cols if idx < half_cols else idx - half_cols
+            )
+            var paired_raw = shared_input.load[
+                width=simd_width, alignment=align
+            ](paired_idx).cast[accum_type]()
+            var paired_gamma = gamma.load[width=simd_width, alignment=align](
+                Coord(Idx(paired_idx))
+            )
+            var paired_normed: SIMD[accum_type, simd_width]
+            # Cast through input_dtype to reproduce the same rounding that
+            # would occur if the paired normed value had been stored and
+            # reloaded from a typed buffer (matching the CPU reference).
+            comptime if multiply_before_cast:
+                var paired_gamma_accum = (
+                    paired_gamma.cast[accum_type]() + weight_offset_accum
+                )
+                paired_normed = (
+                    (paired_raw * norm_factor * paired_gamma_accum)
+                    .cast[input_dtype]()
+                    .cast[accum_type]()
+                )
+            else:
+                paired_normed = (
+                    (paired_raw * norm_factor).cast[input_dtype]()
+                    * (paired_gamma + weight_offset)
+                ).cast[accum_type]()
+
+            var rotated: SIMD[accum_type, simd_width]
+            if idx < half_cols:
+                rotated = -paired_normed
+            else:
+                rotated = paired_normed
+
+            var result = (normed_col * cos_val + rotated * sin_val).cast[
+                input_dtype
+            ]()
+            output_fn[alignment=align](row, idx, result)
+
+
+def _rms_norm_rope_gpu_warp_tiling_128[
+    mut: Bool,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+    input_dtype: DType,
+    cos_sin_dtype: DType,
+    //,
+    simd_width: Int,
+    warps_per_block: Int,
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
+        input_dtype, width
+    ],
+    cos_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
+        cos_sin_dtype, width
+    ],
+    sin_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
+        cos_sin_dtype, width
+    ],
+    output_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int, val: SIMD[input_dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+](
+    gamma: TileTensor[input_dtype, LayoutType, origin],
+    epsilon: Scalar[input_dtype],
+    weight_offset: Scalar[input_dtype],
+    num_rows: Int,
+    num_cols: Int,
+):
+    """Runs the fused RMSNorm+RoPE kernel optimized for small column counts (cols <= 128).
+
+    Packs two rows per warp by splitting each 32-thread warp into two 16-thread
+    half-warps, one per row.  Half-warp reductions via `lane_group_sum()`
+    replace the full `block_reduce()`, and `syncwarp()` provides the
+    shared-memory fence (no cross-warp shmem access occurs, so `__syncthreads`
+    is not required).  Shared memory layout: `[warp_id * 2 + sub_warp_id][col]`,
+    total size = `warps_per_block * 2 * num_cols * sizeof(input_dtype)`.
+
+    Parameters:
+        mut: Whether the gamma tensor's origin is mutable.
+        LayoutType: Memory layout type of the gamma tensor.
+        origin: Origin of the gamma tensor's memory.
+        input_dtype: Data type of the input and output tensors.
+        cos_sin_dtype: Data type of the cosine and sine tables.
+        simd_width: Number of elements per SIMD vector per thread.
+        warps_per_block: Number of warps per thread block; each warp handles
+            two rows via two 16-thread half-warps.
+        input_fn: Callback that loads `simd_width` input elements at
+            `(row, col)`.
+        cos_fn: Callback that loads `simd_width` cosine values at `(row, col)`.
+        sin_fn: Callback that loads `simd_width` sine values at `(row, col)`.
+        output_fn: Callback that stores `simd_width` result elements at
+            `(row, col)` with the given alignment.
+        multiply_before_cast: If `True`, gamma scaling is applied in
+            accumulation precision before casting back to `input_dtype`.
+
+    Args:
+        gamma: RMS normalization scale weights with shape `[num_cols]`.
+        epsilon: Small constant added to the variance for numerical stability.
+        weight_offset: Additive offset applied to `gamma` before scaling.
+        num_rows: Total number of rows to process.
+        num_cols: Hidden dimension size; must be <= 128 and satisfy
+            `cols % (2 * simd_width) == 0`.
+    """
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime half_warp_size = WARP_SIZE // 2
+    comptime align = align_of[SIMD[input_dtype, simd_width]]()
+    comptime accum_type = get_accum_type[input_dtype]()
+
+    # Raw input is stored here so each half-warp can read the paired column
+    # (col ± half_cols) during the RoPE step without a second global load.
+    var shared_input = external_memory[
+        Scalar[input_dtype],
+        address_space=AddressSpace.SHARED,
+        alignment=align_of[SIMD[input_dtype, simd_width]](),
+        name="rms_norm_rope_normed_128",
+    ]()
+
+    var eps_accum = epsilon.cast[accum_type]()
+    var weight_offset_accum = weight_offset.cast[accum_type]()
+
+    var tid = thread_idx.x
+    var local_warp_id = ufloordiv(tid, WARP_SIZE)
+    var sub_warp_id = ufloordiv(umod(tid, WARP_SIZE), half_warp_size)
+    var local_tid = umod(tid, half_warp_size)
+    var idx = local_tid * simd_width
+
+    # Each warp handles 2 rows; total rows per block = warps_per_block * 2.
+    var block_row = block_idx.x * warps_per_block * 2
+    var row = block_row + local_warp_id * 2 + Int(sub_warp_id)
+
+    with PDL():
+        var vec_data = SIMD[accum_type, simd_width](0)
+        var gamma_val = SIMD[input_dtype, simd_width](0)
+
+        if row < num_rows and idx < num_cols:
+            vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
+            gamma_val = gamma.load[width=simd_width, alignment=align](
+                Coord(Idx(idx))
+            )
+
+        # Half-warp reduction: each 16-thread group independently reduces
+        # its own row's sum-of-squares.
+        var thread_m2: Scalar[accum_type] = (vec_data**2).reduce_add()
+        var row_m2 = warp.lane_group_sum[num_lanes=half_warp_size](thread_m2)
+        var norm_factor = rsqrt(
+            (row_m2 / Scalar[accum_type](num_cols)) + eps_accum
+        )
+
+        # Compute normed value and write raw input to this row's shmem slot.
+        var norm_val: SIMD[input_dtype, simd_width] = 0
+        var shmem_row_offset = (local_warp_id * 2 + Int(sub_warp_id)) * num_cols
+
+        if row < num_rows and idx < num_cols:
+            comptime if multiply_before_cast:
+                var gamma_accum = (
+                    gamma_val.cast[accum_type]() + weight_offset_accum
+                )
+                norm_val = (vec_data * norm_factor * gamma_accum).cast[
+                    input_dtype
+                ]()
+            else:
+                norm_val = (vec_data * norm_factor).cast[input_dtype]() * (
+                    gamma_val + weight_offset
+                )
+            shared_input.store[alignment=align](
+                shmem_row_offset + idx, vec_data.cast[input_dtype]()
+            )
+
+        # syncwarp() is sufficient: each warp's shmem section is disjoint from
+        # every other warp's, so only intra-warp ordering is required.
+        syncwarp()
+
+        # Apply RoPE using the paired element re-normalized from shared memory.
+        if row < num_rows and idx < num_cols:
+            var half_cols = num_cols // 2
+            var cos_val = cos_fn[simd_width](row, idx).cast[accum_type]()
+            var sin_val = sin_fn[simd_width](row, idx).cast[accum_type]()
+            var normed_col = norm_val.cast[accum_type]()
+
+            # paired_idx is in the same row's shmem slot (within [0, num_cols)).
+            var paired_idx = (
+                idx + half_cols if idx < half_cols else idx - half_cols
+            )
+            var paired_raw = shared_input.load[
+                width=simd_width, alignment=align
+            ](shmem_row_offset + paired_idx).cast[accum_type]()
+            var paired_gamma = gamma.load[width=simd_width, alignment=align](
+                Coord(Idx(paired_idx))
+            )
+            var paired_normed: SIMD[accum_type, simd_width]
+            comptime if multiply_before_cast:
+                var paired_gamma_accum = (
+                    paired_gamma.cast[accum_type]() + weight_offset_accum
+                )
+                paired_normed = (
+                    (paired_raw * norm_factor * paired_gamma_accum)
+                    .cast[input_dtype]()
+                    .cast[accum_type]()
+                )
+            else:
+                paired_normed = (
+                    (paired_raw * norm_factor).cast[input_dtype]()
+                    * (paired_gamma + weight_offset)
+                ).cast[accum_type]()
+
+            var rotated: SIMD[accum_type, simd_width]
+            if idx < half_cols:
+                rotated = -paired_normed
+            else:
+                rotated = paired_normed
+
+            var result = (normed_col * cos_val + rotated * sin_val).cast[
+                input_dtype
+            ]()
+            output_fn[alignment=align](row, idx, result)
+
+
+def _rms_norm_rope_gpu_block[
+    mut: Bool,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+    input_dtype: DType,
+    cos_sin_dtype: DType,
+    //,
+    simd_width: Int,
+    max_warps_per_block: Int,
+    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
+        input_dtype, width
+    ],
+    cos_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
+        cos_sin_dtype, width
+    ],
+    sin_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
+        cos_sin_dtype, width
+    ],
+    output_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int, val: SIMD[input_dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+](
+    gamma: TileTensor[input_dtype, LayoutType, origin],
+    epsilon: Scalar[input_dtype],
+    weight_offset: Scalar[input_dtype],
+    num_cols: Int,
+):
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    comptime align = align_of[SIMD[input_dtype, simd_width]]()
+    comptime accum_type = get_accum_type[input_dtype]()
+
+    with PDL():
+        var tid = thread_idx.x
+        var row = block_idx.x
+        var eps_accum = epsilon.cast[accum_type]()
+        var weight_offset_accum = weight_offset.cast[accum_type]()
+
+        # Pass 1: Compute sum-of-squares for norm factor.
+        var thread_m2 = Scalar[accum_type](0)
+        for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
+            var offset = x * block_dim.x * simd_width + tid * simd_width
+            if offset < num_cols:
+                var v = input_fn[simd_width](row, offset).cast[accum_type]()
+                thread_m2 += (v**2).reduce_add()
+
+        var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
+            thread_m2
+        )
+        var norm_factor = rsqrt(
+            (row_m2 / Scalar[accum_type](num_cols)) + eps_accum
+        )
+
+        # Pass 2: Load own and paired raw inputs from global memory, normalize
+        # both on-the-fly using the shared norm_factor, apply RoPE, and write
+        # output.  No shared memory is required: the paired element is fetched
+        # directly from global memory, avoiding any shared-memory size concern.
+        var half_cols = num_cols // 2
+        for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
+            var offset = x * block_dim.x * simd_width + tid * simd_width
+            if offset < num_cols:
+                var v = input_fn[simd_width](row, offset).cast[accum_type]()
+                var gamma_val = gamma.load[width=simd_width, alignment=align](
+                    Coord(Idx(offset))
+                )
+                var norm_val: SIMD[accum_type, simd_width]
+                # Cast through input_dtype to reproduce the rounding that would
+                # occur if the normed value were stored and reloaded from a typed
+                # buffer (matching the CPU reference semantics).
+                comptime if multiply_before_cast:
+                    var gamma_accum = (
+                        gamma_val.cast[accum_type]() + weight_offset_accum
+                    )
+                    norm_val = (
+                        (v * norm_factor * gamma_accum)
+                        .cast[input_dtype]()
+                        .cast[accum_type]()
+                    )
+                else:
+                    norm_val = (
+                        (v * norm_factor).cast[input_dtype]()
+                        * (gamma_val + weight_offset)
+                    ).cast[accum_type]()
+
+                var paired_offset = (
+                    offset + half_cols if offset
+                    < half_cols else offset - half_cols
+                )
+                var paired_v = input_fn[simd_width](row, paired_offset).cast[
+                    accum_type
+                ]()
+                var paired_gamma_val = gamma.load[
+                    width=simd_width, alignment=align
+                ](Coord(Idx(paired_offset)))
+                var paired_norm_val: SIMD[accum_type, simd_width]
+                comptime if multiply_before_cast:
+                    var paired_gamma_accum = (
+                        paired_gamma_val.cast[accum_type]()
+                        + weight_offset_accum
+                    )
+                    paired_norm_val = (
+                        (paired_v * norm_factor * paired_gamma_accum)
+                        .cast[input_dtype]()
+                        .cast[accum_type]()
+                    )
+                else:
+                    paired_norm_val = (
+                        (paired_v * norm_factor).cast[input_dtype]()
+                        * (paired_gamma_val + weight_offset)
+                    ).cast[accum_type]()
+
+                var rotated: SIMD[accum_type, simd_width]
+                if offset < half_cols:
+                    rotated = -paired_norm_val
+                else:
+                    rotated = paired_norm_val
+
+                var cos_val = cos_fn[simd_width](row, offset).cast[accum_type]()
+                var sin_val = sin_fn[simd_width](row, offset).cast[accum_type]()
+                var result = (norm_val * cos_val + rotated * sin_val).cast[
+                    input_dtype
+                ]()
+                output_fn[alignment=align](row, offset, result)
+
+
+def rms_norm_rope_gpu[
+    input_dtype: DType,
+    cos_sin_dtype: DType,
+    rank: Int,
+    //,
+    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        input_dtype, width
+    ],
+    cos_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        cos_sin_dtype, width
+    ],
+    sin_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+        cos_sin_dtype, width
+    ],
+    output_fn: def[width: Int, alignment: Int](
+        IndexList[rank], SIMD[input_dtype, width]
+    ) capturing -> None,
+    multiply_before_cast: Bool,
+    pdl_level: PDLLevel = PDLLevel(1),
+](
+    shape: IndexList[rank, ...],
+    gamma: TileTensor[input_dtype, ...],
+    epsilon: Scalar[input_dtype],
+    weight_offset: Scalar[input_dtype],
+    cos_vals: TileTensor[cos_sin_dtype, ...],
+    sin_vals: TileTensor[cos_sin_dtype, ...],
+    ctx: DeviceContext,
+) raises:
+    """Fused RMS normalization followed by Rotary Position Embedding (RoPE) for GPU.
+
+    Computes:
+      normed = rms_norm(input, gamma, epsilon, weight_offset)
+      x1, x2 = split(normed, axis=-1)          # halves along last dim
+      rotated = concat(-x2, x1, axis=-1)
+      output = normed * cos_vals + rotated * sin_vals
+
+    The last dimension must be a known even number.
+    """
+    comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
+    if rank == 0:
+        return
+
+    var cols = Int(gamma.dim[0]())
+    if cols == 0:
+        return
+
+    var rows = shape.flattened_length() // cols
+
+    @parameter
+    @always_inline
+    def output_fn_2d[
+        simd_width: Int, alignment: Int
+    ](row: Int, col: Int, val: SIMD[input_dtype, simd_width]) -> None:
+        var indices = _get_start_indices_of_nth_subvolume(row, shape)
+        indices[rank - 1] = col
+        output_fn[simd_width, alignment](indices.canonicalize(), val)
+
+    @parameter
+    @always_inline
+    def input_fn_2d[
+        simd_width: Int
+    ](row: Int, col: Int) -> SIMD[input_dtype, simd_width]:
+        var indices = _get_start_indices_of_nth_subvolume(row, shape)
+        indices[rank - 1] = col
+        return input_fn[simd_width](indices.canonicalize())
+
+    @parameter
+    @always_inline
+    def cos_fn_2d[
+        simd_width: Int
+    ](row: Int, col: Int) -> SIMD[cos_sin_dtype, simd_width]:
+        var indices = _get_start_indices_of_nth_subvolume(row, shape)
+        indices[rank - 1] = col
+        return cos_fn[simd_width](indices.canonicalize())
+
+    @parameter
+    @always_inline
+    def sin_fn_2d[
+        simd_width: Int
+    ](row: Int, col: Int) -> SIMD[cos_sin_dtype, simd_width]:
+        var indices = _get_start_indices_of_nth_subvolume(row, shape)
+        indices[rank - 1] = col
+        return sin_fn[simd_width](indices.canonicalize())
+
+    comptime simd_width = simd_width_of[input_dtype, target=get_gpu_target()]()
+    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+
+    var grid_dim = rows
+    var block_dim = min(
+        ceildiv(ceildiv(cols, simd_width), WARP_SIZE) * WARP_SIZE,
+        WARP_SIZE * max_warps_per_block,
+    )
+
+    var shared_mem_size = (
+        ceildiv(cols, simd_width) * simd_width * size_of[input_dtype]()
+    )
+
+    # The paired SIMD load from shared memory (at col ± half_cols) is aligned
+    # only if half_cols is a multiple of simd_width, i.e. cols % (2*simd_width) == 0.
+    if (
+        input_dtype == DType.bfloat16
+        and cols <= 128
+        and cols % (2 * simd_width) == 0
+    ):
+        # Two rows per warp: pack two half-warps per warp, each handling one
+        # row.  Mirrors the rms_norm_gpu_warp_tiling_128 optimization.
+        # warps_per_block=2 was found optimal empirically (matches rms_norm_gpu).
+        comptime warps_per_block = 2
+        block_dim = warps_per_block * WARP_SIZE
+        grid_dim = ceildiv(rows, warps_per_block * 2)
+        shared_mem_size = warps_per_block * 2 * cols * size_of[input_dtype]()
+
+        comptime kernel = _rms_norm_rope_gpu_warp_tiling_128[
+            mut=gamma.mut,
+            LayoutType=gamma.LayoutType,
+            origin=gamma.origin,
+            simd_width,
+            warps_per_block,
+            input_fn_2d,
+            cos_fn_2d,
+            sin_fn_2d,
+            output_fn_2d,
+            multiply_before_cast=multiply_before_cast,
+        ]
+        ctx.enqueue_function[kernel, kernel](
+            gamma,
+            epsilon,
+            weight_offset,
+            rows,
+            cols,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            attributes=pdl_launch_attributes(pdl_level),
+            shared_mem_bytes=shared_mem_size,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(shared_mem_size)
+            ),
+        )
+    elif cols % (2 * simd_width) == 0 and cols <= (
+        WARP_SIZE * simd_width * max_warps_per_block
+    ):
+        # Warp-tiling path: all elements fit in registers; use shmem only for
+        # the RoPE cross-half access.
+        comptime kernel = _rms_norm_rope_gpu_warp_tiling[
+            mut=gamma.mut,
+            LayoutType=gamma.LayoutType,
+            origin=gamma.origin,
+            simd_width,
+            max_warps_per_block,
+            input_fn_2d,
+            cos_fn_2d,
+            sin_fn_2d,
+            output_fn_2d,
+            multiply_before_cast=multiply_before_cast,
+        ]
+        ctx.enqueue_function[kernel, kernel](
+            gamma,
+            epsilon,
+            weight_offset,
+            cols,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            attributes=pdl_launch_attributes(pdl_level),
+            shared_mem_bytes=shared_mem_size,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(shared_mem_size)
+            ),
+        )
+    elif cols % (2 * simd_width) == 0:
+        # Block path, aligned: large rows that exceed warp-tiling capacity.
+        # No dynamic shared memory needed: paired elements are re-loaded from
+        # global memory and normalized on-the-fly.
+        comptime kernel = _rms_norm_rope_gpu_block[
+            mut=gamma.mut,
+            LayoutType=gamma.LayoutType,
+            origin=gamma.origin,
+            simd_width,
+            max_warps_per_block,
+            input_fn_2d,
+            cos_fn_2d,
+            sin_fn_2d,
+            output_fn_2d,
+            multiply_before_cast=multiply_before_cast,
+        ]
+        ctx.enqueue_function[kernel, kernel](
+            gamma,
+            epsilon,
+            weight_offset,
+            cols,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            attributes=pdl_launch_attributes(pdl_level),
+        )
+    else:
+        # Block path, not aligned: fall back to simd_width=1.
+        comptime kernel = _rms_norm_rope_gpu_block[
+            mut=gamma.mut,
+            LayoutType=gamma.LayoutType,
+            origin=gamma.origin,
+            1,
+            max_warps_per_block,
+            input_fn_2d,
+            cos_fn_2d,
+            sin_fn_2d,
+            output_fn_2d,
+            multiply_before_cast=multiply_before_cast,
+        ]
+        ctx.enqueue_function[kernel, kernel](
+            gamma,
+            epsilon,
+            weight_offset,
+            cols,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            attributes=pdl_launch_attributes(pdl_level),
+        )
+
+
 @always_inline
 def rms_norm[
     dtype: DType,
