@@ -79,6 +79,19 @@ static ValueObjectSP unwrapToScalarOrPointer(ValueObjectSP field) {
       field = member;
       continue;
     }
+    // Handle Scalar[T] (i.e. SIMD[T, 1]): the _mlir_value is a 1-element
+    // SIMD vector that LLDB does not recognize as a scalar type, so
+    // GetValueAsUnsigned fails on it directly.  Descend into the single
+    // child element to reach the underlying integer scalar.
+    //
+    // We check the type name explicitly to avoid descending into arbitrary
+    // 1-child wrappers that happen to lack a named member field.
+    if (llvm::StringRef(field->GetTypeName()).starts_with("!pop.simd<1,")) {
+      if (auto member = field->GetChildAtIndex(0)) {
+        field = member;
+        continue;
+      }
+    }
     break;
   }
   return field;
@@ -296,6 +309,57 @@ simdBoolVectorSummaryProvider(ValueObject &valobj, Stream &stream,
   return true;
 }
 
+/// Summary provider for !kgen.pack<*> types (Tuple._mlir_value).
+/// Displays pack elements as `([0] = 1, [1] = 87, [2] = 123.125)`.
+static bool packTypeSummaryProvider(ValueObject &valobj, Stream &stream,
+                                    const TypeSummaryOptions &summaryOptions) {
+  auto numChildren = getExpectedValueOr(valobj.GetNumChildren(), 0u);
+  if (numChildren == 0) {
+    stream << "()";
+    return true;
+  }
+
+  // Cap the one-liner length, matching vectorLikeSummaryProvider's approach.
+  const size_t maxSummaryLength = 32;
+  std::string summary = "(";
+
+  uint32_t i = 0;
+  for (; i < numChildren; ++i) {
+    if (summary.size() > maxSummaryLength)
+      break;
+
+    ValueObjectSP child = valobj.GetChildAtIndex(i);
+    if (!child)
+      break;
+
+    // Probe the child's text before appending anything, so we don't leave
+    // a dangling "[name] = " when the value is unavailable (e.g. SIMD
+    // vectors have no scalar value and no summary).
+    std::string childSummary;
+    child->GetSummaryAsCString(childSummary, summaryOptions);
+    llvm::StringRef childText;
+    if (!childSummary.empty()) {
+      childText = childSummary;
+    } else {
+      childText = child->GetValueAsCString();
+      if (childText.empty())
+        break;
+    }
+
+    if (i > 0)
+      summary += ", ";
+    summary += child->GetName().GetStringRef();
+    summary += " = ";
+    summary += childText;
+  }
+
+  if (i < numChildren)
+    summary += ", ...";
+  summary += ")";
+  stream << summary;
+  return true;
+}
+
 /// Summary provider for single-element scalar types (!pop.scalar<*>).
 /// Instead of displaying `([0] = 12)`, shows just `12`.
 static bool scalarSummaryProvider(ValueObject &valobj, Stream &stream,
@@ -314,9 +378,13 @@ static bool scalarSummaryProvider(ValueObject &valobj, Stream &stream,
 }
 
 namespace {
-/// Synthetic children provider that elides single-entry `_mlir_value` fields.
-/// When a struct has exactly one child named `_mlir_value`, this presents
-/// the children of `_mlir_value` directly, removing the wrapper from display.
+/// Synthetic children provider that elides `_mlir_value` wrapper fields.
+/// When a `!lit.struct` type has an `_mlir_value` field that itself contains
+/// more than one child (i.e. a composite MLIR type like a multi-element struct
+/// or pack), this presents those children directly, removing the wrapper from
+/// display. The child-count guard prevents elision for scalar-typed
+/// `_mlir_value` fields (e.g. the underlying index in Int), which should
+/// display their value rather than an empty child list.
 class MlirValueElisionFrontEnd : public SyntheticChildrenFrontEnd {
   ValueObjectSP m_inner;
 
@@ -345,14 +413,36 @@ public:
   }
 
   lldb::ChildCacheState Update() override {
+    static const ConstString kMlirValue("_mlir_value");
     m_inner = nullptr;
-    auto numChildren = getExpectedValueOr(m_backend.GetNumChildren(), 0u);
-    if (numChildren == 1) {
-      auto child = m_backend.GetChildAtIndex(0, /*can_create=*/true);
-      static const ConstString kMlirValue("_mlir_value");
-      if (child && child->GetName() == kMlirValue)
-        m_inner = child;
-    }
+    // Use GetChildMemberWithName to find _mlir_value by struct-decl field
+    // name. This is necessary for types like Tuple[T...] whose backing KGEN
+    // struct type system presents the pack elements as numbered children
+    // ([0], [1], …) rather than the Mojo-level _mlir_value wrapper.
+    //
+    // Guard: only elide when _mlir_value has more than one child. This
+    // prevents applying elision to types like Int, where GetChildMemberWithName
+    // finds _mlir_value recursively through an intermediate "value" field
+    // (Int.value → Scalar._mlir_value = !pop.simd<1, index>, 1 child).
+    // For those types, elision would hide the scalar value rather than
+    // simplifying display.
+    //
+    // Safety: this synthetic is registered on `^!lit\.struct<.*>` with the
+    // lowest priority.  Other !lit.struct types that have a multi-child
+    // _mlir_value (SIMD[T, N>1] with !pop.simd, StaticTuple with !pop.array)
+    // are decorated with @lldb_formatter_wrapping_type, so the higher-priority
+    // wrapping-type synthetic takes precedence and this elision never fires
+    // for them.  _RegisterPackType has !kgen.pack (like Tuple) and is internal
+    // — elision is harmless there.
+    //
+    // Known gap: single-element Tuple[T] also has a 1-child _mlir_value
+    // (!kgen.pack<T>), so elision does not fire and the expanded children view
+    // shows `_mlir_value = ([0] = v)` rather than `[0] = v` directly.  The
+    // one-liner summary is still correct because packTypeSummaryProvider
+    // formats _mlir_value via the wrapping-type summary path.
+    auto child = m_backend.GetChildMemberWithName(kMlirValue);
+    if (child && getExpectedValueOr(child->GetNumChildren(), 0u) > 1)
+      m_inner = child;
     return lldb::ChildCacheState::eRefetch;
   }
 };
@@ -591,6 +681,10 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
                 summaryFlags, /*regex=*/true);
 
   summaryFlags.SetDontShowChildren(true);
+  AddCXXSummary(mojoCategorySP, packTypeSummaryProvider,
+                "!kgen.pack summary provider", R"(!kgen\.pack<.*>)",
+                summaryFlags, /*regex=*/true);
+
   AddCXXSummary(mojoCategorySP, kgenNoneSummaryProvider,
                 "!kgen.none summary provider", "!kgen.none", summaryFlags,
                 /*regex=*/false);

@@ -253,3 +253,20 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
             "(__mlir_type.`!pop.scalar<ui64>`) u64_max = "
             "18446744073709551615\n");
 }
+
+TEST(PrimitiveTypesTest, testScalarMembers) {
+  // Test that struct members typed as SIMD[T, 1] (Scalar[T]) display
+  // correctly.  This exercises the !pop.simd<1, ...> fallback in
+  // unwrapToScalarOrPointer, which is critical for the upcoming Int = SIMD[1]
+  // unification.
+
+  StopContext ctx = buildAndLaunch("scalar_members.mojo");
+  CommandResult result = ctx.runCommand("v s");
+  // The struct should display with readable scalar values, not "Summary
+  // Unavailable".  Check that the field names and values are present.
+  EXPECT_TRUE(StringRef(result.output).contains("int_scalar"));
+  EXPECT_TRUE(StringRef(result.output).contains("42"));
+  EXPECT_TRUE(StringRef(result.output).contains("bool_scalar"));
+  EXPECT_TRUE(StringRef(result.output).contains("uint8_scalar"));
+  EXPECT_TRUE(StringRef(result.output).contains("255"));
+}
