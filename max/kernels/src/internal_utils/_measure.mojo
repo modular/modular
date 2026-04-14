@@ -131,15 +131,14 @@ def correlation[
     """
     var umu = Scalar[out_type]()
     var vmu = Scalar[out_type]()
-    var w_val = UnsafePointer[u.type, MutAnyOrigin](_unsafe_null=())
+    var w_list = List[Scalar[dtype]]()
     if w:
-        # TODO: this is a memory leak and needs to be freed
-        w_val = alloc[Scalar[dtype]](len)
-        _div(w_val, w.value(), _sum(w.value(), len), len)
+        w_list = List[Scalar[dtype]](capacity=len)
+        _div(w_list.unsafe_ptr(), w.value(), _sum(w.value(), len), len)
     if centered:
         if w:
-            umu = _dot[out_type=out_type](u, w_val, len)
-            vmu = _dot[out_type=out_type](v, w_val, len)
+            umu = _dot[out_type=out_type](u, w_list.unsafe_ptr(), len)
+            vmu = _dot[out_type=out_type](v, w_list.unsafe_ptr(), len)
         else:
             umu = _mean(u, len).cast[out_type]()
             vmu = _mean(v, len).cast[out_type]()
@@ -152,6 +151,8 @@ def correlation[
     var uv_simd = SIMD[out_type, simd_width]()
     var uu_simd = SIMD[out_type, simd_width]()
     var vv_simd = SIMD[out_type, simd_width]()
+
+    var w_val = w_list.unsafe_ptr()
 
     @parameter
     def accumulate[weighted: Bool]():
@@ -186,8 +187,6 @@ def correlation[
     uv += uv_simd.reduce_add()
     uu += uu_simd.reduce_add()
     vv += vv_simd.reduce_add()
-    if w:
-        w_val.free()
 
     return (uv / sqrt(uu * vv)).clamp(-1, 1)
 

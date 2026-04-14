@@ -21,6 +21,7 @@ from comm.sync import is_p2p_enabled
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.gpu.host import DeviceBuffer
 from std.gpu.host.info import is_gpu
+from std.memory.unsafe_pointer import pointer_to_int
 from layout import TileTensor, Idx
 from layout.tile_tensor import row_major
 from std.utils.index import IndexList
@@ -200,7 +201,7 @@ struct Struct_ep_init:
         var dispatch_recv_p: UnsafePointer[UInt8, MutAnyOrigin]
         var dispatch_recv_count_p: UnsafePointer[UInt64, MutAnyOrigin]
 
-        var combine_send_p: UnsafePointer[UInt8, MutAnyOrigin]
+        var combine_send_p: Optional[UnsafePointer[UInt8, MutAnyOrigin]]
         var combine_recv_p: UnsafePointer[UInt8, MutAnyOrigin]
         var combine_recv_count_p: UnsafePointer[UInt64, MutAnyOrigin]
 
@@ -237,7 +238,7 @@ struct Struct_ep_init:
             # When all the devices are on the same node, we skip the combine
             # send buffer and directly send tokens to each device's recv buffer.
             # Hence, we don't need to allocate the combine send buffer.
-            combine_send_p = UnsafePointer[UInt8, MutAnyOrigin](_unsafe_null=())
+            combine_send_p = None
             combine_recv_p = gpu_ctx.enqueue_create_buffer[DType.uint8](
                 combine_recv_size
             ).take_ptr()
@@ -263,7 +264,7 @@ struct Struct_ep_init:
         dev_ptrs[0, 2] = UInt64(Int(dispatch_recv_count_p))
 
         # Group 1: Combine phase buffer pointers
-        dev_ptrs[1, 0] = UInt64(Int(combine_send_p))
+        dev_ptrs[1, 0] = UInt64(pointer_to_int(combine_send_p))
         dev_ptrs[1, 1] = UInt64(Int(combine_recv_p))
         dev_ptrs[1, 2] = UInt64(Int(combine_recv_count_p))
 

@@ -142,6 +142,12 @@ def unsafe_cast[
     result = UnsafePointer(to=pointer).bitcast[type_of(result)]()[]
 
 
+@always_inline("nodebug")
+@doc_hidden
+def pointer_to_int(pointer: OptionalUnsafePointer[...]) -> Int:
+    return UnsafePointer(to=pointer).bitcast[Int]()[]
+
+
 # ===----------------------------------------------------------------------=== #
 # alloc
 # ===----------------------------------------------------------------------=== #

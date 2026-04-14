@@ -26,7 +26,7 @@ from .dtype import DataType, Property
 from .result import Result
 
 
-comptime cublasLtHandle_t = OpaquePointer[_]
+comptime cublasLtHandle_t = OptionalUnsafePointer[NoneType, _]
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -813,7 +813,9 @@ def cublasLtMatmulDescGetAttribute(
 
 # Opaque descriptor for matrix memory layout
 # .
-comptime cublasLtMatrixLayout_t = UnsafePointer[MatrixLayout, MutAnyOrigin]
+comptime cublasLtMatrixLayout_t = OptionalUnsafePointer[
+    MatrixLayout, MutAnyOrigin
+]
 
 # Opaque descriptor for cublasLtMatrixTransform() operation details
 # .
@@ -1534,11 +1536,11 @@ def cublasLtMatrixLayoutDestroy(
 
 # Opaque descriptor for cublasLtMatmul() operation details
 # .
-comptime cublasLtMatmulDesc_t = UnsafePointer[Descriptor, MutAnyOrigin]
+comptime cublasLtMatmulDesc_t = OptionalUnsafePointer[Descriptor, MutAnyOrigin]
 
 # Opaque descriptor for cublasLtMatmulAlgoGetHeuristic() configuration
 # .
-comptime cublasLtMatmulPreference_t = UnsafePointer[
+comptime cublasLtMatmulPreference_t = OptionalUnsafePointer[
     PreferenceOpaque, MutAnyOrigin
 ]
 
@@ -1552,7 +1554,7 @@ def cublasLtMatmul(
     _b: _CPointer[NoneType, ImmutAnyOrigin],
     _bdesc: cublasLtMatrixLayout_t,
     beta: OpaquePointer[ImmutAnyOrigin],
-    _c: OpaquePointer[ImmutAnyOrigin],
+    _c: _CPointer[NoneType, ImmutAnyOrigin],
     _cdesc: cublasLtMatrixLayout_t,
     _d: _CPointer[NoneType, MutAnyOrigin],
     _ddesc: cublasLtMatrixLayout_t,

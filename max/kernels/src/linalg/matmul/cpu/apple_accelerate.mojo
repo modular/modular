@@ -262,9 +262,9 @@ def apple_gemv[
     var K = Int(a.dim[1]()) if b_packed else Int(b.dim[0]())
     var N = Int(b.dim[0]()) if transpose_b or b_packed else Int(b.dim[1]())
 
-    var transposed_b_ptr = UnsafePointer[Scalar[b.dtype], MutExternalOrigin](
-        _unsafe_null=()
-    )
+    var transposed_b_ptr = Optional[
+        UnsafePointer[Scalar[b.dtype], MutExternalOrigin]
+    ]()
     var transposed_b = TileTensor(
         UnsafePointer[Scalar[b.dtype], MutExternalOrigin](_unsafe_null=()),
         row_major(Coord(Idx(Int(0)), Idx(Int(0)))),
@@ -274,9 +274,10 @@ def apple_gemv[
     # runtime (which is suboptimal, but enables faster gemv below).
     comptime if b_packed == False and not transpose_b:
         var transposed_b_shape = Index(Int(b.dim[1]()), Int(b.dim[0]()))
-        transposed_b_ptr = alloc[Scalar[b.dtype]](b.num_elements())
+        var allocated_ptr = alloc[Scalar[b.dtype]](b.num_elements())
+        transposed_b_ptr = allocated_ptr
         transposed_b = TileTensor(
-            transposed_b_ptr,
+            allocated_ptr,
             row_major(
                 Coord(Idx(transposed_b_shape[0]), Idx(transposed_b_shape[1]))
             ),
@@ -349,7 +350,8 @@ def apple_gemv[
         IndexList[2](N, K), 1, parallelism_grain_size
     )
 
-    transposed_b_ptr.free()
+    if transposed_b_ptr:
+        transposed_b_ptr.unsafe_value().free()
 
 
 # ===-----------------------------------------------------------------------===#

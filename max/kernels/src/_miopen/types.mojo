@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.collections import OptionalReg
 from std.os import abort
 from std.sys.info import size_of
 
@@ -21,26 +22,26 @@ from std.sys.info import size_of
 
 @fieldwise_init
 struct Handle(Defaultable, Equatable, TrivialRegisterPassable):
-    var _value: OpaquePointer[MutAnyOrigin]
+    var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
 
     def __init__(out self):
-        self._value = {_unsafe_null = ()}
+        self._value = None
 
 
 @fieldwise_init
 struct TensorDescriptor(Defaultable, Equatable, TrivialRegisterPassable):
-    var _value: OpaquePointer[MutAnyOrigin]
+    var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
 
     def __init__(out self):
-        self._value = {_unsafe_null = ()}
+        self._value = None
 
 
 @fieldwise_init
 struct ConvolutionDescriptor(Defaultable, Equatable, TrivialRegisterPassable):
-    var _value: OpaquePointer[MutAnyOrigin]
+    var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
 
     def __init__(out self):
-        self._value = {_unsafe_null = ()}
+        self._value = None
 
 
 # ===-----------------------------------------------------------------------===#
@@ -222,26 +223,26 @@ struct ConvSolution(RegisterPassable):
 
 @fieldwise_init
 struct Problem(Defaultable, Equatable, TrivialRegisterPassable):
-    var _value: OpaquePointer[MutAnyOrigin]
+    var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
 
     def __init__(out self):
-        self._value = {_unsafe_null = ()}
+        self._value = None
 
 
 @fieldwise_init
 struct Solution(Defaultable, Equatable, TrivialRegisterPassable):
-    var _value: OpaquePointer[MutAnyOrigin]
+    var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
 
     def __init__(out self):
-        self._value = {_unsafe_null = ()}
+        self._value = None
 
 
 @fieldwise_init
 struct FindOptions(Defaultable, Equatable, TrivialRegisterPassable):
-    var _value: OpaquePointer[MutAnyOrigin]
+    var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
 
     def __init__(out self):
-        self._value = {_unsafe_null = ()}
+        self._value = None
 
 
 @fieldwise_init

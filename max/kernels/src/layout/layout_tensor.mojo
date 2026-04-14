@@ -2663,13 +2663,7 @@ struct LayoutTensor[
         Returns:
             A null `LayoutTensor` object.
         """
-        return Self.StackTensorType(
-            UnsafePointer[
-                Scalar[Self.dtype],
-                address_space=Self.address_space,
-                origin=MutExternalOrigin,
-            ](_unsafe_null=())
-        )
+        return Self.StackTensorType(None)
 
     comptime StackTensorType = LayoutTensor[
         Self.dtype,

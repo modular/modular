@@ -35,7 +35,7 @@ from .dtype import DataType, Property
 from .result import Result
 
 comptime cublasContext = NoneType
-comptime cublasHandle_t = UnsafePointer[cublasContext, _]
+comptime cublasHandle_t = OptionalUnsafePointer[cublasContext, _]
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -4559,7 +4559,7 @@ def cublasDsyrk(
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
-def cublasDestroy(handle: UnsafePointer[cublasContext, _]) raises -> Result:
+def cublasDestroy(handle: cublasHandle_t) raises -> Result:
     return _get_dylib_function[
         "cublasDestroy_v2",
         def(type_of(handle)) thin -> Result,
@@ -5535,7 +5535,7 @@ def cublasLoggerConfigure(
     log_is_on: Int16,
     log_to_std_out: Int16,
     log_to_std_err: Int16,
-    log_file_name: UnsafePointer[Int8, _],
+    log_file_name: OptionalUnsafePointer[Int8, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasLoggerConfigure",
@@ -5975,7 +5975,7 @@ def cublasDscal(
 
 
 def cublasCreate(
-    handle: UnsafePointer[UnsafePointer[cublasContext, MutAnyOrigin], _],
+    handle: UnsafePointer[cublasHandle_t[MutAnyOrigin], _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasCreate_v2",

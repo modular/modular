@@ -29,6 +29,7 @@ from layout import (
     row_major,
 )
 from std.memory import memcpy
+from std.memory.unsafe_pointer import unsafe_cast
 
 from nn.concat import concat
 from register import register_internal
@@ -1234,7 +1235,7 @@ def mgp_buffer_get_cached(
     Get a reference to the cached tensor.
     """
     var buffer_size: UInt64 = 0
-    var buffer_data = OpaquePointer[MutAnyOrigin](_unsafe_null=())
+    var buffer_data = Optional[OpaquePointer[MutAnyOrigin]]()
 
     var buffer_ref = external_call[
         "TMP_MGP_RT_GetCachedBuffer", TensorBufferRefPtr
@@ -1245,7 +1246,9 @@ def mgp_buffer_get_cached(
         UnsafePointer(to=buffer_data),
     )
 
-    var buffer = MutByteBuffer(buffer_data.bitcast[Int8](), Index(buffer_size))
+    var buffer = MutByteBuffer(
+        unsafe_cast[Type=Int8](buffer_data), Index(buffer_size)
+    )
     var res = Tuple[MutByteBuffer, TensorBufferRefPtr](buffer, buffer_ref)
 
     return res

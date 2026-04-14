@@ -20,10 +20,10 @@ from std.ffi import _Global, OwnedDLHandle
 from std.gpu.host._amdgpu_hip import hipStream_t
 from std.utils import StaticTuple
 
-comptime hipblasLtHandle_t = OpaquePointer[MutAnyOrigin]
-comptime hipblasLtMatmulDesc_t = OpaquePointer[MutAnyOrigin]
-comptime hipblasLtMatrixLayout_t = OpaquePointer[MutAnyOrigin]
-comptime hipblasLtMatmulPreference_t = OpaquePointer[MutAnyOrigin]
+comptime hipblasLtHandle_t = Optional[OpaquePointer[MutAnyOrigin]]
+comptime hipblasLtMatmulDesc_t = Optional[OpaquePointer[MutAnyOrigin]]
+comptime hipblasLtMatrixLayout_t = Optional[OpaquePointer[MutAnyOrigin]]
+comptime hipblasLtMatmulPreference_t = Optional[OpaquePointer[MutAnyOrigin]]
 
 
 @fieldwise_init
