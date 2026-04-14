@@ -1347,6 +1347,51 @@ def test_validate_and_resolve_overlap_scheduler__auto_enable_device_graph_captur
 
 @prepare_registry
 @mock_pipeline_config_resolve
+def test_validate_and_resolve_overlap_scheduler__no_device_graph_capture_for_prefill_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Device graph capture is not supported for prefill-only workers."""
+    arch_name = "LlamaForCausalLM"
+    monkeypatch.setattr(
+        MAXModelConfig, "architecture_name", property(lambda self: arch_name)
+    )
+    arch = SimpleNamespace(name=arch_name)
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_architecture",
+        Mock(return_value=arch),
+    )
+    monkeypatch.setattr(
+        "max.pipelines.lib.config.config.accelerator_api",
+        Mock(return_value="cuda"),
+    )
+
+    config = PipelineConfig(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="test/model",
+                    device_specs=[DeviceSpec.accelerator()],
+                )
+            }
+        ),
+        runtime=PipelineRuntimeConfig(
+            max_num_steps=42,
+            max_batch_size=16,
+            pipeline_role="prefill_only",
+        ),
+    )
+    config._validate_and_resolve_overlap_scheduler()
+
+    # Overlap scheduling should be auto-enabled for prefill_only.
+    assert config.runtime.enable_overlap_scheduler is True
+    assert config.runtime.max_num_steps == 1
+    # But device graph capture should NOT be auto-enabled.
+    assert config.runtime.device_graph_capture is False
+
+
+@prepare_registry
+@mock_pipeline_config_resolve
 def test_validate_and_resolve_overlap_scheduler__auto_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
