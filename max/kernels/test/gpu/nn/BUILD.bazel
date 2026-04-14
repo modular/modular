@@ -49,6 +49,7 @@ _EXTRA_CONSTRAINTS = {
     }),
     "test_mla_prefill_qkv_fp8.mojo": select({
         "//:b200_gpu": [],
+        "//:amd_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mla_prefill_per_token_scale_fp8.mojo": select({

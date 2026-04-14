@@ -1597,8 +1597,7 @@ def flare_mla_prefill[
         comptime cache_depth = cache_t.kv_params.head_size
         comptime q_depth = type_of(q).static_shape[rank - 1]
 
-        # BN = 64 for nvidia, 128 in the only supported BN for amd
-        comptime num_keys_per_block = 64 if has_nvidia_gpu_accelerator() else 128
+        comptime num_keys_per_block = 64
 
         comptime mha_config = MHAConfig[dtype](
             type_of(q).static_shape[rank - 2],  # num_heads
@@ -1751,8 +1750,7 @@ def flare_mla_prefill[
         comptime kv_num_heads = type_of(k_rope).static_shape[2]
         comptime cache_depth = type_of(k_rope).static_shape[3]
         comptime q_depth = type_of(q).static_shape[q.rank - 1]
-        # BN = 64 for nvidia, 128 in the only supported BN for amd
-        comptime num_keys_per_block = 64 if has_nvidia_gpu_accelerator() else 128
+        comptime num_keys_per_block = 64
         comptime mha_config = MHAConfig[dtype](
             type_of(q).static_shape[rank - 2],
             type_of(k).static_shape[rank - 1],
@@ -1907,8 +1905,7 @@ def flare_mla_prefill[
         comptime kv_num_heads = type_of(k_rope).static_shape[2]
         comptime cache_depth = type_of(k_rope).static_shape[3]
         comptime q_depth = type_of(q).static_shape[q.rank - 1]
-        # BN = 64 for nvidia, 128 in the only supported BN for amd
-        comptime num_keys_per_block = 64 if has_nvidia_gpu_accelerator() else 128
+        comptime num_keys_per_block = 64
         comptime mha_config = MHAConfig[dtype](
             type_of(q).static_shape[rank - 2],
             type_of(k).static_shape[rank - 1],
@@ -2072,8 +2069,7 @@ def flare_mla_prefill[
         comptime q_depth = type_of(q_nope).static_shape[
             q_nope.rank - 1
         ] + type_of(q_rope).static_shape[q_rope.rank - 1]
-        # BN = 64 for nvidia, 128 in the only supported BN for amd
-        comptime num_keys_per_block = 64 if has_nvidia_gpu_accelerator() else 128
+        comptime num_keys_per_block = 64
         comptime mha_config = MHAConfig[dtype](
             type_of(q_nope).static_shape[rank - 2],
             type_of(k).static_shape[rank - 1],
@@ -2197,8 +2193,11 @@ def flare_mla_prefill_dispatch[
 
     else:
         comptime assert (
-            k_rope_t.dtype == DType.bfloat16
-        ), "Only support bfloat16 for non-B200 devices"
+            k_rope_t.dtype == DType.bfloat16 or has_amd_gpu_accelerator()
+        ), (
+            "Only support bfloat16 for non-SM100 Nvidia GPUs; AMD supports"
+            " bfloat16 and float8_e4m3fn"
+        )
 
         var q_device = DeviceBuffer[q.dtype](
             ctx, q.ptr, q.num_elements(), owning=False
@@ -2251,6 +2250,7 @@ def flare_mla_prefill_dispatch[
         )
 
 
+@__llvm_metadata(`rocdl.waves_per_eu`=Int(2))
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(config.num_threads())
@@ -2370,7 +2370,7 @@ def mla_prefill[
             Int(start_pos),
             Int(cache_start_pos),
         )
-        attention.mla_prefill(
+        attention.mla_prefill_gfx950(
             k_rope,
         )
     else:

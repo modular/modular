@@ -126,11 +126,16 @@ def block_sync_lds_direct_load[
 
 
 struct KVCacheIterator[
-    cache_t: MHAOperand, tile_size: Int, kv_num_heads: Int, depth: Int
+    cache_t: MHAOperand,
+    tile_size: Int,
+    kv_num_heads: Int,
+    depth: Int,
+    cache_depth: Int = depth,
+    head_dim_offset: Int = 0,
 ]:
     comptime kv_gmem_layout = Layout(
         IntTuple(Self.tile_size, Self.depth),
-        IntTuple(Self.kv_num_heads * Self.depth, 1),
+        IntTuple(Self.kv_num_heads * Self.cache_depth, 1),
     )
     var cache: Self.cache_t
     var end: Int
@@ -170,7 +175,7 @@ struct KVCacheIterator[
         var kv_runtime_layout = type_of(result.runtime_layout)(
             type_of(result.runtime_layout.shape)(kv_tile_num_rows, Self.depth),
             type_of(result.runtime_layout.stride)(
-                Self.kv_num_heads * Self.depth, 1
+                Self.kv_num_heads * Self.cache_depth, 1
             ),
         )
         var out = type_of(result)(
@@ -178,7 +183,7 @@ struct KVCacheIterator[
                 UInt32(self.batch_idx),
                 UInt32(self.tile_start_row),
                 UInt32(self.kv_head_idx),
-                0,
+                UInt32(Self.head_dim_offset),
             ),
             kv_runtime_layout,
         )
@@ -203,6 +208,8 @@ struct KVBuffer[
     depth: Int,
     kv_num_heads: Int,
     transpose: Bool,
+    cache_depth: Int = depth,
+    head_dim_offset: Int = 0,
 ]:
     comptime MMA_N = Self.mma_shape[1]
     comptime MMA_K = Self.mma_shape[2]
@@ -270,7 +277,12 @@ struct KVBuffer[
     comptime smem_stage_size = Self.smem_layout.size()
 
     var kv_cache_iter: KVCacheIterator[
-        Self.kv_t, Self.BN, Self.kv_num_heads, Self.depth
+        Self.kv_t,
+        Self.BN,
+        Self.kv_num_heads,
+        Self.depth,
+        Self.cache_depth,
+        Self.head_dim_offset,
     ]
 
     var lds_base_ptrs: InlineArray[UInt32, 2]
@@ -323,7 +335,7 @@ struct KVBuffer[
             self.smem_ptr + buffer_idx * Self.smem_stage_size
         )
 
-        comptime if Self.depth == 64:
+        comptime if Self.depth == 64 and Self.BN <= Self.warp_tile_rows * 2 and Self.depth // Self.BK >= 2:
             var smem_warp_tile = smem_tile.tile[Self.warp_tile_rows, Self.BK](
                 Int(self.warp_id) // 2, Int(self.warp_id) % 2
             )
@@ -426,8 +438,6 @@ struct KVBuffer[
     @always_inline
     def load_from_shared(self, buffer: Int):
         comptime if not Self.transpose and Self.kv_t.dtype.is_float8():
-            # TODO: This FP8 V gather path is a temporary workaround.
-            # We will revisit and clean this up with a proper abstraction.
             # FP8 V gather: read vertically from [BN, depth] SMEM
             # following the MFMA C-output column permutation so
             # that V's K-position mapping matches P's in the PV
@@ -440,6 +450,9 @@ struct KVBuffer[
             # For 64-key P (lo.join(hi) of two [32,32] tiles):
             #   positions 0-15: keys 0..27 subset (lo)
             #   positions 16-31: keys 32..59 subset (hi)
+            #
+            # Each bk_tile covers 64 BN rows. For BN>64 (e.g. MLA
+            # BN=128), iterate over bk_tiles to cover all rows.
             comptime kv_type = Self.kv_t.dtype
             comptime BN_ = Self.BN
             comptime BK_ = Self.BK
@@ -452,48 +465,53 @@ struct KVBuffer[
 
             var reg_vec = self.mma_tile.vectorize[1, Self.input_frag_size]()
 
-            comptime for dt in range(num_depth_tiles):
-                var d = dt * MMA_M_ + Int(lid % 32)
-                var blk = d // BK_
-                var d_in_blk = d % BK_
-                var base_addr = blk * BN_ * BK_ + d_in_blk
+            comptime for bk_tile in range(Self.num_k_tiles):
+                comptime row_offset = bk_tile * 64
 
-                @parameter
-                def gather4_lo[g: Int]() -> SIMD[kv_type, 4]:
-                    var off = (g * 8 + hw_offset) * BK_
-                    var ab = v_base[base_addr + off].join(
-                        v_base[base_addr + off + BK_]
+                comptime for dt in range(num_depth_tiles):
+                    var d = dt * MMA_M_ + Int(lid % 32)
+                    var blk = d // BK_
+                    var d_in_blk = d % BK_
+                    var base_addr = blk * BN_ * BK_ + d_in_blk
+
+                    @parameter
+                    def gather4_lo[g: Int]() -> SIMD[kv_type, 4]:
+                        var off = (row_offset + g * 8 + hw_offset) * BK_
+                        var ab = v_base[base_addr + off].join(
+                            v_base[base_addr + off + BK_]
+                        )
+                        var cd = v_base[base_addr + off + 2 * BK_].join(
+                            v_base[base_addr + off + 3 * BK_]
+                        )
+                        return rebind[SIMD[kv_type, 4]](ab.join(cd))
+
+                    var lo = (
+                        gather4_lo[0]()
+                        .join(gather4_lo[1]())
+                        .join(gather4_lo[2]().join(gather4_lo[3]()))
                     )
-                    var cd = v_base[base_addr + off + 2 * BK_].join(
-                        v_base[base_addr + off + 3 * BK_]
+
+                    @parameter
+                    def gather4_hi[g: Int]() -> SIMD[kv_type, 4]:
+                        var off = (row_offset + 32 + g * 8 + hw_offset) * BK_
+                        var ab = v_base[base_addr + off].join(
+                            v_base[base_addr + off + BK_]
+                        )
+                        var cd = v_base[base_addr + off + 2 * BK_].join(
+                            v_base[base_addr + off + 3 * BK_]
+                        )
+                        return rebind[SIMD[kv_type, 4]](ab.join(cd))
+
+                    var hi = (
+                        gather4_hi[0]()
+                        .join(gather4_hi[1]())
+                        .join(gather4_hi[2]().join(gather4_hi[3]()))
                     )
-                    return rebind[SIMD[kv_type, 4]](ab.join(cd))
 
-                var lo = (
-                    gather4_lo[0]()
-                    .join(gather4_lo[1]())
-                    .join(gather4_lo[2]().join(gather4_lo[3]()))
-                )
-
-                @parameter
-                def gather4_hi[g: Int]() -> SIMD[kv_type, 4]:
-                    var off = (32 + g * 8 + hw_offset) * BK_
-                    var ab = v_base[base_addr + off].join(
-                        v_base[base_addr + off + BK_]
-                    )
-                    var cd = v_base[base_addr + off + 2 * BK_].join(
-                        v_base[base_addr + off + 3 * BK_]
-                    )
-                    return rebind[SIMD[kv_type, 4]](ab.join(cd))
-
-                var hi = (
-                    gather4_hi[0]()
-                    .join(gather4_hi[1]())
-                    .join(gather4_hi[2]().join(gather4_hi[3]()))
-                )
-
-                var joined = lo.join(hi)
-                reg_vec[dt, 0] = rebind[type_of(reg_vec[dt, 0])](joined)
+                    var joined = lo.join(hi)
+                    reg_vec[bk_tile * num_depth_tiles + dt, 0] = rebind[
+                        type_of(reg_vec[0, 0])
+                    ](joined)
         else:
             comptime for bk_tile in range(Self.num_k_tiles):
                 self.load_from_shared[bk_tile](buffer)
