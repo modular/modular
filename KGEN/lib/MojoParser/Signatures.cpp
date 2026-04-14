@@ -744,10 +744,16 @@ static PValue emitDefault(const ParsedArgument &arg, ASTType type,
 /// arguments), or added to the beginning of the parameter list as `Inferred`
 /// passing-kind parameters (this is used for unbound parameters).
 ///
+/// If `bindUnboundGeneratorTypes` is set, then we're in a context (like
+/// arguments) where we need a concrete type.  This should be false for
+/// parameter lists, because they can take unbound (e.g.) function types whose
+/// parameters are bound in the body of the declaration.
+///
 /// On failure, this returns null.
 static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
                                      TypeCheckedParamList &paramList,
-                                     bool append, SMLoc loc) {
+                                     bool append, SMLoc loc,
+                                     bool bindUnboundGeneratorTypes = true) {
   if (!type) // Propagate an error.
     return {};
 
@@ -884,7 +890,7 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
 
   // First check for a function type.
   // FIXME: We need an AnyFunction metatype.
-  if (auto sig = dyn_cast<FnTypeGeneratorType>(type)) {
+  if (auto sig = sugarDynCast<FnTypeGeneratorType>(type)) {
     TypedAttr origins = sig.getCaptureOrigins();
     if (!isa<UnboundAttr>(origins))
       return type;
@@ -895,8 +901,24 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     return sig.getWithCaptureOrigins(paramValues.back());
   }
 
+  if (auto gen = sugarDynCast<LITGeneratorType>(type)) {
+    if (bindUnboundGeneratorTypes) {
+      PogListAttr paramList = gen.getParamListAttrs();
+      ArrayRef<PogMetadataAttr> pogs = paramList.getPogs();
+      for (auto [idx, type] : llvm::enumerate(gen.getInputParamTypes()))
+        declareAndAddParam(type, pogs[idx].getName(),
+                           /*paramConstraints=*/pogs[idx].getConstraints());
+      if (hadFailure)
+        return {};
+      return gen
+          .getSpecializedGenerator(paramValues, &shared.getEvaluationContext(),
+                                   shared.translateLocation(loc))
+          .getInstantiatedBody();
+    }
+  }
+
   // Auto-parameterize generator typed values.
-  if (auto paramType = dyn_cast<ParamType>(type)) {
+  if (auto paramType = sugarDynCast<ParamType>(type)) {
     if (auto genType =
             dyn_cast<LITGeneratorType>(paramType.getParam().getType())) {
       PogListAttr paramList = genType.getParamListAttrs();
@@ -926,11 +948,11 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
   };
 
   if (auto metatype =
-          dyn_cast_or_null<StructMetaType>(type.extractMetaType())) {
+          sugarDynCastIfPresent<StructMetaType>(type.extractMetaType())) {
     auto mt = getBoundStructMetaType(metatype);
     return mt ? mt.getType() : ASTType();
   }
-  if (auto metatype = dyn_cast_or_null<StructMetaType>(type))
+  if (auto metatype = sugarDynCast<StructMetaType>(type))
     return getBoundStructMetaType(metatype);
 
   return type;
@@ -1058,7 +1080,8 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
     }
 
     type = addImplicitTypeParams(arg.name, type, result,
-                                 /*append=*/false, arg.loc);
+                                 /*append=*/false, arg.loc,
+                                 /*bindUnboundGeneratorTypes=*/false);
     if (!type) {
       type = emitter.shared.getTypeCheckErrorType();
       hasErrors = true;
@@ -1552,8 +1575,18 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
   if (!param) // Error emitting the expression is already diagnosed.
     return {};
 
+  /// Check for autoparameterization of the type list.
+  auto paramType = param.getRValueType();
+  paramType = addImplicitTypeParams(arg.name, paramType, tcSignature.paramList,
+                                    /*append=*/true, arg.loc);
+  if (!paramType.isEqualCanon(param.getRValueType())) {
+    // If the type list is autoparameterized, rebuild the value so it binds with
+    // the new parameter type correctly.
+    param = PValue(UnknownAttr::get(paramType)); // TypeList has no members.
+  }
+
   // Make sure the param value is a variadic list of types.
-  auto elementType = param.getRValueType().getParameterListInfo().elementType;
+  auto elementType = paramType.getParameterListInfo().elementType;
   if (!elementType) {
     emitter.emitError(arg.typeExpr->getLoc(),
                       "pack argument type list must reference a variadic list")
