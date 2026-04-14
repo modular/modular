@@ -1374,7 +1374,6 @@ def call_inner[
 
 # // -----
 
-
 def captures_with_default_convention():
     var a, b, c, d = ("a", "b", "c", "d")
     # COM: a
@@ -1386,7 +1385,6 @@ def captures_with_default_convention():
     # COM: d is omitted because it uses default convention.
     def my_fn() unified {mut a, b, c^, read}:
         pass
-
 
 # // -----
 #
@@ -1408,3 +1406,21 @@ def trigger_dtype():
     comptime dtype = nonsense(k)
     var x = SIMD[dtype, 1]()
     _ = x
+
+# // -----
+
+# COM: Verify unified async closures use an async trait name and async call op.
+
+# CHECK-DAG: lit.trait.decl @"def() async -> None"
+# CHECK-DAG: sourceName = #debuginfo.source_name<"def() async -> None">
+# CHECK-LABEL: lit.fn @"async_unified_closure()"
+# CHECK: lit.async.call[!lit.generator<
+
+
+def async_unified_closure():
+    var value = 0
+
+    async def inc() unified {mut value}:
+        value += 1
+
+    _ = inc()

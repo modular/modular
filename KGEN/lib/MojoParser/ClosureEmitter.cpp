@@ -74,6 +74,62 @@ static FnOp getInit(StructDeclOp structDeclOp) {
   return init;
 }
 
+static LogicalResult emitForwardingCall(ImplicitLocOpBuilder &builder,
+                                        ASTDecl &declScope, TypedAttr callee,
+                                        FnTypeGeneratorType calleeSig,
+                                        Type resultType,
+                                        ArrayRef<TypedAttr> implicitOrigins,
+                                        ArrayRef<Value> arguments) {
+  if (!calleeSig.isAsync()) {
+    Value result =
+        LIT::CallOp::create(builder, TypeRange(calleeSig.getResultType()),
+                            callee, implicitOrigins, arguments)
+            .getResult(0);
+    if (result.getType() != resultType)
+      result = RebindOp::create(builder, resultType, result);
+    IREmitter::emitNormalReturn(builder, result);
+    return success();
+  }
+
+  size_t numAsyncReturnSlots = calleeSig.getNumAsyncReturnSlots();
+  ArrayRef<Value> visibleArguments = arguments.drop_back(numAsyncReturnSlots);
+  ArrayRef<TypedAttr> visibleOrigins =
+      implicitOrigins.drop_back(numAsyncReturnSlots);
+
+  auto asyncCall = LIT::AsyncCallOp::create(builder, builder.getLoc(), callee,
+                                            visibleOrigins, visibleArguments);
+  SyntheticNode syntheticExpr(declScope.getLoc());
+  IREmitter emitter(declScope, builder);
+  ASTType coroutineType = getBoundCoroutineType(
+      declScope, &syntheticExpr, calleeSig,
+      computeArgumentsOrigin(asyncCall,
+                             declScope.getShared().cachedOriginFinder));
+  if (!coroutineType)
+    return failure();
+  ValueDest coroutineDest(coroutineType, EC_SynthesizedMethod);
+  CValue coroutine = materializeAsyncCallAsCoroutine(
+      emitter, asyncCall, &syntheticExpr, calleeSig, coroutineDest);
+  if (!coroutine)
+    return failure();
+
+  auto currentFn = getBlockParentOfType<FnOp>(builder.getInsertionBlock());
+  assert(currentFn && currentFn.getFuncTypeGenerator().isAsync() &&
+         currentFn.getFuncTypeGenerator().hasMemoryOnlyResult() &&
+         "async forwarding wrapper must have a result slot");
+
+  ValueDest awaitDest(MLValue(currentFn.getArguments().back()),
+                      EC_SynthesizedMethod);
+  if (!emitter.emitNamedMethodCall(
+          "__await__",
+          CallOperands(CallSyntax::kMethodCallSynthetic, &syntheticExpr,
+                       {{coroutine, &syntheticExpr}}),
+          awaitDest))
+    return failure();
+
+  IREmitter::emitNormalReturn(builder);
+  return success();
+}
+
 static void addConformanceTable(
     ASTDecl &structDecl, ClosureEmitter::ClosureParent closureParent,
     ArrayRef<std::pair<StringRef, TypedAttr>> witnesses, ASTDecl &fileModule) {
@@ -717,6 +773,8 @@ static std::string formatClosureSignature(FnTypeGeneratorType sig,
     os << " register_passable";
   if (sig.isThrows())
     os << " raises";
+  if (sig.isAsync())
+    os << " async";
 
   os << " -> ";
   Type resultType = body.getUserResultType();
@@ -889,16 +947,10 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
 
     TypedAttr boundSymbol =
         BindParamsAttr::get(symbol, paramArgs, &shared.getEvaluationContext());
-    Type callResultType = implCallSig.getResultType();
-    if (auto calleeSig = dyn_cast<FnTypeGeneratorType>(boundSymbol.getType()))
-      callResultType = calleeSig.getResultType();
-
-    auto callOp =
-        LIT::CallOp::create(b, callResultType, boundSymbol, origins, operands);
-    Value returnValue = callOp.getResult(0);
-    if (callResultType != result)
-      returnValue = RebindOp::create(b, result, returnValue);
-    IREmitter::emitNormalReturn(b, returnValue);
+    auto calleeSig = cast<FnTypeGeneratorType>(boundSymbol.getType());
+    if (failed(emitForwardingCall(b, structDecl, boundSymbol, calleeSig, result,
+                                  origins, operands)))
+      return {};
     return op;
   };
   DenseMap<StringRef, FnOp> nameToImpl;
@@ -1220,10 +1272,10 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
          llvm::zip(arguments, signatureType.getArgConventions()))
       if (hasImplicitOrigin(conv))
         implicitOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());
-    Value resultValue = CallOp::create(builder, TypeRange(result), callee,
-                                       implicitOrigins, arguments)
-                            .getResult(0);
-    IREmitter::emitNormalReturn(builder, resultValue);
+    auto calleeSig = cast<FnTypeGeneratorType>(callee.getType());
+    if (failed(emitForwardingCall(builder, structDecl, callee, calleeSig,
+                                  result, implicitOrigins, arguments)))
+      return {};
   }
 
   return &structDecl;

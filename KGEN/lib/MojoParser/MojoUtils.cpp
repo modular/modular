@@ -10,14 +10,17 @@
 
 #include "MojoUtils.h"
 
+#include "IREmitter.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/ExprNode.h"
 #include "KGEN/MojoParser/MojoDiags.h"
 #include "KGEN/POPDialect/POPTypes.h"
+#include "ParamInf.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -58,6 +61,69 @@ TypedAttr LIT::getOriginsAccessibleByParams(PogListAttr paramList,
     addOriginSet(captureOrigins);
 
   return OriginSetAttr::get(shared.getContext(), origins);
+}
+
+ASTType LIT::getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
+                                   FnTypeGeneratorType sig, TypedAttr origin) {
+  auto &shared = declScope.getShared();
+  SMLoc loc = expr->getLoc();
+  ASTDecl *decl = sig.isThrows() ? shared.getBuiltinRaisingCoroutineType(loc)
+                                 : shared.getBuiltinCoroutineType(loc);
+  if (!decl) {
+    shared.emitError(loc,
+                     "internal error: could not find builtin 'Coroutine' type");
+    return {};
+  }
+  ASTType resultType = ASTType(sig.getUserResultType());
+  ParamBindings paramBinds(declScope, expr);
+  paramBinds.add(expr, PValue(resultType));
+  paramBinds.add(expr, origin);
+
+  auto structOp = cast<StructDeclOp>(decl->getIfOperation());
+  TypeSignatureType structSig = structOp.getSignature();
+  ParamInf inference(paramBinds, structSig.getParamTypes(),
+                     structSig.getParamListAttrs(),
+                     /*allowImplicitConversions=*/true, decl,
+                     /*discardError=*/false);
+  ParameterExprArrayAttr bindings = inference.inferForStruct();
+
+  if (!bindings)
+    return {};
+  return structOp.bindReference(bindings);
+}
+
+TypedAttr LIT::computeArgumentsOrigin(AsyncCallOp call,
+                                      CachedOriginFinder &originFinder) {
+  SmallVector<std::pair<Value, OperandEffect>> operands;
+  SmallVector<ResultEffect> results;
+  SmallVector<TypedAttr> origins;
+  LIT::getOperationEffects(*call, operands, results, origins, originFinder);
+  for (Value value : call.getOperands())
+    if (auto ref = dyn_cast<RefType>(value.getType()))
+      origins.push_back(ref.getOrigin());
+  return OriginSetAttr::get(call.getContext(), origins);
+}
+
+CValue LIT::materializeAsyncCallAsCoroutine(IREmitter &emitter,
+                                            AsyncCallOp call,
+                                            const ExprNode *expr,
+                                            FnTypeGeneratorType sig,
+                                            ValueDest &dest) {
+  ASTType coroutineType = getBoundCoroutineType(
+      emitter.getDeclScope(), expr, sig,
+      computeArgumentsOrigin(call, emitter.shared.cachedOriginFinder));
+  if (!coroutineType) {
+    dest.resetForError(emitter);
+    return {};
+  }
+
+  CValue coroutine = emitter.emitConstructorCall(
+      coroutineType,
+      CallOperands(CallSyntax::kImplicitConvert, expr, {{SRValue(call), expr}}),
+      dest);
+  if (!coroutine)
+    dest.resetForError(emitter);
+  return coroutine;
 }
 
 void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
