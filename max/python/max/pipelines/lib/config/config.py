@@ -946,8 +946,7 @@ class PipelineConfig(ConfigFileModel):
 
     def _is_eligible_for_overlap_serve_optimizations(self) -> bool:
         return (
-            self.runtime.pipeline_role == "prefill_and_decode"
-            and not self.sampling.enable_structured_output
+            not self.sampling.enable_structured_output
             and not self.sampling.enable_variable_logits
             and not self.lora
             and self.model.device_specs[0].device_type != "cpu"

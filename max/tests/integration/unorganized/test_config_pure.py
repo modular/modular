@@ -1425,21 +1425,23 @@ def test_validate_and_resolve_overlap_scheduler__auto_override(
         config._validate_and_resolve_overlap_scheduler()
         assert config.runtime.enable_overlap_scheduler is False
 
-    # Don't override if the pipeline role is not PrefillAndDecode
-    with patch_retrieve_architecture("LlamaForCausalLM"):
-        config = PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": MAXModelConfig(
-                        model_path="test/model",
-                        device_specs=[DeviceSpec.accelerator()],
-                    )
-                }
-            ),
-            runtime=PipelineRuntimeConfig(pipeline_role="prefill_only"),
-        )
-        config._validate_and_resolve_overlap_scheduler()
-        assert config.runtime.enable_overlap_scheduler is False
+    # Auto-enable for DI pipeline roles (prefill_only, decode_only)
+    for role in ("prefill_only", "decode_only"):
+        with patch_retrieve_architecture("LlamaForCausalLM"):
+            config = PipelineConfig(
+                models=ModelManifest(
+                    {
+                        "main": MAXModelConfig(
+                            model_path="test/model",
+                            device_specs=[DeviceSpec.accelerator()],
+                        )
+                    }
+                ),
+                runtime=PipelineRuntimeConfig(pipeline_role=role),
+            )
+            config._validate_and_resolve_overlap_scheduler()
+            assert config.runtime.enable_overlap_scheduler is True
+            assert config.runtime.max_num_steps == 1
 
     # Don't override for other architectures
     with patch_retrieve_architecture("SomeOtherArchitecture"):
