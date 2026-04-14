@@ -10,7 +10,7 @@
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
 #include "Support/SymbolExport.h"
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 
 /// Returns a reference to the process-wide global AsyncRT runtime, creating it
 /// on first use with \p source and \p options. If a global runtime already
@@ -23,6 +23,6 @@ MODULAR_CXX_EXPORT RuntimeRef getOrCreateRuntime(
     RuntimeSource source, const RuntimeOptions &options = RuntimeOptions(),
     bool allowUsingExistingOptions = false);
 
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 
 #endif // MLRT_ASYNCRT_RUNTIME_RUNTIME_MANAGER_H

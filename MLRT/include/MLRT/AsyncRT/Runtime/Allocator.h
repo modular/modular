@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the M::AsyncRT::Allocator interface, which allows clients
+// This file declares the M::MLRT::Allocator interface, which allows clients
 // of AsyncRT to implement custom allocation and other fancy policies.
 //
 //===----------------------------------------------------------------------===//
@@ -17,7 +17,7 @@
 
 #include <memory>
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 
 /// Profiling entry for uses of memcpy via profiledMemcpy.
 using MemCopyProfilerEntry =
@@ -123,6 +123,6 @@ std::unique_ptr<Allocator> createUseAfterFreeAllocator();
 /// allocated by one of our allocators.
 void profiledMemcpy(void *dst, const void *src, size_t size);
 
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 
 #endif // MLRT_ASYNCRT_RUNTIME_ALLOCATOR_H

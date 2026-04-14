@@ -22,19 +22,19 @@
 #include <atomic>
 #include <cstdio>
 
-using namespace M::AsyncRT;
+using namespace M::MLRT;
 
 [[maybe_unused]] MODULAR_CXX_EXPORT std::atomic<ssize_t>
-    M::AsyncRT::Globals::totalAllocatedAsyncValues{0};
+    M::MLRT::Globals::totalAllocatedAsyncValues{0};
 
 MODULAR_CXX_EXPORT CompactRuntimePtr &
-M::AsyncRT::Globals::getCurrentRuntimeInTLS() {
+M::MLRT::Globals::getCurrentRuntimeInTLS() {
   static thread_local CompactRuntimePtr currentRuntimeInTLS;
   return currentRuntimeInTLS;
 }
 
 MODULAR_CXX_EXPORT Detail::RuntimeTable &
-M::AsyncRT::Globals::getRuntimeTableSingleton(
+M::MLRT::Globals::getRuntimeTableSingleton(
     const std::function<Detail::RuntimeTable *()> &ctor) {
   static Detail::RuntimeTable *table = ctor();
   return *table;
@@ -56,7 +56,7 @@ MODULAR_CXX_EXPORT void TCMallocGlobals::tc_delete(void *ptr) {
 #endif
 }
 
-MODULAR_CXX_EXPORT std::string M::AsyncRT::getRuntimeGlobalsBinaryID() {
+MODULAR_CXX_EXPORT std::string M::MLRT::getRuntimeGlobalsBinaryID() {
   // M::getBinaryID() returns the binary ID of the shared library that contains
   // it. For the purposes of MEF cache invalidation, we need to know when
   // there's been a change in these shared libraries.
@@ -67,7 +67,7 @@ MODULAR_CXX_EXPORT std::string M::AsyncRT::getRuntimeGlobalsBinaryID() {
 /// Must live in a shared library to ensure a single instance.
 static std::atomic<uint64_t> globalUniqueTaskIdCounter{0};
 
-MODULAR_CXX_EXPORT uint64_t M::AsyncRT::getUniqueTaskIdForWorkItem() {
+MODULAR_CXX_EXPORT uint64_t M::MLRT::getUniqueTaskIdForWorkItem() {
   uint64_t id =
       globalUniqueTaskIdCounter.fetch_add(1, std::memory_order_relaxed);
   return id;

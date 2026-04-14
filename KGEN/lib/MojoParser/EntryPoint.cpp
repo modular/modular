@@ -421,7 +421,7 @@ LIT::importMojoPackage(ContextRef context, StringRef path,
 /// level package operation. Returns the dependencies of the package, and its
 /// post parse module.
 static std::pair<LinkDependencyArrayAttr, DenseResourceElementsAttr>
-loadStrippedBinaryPackage(AsyncRT::Runtime &runtime,
+loadStrippedBinaryPackage(MLRT::Runtime &runtime,
                           const std::shared_ptr<llvm::SourceMgr> &sourceMgr,
                           MLIRContext *ctx, StringRef path) {
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> packageBuffer =
@@ -477,9 +477,8 @@ loadStrippedBinaryPackage(AsyncRT::Runtime &runtime,
 }
 
 OwningOpRef<ModuleOp> LIT::importStandaloneMojoBinaryPackage(
-    AsyncRT::Runtime &runtime,
-    const std::shared_ptr<llvm::SourceMgr> &sourceMgr, MLIRContext *ctx,
-    StringRef path) {
+    MLRT::Runtime &runtime, const std::shared_ptr<llvm::SourceMgr> &sourceMgr,
+    MLIRContext *ctx, StringRef path) {
   // Emit an error if the path doesn't actually correspond with a package.
   if (!Filesystem::isMojoBinaryPackagePath(path.str())) {
     sourceMgr->PrintMessage(

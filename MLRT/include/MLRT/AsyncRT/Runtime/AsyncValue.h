@@ -25,7 +25,7 @@
 
 #include <atomic>
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 class Runtime;
 class WaiterListNode;
 class AsyncValue;
@@ -858,11 +858,11 @@ inline AsyncValue::Waiter *AsyncValue::getInlineWaiterPointer() {
 }
 
 inline llvm::raw_ostream &operator<<(llvm::raw_ostream &os,
-                                     const M::AsyncRT::AsyncValue &value) {
+                                     const M::MLRT::AsyncValue &value) {
   value.printDebug(os);
   return os;
 }
 
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 
 #endif // MLRT_ASYNCRT_RUNTIME_ASYNCVALUE_H

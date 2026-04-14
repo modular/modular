@@ -17,7 +17,7 @@
 #include <vector>
 
 using namespace M;
-using namespace AsyncRT;
+using namespace MLRT;
 
 template <typename T>
 struct SingleClassTemplate {};

@@ -8,7 +8,7 @@
 
 #include "gtest/gtest.h"
 
-using namespace M::AsyncRT;
+using namespace M::MLRT;
 
 namespace {
 

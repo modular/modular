@@ -12,7 +12,7 @@
 
 #include "gtest/gtest.h"
 
-using namespace M::AsyncRT;
+using namespace M::MLRT;
 using std::chrono::nanoseconds;
 using std::chrono::steady_clock;
 using std::chrono::time_point;

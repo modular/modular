@@ -16,7 +16,7 @@ namespace M {
 class Error;
 }
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 class EncodedLocation;
 class EncodedDiagnostic;
 
@@ -76,6 +76,6 @@ private:
   /// decoded `Location` object.
   RCRef<LocationDecoder> decoder;
 };
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 
 #endif // MLRT_ASYNCRT_SUPPORT_LOCATION_H

@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 //
 // This file exposes a basic set of command line options for setting up and
-// configuring an M::AsyncRT::Runtime for tools to use.
+// configuring an M::MLRT::Runtime for tools to use.
 //
 //===----------------------------------------------------------------------===//
 
@@ -22,7 +22,7 @@
 #include <thread>
 #include <type_traits>
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 
 class Runtime;
 
@@ -154,6 +154,6 @@ private:
       llvm::cl::cat(RuntimeOptionsCategory)};
 };
 
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 
 #endif // MLRT_ASYNCRT_RUNTIME_RUNTIMECLOPTIONS_H

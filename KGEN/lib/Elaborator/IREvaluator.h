@@ -216,7 +216,7 @@ struct ImplNode : public ImplNodeBase {
 /// dependencies in order to make that graph explicit.
 struct ParamNode : public ParamNodeBase {
   /// Create an expansion tree node to represent a generator instantiation.
-  ParamNode(AsyncRT::Runtime &runtime, GeneratorOpInterface gen,
+  ParamNode(MLRT::Runtime &runtime, GeneratorOpInterface gen,
             ParameterExprArrayAttr vals, size_t depth,
             ExpansionGraph *expansionGraph)
       : ParamNodeBase(runtime, gen, vals, depth), impl(this),

@@ -396,8 +396,7 @@ void Graph::doRewrite(const Node *node) {
 void ArgPromotionPass::runOnOperation() {
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
-  AsyncRT::Runtime &runtime =
-      *loadContext(&getContext())->get<AsyncRT::Runtime>();
+  MLRT::Runtime &runtime = *loadContext(&getContext())->get<MLRT::Runtime>();
 
   // We need a target to run this pass.
   TargetInfoAttr target = lookupTargetInfo(getOperation());

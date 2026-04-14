@@ -7,7 +7,7 @@
 #include "MLRT/AsyncRT/Runtime/RuntimeCLOptions.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
 
-using namespace M::AsyncRT;
+using namespace M::MLRT;
 
 bool RuntimeOptions::operator==(const RuntimeOptions &other) const {
   return numThreads == other.numThreads && maxThreads == other.maxThreads &&

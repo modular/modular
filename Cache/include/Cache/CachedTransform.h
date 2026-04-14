@@ -68,19 +68,18 @@ using TransformCache = BlobCache<TransformCacheKey>;
 ///    });
 ///    return result;
 ///  };
-using WritingToBufferTransformFn =
-    llvm::unique_function<AsyncRT::AnyAsyncValueRef(WriteableBufferRef,
-                                                    AsyncRT::AnyAsyncValueRef)>;
+using WritingToBufferTransformFn = llvm::unique_function<MLRT::AnyAsyncValueRef(
+    WriteableBufferRef, MLRT::AnyAsyncValueRef)>;
 
 // A transform fn which perform some transformation and returns the buffer to be
 // cached.
 using ReturnBufferTransformFn =
-    llvm::unique_function<AsyncRT::AsyncValueRef<BufferRef>(
-        AsyncRT::AnyAsyncValueRef)>;
+    llvm::unique_function<MLRT::AsyncValueRef<BufferRef>(
+        MLRT::AnyAsyncValueRef)>;
 
 /// This is the function that's called on a cache hit. It provides the
 /// buffer that was in the cache for the requested lookup.
-using CacheHitFn = llvm::unique_function<AsyncRT::AnyAsyncValueRef(BufferRef)>;
+using CacheHitFn = llvm::unique_function<MLRT::AnyAsyncValueRef(BufferRef)>;
 
 /// Profiler entry for run-time cache transforms.
 using RuntimeCacheProfilerEntry =
@@ -101,8 +100,7 @@ template <typename CacheHitFnT>
 using ResultT = std::invoke_result_t<CacheHitFnT, BufferRef>;
 
 template <typename CacheHitFnT>
-using AsyncValueRefResultT =
-    AsyncRT::AsyncValueRef<Detail::ResultT<CacheHitFnT>>;
+using AsyncValueRefResultT = MLRT::AsyncValueRef<Detail::ResultT<CacheHitFnT>>;
 
 /// Package up detection of member functions of ErrorOr.
 template <typename CacheHitFnT>
@@ -129,9 +127,9 @@ constexpr bool accepts_buffer_v =
 /// the transform. If the transform is *not* run, then the result
 /// AnyAsyncValueRef simply contains a Chain.
 template <typename TransformFnT>
-AsyncRT::AnyAsyncValueRef cachedTransform(
+MLRT::AnyAsyncValueRef cachedTransform(
     EncodedLocation loc, const RCRef<TransformCache> &transformCache,
-    AsyncRT::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
+    MLRT::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
     TransformFnT transformFn, CacheHitFn cacheHitFn,
     bool errorOnCacheInsertFailure = true, std::string *outKeyHash = nullptr) {
   TimeTraceScope traceScope(
@@ -241,11 +239,11 @@ AsyncRT::AnyAsyncValueRef cachedTransform(
 /// This provides a templated version of `cachedTransform` that provides a sync
 /// API for the cache hit function.
 template <typename TransformFnT, typename CacheHitFnT>
-AsyncRT::AnyAsyncValueRef
+MLRT::AnyAsyncValueRef
 cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
-                AsyncRT::AnyAsyncValueRef chain,
-                WriteableBufferRef transformKey, TransformFnT transformFn,
-                CacheHitFnT cacheHitFn, bool errorOnCacheInsertFailure = true,
+                MLRT::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
+                TransformFnT transformFn, CacheHitFnT cacheHitFn,
+                bool errorOnCacheInsertFailure = true,
                 std::string *outKeyHash = nullptr) {
   CacheHitFn onCacheHit;
 
@@ -287,10 +285,10 @@ using CacheProfilerEntry =
 //===----------------------------------------------------------------------===//
 
 /// Transformation and cache functions that operate on a given operation.
-using OpTransformFn = llvm::unique_function<AsyncRT::AnyAsyncValueRef(
-    Operation *, WriteableBufferRef, AsyncRT::AnyAsyncValueRef)>;
+using OpTransformFn = llvm::unique_function<MLRT::AnyAsyncValueRef(
+    Operation *, WriteableBufferRef, MLRT::AnyAsyncValueRef)>;
 using OpCacheHitFn =
-    llvm::unique_function<AsyncRT::AnyAsyncValueRef(Operation *, BufferRef)>;
+    llvm::unique_function<MLRT::AnyAsyncValueRef(Operation *, BufferRef)>;
 
 /// Helper method to write the given operation to the provided cache key.
 LogicalResult writeOperationToCacheKey(Operation *op,
@@ -305,23 +303,22 @@ LogicalResult writeOperationToCacheKey(Operation *op,
 /// result of the transform. If the transform is *not* run, then the result
 /// AnyAsyncValueRef simply contains a Chain.
 template <typename TransformationFnT, typename CacheHitFnT>
-AsyncRT::AnyAsyncValueRef
+MLRT::AnyAsyncValueRef
 cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
-                AsyncRT::AnyAsyncValueRef chain,
-                WriteableBufferRef transformKey,
+                MLRT::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
                 TransformationFnT &&transformFn, CacheHitFnT &&cacheHitFn,
                 std::string *outKeyHash = nullptr) {
   if (failed(writeOperationToCacheKey(target, transformKey.copy()))) {
-    chain.copy().setToError(AsyncRT::getMLIRDiagnostic(
+    chain.copy().setToError(MLRT::getMLIRDiagnostic(
         "failed to write bytecode file", target->getLoc()));
     return chain;
   }
 
   return cachedTransform(
-      AsyncRT::MLIRLocationDecoder::getEncodedLocation(target->getLoc()),
+      MLRT::MLIRLocationDecoder::getEncodedLocation(target->getLoc()),
       std::move(transformCache), std::move(chain), std::move(transformKey),
       [target, transformFn = std::forward<TransformationFnT>(transformFn)](
-          WriteableBufferRef buf, AsyncRT::AnyAsyncValueRef chain) mutable {
+          WriteableBufferRef buf, MLRT::AnyAsyncValueRef chain) mutable {
         return transformFn(target, std::move(buf), std::move(chain));
       },
       [target, cacheHitFn = std::forward<CacheHitFnT>(cacheHitFn)](
@@ -339,9 +336,9 @@ cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
 /// applied).
 /// moreOnMiss and moreOnHit are two callbacks for extra functionality to
 /// perform for cache miss and hit accordingly if needed.
-AsyncRT::AnyAsyncValueRef cachedTransform(
+MLRT::AnyAsyncValueRef cachedTransform(
     Operation *target, RCRef<TransformCache> transformCache,
-    AsyncRT::AnyAsyncValueRef chain, mlir::PassManager &pm,
+    MLRT::AnyAsyncValueRef chain, mlir::PassManager &pm,
     const std::function<void(Operation *)> &moreOnMiss = [](Operation *) {},
     const std::function<void(Operation *)> &moreOnHit = [](Operation *) {});
 

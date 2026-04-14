@@ -66,11 +66,11 @@ ErrorOr<ContextRef> createContextImpl(StringRef programName,
   if (options.getRuntimeOptions()) {
     std::string profileFilename =
         llvm::sys::Process::GetEnv("MODULAR_PROFILE_FILENAME").value_or("");
-    AsyncRT::RuntimeOptions opts = *options.getRuntimeOptions();
+    MLRT::RuntimeOptions opts = *options.getRuntimeOptions();
     if (!profileFilename.empty())
       opts.profileFilename = profileFilename;
-    AsyncRT::RuntimeRef ref =
-        AsyncRT::getOrCreateRuntime(AsyncRT::RuntimeSource::MaxContext, opts);
+    MLRT::RuntimeRef ref =
+        MLRT::getOrCreateRuntime(MLRT::RuntimeSource::MaxContext, opts);
     ctx->setRuntime(GenericRCRef::fromRCRef(std::move(ref)));
   }
 

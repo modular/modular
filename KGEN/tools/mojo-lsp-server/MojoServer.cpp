@@ -755,7 +755,7 @@ struct MojoDocument::Context {
 MojoDocument::MojoDocument(Kind kind, ArrayRef<lsp::URIForFile> uris,
                            int64_t version,
                            SendDiagnosticsFnRef sendDiagnosticsFn,
-                           AsyncRT::Runtime &runtime,
+                           MLRT::Runtime &runtime,
                            ArrayRef<std::string> includeDirs)
     : kind(kind), uris(uris), version(version),
       sendDiagnosticsFn(sendDiagnosticsFn), runtime(runtime),
@@ -1916,7 +1916,7 @@ MojoDocStrings::CodeBlock::onSignatureHelp(llvm::SMLoc loc,
 MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
                                    std::string &&contents, int64_t version,
                                    SendDiagnosticsFnRef sendDiagnosticsFn,
-                                   AsyncRT::Runtime &runtime,
+                                   MLRT::Runtime &runtime,
                                    ArrayRef<std::string> includeDirs,
                                    bool skipDocstringCodeBlockChecks)
     : MojoDocument(Kind::kTextDocument, uri, version, sendDiagnosticsFn,
@@ -2050,7 +2050,7 @@ MojoNotebookDocument::MojoNotebookDocument(
     ArrayRef<lsp::URIForFile> notebookAndCellURIs, int64_t version,
     ArrayRef<lsp::NotebookCell> cellInfos,
     ArrayRef<lsp::TextDocumentItem> cellDocuments,
-    SendDiagnosticsFnRef sendDiagnosticsFn, AsyncRT::Runtime &runtime,
+    SendDiagnosticsFnRef sendDiagnosticsFn, MLRT::Runtime &runtime,
     ArrayRef<std::string> includeDirs)
     : MojoDocument(Kind::kNotebookDocument, notebookAndCellURIs, version,
                    sendDiagnosticsFn, runtime, includeDirs) {
@@ -2314,7 +2314,7 @@ struct MojoServer::Impl {
       // invalidate these files and have the tasks early-out.
       if (!waitOnShutdown)
         file->invalidate();
-      AsyncRT::await(file->getTaskChain());
+      MLRT::await(file->getTaskChain());
     }
 
     {
@@ -2376,7 +2376,7 @@ struct MojoServer::Impl {
     auto [it, _] = files.try_emplace(uri.file(), MojoDocumentRef());
 
     // If a document already exists, invalidate that version.
-    AsyncRT::Runtime &runtime = *ctx->get<AsyncRT::Runtime>();
+    MLRT::Runtime &runtime = *ctx->get<MLRT::Runtime>();
     if (it->second) {
       it->second->invalidate();
     }
@@ -2487,7 +2487,7 @@ MojoServer::create(bool singleThreaded, bool waitOnShutdown,
                    bool skipDocstringCodeBlockChecks) {
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "mojo-lsp-server",
-      Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()
+      Init::Options().withRuntimeOptions(MLRT::RuntimeOptions()
                                              .withSingleThreaded(singleThreaded)
                                              .withMainWillNotDonate()));
   if (ctxOr.isError())
@@ -2715,7 +2715,7 @@ void MojoServer::addNotebookDocument(
   MojoDocumentRef &file = impl->files[uri.file()];
 
   // If a document already exists, invalidate that version.
-  AsyncRT::Runtime &runtime = *impl->ctx->get<AsyncRT::Runtime>();
+  MLRT::Runtime &runtime = *impl->ctx->get<MLRT::Runtime>();
   if (file) {
     file->invalidate();
   }

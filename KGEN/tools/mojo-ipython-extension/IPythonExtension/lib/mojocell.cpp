@@ -359,7 +359,7 @@ static int build(llvm::StringRef code, llvm::StringRef inputName) {
 
   // Create our context (including the runtime).
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "mojo", Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()));
+      "mojo", Init::Options().withRuntimeOptions(MLRT::RuntimeOptions()));
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctxref = std::move(*ctxOr);

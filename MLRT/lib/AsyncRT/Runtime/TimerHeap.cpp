@@ -7,7 +7,7 @@
 #include "MLRT/AsyncRT/Runtime/TimerHeap.h"
 #include "MLRT/AsyncRT/Runtime/Algorithms.h"
 
-using namespace M::AsyncRT;
+using namespace M::MLRT;
 
 void TimerHeap::push(const deadline expiration, AsyncValueRef<Chain> &chain) {
   std::unique_lock<std::mutex> lk(mu);

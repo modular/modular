@@ -887,7 +887,7 @@ ErrorOrSuccess KGENCompiler::runKGENPipeline(ModuleOp theModule,
 
   return runKGENPipeline(
       theModule, target, transformCache,
-      ctx->get<AsyncRT::Runtime>()->getReadyChain().copy(),
+      ctx->get<MLRT::Runtime>()->getReadyChain().copy(),
       [](mlir::Operation *) {}, [](mlir::Operation *) {});
 }
 
@@ -921,12 +921,12 @@ KGENCompiler::runKGENPipeline(ModuleOp theModule, TargetInfoAttr target,
   populateElaborateModulePasses(pm, target, options);
 
   // Run the passes as a cached transform.
-  AsyncRT::AnyAsyncValueRef ready =
+  MLRT::AnyAsyncValueRef ready =
       Cache::cachedTransform(theModule, transformCache.copy(), std::move(chain),
                              pm, std::move(moreOnMiss), std::move(moreOnHit));
 
   // This await here is important since pm is local in this function.
-  AsyncRT::await(ready);
+  MLRT::await(ready);
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();
 
@@ -960,14 +960,14 @@ ErrorOrSuccess KGENCompiler::runGenerateLibraryPipeline(ModuleOp module) {
 
   buildGenerateLibraryPipeline(pm, options);
 
-  AsyncRT::Runtime &runtime =
-      *loadContext(module.getContext())->get<AsyncRT::Runtime>();
-  AsyncRT::AnyAsyncValueRef ready = Cache::cachedTransform(
+  MLRT::Runtime &runtime =
+      *loadContext(module.getContext())->get<MLRT::Runtime>();
+  MLRT::AnyAsyncValueRef ready = Cache::cachedTransform(
       module, transformCache.copy(), AsyncValueRef<Chain>::createReady(runtime),
       pm, [](mlir::Operation *) {}, [](mlir::Operation *) {});
 
   // This await here is important since pm is local in this function.
-  AsyncRT::await(ready);
+  MLRT::await(ready);
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();
 
@@ -1011,7 +1011,7 @@ LogicalResult KGENCompiler::runMOGGPreElabPipeline(ModuleOp module) {
 /// Returns the same AnyAsyncValueRef for error handling in the caller
 /// if needed.
 ErrorOrSuccess KGENCompiler::runElaborationPipeline(
-    ModuleOp module, TargetInfoAttr target, AsyncRT::Runtime &runtime,
+    ModuleOp module, TargetInfoAttr target, MLRT::Runtime &runtime,
     std::optional<AnyAsyncValueRef> chain,
     std::function<void(Operation *)> moreOnMiss,
     std::function<void(Operation *)> moreOnHit) {
@@ -1041,7 +1041,7 @@ ErrorOrSuccess KGENCompiler::runElaborationPipeline(
       std::move(*chain), pm, std::move(moreOnMiss), std::move(moreOnHit));
 
   // This await here is important since pm is local in this function.
-  AsyncRT::await(ready);
+  MLRT::await(ready);
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();
   return success();

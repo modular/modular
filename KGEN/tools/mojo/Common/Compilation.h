@@ -27,10 +27,10 @@ class TimingScope;
 } // namespace mlir
 
 namespace M {
-namespace AsyncRT {
+namespace MLRT {
 class Runtime;
 struct RuntimeOptions;
-} // namespace AsyncRT
+} // namespace MLRT
 
 namespace KGEN::LIT {
 struct ParserConfig;
@@ -194,7 +194,7 @@ ErrorOrSuccess parseTargetOptions(
 ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     const State &state, const llvm::opt::InputArgList &args,
     KGEN::CompilationOptions &compilationOptions, MLIRContext *ctx,
-    AsyncRT::Runtime &runtime, llvm::opt::OptSpecifier docDiagnoseMissingId,
+    MLRT::Runtime &runtime, llvm::opt::OptSpecifier docDiagnoseMissingId,
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier stripFilePrefixId,
     llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdlibPath,
@@ -205,7 +205,7 @@ ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
 
 /// Configure runtime options based on compilation options.
 /// Currently handles thread pool configuration based on numThreads.
-void configureRuntimeOptions(AsyncRT::RuntimeOptions &runtimeOptions,
+void configureRuntimeOptions(MLRT::RuntimeOptions &runtimeOptions,
                              const KGEN::CompilationOptions &options);
 
 } // namespace M

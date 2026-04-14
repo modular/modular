@@ -12,7 +12,7 @@
 
 #include <cstddef>
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 
 /// Run a lambda or other callable with a new Runtime instance configured
 /// according to the command line argument specification.  Encircle this with
@@ -49,6 +49,6 @@ auto runWithLeakCheckedRuntime(const char *testName, BodyFn bodyFn) {
   return bodyFn();
 }
 
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 
 #endif // MLRT_ASYNCRT_RUNTIME_UTILS_H

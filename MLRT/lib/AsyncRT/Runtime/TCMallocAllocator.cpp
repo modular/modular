@@ -7,7 +7,7 @@
 #include "MLRT/AsyncRT/Runtime/Allocator.h"
 #include "MLRT/AsyncRT/Runtime/Globals/Globals.h"
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 
 /// This is an implementation of the Allocator interface that just calls to
 /// tc_new/tc_delete.
@@ -33,4 +33,4 @@ std::unique_ptr<Allocator> createTCMallocAllocator() {
   return std::make_unique<TCMallocAllocator>();
 }
 
-} // end namespace M::AsyncRT
+} // end namespace M::MLRT

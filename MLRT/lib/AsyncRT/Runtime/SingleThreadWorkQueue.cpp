@@ -16,7 +16,7 @@
 #define DEBUG_TYPE "asyncrt"
 
 using namespace M;
-using namespace AsyncRT;
+using namespace MLRT;
 
 namespace {
 
@@ -130,6 +130,6 @@ void SingleThreadWorkQueue::runUntil(StopPredicateFn stopPredicate) {
 }
 
 std::unique_ptr<WorkQueue>
-M::AsyncRT::createSingleThreadWorkQueue(CompactRuntimePtr runtimePtr) {
+M::MLRT::createSingleThreadWorkQueue(CompactRuntimePtr runtimePtr) {
   return std::make_unique<SingleThreadWorkQueue>(runtimePtr);
 }

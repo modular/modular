@@ -606,8 +606,7 @@ struct IPDF : impl::IPDFBase<IPDF> {
 void IPDF::runOnOperation() {
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
-  AsyncRT::Runtime &runtime =
-      *loadContext(&getContext())->get<AsyncRT::Runtime>();
+  MLRT::Runtime &runtime = *loadContext(&getContext())->get<MLRT::Runtime>();
 
   Graph g;
   g.build(getOperation(), symtab);

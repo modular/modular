@@ -36,10 +36,10 @@ public:
     dialect->setInternal(ctxRef.copy());
     if (context->isMultithreadingEnabled() || !enableThreadPool)
       return;
-    AsyncRT::LLVMThreadPool *tp = ctxRef->get<AsyncRT::LLVMThreadPool>();
+    MLRT::LLVMThreadPool *tp = ctxRef->get<MLRT::LLVMThreadPool>();
     if (!tp) {
-      if (AsyncRT::Runtime *runtime = ctxRef->get<AsyncRT::Runtime>())
-        tp = &ctxRef->emplace<AsyncRT::LLVMThreadPool>(*runtime);
+      if (MLRT::Runtime *runtime = ctxRef->get<MLRT::Runtime>())
+        tp = &ctxRef->emplace<MLRT::LLVMThreadPool>(*runtime);
     }
 
     // If the runtime is available, enable threading in MLIR with it.

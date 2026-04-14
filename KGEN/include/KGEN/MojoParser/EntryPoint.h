@@ -22,9 +22,9 @@ namespace M {
 class AutoFixItHandler;
 } // namespace M
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 class Runtime;
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 namespace M::KGEN {
 class CompilationOptions;
 } // namespace M::KGEN
@@ -128,9 +128,8 @@ importMojoPackage(ContextRef context, StringRef path, StringRef packageName,
 /// module, resolving all dependencies into a self contained module. Returns a
 /// module op that contains the package.
 OwningOpRef<ModuleOp> importStandaloneMojoBinaryPackage(
-    AsyncRT::Runtime &runtime,
-    const std::shared_ptr<llvm::SourceMgr> &sourceMgr, MLIRContext *ctx,
-    StringRef path);
+    MLRT::Runtime &runtime, const std::shared_ptr<llvm::SourceMgr> &sourceMgr,
+    MLIRContext *ctx, StringRef path);
 
 /// Clone the module containing the given decl, and prepare it for compilation.
 /// This handles stripping out any unused decls, stabilizing value uses, and

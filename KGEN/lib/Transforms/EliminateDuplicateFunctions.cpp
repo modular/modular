@@ -87,16 +87,16 @@ struct CallGraphNode
     : public CallGraphNodeBase<CallGraphNode, FuncOp, KGENCallOpInterface> {
   using CallGraphNodeBase::CallGraphNodeBase;
   using CallGraphNodeBase::EdgeT;
-  CallGraphNode(FuncOp func, AsyncRT::Runtime &runtime)
+  CallGraphNode(FuncOp func, MLRT::Runtime &runtime)
       : CallGraphNodeBase(func),
-        doneDedup(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(runtime)) {}
+        doneDedup(MLRT::AsyncValueRef<MLRT::Chain>::allocate(runtime)) {}
   CallGraphNode(CallGraphNode &&other)
       : CallGraphNodeBase(std::move(other)),
         doneDedup(std::move(other.doneDedup)) {}
 
   /// Chain value to mark if the deduplication is done or not for synchronizing
   /// CallGraph dependencies.
-  AsyncRT::AsyncValueRef<AsyncRT::Chain> doneDedup;
+  MLRT::AsyncValueRef<MLRT::Chain> doneDedup;
 
   /// The set of dependencies that has to be deduplicated before we can start
   /// working on this node.
@@ -106,7 +106,7 @@ struct CallGraphNode
 struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   // Construct and build the callgraph
   CallGraph(mlir::ModuleOp module, const SymbolTable &symtable,
-            AsyncRT::Runtime &runtime);
+            MLRT::Runtime &runtime);
 
   bool shouldAddToGraph(CallOpT call, CallGraphNode *node) {
     // Skip external functions.
@@ -134,11 +134,11 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   SmallVector<CallGraphNode *> workItems;
 
   /// Reference to the AsyncRT runtime for launch jobs in parallel.
-  AsyncRT::Runtime &runtime;
+  MLRT::Runtime &runtime;
 
   /// Chain value to mark if all work items are done to mark main thread
   /// (this deduplication pass) to be done.
-  AsyncRT::AsyncValueRef<AsyncRT::Chain> done;
+  MLRT::AsyncValueRef<MLRT::Chain> done;
 
   // Map from the target FuncOp to callsites that need to be redirected.
   DenseSet<FuncOp, DuplicateFuncOpEquivalenceInfo> uniqueFuncSet;
@@ -162,9 +162,9 @@ struct GraphTraits<CallGraph *> : public GraphTraits<CallGraph::BaseT *> {};
 } // namespace llvm
 
 CallGraph::CallGraph(mlir::ModuleOp module, const SymbolTable &symtable,
-                     AsyncRT::Runtime &runtime)
+                     MLRT::Runtime &runtime)
     : externalNode(nullptr, runtime), numWorkItems(0), runtime(runtime),
-      done(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(runtime)),
+      done(MLRT::AsyncValueRef<MLRT::Chain>::allocate(runtime)),
       uniqueFuncSet() {
   CallGraphBase::build(module, symtable, runtime);
 
@@ -239,7 +239,7 @@ void CallGraph::deduplicateNode(CallGraphNode *node) {
     finishHandleNode(node);
   };
 
-  AsyncRT::andThenAsyncMoving(waitUtils, std::move(dedupFunc));
+  MLRT::andThenAsyncMoving(waitUtils, std::move(dedupFunc));
 }
 
 void CallGraph::startDeduplication() {
@@ -247,7 +247,7 @@ void CallGraph::startDeduplication() {
     deduplicateNode(node);
 
   finishHandleNode(&externalNode);
-  AsyncRT::await(done);
+  MLRT::await(done);
 }
 
 void EliminateDuplicateFunctionsPass::runOnOperation() {
@@ -256,7 +256,7 @@ void EliminateDuplicateFunctionsPass::runOnOperation() {
   mlir::ModuleOp module = getOperation();
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
-  auto &runtime = *loadContext(&getContext())->get<AsyncRT::Runtime>();
+  auto &runtime = *loadContext(&getContext())->get<MLRT::Runtime>();
 
   CallGraph cg(module, symtab, runtime);
   cg.startDeduplication();

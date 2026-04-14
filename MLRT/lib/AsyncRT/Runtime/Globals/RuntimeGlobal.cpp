@@ -9,7 +9,7 @@
 
 #include <mutex>
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 
 namespace {
 
@@ -47,4 +47,4 @@ RuntimeOptions &getStoredGlobalRuntimeCreationOptions() {
   return storedGlobalRuntimeCreationOptionsImpl();
 }
 
-} // namespace M::AsyncRT
+} // namespace M::MLRT

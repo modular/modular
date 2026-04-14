@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 //
 // Global Runtime pointer and mutex. Implemented in the RuntimeGlobals shared
-// library so there is a single definition per process (ODR). M::AsyncRT
-// uses these (e.g. AsyncRT::getOrCreateRuntime) to manage the single global
+// library so there is a single definition per process (ODR). M::MLRT
+// uses these (e.g. MLRT::getOrCreateRuntime) to manage the single global
 // runtime.
 //
 //===----------------------------------------------------------------------===//
@@ -18,7 +18,7 @@
 
 #include <mutex>
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 
 class Runtime;
 struct RuntimeOptions;
@@ -41,6 +41,6 @@ MODULAR_CXX_EXPORT void clearGlobalRuntimePointerIfEquals(Runtime *ptr);
 /// must hold getGlobalRuntimeMutex() when reading or writing.
 MODULAR_CXX_EXPORT RuntimeOptions &getStoredGlobalRuntimeCreationOptions();
 
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 
 #endif // MLRT_ASYNCRT_RUNTIME_GLOBALS_RUNTIMEGLOBAL_H

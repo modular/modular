@@ -95,7 +95,7 @@ public:
   int64_t getVersion() const { return version; }
 
   /// Return the runtime used for this document.
-  AsyncRT::Runtime &getRuntime() const { return runtime; }
+  MLRT::Runtime &getRuntime() const { return runtime; }
 
   /// Return the URIs of this document.
   ArrayRef<llvm::lsp::URIForFile> getURIs() const { return uris; }
@@ -275,8 +275,8 @@ public:
 
 protected:
   MojoDocument(Kind kind, ArrayRef<llvm::lsp::URIForFile> uris, int64_t version,
-               SendDiagnosticsFnRef sendDiagnosticsFn,
-               AsyncRT::Runtime &runtime, ArrayRef<std::string> includeDirs);
+               SendDiagnosticsFnRef sendDiagnosticsFn, MLRT::Runtime &runtime,
+               ArrayRef<std::string> includeDirs);
 
   /// A collection of MLIR and Mojo related entities used to invoke the parser.
   /// Its lifetime is tied to that of the AST objects gotten from the parser.
@@ -401,7 +401,7 @@ private:
   SendDiagnosticsFnRef sendDiagnosticsFn;
 
   /// The runtime used when parsing the file.
-  AsyncRT::Runtime &runtime;
+  MLRT::Runtime &runtime;
 
   /// A flag indicating if this document version has been invalidated.
   std::atomic<bool> isInvalidated = false;
@@ -546,7 +546,7 @@ struct MojoTextDocument : public MojoDocument {
 public:
   MojoTextDocument(const llvm::lsp::URIForFile &uri, std::string &&contents,
                    int64_t version, SendDiagnosticsFnRef sendDiagnosticsFn,
-                   AsyncRT::Runtime &runtime, ArrayRef<std::string> includeDirs,
+                   MLRT::Runtime &runtime, ArrayRef<std::string> includeDirs,
                    bool skipDocstringCodeBlockChecks = false);
   MojoTextDocument(const MojoDocument &) = delete;
   MojoTextDocument &operator=(const MojoDocument &) = delete;
@@ -658,7 +658,7 @@ public:
                        ArrayRef<llvm::lsp::NotebookCell> cellInfos,
                        ArrayRef<llvm::lsp::TextDocumentItem> cellDocuments,
                        SendDiagnosticsFnRef sendDiagnosticsFn,
-                       AsyncRT::Runtime &runtime,
+                       MLRT::Runtime &runtime,
                        ArrayRef<std::string> includeDirs);
   MojoNotebookDocument(const MojoDocument &) = delete;
   MojoNotebookDocument &operator=(const MojoDocument &) = delete;

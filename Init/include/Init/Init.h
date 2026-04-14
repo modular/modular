@@ -25,8 +25,8 @@ public:
     return *this;
   }
 
-  Options &withRuntimeOptions(
-      const AsyncRT::RuntimeOptions &v = AsyncRT::RuntimeOptions()) {
+  Options &
+  withRuntimeOptions(const MLRT::RuntimeOptions &v = MLRT::RuntimeOptions()) {
     runtimeOptions.emplace(v);
     return *this;
   }
@@ -44,13 +44,13 @@ public:
     return forceDisableCrashReporting;
   }
 
-  std::optional<AsyncRT::RuntimeOptions> getRuntimeOptions() const {
+  std::optional<MLRT::RuntimeOptions> getRuntimeOptions() const {
     return runtimeOptions;
   }
 
 private:
   bool forceDisableCrashReporting = false;
-  std::optional<AsyncRT::RuntimeOptions> runtimeOptions;
+  std::optional<MLRT::RuntimeOptions> runtimeOptions;
 
   friend ErrorOr<ContextRef> getOrCreateContext(StringRef, const Options &,
                                                 StringRef);

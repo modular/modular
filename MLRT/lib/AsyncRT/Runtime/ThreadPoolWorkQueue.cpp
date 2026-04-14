@@ -35,7 +35,7 @@
 #define DEBUG_TYPE "asyncrt"
 
 using namespace M;
-using namespace M::AsyncRT;
+using namespace M::MLRT;
 
 //
 // Terminology:
@@ -473,7 +473,7 @@ void WorkQueueThread::runOnThread() {
   llvm::set_thread_name(poolName + llvm::Twine(workerID));
 
   // On systems that support it, give the thread affinity for one CPU.
-  AsyncRT::setThreadAffinity(cpuID);
+  MLRT::setThreadAffinity(cpuID);
 
   // Run work items until the system is asked to shut down.
   runItemsOnOwningThread(
@@ -496,7 +496,7 @@ void WorkQueueThread::runItemsOnOwningThread(
     StringLiteral spinningLabel, StringLiteral sleepingLabel) {
   if (sharedState.mainWillDonate && workerID == 0) {
     // Temporarily set the main thread's affinity while it is processing work.
-    AsyncRT::runWithThreadAffinity(cpuID, [&]() {
+    MLRT::runWithThreadAffinity(cpuID, [&]() {
       runItemsImpl<EarlyStopPredicateFn, LateStopPredicateFn>(
           earlyStopPredicate, lateStopPredicate, waitForTasks, spinningLabel,
           sleepingLabel);
@@ -1176,7 +1176,7 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
 // createThreadPoolWorkQueue entrypoint
 //===----------------------------------------------------------------------===//
 
-std::unique_ptr<WorkQueue> M::AsyncRT::createThreadPoolWorkQueue(
+std::unique_ptr<WorkQueue> M::MLRT::createThreadPoolWorkQueue(
     CompactRuntimePtr runtimePtr, size_t numThreads, size_t maxThreads,
     bool mainWillDonate, bool withAffinity,
     std::chrono::microseconds threadBusyWaitTime, std::string_view poolName) {

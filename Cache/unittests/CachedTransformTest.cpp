@@ -23,7 +23,7 @@
 
 using namespace M;
 using namespace Cache;
-using namespace AsyncRT;
+using namespace MLRT;
 using namespace mlir;
 
 namespace {
@@ -83,7 +83,7 @@ struct TestPassDiagnosticValidator : public mlir::ScopedDiagnosticHandler {
 // on a cache miss and output of cacheHitFn on cache hit.
 TEST(CachedTransformTest, BufferReturn) {
   TempDir tempDir = createTempDir();
-  RuntimeRef runtime = getOrCreateRuntime(AsyncRT::RuntimeSource::Test,
+  RuntimeRef runtime = getOrCreateRuntime(MLRT::RuntimeSource::Test,
                                           RuntimeOptions().forDebug());
   auto transformBackendChainOr =
       getLocalDefaultBackendChain(tempDir.getPath() / "xform");
@@ -115,7 +115,7 @@ TEST(CachedTransformTest, BufferReturn) {
   constexpr StringLiteral keyStr = "hello";
   WriteableBufferRef key = WriteableBuffer::get(0, {}, keyStr.size());
   key->write(keyStr.data(), keyStr.size());
-  EncodedLocation loc = AsyncRT::UnknownLocationDecoder::getEncodedLocation();
+  EncodedLocation loc = MLRT::UnknownLocationDecoder::getEncodedLocation();
 
   // First call should generate new hash
   AnyAsyncValueRef output =

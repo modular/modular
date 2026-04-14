@@ -1,4 +1,4 @@
-# The nonblocking design of `M::AsyncRT::WorkQueue`
+# The nonblocking design of `M::MLRT::WorkQueue`
 
 ## Introduction
 
@@ -74,7 +74,7 @@ grain. This involves a few things:
    potentially blocking operation on a `WorkQueue`, you should invoke it on the
    foreign thread pool, and have it add a completion handler work-item to the
    `WorkQueue` when it completes.
-3. The top level client of `M::AsyncRT::Runtime` can then configure the system
+3. The top level client of `M::MLRT::Runtime` can then configure the system
    so the `WorkQueue` is balanced with the foreign runtimes at a granular level.
    For example, it is entirely reasonable for some use cases to configure
    `Runtime` to have N threads on an N CPU system, while also having other
@@ -97,7 +97,7 @@ mix between being very useful for "completely pure" systems which scales down to
 embedded systems where you want to control everything, while still working for
 large scale systems with a lot of legacy.
 
-Many clients of `M::AsyncRT::Runtime` will themselves be built with blocking
+Many clients of `M::MLRT::Runtime` will themselves be built with blocking
 expectations (purely async-safe code is still relatively unusual) so there is a
 top-level `await` call which waits until a specified set of values are complete
 before returning. It doesn't block: it donates the client thread to running

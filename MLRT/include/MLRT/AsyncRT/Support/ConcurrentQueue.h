@@ -11,7 +11,7 @@
 #include <memory>
 #include <mutex>
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 
 /// This class provides a concurrent-safe ordered queue. Items in the queue
 /// cannot be re-ordered.
@@ -76,6 +76,6 @@ private:
   ItemType *tail;
 };
 
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 
 #endif // MLRT_ASYNCRT_SUPPORT_CONCURRENTQUEUE_H

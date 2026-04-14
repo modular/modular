@@ -80,10 +80,9 @@ struct AlwaysInlineGraph
 
 struct CallGraphNode
     : CallGraphNodeBase<CallGraphNode, FuncOp, KGENCallOpInterface> {
-  explicit CallGraphNode(FuncOp func, AsyncRT::Runtime &runtime)
+  explicit CallGraphNode(FuncOp func, MLRT::Runtime &runtime)
       : CallGraphNodeBase(func),
-        doneInlining(
-            AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(runtime)) {}
+        doneInlining(MLRT::AsyncValueRef<MLRT::Chain>::allocate(runtime)) {}
   CallGraphNode(CallGraphNode &&other)
       : CallGraphNodeBase(std::move(other)),
         doneInlining(std::move(other.doneInlining)) {}
@@ -137,7 +136,7 @@ struct CallGraphNode
 
   /// Chain value to mark if inlining is done or not for synchronizing CallGraph
   /// dependencies.
-  AsyncRT::AsyncValueRef<AsyncRT::Chain> doneInlining;
+  MLRT::AsyncValueRef<MLRT::Chain> doneInlining;
 
   /// Nodes in the same SCC as the current one.
   llvm::SmallPtrSet<CallGraphNode *, 6> sccNodes;
@@ -156,12 +155,12 @@ struct CallGraphNode
 //===----------------------------------------------------------------------===//
 
 struct CallGraph : CallGraphBase<CallGraph, CallGraphNode> {
-  CallGraph(AsyncRT::Runtime &runtime, PerThreadPassManagers &pms,
+  CallGraph(MLRT::Runtime &runtime, PerThreadPassManagers &pms,
             std::optional<StringAttr> updateAttrName, bool debugCallsite)
       : externalNode(nullptr, runtime), runtime(runtime), pms(pms),
         updateAttrName(updateAttrName), debugCallsite(debugCallsite),
         numWorkItems(0),
-        done(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(runtime)) {}
+        done(MLRT::AsyncValueRef<MLRT::Chain>::allocate(runtime)) {}
 
   /// Build the CallGraph.
   void build(ModuleOp module, const SymbolTable &symtab);
@@ -190,7 +189,7 @@ struct CallGraph : CallGraphBase<CallGraph, CallGraphNode> {
 
 private:
   /// Reference to the AsyncRT runtime for launch jobs in parallel.
-  AsyncRT::Runtime &runtime;
+  MLRT::Runtime &runtime;
 
   /// The pass managers to use.
   PerThreadPassManagers &pms;
@@ -216,7 +215,7 @@ private:
 
   /// Chain value to mark if all work items are done to mark main thread
   /// (this inlining pass)to be done.
-  AsyncRT::AsyncValueRef<AsyncRT::Chain> done;
+  MLRT::AsyncValueRef<MLRT::Chain> done;
 };
 
 } // namespace
@@ -425,7 +424,7 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
 
     completeFunctionProcessing(caller);
   };
-  AsyncRT::andThenAsyncMoving(calleeAsynchValues, std::move(inlineFunc));
+  MLRT::andThenAsyncMoving(calleeAsynchValues, std::move(inlineFunc));
 }
 
 void CallGraph::performInlining(uint64_t threshold) {
@@ -435,7 +434,7 @@ void CallGraph::performInlining(uint64_t threshold) {
   // Mark externalNode's work done (since it's not doing anything.)
   externalNode.doneInlining.copy().emplace();
   endWork();
-  AsyncRT::await(done);
+  MLRT::await(done);
 }
 
 [[maybe_unused]] LogicalResult
@@ -580,8 +579,7 @@ void AutomaticInline::runOnOperation() {
     break;
   }
 
-  AsyncRT::Runtime &runtime =
-      *loadContext(&getContext())->get<AsyncRT::Runtime>();
+  MLRT::Runtime &runtime = *loadContext(&getContext())->get<MLRT::Runtime>();
   PerThreadPassManagers pms(&getContext(), buildFuncPasses);
 
   AlwaysInlineGraph verifyGraph;
@@ -611,7 +609,7 @@ void AutomaticInline::runOnOperation() {
   // If we deferred debuginfo update, do that now.
   if (updateDebugInfo == InlinerDebugInfoUpdateTime::kDeferred) {
     VerboseCompilerTimeTraceScope traceScope("updateDebugInfo");
-    AsyncRT::ForkJoin state(runtime);
+    MLRT::ForkJoin state(runtime);
     for (auto &[func, node] : graph.nodes) {
       if (node.isFunctionDead() || node.callsites.empty())
         continue;

@@ -13,9 +13,8 @@ using namespace M;
 
 namespace {
 struct {
-  void *(*alloc)(size_t alignment,
-                 size_t size) = AsyncRT::TCMallocGlobals::tc_new;
-  void (*free)(void *ptr) = AsyncRT::TCMallocGlobals::tc_delete;
+  void *(*alloc)(size_t alignment, size_t size) = MLRT::TCMallocGlobals::tc_new;
+  void (*free)(void *ptr) = MLRT::TCMallocGlobals::tc_delete;
 } constinit static KGEN_Allocators{};
 } // namespace
 

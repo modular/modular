@@ -119,8 +119,7 @@ struct InferFunctionAttrsPass
 };
 
 void InferFunctionAttrsPass::runOnOperation() {
-  AsyncRT::Runtime &runtime =
-      *loadContext(&getContext())->get<AsyncRT::Runtime>();
+  MLRT::Runtime &runtime = *loadContext(&getContext())->get<MLRT::Runtime>();
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   CallGraph cg(symtab);

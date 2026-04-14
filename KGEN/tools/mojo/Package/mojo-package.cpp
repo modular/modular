@@ -364,7 +364,7 @@ internalizeBitcodeLibs(LLVMBitcodeLibArrayAttr bitcodeLibsAttr,
 /// into Mojo programs.
 static ErrorOr<OwningOpRef<ModuleOp>>
 buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
-             LIT::PackageOp parsedPackageOp, AsyncRT::Runtime &runtime) {
+             LIT::PackageOp parsedPackageOp, MLRT::Runtime &runtime) {
   // Add the dependencies of the package to the package itself, and strip out
   // any post parser metadata for other package.
   SmallVector<FlatSymbolRefAttr> dependencies;
@@ -463,7 +463,7 @@ static int package(const State &subcommandState) {
 
   // Create our context (including the runtime).
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "mojo", Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()),
+      "mojo", Init::Options().withRuntimeOptions(MLRT::RuntimeOptions()),
       "package");
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
@@ -483,7 +483,7 @@ static int package(const State &subcommandState) {
 
   // Parse the input directory as a Mojo package. This returns a module op that
   // wraps the `lit.package` op, which represents the package contents.
-  AsyncRT::Runtime &runtime = *ctx->get<AsyncRT::Runtime>();
+  MLRT::Runtime &runtime = *ctx->get<MLRT::Runtime>();
   LIT::PackageOp packageOp;
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr,
                                                     &packageArgs.ctx);

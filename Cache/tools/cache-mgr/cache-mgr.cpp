@@ -39,7 +39,7 @@
 #include <vector>
 
 using namespace M;
-using namespace AsyncRT;
+using namespace MLRT;
 using namespace Cache;
 
 namespace {
@@ -154,7 +154,7 @@ static AsyncValueRef<std::string>
 putObjectsIntoCache(BinaryBlobCacheKey::KeyTy key, BufferRef value,
                     StringRef input,
                     RCRef<BlobCache<BinaryBlobCacheKey>> &cache,
-                    AsyncRT::Runtime &runtime, bool useHex) {
+                    MLRT::Runtime &runtime, bool useHex) {
 
   AsyncValueRef<std::string> insert =
       cache->insert(runtime, std::move(key), std::move(value));
@@ -187,7 +187,7 @@ int main(int argc, char **argv) {
     llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
     return 1;
   }
-  AsyncRT::Runtime &runtime = *(*ctxOr)->get<AsyncRT::Runtime>();
+  MLRT::Runtime &runtime = *(*ctxOr)->get<MLRT::Runtime>();
 
   auto backendPathOr = clOptions.getBackendPath();
   if (backendPathOr.isError())

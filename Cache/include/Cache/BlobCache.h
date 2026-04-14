@@ -41,35 +41,35 @@ public:
   /// Store the object `obj` with hash `keyHash`. This is expected to take
   /// ownership of the data in `obj` on success. Subclasses are expected to
   /// overwrite the current contents on a collision.
-  AsyncRT::AsyncValueRef<AsyncRT::Chain>
-  insert(AsyncRT::Runtime &runtime, BufferRef keyHash, BufferRef obj,
+  MLRT::AsyncValueRef<MLRT::Chain>
+  insert(MLRT::Runtime &runtime, BufferRef keyHash, BufferRef obj,
          std::optional<EncodedLocation> loc = std::nullopt);
 
   /// May be overwritten to provide an asynchronous insert.
-  virtual AsyncRT::AsyncValueRef<AsyncRT::Chain>
-  insertImpl(AsyncRT::Runtime &runtime, BufferRef keyHash, BufferRef obj,
+  virtual MLRT::AsyncValueRef<MLRT::Chain>
+  insertImpl(MLRT::Runtime &runtime, BufferRef keyHash, BufferRef obj,
              std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Check if an item with key hash `keyHash` exists in this backend or in any
   /// of the delegates.
-  AsyncRT::AsyncValueRef<bool>
-  contains(AsyncRT::Runtime &runtime, BufferRef keyHash,
+  MLRT::AsyncValueRef<bool>
+  contains(MLRT::Runtime &runtime, BufferRef keyHash,
            std::optional<EncodedLocation> loc = std::nullopt);
 
   /// May be overwritten to provide an asynchronous contains.
-  virtual AsyncRT::AsyncValueRef<bool>
-  containsImpl(AsyncRT::Runtime &runtime, BufferRef keyHash,
+  virtual MLRT::AsyncValueRef<bool>
+  containsImpl(MLRT::Runtime &runtime, BufferRef keyHash,
                std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Get the item with key hash `keyHash` from this backend or any of its
   /// delegates.
-  AsyncRT::AsyncValueRef<std::optional<BufferRef>>
-  find(AsyncRT::Runtime &runtime, BufferRef keyHash,
+  MLRT::AsyncValueRef<std::optional<BufferRef>>
+  find(MLRT::Runtime &runtime, BufferRef keyHash,
        std::optional<EncodedLocation> loc = std::nullopt);
 
   /// May be overwritten to provide an asynchronous find.
-  virtual AsyncRT::AsyncValueRef<std::optional<BufferRef>>
-  findImpl(AsyncRT::Runtime &runtime, BufferRef keyHash,
+  virtual MLRT::AsyncValueRef<std::optional<BufferRef>>
+  findImpl(MLRT::Runtime &runtime, BufferRef keyHash,
            std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Subclasses that don't override insert should use this to provide the
@@ -136,8 +136,8 @@ public:
   /// user to use a strong hash function! Returns the cache key on success -
   /// this can be used for speeding up future hash computations or simply
   /// discarded.
-  AsyncRT::AsyncValueRef<Chain>
-  insertKeyed(AsyncRT::Runtime &runtime, llvm::StringRef key, BufferRef obj,
+  MLRT::AsyncValueRef<Chain>
+  insertKeyed(MLRT::Runtime &runtime, llvm::StringRef key, BufferRef obj,
               std::optional<EncodedLocation> loc = std::nullopt) {
     return backendList->insert(runtime, Buffer::get(key), std::move(obj),
                                std::move(loc));
@@ -146,18 +146,18 @@ public:
     return backendList->insertSync(key, std::move(obj));
   }
 
-  AsyncRT::AsyncValueRef<std::string>
-  insert(AsyncRT::Runtime &runtime, KeyTy key, BufferRef obj,
+  MLRT::AsyncValueRef<std::string>
+  insert(MLRT::Runtime &runtime, KeyTy key, BufferRef obj,
          std::optional<EncodedLocation> loc = std::nullopt) {
     std::string keyHash = KeyInfo::hashKey(std::forward<KeyTy>(key));
-    AsyncRT::AsyncValueRef<AsyncRT::Chain> insertAsync =
+    MLRT::AsyncValueRef<MLRT::Chain> insertAsync =
         insertKeyed(runtime, keyHash, std::move(obj), std::move(loc));
 
     // Allocate a space for the output.
-    auto out = AsyncRT::AsyncValueRef<std::string>::allocate(runtime);
+    auto out = MLRT::AsyncValueRef<std::string>::allocate(runtime);
     std::move(insertAsync)
         .andThenSync([keyHash = std::move(keyHash), out = out.copy()](
-                         AsyncValueRef<AsyncRT::Chain> &&insertAsync) mutable {
+                         AsyncValueRef<MLRT::Chain> &&insertAsync) mutable {
           // If insertion failed, propagate the error. Otherwise, hand over the
           // key hash.
           if (insertAsync.isError())
@@ -179,16 +179,16 @@ public:
   /// Check if any of the provided backends have the item. If `outKeyHash` is
   /// provided, it will be set to the key hash, regardless of whether the item
   /// exists or not.
-  AsyncRT::AsyncValueRef<bool>
-  containsKeyed(AsyncRT::Runtime &runtime, llvm::StringRef key,
+  MLRT::AsyncValueRef<bool>
+  containsKeyed(MLRT::Runtime &runtime, llvm::StringRef key,
                 std::optional<EncodedLocation> loc = std::nullopt) const {
     return backendList->contains(runtime, Buffer::get(key), std::move(loc));
   }
   ErrorOr<bool> containsKeyedSync(llvm::StringRef key) const {
     return backendList->containsSync(key);
   }
-  AsyncRT::AsyncValueRef<bool>
-  contains(AsyncRT::Runtime &runtime, KeyTy key,
+  MLRT::AsyncValueRef<bool>
+  contains(MLRT::Runtime &runtime, KeyTy key,
            std::optional<EncodedLocation> loc = std::nullopt,
            std::string *outKeyHash = nullptr) const {
     std::string keyHash = KeyInfo::hashKey(std::forward<KeyTy>(key));
@@ -207,16 +207,16 @@ public:
   /// Get the item from any of the provided backends. If `outKeyHash` is
   /// provided, it will be set to the key hash, regardless of whether the item
   /// exists or not.
-  AsyncRT::AsyncValueRef<std::optional<BufferRef>>
-  findKeyed(AsyncRT::Runtime &runtime, llvm::StringRef key,
+  MLRT::AsyncValueRef<std::optional<BufferRef>>
+  findKeyed(MLRT::Runtime &runtime, llvm::StringRef key,
             std::optional<EncodedLocation> loc = std::nullopt) const {
     return backendList->find(runtime, Buffer::get(key), std::move(loc));
   }
   ErrorOr<std::optional<BufferRef>> findKeyedSync(llvm::StringRef key) const {
     return backendList->findSync(key);
   }
-  AsyncRT::AsyncValueRef<std::optional<BufferRef>>
-  find(AsyncRT::Runtime &runtime, KeyTy key,
+  MLRT::AsyncValueRef<std::optional<BufferRef>>
+  find(MLRT::Runtime &runtime, KeyTy key,
        std::optional<EncodedLocation> loc = std::nullopt,
        std::string *outKeyHash = nullptr) const {
     std::string hash = KeyInfo::hashKey(std::forward<KeyTy>(key));
