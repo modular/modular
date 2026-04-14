@@ -212,18 +212,14 @@ struct Struct_ep_init:
                 shmem_init_thread_mpi(gpu_ctx, gpus_per_node=n_gpus_per_node)
 
             # Allocate SHMEM buffers for dispatch phase
-            dispatch_send_p = shmem_malloc[DType.uint8](
-                UInt(dispatch_send_size)
-            )
-            dispatch_recv_p = shmem_malloc[DType.uint8](
-                UInt(dispatch_recv_size)
-            )
-            dispatch_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
+            dispatch_send_p = shmem_malloc[DType.uint8](dispatch_send_size)
+            dispatch_recv_p = shmem_malloc[DType.uint8](dispatch_recv_size)
+            dispatch_recv_count_p = shmem_malloc[DType.uint64](n_experts)
 
             # Allocate SHMEM buffers for combine phase
-            combine_send_p = shmem_malloc[DType.uint8](UInt(combine_send_size))
-            combine_recv_p = shmem_malloc[DType.uint8](UInt(combine_recv_size))
-            combine_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
+            combine_send_p = shmem_malloc[DType.uint8](combine_send_size)
+            combine_recv_p = shmem_malloc[DType.uint8](combine_recv_size)
+            combine_recv_count_p = shmem_malloc[DType.uint64](n_experts)
 
         else:
             if not is_p2p_enabled():

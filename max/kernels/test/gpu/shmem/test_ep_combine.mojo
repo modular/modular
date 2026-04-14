@@ -123,12 +123,12 @@ def test_combine[
         )
 
     var send_buf = shmem_malloc[DType.uint8](
-        UInt(top_k * n_tokens_per_rank * msg_bytes)
+        top_k * n_tokens_per_rank * msg_bytes
     )
     var recv_buf = shmem_malloc[DType.uint8](
-        UInt(n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes)
+        n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes
     )
-    var recv_count = shmem_malloc[DType.uint64](UInt(n_local_experts * n_ranks))
+    var recv_count = shmem_malloc[DType.uint64](n_local_experts * n_ranks)
     var recv_count_buf = DeviceBuffer(
         ctx, recv_count, n_local_experts * n_ranks, owning=False
     )

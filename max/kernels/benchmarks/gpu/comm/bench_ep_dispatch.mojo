@@ -95,7 +95,7 @@ def bench_dispatch[
         (Idx[hidden_size // group_size](), Idx[max_recv_tokens]())
     )
 
-    var recv_count = shmem_malloc[DType.uint64](UInt(n_local_experts * n_ranks))
+    var recv_count = shmem_malloc[DType.uint64](n_local_experts * n_ranks)
     var recv_count_buf = DeviceBuffer(
         ctx, recv_count, n_local_experts * n_ranks, owning=False
     )
@@ -197,11 +197,9 @@ def bench_dispatch[
     ) raises:
         var msg_bytes = TokenFmtType.msg_size()
 
-        var send_buf = shmem_malloc[DType.uint8](
-            UInt(n_tokens_per_rank * msg_bytes)
-        )
+        var send_buf = shmem_malloc[DType.uint8](n_tokens_per_rank * msg_bytes)
         var recv_buf = shmem_malloc[DType.uint8](
-            UInt(n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes)
+            n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes
         )
 
         comptime dispatch_async = dispatch_async_kernel[

@@ -312,7 +312,7 @@ trait TokenFormat(DevicePassable, TrivialRegisterPassable):
     @staticmethod
     def copy_token_to_send_buf[
         src_type: DType,
-        block_size: UInt,
+        block_size: Int,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
@@ -398,14 +398,14 @@ struct BF16TokenFormat[
     @staticmethod
     def copy_token_to_send_buf[
         src_type: DType,
-        block_size: UInt,
+        block_size: Int,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
         src_p: UnsafePointer[mut=False, Scalar[src_type], ...],
         input_scale: Float32,
     ) -> None:
-        block_memcpy[Self.hid_dim * size_of[BFloat16](), Int(block_size)](
+        block_memcpy[Self.hid_dim * size_of[BFloat16](), block_size](
             buf_p,
             src_p.bitcast[UInt8](),
             thread_idx.x,
@@ -571,7 +571,7 @@ struct BlockwiseFP8TokenFormat[
     @staticmethod
     def copy_token_to_send_buf[
         src_type: DType,
-        block_size: UInt,
+        block_size: Int,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
@@ -591,9 +591,7 @@ struct BlockwiseFP8TokenFormat[
             WARP_SIZE % n_threads_per_group == 0
         ), "Each warp must process a multiple of quantization groups"
 
-        for i in range(
-            thread_idx.x, Self.hid_dim // src_width, Int(block_size)
-        ):
+        for i in range(thread_idx.x, Self.hid_dim // src_width, block_size):
             var loaded_vec = src_p.load[
                 width=src_width, alignment=Self.alignment, invariant=True
             ](i * src_width).cast[Self.scales_dtype]()
@@ -901,7 +899,7 @@ struct NVFP4TokenFormat[
     @staticmethod
     def copy_token_to_send_buf[
         src_type: DType,
-        block_size: UInt,
+        block_size: Int,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
@@ -912,9 +910,7 @@ struct NVFP4TokenFormat[
         comptime byte_width = src_width // 2
         comptime NUM_THREADS_PER_SF = NVFP4_SF_VECTOR_SIZE // src_width
 
-        for i in range(
-            thread_idx.x, Self.hid_dim // src_width, Int(block_size)
-        ):
+        for i in range(thread_idx.x, Self.hid_dim // src_width, block_size):
             var loaded_vec = src_p.load[
                 width=src_width, alignment=Self.alignment, invariant=True
             ](i * src_width)
@@ -1273,7 +1269,7 @@ struct MXFP4TokenFormat[
     @staticmethod
     def copy_token_to_send_buf[
         src_type: DType,
-        block_size: UInt,
+        block_size: Int,
         buf_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         buf_p: UnsafePointer[mut=True, UInt8, _, address_space=buf_addr_space],
@@ -1284,9 +1280,7 @@ struct MXFP4TokenFormat[
         comptime byte_width = src_width // 2
         comptime NUM_THREADS_PER_SF = MXFP4_SF_VECTOR_SIZE // src_width
 
-        for i in range(
-            thread_idx.x, Self.hid_dim // src_width, Int(block_size)
-        ):
+        for i in range(thread_idx.x, Self.hid_dim // src_width, block_size):
             var loaded_vec = src_p.load[
                 width=src_width, alignment=Self.alignment, invariant=True
             ](i * src_width).cast[DType.float32]()
@@ -1761,7 +1755,7 @@ struct EPDispatchKernel[
                 (Idx(token_idx), Idx(0))
             )
             Self.token_fmt_type.copy_token_to_send_buf[
-                input_type, UInt(Self.num_threads)
+                input_type, Self.num_threads
             ](curr_send_buf_ptr, input_tensor_ptr, input_scale)
 
             if tid < Self.top_k:
@@ -2158,7 +2152,7 @@ struct EPDispatchKernel[
             var input_tensor_p = input_tokens.ptr + token_idx * Self.hid_dim
             format_handler.copy_token_to_send_buf[
                 shared_expert_input_dtype,
-                UInt(Self.num_threads),
+                Self.num_threads,
                 buf_addr_space=AddressSpace.SHARED,
             ](smem_buf_p, input_tensor_p, input_scale)
             barrier()
