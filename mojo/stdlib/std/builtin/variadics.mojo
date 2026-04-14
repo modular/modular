@@ -495,6 +495,22 @@ struct TypeList[
         """
         result = type_of(result)()
 
+    comptime of[Trait: type_of(AnyType), //, *values: Trait] = TypeList[
+        Trait=Trait, values.values
+    ]
+    """Form a compile-time list of types with some elements, uninstantiated.
+
+    Parameters:
+        Trait: The type of the elements in the list.
+        values: The values in the list.
+
+    Examples:
+        ```mojo
+        comptime Ts = TypeList.of[Trait=AnyType, Int, String, Float64, Bool]
+        comptime Ms = TypeList.of[Trait=Movable, Int, String, Float64, Bool]
+        ```
+    """
+
     comptime tabulate[
         Trait: type_of(AnyType),
         ToT: Trait,
@@ -626,16 +642,6 @@ struct TypeList[
         """
         return Self.size
 
-
-comptime TypeListOf[type: type_of(AnyType), //, *values: type] = TypeList[
-    Trait=type, values.values
-]
-"""A compile-time type list with some elements, uninstantiated.
-
-Parameters:
-    type: The type of the elements in the list.
-    values: The values in the list.
-"""
 
 # ===-----------------------------------------------------------------------===#
 # ParameterList
@@ -789,6 +795,22 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         +Self.type,
     ]
     """Gets a single element on the variadic list."""
+
+    comptime of[type: AnyType, //, *values: type] = ParameterList[
+        type=type, values.values
+    ]
+    """Form a compile-time list of values with some elements, uninstantiated.
+
+    Parameters:
+        type: The type of the elements in the list.
+        values: The values in the list.
+
+    Examples:
+        ```mojo
+        comptime Ints = ParameterList.of[4, 5, 6]
+        comptime Strings = ParameterList.of["foo", "bar", "baz"]
+        ```
+    """
 
     comptime tabulate[
         type: AnyType,

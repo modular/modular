@@ -563,19 +563,19 @@ def test_variadic_pack_forwarding_through_two_levels() raises:
 
 
 def test_typelist_size() raises:
-    assert_equal(TypeListOf[type=AnyType, Int, String, Float64].size, 3)
-    assert_equal(TypeListOf[Bool].size, 1)
+    assert_equal(TypeList.of[Trait=AnyType, Int, String, Float64].size, 3)
+    assert_equal(TypeList.of[Bool].size, 1)
 
 
 def test_typelist_getitem() raises:
-    comptime TL = TypeListOf[type=AnyType, Int, String, Float64]()
+    comptime TL = TypeList.of[Trait=AnyType, Int, String, Float64]()
     assert_true(_type_is_eq[TL[0], Int]())
     assert_true(_type_is_eq[TL[1], String]())
     assert_true(_type_is_eq[TL[2], Float64]())
 
 
 def test_typelist_reversed() raises:
-    comptime rev = TypeListOf[type=AnyType, Int, String, Float64]().reverse()
+    comptime rev = TypeList.of[Trait=AnyType, Int, String, Float64]().reverse()
     assert_equal(rev.size, 3)
     assert_true(_type_is_eq[rev[0], Float64]())
     assert_true(_type_is_eq[rev[1], String]())
@@ -583,7 +583,7 @@ def test_typelist_reversed() raises:
 
 
 def test_typelist_contains() raises:
-    comptime TL = TypeListOf[type=AnyType, Int, String, Float64]()
+    comptime TL = TypeList.of[Trait=AnyType, Int, String, Float64]()
     comptime assert TL.contains[Int]
     comptime assert TL.contains[String]
     comptime assert TL.contains[Float64]
@@ -591,7 +591,7 @@ def test_typelist_contains() raises:
 
 
 def test_typelist_slice() raises:
-    comptime TL = TypeListOf[type=AnyType, Int, String, Float64, Bool]()
+    comptime TL = TypeList.of[Trait=AnyType, Int, String, Float64, Bool]()
 
     # Slice middle
     comptime middle = TL.slice[start=1, end=3]()
@@ -617,7 +617,7 @@ def test_typelist_slice() raises:
 
 
 def test_typelist_filter() raises:
-    comptime TL = TypeListOf[type=AnyType, Int, String, Float64, Bool]()
+    comptime TL = TypeList.of[Trait=AnyType, Int, String, Float64, Bool]()
 
     comptime IsNotInt[Type: AnyType] = not _type_is_eq[Type, Int]()
     comptime filtered = TL.filter[IsNotInt]()
@@ -628,7 +628,7 @@ def test_typelist_filter() raises:
 
 
 def test_typelist_filter_empty_result() raises:
-    comptime TL = TypeListOf[type=AnyType, Int, String]
+    comptime TL = TypeList.of[Trait=AnyType, Int, String]
 
     comptime AlwaysFalse[Type: AnyType] = False
     comptime empty = TL.filter[AlwaysFalse]
@@ -636,7 +636,7 @@ def test_typelist_filter_empty_result() raises:
 
 
 def test_typelist_map() raises:
-    comptime TL = TypeListOf[type=Copyable, Int, String, Float64]()
+    comptime TL = TypeList.of[Trait=Copyable, Int, String, Float64]()
 
     comptime ToList[T: Copyable] = List[T]
     comptime mapped = TL.map[To=Copyable, Mapper=ToList]()
@@ -647,7 +647,7 @@ def test_typelist_map() raises:
 
 
 def test_typelist_map_identity() raises:
-    comptime TL = TypeListOf[type=AnyType, Int, Bool]()
+    comptime TL = TypeList.of[Trait=AnyType, Int, Bool]()
 
     comptime Identity[T: AnyType] = T
     comptime mapped = TL.map[To=AnyType, Mapper=Identity]()
@@ -657,7 +657,7 @@ def test_typelist_map_identity() raises:
 
 
 def test_typelist_map_empty() raises:
-    comptime TL = TypeListOf[type=Copyable]()
+    comptime TL = TypeList.of[Trait=Copyable]()
 
     comptime ToList[T: Copyable] = List[T]
     comptime mapped = TL.map[To=Copyable, Mapper=ToList]()
