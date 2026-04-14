@@ -9,15 +9,15 @@
 #include "gtest/gtest.h"
 
 using namespace M;
-using namespace M::AsyncRT;
+using namespace M::MLRT;
 
 namespace {
 
 RuntimeRef createRuntime() {
-  return AsyncRT::getOrCreateRuntime(AsyncRT::RuntimeSource::Test,
-                                     AsyncRT::RuntimeOptions()
-                                         .withLeakCheckedAllocator()
-                                         .withMainWillNotDonate());
+  return MLRT::getOrCreateRuntime(MLRT::RuntimeSource::Test,
+                                  MLRT::RuntimeOptions()
+                                      .withLeakCheckedAllocator()
+                                      .withMainWillNotDonate());
 }
 
 /// `getOrCreateRuntime` installs a single global runtime; a second call on the
@@ -40,21 +40,21 @@ TEST(RuntimeTest, CreateDestroyCreateClearsTls) {
 TEST(RuntimeTest, DefaultAffinityBehavior) {
   // Ensure env var is not set (may already be in environment)
   unsetenv("MODULAR_ENABLE_AFFINITY");
-  AsyncRT::RuntimeOptions options;
+  MLRT::RuntimeOptions options;
   // Disabled by default.
   EXPECT_FALSE(options.withAffinity);
 }
 
 TEST(RuntimeTest, EnvVarEnablesAffinity) {
   setenv("MODULAR_ENABLE_AFFINITY", "1", 1);
-  AsyncRT::RuntimeOptions options;
+  MLRT::RuntimeOptions options;
   EXPECT_TRUE(options.withAffinity);
   unsetenv("MODULAR_ENABLE_AFFINITY");
 }
 
 TEST(RuntimeTest, EnvVarEnablesAffinityWithTrue) {
   setenv("MODULAR_ENABLE_AFFINITY", "true", 1);
-  AsyncRT::RuntimeOptions options;
+  MLRT::RuntimeOptions options;
   EXPECT_TRUE(options.withAffinity);
   unsetenv("MODULAR_ENABLE_AFFINITY");
 }
@@ -62,7 +62,7 @@ TEST(RuntimeTest, EnvVarEnablesAffinityWithTrue) {
 TEST(RuntimeTest, BuilderMethodOverridesEnvVar) {
   // Even when env var doesn't enable, builder can enable
   unsetenv("MODULAR_ENABLE_AFFINITY");
-  AsyncRT::RuntimeOptions options;
+  MLRT::RuntimeOptions options;
   EXPECT_FALSE(options.withAffinity);
   options.withCPUAffinity(true);
   EXPECT_TRUE(options.withAffinity);

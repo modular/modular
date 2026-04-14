@@ -19,7 +19,7 @@
 #include "gtest/gtest.h"
 #include <thread>
 
-using namespace M::AsyncRT;
+using namespace M::MLRT;
 
 namespace {
 
@@ -33,8 +33,8 @@ protected:
     runtimeOptions.singleThreaded = GetParam() == kSingleThread;
     runtimeOptions.numThreads = numThreads;
     runtimeOptions.mainWillDonate = mainWillDonate;
-    return M::AsyncRT::getOrCreateRuntime(M::AsyncRT::RuntimeSource::Test,
-                                          runtimeOptions);
+    return M::MLRT::getOrCreateRuntime(M::MLRT::RuntimeSource::Test,
+                                       runtimeOptions);
   }
 };
 

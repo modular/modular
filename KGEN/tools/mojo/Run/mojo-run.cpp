@@ -218,7 +218,7 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
 /// Executes the given module's `main` function, or returns an error indicating
 /// why it could not be executed.
 static ErrorOrSuccess executeMain(ExecutionEngine &engine,
-                                  AsyncRT::Runtime &runtime,
+                                  MLRT::Runtime &runtime,
                                   ArrayRef<const char *> arguments) {
   auto runFn = [arguments](void *fnPtr) -> ErrorOrSuccess {
     using FnType = int (*)(int, const char *const *);
@@ -246,7 +246,7 @@ static ErrorOrSuccess executeMain(ExecutionEngine &engine,
 /// references into its own arena so that the profiler is fully self-contained.
 static void internTimeTraceProfile(M::Context &maxContext) {
   std::optional<TimeTraceProfiler> &profilerOr =
-      maxContext.get<AsyncRT::Runtime>()->getProfiler();
+      maxContext.get<MLRT::Runtime>()->getProfiler();
   if (profilerOr)
     profilerOr->intern();
 }
@@ -255,7 +255,7 @@ static void internTimeTraceProfile(M::Context &maxContext) {
 /// along to that program, initializes an execution engine and executes the
 /// program. Returns a successful exit code if the program was executed
 /// successfully, and an unsuccessful exit code otherwise.
-static int executeModule(const State &state, AsyncRT::Runtime &runtime,
+static int executeModule(const State &state, MLRT::Runtime &runtime,
                          MLIRContext &context,
                          const CompilationOptions &options,
                          OwningOpRef<ModuleOp> module, TargetInfoAttr target,
@@ -347,7 +347,7 @@ static int run(const State &subcommandState) {
 
   warnBuildingForDebugWithDebugBuiltCompiler(state, options.debugLevel);
 
-  AsyncRT::RuntimeOptions runtimeOptions;
+  MLRT::RuntimeOptions runtimeOptions;
   configureRuntimeOptions(runtimeOptions, options);
 
   // Create our context (including the runtime).
@@ -359,7 +359,7 @@ static int run(const State &subcommandState) {
   registerContext(mlirCtx, ctx);
 
   // Lower the input file to an MLIR module.
-  AsyncRT::Runtime &runtime = *ctx->get<AsyncRT::Runtime>();
+  MLRT::Runtime &runtime = *ctx->get<MLRT::Runtime>();
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceManager, &mlirCtx);
   ScopedMLIRWarningHandler warningHandler(&mlirCtx, options.disableWarnings,
                                           options.warningsAsErrors);

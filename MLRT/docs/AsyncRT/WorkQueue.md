@@ -1,11 +1,11 @@
-# `M::AsyncRT::WorkQueue`
+# `M::MLRT::WorkQueue`
 
-This document introduces the `M::AsyncRT::WorkQueue`, key design points and how
+This document introduces the `M::MLRT::WorkQueue`, key design points and how
 to use it.
 
 ## Overview
 
-The `M::AsyncRT::WorkQueue` is an abstract interface for executing work items
+The `M::MLRT::WorkQueue` is an abstract interface for executing work items
 concurrently. It is the core abstraction for managing CPU parallelism in
 AsyncRT, providing a thread pool that distributes tasks across available CPU
 cores.
@@ -98,7 +98,7 @@ overflow.
 
 ### Ownership and Lifecycle
 
-The `WorkQueue` is typically owned by an `M::AsyncRT::Runtime` instance, which
+The `WorkQueue` is typically owned by an `M::MLRT::Runtime` instance, which
 creates and manages it based on `RuntimeOptions`. The lifecycle is:
 
 1. **Creation**: Via `createThreadPoolWorkQueue()` or

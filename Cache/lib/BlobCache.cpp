@@ -43,7 +43,7 @@
 
 using namespace M;
 using namespace Cache;
-using namespace AsyncRT;
+using namespace MLRT;
 
 /// Provides a simple way to get an error given an optional encoded location and
 /// a standard Error.
@@ -96,7 +96,7 @@ static bool checkOrCreateWriteableDirectory(const std::filesystem::path &path) {
 //===----------------------------------------------------------------------===//
 
 AsyncValueRef<Chain>
-BlobCacheBackend::insert(AsyncRT::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::insert(MLRT::Runtime &runtime, BufferRef keyHash,
                          BufferRef obj, std::optional<EncodedLocation> loc) {
   EncodedLocation location = loc.has_value()
                                  ? std::move(*loc)
@@ -140,7 +140,7 @@ ErrorOrSuccess BlobCacheBackend::insertSync(StringRef keyHash, BufferRef obj) {
 }
 
 AsyncValueRef<Chain>
-BlobCacheBackend::insertImpl(AsyncRT::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::insertImpl(MLRT::Runtime &runtime, BufferRef keyHash,
                              BufferRef obj,
                              std::optional<EncodedLocation> loc) {
   // Wrap the synchronous implementation by default.
@@ -158,7 +158,7 @@ BlobCacheBackend::insertImpl(AsyncRT::Runtime &runtime, BufferRef keyHash,
 }
 
 AsyncValueRef<bool>
-BlobCacheBackend::contains(AsyncRT::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::contains(MLRT::Runtime &runtime, BufferRef keyHash,
                            std::optional<EncodedLocation> loc) {
   EncodedLocation location = loc.has_value()
                                  ? std::move(*loc)
@@ -206,7 +206,7 @@ ErrorOr<bool> BlobCacheBackend::containsSync(StringRef keyHash) {
 }
 
 AsyncValueRef<bool>
-BlobCacheBackend::containsImpl(AsyncRT::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::containsImpl(MLRT::Runtime &runtime, BufferRef keyHash,
                                std::optional<EncodedLocation> loc) {
   // Wrap the synchronous implementation by default.
   auto result = AsyncValueRef<bool>::allocate(runtime);
@@ -223,7 +223,7 @@ BlobCacheBackend::containsImpl(AsyncRT::Runtime &runtime, BufferRef keyHash,
 }
 
 AsyncValueRef<std::optional<BufferRef>>
-BlobCacheBackend::find(AsyncRT::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::find(MLRT::Runtime &runtime, BufferRef keyHash,
                        std::optional<EncodedLocation> loc) {
   EncodedLocation location = loc.has_value()
                                  ? std::move(*loc)
@@ -301,7 +301,7 @@ BlobCacheBackend::findSync(StringRef keyHash) {
 }
 
 AsyncValueRef<std::optional<BufferRef>>
-BlobCacheBackend::findImpl(AsyncRT::Runtime &runtime, BufferRef keyHash,
+BlobCacheBackend::findImpl(MLRT::Runtime &runtime, BufferRef keyHash,
                            std::optional<EncodedLocation> loc) {
   // Wrap the synchronous execution by default.
   auto result = AsyncValueRef<std::optional<BufferRef>>::allocate(runtime);

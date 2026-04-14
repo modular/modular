@@ -15,7 +15,7 @@ using ssize_t = SSIZE_T;
 #include <sys/types.h>
 #endif // defined(_WIN64) || defined(_WIN32)
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 /// This is an interface to a basic semaphore with post and timed wait
 /// functionality. This is essentially a lowest-common-denominator interface
 /// that is meant to be able to be backed by a GCD semaphore, or a POSIX
@@ -51,6 +51,6 @@ private:
   class Impl;
   std::unique_ptr<Impl> impl;
 };
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 
 #endif // MLRT_ASYNCRT_SUPPORT_SEMAPHORE_H

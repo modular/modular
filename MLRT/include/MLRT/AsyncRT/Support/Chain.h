@@ -7,7 +7,7 @@
 #ifndef MLRT_ASYNCRT_SUPPORT_CHAIN_H
 #define MLRT_ASYNCRT_SUPPORT_CHAIN_H
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 
 /// This type is used to model dependencies between side-effecting operations,
 /// by turning these side effects into explicitly modeled values.  Its runtime
@@ -18,6 +18,6 @@ public:
   static void swap(Chain &lhs, Chain &rhs) {}
 };
 
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 
 #endif // MLRT_ASYNCRT_SUPPORT_CHAIN_H

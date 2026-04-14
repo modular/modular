@@ -11,7 +11,7 @@
 #include "Support/Threading/SpinWaiter.h"
 #include "llvm/Support/Format.h"
 
-using namespace M::AsyncRT;
+using namespace M::MLRT;
 
 //===----------------------------------------------------------------------===//
 // Destruction logic
@@ -112,7 +112,7 @@ void AsyncValue::removeAnyInlineWaiter(std::optional<Waiter> &inlineWaiter) {
   }
 }
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 /// This class provides a singly linked list of nodes that each contain four
 /// waiters.  The AsyncValue itself stores the first waiter added to an
 /// AsyncValue inline in the same space as its payload field, then stores
@@ -193,7 +193,7 @@ private:
   WaiterListNode(const WaiterListNode &) = delete;
   void operator=(const WaiterListNode &) = delete;
 };
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 
 /// Invoke all of the waiters specified by the list of waiter nodes, and
 /// deallocate the nodes.  We know we have ownership of `list` here, but there

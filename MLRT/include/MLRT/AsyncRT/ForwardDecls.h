@@ -17,7 +17,7 @@
 // Forward Declarations
 //===----------------------------------------------------------------------===//
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 // AsyncRT/Support Declarations
 class Chain;
 class EncodedLocation;
@@ -32,7 +32,7 @@ template <typename T>
 class AsyncValueRef;
 class Runtime;
 
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 
 //===----------------------------------------------------------------------===//
 // Using Declarations
@@ -40,17 +40,17 @@ class Runtime;
 
 namespace M {
 // AsyncRT/Support Declarations
-using AsyncRT::Chain;
-using AsyncRT::EncodedDiagnostic;
-using AsyncRT::EncodedLocation;
-using AsyncRT::LocationDecoder;
+using MLRT::Chain;
+using MLRT::EncodedDiagnostic;
+using MLRT::EncodedLocation;
+using MLRT::LocationDecoder;
 
 // AsyncRT/Runtime Declarations
-using AsyncRT::Allocator;
-using AsyncRT::AnyAsyncValueRef;
-using AsyncRT::AsyncValue;
-using AsyncRT::AsyncValueRef;
-using AsyncRT::Runtime;
+using MLRT::Allocator;
+using MLRT::AnyAsyncValueRef;
+using MLRT::AsyncValue;
+using MLRT::AsyncValueRef;
+using MLRT::Runtime;
 } // namespace M
 
 #endif // MLRT_ASYNCRT_FORWARD_DECLS_H

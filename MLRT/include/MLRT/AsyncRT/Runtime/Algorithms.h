@@ -17,7 +17,7 @@
 #include "llvm/ADT/Twine.h"
 #include <utility>
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 
 /// Profiling entry for sub-tasks launched by the parallelization helpers.
 using AlgorithmProfilerEntry =
@@ -40,7 +40,7 @@ inline static void await(const AsyncValueRef<T> &value) {
 
 /// Error propagating variant of await functions.
 inline ErrorOrSuccess awaitOrError(MutableArrayRef<AnyAsyncValueRef> values) {
-  AsyncRT::await(values);
+  MLRT::await(values);
 
   for (AnyAsyncValueRef &value : values)
     if (value.isError())
@@ -563,6 +563,6 @@ static inline void parallelForEachN(Runtime &runtime, size_t totalCount,
     await(chainResult);
 }
 
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 
 #endif // MLRT_ASYNCRT_RUNTIME_ALGORITHMS_H

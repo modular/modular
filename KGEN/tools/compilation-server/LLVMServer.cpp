@@ -55,7 +55,7 @@ LLVMServer::~LLVMServer() = default;
 ErrorOr<std::unique_ptr<LLVMServer>> LLVMServer::create(bool singleThreaded) {
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "compilation-server",
-      Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()
+      Init::Options().withRuntimeOptions(MLRT::RuntimeOptions()
                                              .withSingleThreaded(singleThreaded)
                                              .withMainWillNotDonate()));
   if (ctxOr.isError())

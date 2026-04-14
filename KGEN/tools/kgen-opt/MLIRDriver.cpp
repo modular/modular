@@ -122,7 +122,7 @@ bool M::KGEN::Tool::registerMLIRPathCLOptions(mlir::DialectRegistry &registry,
 
   // Create and register the AsyncRT context before MlirOptMainConfig so that
   // dialect plugins can see it.
-  AsyncRT::RuntimeOptions asyncrtOpts;
+  MLRT::RuntimeOptions asyncrtOpts;
   asyncrtOpts.withLeakCheckedAllocator();
   if (asyncrtSingleThread)
     asyncrtOpts.withSingleThreaded();
@@ -135,7 +135,7 @@ bool M::KGEN::Tool::registerMLIRPathCLOptions(mlir::DialectRegistry &registry,
   }
 
   if (asyncrtSingleThread) {
-    [[maybe_unused]] auto &runtime = *(*ctxOr)->get<AsyncRT::Runtime>();
+    [[maybe_unused]] auto &runtime = *(*ctxOr)->get<MLRT::Runtime>();
     assert(runtime.getWorkQueue()->getParallelismLevel() == 1);
   }
 

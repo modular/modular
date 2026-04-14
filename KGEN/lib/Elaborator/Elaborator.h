@@ -31,10 +31,9 @@ namespace M::KGEN {
 
 /// This struct represents the expansion of a callgraph during elaboration.
 struct ExpansionGraph {
-  ExpansionGraph(AsyncRT::Runtime &runtime)
-      : worklistCh(AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(runtime)),
-        quiesceChain(
-            AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(runtime)) {}
+  ExpansionGraph(MLRT::Runtime &runtime)
+      : worklistCh(MLRT::AsyncValueRef<MLRT::Chain>::allocate(runtime)),
+        quiesceChain(MLRT::AsyncValueRef<MLRT::Chain>::allocate(runtime)) {}
 
   virtual ~ExpansionGraph();
 
@@ -56,7 +55,7 @@ struct ExpansionGraph {
   /// used to starve the workqueue before running evaluators, because evaluation
   /// cannot be reliably performed while the compiler is doing work on other
   /// threads.
-  AsyncRT::AsyncValueRef<AsyncRT::Chain> worklistCh;
+  MLRT::AsyncValueRef<MLRT::Chain> worklistCh;
 
   /// Concrete functions added directly to the expansion graph.
   std::vector<std::unique_ptr<ImplNode>> elaboratedNodes;
@@ -383,7 +382,7 @@ private:
       knownGraphs;
 
   /// The AsyncRT runtime instance to use.
-  AsyncRT::Runtime &runtime;
+  MLRT::Runtime &runtime;
 
   /// The callgraph being expanded.
   ExpansionGraph g;

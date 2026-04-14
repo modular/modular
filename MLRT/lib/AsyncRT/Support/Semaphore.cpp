@@ -16,7 +16,7 @@
 #include <semaphore.h>
 #endif
 
-using namespace M::AsyncRT;
+using namespace M::MLRT;
 
 /// This class provides the implementation for the Semaphore object. Because we
 /// have so many different implementation details, we encapsulate the

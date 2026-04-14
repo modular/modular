@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the M::AsyncRT::WorkQueue interface, which allows clients
+// This file declares the M::MLRT::WorkQueue interface, which allows clients
 // of AsyncRT to implement work queues that map onto their systems in a nice
 // way.
 //
@@ -30,7 +30,7 @@
 /// should enqueue to Global queue.
 constexpr int kDefaultTaskId = -1;
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 
 //===----------------------------------------------------------------------===//
 // Internal helpers
@@ -226,6 +226,6 @@ std::unique_ptr<WorkQueue> createThreadPoolWorkQueue(
     bool mainWillDonate, bool withAffinity,
     std::chrono::microseconds threadBusyWaitTime, std::string_view poolName);
 
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 
 #endif // MLRT_ASYNCRT_RUNTIME_WORKQUEUE_H

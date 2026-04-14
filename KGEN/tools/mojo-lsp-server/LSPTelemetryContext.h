@@ -9,7 +9,7 @@
 
 #include "Support/Telemetry/Telemetry.h"
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 class Runtime;
 }
 

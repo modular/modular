@@ -12,7 +12,7 @@
 
 #include <mutex>
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 
 RuntimeRef getOrCreateRuntime(RuntimeSource source,
                               const RuntimeOptions &options,
@@ -23,7 +23,7 @@ RuntimeRef getOrCreateRuntime(RuntimeSource source,
     if (getStoredGlobalRuntimeCreationOptions() != options &&
         !allowUsingExistingOptions)
       llvm::report_fatal_error(
-          "AsyncRT::getOrCreateRuntime called requesting different options to "
+          "MLRT::getOrCreateRuntime called requesting different options to "
           "those used to create the existing Runtime.");
     return RuntimeRef::copy(existingRuntime);
   }
@@ -52,4 +52,4 @@ RuntimeRef getOrCreateRuntime(RuntimeSource source,
   return newRuntime.copy();
 }
 
-} // namespace M::AsyncRT
+} // namespace M::MLRT

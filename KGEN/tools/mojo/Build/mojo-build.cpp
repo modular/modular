@@ -505,7 +505,7 @@ createOutputFile(const State &state, const llvm::opt::InputArgList &args,
 /// archive. Returns an unsuccessful exit code if the archive could not be
 /// created successfully, and nullopt otherwise.
 static std::optional<int>
-compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
+compileModuleToArchive(const State &state, MLRT::Runtime &runtime,
                        MLIRContext &context, const CompilationOptions &options,
                        OwningOpRef<ModuleOp> module, TargetInfoAttr target,
                        BufferRef &archive, OutputType outputType,
@@ -914,7 +914,7 @@ static int build(const State &subcommandState) {
 
   warnBuildingForDebugWithDebugBuiltCompiler(state, options.debugLevel);
 
-  AsyncRT::RuntimeOptions runtimeOptions;
+  MLRT::RuntimeOptions runtimeOptions;
   configureRuntimeOptions(runtimeOptions, options);
 
   // Create our context (including the runtime).
@@ -951,7 +951,7 @@ static int build(const State &subcommandState) {
   }
 
   // Lower the input file to an MLIR module.
-  AsyncRT::Runtime &runtime = *ctx->get<AsyncRT::Runtime>();
+  MLRT::Runtime &runtime = *ctx->get<MLRT::Runtime>();
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &mlirCtx);
   ScopedMLIRWarningHandler warningHandler(&mlirCtx, options.disableWarnings,
                                           options.warningsAsErrors);

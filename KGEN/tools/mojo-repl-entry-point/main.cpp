@@ -49,14 +49,13 @@ int main() {
 
   // Create our context for execution.
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "mojo-repl",
-      Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()));
+      "mojo-repl", Init::Options().withRuntimeOptions(MLRT::RuntimeOptions()));
   if (ctxOr.isError()) {
     llvm::errs() << "unable to create context: " << ctxOr.getError() << "\n";
     return 1;
   }
   ContextRef ctx = std::move(*ctxOr);
-  AsyncRT::Runtime *runtime = ctx->get<AsyncRT::Runtime>();
+  MLRT::Runtime *runtime = ctx->get<MLRT::Runtime>();
 
   // In order to ensure that mojo has a runtime for execution, inject
   // a global value. Normally this would be set by Mojo during startup,

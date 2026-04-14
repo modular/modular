@@ -9,7 +9,7 @@
 #include "MLRT/AsyncRT/Runtime/WorkQueue.h"
 #include "Support/SymbolExport.h"
 
-using namespace M::AsyncRT;
+using namespace M::MLRT;
 
 /// Compute the worker task ID for a GPU device. Called from Mojo via
 /// external_call. Obtains the thread pool size internally from the

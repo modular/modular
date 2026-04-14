@@ -65,7 +65,7 @@ static ErrorOr<ContextRef> getOrCreateGlobalContext() {
   std::call_once(g_context_init_flag, []() {
     auto ctxOr = Init::createContext(
         "mojo-lldb-plugin",
-        Init::Options().withRuntimeOptions(AsyncRT::RuntimeOptions()
+        Init::Options().withRuntimeOptions(MLRT::RuntimeOptions()
                                                .withCPUAffinity(false)
                                                .withMainWillNotDonate()));
     if (ctxOr.isError()) {

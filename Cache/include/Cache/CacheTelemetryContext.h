@@ -18,7 +18,7 @@
 #include <functional>
 #include <string>
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 class Runtime;
 }
 

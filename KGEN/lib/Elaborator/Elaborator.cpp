@@ -44,7 +44,7 @@
 
 using namespace M;
 using namespace KGEN;
-using namespace AsyncRT;
+using namespace MLRT;
 
 /// Short living attribute that is needed to set on KGEN::FuncOp or
 /// KGEN::DeclareRegeionOp. This attribute will be converted to LLVMetadata
@@ -182,7 +182,7 @@ ExpansionGraph::~ExpansionGraph() {
   // tasks to the error state and await completion.
   for (auto &[key, node] : nodes.get())
     node->setToError();
-  AsyncRT::await(quiesceChain);
+  MLRT::await(quiesceChain);
 }
 
 void ExpansionGraph::didCompleteTask() {
@@ -466,7 +466,7 @@ Elaborator::Elaborator(SymbolTable &symtab,
     : InterpreterCache(target, config.optimizeInterpreter), target(target),
       options(options), config(config), oldSymTab(symtab),
       env(symtab.getOp()->getAttrOfType<EnvAttr>(EnvAttr::getEnvAttrName())),
-      runtime(*loadContext(target.getContext())->get<AsyncRT::Runtime>()),
+      runtime(*loadContext(target.getContext())->get<MLRT::Runtime>()),
       g(this->runtime),
       paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
       compileAsmFn(compileAsmFn), compileOffloadFn(compileOffloadFn) {}
@@ -2352,12 +2352,11 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
 
     // When all of them are done as individual nodes, they will reset their
     // dependency counter to 1 and wait for all chains to complete.
-    AsyncRT::andThenAsyncMoving(sccChains,
-                                [this, nodes = sccNodes.takeVector()](
-                                    MutableArrayRef<AnyAsyncValueRef>) {
-                                  for (ParamNode *node : nodes)
-                                    completeImplNodeProcessing(&node->impl);
-                                });
+    MLRT::andThenAsyncMoving(sccChains, [this, nodes = sccNodes.takeVector()](
+                                            MutableArrayRef<AnyAsyncValueRef>) {
+      for (ParamNode *node : nodes)
+        completeImplNodeProcessing(&node->impl);
+    });
   }
 
   // Now reschedule the nodes outside the loop to avoid races.
@@ -2599,7 +2598,7 @@ LogicalResult Elaborator::run(
     unsigned cycleGeneration = 0;
     while (true) {
       signalWorklist();
-      AsyncRT::await(g.worklistCh);
+      MLRT::await(g.worklistCh);
       assert(g.numWorkItems == 0);
 
       // Check if all primary generators are done. If so, break.

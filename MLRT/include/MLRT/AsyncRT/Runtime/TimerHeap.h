@@ -16,7 +16,7 @@
 #include <mutex>
 #include <thread>
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 
 class TimerHeap {
 public:
@@ -58,6 +58,6 @@ private:
   std::thread thread;
 };
 
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 
 #endif // MLRT_ASYNCRT_SUPPORT_TIMERHEAP_H

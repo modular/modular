@@ -38,7 +38,7 @@ namespace M {
 class Error;
 } // namespace M
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 class Allocator;
 class WorkQueue;
 
@@ -104,9 +104,9 @@ struct RuntimeOptions {
   ///
   /// For example:
   ///
-  /// AsyncRT::RuntimeOptions rtOpt;
+  /// MLRT::RuntimeOptions rtOpt;
   /// rtOpt.runtimeProfilingTypeMask = 1 << Trace::typeBitshift(Trace::kOther);
-  /// auto rt = AsyncRT::getOrCreateRuntime(AsyncRT::RuntimeSource::Test,
+  /// auto rt = MLRT::getOrCreateRuntime(MLRT::RuntimeSource::Test,
   /// rtOpt);
   ///
   /// Creates a Runtime that will only record `kOther` type events.
@@ -140,9 +140,8 @@ struct RuntimeOptions {
 
   ProfilerDebuginfo profilerDebuginfo = ProfilerDebuginfo::kNoProfiler;
   WorkQueueType defaultWorkQueue;
-  explicit RuntimeOptions(
-      AsyncRT::RuntimeOptions::WorkQueueType wq =
-          AsyncRT::RuntimeOptions::WorkQueueType::kThreadPool)
+  explicit RuntimeOptions(MLRT::RuntimeOptions::WorkQueueType wq =
+                              MLRT::RuntimeOptions::WorkQueueType::kThreadPool)
       : defaultWorkQueue(wq) {}
   /// Explicitly tell runtime to use single threaded workqueue. This is useful
   /// in situations where computation is performed by some other runtime
@@ -467,6 +466,6 @@ inline void checkUniqueRuntime(const Runtime &runtime) {
          "Please don't do that.");
 }
 
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 
 #endif // MLRT_ASYNCRT_RUNTIME_H

@@ -20,7 +20,7 @@
 #include <vector>
 
 using namespace M;
-using namespace M::AsyncRT;
+using namespace M::MLRT;
 
 namespace {
 

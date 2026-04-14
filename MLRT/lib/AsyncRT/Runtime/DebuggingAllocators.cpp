@@ -35,7 +35,7 @@ constexpr bool kCaptureMalloc = true;
 #endif
 
 using namespace M;
-using namespace AsyncRT;
+using namespace MLRT;
 
 //===----------------------------------------------------------------------===//
 // Leak Checking Allocator
@@ -123,7 +123,7 @@ private:
 /// Create a wrapper allocator that checks to make sure all memory is
 /// deallocated when the allocator itself is destroyed.
 std::unique_ptr<Allocator>
-M::AsyncRT::createLeakCheckAllocator(std::unique_ptr<Allocator> baseAllocator) {
+M::MLRT::createLeakCheckAllocator(std::unique_ptr<Allocator> baseAllocator) {
   return std::make_unique<LeakCheckAllocator>(std::move(baseAllocator));
 }
 
@@ -163,7 +163,7 @@ public:
 
   ~ProfilingAllocator() override {
     llvm::errs() << "-----------------------------------------------------\n";
-    llvm::errs() << "M::AsyncRT::Allocator profile:\n";
+    llvm::errs() << "M::MLRT::Allocator profile:\n";
     llvm::errs() << "  Total number of allocations:           "
                  << totalAllocations.load() << "\n";
     llvm::errs() << "  Total bytes allocated:                 "
@@ -205,7 +205,7 @@ public:
 /// Create a wrapper allocator that prints memory profiling information when it
 /// is destroyed.  This also performs leak checks.
 std::unique_ptr<Allocator>
-M::AsyncRT::createProfilingAllocator(std::unique_ptr<Allocator> baseAllocator) {
+M::MLRT::createProfilingAllocator(std::unique_ptr<Allocator> baseAllocator) {
   return std::make_unique<ProfilingAllocator>(std::move(baseAllocator));
 }
 
@@ -244,7 +244,7 @@ private:
 };
 } // namespace
 
-std::unique_ptr<Allocator> M::AsyncRT::createUseAfterFreeAllocator() {
+std::unique_ptr<Allocator> M::MLRT::createUseAfterFreeAllocator() {
   return std::make_unique<UseAfterFreeAllocator>();
 }
 

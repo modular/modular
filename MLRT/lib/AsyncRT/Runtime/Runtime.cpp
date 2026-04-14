@@ -22,7 +22,7 @@
 #include <chrono>
 
 using namespace M;
-using namespace M::AsyncRT;
+using namespace M::MLRT;
 
 void WorkQueue::vtableAnchor() {}
 void Allocator::vtableAnchor() {}
@@ -86,8 +86,7 @@ Runtime::~Runtime() {
   }
 }
 
-std::unique_ptr<Allocator>
-AsyncRT::getAllocator(const AllocatorOptions &options) {
+std::unique_ptr<Allocator> MLRT::getAllocator(const AllocatorOptions &options) {
   // Create base allocator: UseAfterFree, TCMalloc, or Malloc
   // These are mutually exclusive and must be enabled at compile time.
   std::unique_ptr<Allocator> allocator;

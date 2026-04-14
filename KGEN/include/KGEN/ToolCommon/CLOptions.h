@@ -79,12 +79,12 @@ public:
              CommandLineFunc &val);
 };
 
-class KGENCommonOptions : public AsyncRT::RuntimeOptions {
+class KGENCommonOptions : public MLRT::RuntimeOptions {
 
 public:
   KGENCommonOptions()
-      : AsyncRT::RuntimeOptions(
-            AsyncRT::RuntimeOptions::WorkQueueType::kThreadPool) {}
+      : MLRT::RuntimeOptions(MLRT::RuntimeOptions::WorkQueueType::kThreadPool) {
+  }
 
   CompilationOptions::DebugInfoLevel debugInfoLevel{
       CompilationOptions::kNoDebug};
@@ -282,7 +282,7 @@ private:
 // CLOptions
 //===----------------------------------------------------------------------===//
 
-class KGENCommonCLOptions : public AsyncRT::RuntimeCLOptions {
+class KGENCommonCLOptions : public MLRT::RuntimeCLOptions {
 public:
   KGENCommonCLOptions(KGENCommonOptions &opts)
       : RuntimeCLOptions(opts), options(opts) {}

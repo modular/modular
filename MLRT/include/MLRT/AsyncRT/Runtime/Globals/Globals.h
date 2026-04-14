@@ -14,7 +14,7 @@
 #include <functional>
 #include <string>
 
-namespace M::AsyncRT {
+namespace M::MLRT {
 class Runtime;
 class CompactRuntimePtr;
 
@@ -59,6 +59,6 @@ MODULAR_CXX_EXPORT std::string getRuntimeGlobalsBinaryID();
 /// Thread-safe and globally unique across all AsyncRT users.
 MODULAR_CXX_EXPORT uint64_t getUniqueTaskIdForWorkItem();
 
-} // namespace M::AsyncRT
+} // namespace M::MLRT
 
 #endif // MLRT_ASYNCRT_RUNTIME_GLOBALS_H
