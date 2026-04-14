@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     from max.diagnostics.gpu import GPUStats
 
 from max.benchmark.benchmark_shared.config import (
+    CACHE_RESET_ENDPOINT_MAP,
     PIXEL_GEN_DEFAULT_ENDPOINT,
     PIXEL_GENERATION_ENDPOINTS,
     PIXEL_GENERATION_TASKS,
@@ -3069,6 +3070,39 @@ def _extract_metadata_args(
             clean_args.append(args[i])
             i += 1
     return clean_args, metadata_values
+
+
+def flush_prefix_cache(
+    backend: Backend, host: str, port: int, dry_run: bool
+) -> None:
+    """Flush the serving engine's prefix cache via HTTP POST."""
+    if backend not in CACHE_RESET_ENDPOINT_MAP:
+        raise ValueError(
+            f"Cannot flush prefix cache for {backend} backend: this backend"
+            " does not support prefix cache flush."
+        )
+    import requests as _http_requests  # lazy - avoid hard dep for non-sweep use
+
+    api_url = f"http://{host}:{port}{CACHE_RESET_ENDPOINT_MAP[backend]}"
+    if dry_run:
+        logger.info(f"Dry-run flush: POST {api_url}")
+        return
+    response = _http_requests.post(api_url)
+    if response.status_code == 400:
+        logger.warning(
+            f"Prefix caching is not enabled on backend {backend} at {api_url};"
+            " skipping cache flush."
+        )
+    elif response.status_code == 404:
+        logger.warning(
+            f"Prefix cache reset is not supported at {api_url} (HTTP 404);"
+            " skipping cache flush."
+        )
+    elif response.status_code != 200:
+        raise RuntimeError(
+            f"Failed to flush prefix cache for backend {backend} at {api_url}: "
+            f"status={response.status_code} body={response.text}"
+        )
 
 
 def parse_args(args: Sequence[str] | None = None) -> ServingBenchmarkConfig:

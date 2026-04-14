@@ -26,6 +26,7 @@ modular_py_library(
         requirement("jinja2"),
         requirement("numpy"),
         requirement("pyyaml"),
+        requirement("requests"),
         requirement("tqdm"),
         requirement("tiktoken"),
         requirement("transformers"),
@@ -48,11 +49,12 @@ modular_py_binary(
         requirement("cyclopts"),
         requirement("jinja2"),
         requirement("numpy"),
+        requirement("requests"),
         requirement("tqdm"),
-        requirement("tiktoken"),
         requirement("transformers"),
         requirement("pyyaml"),
         requirement("taskgroup"),
+        requirement("tiktoken"),
     ],
 )
 
