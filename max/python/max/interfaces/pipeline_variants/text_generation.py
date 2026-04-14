@@ -764,6 +764,16 @@ class SpecDecodingState:
     """Per-request state for speculative decoding."""
 
     draft_tokens_to_verify: list[int] = field(default_factory=list)
+    """The draft tokens to verify in the next batch"""
+
+    maybe_accepted_draft_tokens: list[int] = field(default_factory=list)
+    """The draft tokens that are being verified in the current batch
+
+    We are unsure whether these tokens will be accepted or not. However, to ensure
+    that we allocate enough KV, we conservatively assume that they will all be
+    accepted.
+
+    This should only be present when running with overlap scheduler."""
 
 
 TextGenerationContextType = TypeVar(

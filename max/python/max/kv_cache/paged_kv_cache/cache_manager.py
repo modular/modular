@@ -507,7 +507,9 @@ class PagedKVCacheManager:
             )
 
             # Get the existing cache length for this sequence.
-            cache_length = ctx.tokens.processed_length
+            cache_length = ctx.tokens.processed_length + len(
+                ctx.spec_decoding_state.maybe_accepted_draft_tokens
+            )
             cache_lengths_np[batch_idx] = cache_length
 
             # Update the maximum lengths seen so far.
