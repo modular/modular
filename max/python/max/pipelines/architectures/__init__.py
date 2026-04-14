@@ -86,6 +86,7 @@ def register_all_models() -> None:
     from .qwen_image_edit import qwen_image_edit_arch, qwen_image_edit_plus_arch
     from .unified_eagle_llama3 import unified_eagle_llama3_arch
     from .unified_mtp_deepseekV3 import unified_mtp_deepseekV3_arch
+    from .wan import wan_arch, wan_i2v_arch
     from .z_image_modulev3 import z_image_arch
 
     architectures = [
@@ -146,6 +147,8 @@ def register_all_models() -> None:
         qwen_image_edit_plus_arch,
         unified_eagle_llama3_arch,
         unified_mtp_deepseekV3_arch,
+        wan_arch,
+        wan_i2v_arch,
         z_image_arch,
     ]
 

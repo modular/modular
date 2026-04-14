@@ -143,6 +143,8 @@ class PipelineClassName(str, Enum):
     FLUX2 = "Flux2Pipeline"
     FLUX2_KLEIN = "Flux2KleinPipeline"
     ZIMAGE = "ZImagePipeline"
+    WAN = "WanPipeline"
+    WAN_I2V = "WanImageToVideoPipeline"
 
     @classmethod
     def from_class_name(cls, class_name: str) -> PipelineClassName:
