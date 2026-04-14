@@ -5225,6 +5225,70 @@ class ReduceRmsNormOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
+class ReduceRmsNormRoPEOp(max._core.Operation):
+    """
+    Fused operation computing RMS normalization followed by Rotary Position
+    Embedding (RoPE):
+
+      normed = rms_norm(input, weight, epsilon, weight_offset)
+      x1, x2 = split(normed, axis=-1)
+      rotated = concat(-x2, x1, axis=-1)
+      result = normed * cos_vals + rotated * sin_vals
+
+    Example:
+
+    ```mlir
+      %result = mo.reduce.rms_norm.RoPE(%input, %weight, %epsilon, %offset,
+                                         %cos_vals, %sin_vals)
+        {multiply_before_cast = false} :
+        (!mo.tensor<[2, 3, 128], bf16, gpu:0>, !mo.tensor<[128], bf16, gpu:0>,
+         !mo.tensor<[], bf16>, !mo.tensor<[], bf16>,
+         !mo.tensor<[2, 3, 128], f32, gpu:0>, !mo.tensor<[2, 3, 128], f32, gpu:0>)
+        -> !mo.tensor<[2, 3, 128], bf16, gpu:0>
+    ```
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        result: TensorType,
+        input: max._core.Value[TensorType],
+        weight: max._core.Value[TensorType],
+        epsilon: max._core.Value[TensorType],
+        weight_offset: max._core.Value[TensorType],
+        cos_vals: max._core.Value[TensorType],
+        sin_vals: max._core.Value[TensorType],
+        multiply_before_cast: max._core.dialects.builtin.BoolAttr,
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @property
+    def input(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight(self) -> max._core.Value[TensorType]: ...
+    @property
+    def epsilon(self) -> max._core.Value[TensorType]: ...
+    @property
+    def weight_offset(self) -> max._core.Value[TensorType]: ...
+    @property
+    def cos_vals(self) -> max._core.Value[TensorType]: ...
+    @property
+    def sin_vals(self) -> max._core.Value[TensorType]: ...
+    @property
+    def multiply_before_cast(self) -> bool: ...
+    @multiply_before_cast.setter
+    def multiply_before_cast(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
 class DistributedReducescatterSumOp(max._core.Operation):
     """
     ReduceScatter takes in inputs each coming from a different device, and
