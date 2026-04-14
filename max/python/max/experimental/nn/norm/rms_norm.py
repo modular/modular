@@ -15,14 +15,16 @@
 
 from __future__ import annotations
 
-from max.driver import CPU
+from max._core.dialects import builtin, kgen, mo
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
-from max.graph import Dim
+from max.graph import DeviceRef, Dim, TensorType, ops
+from max.graph.graph import Graph
 
 from ..module import Module
 
 
+@F.functional
 def rms_norm(
     x: Tensor,
     weight: Tensor,
@@ -54,18 +56,21 @@ def rms_norm(
             f"{x.type=}, weight shape must match the final input dimension."
         )
 
-    return F.custom(
-        "rms_norm",
-        x.device,
-        [
-            x,
-            weight,
-            F.constant(eps, dtype=x.dtype, device=CPU()),
-            F.constant(weight_offset, dtype=x.dtype, device=CPU()),
-        ],
-        [x.type],
-        parameters={"multiply_before_cast": multiply_before_cast},
-    )[0]
+    x_val = x.__tensorvalue__()
+    weight_val = weight.__tensorvalue__()
+    result = Graph.current._add_op_generated(
+        mo.ReduceRmsNormOp,
+        result=TensorType(dtype=x.dtype, shape=x.shape, device=x.device),
+        input=x_val,
+        weight=weight_val,
+        epsilon=ops.constant(eps, dtype=x.dtype, device=DeviceRef.CPU()),
+        weight_offset=ops.constant(
+            weight_offset, dtype=x.dtype, device=DeviceRef.CPU()
+        ),
+        multiply_before_cast=builtin.BoolAttr(multiply_before_cast),
+        output_param_decls=kgen.ParamDeclArrayAttr([]),
+    )[0].tensor
+    return Tensor.from_graph_value(result)
 
 
 class RMSNorm(Module[[Tensor], Tensor]):

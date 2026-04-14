@@ -112,7 +112,7 @@ REDUCE: dict[
     mo.ReduceMaxOp: reduce_ops.ReduceMax,
     mo.ReduceMinOp: reduce_ops.ReduceMin,
     mo.ReduceAddOp: reduce_ops.ReduceAdd,
-    mo.MeanOp: reduce_ops.Mean,
+    mo.ReduceMeanOp: reduce_ops.Mean,
     mo.ReduceMulOp: reduce_ops.ReduceMul,
 }
 
@@ -131,8 +131,8 @@ UNARY_MIXED: dict[
 SOFTMAX: dict[
     type[_core.Operation], Callable[[Buffer, Buffer, int, int], None]
 ] = {
-    mo.SoftmaxOp: softmax_ops.Softmax,
-    mo.LogsoftmaxOp: softmax_ops.LogSoftmax,
+    mo.ReduceSoftmaxOp: softmax_ops.Softmax,
+    mo.ReduceLogsoftmaxOp: softmax_ops.LogSoftmax,
 }
 
 # Import handlers after defining kernels to avoid circular import issues.

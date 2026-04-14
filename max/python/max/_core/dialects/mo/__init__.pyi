@@ -1180,7 +1180,7 @@ class AndOp(max._core.Operation):
     @property
     def input_y(self) -> max._core.Value[TensorType]: ...
 
-class ArgMaxOp(max._core.Operation):
+class ReduceArgMaxOp(max._core.Operation):
     """
     This op is equivalent to reduce_max, but returns indices instead of values.
 
@@ -1246,7 +1246,7 @@ class ArgMaxOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
-class ArgMinOp(max._core.Operation):
+class ReduceArgMinOp(max._core.Operation):
     """
     This op is equivalent to reduce_min, but returns indices instead of values.
 
@@ -3483,7 +3483,7 @@ class IsNanOp(max._core.Operation):
     @property
     def input_x(self) -> max._core.Value[TensorType]: ...
 
-class LayerNormOp(max._core.Operation):
+class ReduceLayerNormOp(max._core.Operation):
     """
     Layer normalization operation which operates on the last dimension of
     `input`:
@@ -3598,7 +3598,7 @@ class LogOp(max._core.Operation):
     @property
     def input(self) -> max._core.Value[TensorType]: ...
 
-class LogsoftmaxOp(max._core.Operation):
+class ReduceLogsoftmaxOp(max._core.Operation):
     """
     Returns `log(softmax(x, axis))`, where `x` is input tensor, and `axis` is
     the axis along which `softmax` is applied.
@@ -3831,7 +3831,7 @@ class MaxPoolOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
-class MeanOp(max._core.Operation):
+class ReduceMeanOp(max._core.Operation):
     """
     Reduces `input` elements across `axis` to their mean value, changng that
     axis's dimension to 1.
@@ -6324,7 +6324,7 @@ class SliceOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
-class SoftmaxOp(max._core.Operation):
+class ReduceSoftmaxOp(max._core.Operation):
     """
     Returns `exp(input) / sum(exp(input))`, where `x` is input tensor.
 

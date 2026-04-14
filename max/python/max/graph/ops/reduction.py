@@ -56,7 +56,7 @@ def mean(x: TensorValueLike, axis: int = -1) -> TensorValue:
         The tensor will have the same rank as the input tensor, and the same
         shape except along the ``axis`` dimension which will have size ``1``.
     """
-    return _reduce(rmo.mo_mean, x, axis=axis)
+    return _reduce(rmo.mo_reduce_mean, x, axis=axis)
 
 
 def min(x: TensorValueLike, axis: int = -1) -> TensorValue:
@@ -188,7 +188,7 @@ def argmin(x: TensorValueLike, axis: int = -1) -> TensorValue:
         The tensor will have the same rank as the input tensor, and the same
         shape except along the ``axis`` dimension which will have size ``1``.
     """
-    return _reduce(rmo.mo_arg_min, x, axis, out_dtype=DType.int64)
+    return _reduce(rmo.mo_reduce_arg_min, x, axis, out_dtype=DType.int64)
 
 
 def argmax(x: TensorValueLike, axis: int = -1) -> TensorValue:
@@ -209,4 +209,4 @@ def argmax(x: TensorValueLike, axis: int = -1) -> TensorValue:
         The tensor will have the same rank as the input tensor, and the same
         shape except along the ``axis`` dimension which will have size ``1``.
     """
-    return _reduce(rmo.mo_arg_max, x, axis, out_dtype=DType.int64)
+    return _reduce(rmo.mo_reduce_arg_max, x, axis, out_dtype=DType.int64)

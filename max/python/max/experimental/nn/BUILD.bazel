@@ -16,6 +16,7 @@ modular_py_library(
         requirement("numpy"),
         requirement("rich"),
         requirement("typing-extensions"),
+        "//max/python/max:_core",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

@@ -1301,19 +1301,19 @@ def _argmax_min_handler(
     return [output]
 
 
-@register_op_handler(mo.ArgMaxOp)
+@register_op_handler(mo.ReduceArgMaxOp)
 def _handle_argmax(
-    op: mo.ArgMaxOp, inputs: Sequence[Buffer | None]
+    op: mo.ReduceArgMaxOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.arg_max by dispatching to Mojo argmax kernel."""
+    """Handle mo.reduce.arg_max by dispatching to Mojo argmax kernel."""
     return _argmax_min_handler(op, inputs, ops.argmax_ops.ArgMax)
 
 
-@register_op_handler(mo.ArgMinOp)
+@register_op_handler(mo.ReduceArgMinOp)
 def _handle_argmin(
-    op: mo.ArgMinOp, inputs: Sequence[Buffer | None]
+    op: mo.ReduceArgMinOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.arg_min by dispatching to Mojo argmin kernel."""
+    """Handle mo.reduce.arg_min by dispatching to Mojo argmin kernel."""
     return _argmax_min_handler(op, inputs, ops.argmax_ops.ArgMin)
 
 
@@ -1411,11 +1411,11 @@ def _handle_cumsum(
 # Layer norm operations
 
 
-@register_op_handler(mo.LayerNormOp)
+@register_op_handler(mo.ReduceLayerNormOp)
 def _handle_layer_norm(
-    op: mo.LayerNormOp, inputs: Sequence[Buffer | None]
+    op: mo.ReduceLayerNormOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Handle mo.layer_norm by dispatching to Mojo layer_norm kernel.
+    """Handle mo.reduce.layer_norm by dispatching to Mojo layer_norm kernel.
 
     Args:
         op: The layer_norm operation.

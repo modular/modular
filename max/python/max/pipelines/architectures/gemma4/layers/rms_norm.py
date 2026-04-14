@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
+from max._core.dialects import builtin, kgen, mo
 from max.dtype import DType
 from max.graph import (
     DeviceRef,
@@ -23,6 +24,7 @@ from max.graph import (
     Weight,
     ops,
 )
+from max.graph.graph import Graph
 from max.nn.layer import Module, Shardable
 
 
@@ -66,21 +68,21 @@ class Gemma4RMSNorm(Module, Shardable):
                 ),
                 (self.dim,),
             ).to(x.device)
-        return ops.custom(
-            "rms_norm",
-            x.device,
-            [
-                x,
-                w,
-                ops.constant(self.eps, dtype=x.dtype, device=DeviceRef.CPU()),
-                ops.constant(
-                    0.0,
-                    dtype=x.dtype,
-                    device=DeviceRef.CPU(),
-                ),
-            ],
-            [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
-            parameters={"multiply_before_cast": True},
+        return Graph.current._add_op_generated(
+            mo.ReduceRmsNormOp,
+            result=TensorType(dtype=x.dtype, shape=x.shape, device=x.device),
+            input=x,
+            weight=w,
+            epsilon=ops.constant(
+                self.eps, dtype=x.dtype, device=DeviceRef.CPU()
+            ),
+            weight_offset=ops.constant(
+                0.0,
+                dtype=x.dtype,
+                device=DeviceRef.CPU(),
+            ),
+            multiply_before_cast=builtin.BoolAttr(True),
+            output_param_decls=kgen.ParamDeclArrayAttr([]),
         )[0].tensor
 
     @property
