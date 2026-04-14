@@ -208,3 +208,27 @@ def test_comptime_decl_plain_string_splits():
     assert result.strip().count("\n") >= 1, (
         "Expected the string in comptime declaration to be split across lines"
     )
+
+
+@pytest.mark.parametrize("prefix", ["f", "t"])
+def test_long_fstring_with_operator_in_interpolation_not_wrapped(prefix):
+    """Long f/t-strings with binary operators inside {...} should not be wrapped.
+
+    Regression test: spaces inside {expr // divisor} are not splittable by
+    StringSplitter, so StringParenWrapper must not wrap the string even though
+    the token value contains spaces (from around the // operator).
+    """
+    # This string exceeds 88 chars and contains spaces inside {num // group}.
+    # It should be left as-is, not wrapped in (t"...").
+    source = (
+        "@__name(\n"
+        f'    {prefix}"mha_depth{{config.depth}}_{{q_type}}_{{output_type}}_{{ragged}}_{{is_shared_kv}}_nqh{{config.num_heads}}_nkvh{{config.num_heads // group}}",\n'
+        "    mangle=True,\n"
+        ")\n"
+        "def kernel():\n"
+        "    pass\n"
+    )
+    result = mojo_format_str(source)
+    assert result == source, (
+        f"Long {prefix}-string with // in interpolation should not be wrapped in parens"
+    )

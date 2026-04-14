@@ -1790,8 +1790,22 @@ class StringParenWrapper(BaseStringSplitter, CustomSplitMapMixin):
 
         if string_idx is not None:
             string_value = line.leaves[string_idx].value
-            # If the string has no spaces...
-            if " " not in string_value:
+            # If the string has no spaces that StringSplitter could split at...
+            # For f/t-strings, spaces inside {...} interpolations are not
+            # accessible to StringSplitter, so only count spaces outside of
+            # interpolation spans.
+            prefix = get_string_prefix(string_value).lower()
+            if "f" in prefix or "t" in prefix:
+                interp_positions: set[int] = set()
+                for start, end in iter_fexpr_spans(string_value):
+                    interp_positions.update(range(start, end))
+                has_splittable_space = any(
+                    c == " " and i not in interp_positions
+                    for i, c in enumerate(string_value)
+                )
+            else:
+                has_splittable_space = " " in string_value
+            if not has_splittable_space:
                 # And will still violate the line length limit when split...
                 max_string_length = self.line_length - ((line.depth + 1) * 4)
                 if len(string_value) > max_string_length:
