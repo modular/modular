@@ -46,6 +46,44 @@ Language *MojoLanguage::CreateInstance(lldb::LanguageType language) {
   }
 }
 
+/// Unwrap Mojo wrapper struct layers to reach a scalar or pointer leaf.
+/// Mojo types like Int, UInt, UnsafePointer etc. nest their raw value inside
+/// fields named `_mlir_value`, `value`, `address`, `_value`, or `_storage`.
+/// Walk down through any such wrappers until we hit a scalar or pointer.
+///
+/// NOTE: Each iteration calls GetChildMemberWithName on potentially synthetic
+/// ValueObjects. Call sites should only pass children known to exist for the
+/// type (e.g., _len/_data after resolving to a Span). Passing an arbitrary
+/// synthetic ValueObject whose children provider uses cantFail may crash if
+/// none of the known field names exist and the type is not yet scalar or
+/// pointer.
+static ValueObjectSP unwrapToScalarOrPointer(ValueObjectSP field) {
+  while (field && !field->IsScalarType() && !field->IsPointerType()) {
+    if (auto member = field->GetChildMemberWithName("_mlir_value")) {
+      field = member;
+      continue;
+    }
+    if (auto member = field->GetChildMemberWithName("value")) {
+      field = member;
+      continue;
+    }
+    if (auto member = field->GetChildMemberWithName("address")) {
+      field = member;
+      continue;
+    }
+    if (auto member = field->GetChildMemberWithName("_value")) {
+      field = member;
+      continue;
+    }
+    if (auto member = field->GetChildMemberWithName("_storage")) {
+      field = member;
+      continue;
+    }
+    break;
+  }
+  return field;
+}
+
 static bool
 builtinStringSummaryProvider(ValueObject &valobj, Stream &stream,
                              const TypeSummaryOptions &summaryOptions) {
@@ -64,30 +102,7 @@ builtinStringSummaryProvider(ValueObject &valobj, Stream &stream,
       return onError("; could not find String." + std::string(memberName) +
                      " field");
 
-    // Dig through some names we know about.
-    while (field && !field->IsScalarType() && !field->IsPointerType()) {
-      if (auto member = field->GetChildMemberWithName("_mlir_value")) {
-        field = member;
-        continue;
-      }
-      if (auto member = field->GetChildMemberWithName("value")) {
-        field = member;
-        continue;
-      }
-      if (auto member = field->GetChildMemberWithName("address")) {
-        field = member;
-        continue;
-      }
-      if (auto member = field->GetChildMemberWithName("_value")) {
-        field = member;
-        continue;
-      }
-      if (auto member = field->GetChildMemberWithName("_storage")) {
-        field = member;
-        continue;
-      }
-      break;
-    }
+    field = unwrapToScalarOrPointer(field);
 
     if (!field || !field->GetError().Success())
       return onError("decoding " + std::string(memberName));
@@ -349,6 +364,94 @@ mlirValueElisionFrontEndCreator(CXXSyntheticChildren *,
   return new MlirValueElisionFrontEnd(*valobjSP);
 }
 
+/// Summary provider for StringSlice, StaticString, and their underlying
+/// Span[Byte, ...] types. Two cases:
+///   1. Struct field: LLDB type is StringSlice, which has `_slice: Span[Byte]`.
+///      Navigate via _slice._data and _slice._len.
+///   2. Top-level variable: KGEN flattens TrivialRegisterPassable types in
+///      DWARF, so the LLDB type is Span[Byte] directly with _data and _len.
+static bool
+stringSliceSummaryProvider(ValueObject &valobj, Stream &stream,
+                           const TypeSummaryOptions &summaryOptions) {
+  auto onError = [&stream](llvm::StringRef why = {}) {
+    stream << "Summary Unavailable" << why;
+    return true;
+  };
+
+  // Case 1: valobj is StringSlice — navigate to _slice (the Span[Byte] field).
+  // Case 2: valobj is already the Span[Byte] (flattened top-level variable).
+  //
+  // We detect the case via the type name rather than probing for _slice,
+  // because calling GetChildMemberWithName on a synthetic ValueObject for a
+  // non-existent child triggers a cantFail abort inside LLDB.
+  //
+  // This function is registered for two type patterns (see
+  // LoadLibMojoFormatters):
+  //   - StringSlice.*  → type name contains "StringSlice" → case 1
+  //   - Span[Byte]     → type name does not              → case 2
+  // The type name check here must remain consistent with those registrations.
+  ValueObjectSP span;
+  llvm::StringRef typeName = valobj.GetTypeName().GetStringRef();
+  if (typeName.contains("StringSlice")) {
+    ValueObjectSP slice = valobj.GetChildMemberWithName("_slice");
+    if (!slice || !slice->GetError().Success())
+      return onError("; could not find _slice field");
+    span = slice;
+  } else {
+    span = valobj.GetSP();
+  }
+
+  // Get the length from _len (an Int) and data pointer from _data
+  // (UnsafePointer[Byte]). Both may be wrapped in Mojo value-type layers
+  // (_mlir_value, value, address, etc.) — unwrap to reach the scalar/pointer.
+  ValueObjectSP lenField =
+      unwrapToScalarOrPointer(span->GetChildMemberWithName("_len"));
+  if (!lenField || !lenField->GetError().Success() || !lenField->IsScalarType())
+    return onError("; could not find _len");
+
+  bool success = false;
+  size_t size = lenField->GetValueAsUnsigned(0, &success);
+  if (!success)
+    return onError("; could not read _len");
+
+  // If the size is 0, the data address might be invalid.
+  if (size == 0) {
+    stream << "\"\"";
+    return true;
+  }
+
+  ValueObjectSP dataPointer =
+      unwrapToScalarOrPointer(span->GetChildMemberWithName("_data"));
+  if (!dataPointer || !dataPointer->GetError().Success() ||
+      !dataPointer->IsPointerType())
+    return onError("; could not find data pointer in _data");
+
+  StringPrinter::ReadBufferAndDumpToStreamOptions options(valobj);
+  if (summaryOptions.GetCapping() == TypeSummaryCapping::eTypeSummaryCapped) {
+    size_t maxSize = valobj.GetTargetSP()->GetMaximumSizeOfStringSummary();
+    if (size > maxSize) {
+      size = maxSize;
+      options.SetIsTruncated(true);
+    }
+  }
+
+  DataExtractor extractor;
+  const size_t bytesRead = dataPointer->GetPointeeData(extractor, 0, size);
+  if (bytesRead < size)
+    return onError("; couldn't fetch string data");
+
+  options.SetData(std::move(extractor));
+  options.SetStream(&stream);
+  options.SetPrefixToken(nullptr);
+  options.SetQuote('"');
+  options.SetSourceSize(size);
+  // Match String / C-string display style: truncate at the first embedded \0
+  // even when the slice length says the buffer is longer.
+  options.SetBinaryZeroIsTerminator(true);
+  return StringPrinter::ReadBufferAndDumpToStream<
+      StringPrinter::StringElementType::ASCII>(options);
+}
+
 // Summary provider for Mojo reference pointers (ref y = x)
 static bool
 mojoReferenceSummaryProvider(ValueObject &valobj, Stream &stream,
@@ -508,6 +611,27 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
       "collections::string::string::String summary provider",
       R"(!lit.struct<(@std::)?@collections::@string::@string::@String>)",
       summaryFlags, /*regex=*/true);
+
+  // Must be registered AFTER String (reverse-order matching means this takes
+  // priority for StringSlice types, which have a distinct type name).
+  AddCXXSummary(
+      mojoCategorySP, stringSliceSummaryProvider,
+      "collections::string::string_slice::StringSlice summary provider",
+      R"(!lit.struct<(@std::)?@collections::@string::@string_slice::@StringSlice.*>)",
+      summaryFlags, /*regex=*/true);
+
+  // TrivialRegisterPassable types like StringSlice and StaticString are
+  // flattened to their inner Span[Byte] type in DWARF for top-level variables.
+  // Register a formatter for Span[Byte, ...] (element type ui8) so these
+  // variables get summaries. Restricted to ui8 to avoid matching non-byte
+  // spans. The two regexes (StringSlice and Span[Byte]) are non-overlapping by
+  // construction, so registration order only matters relative to other
+  // formatters. Registered last so it is tried first in the reverse list.
+  AddCXXSummary(
+      mojoCategorySP, stringSliceSummaryProvider,
+      "memory::span::Span[Byte] summary provider (flattened StringSlice)",
+      R"(!lit.struct<(@std::)?@memory::@span::@.Span\[.*ui8.*>)", summaryFlags,
+      /*regex=*/true);
 
   summaryFlags.SetDontShowChildren(false);
   summaryFlags.SetDontShowValue(false);

@@ -10,6 +10,18 @@
 using namespace M;
 using namespace lldb;
 
+TEST(StringsTest, testStringSlice) {
+  // Ensures that StaticString (= StringSlice[False, StaticConstantOrigin]) is
+  // shown as a quoted string by the StringSlice summary formatter.
+  StopContext ctx = buildAndLaunch("string_slice.mojo");
+
+  SBValue s1 = ctx.frame.FindVariable("s1");
+  EXPECT_STREQ(s1.GetSummary(), "\"static_string\"");
+
+  SBValue s2 = ctx.frame.FindVariable("s2");
+  EXPECT_STREQ(s2.GetSummary(), "\"\"");
+}
+
 TEST(StringsTest, testStrings) {
   // Ensures that String and StringLiteral can be parsed correctly from memory.
   StopContext ctx = buildAndLaunch("strings.mojo");

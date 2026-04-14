@@ -184,7 +184,7 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
   EXPECT_EQ(ctx.runCommand("v p_struct_int").output,
             "(ParamStruct) p_struct_int = (t = 8)\n");
   EXPECT_TRUE(RE::PartialMatch(ctx.runCommand("v p_struct_string_slice").output,
-                               "len = 5"));
+                               R"("hello")"));
   EXPECT_EQ(ctx.runCommand("v an_int").output,
             "(__mlir_type.index) an_int = 123\n");
   EXPECT_EQ(ctx.runCommand("v a_literal_float").output,
