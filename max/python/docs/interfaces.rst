@@ -97,6 +97,19 @@ Reasoning
    ReasoningParser
    ReasoningSpan
 
+Tool parsing
+------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   ParsedToolCall
+   ParsedToolCallDelta
+   ParsedToolResponse
+   ToolParser
+
 Context and sampling
 --------------------
 
