@@ -11,12 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Negative test: flash_attention[sink=True] on AMD GPU with gpt-oss shapes.
+"""Correctness test: flash_attention[sink=True] on AMD GPU with gpt-oss shapes.
 
-TODO(KERN-2751): flash_attention[sink=True] produces incorrect results on
-MI355. This test asserts the known mismatch against mha_gpu_naive[sink=True].
-Once the kernel is fixed, this test will fail — flip the assertion to check
-correctness instead of divergence.
+Verifies flash_attention[sink=True] matches mha_gpu_naive[sink=True].
 
 gpt-oss production config: hidden_size=2880, num_heads=64, num_kv_heads=8,
 head_dim=64.
@@ -38,8 +35,6 @@ from layout import (
 )
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from std.testing import assert_almost_equal
-
 from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
 
@@ -214,14 +209,10 @@ def test[
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
     _ = output_ref_device_ptr
 
-    # Negative test: assert the known divergence exists.
-    # TODO(KERN-2751): Once flash_attention[sink=True] is fixed on AMD,
-    # flip this to assert correctness (assert_almost_equal) instead.
+    # Compare flash_attention[sink=True] vs mha_gpu_naive[sink=True].
     var rtol = 3e-2
-    var max_abs_err = Float64(0)
-    var total_err = Float64(0)
-    var count = 0
     var mismatches = 0
+    var count = 0
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):
@@ -231,32 +222,17 @@ def test[
                 var actual = flash_output_ptr.load(
                     d + depth * (h + s * num_heads)
                 ).cast[DType.float64]()
-                var abs_err = abs(actual - expect)
-                if abs_err > max_abs_err:
-                    max_abs_err = abs_err
-                total_err += abs_err
                 count += 1
                 if not isclose(actual, expect, atol=1e-5, rtol=rtol):
                     mismatches += 1
 
-    var mae = total_err / Float64(count)
-    print(
-        "  max_abs_err=",
-        max_abs_err,
-        "mae=",
-        mae,
-        "mismatches=",
-        mismatches,
-        "/",
-        count,
-    )
-
-    # Assert the bug is still present. If this fails, KERN-2751 is fixed
-    # and this test should be converted to assert correctness.
-    assert mismatches > 0, (
-        "KERN-2751 appears fixed: flash_attention[sink=True] now matches"
-        " mha_gpu_naive[sink=True] on AMD. Convert this negative test to a"
-        " correctness test."
+    print("  mismatches=", mismatches, "/", count)
+    assert mismatches == 0, (
+        "flash_attention[sink=True] does not match mha_gpu_naive[sink=True]."
+        " mismatches="
+        + String(mismatches)
+        + "/"
+        + String(count)
     )
 
     _ = q_device_ptr

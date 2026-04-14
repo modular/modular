@@ -20,7 +20,10 @@ _EXTRA_CONSTRAINTS = {
     "test_conv_transposed_cudnn.mojo": ["//:nvidia_gpu"],
     "test_irfft.mojo": ["//:nvidia_gpu"],
     "test_flash_attention_amd.mojo": ["//:amd_gpu"],
-    "test_mha_sink_weights_amd.mojo": ["//:amd_gpu"],
+    "test_mha_sink_weights.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     "test_mha_operand_tma.mojo": select({
         "//:h100_gpu": [],
         "//:b200_gpu": [],
@@ -211,7 +214,7 @@ _FILECHECK_TESTS = [
             "//:amd_gpu": src not in [
                 "test_flash_attention.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
                 "test_flash_attention_amd.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
-                "test_mha_sink_weights_amd.mojo",  # KERN-2751: sink kernel triggers OOB on AMD
+                "test_mha_sink_weights.mojo",  # KERN-2751: sink kernel triggers OOB on AMD
             ],
             # KERN-2339: H100 MLA kernel has OOB in LayoutTensor masking
             # infrastructure on boundary tiles (num_keys not aligned to BN).

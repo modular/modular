@@ -788,12 +788,12 @@ def softmax_kernel[
 
             var block_exp_sum = block_reduce[BLOCK_SIZE, _sum](exp_sum, 0)
 
+            comptime if sink:
+                block_exp_sum += exp(sink_val - row_max)
+
             if tid == 0:
                 exp_sum_buf[0] = block_exp_sum
             barrier()
-
-            comptime if sink:
-                block_exp_sum += exp(sink_val - row_max)
 
             # Step 3: Normalize output (and apply log for logsoftmax)
             var block_exp_sum_recip = 1 / exp_sum_buf[0]

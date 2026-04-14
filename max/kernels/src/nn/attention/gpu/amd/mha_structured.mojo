@@ -486,6 +486,8 @@ __extension Attention:
             # Single-tile path.
             softmax_exp_odd[0]()
             softmax_qk_sum[0]()
+            if pending_scale:
+                softmax_sum_correction()
             softmax_update_sum()
             mma_pv_incremental[0](0)
 
