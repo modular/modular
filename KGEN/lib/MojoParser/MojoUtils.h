@@ -17,16 +17,23 @@
 namespace M::KGEN {
 enum class ArgConvention : uint32_t;
 class ParamDeclAttr;
-class FuncTypeGeneratorType;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
+class ASTDecl;
+class AsyncCallOp;
+class CachedOriginFinder;
+class CValue;
+class ExprNode;
+class FnTypeGeneratorType;
+class IREmitter;
 class MojoInflightDiag;
 class StructMetaType;
 class ASTType;
 class OriginSetAttr;
 class PogListAttr;
 class SharedState;
+class ValueDest;
 enum class SpecialFunctionKind : uint8_t;
 
 /// Given a number, return one string if the number is 1, otherwise return the
@@ -53,6 +60,24 @@ TypedAttr getOriginsAccessibleByParams(PogListAttr paramList,
                                        ArrayRef<ParamDeclAttr> params,
                                        SharedState &shared,
                                        TypedAttr captureOrigins);
+
+/// The results of calls to async functions are always bound to a `Coroutine`
+/// type, or `RaisingCoroutine` type in the case of a raising function. This
+/// function looks up the corresponding coroutine type and binds its result
+/// type.
+ASTType getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
+                              FnTypeGeneratorType sig, TypedAttr origin);
+
+/// Compute the union of reference origins captured by an async call.
+TypedAttr computeArgumentsOrigin(AsyncCallOp call,
+                                 CachedOriginFinder &originFinder);
+
+/// Materialize an async call result into the corresponding `Coroutine[...]`
+/// or `RaisingCoroutine[...]` value.
+CValue materializeAsyncCallAsCoroutine(IREmitter &emitter, AsyncCallOp call,
+                                       const ExprNode *expr,
+                                       FnTypeGeneratorType sig,
+                                       ValueDest &dest);
 
 /// Helper to delete code in a region and mark it as unreachable when it's
 /// determined to be dead code.

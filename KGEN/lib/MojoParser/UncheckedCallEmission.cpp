@@ -1226,43 +1226,6 @@ TypedAttr CallEmitter::emitCallInParamContext(
 // IREmitter::emitCallUnchecked
 //===----------------------------------------------------------------------===//
 
-/// The results of calls to async functions are always bound to a `Coroutine`
-/// type, or `RaisingCoroutine` type in the case of a raising function. This
-/// function looks up the corresponding coroutine type and binds its result
-/// type.
-static ASTType getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
-                                     FnTypeGeneratorType sig,
-                                     TypedAttr origin) {
-  auto &shared = declScope.getShared();
-  SMLoc loc = expr->getLoc();
-  ASTDecl *decl = sig.isThrows() ? shared.getBuiltinRaisingCoroutineType(loc)
-                                 : shared.getBuiltinCoroutineType(loc);
-  if (!decl) {
-    shared.emitError(loc,
-                     "internal error: could not find builtin 'Coroutine' type");
-    return {};
-  }
-  // If the async function throws, extract the normal result type.
-  ASTType resultType = ASTType(sig.getUserResultType());
-
-  // Bind the result type to the base coroutine type.
-  ParamBindings paramBinds(declScope, expr);
-  paramBinds.add(expr, PValue(resultType));
-  paramBinds.add(expr, origin);
-
-  auto structOp = cast<StructDeclOp>(decl->getIfOperation());
-  TypeSignatureType structSig = structOp.getSignature();
-  ParamInf inference(paramBinds, structSig.getParamTypes(),
-                     structSig.getParamListAttrs(),
-                     /*allowImplicitConversions=*/true, decl,
-                     /*discardError=*/false);
-  ParameterExprArrayAttr bindings = inference.inferForStruct();
-
-  if (!bindings)
-    return {};
-  return structOp.bindReference(bindings);
-}
-
 /// Emit warnings about incorrect code in a direct call.  This is invoked after
 /// the full IR for the call is emitted, so we know that it was a valid call.
 void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
@@ -1735,23 +1698,6 @@ static bool shouldEmitParameterCall(RValue callee,
   return false;
 }
 
-/// Compute the union of all references origins in a set of function call
-/// arguments.
-static TypedAttr computeArgumentsOrigin(AsyncCallOp call,
-                                        CachedOriginFinder &originFinder) {
-  SmallVector<std::pair<Value, OperandEffect>> operands;
-  SmallVector<ResultEffect> results;
-  SmallVector<TypedAttr> origins;
-  // Check origin accesses on the types. We need to forward this to the
-  // coroutine since it is a transitive capture.
-  LIT::getOperationEffects(*call, operands, results, origins, originFinder);
-  // Collect the implicit origins of the arguments.
-  for (Value value : call.getOperands())
-    if (auto ref = dyn_cast<RefType>(value.getType()))
-      origins.push_back(ref.getOrigin());
-  return OriginSetAttr::get(call.getContext(), origins);
-}
-
 CValue IREmitter::emitCallUnchecked(RValue callee,
                                     const CallOperands &callOperands,
                                     ValueDest &dest) {
@@ -2003,21 +1949,10 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
       // `!co.routine<T>` result in a `Coroutine[T]` object.
       auto call = AsyncCallOp::create(*builder, loc, target.get(),
                                       implicitOrigins, callArgs);
-      ASTType coroType = getBoundCoroutineType(
-          getDeclScope(), callExpr, calleeSig,
-          computeArgumentsOrigin(call, shared.cachedOriginFinder));
-
-      if (!coroType) {
-        dest.resetForError(*this);
-        return {};
-      }
-      // Emit the implicit conversion to Coroutine[T].  We emit into the call's
+      // Emit the implicit conversion to Coroutine[T]. We emit into the call's
       // destination to avoid an extra copy/move of the Coroutine object.
-      callResult = emitConstructorCall(
-          coroType,
-          CallOperands(CallSyntax::kImplicitConvert, callExpr,
-                       {{SRValue(call), callExpr}}),
-          dest);
+      callResult = materializeAsyncCallAsCoroutine(*this, call, callExpr,
+                                                   calleeSig, dest);
       if (!callResult) {
         dest.resetForError(*this);
         return {};
