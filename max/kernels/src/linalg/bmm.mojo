@@ -60,7 +60,7 @@ from .matmul.cpu.apple_accelerate import (
 from .matmul.cpu.impl import _submatmul_sequential_sync
 from .matmul.gpu import _matmul_gpu
 from .matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
-from .matmul.gpu.amd import gemm_kernel_amd
+from .matmul.gpu.amd import AMDMatmul
 from .matmul.gpu.sm100.blockwise_fp8 import (
     matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
 )
@@ -608,12 +608,16 @@ def batched_matmul_kernel_gpu[
             ) if elementwise_lambda_fn else None,
         ](c, a, b)
     elif is_amd_gpu() and not _is_amd_rdna():
-        gemm_kernel_amd[
-            config=config,
-            elementwise_lambda_fn=Optional[matmul_elementwise_epilogue_type](
+        AMDMatmul[
+            a_type,
+            b_type,
+            c_type,
+            transpose_b,
+            config,
+            Optional[matmul_elementwise_epilogue_type](
                 elementwise_epilogue_fn_wrapper
             ) if elementwise_lambda_fn else None,
-        ](c, a, b)
+        ].run(c, a, b)
 
 
 @always_inline

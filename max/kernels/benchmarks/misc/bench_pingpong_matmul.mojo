@@ -33,7 +33,9 @@ from internal_utils._utils import InitializationType
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import elementwise_compute_lambda_type
-from linalg.matmul.gpu.amd.pingpong_kernel import ping_pong_matmul
+from linalg.matmul.gpu.amd.amd_ping_pong_matmul import (
+    structured_ping_pong_matmul as ping_pong_matmul,
+)
 from std.utils import IndexList
 
 

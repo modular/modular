@@ -213,7 +213,7 @@ hardware targets — change the cost model, get a different schedule.
 The default AMD matmul uses a single-buffer pipeline with barrier-gated
 read/write phases. This is the simplest case.
 
-**File**: `matmul_schedule.mojo` (~140 lines of schedule code)
+**File**: `amd_matmul_schedule.mojo` (~140 lines of schedule code)
 
 ### Op tags
 
@@ -316,7 +316,7 @@ and epilogue (drain) from the five-line logical body.
 The ping-pong matmul uses double-buffered LDS with two warp groups running
 one MMA phase apart. This is significantly more complex.
 
-**File**: `pingpong_schedule.mojo` (~150 lines of schedule code)
+**File**: `amd_ping_pong_schedule.mojo` (~150 lines of schedule code)
 
 ### Op tags
 

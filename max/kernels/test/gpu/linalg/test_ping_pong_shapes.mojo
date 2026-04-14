@@ -20,7 +20,9 @@ Documents known limitations:
 from layout import TileTensor, row_major
 from std.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
-from linalg.matmul.gpu.amd.pingpong_kernel import ping_pong_matmul
+from linalg.matmul.gpu.amd.amd_ping_pong_matmul import (
+    structured_ping_pong_matmul as ping_pong_matmul,
+)
 from std.testing import assert_true
 from std.random import random_float64
 

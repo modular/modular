@@ -31,7 +31,7 @@ from std.utils import IndexList
 from structured_kernels.amd_tile_io import (
     LdsTileLoader,
     RegTileLoader,
-    tt_copy_local_to_shared,
+    copy_local_to_shared,
 )
 
 from .mma import TiledMmaOp
@@ -243,8 +243,11 @@ struct KVBufferImpl[
     comptime GmemTileType = TileTensor[
         Self.dtype, Self.kv_tile_layout, ImmutAnyOrigin
     ]
+    # num_threads overridden: block has more threads than the load layout.
     comptime RegLoaderType = RegTileLoader[
-        Self.dtype, Self._thread_rows, Self._thread_cols, Self.num_threads
+        Self.dtype,
+        tt_row_major[Self._thread_rows, Self._thread_cols](),
+        Self.num_threads,
     ]
     var gmem_tile: Self.GmemTileType
     var reg_loader: Self.RegLoaderType
@@ -305,9 +308,8 @@ struct KVBufferImpl[
     def copy_to_shared[
         tile_id: Int = 0
     ](self,):
-        tt_copy_local_to_shared[
-            Self._thread_rows,
-            Self._thread_cols,
+        copy_local_to_shared[
+            tt_row_major[Self._thread_rows, Self._thread_cols](),
             Self.swizzle,
             Self.num_threads,
         ](
@@ -709,8 +711,7 @@ struct VBufferTransposeLoads[
     comptime _dram_thread_cols = Self.depth_tile_size // Self.load_width
     comptime RegLoaderType = RegTileLoader[
         Self.dtype,
-        Self._dram_thread_rows,
-        Self._dram_thread_cols,
+        tt_row_major[Self._dram_thread_rows, Self._dram_thread_cols](),
         warp_scope=True,
     ]
     var gmem_tile: Self.GmemTileType
@@ -946,10 +947,8 @@ struct QRegisterBuffer[
         var warp_tile = q_tile.tile[Self.WM, Self.depth](warp_row, 0)
         var reg_loader = RegTileLoader[
             Self.dtype,
-            Self._q_thread_rows,
-            Self._q_thread_cols,
+            tt_col_major[Self._q_thread_rows, Self._q_thread_cols](),
             warp_scope=True,
-            col_major_threads=True,
         ](warp_tile)
 
         # Load each BK-wide strip along the depth axis.

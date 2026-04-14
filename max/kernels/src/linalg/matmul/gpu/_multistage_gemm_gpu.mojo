@@ -65,7 +65,7 @@ from std.utils.numerics import get_accum_type
 
 from ...utils import apply_epilogue, elementwise_epilogue_type
 from ...utils_gpu import MatmulConfig, block_swizzle
-from .amd import gemm_kernel_amd
+from .amd import AMDMatmul
 
 from ...structuring import SMemTile
 
@@ -1149,7 +1149,13 @@ def multistage_gemm_split_k_kernel[
         and not has_amd_rdna_gpu_accelerator()
         and transpose_b
     ):
-        gemm_kernel_amd[config=k_partition_config,](ws_tt, a_tt, b_tt)
+        AMDMatmul[
+            a_type,
+            b_type,
+            work_space_type,
+            transpose_b,
+            k_partition_config,
+        ].run(ws_tt, a_tt, b_tt)
 
     else:
         multistage_gemm_kernel[config=k_partition_config,](ws_tt, a_tt, b_tt)

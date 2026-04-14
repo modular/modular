@@ -64,7 +64,7 @@ from .matmul.gpu import (
     _amdgpu_matmul_build_block_shape_list,
     _amdgpu_matmul_config_from_block_shape,
 )
-from .matmul.gpu.amd import gemm_kernel_amd
+from .matmul.gpu.amd import AMDMatmul
 from std.algorithm import vectorize
 
 
@@ -699,12 +699,16 @@ def grouped_matmul_amd_kernel_launcher[
         var c_tile = TileTensor(c_ptr, row_major(Coord(Idx(Int(M)), Idx[N]())))
         var a_tile = TileTensor(a_ptr, row_major(Coord(Idx(Int(M)), Idx[K]())))
         var b_tile = TileTensor(b_ptr, row_major[N, K]())
-        gemm_kernel_amd[
-            config=config,
-            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
+        AMDMatmul[
+            a_type,
+            b_type,
+            c_type,
+            transpose_b,
+            config,
+            Optional[elementwise_epilogue_type](
                 elementwise_epilogue_fn_wrapper
             ) if elementwise_lambda_fn else None,
-        ](c_tile, a_tile, b_tile)
+        ].run(c_tile, a_tile, b_tile)
 
     # Perform the epilogue function separately if expert_id is -1
     else:
