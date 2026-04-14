@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.math.uutils import umod
+from std.math.uutils import umod, ufloordiv
 from std.sys import simd_width_of, llvm_intrinsic, get_defined_bool
 from std.sys.intrinsics import readfirstlane, _type_is_eq
 from std.gpu import WARP_SIZE, lane_id
@@ -35,6 +35,7 @@ from layout.swizzle import Swizzle
 from layout.tensor_core import num_matrix_reg
 from .mma import TiledMmaOp
 from std.memory import bitcast
+from std.gpu.intrinsics import ds_read_tr8_b64
 from nn.attention.mha_mask import TileMaskStatus, CausalMask
 from nn.attention.mha_operand import MHAOperand
 
@@ -438,21 +439,21 @@ struct KVBuffer[
     @always_inline
     def load_from_shared(self, buffer: Int):
         comptime if not Self.transpose and Self.kv_t.dtype.is_float8():
-            # FP8 V gather: read vertically from [BN, depth] SMEM
-            # following the MFMA C-output column permutation so
-            # that V's K-position mapping matches P's in the PV
-            # MFMA (both operands use the same register-index-to-K
-            # mapping).
+            # FP8 V vector load using ds_read_b64_tr_b8 with paired-
+            # lane addressing.  Replaces ~128 scalar LDS reads with
+            # ~16 vector reads (8× fewer instructions).
             #
-            # C-output column pattern for [32,32] MFMA, per lane:
-            #   hw0: cols [0,1,2,3, 8,9,10,11, 16,17,18,19, 24,25,26,27]
-            #   hw1: cols [4,5,6,7, 12,13,14,15, 20,21,22,23, 28,29,30,31]
-            # For 64-key P (lo.join(hi) of two [32,32] tiles):
-            #   positions 0-15: keys 0..27 subset (lo)
-            #   positions 16-31: keys 32..59 subset (hi)
+            # Paired lanes (even/odd) access the same key at depth
+            # offsets differing by 8.  After the hardware 8×8
+            # transpose, each lane holds 8 contiguous depth values.
+            # Even lanes cover depths [d, d+8), odd lanes [d+8, d+16)
+            # → 16 unique depths per 16-lane row.  Two rows within
+            # hw0 (depth_base 0 and 16) give 32 depths; hw1 shifts
+            # keys by +4 for the complementary MFMA C-output column
+            # pattern, covering all 64 BN keys per MFMA tile.
             #
-            # Each bk_tile covers 64 BN rows. For BN>64 (e.g. MLA
-            # BN=128), iterate over bk_tiles to cover all rows.
+            # 4 ds_reads per A-fragment (key groups 0,16,32,48) ×
+            # 4 depth tiles = 16 vector reads for depth=128.
             comptime kv_type = Self.kv_t.dtype
             comptime BN_ = Self.BN
             comptime BK_ = Self.BK
@@ -460,8 +461,26 @@ struct KVBuffer[
             comptime num_depth_tiles = Self.depth // MMA_M_
 
             var lid = lane_id()
-            var hw_offset = Int(lid >= 32) * 4
             var v_base = self.smem_ptr + buffer * Self.smem_stage_size
+
+            # Per-lane address components (computed once, reused
+            # across all bk_tile × depth_tile iterations).
+            var lane_in_row = umod(lid, 16)
+            var pair_idx = ufloordiv(lane_in_row, 2)
+            var is_odd = umod(lane_in_row, 2)
+            var row_in_warp = ufloordiv(lid, 16)
+            var is_hw1 = ufloordiv(lid, 32)
+
+            # Key mapping within a 16-lane row: 8 unique keys
+            # matching the MFMA C-output column pattern.
+            var rel_key = Int(umod(pair_idx, 4) + ufloordiv(pair_idx, 4) * 8)
+
+            # Depth sub-range per lane: rows 0,2 → +0; rows 1,3 →
+            # +16.  Even lanes → +0; odd lanes → +8.
+            var depth_base = Int(umod(row_in_warp, 2)) * 16 + Int(is_odd) * 8
+
+            # hw1 key shift: complementary C-output column keys.
+            var hw_key_shift = Int(is_hw1) * 4
 
             var reg_vec = self.mma_tile.vectorize[1, Self.input_frag_size]()
 
@@ -469,46 +488,26 @@ struct KVBuffer[
                 comptime row_offset = bk_tile * 64
 
                 comptime for dt in range(num_depth_tiles):
-                    var d = dt * MMA_M_ + Int(lid % 32)
-                    var blk = d // BK_
-                    var d_in_blk = d % BK_
-                    var base_addr = blk * BN_ * BK_ + d_in_blk
+                    comptime depth_offset = dt * MMA_M_
+                    comptime blk = depth_offset // BK_
+                    comptime d_in_blk = depth_offset % BK_
 
+                    var block_base = v_base + blk * BN_ * BK_
+
+                    @always_inline
                     @parameter
-                    def gather4_lo[g: Int]() -> SIMD[kv_type, 4]:
-                        var off = (row_offset + g * 8 + hw_offset) * BK_
-                        var ab = v_base[base_addr + off].join(
-                            v_base[base_addr + off + BK_]
+                    def _load_keys[key_base: Int]() -> SIMD[kv_type, 8]:
+                        var key = row_offset + key_base + rel_key + hw_key_shift
+                        return ds_read_tr8_b64(
+                            block_base + key * BK_ + d_in_blk + depth_base
                         )
-                        var cd = v_base[base_addr + off + 2 * BK_].join(
-                            v_base[base_addr + off + 3 * BK_]
-                        )
-                        return rebind[SIMD[kv_type, 4]](ab.join(cd))
 
-                    var lo = (
-                        gather4_lo[0]()
-                        .join(gather4_lo[1]())
-                        .join(gather4_lo[2]().join(gather4_lo[3]()))
-                    )
+                    var r0 = _load_keys[0]()
+                    var r1 = _load_keys[16]()
+                    var r2 = _load_keys[32]()
+                    var r3 = _load_keys[48]()
+                    var joined = r0.join(r1).join(r2.join(r3))
 
-                    @parameter
-                    def gather4_hi[g: Int]() -> SIMD[kv_type, 4]:
-                        var off = (row_offset + 32 + g * 8 + hw_offset) * BK_
-                        var ab = v_base[base_addr + off].join(
-                            v_base[base_addr + off + BK_]
-                        )
-                        var cd = v_base[base_addr + off + 2 * BK_].join(
-                            v_base[base_addr + off + 3 * BK_]
-                        )
-                        return rebind[SIMD[kv_type, 4]](ab.join(cd))
-
-                    var hi = (
-                        gather4_hi[0]()
-                        .join(gather4_hi[1]())
-                        .join(gather4_hi[2]().join(gather4_hi[3]()))
-                    )
-
-                    var joined = lo.join(hi)
                     reg_vec[bk_tile * num_depth_tiles + dt, 0] = rebind[
                         type_of(reg_vec[0, 0])
                     ](joined)

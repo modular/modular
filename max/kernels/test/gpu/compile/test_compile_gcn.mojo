@@ -29,6 +29,7 @@ from std.gpu.globals import WARP_SIZE
 from std.gpu.host import get_gpu_target
 from std.gpu.host.compile import _compile_code
 from std.gpu.intrinsics import (
+    ds_read_tr8_b64,
     ds_read_tr16_b64,
     load_acquire,
     store_release,
@@ -424,6 +425,34 @@ def test_ds_read_tr16_b64_compile() raises:
     )
 
 
+# CHECK-LABEL: test_ds_read_tr8_b64_compile
+def test_ds_read_tr8_b64_compile() raises:
+    print("== test_ds_read_tr8_b64_compile")
+
+    def test_kernel[dtype: DType]():
+        var x = UnsafePointer[
+            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        ](_unsafe_null=())
+        var y = ds_read_tr8_b64(x)
+        y[0] = y[0] + 1
+        x[0] = y[0]
+
+    # CHECK: ds_read_b64_tr_b8 v[0:1], v2
+    print(
+        _compile_code[
+            test_kernel[DType.uint8],
+            target=MI355X_TARGET,
+        ]()
+    )
+    # CHECK: ds_read_b64_tr_b8 v[0:1], v2
+    print(
+        _compile_code[
+            test_kernel[DType.int8],
+            target=MI355X_TARGET,
+        ]()
+    )
+
+
 # CHECK-LABEL: test_permlane_compile
 def test_permlane_compile() raises:
     print("== test_permlane_compile")
@@ -551,6 +580,7 @@ def main() raises:
     test_schedule_group_barrier_compile()
     test_atomic_compile()
     test_ds_read_tr16_b64_compile()
+    test_ds_read_tr8_b64_compile()
     test_permlane_compile()
     test_waitcnt_compile()
     test_nt_load_compile()
