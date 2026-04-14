@@ -1103,8 +1103,8 @@ def col_major[*idxs: Int]() -> ColMajorLayout[_IntToComptimeInt[*idxs]]:
 def col_major(
     idx: ComptimeInt[...],
 ) -> Layout[
-    shape_types=TypeListOf[type=CoordLike, type_of(idx)](),
-    stride_types=TypeListOf[type=CoordLike, ComptimeInt[1]](),
+    shape_types=Coord[type_of(idx)].element_types,
+    stride_types=Coord[ComptimeInt[1]].element_types,
 ]:
     """Creates a 1D column-major layout from a compile-time dimension.
 
@@ -1121,8 +1121,8 @@ def col_major(
 def col_major(
     idx: RuntimeInt[...],
 ) -> Layout[
-    shape_types=TypeListOf[type=CoordLike, type_of(idx)](),
-    stride_types=TypeListOf[type=CoordLike, ComptimeInt[1]](),
+    shape_types=Coord[type_of(idx)].element_types,
+    stride_types=Coord[ComptimeInt[1]].element_types,
 ]:
     """Creates a 1D column-major layout from a runtime dimension.
 
@@ -1194,20 +1194,18 @@ comptime ZippedDivideLayout[
     LayoutType: TensorLayout,
     tile: TypeList[Trait=CoordLike, ...],
 ] = Layout[
-    TypeListOf[
-        type=CoordLike,
+    Coord[
         Coord[*tile],  # inner_shape = tile
         Coord[
             *_Divide[LayoutType._shape_types, tile]
         ],  # outer_shape = shape / tile
-    ](),
-    TypeListOf[
-        type=CoordLike,
+    ].element_types,
+    Coord[
         Coord[*LayoutType._stride_types],  # inner_stride = original stride
         Coord[
             *_Multiply[LayoutType._stride_types, tile]
         ],  # outer_stride = stride * tile
-    ](),
+    ].element_types,
 ]
 """Type alias for the result of `zipped_divide`.
 

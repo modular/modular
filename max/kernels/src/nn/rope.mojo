@@ -127,9 +127,7 @@ def rope_ragged[
     ],
     mrope_section: Optional[Coord[*TypeList[mrope_types]()]] = None,
     PositionIdsLayoutType: TensorLayout = RowMajorLayout[
-        *TypeListOf[
-            type=CoordLike, RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-        ]()
+        *Coord[RuntimeInt[DType.int64], RuntimeInt[DType.int64]].element_types
     ],
 ](
     x: TileTensor[dtype, ...],

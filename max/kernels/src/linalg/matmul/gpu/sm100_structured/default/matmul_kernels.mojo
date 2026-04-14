@@ -1719,10 +1719,8 @@ struct BlackwellMatmulSM100FallbackKernel[
     # Used as stride_layout in tile/tile_with_offset to override
     # the parent TileTensor's dynamic strides with static values.
     comptime CGmemStrideLayout = _NewLayout[
-        TypeListOf[
-            type=CoordLike, ComptimeInt[Self.static_N], ComptimeInt[1]
-        ](),
-        TypeListOf[type=CoordLike, ComptimeInt[1], ComptimeInt[1]](),
+        Coord[ComptimeInt[Self.static_N], ComptimeInt[1]].element_types,
+        Coord[ComptimeInt[1], ComptimeInt[1]].element_types,
     ]
 
     # Typed layouts (new Layout from tile_layout.mojo).

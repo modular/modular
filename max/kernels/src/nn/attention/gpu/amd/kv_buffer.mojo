@@ -65,16 +65,10 @@ struct KVCacheIterator[
     """
 
     comptime GmemTileLayout = MixedLayout[
-        TypeListOf[
-            type=CoordLike,
-            RuntimeInt[DType.int64],
-            ComptimeInt[Self.depth],
-        ](),
-        TypeListOf[
-            type=CoordLike,
-            ComptimeInt[Self.kv_num_heads * Self.depth],
-            ComptimeInt[1],
-        ](),
+        Coord[RuntimeInt[DType.int64], ComptimeInt[Self.depth]].element_types,
+        Coord[
+            ComptimeInt[Self.kv_num_heads * Self.depth], ComptimeInt[1]
+        ].element_types,
     ]
     comptime GmemTileType = TileTensor[
         Self.cache_t.dtype,

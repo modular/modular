@@ -250,16 +250,10 @@ struct GlobalMemoryManager[
         )
     )
     comptime OutputTileLayout = TileLayout[
-        TypeListOf[
-            type=CoordLike,
-            RuntimeInt[DType.int64],
-            ComptimeInt[Int(Self.output_depth)],
-        ](),
-        TypeListOf[
-            type=CoordLike,
-            ComptimeInt[Self._output_stride0],
-            ComptimeInt[1],
-        ](),
+        Coord[
+            RuntimeInt[DType.int64], ComptimeInt[Int(Self.output_depth)]
+        ].element_types,
+        Coord[ComptimeInt[Self._output_stride0], ComptimeInt[1]].element_types,
     ]
 
     comptime kv_gmem_layout = Layout(
@@ -270,16 +264,10 @@ struct GlobalMemoryManager[
     # TileTensor KV layout with RuntimeInt for valid_rows (OOB clamping).
     comptime _kv_stride0 = Int(Self.kv_num_heads) * Int(Self.depth)
     comptime KvTileLayout = TileLayout[
-        TypeListOf[
-            type=CoordLike,
-            RuntimeInt[DType.int64],
-            ComptimeInt[Int(Self.depth)],
-        ](),
-        TypeListOf[
-            type=CoordLike,
-            ComptimeInt[Self._kv_stride0],
-            ComptimeInt[1],
-        ](),
+        Coord[
+            RuntimeInt[DType.int64], ComptimeInt[Int(Self.depth)]
+        ].element_types,
+        Coord[ComptimeInt[Self._kv_stride0], ComptimeInt[1]].element_types,
     ]
 
     var q_offset: UInt32
@@ -343,16 +331,10 @@ struct GlobalMemoryManager[
         * Int(Self.q_depth) if not Self.token_gen else Int(Self.q_depth)
     )
     comptime QTileLayout = TileLayout[
-        TypeListOf[
-            type=CoordLike,
-            RuntimeInt[DType.int64],
-            ComptimeInt[Int(Self.q_depth)],
-        ](),
-        TypeListOf[
-            type=CoordLike,
-            ComptimeInt[Self._q_stride0],
-            ComptimeInt[1],
-        ](),
+        Coord[
+            RuntimeInt[DType.int64], ComptimeInt[Int(Self.q_depth)]
+        ].element_types,
+        Coord[ComptimeInt[Self._q_stride0], ComptimeInt[1]].element_types,
     ]
 
     @always_inline

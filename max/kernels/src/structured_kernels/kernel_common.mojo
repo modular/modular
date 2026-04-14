@@ -450,9 +450,7 @@ def init_clc_barriers[
 
 
 comptime _Batched3DLayout[L: TensorLayout] = RowMajorLayout[
-    *TypeListOf[
-        type=CoordLike, ComptimeInt[1], L._shape_types[0], L._shape_types[1]
-    ]()
+    *Coord[ComptimeInt[1], L._shape_types[0], L._shape_types[1]].element_types,
 ]
 """3D batched layout from a 2D layout: prepend batch=1, preserve shape types."""
 

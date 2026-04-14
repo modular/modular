@@ -62,14 +62,13 @@ from .block_scaled_smem import BlockScaledSmem
 
 
 comptime _Scales5DLayoutBatched[L: TensorLayout] = RowMajorLayout[
-    *TypeListOf[
-        type=CoordLike,
+    *Coord[
         L._shape_types[0],
         L._shape_types[1],
         L._shape_types[2],
         ComptimeInt[SF_ATOM_M[0]],
         ComptimeInt[SF_ATOM_M[1] * SF_ATOM_K],
-    ]()
+    ].element_types
 ]
 """5D scale factor layout for batched TMA. (B, sf_m, sf_k, atom0, atom1*atom_k).
 
@@ -77,14 +76,13 @@ Preserves the static/dynamic nature of B, sf_m, sf_k from the input layout.
 """
 
 comptime _Scales5DLayoutNonBatched[L: TensorLayout] = RowMajorLayout[
-    *TypeListOf[
-        type=CoordLike,
+    *Coord[
         ComptimeInt[1],
         L._shape_types[0],
         L._shape_types[1],
         ComptimeInt[SF_ATOM_M[0]],
         ComptimeInt[SF_ATOM_M[1] * SF_ATOM_K],
-    ]()
+    ].element_types
 ]
 """5D scale factor layout for non-batched TMA. (1, sf_m, sf_k, atom0, atom1*atom_k).
 

@@ -1648,13 +1648,12 @@ struct TileTensor[
         dtype=Self.dtype,
         origin=Self.origin,
         LayoutType=Layout[
-            shape_types=TypeListOf[
-                type=CoordLike,
+            shape_types=Coord[
                 ComptimeInt[
                     Coord[*Self.LayoutType._shape_types].static_product
                 ],
-            ](),
-            stride_types=TypeListOf[type=CoordLike, ComptimeInt[1]](),
+            ].element_types,
+            stride_types=Coord[ComptimeInt[1]].element_types,
         ],
         address_space=Self.address_space,
         element_size=Self.element_size,
@@ -3236,9 +3235,7 @@ False otherwise. For row-major, stride[i] = product(shape[i+1:]).
 
 
 comptime _FlatLeadingLayout[L: TensorLayout] = RowMajorLayout[
-    *TypeListOf[
-        type=CoordLike, RuntimeInt[DType.int64], L._shape_types[L.rank - 1]
-    ]()
+    *Coord[RuntimeInt[DType.int64], L._shape_types[L.rank - 1]].element_types
 ]
 """Layout type after merging leading two dims: (A, B, C) -> (A*B, C).
 
@@ -3256,11 +3253,9 @@ def flatten_leading[
     tensor: TileTensor[dtype=dtype, LayoutType=layout, ...],
 ) -> tensor.ViewType[
     RowMajorLayout[
-        *TypeListOf[
-            type=CoordLike,
-            RuntimeInt[DType.int64],
-            layout._shape_types[layout.rank - 1],
-        ]()
+        *Coord[
+            RuntimeInt[DType.int64], layout._shape_types[layout.rank - 1]
+        ].element_types
     ]
 ]:
     """Merge the first two dimensions of a rank-3 TileTensor: (A, B, C) -> (A*B, C).
@@ -3287,11 +3282,9 @@ def flatten_leading[
         * Int64(tensor.layout.shape[1]().value())
     )
     comptime ResultLayout = RowMajorLayout[
-        *TypeListOf[
-            type=CoordLike,
-            RuntimeInt[DType.int64],
-            layout._shape_types[layout.rank - 1],
-        ]()
+        *Coord[
+            RuntimeInt[DType.int64], layout._shape_types[layout.rank - 1]
+        ].element_types
     ]
     return rebind[tensor.ViewType[ResultLayout]](
         tensor.reshape(row_major(Coord(merged, tensor.layout.shape[2]())))

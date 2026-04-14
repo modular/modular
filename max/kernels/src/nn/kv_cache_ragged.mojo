@@ -1506,9 +1506,9 @@ def _matmul_blockwise_scaled_fp8_common[
     ](lt: LayoutTensor[dtype, _, ...]) -> TileTensor[
         dtype,
         RowMajorLayout[
-            *TypeListOf[
-                type=CoordLike, RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-            ]()
+            *Coord[
+                RuntimeInt[DType.int64], RuntimeInt[DType.int64]
+            ].element_types
         ],
         lt.origin,
     ]:
@@ -1521,11 +1521,9 @@ def _matmul_blockwise_scaled_fp8_common[
         return TileTensor[
             dtype,
             RowMajorLayout[
-                *TypeListOf[
-                    type=CoordLike,
-                    RuntimeInt[DType.int64],
-                    RuntimeInt[DType.int64],
-                ]()
+                *Coord[
+                    RuntimeInt[DType.int64], RuntimeInt[DType.int64]
+                ].element_types
             ],
             lt.origin,
         ](
@@ -1540,9 +1538,9 @@ def _matmul_blockwise_scaled_fp8_common[
     var c_tt = NullableTileTensor[
         output_dtype,
         RowMajorLayout[
-            *TypeListOf[
-                type=CoordLike, RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-            ]()
+            *Coord[
+                RuntimeInt[DType.int64], RuntimeInt[DType.int64]
+            ].element_types
         ],
         MutAnyOrigin,
     ](
@@ -1605,9 +1603,9 @@ def _matmul_blockwise_scaled_fp4_common[
     var c_tt = NullableTileTensor[
         output_dtype,
         RowMajorLayout[
-            *TypeListOf[
-                type=CoordLike, RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-            ]()
+            *Coord[
+                RuntimeInt[DType.int64], RuntimeInt[DType.int64]
+            ].element_types
         ],
         MutAnyOrigin,
     ](

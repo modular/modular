@@ -32,7 +32,7 @@ from std.gpu.memory import AddressSpace, external_memory
 from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
 from layout import (
     ComptimeInt,
-    CoordLike,
+    Coord,
     Idx,
     RuntimeInt,
     TensorLayout,
@@ -351,8 +351,8 @@ def topk_mask_logits[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types=TypeListOf[type=CoordLike, RuntimeInt[DType.int64]](),
-        stride_types=TypeListOf[type=CoordLike, ComptimeInt[1]](),
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
 ](
     ctx: DeviceContext,
@@ -888,12 +888,12 @@ def topk_sampling_from_prob[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types=TypeListOf[type=CoordLike, RuntimeInt[DType.int64]](),
-        stride_types=TypeListOf[type=CoordLike, ComptimeInt[1]](),
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     IndicesLayoutType: TensorLayout = Layout[
-        shape_types=TypeListOf[type=CoordLike, RuntimeInt[DType.int64]](),
-        stride_types=TypeListOf[type=CoordLike, ComptimeInt[1]](),
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
 ](
     ctx: DeviceContext,
@@ -1260,20 +1260,20 @@ def topk_topp_sampling_from_prob[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types=TypeListOf[type=CoordLike, RuntimeInt[DType.int64]](),
-        stride_types=TypeListOf[type=CoordLike, ComptimeInt[1]](),
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     IndicesLayoutType: TensorLayout = Layout[
-        shape_types=TypeListOf[type=CoordLike, RuntimeInt[DType.int64]](),
-        stride_types=TypeListOf[type=CoordLike, ComptimeInt[1]](),
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     TopPArrLayoutType: TensorLayout = Layout[
-        shape_types=TypeListOf[type=CoordLike, RuntimeInt[DType.int64]](),
-        stride_types=TypeListOf[type=CoordLike, ComptimeInt[1]](),
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     SeedLayoutType: TensorLayout = Layout[
-        shape_types=TypeListOf[type=CoordLike, RuntimeInt[DType.int64]](),
-        stride_types=TypeListOf[type=CoordLike, ComptimeInt[1]](),
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
 ](
     ctx: DeviceContext,
@@ -1653,16 +1653,16 @@ def topk_softmax_sample[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types=TypeListOf[type=CoordLike, RuntimeInt[DType.int64]](),
-        stride_types=TypeListOf[type=CoordLike, ComptimeInt[1]](),
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     TemperatureLayoutType: TensorLayout = Layout[
-        shape_types=TypeListOf[type=CoordLike, RuntimeInt[DType.int64]](),
-        stride_types=TypeListOf[type=CoordLike, ComptimeInt[1]](),
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     SeedLayoutType: TensorLayout = Layout[
-        shape_types=TypeListOf[type=CoordLike, RuntimeInt[DType.int64]](),
-        stride_types=TypeListOf[type=CoordLike, ComptimeInt[1]](),
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
 ](
     ctx: DeviceContext,
