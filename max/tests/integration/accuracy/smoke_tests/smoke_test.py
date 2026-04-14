@@ -109,8 +109,8 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
         "hf_model_path": "microsoft/phi-4",
         "max_serve_args": "--prefer-module-v3",
     },
-    "google/gemma-3-1b-it__modulev3": {
-        "hf_model_path": "google/gemma-3-1b-it",
+    "google/gemma-3-4b-it__modulev3": {
+        "hf_model_path": "google/gemma-3-4b-it",
         "max_serve_args": "--prefer-module-v3",
     },
     "nvidia/deepseek-v3.1-nvfp4__fp8kv": {
