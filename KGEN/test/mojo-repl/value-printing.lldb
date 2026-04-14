@@ -88,7 +88,7 @@ var a_bool = True
 var another_bool = False
 
 
-# CHECK: (List[Int]) z = (size 3) {
+# CHECK: (List[Int]) z = (size 3)[1, 2, 3] {
 # CHECK:   (Int) [0] = 1
 # CHECK:   (Int) [1] = 2
 # CHECK:   (Int) [2] = 3
@@ -100,7 +100,7 @@ z.append(2)
 z.append(3)
 
 
-# CHECK: (Tuple[Int, SIMD[DType.int8, 4]]) a = {
+# CHECK: (Tuple[Int, SIMD[DType.int8, 4]]) a = ([0] = 1, ...) {
 # CHECK:   (Int) [0] = 1
 # CHECK:   (SIMD[DType.int8, 4]) [1] = {
 # CHECK:     (__mlir_type.si8) [0] = 1
@@ -124,7 +124,7 @@ for var i in range(0, 100):
         s4 += String(i)
 var s3 = String()
 
-# CHECK: (List[Int]) even = (size 3) {
+# CHECK: (List[Int]) even = (size 3)[0, 2, 4] {
 # CHECK:   (Int) [0] = 0
 # CHECK:   (Int) [1] = 2
 # CHECK:   (Int) [2] = 4

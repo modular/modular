@@ -53,11 +53,18 @@ public:
     // If the summary provider for this child asks for no children, then we
     // simply report as this type has no children, otherwise structs like `Bool`
     // are displayed with its nested `i1` field.
-    lldb::TypeSummaryImplSP typeSummary =
-        GetSyntheticValue()->GetSummaryFormat();
-    if (typeSummary && (typeSummary->GetOptions() & eTypeOptionHideChildren))
+    //
+    // Exception: for multi-element types like Tuple's !kgen.pack, the
+    // HideChildren flag is intended to suppress redundant children on the
+    // pack itself, not to hide Tuple's elements from the wrapping display.
+    lldb::ValueObjectSP sv = GetSyntheticValue();
+    if (!sv)
       return false;
-    return GetSyntheticValue()->MightHaveChildren();
+    lldb::TypeSummaryImplSP typeSummary = sv->GetSummaryFormat();
+    if (typeSummary && (typeSummary->GetOptions() & eTypeOptionHideChildren) &&
+        getExpectedValueOr(sv->GetNumChildren(), 0u) <= 1)
+      return false;
+    return sv->MightHaveChildren();
   }
 };
 } // namespace
@@ -72,10 +79,18 @@ bool M::KGEN::Mojo::MojoLLDBWrappingTypeSummaryProvider(
     ValueObject &valobj, Stream &stream, TypeSummaryOptions summaryOptions) {
   ValueObjectSP nonSyntheticValobj = valobj.GetNonSyntheticValue();
   ValueObjectSP impl = nonSyntheticValobj->GetChildAtIndex(0);
+  if (!impl)
+    return false;
   std::string dest;
   impl->GetSummaryAsCString(dest, summaryOptions);
-  if (dest.empty())
-    return false;
-  stream << dest;
-  return true;
+  if (!dest.empty()) {
+    stream << dest;
+    return true;
+  }
+  // Fall back to scalar value if available (e.g. index, si8, f32).
+  if (const char *val = impl->GetValueAsCString()) {
+    stream << val;
+    return true;
+  }
+  return false;
 }

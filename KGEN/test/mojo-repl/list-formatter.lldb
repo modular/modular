@@ -19,7 +19,7 @@ struct Point(TrivialRegisterPassable, Copyable, Movable):
     self.x = x
     self.y = y
 
-# CHECK: (List[Int]) vec = (size 5) {
+# CHECK: (List[Int]) vec = (size 5)[1, 2, 3, 4, 5] {
 # CHECK:   (Int) [0] = 1
 # CHECK:   (Int) [1] = 2
 # CHECK:   (Int) [2] = 3
