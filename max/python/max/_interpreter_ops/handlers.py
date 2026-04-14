@@ -3691,3 +3691,66 @@ def _handle_distributed_broadcast(
     # Trailing None for the output chain.
     output_buffers.append(None)
     return output_buffers
+
+
+@register_op_handler(mo.DistributedReducescatterSumOp)
+def _handle_distributed_reducescatter_sum(
+    op: mo.DistributedReducescatterSumOp,
+    inputs: Sequence[Buffer | None],
+) -> Sequence[Buffer | None]:
+    """Handle mo.distributed.reducescatter.sum by summing then splitting.
+
+    Operands (flat): N input tensors, N signal buffers, 1 input chain.
+    Results: N output tensors (one per device, each a chunk of the sum),
+    1 output chain.
+
+    The interpreter executes sequentially on the host, so signal buffers
+    and chains are unused.  Each input tensor is transferred to the CPU,
+    summed via NumPy, and the result is split along the scatter axis so
+    that each device receives its disjoint chunk.
+
+    Args:
+        op: The reduce-scatter sum operation.
+        inputs: Flat operand buffers from the interpreter dispatcher.
+
+    Returns:
+        N output buffers followed by None for the chain.
+    """
+    num_inputs = len(op.inputs)
+    bufs: list[Buffer] = []
+    for i in range(num_inputs):
+        b = inputs[i]
+        assert isinstance(b, Buffer), f"reducescatter input {i} is not a Buffer"
+        bufs.append(b)
+
+    axis = op.axis
+
+    # Sum all inputs on the CPU via NumPy.
+    total = bufs[0].to(CPU()).to_numpy().copy()
+    for buf in bufs[1:]:
+        total += buf.to(CPU()).to_numpy()
+
+    # Split the summed result along the scatter axis using ragged binning
+    # (same formula as ops/reducescatter.py).
+    dim = total.shape[axis]
+    chunk_sizes = [
+        (dim + (num_inputs - i - 1)) // num_inputs for i in range(num_inputs)
+    ]
+    chunks = np.split(total, np.cumsum(chunk_sizes[:-1]), axis=axis)
+
+    results = list(op.results)
+    num_outputs = len(results) - 1  # exclude trailing chain
+    assert num_outputs == num_inputs, (
+        f"reducescatter expects N inputs and N outputs, "
+        f"got {num_inputs} inputs and {num_outputs} outputs"
+    )
+
+    output_buffers: list[Buffer | None] = []
+    for idx, result in enumerate(results[:-1]):
+        result_type: mo.TensorType = result.type  # type: ignore[assignment]
+        device = graph.DeviceRef.from_mlir(result_type.device_ref).to_device()
+        output_buffers.append(Buffer.from_numpy(chunks[idx]).to(device))
+
+    # Trailing None for the output chain.
+    output_buffers.append(None)
+    return output_buffers

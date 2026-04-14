@@ -33,6 +33,7 @@ from .collectives import (
     all_reduce_sum,
     auto_reduce_partial,
     distributed_broadcast,
+    distributed_reducescatter_sum,
     distributed_scatter,
     materialize,
     reduce_scatter,

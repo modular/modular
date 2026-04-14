@@ -38,6 +38,9 @@ from max.experimental.distributed_functional.collectives import (
     distributed_broadcast as df_broadcast,
 )
 from max.experimental.distributed_functional.collectives import (
+    distributed_reducescatter_sum as df_reducescatter_sum,
+)
+from max.experimental.distributed_functional.collectives import (
     distributed_scatter as df_scatter,
 )
 from max.experimental.distributed_functional.collectives import (
@@ -3627,3 +3630,102 @@ class TestDistributedBroadcastHandler:
         assert result.placements == (Replicated(),)
         for shard in result.local_shards:
             np.testing.assert_allclose(to_numpy(shard), data, rtol=1e-5)
+
+
+class TestDistributedReducescatterSumHandler:
+    """Tests for the DistributedReducescatterSumOp interpreter handler."""
+
+    @_NEED_2_GPUS
+    def test_reducescatter_sum_via_graph_ops(self) -> None:
+        """Build a graph with ops.reducescatter.sum and run via MOInterpreter."""
+        shape = [4, 4]
+        gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
+
+        input_types: list[GType[Any]] = [
+            TensorType(DType.float32, shape, gpu0),
+            TensorType(DType.float32, shape, gpu1),
+            GBufferType(DType.uint8, [1024], gpu0),
+            GBufferType(DType.uint8, [1024], gpu1),
+        ]
+
+        with Graph("reducescatter_test", input_types=input_types) as graph:
+            t0, t1, b0, b1 = graph.inputs
+            results = graph_ops.reducescatter.sum(
+                [t0.tensor, t1.tensor], [b0.buffer, b1.buffer], axis=0
+            )
+            graph.output(*results)
+
+        a_np = np.array(
+            [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]],
+            dtype=np.float32,
+        )
+        b_np = np.array(
+            [
+                [10, 20, 30, 40],
+                [50, 60, 70, 80],
+                [90, 100, 110, 120],
+                [130, 140, 150, 160],
+            ],
+            dtype=np.float32,
+        )
+        total = a_np + b_np
+        # axis=0, 2 devices: each gets 2 rows of the 4-row sum.
+        expected_0 = total[:2]  # rows 0-1
+        expected_1 = total[2:]  # rows 2-3
+
+        dev0, dev1 = Accelerator(0), Accelerator(1)
+        input_bufs = [
+            Buffer.from_numpy(a_np).to(dev0),
+            Buffer.from_numpy(b_np).to(dev1),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev0),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev1),
+        ]
+
+        interp = MOInterpreter()
+        assert interp.can_execute(graph)
+        outputs = interp.execute(graph, input_bufs)
+
+        assert len(outputs) == 2
+        out0, out1 = outputs[0], outputs[1]
+        assert isinstance(out0, Buffer)
+        assert isinstance(out1, Buffer)
+        np.testing.assert_allclose(
+            out0.to(CPU()).to_numpy(), expected_0, rtol=1e-5
+        )
+        np.testing.assert_allclose(
+            out1.to(CPU()).to_numpy(), expected_1, rtol=1e-5
+        )
+
+    @_NEED_2_GPUS
+    def test_reducescatter_sum_distributed_tensor_e2e(self) -> None:
+        """E2E: reduce-scatter per-device tensors to Sharded via interpreter."""
+        num_gpus = min(accelerator_count(), 2)
+        devices = tuple(Accelerator(i) for i in range(num_gpus))
+        mesh = DeviceMesh(
+            devices=devices, mesh_shape=(num_gpus,), axis_names=("tp",)
+        )
+
+        # Each device contributes a [4, 4] tensor of ones.
+        data = np.ones((4, 4), dtype=np.float32)
+        input_tensors = [
+            Tensor(storage=Buffer.from_numpy(data).to(devices[i]))
+            for i in range(num_gpus)
+        ]
+
+        mapping = PlacementMapping(mesh, (Sharded(0),))
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = df_reducescatter_sum(
+                input_tensors, scatter_axis=0, mapping=mapping
+            )
+
+        assert result.placements == (Sharded(0),)
+        # Sum of num_gpus copies of ones, split along axis 0.
+        total = data * num_gpus
+        rows_per_chunk = total.shape[0] // num_gpus
+        for i, shard in enumerate(result.local_shards):
+            expected = total[i * rows_per_chunk : (i + 1) * rows_per_chunk]
+            np.testing.assert_allclose(to_numpy(shard), expected, rtol=1e-5)

@@ -179,6 +179,11 @@ This version is still a work in progress.
   without falling back to compilation.
 - Added `distributed_broadcast` collective to `distributed_functional` for
   hardware-accelerated root-to-all tensor replication.
+- Added `distributed.reducescatter.sum` op handler to the eager interpreter,
+  enabling multi-GPU eager execution of reduce-scatter collectives without
+  falling back to compilation.
+- Added `distributed_reducescatter_sum` collective to `distributed_functional`
+  for hardware-accelerated reduce-and-scatter tensor distribution.
 - `Module.compile()` now accepts a `custom_extensions` parameter for loading
   custom Mojo kernel libraries at graph construction time, fixing validation
   failures for kernels with struct-level parameters.

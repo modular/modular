@@ -29,9 +29,17 @@ from max.experimental import realization_context as rc
 from max.experimental.distributed_functional.collectives import (
     distributed_broadcast as df_broadcast,
 )
+from max.experimental.distributed_functional.collectives import (
+    distributed_reducescatter_sum as df_reducescatter_sum,
+)
 from max.experimental.distributed_functional.collectives import to_numpy
 from max.experimental.realization_context import set_seed
-from max.experimental.sharding import DeviceMesh, PlacementMapping, Replicated
+from max.experimental.sharding import (
+    DeviceMesh,
+    PlacementMapping,
+    Replicated,
+    Sharded,
+)
 from max.experimental.tensor import Tensor, realization_context
 
 # DTypes to test for elementwise operations
@@ -7629,3 +7637,39 @@ class TestDistributedBroadcastSimulated:
         assert len(result.local_shards) == 2
         np.testing.assert_allclose(to_numpy(result.local_shards[0]), data)
         np.testing.assert_allclose(to_numpy(result.local_shards[1]), data)
+
+
+class TestDistributedReducescatterSumSimulated:
+    """Test distributed_reducescatter_sum on a simulated CPU mesh."""
+
+    def test_reducescatter_sum_simulated_fallback(self) -> None:
+        """Simulated mesh: reduce-scatter falls back to add + split."""
+        cpu = CPU()
+        mesh = DeviceMesh(
+            devices=(cpu, cpu), mesh_shape=(2,), axis_names=("tp",)
+        )
+
+        # Two [4, 2] inputs — sum then split along axis 0.
+        data_a = np.arange(8, dtype=np.float32).reshape(4, 2)
+        data_b = np.arange(8, 16, dtype=np.float32).reshape(4, 2)
+
+        inputs = [
+            Tensor.from_dlpack(np.ascontiguousarray(data_a)),
+            Tensor.from_dlpack(np.ascontiguousarray(data_b)),
+        ]
+
+        mapping = PlacementMapping(mesh, (Sharded(0),))
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = df_reducescatter_sum(
+                inputs, scatter_axis=0, mapping=mapping
+            )
+
+        assert result.placements == (Sharded(0),)
+        assert len(result.local_shards) == 2
+        total = data_a + data_b
+        np.testing.assert_allclose(to_numpy(result.local_shards[0]), total[:2])
+        np.testing.assert_allclose(to_numpy(result.local_shards[1]), total[2:])
