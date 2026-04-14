@@ -44,7 +44,17 @@ inline ErrorOrSuccess awaitOrError(MutableArrayRef<AnyAsyncValueRef> values) {
 
   for (AnyAsyncValueRef &value : values)
     if (value.isError())
-      return value.takeDiagnostic().getMessage().copy();
+      return value.getDiagnostic().getMessage().copy();
+
+  return success();
+}
+
+template <typename T>
+inline static ErrorOrSuccess awaitOrError(const AsyncValueRef<T> &value) {
+  await(ArrayRef<AnyAsyncValueRef>(value));
+
+  if (value.isError())
+    return value.getDiagnostic().getMessage().copy();
 
   return success();
 }
