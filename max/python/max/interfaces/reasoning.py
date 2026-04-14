@@ -36,8 +36,9 @@ class ReasoningSpan:
     delimiters). Uses standard Python slice semantics: ``[start, end)``.
 
     Args:
-        reasoning_with_delimiters: Full span including delimiter tokens.
-        reasoning: Span excluding delimiter tokens. Must be contained within ``reasoning_with_delimiters``.
+        reasoning_with_delimiters: The full span including delimiter tokens.
+        reasoning: The span excluding delimiter tokens. Must be contained
+            within ``reasoning_with_delimiters``.
     """
 
     def __init__(
@@ -55,17 +56,25 @@ class ReasoningSpan:
         self._reasoning = reasoning
 
     def extract_content(self, seq: Sequence[T]) -> list[T]:
-        """Extract the non-reasoning elements from a sequence.
+        """Extracts the non-reasoning elements from a sequence.
 
-        Returns the elements outside the delimited reasoning span.
+        Args:
+            seq: The sequence from which to extract non-reasoning elements.
+
+        Returns:
+            The elements outside the delimited reasoning span.
         """
         delimited_start, delimited_end = self._reasoning_with_delimiters
         return list(seq[:delimited_start]) + list(seq[delimited_end:])
 
     def extract_reasoning(self, seq: Sequence[T]) -> list[T]:
-        """Extract the reasoning elements from a sequence.
+        """Extracts the reasoning elements from a sequence.
 
-        Returns the elements within the reasoning span (excluding delimiters).
+        Args:
+            seq: The sequence from which to extract reasoning elements.
+
+        Returns:
+            The elements within the reasoning span, excluding delimiters.
         """
         reasoning_start, reasoning_end = self._reasoning
         return list(seq[reasoning_start:reasoning_end])
@@ -79,14 +88,19 @@ class ReasoningParser(ABC):
         self,
         delta_token_ids: Sequence[int],
     ) -> tuple[ReasoningSpan, bool]:
-        """Identify a reasoning span within a streaming delta chunk.
+        """Identifies a reasoning span within a streaming delta chunk.
 
-        Returns a tuple of (ReasoningSpan, is_still_reasoning) where
-        is_still_reasoning indicates whether the reasoning section has ended.
-        The ReasoningSpan identifies the reasoning portion of the chunk. If
-        there is no reasoning in the chunk, the span is zero-width so that
-        ``extract_content`` behaves as identity and ``extract_reasoning``
-        returns an empty list.
+        Args:
+            delta_token_ids: The token IDs of the incremental streaming chunk.
+
+        Returns:
+            A tuple of ``(ReasoningSpan, is_still_reasoning)`` where
+            ``is_still_reasoning`` indicates whether the reasoning section has
+            ended. The :class:`ReasoningSpan` identifies the reasoning portion
+            of the chunk. If there is no reasoning in the chunk, the span is
+            zero-width so that :meth:`ReasoningSpan.extract_content` behaves
+            as identity and :meth:`ReasoningSpan.extract_reasoning` returns an
+            empty list.
         """
         ...
 
@@ -96,5 +110,13 @@ class ReasoningParser(ABC):
         cls,
         tokenizer: PipelineTokenizer[Any, Any, Any],
     ) -> ReasoningParser:
-        """Construct a reasoning parser from a tokenizer."""
+        """Constructs a reasoning parser from a tokenizer.
+
+        Args:
+            tokenizer: The :class:`~max.interfaces.PipelineTokenizer` to use
+                for resolving reasoning delimiter token IDs.
+
+        Returns:
+            A new :class:`ReasoningParser` instance.
+        """
         ...

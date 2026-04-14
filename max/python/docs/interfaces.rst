@@ -86,6 +86,17 @@ Image generation
    PixelGenerationInputs
    VideoContentPart
 
+Reasoning
+---------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   ReasoningParser
+   ReasoningSpan
+
 Context and sampling
 --------------------
 
