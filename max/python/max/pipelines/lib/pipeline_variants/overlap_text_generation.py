@@ -1180,8 +1180,17 @@ class OverlapTextGenerationPipeline(
             # block until the d2h copy is complete, and no more.
             copy_event = device0.default_stream.record_event()
 
+        # Make a deep copy of the input object in case the caller modifies it!
+        cloned_inputs = TextGenerationInputs(
+            batches=[
+                [ctx for ctx in replica_batch]
+                for replica_batch in inputs.batches
+            ],
+            num_steps=inputs.num_steps,
+        )
+
         return AsyncBatch(
-            inputs=inputs,
+            inputs=cloned_inputs,
             generated_tokens_device=generated_tokens_device,
             generated_tokens_host=generated_tokens_host,
             copy_event=copy_event,
