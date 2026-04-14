@@ -23,18 +23,13 @@ adding more complexity. The concepts you learn here will serve as a foundation
 for more advanced GPU programming with Mojo. If you just want to see the
 finished code, you can [get it on
 GitHub](https://github.com/modular/modular/tree/main/mojo/examples/gpu-intro).
+See [GPU compatibility](/mojo/requirements#gpu-compatibility) for a list of
+compatible GPUs and software requirements.
 
 :::tip
 
 **Tip:** To use AI coding assistants with Mojo, see our guide for
 [using Mojo AI skills](/mojo/tools/skills/).
-
-:::
-
-:::note System requirements
-
-You can use Mac, Linux, or Windows with WSL. For details, see the
-[system requirements](/mojo/requirements).
 
 :::
 
@@ -139,7 +134,7 @@ Found GPU: NVIDIA A10G
 :::note
 
 Mojo requires a
-[compatible GPU development environment](/mojo/requirements/#gpu-compatibility)
+[compatible GPU development environment](/mojo/requirements#gpu-compatibility)
 to compile kernel functions, otherwise it raises a compile-time error. In our
 code, we're using the
 [`comptime if`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if)

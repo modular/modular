@@ -204,10 +204,10 @@ To install `modular`, your system must meet these specifications.
 - Apple silicon (M1 - M5 processor)
 - Python 3.10 - 3.14
 - Xcode or Xcode Command Line Tools 16 or later
-- We have [limited compatibility](#gpu-compatibility) for Apple Silicon GPUs.
-  You may need to run `xcodebuild -downloadComponent MetalToolchain`, which
-  downloads the Metal utilities required for GPU programming in later versions
-  of Xcode.
+- Apple silicon GPU support is available for Mojo GPU programming. See
+  [GPU compatibility](#gpu-compatibility) for details. You may need to run
+  `xcodebuild -downloadComponent MetalToolchain` to install the Metal utilities
+  required for GPU programming.
 
 </TabItem>
 <TabItem value="linux" label="Linux">
@@ -235,97 +235,180 @@ version of Ubuntu (see our requirements for Linux).
 
 ### GPU compatibility
 
-The Modular Platform supports both CPUs and GPUs, so you don't always need a
-GPU to serve a model or program with Mojo. But if you do want to accelerate
-your model with GPUs or program for GPUs with Mojo, we support the following
-GPUs.
+MAX supports both CPUs and GPUs, so you don't always need a GPU to serve a
+model. But if you want to accelerate inference with GPUs or program for GPUs
+with Mojo, the following GPUs are compatible.
 
-Because we don't test every variant of a GPU architecture, and support for new
-architectures will improve incrementally, we've divided our list of compatible
-GPUs into 3 tiers:
+#### NVIDIA GPUs
 
-#### Tier 1: Fully supported
+<table>
+  <thead>
+    <tr>
+      <th>GPU</th>
+      <th>Architecture</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td colSpan="2"><strong>Tested for serving</strong></td>
+    </tr>
+    <tr>
+      <td>B200</td>
+      <td>Blackwell</td>
+    </tr>
+    <tr>
+      <td>H100</td>
+      <td>Hopper</td>
+    </tr>
+    <tr>
+      <td>H200</td>
+      <td>Hopper</td>
+    </tr>
+    <tr>
+      <td colSpan="2"><strong>Known compatible for development</strong></td>
+    </tr>
+    <tr>
+      <td>B300</td>
+      <td>Blackwell</td>
+    </tr>
+    <tr>
+      <td>B100</td>
+      <td>Blackwell</td>
+    </tr>
+    <tr>
+      <td>L4</td>
+      <td>Ada Lovelace</td>
+    </tr>
+    <tr>
+      <td>L40</td>
+      <td>Ada Lovelace</td>
+    </tr>
+    <tr>
+      <td>A100</td>
+      <td>Ampere</td>
+    </tr>
+    <tr>
+      <td>A10</td>
+      <td>Ampere</td>
+    </tr>
+    <tr>
+      <td>RTX 50XX series</td>
+      <td>Blackwell</td>
+    </tr>
+    <tr>
+      <td>RTX 40XX series</td>
+      <td>Ada Lovelace</td>
+    </tr>
+    <tr>
+      <td>RTX 30XX series</td>
+      <td>Ampere</td>
+    </tr>
+    <tr>
+      <td>Jetson Orin / Orin Nano</td>
+      <td>Ampere</td>
+    </tr>
+  </tbody>
+</table>
 
-We provide full support and testing for the following data center GPUs:
+Software requirement: NVIDIA GPU driver 580 or later. Check your version with
+[`nvidia-smi`](https://developer.nvidia.com/system-management-interface). To
+update, see the [NVIDIA driver docs](https://www.nvidia.com/en-us/drivers/). If
+your driver is older than 580, set the `MODULAR_NVPTX_COMPILER_PATH` environment
+variable to a system `ptxas` binary (for example,
+`export MODULAR_NVPTX_COMPILER_PATH=/usr/local/cuda/bin/ptxas`).
 
-- NVIDIA B200 (Blackwell)
-- NVIDIA H100 and H200 (Hopper)
-- AMD Instinct MI355X (CDNA4)
-- AMD Instinct MI300X and MI325X (CDNA3)
+#### AMD GPUs
 
-#### Tier 2: Confirmed compatibility
+<table>
+  <thead>
+    <tr>
+      <th>GPU</th>
+      <th>Architecture</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td colSpan="2"><strong>Tested for serving</strong></td>
+    </tr>
+    <tr>
+      <td>MI355X</td>
+      <td>CDNA4</td>
+    </tr>
+    <tr>
+      <td>MI300X</td>
+      <td>CDNA3</td>
+    </tr>
+    <tr>
+      <td>MI325X</td>
+      <td>CDNA3</td>
+    </tr>
+    <tr>
+      <td colSpan="2"><strong>Known compatible for development</strong></td>
+    </tr>
+    <tr>
+      <td>MI250X</td>
+      <td>CDNA2</td>
+    </tr>
+    <tr>
+      <td>Radeon RX 9070</td>
+      <td>RDNA4</td>
+    </tr>
+    <tr>
+      <td>Radeon RX 9060</td>
+      <td>RDNA4</td>
+    </tr>
+    <tr>
+      <td>Radeon 880M</td>
+      <td>RDNA3.5</td>
+    </tr>
+    <tr>
+      <td>Radeon 860M</td>
+      <td>RDNA3.5</td>
+    </tr>
+    <tr>
+      <td>Radeon 8060S</td>
+      <td>RDNA3.5</td>
+    </tr>
+    <tr>
+      <td>Radeon RX 7900</td>
+      <td>RDNA3</td>
+    </tr>
+    <tr>
+      <td>Radeon RX 7800 / 7700</td>
+      <td>RDNA3</td>
+    </tr>
+    <tr>
+      <td>Radeon RX 7600</td>
+      <td>RDNA3</td>
+    </tr>
+  </tbody>
+</table>
 
-We've confirmed full compatibility with the following GPUs but we
-don't maintain tests for them:
+Software requirement: AMD GPU driver 6.3.3 or later (MI355X requires ROCm 7.0 or
+later). For installation, see the
+[Ubuntu native install guide](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/install-methods/package-manager/package-manager-ubuntu.html).
 
-- NVIDIA A100 and A10 (Ampere)
-- NVIDIA L4 and L40 (Ada Lovelace)
-- NVIDIA RTX 50XX series (Blackwell)
-- NVIDIA RTX 40XX series (Ada Lovelace)
-- NVIDIA RTX 30XX series (Ampere)
-- NVIDIA Jetson Orin and Orin Nano (Ampere)
+#### Apple silicon GPUs
 
-#### Tier 3: Limited compatibility
-
-We've either confirmed or received reports that the following GPUs work for GPU
-programming with Mojo. Some can also execute basic graphs with MAX APIs.
-However, none of these currently run major GenAI models with MAX:
-
-- Apple silicon GPUs (M1 - M5)
-- NVIDIA RTX 20XX series (Turing)
-- NVIDIA T4 (Turing)
-- AMD Radeon RX 9000 series (RDNA4)
-- AMD Radeon 800M series (RDNA3.5)
-- AMD Radeon 8050S / 8060S (RDNA3.5)
-- AMD Radeon 700M series (RDNA3)
-- AMD Radeon RX 7000 series (RDNA3)
-
-#### Pre-Turing NVIDIA GPUs
-
-Pre-Turing NVIDIA GPUs (such as Pascal-generation GTX 10XX and Tesla P100) are
-not supported out of the box. To use Mojo and MAX on these GPUs, set the
-`MODULAR_NVPTX_COMPILER_PATH` environment variable to point to a system
-`ptxas` binary compatible with your hardware and driver version.
-
-If you've had success with any GPUs not listed here, please [let us know on
-Discord](https://discord.gg/modular).
-
-#### GPU software requirements
-
-Make sure you have the corresponding GPU software:
-
-- If you're on an **NVIDIA GPU**:
-
-  - NVIDIA GPU driver version 580 or higher
-
-    - Check your NVIDIA GPU driver version using
-  [nvidia-smi](https://developer.nvidia.com/system-management-interface)
-    - To update, see the [NVIDIA driver
-    docs](https://www.nvidia.com/en-us/drivers/)
-    - For older driver versions, you can set the
-    `MODULAR_NVPTX_COMPILER_PATH` environment variable to point to a
-    system `ptxas` binary to bypass this requirement
-
-- If you're on an **AMD GPU**:
-
-  - AMD GPU driver version 6.3.3 or higher
-
-    - For datacenter GPUs (MI300X/MI325X), see the
-      [Ubuntu native install guide](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/install/install-methods/package-manager/package-manager-ubuntu.html)
-    - For Radeon GPUs on Ubuntu, see the
-      [Linux install guide for Radeon software](https://rocm.docs.amd.com/projects/radeon/en/latest/docs/install/native_linux/install-radeon.html)
-    - For Radeon GPUs on WSL, see the
-      [WSL install guide for Radeon software](https://rocm.docs.amd.com/projects/radeon/en/latest/docs/install/wsl/install-radeon.html)
+Apple silicon GPU support (M1--M5) is functional for GPU programming with Mojo.
+Large GenAI model inference via MAX isn't yet available on Apple silicon. For
+details, see the
+[Mojo system requirements](/mojo/requirements#apple-silicon-gpus).
 
 :::note Notes
 
 - Many GPUs are available in variants with different amounts of memory, and
-each AI model has different memory requirements. So even if your GPU
-architecture is listed as compatible, you must confirm that the available
-memory is sufficient for the model you're using.
+each AI model has different memory requirements. Even if your GPU architecture
+is listed as compatible, confirm that the available memory is sufficient for the
+model you're using.
 
-- Modular can serve lots of models on either CPU and GPU, but some models do
-require one or more GPUs. When you browse our [supported models](/max/models/),
-you can check for multi-gpu support.
+- MAX can serve models on either CPU or GPU, but some models require one or
+more GPUs. When you browse our [supported models](/max/models/), you can check
+for multi-GPU support.
+
+- For comprehensive GPU hardware tables, arch targets, and troubleshooting, see
+the [Mojo system requirements](/mojo/requirements#gpu-compatibility) page.
+
+- To deploy MAX in containers, see the [deployment guide](/max/deploy/).
 
 :::
