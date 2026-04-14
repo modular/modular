@@ -159,7 +159,7 @@ def load_AB[
     work_tile_coord: Tuple[Int, Int],
     a_multicast_mask: UInt16,
     b_multicast_mask: UInt16,
-    iter_idx: UInt,
+    iter_idx: Int,
     elect_one_cta: Bool,
 ):
     comptime BM = block_tile_shape[0]
@@ -208,14 +208,14 @@ def load_AB[
     a_tma_op.async_multicast_load[cta_group](
         a_smem_slice,
         tma_mbar[stage],
-        (Int(iter_idx) * BK, a_gmem_slice_coord),
+        (iter_idx * BK, a_gmem_slice_coord),
         a_multicast_mask,
     )
 
     b_tma_op.async_multicast_load[cta_group](
         b_smem_slice,
         tma_mbar[stage],
-        (Int(iter_idx) * BK, b_gmem_slice_coord),
+        (iter_idx * BK, b_gmem_slice_coord),
         b_multicast_mask,
     )
 
@@ -277,7 +277,7 @@ def consumer_main_loop[
         transpose_b=transpose_b,
     ],
     elect_one_warp: Bool,
-    iter_idx: UInt,
+    iter_idx: Int,
 ):
     var stage = consumer_phase.index()
     var phase = consumer_phase.phase()
@@ -322,13 +322,13 @@ def stsm_helper[
     comptime stride0 = dst.layout.stride[0].value()
     comptime shape0 = dst.layout.shape[1].value()
 
-    var lane = UInt(lane_id())
-    var stsm_lane_offset = (lane & 15) * UInt(stride0) + (lane >> 4) * 8
+    var lane = lane_id()
+    var stsm_lane_offset = (lane & 15) * stride0 + (lane >> 4) * 8
 
     # Assume the dst tile has 16 rows and only use stsm in N dim.
     comptime for i in range(shape0 // stsmx4_row_size):
         comptime n_offset = i * stsmx4_row_size
-        var offset = swizzle(Int(stsm_lane_offset + UInt(n_offset)))
+        var offset = swizzle(stsm_lane_offset + n_offset)
         var v = SIMD[dst.dtype, stsmx4_lane_size]()
 
         comptime for k in range(stsmx4_lane_size // 2):
@@ -719,7 +719,7 @@ def kernel_7[
                     (block_idx.x, block_idx.y),
                     a_multicast_mask,
                     b_multicast_mask,
-                    UInt(i),
+                    i,
                     elect_one_cta,
                 )
                 producer_phase.step()
@@ -742,7 +742,7 @@ def kernel_7[
                 consumer_phase,
                 mma_op,
                 elect_one_warp,
-                UInt(i),
+                i,
             )
             consumer_phase.step()
 

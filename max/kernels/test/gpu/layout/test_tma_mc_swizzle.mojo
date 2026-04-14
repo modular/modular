@@ -44,8 +44,8 @@ def tma_swizzle_multicast_load_kernel[
     subcluster_tile_rank: Int,
     subcluster_tile_shape: IndexList[subcluster_tile_rank],
     desc_shape: IndexList[subcluster_tile_rank],
-    CLUSTER_M: UInt,
-    CLUSTER_N: UInt,
+    CLUSTER_M: Int,
+    CLUSTER_N: Int,
 ](
     dst: LayoutTensor[dtype, layout, MutAnyOrigin],
     tma_tile: TMATensorTile[
@@ -60,10 +60,10 @@ def tma_swizzle_multicast_load_kernel[
     comptime subcluster_tileN = subcluster_tile_shape[1]
 
     var block_rank = block_rank_in_cluster()
-    var rank_m, rank_n = divmod(Int(block_rank), Int(CLUSTER_N))
+    var rank_m, rank_n = divmod(Int(block_rank), CLUSTER_N)
 
     comptime CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
-    var tma_multicast_mask = (1 << Int(CLUSTER_SIZE)) - 1
+    var tma_multicast_mask = (1 << CLUSTER_SIZE) - 1
 
     tile = LayoutTensor[
         dtype,
@@ -128,14 +128,14 @@ def test_tma_multicast_swizzle[
     dtype: DType,
     shape: IndexList[2],
     cluster_tile_shape: IndexList[2],
-    CLUSTER_M: UInt,
-    CLUSTER_N: UInt,
+    CLUSTER_M: Int,
+    CLUSTER_N: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](ctx: DeviceContext) raises:
     comptime tileM = cluster_tile_shape[0]
     comptime tileN = cluster_tile_shape[1]
     comptime subcluster_tile_shape = Index(
-        tileM // Int(CLUSTER_M), tileN // Int(CLUSTER_N)
+        tileM // CLUSTER_M, tileN // CLUSTER_N
     )
 
     comptime layout = Layout.row_major(shape[0], shape[1])
@@ -180,8 +180,8 @@ def test_tma_multicast_swizzle[
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(
-            (shape[1] // cluster_tile_shape[1]) * Int(CLUSTER_N),
-            (shape[0] // cluster_tile_shape[0]) * Int(CLUSTER_M),
+            (shape[1] // cluster_tile_shape[1]) * CLUSTER_N,
+            (shape[0] // cluster_tile_shape[0]) * CLUSTER_M,
         ),
         block_dim=(1),
         cluster_dim=Dim(CLUSTER_N, CLUSTER_M, 1),

@@ -71,7 +71,7 @@ def multicast_tma_wgmma_kernel[
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: UInt,
+    num_iters: Int,
 ):
     var a_smem_tile = LayoutTensor[
         a_type,
@@ -159,7 +159,7 @@ def multicast_tma_wgmma_kernel[
 
                 comptime if partitioned_multicast:
                     var a_gmem_slice_coord = (
-                        block_idx.y * BM + Int(rank_n) * a_tma_rows
+                        block_idx.y * BM + rank_n * a_tma_rows
                     )
                     var a_smem_slice = type_of(a_smem_tile)(
                         a_smem_tile.ptr + rank_n * a_tma_load_size
@@ -168,7 +168,7 @@ def multicast_tma_wgmma_kernel[
                     a_tma_op.async_multicast_load(
                         a_smem_slice,
                         mbar[0],
-                        (UInt(i) * UInt(BK), UInt(a_gmem_slice_coord)),
+                        (i * BK, a_gmem_slice_coord),
                         multicast_mask.cast[DType.uint16](),
                     )
 
@@ -177,7 +177,7 @@ def multicast_tma_wgmma_kernel[
                         a_tma_op.async_multicast_load(
                             a_smem_tile,
                             mbar[0],
-                            (UInt(i) * UInt(BK), block_idx.y * UInt(BM)),
+                            (i * BK, block_idx.y * BM),
                             multicast_mask.cast[DType.uint16](),
                         )
 
@@ -185,7 +185,7 @@ def multicast_tma_wgmma_kernel[
                 a_tma_op.async_copy(
                     a_smem_tile,
                     mbar[0],
-                    (Int(i) * BK, Int(block_idx.y) * BM),
+                    (i * BK, block_idx.y * BM),
                 )
 
             comptime if CLUSTER_M > 1:
@@ -195,7 +195,7 @@ def multicast_tma_wgmma_kernel[
 
                 comptime if partitioned_multicast:
                     var b_gmem_slice_coord = (
-                        block_idx.x * BN + Int(rank_m) * b_tma_rows
+                        block_idx.x * BN + rank_m * b_tma_rows
                     )
                     var b_smem_slice = type_of(b_smem_tile)(
                         b_smem_tile.ptr + rank_m * b_tma_load_size
@@ -205,11 +205,11 @@ def multicast_tma_wgmma_kernel[
                         b_smem_slice,
                         mbar[0],
                         (
-                            UInt(i) * UInt(BK),
-                            UInt(b_gmem_slice_coord),
+                            i * BK,
+                            b_gmem_slice_coord,
                         ) if transpose_b else (
-                            block_idx.x * UInt(BN),
-                            UInt(i) * UInt(BK),
+                            block_idx.x * BN,
+                            i * BK,
                         ),
                         (multicast_mask << rank_n).cast[DType.uint16](),
                     )
@@ -220,11 +220,11 @@ def multicast_tma_wgmma_kernel[
                             b_smem_tile,
                             mbar[0],
                             (
-                                UInt(i) * UInt(BK),
-                                block_idx.x * UInt(BN),
+                                i * BK,
+                                block_idx.x * BN,
                             ) if transpose_b else (
-                                block_idx.x * UInt(BN),
-                                UInt(i) * UInt(BK),
+                                block_idx.x * BN,
+                                i * BK,
                             ),
                             (multicast_mask << rank_n).cast[DType.uint16](),
                         )
@@ -234,11 +234,11 @@ def multicast_tma_wgmma_kernel[
                     b_smem_tile,
                     mbar[0],
                     (
-                        Int(i) * BK,
-                        Int(block_idx.x) * BN,
+                        i * BK,
+                        block_idx.x * BN,
                     ) if transpose_b else (
-                        Int(block_idx.x) * BN,
-                        Int(i) * BK,
+                        block_idx.x * BN,
+                        i * BK,
                     ),
                 )
 

@@ -55,8 +55,8 @@ def im2col_load_kernel[
 ](
     act_tma_op: TMATensorTileIm2col[dtype, tile_rank, tile_shape, desc_shape],
     output_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    k_coord: UInt,
-    m_coord: UInt,
+    k_coord: Int,
+    m_coord: Int,
 ):
     """Kernel that loads one tile using im2col TMA and copies to global memory.
     """
@@ -356,8 +356,8 @@ def run_im2col_test[
     ctx.enqueue_function_unchecked[kernel, dump_asm=False](
         act_tma,
         output_device,
-        UInt(0),  # k_coord
-        UInt(0),  # m_coord
+        0,  # k_coord
+        0,  # m_coord
         grid_dim=(1, 1, 1),
         block_dim=128,
         shared_mem_bytes=smem_bytes,

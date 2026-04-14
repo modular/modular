@@ -40,39 +40,39 @@ def test_stmatrix(
     n: Int,
     k: Int,
 ):
-    comptime mma_m: UInt = 16
-    comptime mma_n: UInt = 8
-    comptime mma_k: UInt = 8
+    comptime mma_m: Int = 16
+    comptime mma_n: Int = 8
+    comptime mma_k: Int = 8
 
     var d_reg = SIMD[DType.float32, 4](0)
     var tid = thread_idx.x
     var a_shared = stack_allocation[
-        Int(mma_m * mma_k),
+        mma_m * mma_k,
         DType.float32,
         alignment=32,
         address_space=AddressSpace.SHARED,
     ]()
     var b_shared = stack_allocation[
-        Int(mma_n * mma_k),
+        mma_n * mma_k,
         DType.float32,
         alignment=32,
         address_space=AddressSpace.SHARED,
     ]()
 
     var c_shared = stack_allocation[
-        Int(mma_m * mma_n),
+        mma_m * mma_n,
         DType.float32,
         alignment=32,
         address_space=AddressSpace.SHARED,
     ]()
 
-    for i in range(tid, Int(mma_m * mma_k), WARP_SIZE):
+    for i in range(tid, mma_m * mma_k, WARP_SIZE):
         a_shared[i] = a_ptr[i]
 
     # Transpose B to fit ld_matrix layout.
-    for i in range(tid, Int(mma_k * mma_n), WARP_SIZE):
-        var y, x = divmod(i, Int(mma_n))
-        b_shared[x * Int(mma_k) + y] = b_ptr[i]
+    for i in range(tid, mma_k * mma_n, WARP_SIZE):
+        var y, x = divmod(i, mma_n)
+        b_shared[x * mma_k + y] = b_ptr[i]
 
     barrier()
 

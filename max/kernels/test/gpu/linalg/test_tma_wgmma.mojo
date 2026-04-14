@@ -119,7 +119,7 @@ def tma_wgmma_kernel[
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: UInt,
+    num_iters: Int,
 ):
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -194,17 +194,17 @@ def tma_wgmma_kernel[
             a_tma_op.async_copy(
                 a_smem_tile,
                 mbar[0],
-                (Int(i) * BK, block_idx.y * BM),
+                (i * BK, block_idx.y * BM),
             )
             b_tma_op.async_copy(
                 b_smem_tile,
                 mbar[0],
                 (
-                    Int(i) * BK,
+                    i * BK,
                     block_idx.x * BN,
                 ) if transpose_b else (
                     block_idx.x * BN,
-                    Int(i) * BK,
+                    i * BK,
                 ),
             )
 
@@ -343,7 +343,7 @@ def test_tma_wgmma[
         a_tma_op,
         b_tma_op,
         c.device_tensor(),
-        UInt(K // BK),
+        K // BK,
         grid_dim=(N // BN, M // BM),
         block_dim=(128),
     )
