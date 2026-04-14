@@ -108,6 +108,7 @@ modular_py_test(
     ignore_unresolved_imports = [
         "max._interpreter_ops.handlers._handle_buffer_create",
         "max._interpreter_ops.handlers._handle_buffer_transfer",
+        "max._interpreter_ops.handlers._handle_gather_sum",
         "max._interpreter_ops.handlers._handle_shape_from_tensor",
         "max._interpreter_ops.handlers._handle_index_to_tensor",
     ],

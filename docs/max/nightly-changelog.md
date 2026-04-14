@@ -160,6 +160,10 @@ This version is still a work in progress.
   the experimental eager interpreter. These internal ops are typically
   lowered by the graph compiler; the handlers prevent crashes if they
   survive into the interpreter.
+- Added defensive `mo.gather_sum` handler to the experimental eager
+  interpreter. This fused composite op (gather axis 0 + sum axis 1) is
+  used by DLRM-style multi-hot embeddings; the handler prevents crashes
+  if the op survives into the interpreter.
 - Added `distributed.allreduce.sum` op handler to the experimental eager
   interpreter, enabling multi-GPU eager execution of allreduce collectives
 - Added `distributed.allgather` op handler to the experimental eager

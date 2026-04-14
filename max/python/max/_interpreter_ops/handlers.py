@@ -1791,6 +1791,34 @@ def _handle_gather(
     return [output]
 
 
+@register_op_handler(mo.GatherSumOp)
+def _handle_gather_sum(
+    op: mo.GatherSumOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.gather_sum via NumPy gather-then-sum.
+
+    This is a fused composite op used by DLRM-style multi-hot embeddings:
+    gather along axis 0, then reduce-add along axis 1.
+
+    ``output[i, k] = sum_j(input[indices[i, j], k])``
+
+    Operands: input (2-D+ tensor), indices (index tensor).
+    """
+    target_device = _get_target_device(op)
+    _check_cpu_only(op, target_device)
+
+    assert isinstance(inputs[0], Buffer)
+    assert isinstance(inputs[1], Buffer)
+
+    input_np = inputs[0].to_numpy()
+    indices_np = inputs[1].to_numpy().astype(np.intp)
+
+    gathered = np.take(input_np, indices_np, axis=0)
+    result = gathered.sum(axis=1, keepdims=True)
+
+    return [Buffer.from_numpy(np.ascontiguousarray(result))]
+
+
 @register_op_handler(mo.GatherNdOp)
 def _handle_gather_nd(
     op: mo.GatherNdOp, inputs: Sequence[Buffer | None]

@@ -3546,6 +3546,107 @@ class TestGatherNdOp:
         np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
 
 
+class TestGatherSumOp:
+    """Tests for the gather_sum interpreter handler.
+
+    ``mo.GatherSumOp`` fuses a gather (axis 0) with a sum reduction
+    (axis 1).  It is ``MO_HostOnly`` and used by DLRM-style multi-hot
+    embeddings.  Tests call the handler directly since no user-facing
+    graph API produces this op.
+    """
+
+    def test_gather_sum_basic(self) -> None:
+        """Gather rows then sum over the multi-hot dimension."""
+        from unittest.mock import MagicMock
+
+        from max._interpreter_ops.handlers import _handle_gather_sum
+        from max.driver import Buffer
+
+        input_np = np.arange(12, dtype=np.float32).reshape(4, 3)
+        indices_np = np.array([[0, 2], [1, 3]], dtype=np.int32)
+
+        mock_op = MagicMock()
+        mock_result = MagicMock()
+        mock_result.type = MagicMock()
+        mock_result.type.device_ref = MagicMock()
+
+        from max.graph import DeviceRef
+
+        mock_result.type.device_ref = DeviceRef.CPU().to_mlir()
+        mock_op.results = [mock_result]
+
+        input_buf = Buffer.from_numpy(input_np)
+        indices_buf = Buffer.from_numpy(indices_np)
+
+        result = _handle_gather_sum(mock_op, [input_buf, indices_buf])
+
+        assert len(result) == 1
+        out = result[0]
+        assert isinstance(out, Buffer)
+
+        gathered = np.take(input_np, indices_np, axis=0)
+        expected = gathered.sum(axis=1, keepdims=True)
+        np.testing.assert_array_almost_equal(out.to_numpy(), expected)
+
+    def test_gather_sum_single_index(self) -> None:
+        """Single index per row — sum is a no-op."""
+        from unittest.mock import MagicMock
+
+        from max._interpreter_ops.handlers import _handle_gather_sum
+        from max.driver import Buffer
+
+        input_np = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
+        indices_np = np.array([[2], [0]], dtype=np.int32)
+
+        mock_op = MagicMock()
+        mock_result = MagicMock()
+
+        from max.graph import DeviceRef
+
+        mock_result.type = MagicMock()
+        mock_result.type.device_ref = DeviceRef.CPU().to_mlir()
+        mock_op.results = [mock_result]
+
+        result = _handle_gather_sum(
+            mock_op,
+            [Buffer.from_numpy(input_np), Buffer.from_numpy(indices_np)],
+        )
+
+        gathered = np.take(input_np, indices_np, axis=0)
+        expected = gathered.sum(axis=1, keepdims=True)
+        assert isinstance(result[0], Buffer)
+        np.testing.assert_array_almost_equal(result[0].to_numpy(), expected)
+
+    def test_gather_sum_int_data(self) -> None:
+        """Integer input dtype."""
+        from unittest.mock import MagicMock
+
+        from max._interpreter_ops.handlers import _handle_gather_sum
+        from max.driver import Buffer
+
+        input_np = np.arange(8, dtype=np.int64).reshape(4, 2)
+        indices_np = np.array([[0, 1], [2, 3]], dtype=np.int32)
+
+        mock_op = MagicMock()
+        mock_result = MagicMock()
+
+        from max.graph import DeviceRef
+
+        mock_result.type = MagicMock()
+        mock_result.type.device_ref = DeviceRef.CPU().to_mlir()
+        mock_op.results = [mock_result]
+
+        result = _handle_gather_sum(
+            mock_op,
+            [Buffer.from_numpy(input_np), Buffer.from_numpy(indices_np)],
+        )
+
+        gathered = np.take(input_np, indices_np, axis=0)
+        expected = gathered.sum(axis=1, keepdims=True)
+        assert isinstance(result[0], Buffer)
+        np.testing.assert_array_equal(result[0].to_numpy(), expected)
+
+
 class TestArgMaxMinOp:
     """Tests for ArgMax and ArgMin interpreter ops.
 
