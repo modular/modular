@@ -350,8 +350,7 @@ class WanSelfAttention(Module):
             value, [batch_size, seq_len, self.num_heads, self.head_dim]
         )
 
-        # Apply RoPE
-        original_dtype = query.dtype
+        # Apply RoPE (stays in input dtype — no f32 promotion)
         query = apply_rotary_emb(
             query,
             rotary_emb,
@@ -366,8 +365,6 @@ class WanSelfAttention(Module):
             use_real_unbind_dim=-1,
             sequence_dim=1,
         )
-        query = ops.cast(query, original_dtype)
-        key = ops.cast(key, original_dtype)
 
         # Flash attention
         scale = 1.0 / (self.head_dim**0.5)
@@ -384,8 +381,6 @@ class WanSelfAttention(Module):
             hidden_states,
             [hidden_states.shape[0], hidden_states.shape[1], self.inner_dim],
         )
-        hidden_states = ops.cast(hidden_states, original_dtype)
-
         return self.to_out(hidden_states)
 
 
@@ -539,6 +534,37 @@ class WanFeedForward(Module):
         hidden = self.proj(x)
         hidden = ops.gelu(hidden, approximate="tanh")
         return self.linear_out(hidden)
+
+
+class WanTransformerBlockSequence(Module):
+    """All transformer blocks as a single module for single-graph compilation.
+
+    Wrapping all blocks in one module means ``session.load()`` is called
+    once, so the runtime allocates a single shared workspace instead of
+    40 independent ones -- reducing peak VRAM by ~40x.
+    """
+
+    def __init__(self, blocks: list[WanTransformerBlock]) -> None:
+        super().__init__()
+        self.blocks = LayerList(blocks)
+
+    def __call__(
+        self,
+        hidden_states: TensorValue,
+        encoder_hidden_states: TensorValue,
+        timestep_proj: TensorValue,
+        rope_cos: TensorValue,
+        rope_sin: TensorValue,
+    ) -> TensorValue:
+        for block in self.blocks:
+            hidden_states = block(
+                hidden_states,
+                encoder_hidden_states,
+                timestep_proj,
+                rope_cos,
+                rope_sin,
+            )
+        return hidden_states
 
 
 class WanTransformerBlock(Module):

@@ -32,6 +32,7 @@ from max.pipelines.lib.interfaces.component_model import ComponentModel
 from .model_config import WanConfig
 from .wan_transformer import (
     WanTransformerBlock,
+    WanTransformerBlockSequence,
     WanTransformerPostProcess,
     WanTransformerPreProcess,
 )
@@ -204,8 +205,13 @@ def _compute_wan_rope_cached(
 class BlockLevelModel:
     """Executes transformer forward pass as pre -> N blocks -> post.
 
-    Each component is a separately compiled graph, so only one block's
-    workspace is live at any time. This keeps peak VRAM low.
+    Supports two modes:
+
+    * **Combined** (``combined_blocks`` is set): All transformer blocks
+      are compiled into a single ``Model`` graph, so the runtime
+      allocates one shared workspace.
+    * **Per-block** (``blocks`` list): Each block is a separate
+      ``Model``.  Kept for backwards compatibility and MoE weight-swap.
     """
 
     def __init__(
@@ -213,10 +219,13 @@ class BlockLevelModel:
         pre: Model,
         blocks: list[Model],
         post: Model,
+        *,
+        combined_blocks: Model | None = None,
     ) -> None:
         self.pre = pre
         self.blocks = blocks
         self.post = post
+        self.combined_blocks = combined_blocks
 
     def __call__(
         self,
@@ -236,11 +245,17 @@ class BlockLevelModel:
             pre_out[2],
             pre_out[3],
         )
-        for block in self.blocks:
-            block_out = block.execute(
+        if self.combined_blocks is not None:
+            block_out = self.combined_blocks.execute(
                 hs, text_emb, timestep_proj, rope_cos, rope_sin
             )
             hs = block_out[0]
+        else:
+            for block in self.blocks:
+                block_out = block.execute(
+                    hs, text_emb, timestep_proj, rope_cos, rope_sin
+                )
+                hs = block_out[0]
         post_out = self.post.execute(hs, temb, spatial_shape)
         return post_out[0]
 
@@ -395,10 +410,18 @@ class WanTransformerModel(ComponentModel):
             )
 
             self.model.pre.reload(pre_registry)
-            for compiled_block, compiled_reg in zip(
-                self.model.blocks, block_registries, strict=True
-            ):
-                compiled_block.reload(compiled_reg)
+            if self.model.combined_blocks is not None:
+                # Build combined registry with LayerList prefixes.
+                combined_registry: dict[str, Any] = {}
+                for i, block_reg in enumerate(block_registries):
+                    for k, v in block_reg.items():
+                        combined_registry[f"blocks.{i}.{k}"] = v
+                self.model.combined_blocks.reload(combined_registry)
+            else:
+                for compiled_block, block_registry in zip(
+                    self.model.blocks, block_registries, strict=True
+                ):
+                    compiled_block.reload(block_registry)
             self.model.post.reload(post_registry)
 
     def load_model(  # type: ignore[override]
@@ -461,6 +484,8 @@ class WanTransformerModel(ComponentModel):
             pre_model = self.session.load(
                 pre_graph, weights_registry=pre_module.state_dict()
             )
+            # Combined blocks graph: all blocks in a single Model
+            # so the runtime allocates one shared workspace.
             block_seq_len_dim: str = "seq_len"
             block_input_types = [
                 TensorType(
@@ -479,54 +504,48 @@ class WanTransformerModel(ComponentModel):
                     device=dev,
                 ),
             ]
-            block_template = WanTransformerBlock(
-                dim=dim,
-                ffn_dim=self.config.ffn_dim,
-                num_heads=self.config.num_attention_heads,
-                head_dim=self.config.attention_head_dim,
-                text_dim=dim,
-                cross_attn_norm=self.config.cross_attn_norm,
-                eps=self.config.eps,
-                added_kv_proj_dim=self.config.added_kv_proj_dim,
-                dtype=dtype,
-                device=dev_ref,
-            )
-            block_template.load_state_dict(
-                block_weights_list[0], weight_alignment=1, strict=True
+            all_blocks = [
+                WanTransformerBlock(
+                    dim=dim,
+                    ffn_dim=self.config.ffn_dim,
+                    num_heads=self.config.num_attention_heads,
+                    head_dim=self.config.attention_head_dim,
+                    text_dim=dim,
+                    cross_attn_norm=self.config.cross_attn_norm,
+                    eps=self.config.eps,
+                    added_kv_proj_dim=self.config.added_kv_proj_dim,
+                    dtype=dtype,
+                    device=dev_ref,
+                )
+                for _ in range(self.config.num_layers)
+            ]
+            block_sequence = WanTransformerBlockSequence(all_blocks)
+            # Load per-block weights with LayerList prefix.
+            combined_block_weights: dict[str, Any] = {}
+            for i, block_weights in enumerate(block_weights_list):
+                for k, v in block_weights.items():
+                    combined_block_weights[f"blocks.{i}.{k}"] = v
+            block_sequence.load_state_dict(
+                combined_block_weights, weight_alignment=1, strict=True
             )
             with Graph(
-                "wan_block", input_types=block_input_types
-            ) as block_graph:
-                block_out = block_template(
-                    *(v.tensor for v in block_graph.inputs)
+                "wan_blocks_combined", input_types=block_input_types
+            ) as blocks_graph:
+                block_out = block_sequence(
+                    *(v.tensor for v in blocks_graph.inputs)
                 )
-                block_graph.output(block_out)
-
-            block_models: list[Model] = [
-                self.session.load(
-                    block_graph,
-                    weights_registry=block_template.state_dict(),
-                )
-            ]
-            for i in range(1, self.config.num_layers):
-                block_template.load_state_dict(
-                    block_weights_list[i],
-                    weight_alignment=1,
-                    strict=True,
-                )
-                block_models.append(
-                    self.session.load(
-                        block_graph,
-                        weights_registry=block_template.state_dict(),
-                    )
-                )
+                blocks_graph.output(block_out)
+            combined_blocks_model = self.session.load(
+                blocks_graph,
+                weights_registry=block_sequence.state_dict(),
+            )
             logger.info(
-                "Compiled block graph (batch=%d, seq_len=symbolic "
+                "Compiled combined block graph (batch=%d, seq_len=symbolic "
                 "default=%d, seq_text=%d, %d layers)",
                 batch_size,
                 seq_len,
                 seq_text_len,
-                len(block_models),
+                self.config.num_layers,
             )
             post_input_types = [
                 TensorType(dtype, ["batch", "seq_len", dim], device=dev),
@@ -545,7 +564,12 @@ class WanTransformerModel(ComponentModel):
             post_model = self.session.load(
                 post_graph, weights_registry=post_module.state_dict()
             )
-            self.model = BlockLevelModel(pre_model, block_models, post_model)
+            self.model = BlockLevelModel(
+                pre_model,
+                [],
+                post_model,
+                combined_blocks=combined_blocks_model,
+            )
             return self.__call__
 
     def compute_rope(

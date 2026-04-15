@@ -21,7 +21,7 @@ from typing import Any
 
 from max.driver import Buffer, Device, load_devices
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import load_weights
 from max.pipelines.lib.compiled_component import CompiledComponent
@@ -36,6 +36,7 @@ from ..model import (
 from ..model_config import WanConfig
 from ..wan_transformer import (
     WanTransformerBlock,
+    WanTransformerBlockSequence,
     WanTransformerPostProcess,
     WanTransformerPreProcess,
 )
@@ -49,7 +50,7 @@ class WanTransformer(CompiledComponent):
     Each block is compiled independently so only one block's workspace
     is live at any time, keeping peak VRAM low for 14B-parameter models.
 
-    Supports MoE (dual expert) via weight swapping or dual-load.
+    Supports MoE (dual expert) by compiling both transformers on device.
     """
 
     # Diffusers pads to 512 but trims embeddings to 226 for cross-attn.
@@ -77,61 +78,47 @@ class WanTransformer(CompiledComponent):
 
         self._load_lock = threading.Lock()
         self._model: BlockLevelModel | None = None
-        self._state_dict: dict[str, Any] | None = None
-        self._weight_registry_cache: dict[
-            int,
-            tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]],
-        ] = {}
+        self._model_2: BlockLevelModel | None = None
 
         # Load and remap weights.
         paths = config_entry.resolved_weight_paths()
         weights = load_weights(paths)
-        self._state_dict = _remap_state_dict(
-            weights, target_dtype=DType.bfloat16
-        )
+        state_dict = _remap_state_dict(weights, target_dtype=DType.bfloat16)
 
-        # MoE: secondary transformer state dict (lazy).
-        self._transformer_2_state_dict: dict[str, Any] | None = None
-        self._moe_dual_loaded = False
-        self._active_weights = "primary"
-        self._model_2: BlockLevelModel | None = None
-        self._setup_moe(manifest)
+        # MoE: load secondary transformer weights.
+        state_dict_2 = self._load_moe_weights(manifest)
 
         # Compile block-level graphs.
         h, w, nf = self.default_resolution
         seq_len = self._compute_seq_len(h, w, nf)
         self._compile_model(
+            state_dict=state_dict,
             seq_text_len=self.embed_seq_len,
             seq_len=seq_len,
         )
 
-        # Attempt MoE dual-load after primary compilation.
-        if self._transformer_2_state_dict is not None:
-            if self._try_dual_load():
-                self._moe_dual_loaded = True
-                logger.info(
-                    "MoE dual-load enabled: transformer_2 stays resident."
-                )
-            else:
-                logger.info(
-                    "MoE swap mode: transformer_2 will use weight swap."
-                )
+        # Compile secondary transformer for MoE.
+        if state_dict_2 is not None:
+            self._compile_secondary_transformer(state_dict_2, seq_len)
 
-    def _setup_moe(self, manifest: ModelManifest) -> None:
+    def _load_moe_weights(
+        self, manifest: ModelManifest
+    ) -> dict[str, Any] | None:
         """Load optional transformer_2 weights for MoE."""
         if "transformer_2" not in manifest:
-            return
+            return None
 
         config_entry_2 = manifest["transformer_2"]
         paths_2 = config_entry_2.resolved_weight_paths()
         weights_2 = load_weights(paths_2)
-        self._transformer_2_state_dict = _remap_state_dict(
-            weights_2, target_dtype=DType.bfloat16
-        )
+        state_dict_2 = _remap_state_dict(weights_2, target_dtype=DType.bfloat16)
+
+        return state_dict_2
 
     def _compile_model(
         self,
         *,
+        state_dict: dict[str, Any],
         seq_text_len: int,
         seq_len: int,
         batch_size: int = 1,
@@ -140,9 +127,6 @@ class WanTransformer(CompiledComponent):
         with self._load_lock:
             if self._model is not None:
                 return
-
-            assert self._state_dict is not None
-            state_dict = self._state_dict
 
             dim = (
                 self.config.num_attention_heads * self.config.attention_head_dim
@@ -188,7 +172,8 @@ class WanTransformer(CompiledComponent):
                 pre_graph, weights_registry=pre_module.state_dict()
             )
 
-            # Block graph (shared across all layers).
+            # Combined blocks graph: all blocks in a single Model
+            # so the runtime allocates one shared workspace.
             block_seq_len_dim: str = "seq_len"
             block_input_types = [
                 TensorType(
@@ -207,54 +192,48 @@ class WanTransformer(CompiledComponent):
                     device=dev,
                 ),
             ]
-            block_template = WanTransformerBlock(
-                dim=dim,
-                ffn_dim=self.config.ffn_dim,
-                num_heads=self.config.num_attention_heads,
-                head_dim=self.config.attention_head_dim,
-                text_dim=dim,
-                cross_attn_norm=self.config.cross_attn_norm,
-                eps=self.config.eps,
-                added_kv_proj_dim=self.config.added_kv_proj_dim,
-                dtype=dtype,
-                device=dev_ref,
-            )
-            block_template.load_state_dict(
-                block_weights_list[0], weight_alignment=1, strict=True
+            all_blocks = [
+                WanTransformerBlock(
+                    dim=dim,
+                    ffn_dim=self.config.ffn_dim,
+                    num_heads=self.config.num_attention_heads,
+                    head_dim=self.config.attention_head_dim,
+                    text_dim=dim,
+                    cross_attn_norm=self.config.cross_attn_norm,
+                    eps=self.config.eps,
+                    added_kv_proj_dim=self.config.added_kv_proj_dim,
+                    dtype=dtype,
+                    device=dev_ref,
+                )
+                for _ in range(self.config.num_layers)
+            ]
+            block_sequence = WanTransformerBlockSequence(all_blocks)
+            # Load per-block weights with LayerList prefix.
+            combined_block_weights: dict[str, Any] = {}
+            for i, block_weights in enumerate(block_weights_list):
+                for k, v in block_weights.items():
+                    combined_block_weights[f"blocks.{i}.{k}"] = v
+            block_sequence.load_state_dict(
+                combined_block_weights, weight_alignment=1, strict=True
             )
             with Graph(
-                "wan_block", input_types=block_input_types
-            ) as block_graph:
-                block_out = block_template(
-                    *(v.tensor for v in block_graph.inputs)
+                "wan_blocks_combined", input_types=block_input_types
+            ) as blocks_graph:
+                block_out = block_sequence(
+                    *(v.tensor for v in blocks_graph.inputs)
                 )
-                block_graph.output(block_out)
-
-            block_models: list[Model] = [
-                self._session.load(
-                    block_graph,
-                    weights_registry=block_template.state_dict(),
-                )
-            ]
-            for i in range(1, self.config.num_layers):
-                block_template.load_state_dict(
-                    block_weights_list[i],
-                    weight_alignment=1,
-                    strict=True,
-                )
-                block_models.append(
-                    self._session.load(
-                        block_graph,
-                        weights_registry=block_template.state_dict(),
-                    )
-                )
+                blocks_graph.output(block_out)
+            combined_blocks_model = self._session.load(
+                blocks_graph,
+                weights_registry=block_sequence.state_dict(),
+            )
             logger.info(
-                "Compiled block graph (batch=%d, seq_len=symbolic "
+                "Compiled combined block graph (batch=%d, seq_len=symbolic "
                 "default=%d, seq_text=%d, %d layers)",
                 batch_size,
                 seq_len,
                 seq_text_len,
-                len(block_models),
+                self.config.num_layers,
             )
 
             # Post-processor graph.
@@ -275,7 +254,12 @@ class WanTransformer(CompiledComponent):
             post_model = self._session.load(
                 post_graph, weights_registry=post_module.state_dict()
             )
-            self._model = BlockLevelModel(pre_model, block_models, post_model)
+            self._model = BlockLevelModel(
+                pre_model,
+                [],
+                post_model,
+                combined_blocks=combined_blocks_model,
+            )
 
     @traced(message="WanTransformer.__call__")
     def __call__(
@@ -358,34 +342,10 @@ class WanTransformer(CompiledComponent):
             Buffer.from_numpy(rope_sin_np).to(self._device),
         )
 
-    def activate_weights(self, *, use_secondary: bool) -> None:
-        """Switch active weights for MoE weight-swap mode.
-
-        No-op if dual-load is active (both models resident).
-        """
-        if self._moe_dual_loaded:
-            return  # Both models are resident; no swap needed.
-
-        if not use_secondary:
-            if self._active_weights != "primary":
-                assert self._state_dict is not None
-                self._reload_weights(self._state_dict)
-                self._active_weights = "primary"
-        else:
-            if self._active_weights != "secondary":
-                assert self._transformer_2_state_dict is not None
-                self._reload_weights(self._transformer_2_state_dict)
-                self._active_weights = "secondary"
-
     @property
     def has_moe(self) -> bool:
         """Whether this transformer has MoE (dual expert) support."""
-        return self._transformer_2_state_dict is not None
-
-    @property
-    def moe_dual_loaded(self) -> bool:
-        """Whether both MoE models are compiled and resident on device."""
-        return self._moe_dual_loaded
+        return self._model_2 is not None
 
     @property
     def device(self) -> Device:
@@ -435,149 +395,22 @@ class WanTransformer(CompiledComponent):
 
         return pre_weights, block_weights_list, post_weights
 
-    def _build_weight_registries(
-        self, state_dict: dict[str, Any]
-    ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
-        """Build module-level weight registries for pre/block/post."""
-        dim = self.config.num_attention_heads * self.config.attention_head_dim
-        dtype = self.config.dtype
-        dev_ref = DeviceRef.from_device(self._device)
-        pre_weights, block_weights_list, post_weights = self._split_state_dict(
-            state_dict
-        )
+    def _compile_secondary_transformer(
+        self, state_dict: dict[str, Any], seq_len: int
+    ) -> None:
+        """Compile the secondary transformer for MoE.
 
-        pre_module = WanTransformerPreProcess(
-            self.config, dtype=dtype, device=dev_ref
-        )
-        pre_module.load_state_dict(pre_weights, weight_alignment=1, strict=True)
-
-        block_registries: list[dict[str, Any]] = []
-        block_module = WanTransformerBlock(
-            dim=dim,
-            ffn_dim=self.config.ffn_dim,
-            num_heads=self.config.num_attention_heads,
-            head_dim=self.config.attention_head_dim,
-            text_dim=dim,
-            cross_attn_norm=self.config.cross_attn_norm,
-            eps=self.config.eps,
-            added_kv_proj_dim=self.config.added_kv_proj_dim,
-            dtype=dtype,
-            device=dev_ref,
-        )
-        for block_weights in block_weights_list:
-            block_module.load_state_dict(
-                block_weights, weight_alignment=1, strict=True
-            )
-            block_registries.append(block_module.state_dict())
-
-        post_module = WanTransformerPostProcess(
-            self.config, dtype=dtype, device=dev_ref
-        )
-        post_module.load_state_dict(
-            post_weights, weight_alignment=1, strict=True
-        )
-
-        return (
-            pre_module.state_dict(),
-            block_registries,
-            post_module.state_dict(),
-        )
-
-    def _get_cached_weight_registries(
-        self, state_dict: dict[str, Any]
-    ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
-        """Return weight registries, caching by state_dict identity."""
-        cache_key = id(state_dict)
-        cached = self._weight_registry_cache.get(cache_key)
-        if cached is not None:
-            return cached
-        registries = self._build_weight_registries(state_dict)
-        self._weight_registry_cache[cache_key] = registries
-        return registries
-
-    def _reload_weights(self, state_dict: dict[str, Any]) -> None:
-        """Reload weights into already-compiled primary model."""
-        with self._load_lock:
-            if self._model is None:
-                raise RuntimeError("Transformer model not compiled.")
-
-            pre_registry, block_registries, post_registry = (
-                self._get_cached_weight_registries(state_dict)
-            )
-
-            self._model.pre.reload(pre_registry)
-            for compiled_block, compiled_reg in zip(
-                self._model.blocks, block_registries, strict=True
-            ):
-                compiled_block.reload(compiled_reg)
-            self._model.post.reload(post_registry)
-
-    def _try_dual_load(self) -> bool:
-        """Try to compile secondary transformer on GPU if VRAM sufficient."""
-        if self._transformer_2_state_dict is None or self._model is None:
-            return False
-
-        free_vram = self._get_free_vram_bytes()
-        if free_vram is None:
-            return False
-
-        # Estimate required VRAM as the primary transformer's weight size.
-        assert self._state_dict is not None
-        estimated_bytes = 0
-        for v in self._state_dict.values():
-            if hasattr(v, "shape") and hasattr(v, "dtype"):
-                num_elements = 1
-                for d in v.shape:
-                    num_elements *= d
-                estimated_bytes += num_elements * 2  # bfloat16
-
-        margin = 1.2  # 20% headroom
-        if free_vram < estimated_bytes * margin:
-            logger.info(
-                "Insufficient VRAM for dual load: need %.1f GB, free %.1f GB",
-                estimated_bytes * margin / 1e9,
-                free_vram / 1e9,
-            )
-            return False
-
-        assert self._model is not None
-        # Reload secondary weights into a clone of the block models.
-        # For dual-load we re-use the compiled graphs from the primary
-        # but load with secondary weight registries.
-        h, w, nf = self.default_resolution
-        seq_len = self._compute_seq_len(h, w, nf)
-
-        # The simplest approach: compile the same graph structure
-        # with secondary weights.
-        saved_state_dict = self._state_dict
-        self._state_dict = self._transformer_2_state_dict
+        Both expert models stay resident on GPU so the executor can
+        dispatch to either without hot-swapping weights.
+        """
         saved_model = self._model
         self._model = None
         try:
             self._compile_model(
+                state_dict=state_dict,
                 seq_text_len=self.embed_seq_len,
                 seq_len=seq_len,
             )
             self._model_2 = self._model
         finally:
             self._model = saved_model
-            self._state_dict = saved_state_dict
-        return self._model_2 is not None
-
-    @staticmethod
-    def _get_free_vram_bytes() -> int | None:
-        """Query free GPU VRAM in bytes via nvidia-smi."""
-        import subprocess
-
-        try:
-            out = subprocess.check_output(
-                [
-                    "nvidia-smi",
-                    "--query-gpu=memory.free",
-                    "--format=csv,noheader,nounits",
-                ],
-                text=True,
-            )
-            return int(out.strip().split("\n")[0]) * 1024 * 1024
-        except Exception:
-            return None

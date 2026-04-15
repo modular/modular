@@ -461,9 +461,6 @@ class WanExecutor(
         with Tracer("denoising_loop"):
             step_state: WanUniPCState = (None, None, None)
 
-            if not self.transformer.moe_dual_loaded:
-                self.transformer.activate_weights(use_secondary=False)
-
             # High-noise phase (or full denoising if no MoE).
             latents, step_state = self._run_denoising_phase(
                 latents=latents,
@@ -485,15 +482,9 @@ class WanExecutor(
 
             # Low-noise phase (MoE only).
             if has_moe and boundary_step_idx < num_steps:
-                use_secondary = True
-                if not self.transformer.moe_dual_loaded:
-                    self.transformer.activate_weights(use_secondary=True)
-
                 latents, _ = self._run_denoising_phase(
                     latents=latents,
-                    use_secondary_transformer=(
-                        self.transformer.moe_dual_loaded
-                    ),
+                    use_secondary_transformer=True,
                     prompt_embeds=prompt_embeds,
                     negative_prompt_embeds=negative_prompt_embeds,
                     rope_cos=inputs.rope_cos,
@@ -599,7 +590,7 @@ class WanExecutor(
     ) -> Buffer:
         """Run transformer + optional CFG guidance."""
         # Select transformer call.
-        if use_secondary and self.transformer.moe_dual_loaded:
+        if use_secondary:
             transformer_call = self.transformer.call_secondary
         else:
             transformer_call = self.transformer.__call__
