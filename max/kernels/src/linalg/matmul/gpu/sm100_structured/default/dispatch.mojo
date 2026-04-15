@@ -841,7 +841,7 @@ def dispatch_sm100_batched_matmul[
     a_type: DType,
     b_type: DType,
     transpose_b: Bool,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[mut=False, a_type, ...],
