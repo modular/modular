@@ -190,10 +190,12 @@ struct Variadic:
         //,
         element_types: Variadic.TypesOfTrait[From],
         Mapper: _TypeToTypeGenerator[From, To],
-    ] = _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[To],
-        ParamListType=element_types,
-        Reducer=_MapTypeToTypeReducer[From, To, Mapper, ...],
+    ] = TypeList[
+        _ReduceVariadicAndIdxToVariadic[
+            BaseVal=Variadic.empty_of_trait[To],
+            ParamListType=element_types,
+            Reducer=_MapTypeToTypeReducer[From, To, Mapper, ...],
+        ]
     ]
     """Map a variadic of types to a new variadic of types using a mapper.
 
@@ -244,10 +246,12 @@ struct Variadic:
         end: Int where start <= end <= TypeList[element_types].size = TypeList[
             element_types
         ].size,
-    ] = _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[T],
-        ParamListType=element_types,
-        Reducer=_SliceReducer[T, start, end, ...],
+    ] = TypeList[
+        _ReduceVariadicAndIdxToVariadic[
+            BaseVal=Variadic.empty_of_trait[T],
+            ParamListType=element_types,
+            Reducer=_SliceReducer[T, start, end, ...],
+        ]
     ]
     """Extract a contiguous subsequence from a variadic sequence.
 
@@ -314,10 +318,12 @@ struct Variadic:
         //,
         *element_types: T,
         predicate: _TypePredicateGenerator[T],
-    ] = _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[T],
-        ParamListType=element_types.values,
-        Reducer=_FilterReducer[T, predicate, ...],
+    ] = TypeList[
+        _ReduceVariadicAndIdxToVariadic[
+            BaseVal=Variadic.empty_of_trait[T],
+            ParamListType=element_types.values,
+            Reducer=_FilterReducer[T, predicate, ...],
+        ]
     ]
     """Filter types from a variadic sequence based on a predicate function.
 
@@ -470,30 +476,23 @@ struct TypeList[
         pass
 
     # TODO: Support implicit conversion from a more derived trait to a base one.
-    @always_inline("builtin")
-    def upcast[
-        dst_trait: type_of(AnyType)
-    ](
-        self,
-        out result: TypeList[
-            Trait=dst_trait,
-            __mlir_attr[
-                `#kgen.upcast<`,
-                Self.values,
-                `> : `,
-                Variadic.TypesOfTrait[dst_trait],
-            ],
+    comptime upcast[dst_trait: type_of(AnyType)] = TypeList[
+        Trait=dst_trait,
+        __mlir_attr[
+            `#kgen.upcast<`,
+            Self.values,
+            `> : `,
+            Variadic.TypesOfTrait[dst_trait],
         ],
-    ):
-        """Upcasts a TypeList to a base trait.
+    ]
+    """Upcasts a TypeList to a base trait.
 
-        Parameters:
-            dst_trait: The trait to downcast to.
+    Parameters:
+        dst_trait: The trait to downcast to.
 
-        Returns:
-            A new TypeList with the types downcasted to the base trait.
-        """
-        result = type_of(result)()
+    Returns:
+        A new TypeList with the types downcasted to the base trait.
+    """
 
     comptime of[Trait: type_of(AnyType), //, *values: Trait] = TypeList[
         Trait=Trait, values.values

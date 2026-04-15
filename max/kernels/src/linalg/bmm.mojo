@@ -122,7 +122,7 @@ def _slice_types[
     comptime assert 0 <= rank - n_dims <= stride_types.size
     comptime assert rank <= stride_types.size
 
-    return Variadic.slice_types[stride_types.values, rank - n_dims]
+    return Variadic.slice_types[stride_types.values, rank - n_dims]().values
 
 
 @always_inline

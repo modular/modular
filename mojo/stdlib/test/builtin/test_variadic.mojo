@@ -303,27 +303,27 @@ def test_zip_values_triple() raises:
 
 
 def test_slice_types_empty() raises:
-    comptime variadic = Variadic.slice_types[
+    comptime types = Variadic.slice_types[
         Variadic.empty_of_trait[Writable], start=0, end=0
     ]
-    assert_equal(TypeList[variadic].size, 0)
+    assert_equal(types.size, 0)
 
 
 def test_slice_types() raises:
-    comptime variadic = Variadic.slice_types[
+    comptime types = Variadic.slice_types[
         Variadic.types[T=AnyType, Int, String, Float32], start=0, end=2
-    ]
-    assert_equal(TypeList[variadic].size, 2)
-    assert_true(_type_is_eq[variadic[0], Int]())
-    assert_true(_type_is_eq[variadic[1], String]())
+    ]()
+    assert_equal(types.size, 2)
+    assert_true(_type_is_eq[types[0], Int]())
+    assert_true(_type_is_eq[types[1], String]())
 
 
 def test_map_types_to_types_empty() raises:
     comptime mapper[T: AnyType] = Int
-    comptime variadic = Variadic.map_types_to_types[
+    comptime types = Variadic.map_types_to_types[
         Variadic.empty_of_trait[AnyType], mapper
-    ]
-    assert_equal(TypeList[variadic].size, 0)
+    ]()
+    assert_equal(types.size, 0)
 
 
 trait TestErrable:
@@ -340,20 +340,20 @@ struct Baz(TestErrable):
 
 def test_map_types_to_types() raises:
     comptime Mapper[T: TestErrable] = T.ErrorType
-    comptime variadic = Variadic.map_types_to_types[
+    comptime types = Variadic.map_types_to_types[
         Variadic.types[T=TestErrable, Foo, Baz], Mapper
-    ]
-    assert_equal(TypeList[variadic].size, 2)
-    assert_true(_type_is_eq[variadic[0], Int]())
-    assert_true(_type_is_eq[variadic[1], String]())
+    ]()
+    assert_equal(types.size, 2)
+    assert_true(_type_is_eq[types[0], Int]())
+    assert_true(_type_is_eq[types[1], String]())
 
 
 def test_filter_types_exclude_one() raises:
     comptime IsNotInt[Type: Movable] = not _type_is_eq[Type, Int]()
     comptime without_int = Variadic.filter_types[
         *Tuple[Int, String, Float64, Bool].element_types, predicate=IsNotInt
-    ]
-    assert_equal(TypeList[without_int].size, 3)
+    ]()
+    assert_equal(without_int.size, 3)
     assert_true(_type_is_eq[without_int[0], String]())
     assert_true(_type_is_eq[without_int[1], Float64]())
     assert_true(_type_is_eq[without_int[2], Bool]())
@@ -366,8 +366,8 @@ def test_filter_types_keep_only() raises:
     comptime kept = Variadic.filter_types[
         *Tuple[Int, String, Float64, Bool].element_types,
         predicate=IsStringOrFloat,
-    ]
-    assert_equal(TypeList[kept].size, 2)
+    ]()
+    assert_equal(kept.size, 2)
     assert_true(_type_is_eq[kept[0], String]())
     assert_true(_type_is_eq[kept[1], Float64]())
 
@@ -379,8 +379,8 @@ def test_filter_types_exclude_many() raises:
     comptime filtered = Variadic.filter_types[
         *Tuple[Int, String, Float64, Bool].element_types,
         predicate=NotIntOrBool,
-    ]
-    assert_equal(TypeList[filtered].size, 2)
+    ]()
+    assert_equal(filtered.size, 2)
     assert_true(_type_is_eq[filtered[0], String]())
     assert_true(_type_is_eq[filtered[1], Float64]())
 
@@ -390,11 +390,9 @@ def test_filter_types_chained() raises:
     comptime IsNotInt[Type: Movable] = not _type_is_eq[Type, Int]()
     comptime step1 = Variadic.filter_types[
         *Tuple[Int, String, Float64, Bool].element_types, predicate=IsNotBool
-    ]
-    comptime step2 = Variadic.filter_types[
-        *TypeList[step1](), predicate=IsNotInt
-    ]
-    assert_equal(TypeList[step2].size, 2)
+    ]()
+    comptime step2 = Variadic.filter_types[*step1, predicate=IsNotInt]()
+    assert_equal(step2.size, 2)
     assert_true(_type_is_eq[step2[0], String]())
     assert_true(_type_is_eq[step2[1], Float64]())
 
@@ -403,8 +401,8 @@ def test_filter_types_empty_result() raises:
     comptime AlwaysFalse[Type: Movable] = False
     comptime empty = Variadic.filter_types[
         *Tuple[Int, String, Float64, Bool].element_types, predicate=AlwaysFalse
-    ]
-    assert_equal(TypeList[empty].size, 0)
+    ]()
+    assert_equal(empty.size, 0)
 
 
 def test_variadic_list_linear_type() raises:
