@@ -261,23 +261,36 @@ def test_quantize_mxfp4() -> None:
             assert scales.shape == [128, 4]
 
 
-def test_block_scales_interleave() -> None:
+@pytest.mark.parametrize(
+    "sf_vector_size,scales_dtype,input_shape,expected_output_shape",
+    [
+        (16, DType.float8_e4m3fn, (129, 136), [2, 34, 32, 4, 4]),
+        (32, DType.float8_e8m0fnu, (129, 68), [2, 17, 32, 4, 4]),
+    ],
+    ids=["nvfp4", "mxfp4"],
+)
+def test_block_scales_interleave(
+    sf_vector_size: int,
+    scales_dtype: DType,
+    input_shape: tuple[int, int],
+    expected_output_shape: list[int],
+) -> None:
     """Tests block_scales_interleave with valid inputs."""
     device = DeviceRef.CPU()
     with Graph(
         "block_scales_interleave",
         input_types=[
-            # scales
-            TensorType(DType.float8_e4m3fn, shape=(129, 136), device=device),
+            TensorType(scales_dtype, shape=input_shape, device=device),
         ],
     ) as graph:
         (scales,) = (inp.tensor for inp in graph.inputs)
 
         scales_interleaved = block_scales_interleave(
             scales,
+            sf_vector_size=sf_vector_size,
         )
-        assert scales_interleaved.shape == [2, 34, 32, 4, 4]
-        assert scales_interleaved.dtype == DType.float8_e4m3fn
+        assert scales_interleaved.shape == expected_output_shape
+        assert scales_interleaved.dtype == scales_dtype
 
 
 # NVFP4 scale factor parameters (constants).

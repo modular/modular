@@ -4660,31 +4660,42 @@ def quantize_dynamic_block_scaled_fp4(
 def block_scales_interleave(
     scales: TensorValue,
     sf_vector_size: int = 16,
-    scales_type: DType = DType.float8_e4m3fn,
 ) -> TensorValue:
-    """Interleave the block scales tensor in [M, N] layout to [ceildiv(M, 128), ceildiv(N, sf_vector_size * 4), 32, 4, 4] layout.
+    """Interleaves rank-2 FP4 block scales into the rank-5 TCGEN layout.
 
     Args:
-        scales: The scales tensor to interleave in [M, N] layout.
-        sf_vector_size: The block size for the scaling factors.
+        scales: Rank-2 block scales in ``[M, K // sf_vector_size]`` layout.
+            Supported dtypes are ``float8_e4m3fn`` for NVFP4 and
+            ``float8_e8m0fnu`` for MXFP4.
+        sf_vector_size: Scale-factor vector size: 16 for NVFP4 or 32 for MXFP4.
 
     Returns:
-        The interleaved scales tensor in [ceildiv(M, 128), ceildiv(N, sf_vector_size * 4), 32, 4, 4] layout.
+        The interleaved scales tensor in
+        ``[ceildiv(M, 128), ceildiv(K // sf_vector_size, 4), 32, 4, 4]`` layout.
     """
     if scales.rank != 2:
-        raise ValueError("Both a and b must be rank 2 tensors")
+        raise ValueError("scales must be a rank 2 tensor")
 
-    if scales.dtype != DType.float8_e4m3fn:
-        raise ValueError("scales dtype must be float8_e4m3fn")
+    if scales.dtype not in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
+        raise ValueError(
+            "scales dtype must be float8_e4m3fn (NVFP4) or"
+            " float8_e8m0fnu (MXFP4)"
+        )
 
-    if sf_vector_size != 16:
-        raise ValueError("sf_vector_size must be 16 for NVFP4")
+    expected_sf_vector_size = 32 if scales.dtype == DType.float8_e8m0fnu else 16
+    if sf_vector_size != expected_sf_vector_size:
+        raise ValueError(
+            "sf_vector_size must match scales dtype:"
+            " 16 for float8_e4m3fn (NVFP4),"
+            " 32 for float8_e8m0fnu (MXFP4)"
+        )
 
     SF_ATOM_M = [32, 4]
     SF_ATOM_K = 4
     SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
 
-    # scales tensor shape: [ceildiv(M, SF_MN_GROUP_SIZE), ceildiv(N, sf_vector_size * 4), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K]
+    # Interleaved scales shape:
+    # [ceildiv(M, 128), ceildiv(num_scale_cols, 4), 32, 4, 4].
     scales_dim_0 = ceildiv(scales.shape[0], Dim(SF_MN_GROUP_SIZE))
     scales_dim_1 = ceildiv(scales.shape[1], Dim(SF_ATOM_K))
     scales_dim_2 = SF_ATOM_M[0]
@@ -4697,7 +4708,7 @@ def block_scales_interleave(
         values=[scales],
         out_types=[
             TensorType(
-                dtype=scales_type,
+                dtype=scales.dtype,
                 shape=[
                     scales_dim_0,
                     scales_dim_1,
