@@ -456,10 +456,42 @@ struct List[T: Copyable](
         Args:
             iterable: The iterable of values to populate the list with.
         """
-        var lower, _ = iter(iterable).bounds()
+        return {iter(iterable)}
+
+    def __init__[
+        IterableType: IterableOwned,
+    ](
+        var iterable: IterableType,
+        out self: List[
+            downcast[IterableType.IteratorOwnedType.Element, Copyable]
+        ],
+    ) where conforms_to(IterableType.IteratorOwnedType.Element, Copyable):
+        """Constructs a list from an iterable of values.
+
+        Parameters:
+            IterableType: The type of the `iterable` argument.
+
+        Args:
+            iterable: The iterable of values to populate the list with.
+        """
+        return {iter(iterable^)}
+
+    def __init__(
+        var iterator: Some[Iterator],
+        out self: List[downcast[type_of(iterator).Element, Copyable]],
+    ) where conforms_to(type_of(iterator).Element, Copyable):
+        """Constructs a list from an iterator of values.
+
+        Args:
+            iterator: The iterator of values to populate the list with.
+        """
+        var lower, _ = iterator.bounds()
         self = type_of(self)(capacity=lower)
-        for var value in iterable:
-            self.append(rebind_var[type_of(self).T](value^))
+        while True:
+            try:
+                self.append(rebind_var[type_of(self).T](next(iterator)))
+            except StopIteration:
+                break
 
     @always_inline
     def __init__(out self, *, unsafe_uninit_length: Int):
