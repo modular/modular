@@ -92,7 +92,7 @@ def _make_nvfp4_quant_config() -> QuantConfig:
         weight_scale=WeightScaleSpec(
             granularity=ScaleGranularity.BLOCK,
             dtype=DType.float8_e4m3fn,
-            block_size=(1, 16 // 2),
+            block_size=(1, 16),
         ),
         format=QuantFormat.NVFP4,
         mlp_quantized_layers={0},

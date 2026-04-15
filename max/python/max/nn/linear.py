@@ -31,11 +31,7 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.nn.quant_config import (
-    QuantConfig,
-    ScaleGranularity,
-    fp4_packed_k,
-)
+from max.nn.quant_config import QuantConfig, ScaleGranularity, fp4_packed_k
 from max.nn.quant_ops import quantized_matmul
 from max.support.math import ceildiv
 
@@ -218,8 +214,8 @@ class Linear(Module, Shardable):
         elif weight_scale.is_block:
             assert quant_config.weight_scale.block_size is not None
             k_dim = int(self.weight.shape[1])
-            if quant_config.is_mxfp4:
-                k_dim *= 2  # MXFP4 weights are packed 2x as uint8 (TODO: fix for NVFP4 too)
+            if quant_config.is_fp4:
+                k_dim *= 2  # FP4 weights are packed 2x as uint8
             weight_scale_shape = (
                 ceildiv(
                     int(self.weight.shape[0]),

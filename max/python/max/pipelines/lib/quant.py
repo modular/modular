@@ -639,7 +639,7 @@ def _parse_modelopt_float4_config(
     weight_spec = WeightScaleSpec(
         granularity=ScaleGranularity.BLOCK,
         dtype=DType.float8_e4m3fn,
-        block_size=(1, 16 // 2),
+        block_size=(1, 16),
     )
 
     bias_dtype = _bias_dtype(state_dict)

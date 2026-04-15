@@ -283,7 +283,7 @@ def test_ep_moe_fp4(
     fp4_weight_config = WeightScaleSpec(
         granularity=ScaleGranularity.BLOCK,
         dtype=DType.float8_e4m3fn,
-        block_size=(1, 8),
+        block_size=(1, 16),
     )
     fp4_config = QuantConfig(
         input_scale=fp4_input_config,

@@ -45,7 +45,7 @@ def _make_nvfp4_config(num_layers: int, num_single_layers: int) -> QuantConfig:
     weight_spec = WeightScaleSpec(
         granularity=ScaleGranularity.BLOCK,
         dtype=DType.float8_e4m3fn,
-        block_size=(1, 16 // 2),
+        block_size=(1, 16),
     )
     all_layers = set(range(num_layers + num_single_layers))
     return QuantConfig(
