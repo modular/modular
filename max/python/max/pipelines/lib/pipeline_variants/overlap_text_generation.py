@@ -151,6 +151,7 @@ logger = logging.getLogger("max.pipelines")
 
 _MAX_GRAPH_CAPTURE_BATCH_SIZE = 128
 _OOB_IDX = np.iinfo(np.int32).min
+_MAGIC_DRAFT_TOKEN_ID = 42
 
 
 @runtime_checkable
@@ -1584,10 +1585,7 @@ class OverlapTextGenerationPipeline(
 
         context_batch = inputs.flat_batch
         verify_draft_tokens = all(
-            len(ctx.spec_decoding_state.draft_tokens_to_verify)
-            == num_speculative_tokens
-            and ctx.tokens.generated_length > 1
-            for ctx in context_batch
+            ctx.tokens.generated_length > 1 for ctx in context_batch
         )
         num_draft_tokens_to_verify = (
             num_speculative_tokens if verify_draft_tokens else 0
@@ -1608,6 +1606,14 @@ class OverlapTextGenerationPipeline(
         draft_tokens_np = draft_tokens_pinned.to_numpy()
         if num_draft_tokens_to_verify:
             for i, ctx in enumerate(context_batch):
+                # If there are no draft_tokens to verify, populate it with a
+                # arbitrary token value. This is to trigger token verification
+                # more often. When we do not verify tokens, we cannot replay cuda
+                # graph which hurts perf.
+                if not ctx.spec_decoding_state.draft_tokens_to_verify:
+                    ctx.spec_decoding_state.draft_tokens_to_verify = [
+                        _MAGIC_DRAFT_TOKEN_ID
+                    ] * num_draft_tokens_to_verify
                 tokens = ctx.spec_decoding_state.draft_tokens_to_verify
                 assert len(tokens) == num_draft_tokens_to_verify
                 draft_tokens_np[i, :] = tokens
