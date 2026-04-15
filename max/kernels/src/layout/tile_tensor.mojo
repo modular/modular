@@ -983,7 +983,7 @@ struct TileTensor[
             element_size=Self.element_size,
         ],
         IndexList[coordinates.element_types.size],
-        UInt,
+        Int,
     ]:
         """Like tile(), but also returns corner coordinates and linear offset.
 
@@ -1013,7 +1013,7 @@ struct TileTensor[
             element_size=Self.element_size,
         ],
         IndexList[coordinates.element_types.size],
-        UInt,
+        Int,
     ]:
         """Like tile(), but with explicit static strides.
 
@@ -1219,7 +1219,7 @@ struct TileTensor[
             element_size=Self.element_size,
         ],
         IndexList[thread_layout.shape_types.size],
-        UInt,
+        Int,
     ]:
         """Like distribute(), but also returns thread coordinates and offset.
 
@@ -2477,15 +2477,13 @@ def _distribute[
         A view into the tensor for the specified thread.
     """
 
-    var offset: UInt = 0
+    var offset: Int = 0
 
     comptime for i in range(thread_layout.stride_types.size):
         comptime stride_i = thread_layout.stride_types[i].static_value
         comptime shape_i = thread_layout.shape_types[i].static_value
         var thread_coord_i = (thread_id // stride_i) % shape_i
-        offset += UInt(
-            thread_coord_i * data_layout_tensor.layout.stride[i]().value()
-        )
+        offset += thread_coord_i * data_layout_tensor.layout.stride[i]().value()
 
     # Swizzling applies to the index of elements rather than scalars because
     # the former is the unit in distribution.
@@ -2494,9 +2492,7 @@ def _distribute[
     comptime if swizzle:
         comptime swizzle_fn = swizzle.value()
         comptime element_size = data_layout_tensor.element_size
-        swizzled_offset = UInt(
-            swizzle_fn(Int(offset) // element_size) * element_size
-        )
+        swizzled_offset = swizzle_fn(offset // element_size) * element_size
 
     comptime NewShapeTypes = _Divide[
         data_layout_tensor.LayoutType._shape_types,
@@ -2573,7 +2569,7 @@ def _distribute_with_offset[
         element_size=data_layout_tensor.element_size,
     ],
     IndexList[thread_layout.shape_types.size],
-    UInt,
+    Int,
 ]:
     """Like _distribute, but also returns thread coordinates and offset.
 
@@ -2583,7 +2579,7 @@ def _distribute_with_offset[
     """
 
     # Use shape_types consistently for the IndexList size (must match return type)
-    var offset: UInt = 0
+    var offset: Int = 0
     var thread_coords = IndexList[thread_layout.shape_types.size]()
 
     comptime for i in range(thread_layout.shape_types.size):
@@ -2591,9 +2587,7 @@ def _distribute_with_offset[
         comptime shape_i = thread_layout.shape_types[i].static_value
         var thread_coord_i = (thread_id // stride_i) % shape_i
         thread_coords[i] = thread_coord_i
-        offset += UInt(
-            thread_coord_i * data_layout_tensor.layout.stride[i]().value()
-        )
+        offset += thread_coord_i * data_layout_tensor.layout.stride[i]().value()
 
     # Swizzling applies to the index of elements rather than scalars because
     # the former is the unit in distribution.
@@ -2602,9 +2596,7 @@ def _distribute_with_offset[
     comptime if swizzle:
         comptime swizzle_fn = swizzle.value()
         comptime element_size = data_layout_tensor.element_size
-        swizzled_offset = UInt(
-            swizzle_fn(Int(offset) // element_size) * element_size
-        )
+        swizzled_offset = swizzle_fn(offset // element_size) * element_size
 
     comptime NewShapeTypes = _Divide[
         data_layout_tensor.LayoutType._shape_types,
@@ -2713,10 +2705,10 @@ def _tile[
         with the original tensor. Element types are propagated from the source tensor.
     """
 
-    var offset: UInt = 0
+    var offset: Int = 0
 
     comptime for i in range(Coord[*coord_types].__len__()):
-        offset += UInt(
+        offset += (
             tile_coords[i].value()
             * tile_shape[i].value()
             * data_layout_tensor.layout.stride[i]().value()
@@ -2767,7 +2759,7 @@ def _tile_with_offset[
         element_size=data_layout_tensor.element_size,
     ],
     IndexList[coord_types.size],
-    UInt,
+    Int,
 ]:
     """Like _tile, but also returns corner coordinates and linear offset.
 
@@ -2777,12 +2769,12 @@ def _tile_with_offset[
     """
 
     # Use TypeList[coord_types].size consistently (must match return type)
-    var offset: UInt = 0
+    var offset: Int = 0
     var corner_coords = IndexList[coord_types.size]()
 
     comptime for i in range(coord_types.size):
         corner_coords[i] = tile_coords[i].value() * tile_shape[i].value()
-        offset += UInt(
+        offset += (
             tile_coords[i].value()
             * tile_shape[i].value()
             * data_layout_tensor.layout.stride[i]().value()
@@ -2845,10 +2837,10 @@ def _tile[
     vectorize/distribute which require all_dims_known.
     """
 
-    var offset: UInt = 0
+    var offset: Int = 0
 
     comptime for i in range(Coord[*coord_types].__len__()):
-        offset += UInt(
+        offset += (
             tile_coords[i].value()
             * tile_shape[i].value()
             * data_layout_tensor.layout.stride[i]().value()
@@ -2901,16 +2893,16 @@ def _tile_with_offset[
         element_size=data_layout_tensor.element_size,
     ],
     IndexList[coord_types.size],
-    UInt,
+    Int,
 ]:
     """Like _tile_with_offset, but with explicit static strides."""
 
-    var offset: UInt = 0
+    var offset: Int = 0
     var corner_coords = IndexList[coord_types.size]()
 
     comptime for i in range(coord_types.size):
         corner_coords[i] = tile_coords[i].value() * tile_shape[i].value()
-        offset += UInt(
+        offset += (
             tile_coords[i].value()
             * tile_shape[i].value()
             * data_layout_tensor.layout.stride[i]().value()

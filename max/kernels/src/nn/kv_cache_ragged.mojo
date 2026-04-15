@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys.info import _current_target, simd_width_of
+from std.math.uutils import udivmod
 
 from std.algorithm.functional import elementwise, unswitch
 from std.gpu.host import DeviceContext, get_gpu_target
@@ -862,35 +863,31 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
 
         token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
 
-        var h_idx: UInt
-        var hd_idx: UInt
+        var h_idx: Int
+        var hd_idx: Int
         var cache: cache_t
         var output_val = val
 
         comptime if kv_params.is_mla:
             cache = k_cache
             h_idx = 0  # in MLA mode we only have one head
-            hd_idx = UInt(idx[1]) - UInt(q_dim)
+            hd_idx = idx[1] - q_dim
 
         else:
             if idx[1] < qk_offset:
                 cache = k_cache
-                h_idx, hd_idx = divmod(
-                    UInt(idx[1]) - UInt(q_dim), UInt(kv_params.head_size)
-                )
+                h_idx, hd_idx = udivmod(idx[1] - q_dim, kv_params.head_size)
             else:
                 cache = v_cache.value()
-                h_idx, hd_idx = divmod(
-                    UInt(idx[1]) - UInt(qk_offset), UInt(kv_params.head_size)
-                )
+                h_idx, hd_idx = udivmod(idx[1] - qk_offset, kv_params.head_size)
 
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
         cache.store(
             batch_idx,
-            Int(h_idx),
+            h_idx,
             cache_token_idx,
-            Int(hd_idx),
+            hd_idx,
             rebind[SIMD[kv_type, width]](output_val),
         )
 
@@ -999,27 +996,23 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
 
         token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
 
-        var h_idx: UInt
-        var hd_idx: UInt
+        var h_idx: Int
+        var hd_idx: Int
         var cache: cache_t
         if idx[1] < qk_offset:
             cache = k_cache
-            h_idx, hd_idx = divmod(
-                UInt(idx[1]) - UInt(q_dim), UInt(kv_params.head_size)
-            )
+            h_idx, hd_idx = udivmod(idx[1] - q_dim, kv_params.head_size)
         else:
             cache = v_cache
-            h_idx, hd_idx = divmod(
-                UInt(idx[1]) - UInt(qk_offset), UInt(kv_params.head_size)
-            )
+            h_idx, hd_idx = udivmod(idx[1] - qk_offset, kv_params.head_size)
 
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
         cache.store(
             batch_idx,
-            Int(h_idx),
+            h_idx,
             cache_token_idx,
-            Int(hd_idx),
+            hd_idx,
             rebind[SIMD[kv_type, width]](output_val),
         )
 
@@ -1179,34 +1172,30 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
 
         token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
 
-        var h_idx: UInt
-        var hd_idx: UInt
+        var h_idx: Int
+        var hd_idx: Int
         var cache: cache_t
 
         comptime if kv_params.is_mla:
             cache = k_cache
             h_idx = 0  # in MLA mode we only have one head
-            hd_idx = UInt(idx[1]) - UInt(q_dim)
+            hd_idx = idx[1] - q_dim
 
         else:
             if idx[1] < qk_offset:
                 cache = k_cache
-                h_idx, hd_idx = divmod(
-                    UInt(idx[1]) - UInt(q_dim), UInt(kv_params.head_size)
-                )
+                h_idx, hd_idx = udivmod(idx[1] - q_dim, kv_params.head_size)
             else:
                 cache = v_cache.value()
-                h_idx, hd_idx = divmod(
-                    UInt(idx[1]) - UInt(qk_offset), UInt(kv_params.head_size)
-                )
+                h_idx, hd_idx = udivmod(idx[1] - qk_offset, kv_params.head_size)
 
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
         cache.store(
             batch_idx,
-            Int(h_idx),
+            h_idx,
             cache_token_idx,
-            Int(hd_idx),
+            hd_idx,
             rebind[SIMD[kv_type, width]](output_val_out.cast[kv_type]()),
         )
 
@@ -1324,34 +1313,30 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale_float4[
 
         token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
 
-        var h_idx: UInt
-        var hd_idx: UInt
+        var h_idx: Int
+        var hd_idx: Int
         var cache: cache_t
 
         comptime if kv_params.is_mla:
             cache = k_cache
             h_idx = 0  # in MLA mode we only have one head
-            hd_idx = UInt(idx[1]) - UInt(q_dim)
+            hd_idx = idx[1] - q_dim
 
         else:
             if idx[1] < qk_offset:
                 cache = k_cache
-                h_idx, hd_idx = divmod(
-                    UInt(idx[1]) - UInt(q_dim), UInt(kv_params.head_size)
-                )
+                h_idx, hd_idx = udivmod(idx[1] - q_dim, kv_params.head_size)
             else:
                 cache = v_cache.value()
-                h_idx, hd_idx = divmod(
-                    UInt(idx[1]) - UInt(qk_offset), UInt(kv_params.head_size)
-                )
+                h_idx, hd_idx = udivmod(idx[1] - qk_offset, kv_params.head_size)
 
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
         cache.store(
             batch_idx,
-            Int(h_idx),
+            h_idx,
             cache_token_idx,
-            Int(hd_idx),
+            hd_idx,
             rebind[SIMD[kv_type, width]](output_val_out.cast[kv_type]()),
         )
 
@@ -1819,21 +1804,19 @@ def _matmul_kv_cache_ragged_impl[
         if idx[1] < k_offset:
             # Write this element to the K cache.
             cache = k_cache
-            h_idx, hd_idx = divmod(UInt(idx[1]), UInt(kv_params.head_size))
+            h_idx, hd_idx = udivmod(idx[1], kv_params.head_size)
         else:
             # Otherwise, write this element to the V cache.
             cache = v_cache
-            h_idx, hd_idx = divmod(
-                UInt(idx[1]) - UInt(k_offset), UInt(kv_params.head_size)
-            )
+            h_idx, hd_idx = udivmod(idx[1] - k_offset, kv_params.head_size)
 
         cache_length = cache.cache_length(batch_idx)
         cache_token_idx = token_idx + cache_length
         cache.store(
             batch_idx,
-            Int(h_idx),
+            h_idx,
             cache_token_idx,
-            Int(hd_idx),
+            hd_idx,
             rebind[SIMD[kv_type, width]](val),
         )
 
@@ -2023,15 +2006,15 @@ def _matmul_k_cache_ragged_impl[
         )
         token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
 
-        h_idx, hd_idx = divmod(UInt(idx[1]), UInt(kv_params.head_size))
+        h_idx, hd_idx = udivmod(idx[1], kv_params.head_size)
 
         cache_length = k_cache.cache_length(batch_idx)
         cache_token_idx = token_idx + cache_length
         k_cache.store(
             batch_idx,
-            Int(h_idx),
+            h_idx,
             cache_token_idx,
-            Int(hd_idx),
+            hd_idx,
             rebind[SIMD[kv_type, width]](val),
         )
 
@@ -2198,15 +2181,15 @@ def _matmul_k_cache_ragged_scale_impl[
             UInt32(global_token_idx) - input_row_offsets[batch_idx]
         )
 
-        var h_idx, hd_idx = divmod(UInt(idx[1]), UInt(kv_params.head_size))
+        var h_idx, hd_idx = udivmod(idx[1], kv_params.head_size)
 
         var cache_length = k_cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
         k_cache.store(
             batch_idx,
-            Int(h_idx),
+            h_idx,
             cache_token_idx,
-            Int(hd_idx),
+            hd_idx,
             rebind[SIMD[kv_type, width]](val),
         )
 
@@ -2493,16 +2476,16 @@ def _qmatmul_k_or_v_cache_ragged_gguf_quantized_impl[
 
         # Write this element to the K or V cache.
         cache = k_or_v_cache
-        h_idx, hd_idx = divmod(UInt(idx[1]), UInt(kv_params.head_size))
+        h_idx, hd_idx = udivmod(idx[1], kv_params.head_size)
 
         cache_length = cache.cache_length(batch_idx)
         cache_token_idx = token_idx + cache_length
 
         cache.store(
             batch_idx,
-            Int(h_idx),
+            h_idx,
             cache_token_idx,
-            Int(hd_idx),
+            hd_idx,
             rebind[SIMD[k_or_v_type, width]](val),
         )
 
@@ -3631,33 +3614,31 @@ def generic_kv_cache_radd_dispatch[
         var tok_idx = Int(corrected_token_idx - input_row_offsets[batch_idx])
 
         var cache: collection_t.CacheType
-        var corrected_dim: UInt
+        var corrected_dim: Int
         if idx[1] < hidden_size:
             cache = k_cache
-            corrected_dim = UInt(idx[1])
+            corrected_dim = idx[1]
         else:
             cache = v_cache
-            corrected_dim = UInt(idx[1] - hidden_size)
+            corrected_dim = idx[1] - hidden_size
 
-        var h_idx: UInt
-        var hd_idx: UInt
-        h_idx, hd_idx = divmod(
-            corrected_dim, UInt(collection_t.kv_params.head_size)
-        )
+        var h_idx: Int
+        var hd_idx: Int
+        h_idx, hd_idx = udivmod(corrected_dim, collection_t.kv_params.head_size)
 
         var cache_length = cache.cache_length(Int(corrected_batch_idx))
         var cache_token_idx = tok_idx + cache_length
 
         var old_val = cache.load[width=width](
-            Int(corrected_batch_idx), Int(h_idx), cache_token_idx, Int(hd_idx)
+            Int(corrected_batch_idx), h_idx, cache_token_idx, hd_idx
         )
         var a_val = rebind[type_of(old_val)](a.load[width=width](idx))
 
         cache.store(
             Int(corrected_batch_idx),
-            Int(h_idx),
+            h_idx,
             cache_token_idx,
-            Int(hd_idx),
+            hd_idx,
             a_val + old_val,
         )
 
@@ -3886,17 +3867,15 @@ def kv_cache_2m_iadd_dispatch[
         var batch_idx = get_batch_from_row_offsets(input_row_offsets, row_idx)
         var tok_idx = Int(UInt32(row_idx) - input_row_offsets[batch_idx])
 
-        var h_idx: UInt
-        var hd_idx: UInt
-        h_idx, hd_idx = divmod(
-            UInt(idx[1]), UInt(collection_t.kv_params.head_size)
-        )
+        var h_idx: Int
+        var hd_idx: Int
+        h_idx, hd_idx = udivmod(idx[1], collection_t.kv_params.head_size)
 
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = tok_idx + cache_length
 
         var old_val = cache.load[width=width](
-            batch_idx, Int(h_idx), cache_token_idx, Int(hd_idx)
+            batch_idx, h_idx, cache_token_idx, hd_idx
         )
         var a_val = rebind[type_of(old_val)](
             kv.load[width=width](idx[0], idx[1])
@@ -3904,9 +3883,9 @@ def kv_cache_2m_iadd_dispatch[
 
         cache.store(
             batch_idx,
-            Int(h_idx),
+            h_idx,
             cache_token_idx,
-            Int(hd_idx),
+            hd_idx,
             a_val + old_val,
         )
 

@@ -1334,7 +1334,7 @@ def naive_blockwise_scaled_fp8_matmul_kernel[
         var b_scale_0 = Int(b_scales.dim[0]())
         var b_scale_1 = Int(b_scales.dim[1]())
         MAT_A_ROWS_SCALE_SIZE = K // a_scale_0
-        # MAT_A_COLS_SCALE_SIZE = UInt(M // a_scale_1)
+        # MAT_A_COLS_SCALE_SIZE = M // a_scale_1
         MAT_A_COLS_SCALE_SIZE = 1
         MAT_B_ROWS_SCALE_SIZE = (
             N // b_scale_0 if transpose_b else K // b_scale_0
@@ -1586,7 +1586,7 @@ def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
             ]()
             var b_scale = rebind[Scalar[b_scales_type]](
                 b_scales[
-                    UInt(expert),
+                    expert,
                     n // MAT_B_ROWS_SCALE_SIZE,
                     k // MAT_B_COLS_SCALE_SIZE,
                 ]

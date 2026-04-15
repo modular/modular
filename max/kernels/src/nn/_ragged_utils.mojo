@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys.info import _current_target, simd_width_of
+from std.math.uutils import ufloordiv
 
 from std.algorithm.functional import elementwise
 from std.gpu.host import get_gpu_target
@@ -35,17 +36,17 @@ def get_batch_from_row_offsets(
         row_offsets[row_offsets_size - 1]
     ), "tok_idx is out of range of row_offsets"
 
-    var low: UInt = 0
-    var high = UInt(row_offsets_size - 1)
+    var low = 0
+    var high: Int = row_offsets_size - 1
     while low + 1 != high:
-        var mid = (low + high) // 2
+        var mid = ufloordiv(low + high, 2)
 
         if tok_idx >= Int(row_offsets[mid]):
             low = mid
         else:
             high = mid
 
-    return Int(low)
+    return low
 
 
 @always_inline
@@ -62,17 +63,17 @@ def get_batch_from_row_offsets(
         row_offsets[row_offsets_size - 1]
     ), "tok_idx is out of range of row_offsets"
 
-    var low: UInt = 0
-    var high = UInt(row_offsets_size - 1)
+    var low = 0
+    var high: Int = row_offsets_size - 1
     while low + 1 != high:
-        var mid = (low + high) // 2
+        var mid = ufloordiv(low + high, 2)
 
         if tok_idx >= Int(row_offsets[mid]):
             low = mid
         else:
             high = mid
 
-    return Int(low)
+    return low
 
 
 @always_inline
@@ -84,7 +85,7 @@ def get_batch_and_token_idx_from_row_offsets(
     comptime assert row_offsets.flat_rank == 1
 
     var batch_idx = get_batch_from_row_offsets(row_offsets, tok_idx)
-    return batch_idx, Int(tok_idx - Int(row_offsets[UInt(batch_idx)]))
+    return batch_idx, Int(tok_idx - Int(row_offsets[batch_idx]))
 
 
 def merge_ragged_tensors[

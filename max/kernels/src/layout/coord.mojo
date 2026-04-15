@@ -15,6 +15,7 @@
 from std.os import abort
 from std.sys.intrinsics import _type_is_eq
 from std.utils import IndexList
+from std.math.uutils import umod, ufloordiv
 
 from std.builtin.variadics import (
     Variadic,
@@ -1110,9 +1111,8 @@ def idx2crd[
             else:
                 var stride_val = stride_t[i].value()
                 var shape_val = shape_t[i].value()
-                var coord_val = Int(
-                    (UInt(idx) // UInt(stride_val)) % UInt(shape_val)
-                )
+                var coord_val = _linear_idx_to_coord(idx, stride_val, shape_val)
+
                 UnsafePointer(to=result[i]).init_pointee_copy(
                     rebind[ResultTypes[i]](
                         RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
@@ -1124,8 +1124,8 @@ def idx2crd[
                 rebind[ResultTypes[0]](ComptimeInt[0]())
             )
         else:
-            var coord_val = Int(
-                (UInt(idx) // UInt(stride.value())) % UInt(shape.value())
+            var coord_val = _linear_idx_to_coord(
+                idx, stride.value(), shape.value()
             )
 
             comptime for i in range(shape_len):
@@ -1220,8 +1220,8 @@ def idx2crd[
             else:
                 var stride_val = stride_t[i].value()
                 var shape_val = shape_t[i].value()
-                var coord_val = Int(
-                    (UInt(idx.value()) // UInt(stride_val)) % UInt(shape_val)
+                var coord_val = _linear_idx_to_coord(
+                    idx.value(), stride_val, shape_val
                 )
                 UnsafePointer(to=result[i]).init_pointee_copy(
                     rebind[ResultTypes[i]](
@@ -1241,9 +1241,8 @@ def idx2crd[
             # All static: result is ComptimeInt, already default-initialized.
             pass
         else:
-            var coord_val = Int(
-                (UInt(idx.value()) // UInt(stride.value()))
-                % UInt(shape.value())
+            var coord_val = _linear_idx_to_coord(
+                idx.value(), stride.value(), shape.value()
             )
 
             comptime for i in range(shape_len):
@@ -2270,3 +2269,8 @@ comptime _CeilDiv[
         Reducer=_CeilDivReducer[Rhs=Rhs.values, ...],
     ]
 ]()
+
+
+@always_inline
+def _linear_idx_to_coord(idx: Int, stride: Int, shape: Int) -> Int:
+    return umod(ufloordiv(idx, stride), shape)

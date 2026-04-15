@@ -320,7 +320,7 @@ struct MMATileBuffers[
     ].TiledIteratorType[Self.block_rows, Self.mma_type.BK, axis=1]
     var gmem_iter: Self.iter_type
 
-    var global_offset: UInt
+    var global_offset: Int
 
     var tensor: Pointer[Self.tensor_type, Self.tensor_origin]
 
@@ -351,7 +351,7 @@ struct MMATileBuffers[
         self.gmem_iter = tensor.tile[Self.block_rows, Self.stride](
             block_idx, 0
         ).tiled_iterator[Self.block_rows, Self.mma_type.BK, axis=1](0, 0)
-        self.global_offset = UInt(Self.stride * (Self.block_rows * block_idx))
+        self.global_offset = Self.stride * Self.block_rows * block_idx
         # TODO: remove rebind once MOCO-1905 is fixed
         self.tensor = rebind[Pointer[Self.tensor_type, Self.tensor_origin]](
             Pointer(to=tensor)
@@ -386,7 +386,7 @@ struct MMATileBuffers[
             self.global_offset,
         )
 
-        self.global_offset += UInt(Self.mma_type.BK)
+        self.global_offset += Self.mma_type.BK
         self.gmem_iter._incr()
 
     @always_inline

@@ -23,6 +23,7 @@ from std.collections import OptionalReg
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
 from std.math import gcd
+from std.math.uutils import udivmod
 from std.sys.info import _current_target, simd_width_of
 
 from kv_cache.types import KVCacheT, PagedKVCacheCollection
@@ -166,21 +167,21 @@ def _rope_split_store_ragged[
             if col < qk_offset:
                 # K region: apply rope, store to k_cache.
                 var kv_col = col - q_dim
-                var hi, di = divmod(UInt(kv_col), UInt(kv_params.head_size))
+                var hi, di = udivmod(kv_col, kv_params.head_size)
                 var cl = k_cache.cache_length(bi)
                 var pos = cl + ti
 
                 comptime if interleaved:
                     var qkv_base = global_token_idx * combined_dim + col
                     var val = (qkv_ptr + qkv_base).load[width=simd_width]()
-                    var freq = (freqs_ptr + pos * freqs_stride0 + Int(di)).load[
+                    var freq = (freqs_ptr + pos * freqs_stride0 + di).load[
                         width=simd_width
                     ]()
                     k_cache.store(
                         bi,
-                        Int(hi),
+                        hi,
                         pos,
-                        Int(di),
+                        di,
                         rebind[SIMD[kv_type, simd_width]](
                             rope_value(val, freq)
                         ),
@@ -189,11 +190,9 @@ def _rope_split_store_ragged[
                     # Non-interleaved K: gather re/im, rope, deinterleave, store.
                     comptime width_2 = simd_width / 2
                     var k_head_base = (
-                        global_token_idx * combined_dim
-                        + q_dim
-                        + Int(hi) * head_size
+                        global_token_idx * combined_dim + q_dim + hi * head_size
                     )
-                    var re_idx, im_idx = get_safetensors_idx(Int(di), head_size)
+                    var re_idx, im_idx = get_safetensors_idx(di, head_size)
                     var val_re = (qkv_ptr + k_head_base + re_idx).load[
                         width=width_2
                     ]()
@@ -203,7 +202,7 @@ def _rope_split_store_ragged[
                     var val = rebind[SIMD[dtype, simd_width]](
                         val_re.interleave(val_im)
                     )
-                    var freq = (freqs_ptr + pos * freqs_stride0 + Int(di)).load[
+                    var freq = (freqs_ptr + pos * freqs_stride0 + di).load[
                         width=simd_width
                     ]()
                     var roped = rope_value(val, freq)
@@ -212,14 +211,14 @@ def _rope_split_store_ragged[
                     roped_re, roped_im = roped.deinterleave()
                     k_cache.store(
                         bi,
-                        Int(hi),
+                        hi,
                         pos,
                         re_idx,
                         rebind[SIMD[kv_type, width_2]](roped_re),
                     )
                     k_cache.store(
                         bi,
-                        Int(hi),
+                        hi,
                         pos,
                         im_idx,
                         rebind[SIMD[kv_type, width_2]](roped_im),
@@ -230,13 +229,13 @@ def _rope_split_store_ragged[
             var qkv_base = global_token_idx * combined_dim + col
             var val = (qkv_ptr + qkv_base).load[width=simd_width]()
             var v_col = col - qk_offset
-            var hi, di = divmod(UInt(v_col), UInt(kv_params.head_size))
+            var hi, di = udivmod(v_col, kv_params.head_size)
             var cl = v_cache.value().cache_length(bi)
             v_cache.value().store(
                 bi,
-                Int(hi),
+                hi,
                 ti + cl,
-                Int(di),
+                di,
                 rebind[SIMD[kv_type, simd_width]](val),
             )
 

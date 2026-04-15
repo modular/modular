@@ -448,9 +448,9 @@ def shmem_malloc[
     """
 
     comptime if has_nvidia_gpu_accelerator():
-        return nvshmem_malloc[dtype](UInt(size_of[dtype]() * size))
+        return nvshmem_malloc[dtype](c_size_t(size_of[dtype]() * size))
     elif has_amd_gpu_accelerator():
-        return rocshmem_malloc[dtype](UInt(size_of[dtype]() * size))
+        return rocshmem_malloc[dtype](c_size_t(size_of[dtype]() * size))
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()

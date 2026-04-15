@@ -625,8 +625,8 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ), "Only support MXF8F6F4 (k=1), MXF4 (k=2), or MXF4NVF4 (k=4)"
 
     comptime assert (
-        UInt(config.num_accum_pipeline_stages) * UInt(MMA_N)
-        + UInt(SFA_NUM_COLS + SFB_NUM_COLS) * UInt(config.num_pipeline_stages)
+        config.num_accum_pipeline_stages * MMA_N
+        + (SFA_NUM_COLS + SFB_NUM_COLS) * config.num_pipeline_stages
         <= NUM_TMEM_COLS
     ), "sfa_tmem and sfb_tmem exceed tmem_cols"
 
@@ -1018,7 +1018,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
             tmem_addr = ptr_tmem_addr[0]
             var sfa_tmem = tmem_addr + UInt32(
-                UInt(config.num_accum_pipeline_stages) * UInt(MMA_N)
+                config.num_accum_pipeline_stages * MMA_N
             )
             var sfb_tmem = sfa_tmem + UInt32(SFA_NUM_COLS) * UInt32(
                 config.num_pipeline_stages

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.algorithm.functional import unswitch
+from std.math.uutils import udivmod
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.info import is_cpu, is_gpu
 from std.collections import OptionalReg
@@ -316,7 +317,7 @@ def _fused_qkv_matmul_kv_cache_impl[
     comptime N = Int(weight.layout.shape[0])
     comptime K = Int(weight.layout.shape[1])
 
-    var SEQ_LEN = UInt(hidden_state.dim[1]())
+    var SEQ_LEN: Int = hidden_state.dim[1]()
 
     var q_dim = output.dim[2]()
     var k_dim = kv_params.head_size * kv_params.num_heads
@@ -331,44 +332,40 @@ def _fused_qkv_matmul_kv_cache_impl[
     def write_to_cache[
         dtype_: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype_, width]):
-        var b_idx, t_idx = divmod(UInt(idx[0]), SEQ_LEN)
+        var b_idx, t_idx = udivmod(idx[0], SEQ_LEN)
         if idx[1] < q_dim:
             output.store[width=width](
-                Index(Int(b_idx), Int(t_idx), idx[1]),
+                Index(b_idx, t_idx, idx[1]),
                 rebind[SIMD[dtype, width]](val),
             )
             return
 
         # Skip writing to cache for padded positions
-        var valid_len_for_batch_vec = valid_lengths[Int(b_idx)]
+        var valid_len_for_batch_vec = valid_lengths[b_idx]
         comptime assert valid_len_for_batch_vec.size == 1
-        var valid_len_for_batch = UInt(valid_len_for_batch_vec[0])
-        if t_idx >= valid_len_for_batch:
+        var valid_len_for_batch: UInt32 = valid_len_for_batch_vec[0]
+        if t_idx >= Int(valid_len_for_batch):
             return
 
-        var h_idx: UInt
-        var hd_idx: UInt
+        var h_idx: Int
+        var hd_idx: Int
         var cache: cache_t
         var output_val = val
         if idx[1] < qk_offset:
             cache = k_cache
-            h_idx, hd_idx = divmod(
-                UInt(idx[1]) - UInt(q_dim), UInt(kv_params.head_size)
-            )
+            h_idx, hd_idx = udivmod(idx[1] - q_dim, kv_params.head_size)
 
         else:
             cache = v_cache
-            h_idx, hd_idx = divmod(
-                UInt(idx[1]) - UInt(qk_offset), UInt(kv_params.head_size)
-            )
+            h_idx, hd_idx = udivmod(idx[1] - qk_offset, kv_params.head_size)
 
-        var cache_len = cache.cache_length(Int(b_idx))
-        var cache_t_idx = t_idx + UInt(cache_len)
+        var cache_len = cache.cache_length(b_idx)
+        var cache_t_idx = t_idx + cache_len
         cache.store(
-            Int(b_idx),
-            Int(h_idx),
-            Int(cache_t_idx),
-            Int(hd_idx),
+            b_idx,
+            h_idx,
+            cache_t_idx,
+            hd_idx,
             rebind[SIMD[cache_dtype, width]](output_val),
         )
 

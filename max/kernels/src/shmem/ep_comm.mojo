@@ -16,6 +16,7 @@ from std.math.uutils import umod, ufloordiv
 from std.os.atomic import Atomic, Consistency
 from std.sys import is_amd_gpu, is_nvidia_gpu
 from std.sys.info import CompilationTarget, align_of, simd_width_of, size_of
+from std.ffi import c_size_t
 
 from linalg.fp4_utils import (
     MXFP4_SF_VECTOR_SIZE,
@@ -1872,7 +1873,7 @@ struct EPDispatchKernel[
                         shmem_put_nbi[kind=SHMEMScope.default](
                             dst_recv_buf_ptr,
                             curr_send_buf_ptr,
-                            UInt(Self.msg_bytes),
+                            c_size_t(Self.msg_bytes),
                             dst_rank,
                         )
 
@@ -2718,7 +2719,7 @@ struct EPCombineKernel[
                                 shmem_put_nbi[kind=SHMEMScope.default](
                                     dst_recv_buf_ptr,
                                     curr_send_buf_ptr,
-                                    UInt(Self.msg_bytes),
+                                    c_size_t(Self.msg_bytes),
                                     Int32(target_rank),
                                 )
 

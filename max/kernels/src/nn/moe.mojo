@@ -461,12 +461,12 @@ def _copy_tokens_smem_to_gmem[
                     g_offset_copy + UInt32(smem_idx) + UInt32(i)
                 )
 
-    var start_idx = UInt((smem_writes // UInt64(width)) * UInt64(width))
+    var start_idx: UInt64 = (smem_writes // UInt64(width)) * UInt64(width)
 
     g_offset_copy += UInt32(start_idx)
 
-    if UInt64(thread_idx.x) < smem_writes - UInt64(start_idx):
-        var smem_val = smem[0, start_idx + UInt(thread_idx.x)]
+    if UInt64(thread_idx.x) < smem_writes - start_idx:
+        var smem_val = smem[0, start_idx + UInt64(thread_idx.x)]
         token_expert_order.store(
             Coord(Idx(Int(g_offset_copy + UInt32(thread_idx.x)))),
             smem_val,

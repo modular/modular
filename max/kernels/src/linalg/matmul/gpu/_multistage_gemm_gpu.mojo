@@ -735,9 +735,9 @@ def multistage_gemm_kernel[
     ), "Pipeline gemm only supports tf32, BF16, E4M3, and E5M2 mma"
     comptime simd_size = simd_width_of[c_type]()
 
-    var M = UInt(c.dim[0]())
-    var N = UInt(b.dim[0 if transpose_b else 1]())
-    var K = UInt(b.dim[1 if transpose_b else 0]())
+    var M: Int = c.dim[0]()
+    var N: Int = b.dim[0 if transpose_b else 1]()
+    var K: Int = b.dim[1 if transpose_b else 0]()
 
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
@@ -821,7 +821,7 @@ def multistage_gemm_kernel[
     # create input layout tensors A and Bv
     # global memory iterator
     var bk_start: Int = (
-        Int(K // UInt(BK) // UInt(num_warp_k_partitions)) * warp_k_part_id
+        ufloordiv(ufloordiv(K, BK), num_warp_k_partitions) * warp_k_part_id
     )
     var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](
         block_idx_swizzle[1], bk_start
@@ -878,7 +878,7 @@ def multistage_gemm_kernel[
         b_gmem_iter,
         a_smem_iter,
         b_smem_iter,
-        uceildiv(ufloordiv(Int(K), num_warp_k_partitions), BK),
+        uceildiv(ufloordiv(K, num_warp_k_partitions), BK),
     )
 
     # reduce within the threadblock
@@ -926,16 +926,16 @@ def multistage_gemm_kernel[
 
         comptime for i in range(type_of(c_gmem_frag).layout.size()):
             comptime src_idx = c_reg_frag.layout(i)
-            comptime dst_static_idx = UInt(type_of(c_gmem_frag).layout(i))
+            comptime dst_static_idx = Int(type_of(c_gmem_frag).layout(i))
             var dst_idx: Int
 
             comptime if c_gmem_frag.layout.all_dims_known():
-                dst_idx = Int(dst_static_idx)
+                dst_idx = dst_static_idx
             else:
                 dst_idx = Int(c_gmem_frag.runtime_layout(i))
             comptime alignment = align_of[SIMD[c_type, src_simd_width_y]]()
-            var m, n = divmod(Int(thread_offset) + dst_idx, Int(N))
-            if m < Int(M) and n < Int(N):
+            var m, n = divmod(Int(thread_offset) + dst_idx, N)
+            if m < M and n < N:
                 var vec = (c_reg_frag.ptr + src_idx).load[
                     width=src_simd_width_y,
                     alignment=align_of[SIMD[c_type, src_simd_width_y]](),
@@ -945,7 +945,7 @@ def multistage_gemm_kernel[
                     epilogue[alignment=alignment]((m, n), vec)
                 else:
                     comptime for j in range(dst_simd_width_x):
-                        if m + j < Int(M):
+                        if m + j < M:
                             epilogue[alignment=alignment](
                                 (m + j, n), vec[j].cast[c_type]()
                             )
@@ -1015,9 +1015,9 @@ def multistage_gemm_kernel[
                 else:
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
-                var m, n = divmod(Int(thread_offset) + dst_idx, Int(N))
+                var m, n = divmod(Int(thread_offset) + dst_idx, N)
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
-                if m < Int(M) and n < Int(N):
+                if m < M and n < N:
                     epilogue[alignment=alignment](
                         (m, n),
                         accum_smem_warp_tile.ptr.load[

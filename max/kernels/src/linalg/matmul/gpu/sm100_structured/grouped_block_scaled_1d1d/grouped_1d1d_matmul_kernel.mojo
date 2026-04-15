@@ -40,7 +40,7 @@ architecture.
 from std.collections import Optional
 from std.math import align_up, ceildiv
 from std.memory import Pointer, UnsafePointer, bitcast
-from std.math.uutils import ufloordiv, umod
+from std.math.uutils import ufloordiv, umod, udiv_unchecked, udivmod_unchecked
 from std.sys import align_of, size_of
 
 from std.gpu import WARP_SIZE, block_id_in_cluster, thread_idx, lane_id
@@ -962,17 +962,19 @@ struct Grouped1D1DMatmulKernel[
                     # cp.async per-lane addressing (computed by all lanes).
                     # outer = position within SF_MN_GROUP_SIZE (128),
                     # matching the non-grouped cp.async formula.
-                    var cp_outer: UInt
+                    var cp_outer: Int
                     comptime if Self.config.AB_swapped:
-                        cp_outer = (UInt(ctx.m()) - UInt(ctx.m_start())) % UInt(
-                            SF_MN_GROUP_SIZE
-                        ) + UInt(lane_id())
+                        cp_outer = (
+                            umod(Int(ctx.m() - ctx.m_start()), SF_MN_GROUP_SIZE)
+                            + lane_id()
+                        )
                     else:
-                        cp_outer = UInt(ctx.n()) % UInt(
-                            SF_MN_GROUP_SIZE
-                        ) + UInt(lane_id())
-                    var cp_row_in_atom = cp_outer % UInt(SF_ATOM_M[0])
-                    var cp_sub_column = cp_outer / UInt(SF_ATOM_M[0])
+                        cp_outer = (
+                            umod(Int(ctx.n()), SF_MN_GROUP_SIZE) + lane_id()
+                        )
+                    var cp_sub_column, cp_row_in_atom = udivmod_unchecked(
+                        Int(cp_outer), SF_ATOM_M[0]
+                    )
 
                     for k_tile in range(num_k_iters):
                         sfb_tma_pipeline.wait_consumer()
@@ -997,8 +999,8 @@ struct Grouped1D1DMatmulKernel[
                                         # outer%32 * ROW_STRIDE + outer/32 * SF_ATOM_K
                                         var smem_offset = (
                                             k_atom * K_TILE_ELEMS
-                                            + Int(cp_row_in_atom) * ROW_STRIDE
-                                            + Int(cp_sub_column) * SF_ATOM_K
+                                            + cp_row_in_atom * ROW_STRIDE
+                                            + cp_sub_column * SF_ATOM_K
                                         )
                                         var k_tile_base = (
                                             Int(
@@ -1015,8 +1017,8 @@ struct Grouped1D1DMatmulKernel[
                                             sfb_n_coord * sfb_n_stride
                                             + (k_tile_base + k_atom)
                                             * K_TILE_ELEMS
-                                            + Int(cp_row_in_atom) * ROW_STRIDE
-                                            + Int(cp_sub_column) * SF_ATOM_K
+                                            + cp_row_in_atom * ROW_STRIDE
+                                            + cp_sub_column * SF_ATOM_K
                                         )
                                         # cp.async with src_size masking: when
                                         # src_size=0 (OOB k-tile or lane beyond
@@ -1232,25 +1234,23 @@ struct Grouped1D1DMatmulKernel[
                     # Compute N-position within SF group.
                     # work_ctx.n() is in element space (not tile index),
                     # so no multiplication by MMA_N needed.
-                    var outer: UInt
+                    var outer: Int
                     comptime if Self.config.AB_swapped:
                         # AB_swapped: N position is derived from M
-                        var m_in_group = UInt(work_ctx.m()) - UInt(
-                            work_ctx.m_start()
-                        )
-                        outer = m_in_group % UInt(SF_MN_GROUP_SIZE) + UInt(
-                            lane_id()
+                        var m_in_group = work_ctx.m() - work_ctx.m_start()
+                        outer = (
+                            umod(Int(m_in_group), SF_MN_GROUP_SIZE) + lane_id()
                         )
                     else:
-                        outer = UInt(work_ctx.n()) % UInt(
-                            SF_MN_GROUP_SIZE
-                        ) + UInt(lane_id())
+                        outer = (
+                            umod(Int(work_ctx.n()), SF_MN_GROUP_SIZE)
+                            + lane_id()
+                        )
 
                     var scales_offset = (
-                        UInt(sf_idx) * UInt(SFB_TILE_BYTES)
-                        + (outer % UInt(SF_ATOM_M[0]))
-                        * (UInt(SF_ATOM_M[1]) * UInt(SF_ATOM_K))
-                        + (outer / UInt(SF_ATOM_M[0])) * UInt(SF_ATOM_K)
+                        sf_idx * SFB_TILE_BYTES
+                        + umod(outer, SF_ATOM_M[0]) * (SF_ATOM_M[1] * SF_ATOM_K)
+                        + udiv_unchecked(outer, SF_ATOM_M[0]) * SF_ATOM_K
                     )
                     sfb_scales = sfb_smem_tile.ptr.load[
                         width=SF_ATOM_K,

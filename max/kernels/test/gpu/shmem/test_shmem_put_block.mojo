@@ -13,6 +13,7 @@
 # RUN: %mojo %s
 from std.gpu import block_dim, block_idx, global_idx
 from std.memory import UnsafePointer, alloc
+from std.ffi import c_size_t
 from shmem import *
 from std.testing import assert_equal
 
@@ -42,14 +43,14 @@ def set_and_shift_kernel(
         shmem_put_nbi[SHMEMScope.block](
             recv_data + block_offset,
             send_data + block_offset,
-            UInt(min(block_dim.x, num_elems - block_offset)),
+            c_size_t(min(block_dim.x, num_elems - block_offset)),
             peer,
         )
     else:
         shmem_put[SHMEMScope.block](
             recv_data + block_offset,
             send_data + block_offset,
-            UInt(min(block_dim.x, num_elems - block_offset)),
+            c_size_t(min(block_dim.x, num_elems - block_offset)),
             peer,
         )
 

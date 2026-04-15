@@ -34,6 +34,7 @@ optimizes memory access patterns for higher throughput.
 """
 
 from std.sys import simd_width_of, size_of
+from std.math.uutils import udivmod
 
 from std.bit import log2_floor
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -680,7 +681,7 @@ def eval_composed[
     Returns:
         The transformed index after applying both layouts.
     """
-    var a_idx = UInt(idx)
+    var a_idx = idx
     var b_idx = 0
 
     comptime shape_a = flatten(composed_layout.layout_a.shape)
@@ -689,8 +690,8 @@ def eval_composed[
     comptime for i in range(len(stride_a)):
         comptime s = shape_a[i].value()
         comptime st = stride_a[i].value()
-        a_idx, coord_i = divmod(a_idx, UInt(s))
-        b_idx += Int(coord_i * UInt(st))
+        a_idx, coord_i = udivmod(a_idx, s)
+        b_idx += coord_i * st
 
     b_idx += offset
 

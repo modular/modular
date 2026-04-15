@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_up, ceildiv
-from std.math.uutils import umod, ufloordiv
+from std.math.uutils import umod, ufloordiv, udivmod_unchecked
 from std.sys import align_of, size_of
 
 from std.gpu import WARP_SIZE, barrier
@@ -675,9 +675,7 @@ def _sfb_cpasync_produce_tile[
             var j = UInt32(jj)
             var offset = stage * UInt32(k_group_size) + j
             var sfb_smem_tile_ptr = sfb_smem_base_ptr + Int(
-                sfb_smem_stage_layout(
-                    Coord(RuntimeInt(Scalar[DType.int64](offset)))
-                )
+                sfb_smem_stage_layout(Coord(RuntimeInt(Int64(offset))))
             )
             var k_tile_base = Int(i * UInt32(k_group_size) + j) * num_sf_k_tiles
 
@@ -687,11 +685,12 @@ def _sfb_cpasync_produce_tile[
                     if pos < MMA_N:
                         # Global address: compute per-position to handle
                         # tiles that straddle SF_MN_GROUP boundaries.
-                        var abs_pos = UInt(Int(work_info.n) * MMA_N + Int(pos))
-                        var n_group = Int(abs_pos) // SF_MN_GROUP_SIZE
-                        var outer = abs_pos % UInt(SF_MN_GROUP_SIZE)
-                        var row_in_atom = outer % UInt(SF_ATOM_M[0])
-                        var sub_column = outer / UInt(SF_ATOM_M[0])
+                        var abs_pos = Int(work_info.n) * MMA_N + Int(pos)
+                        var n_group = abs_pos // SF_MN_GROUP_SIZE
+                        var outer = umod(abs_pos, SF_MN_GROUP_SIZE)
+                        var sub_column, row_in_atom = udivmod_unchecked(
+                            outer, SF_ATOM_M[0]
+                        )
                         # SMEM atom layout: row within 32-row atom + sub_col.
                         var smem_row = Int(pos) % SF_ATOM_M[0]
                         var smem_sub_col = Int(pos) // SF_ATOM_M[0]
@@ -709,16 +708,10 @@ def _sfb_cpasync_produce_tile[
                                     sfb_global_atom_layout(
                                         Coord(
                                             RuntimeInt(
-                                                Scalar[DType.int64](
-                                                    k_tile_base + k_atom
-                                                )
+                                                Int64(k_tile_base + k_atom)
                                             ),
-                                            RuntimeInt(
-                                                Scalar[DType.int64](row_in_atom)
-                                            ),
-                                            RuntimeInt(
-                                                Scalar[DType.int64](sub_column)
-                                            ),
+                                            RuntimeInt(Int64(row_in_atom)),
+                                            RuntimeInt(Int64(sub_column)),
                                         )
                                     )
                                 )
@@ -813,11 +806,8 @@ def _sfb_cpasync_produce_tile_warpwide[
     var active = lane_id() < MMA_N * num_sf_k_tiles
 
     # Per-tile address components for this lane's position.
-    var outer = (UInt(work_info.n) * UInt(MMA_N)) % UInt(
-        SF_MN_GROUP_SIZE
-    ) + UInt(my_pos)
-    var row_in_atom = outer % UInt(SF_ATOM_M[0])
-    var sub_column = outer / UInt(SF_ATOM_M[0])
+    var outer = umod(Int(work_info.n) * MMA_N, SF_MN_GROUP_SIZE) + my_pos
+    var sub_column, row_in_atom = udivmod_unchecked(outer, SF_ATOM_M[0])
     var n_group = (Int(work_info.n) * MMA_N) // SF_MN_GROUP_SIZE
     var batch = Int(work_info.k_start)
 
@@ -831,9 +821,7 @@ def _sfb_cpasync_produce_tile_warpwide[
             var j = UInt32(jj)
             var offset = stage * UInt32(k_group_size) + j
             var sfb_smem_tile_ptr = sfb_smem_base_ptr + Int(
-                sfb_smem_stage_layout(
-                    Coord(RuntimeInt(Scalar[DType.int64](offset)))
-                )
+                sfb_smem_stage_layout(Coord(RuntimeInt(Int64(offset))))
             )
             var k_tile_base = Int(i * UInt32(k_group_size) + j) * num_sf_k_tiles
 
@@ -857,15 +845,9 @@ def _sfb_cpasync_produce_tile_warpwide[
                         + Int(
                             sfb_global_atom_layout(
                                 Coord(
-                                    RuntimeInt(
-                                        Scalar[DType.int64](
-                                            k_tile_base + my_k_atom
-                                        )
-                                    ),
-                                    RuntimeInt(
-                                        Scalar[DType.int64](row_in_atom)
-                                    ),
-                                    RuntimeInt(Scalar[DType.int64](sub_column)),
+                                    RuntimeInt(Int64(k_tile_base + my_k_atom)),
+                                    RuntimeInt(Int64(row_in_atom)),
+                                    RuntimeInt(Int64(sub_column)),
                                 )
                             )
                         )
@@ -1005,8 +987,8 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ), "Only support MXF8F6F4 (k=1) or MXF4NVF4 (k=4)"
 
     comptime assert (
-        UInt(config.num_accum_pipeline_stages) * UInt(MMA_N)
-        + UInt(SFA_NUM_COLS + SFB_NUM_COLS) * UInt(config.num_pipeline_stages)
+        config.num_accum_pipeline_stages * MMA_N
+        + (SFA_NUM_COLS + SFB_NUM_COLS) * config.num_pipeline_stages
         <= NUM_TMEM_COLS
     ), "sfa_tmem and sfb_tmem exceed tmem_cols"
 
@@ -1579,7 +1561,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
             tmem_addr = ptr_tmem_addr[0]
             var sfa_tmem = tmem_addr + UInt32(
-                UInt(config.num_accum_pipeline_stages) * UInt(MMA_N)
+                config.num_accum_pipeline_stages * MMA_N
             )
             var sfb_tmem = sfa_tmem + UInt32(SFA_NUM_COLS) * UInt32(
                 config.num_pipeline_stages

@@ -25,12 +25,12 @@ trait TuningConfig(TrivialRegisterPassable, Writable):
 struct Table[type: TuningConfig](Writable):
     var configs: List[Self.type]
     var name: String
-    var num_configs: UInt
+    var num_configs: Int
 
     def __init__(out self, configs: List[Self.type], name: String):
         self.configs = configs.copy()
         self.name = name
-        self.num_configs = UInt(len(configs))
+        self.num_configs = len(configs)
 
         if not self.check():
             abort(t"Failed to Compile Table: [{self.name}]")
@@ -81,11 +81,11 @@ struct Table[type: TuningConfig](Writable):
         var flag: List[Bool]
 
         comptime if len(domain):
-            flag = List[Bool](length=Int(self.num_configs), fill=False)
+            flag = List[Bool](length=self.num_configs, fill=False)
             for idx in materialize[domain]():
                 flag[idx] = True
         else:
-            flag = List[Bool](length=Int(self.num_configs), fill=True)
+            flag = List[Bool](length=self.num_configs, fill=True)
 
         for i in range(self.num_configs):
             flag[i] &= rule(self.configs[i])
@@ -93,7 +93,7 @@ struct Table[type: TuningConfig](Writable):
 
         for i in range(self.num_configs):
             if flag[i]:
-                result_idx_list.append(Int(i))
+                result_idx_list.append(i)
         return result_idx_list^
 
     # Apply rule on all configs in the table and return list of all the unique results.
@@ -110,7 +110,7 @@ struct Table[type: TuningConfig](Writable):
             if len(materialize[domain]()):
                 return materialize[domain]()
             else:
-                return [Int(idx) for idx in range(self.num_configs)]
+                return [idx for idx in range(self.num_configs)]
 
         var search_domain = _get_search_domain()
 

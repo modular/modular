@@ -89,9 +89,9 @@ def test_stmatrix(
         c_shared + thread_idx.x * 4, rebind[SIMD[DType.float32, 4]](d_reg)
     )
 
-    var base = UInt(tid) * 4
+    var base = tid * 4
     for i in range(4):
-        var d = base + UInt(i)
+        var d = base + i
         var r = d & 63
         var src = ((d >> 6) << 6) + ((r & 1) << 5) + (r >> 1)
         c_ptr[d] = c_shared[src]
@@ -153,9 +153,9 @@ def test_stmatrix_gen[
         rebind[SIMD[DType.float32, c_frag_size]](d_reg),
     )
 
-    var base = UInt(thread_idx.x) * 4
+    var base = thread_idx.x * 4
     for i in range(4):
-        var d = base + UInt(i)
+        var d = base + i
         var r = d & 63
         var src = ((d >> 6) << 6) + ((r & 1) << 5) + (r >> 1)
         c_ptr[d] = c_shared[src].cast[output_type]()

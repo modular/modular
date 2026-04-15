@@ -152,7 +152,7 @@ def _bitonic_local_sort_kernel[
         var j = k >> 1
         while j > 0:
             barrier()
-            var partner = Int(UInt(tid) ^ UInt(j))
+            var partner = tid ^ j
             if partner > tid:
                 var vi = shared_vals[tid]
                 var vp = shared_vals[partner]
@@ -163,7 +163,7 @@ def _bitonic_local_sort_kernel[
                 else:
                     cmp_val = vi < vp
 
-                var direction = (UInt(tid) & UInt(k)) == 0
+                var direction = (tid & k) == 0
                 if cmp_val == direction:
                     shared_vals[tid] = vp
                     shared_vals[partner] = vi
@@ -227,7 +227,7 @@ def _bitonic_merge_local_kernel[
     var j = BLOCK_SIZE >> 1
     while j > 0:
         barrier()
-        var partner = Int(UInt(tid) ^ UInt(j))
+        var partner = tid ^ j
         if partner > tid:
             var vi = shared_vals[tid]
             var vp = shared_vals[partner]
@@ -238,7 +238,7 @@ def _bitonic_merge_local_kernel[
             else:
                 cmp_val = vi < vp
 
-            var direction = (UInt(gid) & UInt(stage)) == 0
+            var direction = (gid & stage) == 0
             if cmp_val == direction:
                 shared_vals[tid] = vp
                 shared_vals[partner] = vi
@@ -302,19 +302,19 @@ def _argsort_gpu_impl[
         step: Int,
         stage: Int,
     ):
-        var i = UInt(global_idx.x)
-        if i >= UInt(n_arg):
+        var i = global_idx.x
+        if i >= n_arg:
             return
 
-        var partner = i ^ UInt(step)
-        if partner > i and partner < UInt(n_arg):
+        var partner = i ^ step
+        if partner > i and partner < n_arg:
             var cmp_val: Bool
             comptime if ascending:
                 cmp_val = input_arg[i] > input_arg[partner]
             else:
                 cmp_val = input_arg[i] < input_arg[partner]
 
-            var bitonic_merge_direction = (i & UInt(stage)) == 0
+            var bitonic_merge_direction = (i & stage) == 0
             if cmp_val == bitonic_merge_direction:
                 swap(input_arg[i], input_arg[partner])
                 swap(indices_arg[i], indices_arg[partner])

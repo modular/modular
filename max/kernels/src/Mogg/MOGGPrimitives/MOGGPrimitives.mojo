@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import fma
-from std.ffi import external_call
+from std.ffi import external_call, c_size_t
 from std.sys import size_of, align_of
 
 from compiler_internal import StaticTensorSpec
@@ -735,7 +735,7 @@ def mgp_debug_tensor_print[
 ) raises:
     external_call["MGP_RT_DebugTensorPrint", NoneType](
         label_ptr,
-        UInt(label_len),
+        c_size_t(label_len),
         dtype,
         UnsafePointer(to=shape.data),
         spec_rank,

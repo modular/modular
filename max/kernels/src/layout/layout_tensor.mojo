@@ -7414,7 +7414,7 @@ def _copy_dram_to_local[
     dst: LayoutTensor[mut=True, ...],
     src: LayoutTensor[mut=False, ...],
     buffer: AMDBufferResource,
-    offset: Optional[UInt] = None,
+    offset: Optional[Int] = None,
 ):
     comptime assert is_amd_gpu(), "This function is only supported on AMD GPUs."
     comptime simd_width = src.element_layout.size()
@@ -7442,7 +7442,7 @@ def _copy_dram_to_local[
 
     @always_inline
     @parameter
-    def offset_helper(offset_val: UInt):
+    def offset_helper(offset_val: Int):
         var src_frag_offset = Int32(
             src_fragments.distance(src.ptr)
             + Scalar[src.linear_idx_type](offset_val)
@@ -7466,9 +7466,7 @@ def _copy_dram_to_local[
         offset_helper(offset.value())
     else:
         var base_ptr = buffer.get_base_ptr()
-        offset_helper(
-            UInt(Int(src.ptr) - base_ptr) // UInt(size_of[src.dtype]())
-        )
+        offset_helper(ufloordiv(Int(src.ptr) - base_ptr, size_of[src.dtype]()))
 
 
 @always_inline("nodebug")
@@ -7482,7 +7480,7 @@ def copy_dram_to_local[
     dst: LayoutTensor[mut=True, ...],
     src: LayoutTensor[mut=False, ...],
     src_base: LayoutTensor[mut=False, ...],
-    offset: Optional[UInt] = None,
+    offset: Optional[Int] = None,
 ):
     """Efficiently copy data from global memory (DRAM) to registers for AMD GPUs.
 
@@ -7562,7 +7560,7 @@ def _copy_dram_to_local[
         thread_scope,
         block_dim_count,
         cache_policy,
-    ](dst, src_tensor, buffer, UInt(src_iter.offset))
+    ](dst, src_tensor, buffer, Int(src_iter.offset))
 
 
 @always_inline("nodebug")

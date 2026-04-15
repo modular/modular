@@ -783,7 +783,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             k_content_tma.async_copy_3d(
                 content_tensor,
                 k0_bar[],
-                (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
+                (0, 0, Int(kv_gmem_row)),
             )
             # K_rope TMA: load BF16 rope into kv_rope_smem
             var rope_stage_ptr = kv_rope_smem + stage0_idx * UInt32(
@@ -795,7 +795,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             k_rope_tma.async_copy_3d(
                 rope_tensor,
                 k0_bar[],
-                (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
+                (0, 0, Int(kv_gmem_row)),
             )
             # Scale TMA: load BN float32 per-token scales into scale SMEM.
             # The scale TMA treats scales as a flat [1, total_elements] 2D
@@ -811,7 +811,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 scale_tma.async_copy(
                     scale_tensor,
                     k0_bar[],
-                    (Int(UInt(kv_gmem_row)), Int(0)),
+                    (Int(kv_gmem_row), 0),
                 )
 
         kv_prod.commit_step()
@@ -847,7 +847,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 k_content_tma.async_copy_3d(
                     content_tensor,
                     k_mbar[],
-                    (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
+                    (0, 0, Int(kv_gmem_row)),
                 )
                 # K_rope TMA
                 var rope_stage_ptr = kv_rope_smem + stage_idx * UInt32(
@@ -859,7 +859,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 k_rope_tma.async_copy_3d(
                     rope_tensor,
                     k_mbar[],
-                    (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
+                    (0, 0, Int(kv_gmem_row)),
                 )
                 # Scale TMA
                 comptime if Self.has_per_token_scales:
@@ -872,7 +872,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     scale_tma.async_copy(
                         scale_tensor,
                         k_mbar[],
-                        (Int(UInt(kv_gmem_row)), Int(0)),
+                        (Int(kv_gmem_row), 0),
                     )
 
             kv_row += UInt32(Self.config.BN)
