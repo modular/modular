@@ -57,6 +57,10 @@ class Flux2KleinModelInputs(Flux2ModelInputs):
     is_distilled: bool = False
     """Whether the model is distilled (disables CFG)."""
 
+    explicit_negative_prompt: bool = False
+    """Whether the request explicitly supplied a negative prompt. Used to
+    gate distilled/CFG warnings so they only fire on real user intent."""
+
     @property
     def do_classifier_free_guidance(self) -> bool:
         return (
@@ -150,7 +154,11 @@ class Flux2KleinPipeline(Flux2Pipeline):
             self.pipeline_config.models.metadata.get("is_distilled", False)
         )
 
-        if context.guidance_scale > 1.0 and is_distilled:
+        if (
+            context.guidance_scale > 1.0
+            and is_distilled
+            and context.explicit_negative_prompt
+        ):
             logger.warning(
                 "Guidance scale %s is ignored for distilled Klein models.",
                 context.guidance_scale,
@@ -177,6 +185,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
             negative_attention_mask=context.negative_mask,
             guidance_scale=context.guidance_scale,
             is_distilled=is_distilled,
+            explicit_negative_prompt=context.explicit_negative_prompt,
         )
 
     @traced(message="Flux2KleinPipeline.execute")
@@ -212,6 +221,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
             model_inputs.negative_tokens is None
             and not model_inputs.is_distilled
             and model_inputs.guidance_scale > 1.0
+            and model_inputs.explicit_negative_prompt
         ):
             logger.warning(
                 "CFG requested but negative prompt tokens are missing; "
