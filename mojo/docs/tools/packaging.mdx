@@ -1,0 +1,316 @@
+---
+title: Packaging
+description: How to package your Mojo project for distribution
+---
+
+This page explains how to turn your Mojo project into a distributable conda
+package using rattler-build.
+
+You can distribute your conda package on any conda-compatible package index,
+such as [prefix.dev](https://prefix.dev), [anaconda.org](https://anaconda.org),
+or an S3 bucket. For the most visibility, we recommend sharing your package in
+the [modular-community channel](https://prefix.dev/channels/modular-community)
+on prefix.dev, as described below.
+
+## How it works
+
+*rattler-build* is a tool that turns your source code into a conda package.
+You give it a *recipe*—a YAML file named `recipe.yaml`—and it does the
+rest: fetches your source, compiles it in an isolated environment, runs your
+tests, and writes out a `.conda` file ready to upload to a package index.
+
+The recipe is a declarative description of your package that specifies:
+
+- The source code location (a git commit or tarball URL)
+- The build process (a `mojo package` command)
+- Package dependencies
+- Test commands to verify the build
+
+The complete packaging process is:
+
+1. Create a `recipe.yaml` that specifies your package details.
+2. Run `rattler-build` to create a `.conda` package.
+3. Share the package in a public package index.
+
+:::note
+
+If you want to distribute your package in the modular-community channel, you
+only need to merge your `recipe.yaml` file into the [modular-community
+repository](https://github.com/modular/modular-community) (the repo handles
+steps 2 and 3).
+
+:::
+
+Then you and other users can install your package with `pixi` or other conda
+package managers by adding the appropriate conda channel to your project
+manifest file (`pixi.toml`).
+
+## Install rattler-build
+
+We recommend using [Pixi](https://pixi.sh/latest/) to install `rattler-build`:
+
+1. If you don't have it, install `pixi` with this command:
+
+    ```bash
+    curl -fsSL https://pixi.sh/install.sh | sh
+    ```
+
+    Then restart your terminal for the changes to take effect.
+
+2. Now install `rattler-build` globally:
+
+    ```bash
+    pixi global install rattler-build
+    ```
+
+3. Verify the installation:
+
+    ```bash
+    rattler-build --version
+    ```
+
+## Write your recipe file
+
+The recipe is the heart of the packaging process and is defined in a YAML file
+named `recipe.yaml`.
+
+By convention, store your recipe in your project root at
+`conda.recipe/recipe.yaml`. `rattler-build` looks there by default, and it's
+the location expected by the GitHub Action
+([rattler-build-action](https://github.com/prefix-dev/rattler-build-action)).
+For example:
+
+```output
+my-mojo-lib/
+├── src/
+│   └── my_mojo_lib/
+│       ├── __init__.mojo
+│       └── utils.mojo
+├── test.mojo
+├── conda.recipe/
+│   └── recipe.yaml
+├── LICENSE
+└── README.md
+```
+
+### The minimal recipe file
+
+This section covers the most important recipe fields for Mojo packages.
+For details about all available recipe fields, see the [rattler-build recipe
+reference](https://rattler-build.prefix.dev/latest/reference/recipe_file/).
+
+You can copy this template to begin building your `recipe.yaml` file:
+
+```yaml title="recipe.yaml"
+context:
+  version: "0.1.0"
+
+package:
+  name: my-mojo-lib
+  version: ${{ version }}
+
+source:
+  - git: https://github.com/yourname/my-mojo-lib.git
+    rev: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+
+build:
+  number: 0
+  script:
+    - mojo package src/my_mojo_lib -o ${{ PREFIX }}/lib/mojo/my_mojo_lib.mojopkg
+
+requirements:
+  build:
+    - mojo-compiler =25.5.0
+  host:
+    - mojo-compiler =25.5.0
+  run:
+    - ${{ pin_compatible('mojo-compiler') }}
+
+tests:
+  - script:
+      - if: unix
+        then:
+          - mojo run test.mojo
+    files:
+      recipe:
+        - test.mojo
+
+about:
+  homepage: https://github.com/yourname/my-mojo-lib
+  repository: https://github.com/yourname/my-mojo-lib
+  license: MIT
+  license_file: LICENSE
+  summary: A short one-line description of what your library does.
+
+extra:
+  maintainers:
+    - yourname
+```
+
+### Recipe tips
+
+Here are a few things that are particularly important for Mojo packages.
+
+#### Use a full commit SHA as the source revision
+
+The `source.rev` field should be a full 40-character git commit SHA rather than
+a branch name or tag. This makes the build reproducible—anyone who builds from
+the same recipe gets the exact same source code.
+
+#### Set the build number
+
+Start `build.number` at `0`. If you need to rebuild the same version of your
+library (such as to pick up a new Mojo compiler release), increment
+`build.number` rather than changing the version. Reset it to `0` when you bump
+the version.
+
+#### Specify the install location
+
+In the above recipe, look at the `mojo package` command in the `build.script`
+section. It's important that this command outputs the `.mojopkg` file into
+`$PREFIX/lib/mojo/`, because this path is what makes the package
+auto-discoverable by the Mojo compiler.
+
+When `rattler-build` runs your build script, it sets a `$PREFIX` environment
+variable pointing to the root of an isolated installation directory. Any files
+your script places under `$PREFIX` become part of the conda package—a file
+written to `$PREFIX/lib/mojo/foo.mojopkg` during the build is extracted into
+your actual environment when you run `pixi add foo`. Think of `$PREFIX` as a
+stand-in for wherever your environment lives on your machine.
+
+#### Pin the Mojo compiler version
+
+Mojo packages compile against a specific compiler version and might not be
+compatible with other versions. The required `mojo-compiler` version must be
+specified in the `requirements.build` section of your recipe, which must conform
+to the
+[conda package match syntax](https://docs.conda.io/projects/conda/en/latest/user-guide/concepts/pkg-specs.html#package-match-specifications).
+
+The `pin_compatible('mojo-compiler')` function
+in `requirements.run` generates a version constraint based on whichever version
+is resolved at build time, preventing your package from silently running
+against an incompatible runtime.
+
+## Build the package
+
+With your recipe file in hand, you can build the package using `rattler-build`
+from your project root:
+
+```bash
+rattler-build build \
+  --recipe conda.recipe/recipe.yaml \
+  -c conda-forge \
+  -c https://conda.modular.com/max \
+  -c https://repo.prefix.dev/modular-community
+```
+
+The `-c` flags specify which conda channels to search for dependencies (in
+priority order). You need:
+
+- `conda-forge` for general tooling
+- `https://conda.modular.com/max` for `mojo-compiler` and `max`
+- `https://repo.prefix.dev/modular-community` if you depend on other
+  community Mojo packages
+
+When you run `rattler-build build`, it:
+
+1. Creates an isolated build environment
+2. Fetches your source code
+3. Runs your build script to compile the `.mojopkg` file
+4. Bundles the result into a `.conda` archive
+5. Runs your test commands to verify the package works
+
+The output file appears in an `output/` directory, for example:
+
+```text
+output/
+└── linux-64/
+    └── my-mojo-lib-0.3.0-h1a2b3c4_0.conda
+```
+
+The hash in the filename (`h1a2b3c4`) is derived from the build configuration
+and is managed automatically by rattler-build.
+
+## Debug a failed build
+
+If the build fails, open a debug shell to investigate interactively:
+
+```bash
+rattler-build debug shell
+```
+
+This gives you a shell with all environment variables set (`$PREFIX`,
+`$SRC_DIR`, etc.) and the build environment activated, so you can run your
+build commands to find the problem.
+
+For more details, see the [rattler-build debugging
+guide](https://rattler-build.prefix.dev/latest/debugging_builds/).
+
+## Publish to a package index
+
+Once you have a built `.conda` file, you can upload it to any compatible host,
+such as [prefix.dev](https://prefix.dev), [anaconda.org](https://anaconda.org),
+or an AWS S3 bucket. For the most visibility, add your package to the
+[modular-community channel](https://prefix.dev/channels/modular-community)
+(hosted on prefix.dev), as described below.
+
+### Publish to the modular-community channel
+
+To publish your package on the [modular-community
+channel](https://prefix.dev/channels/modular-community), open a pull
+request to the [modular-community GitHub
+repo](https://github.com/modular/modular-community) to add your package's
+`recipe.yaml` file. The repo automatically builds and hosts all the packages
+based on the recipes in the repo.
+
+Your `recipe.yaml` is the same file described above. Just add it to a new
+directory that matches your package name:
+
+```text
+modular-community/
+└── recipes/
+    └── my-mojo-lib/
+        └── recipe.yaml
+```
+
+Once published to the channel, you can install your package with `pixi` by
+adding the `https://repo.prefix.dev/modular-community` channel to your
+project manifest:
+
+```toml title="pixi.toml"
+[workspace]
+channels = [
+  "https://conda.modular.com/max-nightly",
+  "https://repo.prefix.dev/modular-community",
+  "conda-forge",
+]
+```
+
+:::note
+
+If your package includes Python or any language other than Mojo, you must enable
+[CodeQL scanning](https://docs.github.com/en/code-security/code-scanning/enabling-code-scanning/configuring-default-setup-for-code-scanning)
+on your source repository and add the badge to your README.
+
+:::
+
+For more details, see the
+[modular-community README](https://github.com/modular/modular-community?tab=readme-ov-file#modular-community-channel).
+
+### Update your package
+
+When you release a new version of your library:
+
+1. Update `context.version` in your recipe.
+2. Update `source.rev` to the new commit SHA (or update the tarball URL and
+   SHA256).
+3. Reset `build.number` to `0`.
+4. Open a new PR to modular-community (if you've already published it there).
+
+If you're republishing the same version (for example, to support a new Mojo
+compiler release), increment `build.number` instead of changing the version.
+
+## Useful links
+
+- [modular-community repository](https://github.com/modular/modular-community)
+- [rattler-build recipe reference](https://rattler-build.prefix.dev/latest/reference/recipe_file/)

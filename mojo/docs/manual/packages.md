@@ -2,14 +2,15 @@
 title: Modules and packages
 sidebar_position: 5
 sidebar_label: Modules and packages
-description: Learn how to package Mojo code for distribution and importing.
+description: Learn how to organize Mojo code into modules and packages.
 ---
 
-Mojo provides a packaging system that allows you to organize and compile code
-libraries into importable files. This page introduces the necessary concepts
-about how to organize your code into modules and packages (which is a lot
-like Python), and shows you how to create a packaged binary with the [`mojo
-package`](/mojo/cli/package) command.
+This page describes how to organize your project into modules (files) and
+packages (directories) that you can import into other Mojo code (and
+[into Python code](/mojo/manual/python/mojo-from-python/)).
+
+If you want to package your project for distribution, instead see the
+[Packaging guide](/mojo/tools/packaging/).
 
 ## Mojo modules
 
