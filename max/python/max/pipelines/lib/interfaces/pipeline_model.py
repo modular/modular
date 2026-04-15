@@ -121,9 +121,9 @@ class ModelOutputs:
     - ``H``: hidden-state width
     - ``T``: number of returned logit rows (depends on return mode)
 
-    The shape depends on the value of the `ReturnLogits` and `ReturnHiddenStates`
-    enums. Unless we are running with spec decoding, we use `ReturnLogits.LAST_TOKEN`
-    and `ReturnHiddenStates.NONE`.
+    The shape depends on the value of the :class:`ReturnLogits` and :class:`ReturnHiddenStates`
+    enums. Unless we are running with spec decoding, we use ``ReturnLogits.LAST_TOKEN``
+    and ``ReturnHiddenStates.NONE``.
     """
 
     logits: Buffer
@@ -445,7 +445,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         kv_cache_inputs: KVCacheInputs | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
-        """Prepares the initial inputs to be passed to ``.execute()``.
+        """Prepares the initial inputs to be passed to ``execute()``.
 
         The inputs and functionality can vary per model. For example, model
         inputs could include encoded tensors, unique IDs per tensor when using
@@ -461,9 +461,9 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> ModelInputs:
-        """Prepares the secondary inputs to be passed to `.execute()`.
+        """Prepares the secondary inputs to be passed to ``execute()``.
 
-        While `prepare_initial_token_inputs` is responsible for managing the initial inputs.
+        While ``prepare_initial_token_inputs`` is responsible for managing the initial inputs.
         This function is responsible for updating the inputs, for each step in a multi-step execution pattern.
         """
         ...

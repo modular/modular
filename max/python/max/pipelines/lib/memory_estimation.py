@@ -52,7 +52,7 @@ class MemoryEstimator:
 
     @classmethod
     def free_memory(cls, devices: list[Device]) -> int:
-        """Return the total free memory available across all provided devices."""
+        """Returns the total free memory available across all provided devices."""
         try:
             return int(sum(d.stats["free_memory"] for d in devices))
         except Exception as e:
@@ -169,7 +169,7 @@ class MemoryEstimator:
         model_weights_size: int,
         activation_memory_size: int,
     ) -> None:
-        """Estimates memory footprint and validates max_length/max_batch_size fit."""
+        """Estimates memory footprint and validates ``max_length``/``max_batch_size`` fit."""
         is_draft_model = (
             pipeline_config.draft_model is not None
             and model_config is pipeline_config.draft_model

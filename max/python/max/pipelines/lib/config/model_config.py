@@ -690,9 +690,9 @@ class MAXModelConfig(MAXModelConfigBase):
         Attempts to find the weights locally first to avoid network
         calls, checking in the following order:
 
-        1. If `repo_type` is ``"local"``, it checks if the path
-           in `weight_path` exists directly as a local file path.
-        2. Otherwise, if `repo_type` is ``"online"``, it first checks the local
+        1. If ``repo_type`` is ``"local"``, it checks if the path
+           in ``weight_path`` exists directly as a local file path.
+        2. Otherwise, if ``repo_type`` is ``"online"``, it first checks the local
            Hugging Face cache using :obj:`huggingface_hub.try_to_load_from_cache()`.
            If not found in the cache, it falls back to querying the Hugging Face
            Hub API via :obj:`HuggingFaceRepo.size_of()`.
@@ -1380,7 +1380,7 @@ class MAXModelConfig(MAXModelConfigBase):
         return self.device_specs[0]
 
     def create_kv_cache_config(self, **kv_cache_kwargs) -> None:
-        """Create and set the KV cache configuration with the given parameters.
+        """Creates and sets the KV cache configuration with the given parameters.
 
         Creates a new :class:`~max.pipelines.lib.config.KVCacheConfig` from the provided keyword arguments
         and automatically sets the cache_dtype based on the model's quantization

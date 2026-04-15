@@ -1189,7 +1189,7 @@ class OverlapTextGenerationPipeline(
 
     @property
     def pipeline_config(self) -> PipelineConfig:
-        """Return the pipeline configuration."""
+        """Returns the pipeline configuration."""
         return self._pipeline_config
 
     @property
@@ -1200,13 +1200,13 @@ class OverlapTextGenerationPipeline(
         npt.NDArray[np.integer[Any]],
         TextGenerationRequest,
     ]:
-        """Return the tokenizer used for building contexts and decoding."""
+        """Returns the tokenizer used for building contexts and decoding."""
         return self._tokenizer
 
     def has_pending_outputs(self) -> bool:
         """Returns True if there are pending outputs for the previous batch.
 
-        If this is True, the caller should call `.execute()` even with empty
+        If this is True, the caller should call ``execute()`` even with empty
         inputs to retrieve the outputs for the previous batch.
         """
         return self._prev_batch is not None

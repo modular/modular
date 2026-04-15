@@ -352,7 +352,7 @@ class TextTokenizer(
         TextContext, npt.NDArray[np.integer[Any]], TextGenerationRequest
     ]
 ):
-    """Encapsulates creation of TextContext and specific token encode/decode logic.
+    """Encapsulates creation of :class:`TextContext` and specific token encode/decode logic.
 
     Args:
         model_path: Path to the model/tokenizer
@@ -521,7 +521,7 @@ class TextTokenizer(
     async def decode(
         self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
-        """Transformer a provided encoded token array, back into readable text."""
+        """Transforms a provided encoded token array back into readable text."""
         # Sometimes, encoded comes in as an int so, make it np array
         if isinstance(encoded, int):
             encoded = np.array(encoded)
@@ -593,7 +593,7 @@ class TextTokenizer(
     async def create_eos_tracker(
         self, request: TextGenerationRequest
     ) -> EOSTracker:
-        """Builds an EOSTracker from the request sampling params and tokenizer default EOS token IDs."""
+        """Builds an :class:`EOSTracker` from the request sampling params and tokenizer default EOS token IDs."""
         return await build_eos_tracker_for_request(
             self._default_eos_token_ids,
             request,
@@ -823,7 +823,7 @@ class TextAndVisionTokenizer(
     async def decode(
         self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
-        """Transformer a provided encoded token array, back into readable text."""
+        """Transforms a provided encoded token array back into readable text."""
         try:
             return self.delegate.decode(encoded.tolist(), **kwargs)
         except OverflowError as e:
@@ -833,7 +833,7 @@ class TextAndVisionTokenizer(
     async def create_eos_tracker(
         self, request: TextGenerationRequest
     ) -> EOSTracker:
-        """Builds an EOSTracker from the request sampling params and tokenizer default EOS token IDs."""
+        """Builds an :class:`EOSTracker` from the request sampling params and tokenizer default EOS token IDs."""
         return await build_eos_tracker_for_request(
             self._default_eos_token_ids,
             request,

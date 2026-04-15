@@ -208,7 +208,7 @@ def download_weight_files(
 
     Args:
         huggingface_model_id:
-          The Hugging Face model identifier, ie. `modularai/Llama-3.1-8B-Instruct-GGUF`
+          The Hugging Face model identifier, that is, ``modularai/Llama-3.1-8B-Instruct-GGUF``
 
         filenames:
           A list of file paths relative to the root of the Hugging Face repo.
@@ -758,7 +758,7 @@ def is_diffusion_pipeline(repo: HuggingFaceRepo) -> bool:
 
 
 def generate_local_model_path(repo_id: str, revision: str) -> str:
-    """Generate the local filesystem path where a Hugging Face model repo is cached.
+    """Generates the local filesystem path where a Hugging Face model repo is cached.
 
     This function resolves the model from the local Hugging Face cache only.
     Missing snapshots should be pre-downloaded explicitly so tests without the

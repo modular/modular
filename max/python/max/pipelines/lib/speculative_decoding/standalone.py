@@ -237,7 +237,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         self,
         inputs: TextGenerationInputs[TextContext],
     ) -> dict[RequestID, TextGenerationOutput]:
-        """Execute standalone speculative decoding.
+        """Executes standalone speculative decoding.
 
         In standalone mode:
         1. Draft model generates tokens independently

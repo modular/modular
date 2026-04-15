@@ -35,13 +35,12 @@ class WeightPathParser:
         | Path
         | str,
     ) -> tuple[list[Path], str | None]:
-        """Parse weight paths and extract any weights repo ID.
+        """Parses weight paths and extracts any weights repo ID.
 
-        Args:
-            model_path: The model path to use for parsing the weight path(s)
-            weight_path: The weight path(s) to parse - can be a single path, tuple, or list
+        For example:
 
-        Examples:
+        .. code-block:: pycon
+
             >>> WeightPathParser.parse("org/model", "path/to/weights.safetensors")
             (["path/to/weights.safetensors"], None)
 
@@ -57,24 +56,28 @@ class WeightPathParser:
             >>> WeightPathParser.parse("org/model", ["local_weights.safetensors", "other_org/other_model/remote_weights.safetensors"])
             ([Path("local_weights.safetensors"), Path("remote_weights.safetensors")], "other_org/other_model")
 
-            # This is a special case where the weight path doesn't have a HF prefix,
-            # which means file_exists will return False so treat the whole path
-            # (without trimming a potential repo id prefix) as a local path.
+        When the weight path does not have a Hugging Face prefix,
+        ``file_exists`` returns ``False`` and the whole path is treated as a
+        local path:
+
+        .. code-block:: pycon
+
             >>> WeightPathParser.parse("org/model", "very/nested/subfolder/another_nested/weights.safetensors")
             ([Path("very/nested/subfolder/another_nested/weights.safetensors")], None)
 
-            # This on the other hand should fail, since model_path is empty
-            # and we can't derive the repo id from the weight path.
-            >>> WeightPathParser.parse("", "very/nested/subfolder/another_nested/weights.safetensors")
-            Traceback (most recent call last):
-            ...
-            ValueError: Unable to derive model_path from weight_path, please provide a valid Hugging Face repository id.
+        If ``model_path`` is empty and the repo ID cannot be derived, a
+        ``ValueError`` is raised.
+
+        Args:
+            model_path: The model path to use for parsing the weight path(s).
+            weight_path: The weight path(s) to parse. Can be a single path,
+                tuple, or list.
 
         Returns:
-            A tuple of (processed_weight_paths, weights_repo_id)
+            A tuple of ``(processed_weight_paths, weights_repo_id)``.
 
         Raises:
-            ValueError: If weight paths are invalid or cannot be processed
+            ValueError: If weight paths are invalid or cannot be processed.
         """
         # Normalize to list
         if isinstance(weight_path, tuple):

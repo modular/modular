@@ -831,7 +831,7 @@ class PixelGenerationTokenizer(
         self,
         output: Any,
     ) -> Any:
-        """Post-process pipeline output.
+        """Post-processes pipeline output.
 
         Accepts either a raw numpy array or a GenerationOutput.
         For raw numpy arrays, denormalizes from [-1, 1] to [0, 1].
@@ -948,7 +948,7 @@ class PixelGenerationTokenizer(
         request: OpenResponsesRequest,
         input_image: PIL.Image.Image | None = None,
     ) -> PixelContext:
-        """Create a new PixelContext object, leveraging necessary information from OpenResponsesRequest."""
+        """Creates a new :class:`PixelContext` object, leveraging necessary information from :class:`OpenResponsesRequest`."""
         # Extract prompt from request using the helper method
         prompt = self._retrieve_prompt(request)
         if not prompt:

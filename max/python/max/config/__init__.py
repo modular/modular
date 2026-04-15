@@ -190,7 +190,7 @@ def _get_argparse_type_and_action(
 def convert_max_config_value(
     config_class: type[MAXConfig], value: Any, field_type: Any, field_name: str
 ) -> Any:
-    """Convert a config value to the appropriate type.
+    """Converts a config value to the appropriate type.
 
     Handles enums, Optional types, Union types, lists, and basic types.
 
@@ -400,7 +400,7 @@ def _convert_enum_value(
 def get_default_max_config_file_section_name(
     config_class: type[MAXConfig],
 ) -> str:
-    """Get the default section name for a MAXConfig class.
+    """Gets the default section name for a MAXConfig class.
 
     Args:
         config_class: The config class.
@@ -454,7 +454,7 @@ def resolve_max_config_inheritance(
     config_class: type[MAXConfig],
     config_file_path: Path | None = None,
 ) -> dict[str, Any]:
-    """Resolve configuration inheritance by loading base config and merging.
+    """Resolves configuration inheritance by loading base config and merging.
 
     Args:
         config_dict: The current configuration dictionary.
@@ -608,8 +608,7 @@ class MAXConfig:
     @staticmethod
     @abstractmethod
     def help() -> dict[str, str]:
-        """Documentation for this config class. Return a dictionary of config
-        options and their descriptions."""
+        """Returns a dictionary of config options and their descriptions."""
         ...
 
     @staticmethod

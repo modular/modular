@@ -65,7 +65,7 @@ class LoRARequestProcessor:
         )
 
     def process_lora_requests(self) -> None:
-        """Check for new LoRA requests and processes them."""
+        """Checks for new LoRA requests and processes them."""
         while True:
             try:
                 req_id, request = self._request_socket.get_nowait()
