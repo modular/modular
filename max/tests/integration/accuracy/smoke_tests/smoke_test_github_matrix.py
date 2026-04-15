@@ -117,6 +117,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "meta-llama/llama-3.1-8b-instruct__eagle": MULTI | {"vllm", "sglang"},
     "meta-llama/llama-3.1-8b-instruct__eagle_1_draft_token": MULTI | {"vllm", "sglang"},
     "nvidia/deepseek-v3.1-nvfp4__mtp": NON_XL | {"8xMI355"},
+    "nvidia/deepseek-v3.1-nvfp4__mtp_1_draft_token": NON_XL | {"8xMI355"},
     "nvidia/kimi-k2.5-nvfp4__eagle": NON_XL | {"8xMI355"},
     "google/gemma-4-26b-a4b-it__no_dgc": DISABLE,  # TODO(MODELS-1340)
 }
