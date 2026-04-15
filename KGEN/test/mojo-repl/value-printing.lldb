@@ -13,50 +13,32 @@ var x = 12
 # CHECK: (Float64) x = 4.2{{.*}}
 var x = 4.2
 
-# CHECK:  (SIMD[DType.int32, 8]) x = {
-# CHECK:    (__mlir_type.si32) [0] = 5
-# CHECK:    (__mlir_type.si32) [1] = 6
-# CHECK:    (__mlir_type.si32) [2] = 7
-# CHECK:    (__mlir_type.si32) [3] = 8
-# CHECK:    (__mlir_type.si32) [4] = 9
-# CHECK:    (__mlir_type.si32) [5] = 10
-# CHECK:    (__mlir_type.si32) [6] = 11
-# CHECK:    (__mlir_type.si32) [7] = 12
-# CHECK:  }
+# CHECK:  (SIMD[DType.int32, 8]) x = [5, 6, 7, 8, 9, 10, 11, 12]
 var x = SIMD[DType.int32, 8](5, 6, 7, 8, 9, 10, 11, 12)
 
-# CHECK:  (SIMD[DType.int64, 4]) x = {
-# CHECK:    (__mlir_type.si64) [0] = 1
-# CHECK:    (__mlir_type.si64) [1] = 2
-# CHECK:    (__mlir_type.si64) [2] = 3
-# CHECK:    (__mlir_type.si64) [3] = 4
-# CHECK:  }
+# CHECK:  (SIMD[DType.int64, 4]) x = [1, 2, 3, 4]
 var x = SIMD[DType.int64, 4](1, 2, 3, 4)
 
 # CHECK: (Int) v = -101
 var v = -101
 
-# CHECK: (SIMD[DType.int8, 2]) w = {
-# CHECK:   (__mlir_type.si8) [0] = -50
-# CHECK:   (__mlir_type.si8) [1] = 31
-# CHECK: }
+# CHECK: (SIMD[DType.int8, 2]) w = [-50, 31]
 var w = SIMD[DType.int8, 2](-50, 31)
+
+# CHECK: (SIMD[DType.uint8, 4]) u = [1, 2, 3, 255]
+var u = SIMD[DType.uint8, 4](1, 2, 3, 255)
+
+# Scalar[T] (i.e. SIMD[T, 1]) must still display as a plain value, not [42].
+# CHECK: (Int32) s = 42
+var s: Scalar[DType.int32] = 42
 
 
 # CHECK-LABEL: (Foo) f = {
 # CHECK:   (Int) v = -101
-# CHECK:   (SIMD[DType.int8, 2]) w = {
-# CHECK:     (__mlir_type.si8) [0] = -50
-# CHECK:     (__mlir_type.si8) [1] = 31
-# CHECK:   }
+# CHECK:   (SIMD[DType.int8, 2]) w = [-50, 31]
 # CHECK:   (Bool) x = True
 # CHECK:   (StaticString) y =
-# CHECK:   (SIMD[DType.float32, 4]) z = {
-# CHECK:     (__mlir_type.f32) [0] = 1
-# CHECK:     (__mlir_type.f32) [1] = 2
-# CHECK:     (__mlir_type.f32) [2] = 3
-# CHECK:     (__mlir_type.f32) [3] = 4
-# CHECK:   }
+# CHECK:   (SIMD[DType.float32, 4]) z = [1, 2, 3, 4]
 # CHECK: }
 @fieldwise_init
 struct Foo(TrivialRegisterPassable, Copyable):
@@ -100,14 +82,9 @@ z.append(2)
 z.append(3)
 
 
-# CHECK: (Tuple[Int, SIMD[DType.int8, 4]]) a = ([0] = 1, ...) {
+# CHECK: (Tuple[Int, SIMD[DType.int8, 4]]) a = ([0] = 1, [1] = [1, 2, 3, 0]) {
 # CHECK:   (Int) [0] = 1
-# CHECK:   (SIMD[DType.int8, 4]) [1] = {
-# CHECK:     (__mlir_type.si8) [0] = 1
-# CHECK:     (__mlir_type.si8) [1] = 2
-# CHECK:     (__mlir_type.si8) [2] = 3
-# CHECK:     (__mlir_type.si8) [3] = 0
-# CHECK:   }
+# CHECK:   (SIMD[DType.int8, 4]) [1] = [1, 2, 3, 0]
 # CHECK: }
 a = (1, SIMD[DType.int8, 4](1, 2, 3, 0))
 
