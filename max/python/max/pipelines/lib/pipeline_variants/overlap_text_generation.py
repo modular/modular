@@ -964,11 +964,19 @@ class RealizeFutureTokenProcessor:
 
         prev_to_curr_map, curr_to_prev_map = mappings
         device = prev_to_curr_map.device
+
+        # TODO: This is a hotfix for MODELS-1350. Do the cleaner thing in followup.
+        input_row_offsets: list[Buffer] | Buffer = (
+            model_inputs.input_row_offsets
+        )
+        if isinstance(input_row_offsets, list):
+            input_row_offsets = input_row_offsets[0]
+
         my_inputs = _RealizeFutureTokenInputs[Buffer, Buffer](
             prev_to_curr_map=prev_to_curr_map.to(device),
             curr_to_prev_map=curr_to_prev_map.to(device),
             curr_tokens=model_inputs.tokens,
-            curr_input_row_offsets=model_inputs.input_row_offsets,
+            curr_input_row_offsets=input_row_offsets,
             prev_generated_tokens=prev_batch.generated_tokens_device,
             spec_decode=spec_decode,
         )
