@@ -179,6 +179,13 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             draft_config = Llama3Config.initialize_from_config(
                 self.pipeline_config, draft_hf_config, draft_model_config
             )
+            # The draft model config may default to gpu:0. Override its
+            # devices to match the target so weights land on the correct GPU
+            # (e.g. when pipeline_role=prefill_only assigns a non-zero GPU).
+            draft_config.devices = target_config.devices
+            draft_config.kv_params = replace(
+                draft_config.kv_params, devices=target_config.devices
+            )
             draft_config.finalize(
                 huggingface_config=draft_hf_config,
                 state_dict=draft_state_dict,
