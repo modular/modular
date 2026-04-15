@@ -990,21 +990,25 @@ struct ContinuousBatchingKVCache[
         """Returns a pointer to the scales block at the requested indices.
 
         Note: ContinuousBatchingKVCache does not support KVCache quantization.
-        This function returns a NULL pointer.
+        This function returns a dangling pointer.
         """
-        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin](
-            _unsafe_null=()
-        )
+        # SAFETY: Callers only dereference scales pointers behind comptime
+        # `quantization_enabled` guards, which are False for this cache type.
+        return UnsafePointer[
+            Scalar[Self.scale_dtype], MutAnyOrigin
+        ].unsafe_dangling()
 
     @always_inline
     def scales_raw_ptr(
         self,
     ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
-        """Returns a null pointer. ContinuousBatchingKVCache does not support
+        """Returns a dangling pointer. ContinuousBatchingKVCache does not support
         quantization."""
-        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin](
-            _unsafe_null=()
-        )
+        # SAFETY: Callers only dereference scales pointers behind comptime
+        # `quantization_enabled` guards, which are False for this cache type.
+        return UnsafePointer[
+            Scalar[Self.scale_dtype], MutAnyOrigin
+        ].unsafe_dangling()
 
 
 struct PagedKVCache[
@@ -1699,14 +1703,16 @@ struct PagedKVCache[
     def scales_raw_ptr(
         self,
     ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
-        """Returns the base pointer to the scales tensor, or null if scales
-        are not set."""
+        """Returns the base pointer to the scales tensor, or a
+        dangling pointer if scales are not set."""
 
         comptime if Self.quantization_enabled:
             return self.scales.value().ptr
-        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin](
-            _unsafe_null=()
-        )
+        # SAFETY: Only reached when quantization is disabled; callers guard
+        # scales access behind comptime `quantization_enabled` checks.
+        return UnsafePointer[
+            Scalar[Self.scale_dtype], MutAnyOrigin
+        ].unsafe_dangling()
 
 
 trait KVCollectionT(ImplicitlyCopyable):

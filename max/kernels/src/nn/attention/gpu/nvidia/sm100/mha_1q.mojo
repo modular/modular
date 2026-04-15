@@ -2204,9 +2204,11 @@ def _mha_sm100[
     comptime ragged = not ValidLengthType.is_null
 
     # Handle sink_weights
-    var sink_weights_ptr = UnsafePointer[Scalar[kv_type], ImmutAnyOrigin](
-        _unsafe_null=()
-    )
+    # SAFETY: Only dereferenced when SinkType is non-null (comptime guard
+    # below), at which point it's overwritten with the real pointer.
+    var sink_weights_ptr = UnsafePointer[
+        Scalar[kv_type], ImmutAnyOrigin
+    ].unsafe_dangling()
 
     comptime if not SinkType.is_null:
         sink_weights_ptr = rebind[

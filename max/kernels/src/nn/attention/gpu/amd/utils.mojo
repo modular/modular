@@ -205,13 +205,13 @@ struct SharedMemoryManager[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]:
+        # SAFETY: Placeholder dangling pointer guarded by
+        # Self.token_gen.
         return self.k_smem.bitcast[
             Scalar[_dtype]
         ]() if Self.token_gen else UnsafePointer[
             Scalar[_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
-        ](
-            _unsafe_null=()
-        )
+        ].unsafe_dangling()
 
 
 struct GlobalMemoryManager[

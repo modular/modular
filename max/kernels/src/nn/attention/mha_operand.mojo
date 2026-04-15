@@ -604,9 +604,11 @@ struct KVCacheScalesMHAOperand[
         head_idx: Int,
         head_dim_idx: Int = 0,
     ) -> UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
-        return UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin](
-            _unsafe_null=()
-        )
+        # SAFETY: KVCacheScalesMHAOperand doesn't support block-paged scales;
+        # callers only dereference behind comptime quantization guards.
+        return UnsafePointer[
+            Scalar[Self.scale_dtype], ImmutAnyOrigin
+        ].unsafe_dangling()
 
     @always_inline
     def load_scale[
@@ -781,11 +783,13 @@ struct KVCacheScalesMHAOperand[
     def scales_raw_ptr(
         self,
     ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
-        """Returns a null pointer. KVCacheScalesMHAOperand already points to the
+        """Returns a dangling pointer. KVCacheScalesMHAOperand already points to the
         scales pointer."""
-        return UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
-            _unsafe_null=()
-        )
+        # SAFETY: Callers access scales through the operand's own pointer, not
+        # this raw_ptr; only used behind comptime quantization guards.
+        return UnsafePointer[
+            Scalar[DType.float32], MutAnyOrigin
+        ].unsafe_dangling()
 
 
 struct LayoutTensorMHAOperand[
@@ -1103,11 +1107,13 @@ struct LayoutTensorMHAOperand[
     def scales_raw_ptr(
         self,
     ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
-        """Returns a null pointer. LayoutTensor operands do not support
+        """Returns a dangling pointer. LayoutTensor operands do not support
         quantization."""
-        return UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
-            _unsafe_null=()
-        )
+        # SAFETY: LayoutTensor operands are never quantized; callers only
+        # dereference behind comptime quantization guards.
+        return UnsafePointer[
+            Scalar[DType.float32], MutAnyOrigin
+        ].unsafe_dangling()
 
 
 struct RaggedMHAOperand[
@@ -1214,9 +1220,11 @@ struct RaggedMHAOperand[
         head_idx: Int,
         head_dim_idx: Int = 0,
     ) -> UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin]:
-        return UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin](
-            _unsafe_null=()
-        )
+        # SAFETY: Ragged operands don't support quantization; callers only
+        # dereference behind comptime quantization guards.
+        return UnsafePointer[
+            Scalar[Self.scale_dtype], ImmutAnyOrigin
+        ].unsafe_dangling()
 
     @always_inline
     def load_scale[
@@ -1462,8 +1470,10 @@ struct RaggedMHAOperand[
     def scales_raw_ptr(
         self,
     ) -> UnsafePointer[Scalar[DType.float32], MutAnyOrigin]:
-        """Returns a null pointer. Ragged operands do not support
+        """Returns a dangling pointer. Ragged operands do not support
         quantization."""
-        return UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
-            _unsafe_null=()
-        )
+        # SAFETY: Ragged operands don't support quantization; callers only
+        # dereference behind comptime quantization guards.
+        return UnsafePointer[
+            Scalar[DType.float32], MutAnyOrigin
+        ].unsafe_dangling()

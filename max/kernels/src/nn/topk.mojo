@@ -1426,9 +1426,10 @@ def _topk_stage2[
 
     var idxs_sram = (vals_sram + vals_smem_size).bitcast[Int]()
 
-    # These values are only read from in the sampling case.
-    var s_val2 = type_of(vals_sram)(_unsafe_null=())
-    var s_id = type_of(idxs_sram)(_unsafe_null=())
+    # SAFETY: Only dereferenced inside `comptime if sampling` blocks;
+    # overwritten with real pointers before use when sampling is enabled.
+    var s_val2 = type_of(vals_sram).unsafe_dangling()
+    var s_id = type_of(idxs_sram).unsafe_dangling()
 
     with PDL():
         # Handle the case where stage 1 is executed with a single block

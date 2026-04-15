@@ -674,10 +674,6 @@ def flare_mla_decoding_dispatch[
             decoding_warp_split_k=decoding_warp_split_k,
         ]
 
-        comptime nullptr = UnsafePointer[Scalar[accum_type], MutExternalOrigin](
-            _unsafe_null=()
-        )
-
         var num_partitions_value: Int = 1
         var q_device = DeviceBuffer[q.dtype](
             ctx, q.ptr, q.num_elements(), owning=False
@@ -685,9 +681,7 @@ def flare_mla_decoding_dispatch[
         var output_device = DeviceBuffer[output.dtype](
             ctx, output.ptr, output.num_elements(), owning=False
         )
-        var nullptr_device = DeviceBuffer[accum_type](
-            ctx, nullptr, 0, owning=False
-        )
+        var nullptr_device = DeviceBuffer[accum_type].empty(ctx)
 
         ctx.enqueue_function[kernel, kernel](
             q_device,
