@@ -4,8 +4,6 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "LICENSE",
-    "src/mblib2to3/Grammar.txt",
-    "src/mblib2to3/PatternGrammar.txt",
 ])
 
 modular_py_library(
@@ -50,7 +48,6 @@ modular_py_test(
         ],
     ),
     data = glob(["tests/data/**"]) + [
-        "pyproject.toml",
         "tests/empty.toml",
         "tests/test.toml",
     ],
