@@ -20,6 +20,15 @@ using namespace M::KGEN;
 using namespace M::KGEN::Mojo;
 
 namespace {
+/// Returns true for multi-element, non-bool SIMD vector types
+/// (e.g. `!pop.simd<4, si32>`), excluding scalars (`!pop.simd<1, …>`)
+/// and bool vectors (`!pop.simd<N, bool>`).
+static bool isMultiElementNonBoolSIMD(llvm::StringRef typeName) {
+  return typeName.starts_with("!pop.simd<") &&
+         !typeName.starts_with("!pop.simd<1,") &&
+         !typeName.ends_with(", bool>");
+}
+
 /// Synthetic type front end corresponding to the @lldb_formatter_wrapping_type
 /// decorator. It replaces a variable with its first child.
 class WrappingTypeSyntheticFrontEnd
@@ -60,6 +69,11 @@ public:
     lldb::ValueObjectSP sv = GetSyntheticValue();
     if (!sv)
       return false;
+    // SIMD vectors (multi-element, non-bool) display all values in their
+    // summary as [v0, v1, …]. Hide the raw __mlir_type.* children that would
+    // otherwise appear in the expanded view.
+    if (isMultiElementNonBoolSIMD(sv->GetTypeName().GetStringRef()))
+      return false;
     lldb::TypeSummaryImplSP typeSummary = sv->GetSummaryFormat();
     if (typeSummary && (typeSummary->GetOptions() & eTypeOptionHideChildren) &&
         getExpectedValueOr(sv->GetNumChildren(), 0u) <= 1)
@@ -87,6 +101,29 @@ bool M::KGEN::Mojo::MojoLLDBWrappingTypeSummaryProvider(
     stream << dest;
     return true;
   }
+
+  // If the inner value is a multi-element non-bool SIMD vector, format it as
+  // [v0, v1, ..., vN] rather than falling through to show nothing. This avoids
+  // the verbose "(__mlir_type.si32) [0] = 5" expanded-children display that
+  // would otherwise appear for Mojo SIMD[DType.T, N] wrapper types.
+  if (isMultiElementNonBoolSIMD(impl->GetTypeName().GetStringRef())) {
+    auto numChildren = getExpectedValueOr(impl->GetNumChildren(), 0u);
+    stream.PutCString("[");
+    for (size_t i = 0; i < numChildren; ++i) {
+      ValueObjectSP child = impl->GetChildAtIndex(i);
+      if (i > 0)
+        stream.PutCString(", ");
+      if (!child) {
+        stream.PutCString("<error>");
+        continue;
+      }
+      const char *value = child->GetValueAsCString();
+      stream.PutCString(value ? value : "<error>");
+    }
+    stream.PutCString("]");
+    return true;
+  }
+
   // Fall back to scalar value if available (e.g. index, si8, f32).
   if (const char *val = impl->GetValueAsCString()) {
     stream << val;
