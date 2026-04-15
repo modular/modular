@@ -42,6 +42,7 @@ from .types import (
     PixelGenerationImageOptions,
     PixelGenerationSampledRequest,
     SampledRequest,
+    SharedContext,
 )
 from .vision_arena import VisionArenaBenchmarkDataset
 
@@ -73,6 +74,7 @@ __all__ = [
     "RandomBenchmarkDataset",
     "SampledRequest",
     "ShareGPTBenchmarkDataset",
+    "SharedContext",
     "SonnetBenchmarkDataset",
     "SyntheticBenchmarkDataset",
     "SyntheticPixelBenchmarkDataset",

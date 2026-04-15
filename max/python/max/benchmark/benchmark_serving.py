@@ -2009,6 +2009,99 @@ def _add_steady_state_result(
         logger.warning(f"Steady-state detection: {steady.warning}")
 
 
+async def prime_shared_contexts(
+    model_id: str,
+    api_url: str,
+    samples: Samples,
+    request_driver: RequestDriver,
+    temperature: float | None,
+    top_p: float | None,
+    top_k: int | None,
+    run_prefix: str | None = None,
+    run_prefix_len: int = 0,
+) -> None:
+    """Warm up prefix caching by sending each shared context for prefilling."""
+    warmup_entries = samples.shared_contexts
+
+    if not warmup_entries:
+        logger.warning(
+            "shared_contexts is empty; the prefix cache could not be primed."
+            " Check that --random-sys-prompt-ratio > 0 and input lengths are"
+            " sufficient to produce a non-trivial shared context."
+        )
+        return
+
+    logger.info(
+        f"Warming prefix cache with {len(warmup_entries)}"
+        " unique shared context(s)..."
+    )
+
+    is_chat = isinstance(samples, ChatSamples)
+    warmup_inputs: list[RequestFuncInput] = []
+    for entry in warmup_entries:
+        warmup_prompt: str | list[dict[str, Any]]
+        if is_chat:
+            warmup_prompt = [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": entry.text}],
+                }
+            ]
+        else:
+            warmup_prompt = entry.text
+
+        if run_prefix:
+            warmup_prompt = _prepend_run_prefix_to_formatted_prompt(
+                warmup_prompt, run_prefix
+            )
+
+        warmup_inputs.append(
+            RequestFuncInput(
+                model=model_id,
+                session_id=None,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                prompt=warmup_prompt,
+                images=[],
+                api_url=api_url,
+                prompt_len=entry.num_tokens + run_prefix_len,
+                max_tokens=1,
+                ignore_eos=True,
+            )
+        )
+
+    warmup_results: list[BaseRequestFuncOutput | None] = [None] * len(
+        warmup_inputs
+    )
+
+    async def _run_warmup_index(idx: int, inp: RequestFuncInput) -> None:
+        warmup_results[idx] = await request_driver.request(inp)
+
+    warmup_start = time.perf_counter()
+    async with TaskGroup() as tg:
+        for idx, inp in enumerate(warmup_inputs):
+            tg.create_task(_run_warmup_index(idx, inp))
+    warmup_elapsed_s = time.perf_counter() - warmup_start
+    for sys_idx, inp in enumerate(warmup_inputs):
+        result = warmup_results[sys_idx]
+        if result is None:
+            raise RuntimeError(
+                f"Warmup task {sys_idx} did not produce a result (this is a bug)"
+            )
+        if not result.success:
+            raise ValueError(
+                f"Shared context warmup request failed at index {sys_idx}:"
+                f" (prompt: (SKIPPED), prompt_len: {inp.prompt_len}),"
+                f" error: {result.error}"
+            )
+
+    logger.info(
+        "Prefix cache warmup completed and took %.2f seconds.",
+        warmup_elapsed_s,
+    )
+
+
 async def benchmark(
     backend: Backend,
     benchmark_task: BenchmarkTask,
@@ -2023,6 +2116,7 @@ async def benchmark(
     max_concurrent_conversations: int | None,
     disable_tqdm: bool,
     do_test_prompt: bool,
+    warm_shared_prefix: bool,
     collect_gpu_stats: bool,
     collect_cpu_stats: bool,
     collect_server_stats: bool,
@@ -2092,6 +2186,19 @@ async def benchmark(
     test_request_driver: RequestDriver = request_driver_class(
         tokenizer=tokenizer
     )
+
+    if warm_shared_prefix:
+        await prime_shared_contexts(
+            model_id=model_id,
+            api_url=api_url,
+            samples=samples,
+            request_driver=test_request_driver,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            run_prefix=run_prefix,
+            run_prefix_len=run_prefix_len,
+        )
 
     if do_test_prompt:
         await run_single_test_prompt(
@@ -2926,6 +3033,18 @@ def main_with_parsed_args(
     if skip_last_n_requests is None:
         skip_last_n_requests = 0
 
+    if args.warm_shared_prefix:
+        if args.dataset_name not in ("random", "synthetic"):
+            raise ValueError(
+                f"--warm-shared-prefix is not supported for dataset"
+                f" '{args.dataset_name}'. Only random/synthetic datasets have a"
+                " defined shared prefix to cache."
+            )
+        if args.random_sys_prompt_ratio <= 0:
+            raise ValueError(
+                "--warm-shared-prefix requires --random-sys-prompt-ratio > 0."
+            )
+
     logger.info("Starting benchmark run")
     assert args.num_prompts is not None
     benchmark_result, benchmark_metrics = asyncio.run(
@@ -2943,6 +3062,7 @@ def main_with_parsed_args(
             max_concurrent_conversations=args.max_concurrent_conversations,
             disable_tqdm=args.disable_tqdm,
             do_test_prompt=not args.skip_test_prompt,
+            warm_shared_prefix=args.warm_shared_prefix,
             collect_gpu_stats=args.collect_gpu_stats,
             collect_cpu_stats=args.collect_cpu_stats,
             collect_server_stats=args.collect_server_stats,

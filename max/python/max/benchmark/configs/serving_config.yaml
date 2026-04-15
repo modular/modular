@@ -88,6 +88,7 @@ benchmark_config:
   sonnet_prefix_len: 200
 
   # Control flags (serving-specific)
+  warm_shared_prefix: false  # Prime prefix-cache KV for each unique shared context before the benchmark
   force_unique_runs: false  # Prepend a per-run UUID prefix to prevent cross-run KV-cache reuse
   skip_test_prompt: false
   collect_gpu_stats: false  # Enable GPU stats collection for serving benchmarks

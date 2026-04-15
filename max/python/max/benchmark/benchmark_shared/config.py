@@ -846,6 +846,18 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
 
     # Control flags (serving-specific)
+    warm_shared_prefix: bool = Field(
+        default=False,
+        description=(
+            "Send each unique shared prefix once (max_tokens=1) before the"
+            " benchmark run to prime prefix-cache KV entries. Only supported for"
+            " random/synthetic datasets with --random-sys-prompt-ratio > 0."
+        ),
+        json_schema_extra={
+            "group": "Control Flags",
+            "group_description": "Boolean flags controlling benchmark behavior",
+        },
+    )
     skip_test_prompt: bool = Field(
         default=False,
         description="Skip the test prompt. Useful when doing external profiling.",

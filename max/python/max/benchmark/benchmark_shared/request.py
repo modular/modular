@@ -1101,13 +1101,14 @@ class RequestCounter:
         """
         with self.req_counter_lock:
             if self.total_sent_requests >= self.max_requests:
-                logger.warning(
-                    f"Ending run: max requests {self.max_requests} have been"
-                    " sent"
-                )
                 return False
 
             self.total_sent_requests += 1
+            if self.total_sent_requests == self.max_requests:
+                logger.info(
+                    f"Ending run: max requests {self.max_requests} have been"
+                    " sent"
+                )
             return True
 
 

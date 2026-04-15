@@ -32,6 +32,7 @@ from .types import (
     ChatSession,
     RequestSamples,
     SampledRequest,
+    SharedContext,
     build_chat_message,
     encode_image,
 )
@@ -199,7 +200,6 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                     else None,
                 ),
             ]
-
             current_context_length = sum(msg.num_tokens for msg in messages)
             for i in range(num_turns_per_session[session_id] - 1):
                 follow_up_turn = follow_up_turns[follow_up_turn_idx_offset + i]
@@ -246,7 +246,10 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                 ChatSession(session_id, messages, prefix_turns=prefix_turns)
             )
 
-        return ChatSamples(chat_sessions=sessions)
+        return ChatSamples(
+            chat_sessions=sessions,
+            shared_contexts=first_turn_samples.shared_contexts,
+        )
 
     def _load_sharegpt_prompts_limited(
         self,
@@ -467,6 +470,15 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
         max_context_length = int(model_max_length * MAX_CONTEXT_USAGE_RATIO)
 
+        # Track longest system prompt per unique idx for prefix-cache warmup.
+        # Prompts with the same idx are repetitions of the same base token
+        # sequence, so at the token-ID level the shortest is always a prefix of
+        # the longest. Warming up with only the longest is therefore sufficient
+        # to prime the cache for all shorter variants.
+        # Note: this is best-effort — decode/re-tokenize round-trips can cause
+        # minor token-boundary mismatches (~90-96% cache hit rate in practice).
+        warmup_dict: dict[int, SharedContext] = {}
+
         input_requests = []
         for i in range(num_requests):
             input_len_cur = input_lens[i]
@@ -526,10 +538,26 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                 not in (None, tokenizer.unk_token_id)
             )
             prompt_ids = [
-                (replacement if (id in special_ids) else id)
-                for id in prompt_ids
+                replacement if id in special_ids else id for id in prompt_ids
             ]
             prompt = tokenizer.decode(prompt_ids)
+
+            if sys_prompt_ratio > 0:
+                sys_prompt_ids = [
+                    replacement if id in special_ids else id
+                    for id in sys_prompt_ids
+                ]
+                sys_prompt = tokenizer.decode(sys_prompt_ids)
+                sys_prompt_len = len(
+                    tokenizer(sys_prompt, add_special_tokens=False).input_ids
+                )
+                prev = warmup_dict.get(sys_prompt_idx)
+                if sys_prompt_len > 0 and (
+                    prev is None or sys_prompt_len > prev.num_tokens
+                ):
+                    warmup_dict[sys_prompt_idx] = SharedContext(
+                        text=sys_prompt, num_tokens=sys_prompt_len
+                    )
 
             images = []
             image_token_len = 0
@@ -564,7 +592,10 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
         log_request_actual_length_percentiles(input_requests)
 
-        return RequestSamples(requests=input_requests)
+        return RequestSamples(
+            requests=input_requests,
+            shared_contexts=list(warmup_dict.values()),
+        )
 
     def _generate_random_image(self, height: int, width: int) -> Image.Image:
         # Truly random images end up being too large and incompressible.
