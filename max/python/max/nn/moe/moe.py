@@ -457,23 +457,29 @@ class MoE(Module, Shardable):
 
         return shard
 
-    def _ep_call(
-        self,
-        x: TensorValue,
-        router_idx: TensorValue,
-        router_weight: TensorValue,
-    ) -> TensorValue:
-        device_id = self.devices[0].id
-        expert_inputs = self.ep_batch_manager.ep_dispatch(
-            x, router_idx, device_id
-        )
+    def _ep_dispatch_input_scales(self) -> TensorValue | None:
+        """Returns quantized input scales for EP dispatch, or ``None``.
 
+        Overridden in :class:`MoEQuantized` for NVFP4 support.
+        """
+        return None
+
+    def _local_ep_compute(
+        self,
+        expert_inputs: tuple[TensorValue, ...],
+        x: TensorValue,
+    ) -> TensorValue:
+        """Runs local expert matmuls on dispatched tokens.
+
+        This is the computation between ``ep_dispatch`` and
+        ``ep_combine``.  ``x`` is unused by :class:`MoE` but accepted
+        for interface consistency with :class:`MoEQuantized`.
+        """
         gate_up_projs = grouped_matmul_ragged(
             expert_inputs[0],
             self.gate_up_proj,
             *expert_inputs[1:],
         )
-
         if self.swiglu_limit > 0:
             gate = ops.silu(gate_up_projs[:, : self.moe_dim])
             up = gate_up_projs[:, self.moe_dim :]
@@ -488,24 +494,11 @@ class MoE(Module, Shardable):
             silu_out = gate * up
         else:
             silu_out = fused_silu(gate_up_projs, expert_inputs[1])
-
-        down_projs = grouped_matmul_ragged(
+        return grouped_matmul_ragged(
             silu_out,
             self.down_proj,
             *expert_inputs[1:],
         )
-
-        routed_expert_out = self.ep_batch_manager.ep_combine(
-            down_projs, router_weight, device_id
-        )
-
-        if (
-            self.has_shared_experts
-            and not self.ep_batch_manager.config.fused_shared_expert
-        ):
-            routed_expert_out += self.shared_experts(x)
-
-        return routed_expert_out.cast(x.dtype)
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Args:
@@ -514,14 +507,16 @@ class MoE(Module, Shardable):
         Returns:
             (seq_len, hidden_dim)
         """
+        if self._ep_batch_manager:
+            raise ValueError(
+                "Use forward_moe_sharded_layers for expert-parallel inference "
+                "instead of calling MoE directly."
+            )
+
         seq_len = x.shape[0]
 
         # Get the topk experts per token and their weights
         router_idx, router_weight = self.gate(x)
-        if self._ep_batch_manager:
-            return self._ep_call(
-                x, ops.cast(router_idx, DType.int32), router_weight
-            )
 
         router_idx = ops.reshape(
             router_idx, [-1]

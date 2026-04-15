@@ -39,6 +39,7 @@ from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -363,7 +364,7 @@ class Eagle3KimiK25(Module):
         norm_outs = forward_sharded_layers(
             self.decoder_layer.post_attention_layernorm_shards, hs
         )
-        mlp_outs = forward_sharded_layers(
+        mlp_outs = forward_moe_sharded_layers(
             self.decoder_layer.mlp_shards, norm_outs
         )
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]

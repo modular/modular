@@ -30,9 +30,7 @@ from max.graph import (
 )
 from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
 from max.nn.moe import MoE, MoEGate
-from max.nn.transformer.distributed_transformer import (
-    forward_sharded_layers,
-)
+from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 
 """
 Fixtures for EP tests, including dummy weights.
@@ -434,7 +432,7 @@ def _build_compiled_ep_models(
     ) as graph:
         inputs_tensors = [x.tensor for x in graph.inputs[:n_devices]]
         ep_batch_manager.fetch_buffers(graph.inputs[n_devices:])
-        outputs = forward_sharded_layers(moe_shards, inputs_tensors)
+        outputs = forward_moe_sharded_layers(moe_shards, inputs_tensors)
         graph.output(*outputs)
 
     moe_model = session.load(graph, weights_registry=moe.state_dict())
