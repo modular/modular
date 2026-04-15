@@ -95,7 +95,7 @@ def test_list_literal() raises:
     assert_equal(2, list[1])
     assert_equal(3, list[2])
 
-    var list2 = [1, 2.5]
+    var list2 = [1.0, 2.5]
     assert_equal(2, len(list2))
     assert_equal(1.0, list2[0])
     assert_equal(2.5, list2[1])

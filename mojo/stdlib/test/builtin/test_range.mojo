@@ -223,7 +223,7 @@ def test_range_getitem_uint() raises:
     # start > end
     var bad_strided_uint_range = range(UInt(10), UInt(5), UInt(1))
     var bad_strided_uint_range_iter = bad_strided_uint_range.__iter__()
-    assert_equal(UInt(0), bad_strided_uint_range_iter.__len__())
+    assert_equal(UInt(0), UInt(bad_strided_uint_range_iter.__len__()))
 
 
 def test_range_reversed() raises:

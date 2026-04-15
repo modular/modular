@@ -260,7 +260,7 @@ def test_is_power_of_two() raises:
     assert_equal(Int(3).is_power_of_two(), False)
     assert_equal(Int(4).is_power_of_two(), True)
     assert_equal(Int(5).is_power_of_two(), False)
-    assert_equal(Int.MAX.is_power_of_two(), False)
+    assert_equal(UInt64(Int.MAX).is_power_of_two(), False)
 
 
 def main() raises:

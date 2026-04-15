@@ -666,7 +666,7 @@ def test_dtypepointer_gather() raises:
 
     @parameter
     def _test_gather[
-        width: Int
+        width: SIMDSize
     ](offset: SIMD[_, width], desired: SIMD[ptr.type.dtype, width]) raises:
         var actual = ptr.gather(offset)
         assert_almost_equal(
@@ -675,7 +675,7 @@ def test_dtypepointer_gather() raises:
 
     @parameter
     def _test_masked_gather[
-        width: Int
+        width: SIMDSize
     ](
         offset: SIMD[_, width],
         mask: SIMD[DType.bool, width],
@@ -713,7 +713,7 @@ def test_dtypepointer_scatter() raises:
 
     @parameter
     def _test_scatter[
-        width: Int
+        width: SIMDSize
     ](
         offset: SIMD[_, width],
         val: SIMD[ptr.type.dtype, width],
@@ -727,7 +727,7 @@ def test_dtypepointer_scatter() raises:
 
     @parameter
     def _test_masked_scatter[
-        width: Int
+        width: SIMDSize
     ](
         offset: SIMD[_, width],
         val: SIMD[ptr.type.dtype, width],

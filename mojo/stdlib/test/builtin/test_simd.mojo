@@ -1119,17 +1119,17 @@ def test_shuffle() raises:
     )
 
     assert_equal(
-        vec._shuffle_list[width, StaticTuple[Int, width](3, 2, 1, 0)](vec),
+        vec._shuffle_list[width, StaticTuple[SIMDSize, width](3, 2, 1, 0)](vec),
         SIMD[dtype, width](103, 102, 101, 100),
     )
     assert_equal(
-        vec._shuffle_list[width, StaticTuple[Int, width](0, 2, 4, 6)](vec),
+        vec._shuffle_list[width, StaticTuple[SIMDSize, width](0, 2, 4, 6)](vec),
         SIMD[dtype, width](100, 102, 100, 102),
     )
 
     assert_equal(
         vec._shuffle_list[
-            2 * width, StaticTuple[Int, 2 * width](7, 6, 5, 4, 3, 2, 1, 0)
+            2 * width, StaticTuple[SIMDSize, 2 * width](7, 6, 5, 4, 3, 2, 1, 0)
         ](vec),
         SIMD[dtype, 2 * width](103, 102, 101, 100, 103, 102, 101, 100),
     )
@@ -1715,9 +1715,11 @@ def test_pow() raises:
 
     var f32x4_val = F32x4(0, 1, 2, 3)
     var f32x8_val = F32x8(0, 1, 2, 3, 4, 5, 6, 7)
-    assert_equal(f32x4_val.__pow__(10.0), F32x4(0.0, 1.0, 1024.0, 59049.0))
+    assert_equal(
+        f32x4_val.__pow__(Float32(10.0)), F32x4(0.0, 1.0, 1024.0, 59049.0)
+    )
     assert_almost_equal(
-        f32x8_val.__pow__(15.0),
+        f32x8_val.__pow__(Float32(15.0)),
         F32x8(
             0.0,
             1.0,
@@ -1730,15 +1732,19 @@ def test_pow() raises:
         ),
     )
     assert_almost_equal(
-        f32x4_val.__pow__(-1.0), F32x4(inf, 1.0, 0.5, 0.333333333)
+        f32x4_val.__pow__(Float32(-1.0)), F32x4(inf, 1.0, 0.5, 0.333333333)
     )
-    assert_equal(f32x4_val.__pow__(0.0), F32x4(1.0, 1.0, 1.0, 1.0))
-    assert_equal(F32x4(1, 1, 1, 1).__pow__(100.0), F32x4(1.0, 1.0, 1.0, 1.0))
+    assert_equal(f32x4_val.__pow__(Float32(0.0)), F32x4(1.0, 1.0, 1.0, 1.0))
     assert_equal(
-        String(F32x4(inf, -inf, nan, 1).__pow__(3.0)), "[inf, -inf, nan, 1.0]"
+        F32x4(1, 1, 1, 1).__pow__(Float32(100.0)), F32x4(1.0, 1.0, 1.0, 1.0)
+    )
+    assert_equal(
+        String(F32x4(inf, -inf, nan, 1).__pow__(Float32(3.0))),
+        "[inf, -inf, nan, 1.0]",
     )
     assert_almost_equal(
-        f32x4_val.__pow__(0.5), F32x4(0.0, 1.0, 1.414213562, 1.732050808)
+        f32x4_val.__pow__(Float32(0.5)),
+        F32x4(0.0, 1.0, 1.414213562, 1.732050808),
     )
 
     assert_almost_equal(
@@ -1751,7 +1757,7 @@ def test_pow() raises:
         F32x4(0.0, 0.0, 0.0, 0.0),
     )
     assert_equal(
-        f32x4_neg_zero.__pow__(3.0),
+        f32x4_neg_zero.__pow__(Float32(3.0)),
         F32x4(neg_zero, neg_zero, neg_zero, neg_zero),
     )
 
@@ -1761,7 +1767,8 @@ def test_pow() raises:
     )
 
     assert_equal(
-        F32x4(2.0, 3.0, 4.0, 5.0).__pow__(neg_zero), F32x4(1.0, 1.0, 1.0, 1.0)
+        F32x4(2.0, 3.0, 4.0, 5.0).__pow__(Float32(neg_zero)),
+        F32x4(1.0, 1.0, 1.0, 1.0),
     )
 
     assert_equal(
@@ -1782,7 +1789,7 @@ def test_pow() raises:
     comptime F64x4 = SIMD[DType.float64, 4]
 
     assert_equal(
-        F64x4(0, 1, 2, 3).__pow__(20.0),
+        F64x4(0, 1, 2, 3).__pow__(20),
         F64x4(0.0, 1.0, 1048576.0, 3486784401.0),
     )
 
@@ -1894,17 +1901,17 @@ def test_rpow() raises:
     var f32x4_val = F32x4(0, 1, 2, 3)
     var i32x4_val = I32x4(0, 1, 2, 3)
 
-    assert_equal(0**i32x4_val, I32x4(1, 0, 0, 0))
-    assert_equal(2**i32x4_val, I32x4(1, 2, 4, 8))
-    assert_equal((-1) ** i32x4_val, I32x4(1, -1, 1, -1))
+    assert_equal(I32x4(0) ** i32x4_val, I32x4(1, 0, 0, 0))
+    assert_equal(I32x4(2) ** i32x4_val, I32x4(1, 2, 4, 8))
+    assert_equal(I32x4(-1) ** i32x4_val, I32x4(1, -1, 1, -1))
 
-    assert_equal(Int32(Int(0)) ** i32x4_val, I32x4(1, 0, 0, 0))
-    assert_equal(Int32(Int(2)) ** i32x4_val, I32x4(1, 2, 4, 8))
-    assert_equal(Int32(Int(-1)) ** i32x4_val, I32x4(1, -1, 1, -1))
+    assert_equal(I32x4(0) ** i32x4_val, I32x4(1, 0, 0, 0))
+    assert_equal(I32x4(2) ** i32x4_val, I32x4(1, 2, 4, 8))
+    assert_equal(I32x4(-1) ** i32x4_val, I32x4(1, -1, 1, -1))
 
-    assert_almost_equal(1.0**f32x4_val, F32x4(1.0, 1.0, 1.0, 1.0))
-    assert_almost_equal(2.5**f32x4_val, F32x4(1.0, 2.5, 6.25, 15.625))
-    assert_almost_equal(3.0**f32x4_val, F32x4(1.0, 3.0, 9.0, 27.0))
+    assert_almost_equal(F32x4(1.0) ** f32x4_val, F32x4(1.0, 1.0, 1.0, 1.0))
+    assert_almost_equal(F32x4(2.5) ** f32x4_val, F32x4(1.0, 2.5, 6.25, 15.625))
+    assert_almost_equal(F32x4(3.0) ** f32x4_val, F32x4(1.0, 3.0, 9.0, 27.0))
 
 
 def test_modf() raises:

@@ -117,7 +117,7 @@ def test_round() raises:
 def test_pow() raises:
     comptime F = SIMD[DType.float32, 4]
     var base = F(0.0, 1.0, 2.0, 3.0)
-    assert_equal(pow(base, 2.0), F(0.0, 1.0, 4.0, 9.0))
+    assert_equal(pow(base, Float32(2.0)), F(0.0, 1.0, 4.0, 9.0))
     assert_equal(pow(base, Int(2)), F(0.0, 1.0, 4.0, 9.0))
     comptime I = SIMD[DType.int32, 4]
     assert_equal(pow(I(0, 1, 2, 3), Int(2)), I(0, 1, 4, 9))

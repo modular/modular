@@ -119,7 +119,7 @@ def test_stencil_avg_pool() raises:
 
     @always_inline
     def avg_pool_compute[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -132,7 +132,7 @@ def test_stencil_avg_pool() raises:
 
     @always_inline
     def avg_pool_compute_finalize[
-        simd_width: Int
+        simd_width: SIMDSize
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
         var output,
         var output_shape,
@@ -241,7 +241,7 @@ def test_stencil_avg_pool_padded() raises:
 
     @always_inline
     def avg_pool_compute[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -250,7 +250,7 @@ def test_stencil_avg_pool_padded() raises:
         return val + result
 
     def avg_pool_compute_finalize[
-        simd_width: Int
+        simd_width: SIMDSize
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
         var output,
         var output_shape,
@@ -363,7 +363,7 @@ def test_stencil_avg_pool_stride_2() raises:
 
     @always_inline
     def avg_pool_compute[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -372,7 +372,7 @@ def test_stencil_avg_pool_stride_2() raises:
         return val + result
 
     def avg_pool_compute_finalize[
-        simd_width: Int
+        simd_width: SIMDSize
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
         var output,
         var output_shape,
@@ -487,7 +487,7 @@ def test_stencil_max_pool_dilation_2() raises:
 
     @always_inline
     def max_pool_compute[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
@@ -496,7 +496,7 @@ def test_stencil_max_pool_dilation_2() raises:
         return max(val, result)
 
     def max_pool_compute_finalize[
-        simd_width: Int
+        simd_width: SIMDSize
     ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
         var output,
         var output_shape,
@@ -564,7 +564,7 @@ def test_stencil_size_0() raises:
         return 0
 
     def compute_fn[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         a: SIMD[DType.float32, simd_width],
@@ -573,7 +573,7 @@ def test_stencil_size_0() raises:
         return a + b
 
     def finalize_fn[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[DType.float32, simd_width],

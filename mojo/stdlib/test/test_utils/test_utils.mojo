@@ -64,7 +64,7 @@ def check_write_to(
 @always_inline
 def libm_call[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     fn_fp32: StaticString,
     fn_fp64: StaticString,
