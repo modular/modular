@@ -305,7 +305,7 @@ def struct_field_types[
             print_field_types[MyStruct]()  # Works with any struct!
         ```
     """
-    return __struct_field_types(T)
+    return __struct_field_types(T).values
 
 
 def _struct_field_names_raw[
@@ -316,7 +316,7 @@ def _struct_field_names_raw[
     This is an internal helper. Use `struct_field_names` for a more
     ergonomic API that returns `InlineArray[StaticString, N]`.
     """
-    return __struct_field_names(T)
+    return __struct_field_names(T).values
 
 
 def struct_field_names[
