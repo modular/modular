@@ -3119,6 +3119,101 @@ class DistributedEpDispatchFp8Op(max._core.Operation):
         self, arg: max._core.dialects.builtin.StringAttr, /
     ) -> None: ...
 
+class DistributedEpDispatchMxfp4Op(max._core.Operation):
+    """
+    Dispatches input tokens to expert devices across N GPUs using the Expert
+    Parallelism protocol with MXFP4 quantized output format. Each device
+    routes its tokens based on top-k expert IDs, quantizes them to MXFP4,
+    and sends them to the appropriate peer via shared-memory or ROCSHMEM
+    pointers.
+
+    All variadic operands and results have the same size (one per device).
+    The `sendPtrs`, `recvPtrs`, and `recvCountPtrs` are host-side pointer
+    tensors that are typically identical across devices (replicated N times
+    to satisfy the same-variadic-size constraint).
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        output_tokens: Sequence[max._core.Type],
+        output_scales: Sequence[max._core.Type],
+        row_offsets: Sequence[max._core.Type],
+        scales_offsets: Sequence[max._core.Type],
+        expert_ids: Sequence[max._core.Type],
+        src_info: Sequence[max._core.Type],
+        out_chain: ChainType,
+        input_tokens: Sequence[max._core.Value[max._core.Type]],
+        topk_ids: Sequence[max._core.Value[max._core.Type]],
+        send_ptrs: Sequence[max._core.Value[max._core.Type]],
+        recv_ptrs: Sequence[max._core.Value[max._core.Type]],
+        recv_count_ptrs: Sequence[max._core.Value[max._core.Type]],
+        atomic_counters: Sequence[max._core.Value[max._core.Type]],
+        in_chain: max._core.Value[ChainType],
+        hidden_size: max._core.dialects.builtin.IntegerAttr,
+        top_k: max._core.dialects.builtin.IntegerAttr,
+        n_experts: max._core.dialects.builtin.IntegerAttr,
+        max_token_per_rank: max._core.dialects.builtin.IntegerAttr,
+        n_gpus_per_node: max._core.dialects.builtin.IntegerAttr,
+        n_nodes: max._core.dialects.builtin.IntegerAttr,
+        fused_shared_expert: max._core.dialects.builtin.BoolAttr,
+    ) -> None: ...
+    @property
+    def input_tokens(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def topk_ids(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def send_ptrs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def recv_ptrs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def recv_count_ptrs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def atomic_counters(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def in_chain(self) -> max._core.Value[ChainType]: ...
+    @property
+    def hidden_size(self) -> int: ...
+    @hidden_size.setter
+    def hidden_size(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
+    @property
+    def top_k(self) -> int: ...
+    @top_k.setter
+    def top_k(self, arg: max._core.dialects.builtin.IntegerAttr, /) -> None: ...
+    @property
+    def n_experts(self) -> int: ...
+    @n_experts.setter
+    def n_experts(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
+    @property
+    def max_token_per_rank(self) -> int: ...
+    @max_token_per_rank.setter
+    def max_token_per_rank(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
+    @property
+    def n_gpus_per_node(self) -> int: ...
+    @n_gpus_per_node.setter
+    def n_gpus_per_node(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
+    @property
+    def n_nodes(self) -> int: ...
+    @n_nodes.setter
+    def n_nodes(
+        self, arg: max._core.dialects.builtin.IntegerAttr, /
+    ) -> None: ...
+    @property
+    def fused_shared_expert(self) -> bool: ...
+    @fused_shared_expert.setter
+    def fused_shared_expert(
+        self, arg: max._core.dialects.builtin.BoolAttr, /
+    ) -> None: ...
+
 class DistributedEpDispatchNvfp4Op(max._core.Operation):
     """
     Dispatches input tokens to expert devices across N GPUs using the Expert

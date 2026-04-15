@@ -719,7 +719,7 @@ def call_distributed_ep_dispatch(
 
     Returns:
         Per-device output tuples. The number of tensors per tuple depends on
-        the quantization format (4 for BF16, 5 for FP8, 6 for NVFP4).
+        the quantization format (4 for BF16, 5 for FP8, 6 for NVFP4/MXFP4).
     """
     num_devices = len(input_tokens)
     max_recv_tokens = config.max_tokens_per_rank * min(
@@ -735,10 +735,12 @@ def call_distributed_ep_dispatch(
 
     quant_config = config.dispatch_quant_config
     is_nvfp4 = quant_config is not None and quant_config.is_nvfp4
+    is_mxfp4 = quant_config is not None and quant_config.is_mxfp4
+    is_fp4 = quant_config is not None and quant_config.is_fp4
     is_fp8 = quant_config is not None and config.dispatch_dtype.is_float8()
 
     token_last_dim = config.hidden_size
-    if is_nvfp4:
+    if is_fp4:
         token_last_dim //= 2
 
     output_types_per_device: list[list[TensorType]] = []
@@ -767,6 +769,23 @@ def call_distributed_ep_dispatch(
             recv_buf_ptrs,
             recv_count_ptrs,
             inv_scales,
+            atomic_counters,
+            output_types_per_device,
+            hidden_size=config.hidden_size,
+            top_k=config.top_k,
+            n_experts=config.n_experts,
+            max_token_per_rank=config.max_tokens_per_rank,
+            n_gpus_per_node=config.n_gpus_per_node,
+            n_nodes=config.n_nodes,
+            fused_shared_expert=config.fused_shared_expert,
+        )
+    elif is_mxfp4:
+        return ops.distributed_ep.dispatch_mxfp4(
+            input_tokens,
+            topk_ids,
+            send_buf_ptrs,
+            recv_buf_ptrs,
+            recv_count_ptrs,
             atomic_counters,
             output_types_per_device,
             hidden_size=config.hidden_size,

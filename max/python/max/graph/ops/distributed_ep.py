@@ -310,6 +310,89 @@ def dispatch_nvfp4(
 
 
 # ---------------------------------------------------------------------------
+# MXFP4 Dispatch
+# ---------------------------------------------------------------------------
+
+_MXFP4_OUTPUT_GROUPS = 6
+
+
+def dispatch_mxfp4(
+    input_tokens: list[TensorValue],
+    topk_ids: list[TensorValue],
+    send_ptrs: TensorValue,
+    recv_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    atomic_counters: list[BufferValue],
+    output_types_per_device: list[list[TensorType]],
+    *,
+    hidden_size: int,
+    top_k: int,
+    n_experts: int,
+    max_token_per_rank: int,
+    n_gpus_per_node: int,
+    n_nodes: int,
+    fused_shared_expert: bool,
+) -> list[tuple[TensorValue, ...]]:
+    """Multi-device EP MXFP4 dispatch.
+
+    Returns per-device tuples of 6 tensors:
+    (output_tokens, output_scales, row_offsets, scales_offsets,
+    expert_ids, src_info).
+    """
+    num_devices = len(input_tokens)
+    if num_devices == 0:
+        raise ValueError("input_tokens must be non-empty")
+
+    output_tokens_types = [t[0] for t in output_types_per_device]
+    output_scales_types = [t[1] for t in output_types_per_device]
+    row_offsets_types = [t[2] for t in output_types_per_device]
+    scales_offsets_types = [t[3] for t in output_types_per_device]
+    expert_ids_types = [t[4] for t in output_types_per_device]
+    src_info_types = [t[5] for t in output_types_per_device]
+
+    counters = [BufferValue(c) for c in atomic_counters]
+
+    graph = Graph.current
+    devices = [t.device for t in input_tokens]
+    in_chain = graph._merge_chains(
+        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
+    )
+
+    *results, out_chain = graph._add_op_generated(
+        mo.DistributedEpDispatchMxfp4Op,
+        output_tokens_types,
+        output_scales_types,
+        row_offsets_types,
+        scales_offsets_types,
+        expert_ids_types,
+        src_info_types,
+        _ChainType(),
+        input_tokens,
+        topk_ids,
+        [send_ptrs] * num_devices,
+        [recv_ptrs] * num_devices,
+        [recv_count_ptrs] * num_devices,
+        counters,
+        in_chain,
+        *_ep_common_attrs(
+            hidden_size,
+            top_k,
+            n_experts,
+            max_token_per_rank,
+            n_gpus_per_node,
+            n_nodes,
+            fused_shared_expert,
+        ),
+    )
+
+    graph._update_chain(out_chain)
+    for device in devices:
+        graph.device_chains[device] = out_chain
+
+    return _unpack_results(results, num_devices, _MXFP4_OUTPUT_GROUPS)
+
+
+# ---------------------------------------------------------------------------
 # Combine (fused async + wait, supports output epilogue fusion)
 # ---------------------------------------------------------------------------
 

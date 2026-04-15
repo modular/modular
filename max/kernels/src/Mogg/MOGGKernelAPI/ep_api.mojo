@@ -69,6 +69,7 @@ from shmem.ep_comm import (
     BF16TokenFormat,
     BlockwiseFP8TokenFormat,
     EPLocalSyncCounters,
+    MXFP4TokenFormat,
     NVFP4TokenFormat,
     elementwise_epilogue_type,
     fused_silu_kernel,
@@ -1077,6 +1078,114 @@ struct DistributedEPDispatchNVFP4:
                 fused_shared_expert,
                 target,
                 input_scales_wrapper=input_scales_fn,
+            ](
+                format_handler,
+                row_offsets[index].to_tile_tensor[DType.int64](),
+                expert_ids[index].to_tile_tensor[DType.int64](),
+                src_info[index].to_tile_tensor[DType.int64](),
+                atomic_counters[index].to_tile_tensor[DType.int64](),
+                input_tokens[index].to_tile_tensor[DType.int64](),
+                topk_ids[index].to_tile_tensor[DType.int64](),
+                send_ptrs[index].to_tile_tensor[DType.int64](),
+                recv_ptrs[index].to_tile_tensor[DType.int64](),
+                recv_count_ptrs[index].to_tile_tensor[DType.int64](),
+                gpu_ctxs[index],
+            )
+
+        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs)
+
+
+@compiler.register("mo.distributed.ep.dispatch.mxfp4")
+struct DistributedEPDispatchMXFP4:
+    @staticmethod
+    def execute[
+        input_dtype: DType,
+        dispatch_dtype: DType,
+        dispatch_scale_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        //,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output_tokens: OutputVariadicTensors[dtype=dispatch_dtype, rank=2, ...],
+        output_scales: OutputVariadicTensors[
+            dtype=dispatch_scale_dtype, rank=5, ...
+        ],
+        row_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
+        scales_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputVariadicTensors[dtype=DType.int32, rank=1, ...],
+        src_info: OutputVariadicTensors[dtype=DType.int32, rank=2, ...],
+        input_tokens: InputVariadicTensors[dtype=input_dtype, rank=2, ...],
+        topk_ids: InputVariadicTensors[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        atomic_counters: MutableInputVariadicTensors[
+            dtype=DType.int32, rank=1, ...
+        ],
+        dev_ctxs: DeviceContextPtrList,
+    ) capturing raises:
+        """Multi-device fused Expert Parallelism NVFP4 dispatch.
+
+        Launches the EP dispatch kernel on all devices simultaneously via
+        _ep_launch_device_collective. Each device routes its tokens to experts
+        based on top-k IDs, quantizes them to MXFP4 format, and sends them
+        to the appropriate peer devices.
+        """
+        comptime num_devices = input_tokens.size
+
+        # Filter the dev_ctxs list to only GPU devices. The op also takes
+        # CPU host-pointer tensors (send_ptrs, recv_ptrs, recv_count_ptrs),
+        # so the DeviceContextPtrList may contain CPU contexts.
+        var gpu_ctxs_tuple = StaticTuple[DeviceContextPtr, num_devices]()
+        var dev_idx = 0
+        for i in range(dev_ctxs.size):
+            if dev_idx < num_devices and dev_ctxs[i].api() != "cpu":
+                gpu_ctxs_tuple[dev_idx] = dev_ctxs.ptrs[i]
+                dev_idx += 1
+        if dev_idx != num_devices:
+            raise Error("Invalid number of GPU device contexts")
+        var gpu_ctxs = DeviceContextPtrList[num_devices](gpu_ctxs_tuple)
+
+        @always_inline
+        def launch_dispatch[
+            index: Int
+        ]() raises unified {
+            read output_tokens,
+            read output_scales,
+            read row_offsets,
+            read scales_offsets,
+            read expert_ids,
+            read src_info,
+            read atomic_counters,
+            read input_tokens,
+            read topk_ids,
+            read send_ptrs,
+            read recv_ptrs,
+            read recv_count_ptrs,
+            read gpu_ctxs,
+        }:
+            var out_tokens = output_tokens[index].to_tile_tensor[DType.int64]()
+            var out_scales = output_scales[index].to_tile_tensor[DType.int64]()
+            var sc_offsets = scales_offsets[index].to_tile_tensor[DType.int64]()
+
+            var format_handler = MXFP4TokenFormat[hidden_size, top_k](
+                out_tokens, out_scales, sc_offsets
+            )
+
+            ep_fused_dispatch_kernel_api[
+                n_experts,
+                max_token_per_rank,
+                n_gpus_per_node,
+                n_nodes,
+                fused_shared_expert,
+                target,
             ](
                 format_handler,
                 row_offsets[index].to_tile_tensor[DType.int64](),
