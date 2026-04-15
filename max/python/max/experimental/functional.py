@@ -791,6 +791,9 @@ resize_nearest = functional(ops.resize_nearest)
 #: Resizes a tensor using bicubic interpolation.
 #: See :func:`max.graph.ops.resize_bicubic` for details.
 resize_bicubic = functional(ops.resize_bicubic)
+#: Performs ROI Align pooling on an NHWC input tensor.
+#: See :func:`max.graph.ops.roi_align` for details.
+roi_align = functional(ops.roi_align)
 #: Rounds tensor values element-wise.
 #: See :func:`max.graph.ops.round` for details.
 round = functional(ops.round)

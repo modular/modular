@@ -40,6 +40,9 @@ This version is still a work in progress.
 
 ### Python API {#26-3-max-python}
 
+- Added `ops.roi_align` graph op and `F.roi_align` functional wrapper for
+  ROI Align pooling over NHWC inputs with configurable spatial scale, sampling
+  ratio, alignment mode, and AVG/MAX pooling.
 - Fixed tensor slicing with negative integer indices (e.g. `hidden[:, -1]`)
   which previously raised a `RuntimeError` at compile time.
 - Setting `MODULAR_MAX_UNINITIALIZED_READ_CHECK=true` enables detection of

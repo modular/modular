@@ -81,7 +81,7 @@ from .outer import outer
 from .pad import pad
 from .parallel import parallel
 from .permute import permute
-from .pooling import avg_pool2d, max_pool2d
+from .pooling import avg_pool2d, max_pool2d, roi_align
 from .quantized import dequantize, qmatmul
 from .range import range
 from .rebind import rebind
