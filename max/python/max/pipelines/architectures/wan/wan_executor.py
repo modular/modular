@@ -205,18 +205,6 @@ class WanExecutor(
         # Compile helper graphs.
         self._guidance_graph = self._compile_guidance()
         self._unipc_step_graph = self._compile_unipc_step()
-        self._duplicate_cfg_latents_graph = (
-            self._compile_duplicate_cfg_latents()
-        )
-        self._duplicate_cfg_timesteps_graph = (
-            self._compile_duplicate_cfg_timesteps()
-        )
-        self._concat_cfg_embeddings_graph = (
-            self._compile_concat_cfg_embeddings()
-        )
-        self._split_cfg_predictions_graph = (
-            self._compile_split_cfg_predictions()
-        )
         self._cast_f32_to_model_dtype_graph = (
             self._compile_cast_f32_to_model_dtype()
         )
@@ -754,105 +742,6 @@ class WanExecutor(
                 + predictor_m1_scale * prev_model_output
             )
             g.output(previous_sample, converted, corrected_sample)
-        return self._session.load(g)
-
-    def _compile_duplicate_cfg_latents(self) -> Model:
-        """Compile CFG latent duplication: concat([x, x], axis=0)."""
-        device = self._model_device
-        dtype = self._model_dtype
-        in_channels = self.transformer.config.in_channels
-
-        with Graph(
-            "wan_dup_cfg_latents",
-            input_types=[
-                TensorType(
-                    dtype,
-                    shape=[1, in_channels, "frames", "height", "width"],
-                    device=device,
-                )
-            ],
-        ) as g:
-            g.output(
-                ops.concat([g.inputs[0].tensor, g.inputs[0].tensor], axis=0)
-            )
-        return self._session.load(g)
-
-    def _compile_duplicate_cfg_timesteps(self) -> Model:
-        """Compile CFG timestep duplication."""
-        device = self._model_device
-        with Graph(
-            "wan_dup_cfg_timesteps",
-            input_types=[TensorType(DType.float32, shape=[1], device=device)],
-        ) as g:
-            g.output(
-                ops.concat([g.inputs[0].tensor, g.inputs[0].tensor], axis=0)
-            )
-        return self._session.load(g)
-
-    def _compile_concat_cfg_embeddings(self) -> Model:
-        """Compile CFG prompt embedding concatenation."""
-        device = self._model_device
-        text_dim = self.transformer.config.text_dim
-        embed_dtype = self._model_dtype
-
-        with Graph(
-            "wan_concat_cfg_embeddings",
-            input_types=[
-                TensorType(
-                    embed_dtype,
-                    shape=[1, "seq_text", text_dim],
-                    device=device,
-                ),
-                TensorType(
-                    embed_dtype,
-                    shape=[1, "seq_text", text_dim],
-                    device=device,
-                ),
-            ],
-        ) as g:
-            g.output(
-                ops.concat([g.inputs[0].tensor, g.inputs[1].tensor], axis=0)
-            )
-        return self._session.load(g)
-
-    def _compile_split_cfg_predictions(self) -> Model:
-        """Compile CFG prediction splitting."""
-        device = self._model_device
-        dtype = self._model_dtype
-        out_channels = self.transformer.config.out_channels
-
-        with Graph(
-            "wan_split_cfg_predictions",
-            input_types=[
-                TensorType(
-                    dtype,
-                    shape=[2, out_channels, "frames", "height", "width"],
-                    device=device,
-                )
-            ],
-        ) as g:
-            batched = g.inputs[0].tensor
-            positive = ops.slice_tensor(
-                batched,
-                [
-                    slice(0, 1),
-                    slice(None),
-                    slice(None),
-                    slice(None),
-                    slice(None),
-                ],
-            )
-            negative = ops.slice_tensor(
-                batched,
-                [
-                    slice(1, 2),
-                    slice(None),
-                    slice(None),
-                    slice(None),
-                    slice(None),
-                ],
-            )
-            g.output(positive, negative)
         return self._session.load(g)
 
     def _compile_cast_f32_to_model_dtype(self) -> Model:
