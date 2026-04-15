@@ -6162,6 +6162,292 @@ class TestAvgPool2dOp:
         )
 
 
+class TestRoiAlignOp:
+    """Tests for roi_align interpreter op via F.roi_align.
+
+    Routes through F.roi_align -> ops.roi_align -> rmo.MoRoiAlignOp ->
+    mo.RoiAlignOp -> _handle_roi_align -> roi_align_ops.RoiAlign.
+    The reference is a pure-numpy bilinear-interpolation ROI pooler.
+    """
+
+    @staticmethod
+    def _roi_align_ref(
+        x_nhwc: np.ndarray,
+        rois: np.ndarray,
+        out_h: int,
+        out_w: int,
+        spatial_scale: float = 1.0,
+        sampling_ratio: float = 0.0,
+        aligned: bool = False,
+        mode: str = "AVG",
+    ) -> np.ndarray:
+        """Pure-numpy ROI Align reference (NHWC layout).
+
+        ROIs have shape [M, 5]: [batch_idx, x0, y0, x1, y1].
+        """
+        n_regions = rois.shape[0]
+        height, width, channels = (
+            x_nhwc.shape[1],
+            x_nhwc.shape[2],
+            x_nhwc.shape[3],
+        )
+        offset = 0.5 if aligned else 0.0
+        output = np.zeros(
+            (n_regions, out_h, out_w, channels), dtype=x_nhwc.dtype
+        )
+
+        for ri in range(n_regions):
+            batch_idx = int(rois[ri, 0])
+            roi_start_w = rois[ri, 1] * spatial_scale - offset
+            roi_start_h = rois[ri, 2] * spatial_scale - offset
+            roi_end_w = rois[ri, 3] * spatial_scale - offset
+            roi_end_h = rois[ri, 4] * spatial_scale - offset
+
+            if aligned:
+                roi_h = roi_end_h - roi_start_h
+                roi_w = roi_end_w - roi_start_w
+            else:
+                roi_h = max(roi_end_h - roi_start_h, 1.0)
+                roi_w = max(roi_end_w - roi_start_w, 1.0)
+
+            bin_h = roi_h / out_h
+            bin_w = roi_w / out_w
+
+            grid_h = int(
+                sampling_ratio if sampling_ratio > 0 else np.ceil(bin_h)
+            )
+            grid_w = int(
+                sampling_ratio if sampling_ratio > 0 else np.ceil(bin_w)
+            )
+            pool_count = max(grid_h * grid_w, 1)
+
+            for ph in range(out_h):
+                for pw in range(out_w):
+                    for c in range(channels):
+                        if mode == "AVG":
+                            pool_val = 0.0
+                        else:
+                            pool_val = -np.inf
+                        for iy in range(grid_h):
+                            for ix in range(grid_w):
+                                y = (
+                                    roi_start_h
+                                    + ph * bin_h
+                                    + (iy + 0.5) * bin_h / grid_h
+                                )
+                                x = (
+                                    roi_start_w
+                                    + pw * bin_w
+                                    + (ix + 0.5) * bin_w / grid_w
+                                )
+                                if (
+                                    y < -1.0
+                                    or y > height
+                                    or x < -1.0
+                                    or x > width
+                                ):
+                                    continue
+                                y = max(y, 0.0)
+                                x = max(x, 0.0)
+                                y_low = min(int(y), height - 1)
+                                x_low = min(int(x), width - 1)
+                                y_high = min(y_low + 1, height - 1)
+                                x_high = min(x_low + 1, width - 1)
+                                ly = y - y_low
+                                lx = x - x_low
+                                hy = 1.0 - ly
+                                hx = 1.0 - lx
+                                v = (
+                                    hy * hx * x_nhwc[batch_idx, y_low, x_low, c]
+                                    + hy
+                                    * lx
+                                    * x_nhwc[batch_idx, y_low, x_high, c]
+                                    + ly
+                                    * hx
+                                    * x_nhwc[batch_idx, y_high, x_low, c]
+                                    + ly
+                                    * lx
+                                    * x_nhwc[batch_idx, y_high, x_high, c]
+                                )
+                                if mode == "AVG":
+                                    pool_val += v
+                                else:
+                                    pool_val = max(
+                                        pool_val,
+                                        hy
+                                        * hx
+                                        * x_nhwc[batch_idx, y_low, x_low, c],
+                                    )
+                                    pool_val = max(
+                                        pool_val,
+                                        hy
+                                        * lx
+                                        * x_nhwc[batch_idx, y_low, x_high, c],
+                                    )
+                                    pool_val = max(
+                                        pool_val,
+                                        ly
+                                        * hx
+                                        * x_nhwc[batch_idx, y_high, x_low, c],
+                                    )
+                                    pool_val = max(
+                                        pool_val,
+                                        ly
+                                        * lx
+                                        * x_nhwc[batch_idx, y_high, x_high, c],
+                                    )
+                        if mode == "AVG":
+                            output[ri, ph, pw, c] = pool_val / pool_count
+                        else:
+                            output[ri, ph, pw, c] = pool_val
+        return output
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_avg_mode(self, dtype: DType) -> None:
+        """Test ROI Align with AVG pooling mode."""
+        np_dtype = dtype.to_numpy()
+        x_np = np.arange(100, dtype=np_dtype).reshape(1, 10, 10, 1)
+        rois_np = np.array([[0, 1, 1, 5, 5]], dtype=np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        rois = Tensor.from_dlpack(rois_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.roi_align(x, rois, output_height=3, output_width=3)
+
+        expected = self._roi_align_ref(x_np, rois_np, 3, 3)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_max_mode(self) -> None:
+        """Test ROI Align with MAX pooling mode."""
+        x_np = np.arange(100, dtype=np.float32).reshape(1, 10, 10, 1)
+        rois_np = np.array([[0, 2, 2, 8, 8]], dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        rois = Tensor.from_dlpack(rois_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.roi_align(
+                x, rois, output_height=3, output_width=3, mode="MAX"
+            )
+
+        expected = self._roi_align_ref(x_np, rois_np, 3, 3, mode="MAX")
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_aligned(self) -> None:
+        """Test ROI Align with aligned=True (half-pixel offset)."""
+        x_np = np.arange(100, dtype=np.float32).reshape(1, 10, 10, 1)
+        rois_np = np.array([[0, 1, 1, 5, 5]], dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        rois = Tensor.from_dlpack(rois_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.roi_align(
+                x, rois, output_height=3, output_width=3, aligned=True
+            )
+
+        expected = self._roi_align_ref(x_np, rois_np, 3, 3, aligned=True)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_spatial_scale(self) -> None:
+        """Test ROI Align with non-unit spatial_scale."""
+        x_np = np.arange(100, dtype=np.float32).reshape(1, 10, 10, 1)
+        rois_np = np.array([[0, 2, 2, 10, 10]], dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        rois = Tensor.from_dlpack(rois_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.roi_align(
+                x, rois, output_height=3, output_width=3, spatial_scale=0.5
+            )
+
+        expected = self._roi_align_ref(x_np, rois_np, 3, 3, spatial_scale=0.5)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_sampling_ratio(self) -> None:
+        """Test ROI Align with explicit sampling_ratio."""
+        x_np = np.arange(100, dtype=np.float32).reshape(1, 10, 10, 1)
+        rois_np = np.array([[0, 1, 1, 8, 8]], dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        rois = Tensor.from_dlpack(rois_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.roi_align(
+                x, rois, output_height=3, output_width=3, sampling_ratio=3.0
+            )
+
+        expected = self._roi_align_ref(x_np, rois_np, 3, 3, sampling_ratio=3.0)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_multiple_rois(self) -> None:
+        """Test ROI Align with multiple ROIs."""
+        x_np = np.arange(200, dtype=np.float32).reshape(2, 10, 10, 1)
+        rois_np = np.array(
+            [
+                [0, 0, 0, 5, 5],
+                [1, 2, 2, 8, 8],
+                [0, 3, 3, 9, 9],
+            ],
+            dtype=np.float32,
+        )
+
+        x = Tensor.from_dlpack(x_np)
+        rois = Tensor.from_dlpack(rois_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.roi_align(
+                x, rois, output_height=2, output_width=2, sampling_ratio=2.0
+            )
+
+        expected = self._roi_align_ref(x_np, rois_np, 2, 2, sampling_ratio=2.0)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_multichannel(self) -> None:
+        """Test ROI Align with multiple channels."""
+        x_np = np.arange(300, dtype=np.float32).reshape(1, 10, 10, 3)
+        rois_np = np.array([[0, 1, 1, 6, 6]], dtype=np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        rois = Tensor.from_dlpack(rois_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.roi_align(x, rois, output_height=3, output_width=3)
+
+        expected = self._roi_align_ref(x_np, rois_np, 3, 3)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+
 class TestTopKOp:
     """Tests for TopK interpreter op (mo.top_k).
 

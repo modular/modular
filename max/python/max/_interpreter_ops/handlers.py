@@ -2948,6 +2948,98 @@ def _handle_avg_pool_ceil(
     return _avg_pool_common(op, inputs, ceil_mode=True)
 
 
+# ROI Align operation
+
+
+@register_op_handler(mo.RoiAlignOp)
+def _handle_roi_align(
+    op: mo.RoiAlignOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.roi_align (ROI Align pooling, NHWC).
+
+    Operands: input (4D), rois (2D), output_height, output_width,
+    spatial_scale, sampling_ratio.
+    Attributes: aligned (bool), mode (string: "AVG" or "MAX").
+
+    Args:
+        op: The roi_align operation.
+        inputs: Input buffers.
+
+    Returns:
+        List containing the ROI-aligned output buffer.
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # input [N, H, W, C]
+    assert isinstance(inputs[1], Buffer)  # rois [M, 5]
+    assert isinstance(inputs[2], Buffer)  # output_height (scalar)
+    assert isinstance(inputs[3], Buffer)  # output_width (scalar)
+    assert isinstance(inputs[4], Buffer)  # spatial_scale (scalar)
+    assert isinstance(inputs[5], Buffer)  # sampling_ratio (scalar)
+
+    input_buffer = inputs[0]
+    rois_buffer = inputs[1]
+
+    in_shape = list(input_buffer.shape)
+    if len(in_shape) != 4:
+        raise ValueError(
+            f"roi_align expects rank-4 NHWC input, got rank {len(in_shape)}"
+        )
+
+    rois_shape = list(rois_buffer.shape)
+    if len(rois_shape) != 2 or rois_shape[1] != 5:
+        raise ValueError(
+            f"roi_align expects [M, 5] rois, got shape {rois_shape}"
+        )
+
+    out_h = int(inputs[2].to_numpy().item())
+    out_w = int(inputs[3].to_numpy().item())
+    spatial_scale = float(inputs[4].to_numpy().item())
+    sampling_ratio = float(inputs[5].to_numpy().item())
+
+    n_regions = rois_shape[0]
+    height = in_shape[1]
+    width = in_shape[2]
+    channels = in_shape[3]
+
+    aligned = bool(op.aligned)
+    mode_str = str(op.mode.value)
+    if mode_str not in ("AVG", "MAX"):
+        raise ValueError(
+            f"roi_align mode must be 'AVG' or 'MAX', got '{mode_str}'"
+        )
+    mode_flag = 0 if mode_str == "AVG" else 1
+    aligned_flag = 1 if aligned else 0
+
+    output = Buffer(
+        shape=[n_regions, out_h, out_w, channels],
+        dtype=input_buffer.dtype,
+        device=target_device,
+    )
+    ctx_ptr = target_device._device_context_ptr()
+
+    ops.roi_align_ops.RoiAlign(
+        output,
+        input_buffer,
+        rois_buffer,
+        (
+            n_regions,
+            height,
+            width,
+            channels,
+            out_h,
+            out_w,
+            spatial_scale,
+            sampling_ratio,
+            aligned_flag,
+            mode_flag,
+        ),
+        ctx_ptr,
+    )
+
+    return [output]
+
+
 # Top-K operation
 
 
