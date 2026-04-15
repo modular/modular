@@ -267,9 +267,11 @@ def test[
 
     # Valid length (empty -- not using ragged) for mha_gpu_naive
     var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        DType.uint32,
+        Layout.row_major(UNKNOWN_VALUE),
+        MutAnyOrigin,
     ](
-        UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
+        None,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 

@@ -1065,6 +1065,16 @@ struct DeviceBuffer[dtype: DType](
             self._handle,
         )
 
+    @staticmethod
+    @doc_hidden
+    def empty(context: DeviceContext) -> Self:
+        return Self(
+            context,
+            Self._DevicePtr(_unsafe_null=()),
+            0,
+            owning=False,
+        )
+
     def __len__(self) -> Int:
         """Returns the number of elements in this buffer.
 
@@ -1322,6 +1332,8 @@ struct DeviceBuffer[dtype: DType](
             ](self._handle, ctx._handle)
         )
 
+    # NOTE: This is var self and not deinit self, since we still need
+    # the destructor to run otherwise we hit memory leaks.
     @always_inline
     def take_ptr(
         var self,
@@ -1342,9 +1354,7 @@ struct DeviceBuffer[dtype: DType](
             NoneType,
             _DeviceBufferPtr[mut=True],
         ](self._handle)
-        var result = self._device_ptr
-        self._device_ptr = {_unsafe_null = ()}
-        return result
+        return self._device_ptr
 
     @always_inline
     def unsafe_ptr(

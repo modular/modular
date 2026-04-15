@@ -109,7 +109,7 @@ def broadcast_test[
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={_unsafe_null = ()}
+        uninitialized=True
     )
     for i in range(ngpus):
         # Create this rank's output buffer
