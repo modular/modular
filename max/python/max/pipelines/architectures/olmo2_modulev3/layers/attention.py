@@ -23,9 +23,7 @@ from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
-    fused_qk_ragged_rope,
-    fused_qkv_ragged_matmul,
-    rms_norm_key_cache,
+    rope_split_store_ragged,
 )
 from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.nn.linear import Linear
@@ -142,49 +140,36 @@ class Olmo2Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
         total_seq_len = x.shape[0]
         layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
 
-        # Step 1: Fused QKV projection and cache write
-        q = fused_qkv_ragged_matmul(
-            self.kv_params,
-            input=x,
+        # Step 1: QKV matmul.
+        wqkv = self.wqkv
+        qkv = x @ wqkv.T
+        bias = self.wqkv_bias
+        if bias is not None:
+            qkv = qkv + bias
+
+        # Step 2: Apply full-dimension QK norm before rope.
+        head_dim = self.kv_params.head_dim
+        q_dim = self.n_heads * head_dim
+        kv_dim = self.kv_weight_dim
+        x_q, x_k, x_v = qkv.split([q_dim, kv_dim, kv_dim], axis=-1)
+        x_q = self.q_norm(x_q)
+        x_k = self.k_norm(x_k)
+        qkv = F.concat([x_q, x_k, x_v], axis=-1)
+
+        # Step 3: Fused rope + split + KV store.
+        rope = self.rope
+        freqs_cis = F.cast(rope.freqs_cis, qkv.dtype).to(qkv.device)
+        q = rope_split_store_ragged(
+            kv_params=self.kv_params,
+            qkv=qkv,
             input_row_offsets=input_row_offsets,
-            wqkv=self.wqkv,
+            freqs_cis=freqs_cis,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=self.n_heads,
-            bias=self.wqkv_bias,
-        )
-
-        # Step 2: Reshape Q and apply RMSNorm
-        q = q.reshape((total_seq_len, self.n_heads * self.kv_params.head_dim))
-        q = self.q_norm(q)
-        q = q.reshape((total_seq_len, self.n_heads, self.kv_params.head_dim))
-
-        # Step 3: Apply RMSNorm to K in the cache
-        rms_norm_key_cache(
-            self.kv_params,
-            kv_collection=kv_collection,
-            gamma=self.k_norm.weight.cast(self.kv_params.dtype).to(q.device),
-            epsilon=self.qk_norm_eps,
-            layer_idx=layer_idx,
-            total_seq_len=total_seq_len,
-            input_row_offsets=input_row_offsets,
-            weight_offset=0.0,
-            per_head_norm=False,
-        )
-
-        # Step 4: Apply RoPE to Q and K (in cache)
-        rope = self.rope
-        freqs_cis = F.cast(rope.freqs_cis, q.dtype).to(q.device)
-
-        q = fused_qk_ragged_rope(
-            self.kv_params,
-            q,
-            input_row_offsets,
-            kv_collection,
-            freqs_cis,
-            layer_idx,
             interleaved=rope.interleaved,
         )
+        q = q.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Step 5: Compute flash attention
         attn_out = flash_attention_ragged(

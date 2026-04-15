@@ -23,8 +23,7 @@ from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.nn.attention import MHAMaskVariant, num_heads_for_device
 from max.nn.kernels import (
     flash_attention_ragged,
-    fused_qk_ragged_rope,
-    fused_qkv_ragged_matmul,
+    rope_split_store_ragged,
 )
 from max.nn.kv_cache import (
     KVCacheParams,
@@ -181,34 +180,27 @@ class GptOssAttention(Module, Shardable):
         layer_idx = ops.constant(
             self.layer_idx, DType.uint32, device=DeviceRef.CPU()
         )
-        # Call into fused qkv ragged matmul.
-        wqkv = self.wqkv
-        xq = fused_qkv_ragged_matmul(
-            self.kv_params,
-            input=x,
-            wqkv=wqkv,
-            bias=self.wqkv_bias,
+
+        # QKV matmul: graph-level weight concat, then a single matmul.
+        wqkv = self.wqkv.to(x.device)
+        qkv = x @ wqkv.T
+        if self.wqkv_bias is not None:
+            qkv = qkv + self.wqkv_bias.to(x.device)
+
+        # Fused rope + split + KV store.
+        rope = self.rope
+        freqs_cis = ops.cast(rope.freqs_cis, qkv.dtype).to(qkv.device)
+        xq = rope_split_store_ragged(
+            kv_params=self.kv_params,
+            qkv=qkv,
             input_row_offsets=kwargs["input_row_offsets"],
+            freqs_cis=freqs_cis,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=self.n_heads,
-        )
-        # Apply rope.
-        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
-
-        # Apply rotary embedding based on layer type
-        rope = self.rope
-
-        freqs_cis = ops.cast(rope.freqs_cis, xq.dtype).to(xq.device)
-        xq = fused_qk_ragged_rope(
-            self.kv_params,
-            xq,
-            kwargs["input_row_offsets"],
-            kv_collection,
-            freqs_cis,
-            layer_idx,
             interleaved=rope.interleaved,
         )
+        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Calculate Flash Attention with sinks.
         mask_variant = (

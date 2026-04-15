@@ -38,8 +38,7 @@ from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
-    fused_qk_ragged_rope,
-    fused_qkv_ragged_matmul,
+    rope_split_store_ragged,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import LayerList, Module, Shardable
@@ -228,32 +227,26 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             if wqkv_bf16.dtype != DType.bfloat16:
                 wqkv_bf16 = ops.cast(wqkv_bf16, DType.bfloat16)
 
-        # Fused QKV matmul: input and wqkv are both BF16 now.
-        xq = fused_qkv_ragged_matmul(
-            self.kv_params,
-            input=x_in,
-            wqkv=wqkv_bf16,
-            bias=self.wqkv_bias,
+        # QKV matmul: BF16 input x BF16 wqkv.
+        qkv = x_in @ wqkv_bf16.T
+        if self.wqkv_bias is not None:
+            qkv = qkv + self.wqkv_bias
+
+        # Fused rope + split + KV store.
+        freqs_cis = ops.cast(freqs_cis, qkv.dtype).to(qkv.device)
+        xq = rope_split_store_ragged(
+            kv_params=self.kv_params,
+            qkv=qkv,
             input_row_offsets=input_row_offsets,
+            freqs_cis=freqs_cis,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=self.n_heads,
-        )
-
-        # Apply RoPE and flash attention (also in BF16).
-        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
-        freqs_cis = freqs_cis.to(xq.device)
-        xq = fused_qk_ragged_rope(
-            self.kv_params,
-            xq,
-            input_row_offsets,
-            kv_collection,
-            freqs_cis,
-            layer_idx,
             interleaved=self.rope.interleaved,
             position_ids=position_ids,
             mrope_section=mrope_section,
         )
+        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         attn_out = flash_attention_ragged(
             self.kv_params,

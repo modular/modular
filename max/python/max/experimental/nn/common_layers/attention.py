@@ -25,11 +25,10 @@ from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 
+from ..norm.rms_norm import rms_norm
 from .functional_kernels import (
     flash_attention_ragged,
-    fused_qk_ragged_rope,
-    fused_qkv_ragged_matmul,
-    rms_norm_key_cache,
+    rope_split_store_ragged,
 )
 from .rotary_embedding import RotaryEmbedding
 
@@ -179,53 +178,42 @@ class AttentionWithRope(Module[..., Tensor]):
 
         layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
 
+        # QKV matmul: graph-level weight concat, then a single matmul.
         wqkv = self.wqkv
-        xq = fused_qkv_ragged_matmul(
-            self.kv_params,
-            input=x,
-            wqkv=wqkv,
-            bias=self.wqkv_bias,
+        qkv = x @ wqkv.T
+        if self.wqkv_bias is not None:
+            qkv = qkv + self.wqkv_bias
+
+        if self.use_qk_norm:
+            head_dim = self.kv_params.head_dim
+            q_dim = self.n_heads * head_dim
+            kv_dim = self.num_key_value_heads * head_dim
+            x_q, x_k, x_v = qkv.split([q_dim, kv_dim, kv_dim], axis=-1)
+
+            x_q = x_q.reshape((-1, self.n_heads, head_dim))
+            x_q = rms_norm(x_q, self.q_norm_weight, self.rms_norm_eps)
+            x_q = x_q.reshape((-1, q_dim))
+
+            x_k = x_k.reshape((-1, self.num_key_value_heads, head_dim))
+            x_k = rms_norm(x_k, self.k_norm_weight, self.rms_norm_eps)
+            x_k = x_k.reshape((-1, kv_dim))
+
+            qkv = F.concat([x_q, x_k, x_v], axis=-1)
+
+        # Fused rope + split + KV store.
+        rope = self.rope
+        freqs_cis = F.cast(rope.freqs_cis, qkv.dtype).to(qkv.device)
+        xq = rope_split_store_ragged(
+            kv_params=self.kv_params,
+            qkv=qkv,
             input_row_offsets=kwargs["input_row_offsets"],
+            freqs_cis=freqs_cis,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=self.n_heads,
+            interleaved=rope.interleaved,
         )
-
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
-
-        if self.use_qk_norm:
-            # Normalize new K entries in-place inside the KV cache.
-            # Per-head RMSNorm across head_dim, gamma size = [head_dim].
-            rms_norm_key_cache(
-                kv_params=self.kv_params,
-                kv_collection=kv_collection,
-                gamma=self.k_norm_weight.cast(self.kv_params.dtype).to(
-                    xq.device
-                ),
-                epsilon=self.rms_norm_eps,
-                layer_idx=layer_idx,
-                total_seq_len=total_seq_len,
-                input_row_offsets=kwargs["input_row_offsets"],
-                weight_offset=0.0,
-            )
-
-            # Normalize Q per head across the last dim (head_dim).
-            q_gamma = F.cast(self.q_norm_weight.to(xq.device), xq.dtype)
-            eps_q = F.constant(self.rms_norm_eps, xq.dtype, device=xq.device)
-            inv_rms = F.rsqrt(F.mean(xq * xq, axis=-1) + eps_q)
-            xq = (xq * inv_rms) * q_gamma
-
-        freqs_cis = F.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
-
-        xq = fused_qk_ragged_rope(
-            self.kv_params,
-            xq,
-            kwargs["input_row_offsets"],
-            kv_collection,
-            freqs_cis=freqs_cis,
-            layer_idx=layer_idx,
-            interleaved=self.rope.interleaved,
-        )
 
         attn_out = flash_attention_ragged(
             self.kv_params,

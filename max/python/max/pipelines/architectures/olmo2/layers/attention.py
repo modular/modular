@@ -23,9 +23,7 @@ from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.nn.kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
-    fused_qk_ragged_rope,
-    fused_qkv_ragged_matmul,
-    rms_norm_key_cache,
+    rope_split_store_ragged,
 )
 from max.nn.kv_cache import (
     KVCacheParams,
@@ -179,51 +177,35 @@ class Olmo2Attention(Module):
     ) -> TensorValue:
         total_seq_len = x.shape[0]
 
-        # Project input to Q, K, V
+        # QKV matmul.
         wqkv = self.wqkv
-        xq = fused_qkv_ragged_matmul(
-            self.kv_params,
-            input=x,
-            wqkv=wqkv,
-            bias=self.wqkv_bias,
+        qkv = x @ wqkv.T
+        if self.wqkv_bias is not None:
+            qkv = qkv + self.wqkv_bias
+
+        # Apply full-dimension QK norm before rope.
+        head_dim = self.kv_params.head_dim
+        q_dim = self.n_heads * head_dim
+        kv_dim = self.kv_weight_dim
+        x_q, x_k, x_v = ops.split(qkv, [q_dim, kv_dim, kv_dim], axis=-1)
+        x_q = self.q_norm(x_q)
+        x_k = self.k_norm(x_k)
+        qkv = ops.concat((x_q, x_k, x_v), axis=-1)
+
+        # Fused rope + split + KV store.
+        rope = self.rope
+        freqs_cis = ops.cast(rope.freqs_cis, qkv.dtype).to(qkv.device)
+        xq = rope_split_store_ragged(
+            kv_params=self.kv_params,
+            qkv=qkv,
             input_row_offsets=input_row_offsets,
+            freqs_cis=freqs_cis,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=self.n_heads,
+            interleaved=rope.interleaved,
         )
-
-        # Reshape and apply RMSNorm to Q
-        xq = xq.reshape((-1, self.n_heads * self.kv_params.head_dim))
-        xq = self.q_norm(xq)
-        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
-
-        # Apply RMSNorm to K
-        rms_norm_key_cache(
-            self.kv_params,
-            kv_collection=kv_collection,
-            gamma=self.k_norm.weight.cast(self.kv_params.dtype).to(
-                self.devices[0]
-            ),
-            epsilon=self.qk_norm_eps,
-            layer_idx=layer_idx,
-            total_seq_len=total_seq_len,
-            input_row_offsets=input_row_offsets,
-            weight_offset=0.0,
-            per_head_norm=False,
-        )
-
-        # Apply RoPE
-        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-
-        xq = fused_qk_ragged_rope(
-            self.kv_params,
-            xq,
-            input_row_offsets,
-            kv_collection,
-            freqs_cis,
-            layer_idx,
-            interleaved=self.rope.interleaved,
-        )
+        xq = xq.reshape((-1, self.n_heads, head_dim))
 
         attn_out = flash_attention_ragged(
             self.kv_params,

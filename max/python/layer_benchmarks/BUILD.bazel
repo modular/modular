@@ -119,6 +119,7 @@ _HARNESS_TESTS = {
     # produces correct results on MI355.
     "harness_gpt_oss_attention": _NVIDIA_ONLY,
     "harness_olmo2_attention": _GPU_CONSTRAINTS,
+    "harness_qwen2_5vl_attention": _GPU_CONSTRAINTS,
     "harness_qwen3_attention": _GPU_CONSTRAINTS,
     # TODO(KERN-2749): Re-enable on AMD once graph compiler supports
     # sliding window attention and QK norm on MI355.

@@ -23,9 +23,7 @@ from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
-    fused_qk_ragged_rope,
-    fused_qkv_ragged_matmul,
-    rms_norm_key_cache,
+    rope_split_store_ragged,
 )
 from max.experimental.nn.linear import Linear
 from max.experimental.tensor import Tensor
@@ -128,48 +126,44 @@ class Gemma3Attention(Module[..., Tensor]):
 
         layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
 
-        xq = fused_qkv_ragged_matmul(
-            self.kv_params,
-            input=x,
-            wqkv=self.wqkv,
-            bias=self.wqkv_bias,
-            input_row_offsets=kwargs["input_row_offsets"],
-            kv_collection=kv_collection,
-            layer_idx=layer_idx,
-            n_heads=self.n_heads,
+        head_dim = self.kv_params.head_dim
+        q_dim = self.q_weight_dim
+        kv_dim = self.kv_weight_dim
+        num_kv_heads = kv_dim // head_dim
+
+        # QKV matmul: graph-level weight concat, then a single matmul.
+        wqkv = self.wqkv
+        qkv = x @ wqkv.T
+        if self.wqkv_bias is not None:
+            qkv = qkv + self.wqkv_bias
+
+        # Split into Q, K, V and apply per-head QK norm.
+        x_q, x_k, x_v = qkv.split([q_dim, kv_dim, kv_dim], axis=-1)
+        x_q = self.q_norm(x_q.reshape((-1, self.n_heads, head_dim))).reshape(
+            (-1, q_dim)
+        )
+        x_k = self.k_norm(x_k.reshape((-1, num_kv_heads, head_dim))).reshape(
+            (-1, kv_dim)
         )
 
-        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
+        # Re-concat and apply RoPE + KV cache store.
+        qkv = F.concat([x_q, x_k, x_v], axis=-1)
 
-        # Apply QK norm to query states (Gemma3-style with weight_offset=1).
-        xq = self.q_norm(xq)
-
-        # Apply QK norm to key states in-place inside the KV cache.
-        rms_norm_key_cache(
-            self.kv_params,
-            kv_collection=kv_collection,
-            gamma=self.k_norm.weight.cast(self.kv_params.dtype).to(x.device),
-            epsilon=self.qk_norm_eps,
-            layer_idx=layer_idx,
-            total_seq_len=total_seq_len,
-            input_row_offsets=kwargs["input_row_offsets"],
-            weight_offset=1.0,
-        )
-
-        # Select rope: local (sliding window) or global.
         use_local = bool((self.layer_idx + 1) % self.sliding_window_pattern)
         rope = self.rope_local if use_local else self.rope_global
 
-        freqs_cis = F.cast(rope.freqs_cis, xq.dtype).to(xq.device)
-        xq = fused_qk_ragged_rope(
-            self.kv_params,
-            xq,
-            kwargs["input_row_offsets"],
-            kv_collection,
+        freqs_cis = F.cast(rope.freqs_cis, qkv.dtype).to(qkv.device)
+        xq = rope_split_store_ragged(
+            kv_params=self.kv_params,
+            qkv=qkv,
+            input_row_offsets=kwargs["input_row_offsets"],
             freqs_cis=freqs_cis,
+            kv_collection=kv_collection,
             layer_idx=layer_idx,
+            n_heads=self.n_heads,
             interleaved=rope.interleaved,
         )
+        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         mask_variant = (
             MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
