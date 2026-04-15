@@ -373,7 +373,7 @@ def unprovable_constraints[x: Int, y: Int]()
   where unfoldable_predicate(y):
     pass
 
-comptime IntSumReducerdef[Prev: Int, From: Variadic.ValuesOfType[Int], Idx: __mlir_type.index]: Int = Prev + From[Idx]
+comptime IntSumReducerdef[Prev: Int, From: Variadic.ValuesOfType[Int], Idx: __mlir_type.index]: Int = Prev + ParameterList[From]()[Int(mlir_value=Idx)]
 
 comptime IntSumReducer[Variadic: Variadic.ValuesOfType[Int]] = __mlir_attr[
   `#kgen.param_list.reduce<`,

@@ -348,7 +348,9 @@ comptime _MapTypeToTypeReducer[
     Prev: Variadic.TypesOfTrait[ToTrait],
     From: Variadic.TypesOfTrait[FromTrait],
     idx: Int,
-] = Variadic.concat_types[Prev, Variadic.types[T=ToTrait, Mapper[From[idx]]]]
+] = Variadic.concat_types[
+    Prev, Variadic.types[T=ToTrait, Mapper[TypeList[From]()[idx]]]
+]
 
 comptime _SliceReducer[
     Trait: type_of(AnyType),
@@ -358,7 +360,9 @@ comptime _SliceReducer[
     From: Variadic.TypesOfTrait[Trait],
     idx: Int,
 ] = (
-    Variadic.concat_types[Prev, Variadic.types[T=Trait, From[idx]]] if idx
+    Variadic.concat_types[
+        Prev, Variadic.types[T=Trait, TypeList[From]()[idx]]
+    ] if idx
     >= start
     and idx < end else Prev
 )

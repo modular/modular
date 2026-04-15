@@ -4608,11 +4608,31 @@ AnyValue MagicFunctionNode::emitStructFieldTypes(ValueDest &dest,
   // Create the struct_field_types attribute. It will be evaluated during
   // elaboration to return the actual field types.
   MLIRContext *ctx = emitter.getContext();
-  auto variadicType = ParamListType::get(anyTypeTraitType);
-  auto attr =
+  auto paramListAttr =
       emitter.shared.getEvaluationContext().getAndFold<StructFieldTypesAttr>(
-          ctx, typeArg->get(), variadicType);
-  return emitter.emitResult(PValue(attr), this, dest);
+          ctx, typeArg->get(), ParamListType::get(anyTypeTraitType));
+
+  // Convert to a TypeList.
+  //     TypeList[Trait=AnyType, values: __mlir_type.`!kgen.param_list`]
+  auto listType =
+      emitter.shared.lookupBuiltinType("TypeList", emitter.declScope, getLoc());
+  if (!paramListAttr || sugarIsa<TypeCheckErrorType>(listType))
+    return {};
+
+  ASTDecl *decl = listType.getDecl(emitter.shared);
+  auto litStruct = dyn_cast_if_present<StructDeclOp>(decl->getIfOperation());
+  if (!litStruct || litStruct.getParams().size() != 2 ||
+      !sugarIsa<ParamListType>(litStruct.getParams()[1].getType())) {
+    emitter.emitError(getLoc(), "malformed TypeList type");
+    return {};
+  }
+
+  // Bind the TypeList[trait, value] parameter.
+  listType = litStruct.bindReference({PValue(anyTypeTraitType), paramListAttr});
+
+  // Create an instance of IntLiteral[val]()
+  return emitter.emitConstructorCall(
+      listType, CallOperands(CallSyntax::kTypeCall, this, {}), dest);
 }
 
 AnyValue MagicFunctionNode::emitStructFieldNames(ValueDest &dest,
@@ -4625,10 +4645,32 @@ AnyValue MagicFunctionNode::emitStructFieldNames(ValueDest &dest,
   // elaboration to return the actual field names.
   MLIRContext *ctx = emitter.getContext();
   auto variadicType = ParamListType::get(StringType::get(ctx));
-  auto attr =
+  auto paramListAttr =
       emitter.shared.getEvaluationContext().getAndFold<StructFieldNamesAttr>(
           ctx, typeArg->get(), variadicType);
-  return emitter.emitResult(PValue(attr), this, dest);
+
+  // Convert to a ParameterList.
+  //     ParameterList[type, values: __mlir_type.`!kgen.param_list`]
+  auto listType = emitter.shared.lookupBuiltinType("ParameterList",
+                                                   emitter.declScope, getLoc());
+  if (!paramListAttr || sugarIsa<TypeCheckErrorType>(listType))
+    return {};
+
+  ASTDecl *decl = listType.getDecl(emitter.shared);
+  auto litStruct = dyn_cast_if_present<StructDeclOp>(decl->getIfOperation());
+  if (!litStruct || litStruct.getParams().size() != 2 ||
+      !sugarIsa<ParamListType>(litStruct.getParams()[1].getType())) {
+    emitter.emitError(getLoc(), "malformed ParameterList type");
+    return {};
+  }
+
+  // Bind the TypeList[trait, value] parameter.
+  listType = litStruct.bindReference(
+      {PValue(variadicType.getElementType()), paramListAttr});
+
+  // Create an instance of IntLiteral[val]()
+  return emitter.emitConstructorCall(
+      listType, CallOperands(CallSyntax::kTypeCall, this, {}), dest);
 }
 
 AnyValue
