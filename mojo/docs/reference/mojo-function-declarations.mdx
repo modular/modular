@@ -118,29 +118,72 @@ values in its zone can be passed:
 | `/`    | Positional-only | Positional-only |
 | `*`    | Keyword-only    | Keyword-only    |
 
-### The inferred-only marker (`//`, parameters only)
+### The "infer-only" marker (`//`, parameters only)
 
-`//` markers separate *inferred* parameters from named ones. The compiler
-deduces inferred parameters from call site arguments. You can't pass these
-elements in the square parameter brackets.
-
-In the following example, the compiler infers `T` (which is `String`
-here) from the `value` argument. `count` defaults to 3:
+`//` markers separate explicitly inferred parameters from named
+parameters. The compiler deduces infer-specific parameters from call site
+arguments:
 
 ```mojo
-def splat_list[T: Copyable, //, count: Int = 3](value: T) -> List[T]:
-    return List[T](length=count, fill=value)
+from std.reflection import get_type_name
+
+def inferred_type[T: Writable, //](value: T):
+    print(t"Value is {value}. Type is {get_type_name[T]()}.")
 
 def main():
-    print(splat_list("hello"))  # ["hello", "hello", "hello"]
-    print(splat_list[2]("hello"))  # ["hello", "hello"]
+    inferred_type(5) # Value is 5. Type is Int.
+    inferred_type("Hello") # Value is Hello. Type is String.
+
+    var f: Float16 = 3.14
+    inferred_type(f) # Value is 3.140625. Type is SIMD[DType.float16, 1].
 ```
 
-This example has two call sites.
+An infer-only parameter can't be specified positionally, and it's *usually*
+inferred. Normally, you can't pass an infer-only parameter in square
+brackets. The compiler emits an error:
 
-The first call site doesn't need to use square brackets. The parameters are
-gathered from inference and a default value. The second uses a parameter to
-specify `count`. Infer-only parameters never appear at call-sites.
+```mojo
+# Error:
+# inferred_type' expects 0 positional parameters, but 1 was specified
+inferred_type[Int](5)
+```
+
+However, keyword syntax bypasses the error and allows you to specify an
+infer-only parameter:
+
+```mojo
+# Not an error
+inferred_type[T=Int](5) # Value is 5. Type is Int.
+
+# This is an error because the compiler can't convert "Hello" to Int
+# value passed to 'value' cannot be converted from
+# 'StringLiteral["Hello"]' to 'Int'
+inferred_type[T=Int]("Hello")
+```
+
+You could argue that infer-only parameters would be better named
+"infer-or-keyword parameters."
+
+Inference isn't limited to infer-only parameters. With enough context
+hints, the compiler can infer many parameters:
+
+```mojo
+def add[T: Intable](a: T, b: T) -> Int:
+    return Int(a) + Int(b)
+
+def main():
+    # Explicitly specifies T as Int
+    print(t"Sum is {add[Int](1, 2)}.")  # Sum is 3.
+
+    # Explicitly specifies T as Float64
+    print(t"Sum is {add[Float64](4.5, 1.2)}.")  # Sum is 5.
+
+    # Infers T as Int from the arguments
+    print(t"Sum is {add(1, 2)}.")  # Not an error. Sum is 3.
+
+    # Infers T as Float64 from the arguments
+    print(t"Sum is {add(4.5, 1.2)}.")  # Not an error. Sum is 5.
+```
 
 ### The positional-only marker (`/`)
 
