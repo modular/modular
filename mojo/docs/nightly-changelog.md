@@ -323,6 +323,21 @@ This version is still a work in progress.
 - `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
   or `String.count_codepoints()`.
 
+- Added `map()` and `and_then()` methods to `Optional`. `map()` transforms
+  the contained value by applying a function, returning `Optional[To]`.
+  `and_then()` chains operations that themselves return an `Optional`, enabling
+  flat-mapping over fallible computations.
+
+  ```mojo
+  var o = Optional[Int](42)
+
+  def closure(n: Int) unified {} -> String:
+    return String(n + 1)
+
+  var mapped: Optional[String] = o.map[To=String](closure)
+  print(mapped) # Optional("43")
+  ```
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as

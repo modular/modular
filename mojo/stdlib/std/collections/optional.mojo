@@ -806,6 +806,110 @@ struct Optional[T: Movable](
     ):
         result = UnsafePointer(to=self).bitcast[type_of(result)]()[]
 
+    # TODO(MOCO-3744): `To` cannot be inferred by the compiler
+    # and must be manually specified.
+    def map[
+        To: Movable,
+        //,
+        Mapper: def(var Self.T) unified -> To,
+    ](deinit self, mapper: Mapper) -> Optional[To]:
+        """Applies a function to the contained value (if any), returning an
+        `Optional` containing the result.
+
+        Transforms `Optional[T]` into `Optional[To]` by applying `mapper` to
+        the contained value. If `self` is empty, returns an empty `Optional[To]`
+        without calling `mapper`.
+
+        Parameters:
+            To: The result type of the mapping closure.
+            Mapper: The type of the mapping closure.
+
+        Args:
+            mapper: The closure to apply to the contained value.
+
+        Returns:
+            An `Optional[To]` containing the mapped value, or `None` if `self`
+            was empty.
+
+        Examples:
+
+        Map the value inside an `Optional` to a different type:
+
+        ```mojo
+        var opt = Optional("hello")
+        var length = opt.map[To=Int](String.__len__)
+        print(length.value())  # Output: 5
+        ```
+
+        If the `Optional` is empty, the mapper is not called:
+
+        ```mojo
+        var opt = Optional[String](None)
+        var length = opt.map[To=Int](String.__len__)
+        print(length.or_else(-1))  # Output: -1
+        ```
+        """
+        if self:
+            return {mapper(self.unsafe_take())}
+        else:
+            return None
+
+    # TODO(MOCO-3744): `To` cannot be inferred by the compiler
+    # and must be manually specified.
+    def and_then[
+        To: Movable,
+        //,
+        Mapper: def(var Self.T) unified -> Optional[To],
+    ](deinit self, mapper: Mapper) -> Optional[To]:
+        """Calls `mapper` on the contained value (if any), returning the result.
+
+        Unlike `map()`, the mapper function itself returns an `Optional`. This
+        allows chaining operations that may each independently fail. Sometimes
+        called "flat map" in other languages.
+
+        Parameters:
+            To: The value type of the `Optional` returned by the mapper.
+            Mapper: The type of the mapping function.
+
+        Args:
+            mapper: The function to apply to the contained value. Must return
+                an `Optional[To]`.
+
+        Returns:
+            The `Optional[To]` returned by `mapper`, or `None` if `self` was
+            empty.
+
+        Examples:
+
+        Chain operations that may each return `None`:
+
+        ```mojo
+        def try_parse_int(s: String) -> Optional[Int]:
+            try:
+                return Int(s)
+            except:
+                return None
+
+        def main():
+            var opt = Optional("42")
+            var parsed = opt.and_then[To=Int](try_parse_int)
+            print(parsed.value())  # Output: 42
+        ```
+
+        If the `Optional` is empty, the mapper is not called:
+
+        ```mojo
+        def main():
+            var opt = Optional[String](None)
+            var parsed = opt.and_then[To=Int](try_parse_int)
+            print(parsed.or_else(-1))  # Output: -1
+        ```
+        """
+        if self:
+            return mapper(self.unsafe_take())
+        else:
+            return None
+
 
 # ===-----------------------------------------------------------------------===#
 # OptionalReg

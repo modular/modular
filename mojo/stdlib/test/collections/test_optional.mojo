@@ -379,5 +379,58 @@ def test_optional_iter_owned_bounds() raises:
     assert_equal(it.bounds()[0], 0)
 
 
+def double(var x: Int) -> Float64:
+    return Float64(x) * 2.0
+
+
+def test_map_with_value() raises:
+    var opt = Optional(21)
+    var result = opt^.map[To=Float64](double)
+    assert_true(result)
+    assert_equal(result.value(), 42.0)
+
+
+def test_map_with_none() raises:
+    var opt = Optional[Int](None)
+    var result = opt^.map[To=Float64](double)
+    assert_false(result)
+
+
+def test_map_with_closure_that_takes_by_read() raises:
+    var opt = Optional[String]("hello")
+
+    def closure_by_read(s: String) unified {} -> String:
+        return s + "42"
+
+    var result1 = opt.map[To=String](closure_by_read)
+    assert_equal(result1[], "hello42")
+
+
+def try_parse_int(var s: String) -> Optional[Int]:
+    try:
+        return Int(s)
+    except:
+        return None
+
+
+def test_and_then_with_value() raises:
+    var opt = Optional("42")
+    var result = opt^.and_then[To=Int](try_parse_int)
+    assert_true(result)
+    assert_equal(result.value(), 42)
+
+
+def test_and_then_with_value_returns_none() raises:
+    var opt = Optional("not_a_number")
+    var result = opt^.and_then[To=Int](try_parse_int)
+    assert_false(result)
+
+
+def test_and_then_with_none() raises:
+    var opt = Optional[String](None)
+    var result = opt^.and_then[To=Int](try_parse_int)
+    assert_false(result)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
