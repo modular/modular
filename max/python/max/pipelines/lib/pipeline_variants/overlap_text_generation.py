@@ -62,7 +62,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import logging
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import (
@@ -87,6 +87,7 @@ from max.graph import (
     Graph,
     SymbolicDim,
     TensorType,
+    TensorValue,
     ops,
 )
 from max.graph.weights import (
@@ -449,7 +450,9 @@ _Buffer = TypeVar("_Buffer")
 @dataclass
 class _RealizeFutureTokenSpecDecodeInputs(Generic[_Tensor, _Buffer]):
     curr_draft_tokens: _Tensor
-    curr_cache_length: _Tensor
+    data_parallel_splits: _Tensor | None
+    curr_cache_lengths: Sequence[_Tensor]
+    signal_buffers: Sequence[_Buffer] | None
     prev_generated_draft_tokens: _Tensor
     prev_draft_tokens: _Tensor
     prev_num_accepted_draft_tokens: _Tensor
@@ -457,7 +460,13 @@ class _RealizeFutureTokenSpecDecodeInputs(Generic[_Tensor, _Buffer]):
     def flatten(self) -> list[_Tensor | _Buffer]:
         return [
             self.curr_draft_tokens,
-            self.curr_cache_length,
+            *(
+                (self.data_parallel_splits,)
+                if self.data_parallel_splits is not None
+                else ()
+            ),
+            *self.curr_cache_lengths,
+            *(self.signal_buffers if self.signal_buffers is not None else ()),
             self.prev_generated_draft_tokens,
             self.prev_draft_tokens,
             self.prev_num_accepted_draft_tokens,
@@ -468,7 +477,15 @@ class _RealizeFutureTokenSpecDecodeInputs(Generic[_Tensor, _Buffer]):
     ) -> _RealizeFutureTokenSpecDecodeInputs[Any, Any]:
         return _RealizeFutureTokenSpecDecodeInputs(
             curr_draft_tokens=next(it),
-            curr_cache_length=next(it),
+            data_parallel_splits=next(it)
+            if self.data_parallel_splits is not None
+            else None,
+            curr_cache_lengths=[
+                next(it) for _ in range(len(self.curr_cache_lengths))
+            ],
+            signal_buffers=[next(it) for _ in range(len(self.signal_buffers))]
+            if self.signal_buffers is not None
+            else None,
             prev_generated_draft_tokens=next(it),
             prev_draft_tokens=next(it),
             prev_num_accepted_draft_tokens=next(it),
@@ -518,10 +535,12 @@ class _RealizeFutureTokenInputs(Generic[_Tensor, _Buffer]):
 
 def build_realize_future_token_graph(
     *,
-    device: DeviceRef,
+    devices: Sequence[DeviceRef],
+    enable_dp: int,
     num_speculative_tokens: int,
 ) -> Graph:
     """Builds a graph that prepares the input for the next batch."""
+    device0 = devices[0]
     if num_speculative_tokens > 0:
         spec_decode_input_types = _RealizeFutureTokenSpecDecodeInputs[
             TensorType, BufferType
@@ -532,20 +551,40 @@ def build_realize_future_token_graph(
                     SymbolicDim("curr_batch_size"),
                     SymbolicDim("num_draft_tokens"),
                 ],
-                device=device,
+                device=device0,
             ),
-            curr_cache_length=TensorType(
-                DType.uint32,
-                shape=[SymbolicDim("curr_batch_size")],
-                device=device,
-            ),
+            data_parallel_splits=TensorType(
+                DType.int64,
+                shape=[SymbolicDim("num_replicas_plus_one")],
+                device=DeviceRef.CPU(),
+            )
+            if enable_dp
+            else None,
+            curr_cache_lengths=[
+                TensorType(
+                    DType.uint32,
+                    shape=[SymbolicDim(f"curr_batch_size_gpu_{i}")],
+                    device=device,
+                )
+                for i, device in enumerate(devices)
+            ],
+            signal_buffers=[
+                BufferType(
+                    DType.uint8,
+                    shape=[SymbolicDim(f"signal_buffer_gpu_{i}")],
+                    device=device,
+                )
+                for i, device in enumerate(devices)
+            ]
+            if len(devices) > 1
+            else None,
             prev_generated_draft_tokens=TensorType(
                 DType.int64,
                 shape=[
                     SymbolicDim("prev_batch_size"),
                     SymbolicDim("num_draft_tokens"),
                 ],
-                device=device,
+                device=device0,
             ),
             prev_draft_tokens=TensorType(
                 DType.int64,
@@ -553,12 +592,12 @@ def build_realize_future_token_graph(
                     SymbolicDim("prev_batch_size"),
                     SymbolicDim("prev_num_draft_tokens"),
                 ],
-                device=device,
+                device=device0,
             ),
             prev_num_accepted_draft_tokens=TensorType(
                 DType.int64,
                 shape=[SymbolicDim("prev_batch_size")],
-                device=device,
+                device=device0,
             ),
         )
     else:
@@ -567,27 +606,27 @@ def build_realize_future_token_graph(
         prev_to_curr_map=TensorType(
             DType.int64,
             shape=[SymbolicDim("prev_batch_size")],
-            device=device,
+            device=device0,
         ),
         curr_to_prev_map=TensorType(
             DType.int64,
             shape=[SymbolicDim("curr_batch_size")],
-            device=device,
+            device=device0,
         ),
         curr_tokens=TensorType(
             DType.int64,
             shape=[SymbolicDim("seq_len")],
-            device=device,
+            device=device0,
         ),
         curr_input_row_offsets=TensorType(
             DType.uint32,
             shape=[SymbolicDim("curr_batch_size_plus_one")],
-            device=device,
+            device=device0,
         ),
         prev_generated_tokens=TensorType(
             DType.int64,
             shape=[SymbolicDim("prev_batch_size")],
-            device=device,
+            device=device0,
         ),
         spec_decode=spec_decode_input_types,
     )
@@ -608,7 +647,7 @@ def build_realize_future_token_graph(
             curr_input_row_offsets[1:] - 1, ["curr_batch_size"]
         )
 
-        oob_idx = ops.constant(_OOB_IDX, dtype=DType.int64, device=device)
+        oob_idx = ops.constant(_OOB_IDX, dtype=DType.int64, device=device0)
 
         # scatter the prev generated tokens into the curr tokens
         prev_to_curr_token_indices = oob_idx.broadcast_to(("prev_batch_size",))
@@ -631,7 +670,7 @@ def build_realize_future_token_graph(
                 spec_decode.prev_generated_draft_tokens.shape[1]
             )
             num_draft_tokens = shape_to_scalar(
-                num_draft_tokens_dim, device, dtype=DType.uint32
+                num_draft_tokens_dim, device0, dtype=DType.uint32
             )
 
             # 0...K
@@ -639,7 +678,7 @@ def build_realize_future_token_graph(
                 start=0,
                 stop=num_draft_tokens_dim,
                 out_dim="num_draft_tokens",
-                device=device,
+                device=device0,
                 dtype=DType.uint32,
             )
 
@@ -669,7 +708,7 @@ def build_realize_future_token_graph(
             # uint32 cache lengths to match :class:`~max.nn.kv_cache.KVCacheParams`
             # paged-cache ``cache_lengths`` dtype.
             batch_increments_i64 = ops.broadcast_to(
-                ops.constant(0, dtype=DType.int64, device=device),
+                ops.constant(0, dtype=DType.int64, device=device0),
                 ["curr_batch_size"],
             )
 
@@ -680,7 +719,7 @@ def build_realize_future_token_graph(
             # still must subtract the full K used for optimistic cache extension.
             prev_num_draft_tokens = shape_to_scalar(
                 spec_decode.prev_draft_tokens.shape[1],
-                device,
+                device0,
                 dtype=DType.int64,
             )
             delta = (
@@ -693,16 +732,70 @@ def build_realize_future_token_graph(
                 indices=prev_to_curr_map,
             )
 
+            curr_cache_lenghts = spec_decode.curr_cache_lengths
+
             # realize the cache lengths
-            cache_length_u32 = spec_decode.curr_cache_length
-            realized_cache_length = (
-                cache_length_u32.cast(DType.int64) + batch_increments_i64
-            ).cast(DType.uint32)
+            realized_cache_lengths: list[TensorValue] = []
+            if len(devices) == 1:
+                cache_length_u32 = ops.rebind(
+                    curr_cache_lenghts[0], ["curr_batch_size"]
+                )
+                cache_length_adjusted = (
+                    cache_length_u32.cast(DType.int64) + batch_increments_i64
+                )
+                realized_cache_lengths.append(
+                    cache_length_adjusted.cast(DType.uint32)
+                )
+            elif enable_dp:
+                # DP > 1
+                assert spec_decode.signal_buffers is not None
+                assert spec_decode.data_parallel_splits is not None
+
+                batch_increments_distributed = ops.distributed_broadcast(
+                    batch_increments_i64, spec_decode.signal_buffers
+                )
+
+                for i in range(len(devices)):
+                    start_offset = spec_decode.data_parallel_splits[i]
+                    end_offset = spec_decode.data_parallel_splits[i + 1]
+
+                    batch_increments_local = ops.slice_tensor(
+                        batch_increments_distributed[i],
+                        [
+                            (
+                                slice(
+                                    start_offset,
+                                    end_offset,
+                                ),
+                                f"curr_batch_size_gpu_{i}",
+                            )
+                        ],
+                    )
+                    replica_cache_length = (
+                        curr_cache_lenghts[i].cast(DType.int64)
+                        + batch_increments_local
+                    )
+                    realized_cache_lengths.append(
+                        replica_cache_length.cast(DType.uint32)
+                    )
+            else:
+                # TP > 1
+                assert spec_decode.signal_buffers is not None
+                cache_length_u32 = curr_cache_lenghts[0]
+                cache_length_adjusted = (
+                    cache_length_u32.cast(DType.int64) + batch_increments_i64
+                ).cast(DType.uint32)
+
+                realized_cache_lengths.extend(
+                    ops.distributed_broadcast(
+                        cache_length_adjusted, spec_decode.signal_buffers
+                    )
+                )
 
             graph.output(
                 realized_tokens,
                 realized_draft_tokens,
-                realized_cache_length,
+                *realized_cache_lengths,
             )
 
     return graph
@@ -721,12 +814,15 @@ class RealizeFutureTokenProcessor:
     def __init__(
         self,
         session: InferenceSession,
-        device: DeviceRef,
+        devices: Sequence[DeviceRef],
         num_speculative_tokens: int = 0,
+        enable_dp: bool = False,
     ) -> None:
         self._graph = session.load(
             build_realize_future_token_graph(
-                device=device, num_speculative_tokens=num_speculative_tokens
+                devices=devices,
+                num_speculative_tokens=num_speculative_tokens,
+                enable_dp=enable_dp,
             )
         )
         self._num_speculative_tokens = num_speculative_tokens
@@ -823,10 +919,12 @@ class RealizeFutureTokenProcessor:
             assert isinstance(model_inputs, _UnifiedEagleInputs)
             assert prev_batch.spec_decode is not None
             assert model_inputs.kv_cache_inputs is not None
-            # TODO: support TP>1 and DP>1
-            assert len(model_inputs.kv_cache_inputs.inputs) == 1
 
-            cache_length = model_inputs.kv_cache_inputs.inputs[0].cache_lengths
+            num_kv_cache_inputs = len(model_inputs.kv_cache_inputs.inputs)
+            cache_lengths = [
+                model_inputs.kv_cache_inputs.inputs[i].cache_lengths
+                for i in range(num_kv_cache_inputs)
+            ]
             assert model_inputs.draft_tokens is not None
             num_draft_tokens_to_verify = model_inputs.draft_tokens.shape[1]
             num_accepted_draft_tokens = (
@@ -837,6 +935,10 @@ class RealizeFutureTokenProcessor:
             )
             prev_draft_tokens = (
                 prev_batch.spec_decode.draft_tokens_to_verify_device
+            )
+            signal_buffers = getattr(model_inputs, "signal_buffers", None)
+            data_parallel_splits = getattr(
+                model_inputs, "data_parallel_splits", None
             )
             if num_draft_tokens_to_verify == 0:
                 prev_batch_size = prev_generated_draft_tokens.shape[0]
@@ -850,7 +952,9 @@ class RealizeFutureTokenProcessor:
                 _RealizeFutureTokenSpecDecodeInputs[Buffer, Buffer] | None
             ) = _RealizeFutureTokenSpecDecodeInputs(
                 curr_draft_tokens=model_inputs.draft_tokens,
-                curr_cache_length=cache_length,
+                data_parallel_splits=data_parallel_splits,
+                curr_cache_lengths=cache_lengths,
+                signal_buffers=signal_buffers,
                 prev_generated_draft_tokens=prev_generated_draft_tokens,
                 prev_draft_tokens=prev_draft_tokens,
                 prev_num_accepted_draft_tokens=num_accepted_draft_tokens,
@@ -874,17 +978,20 @@ class RealizeFutureTokenProcessor:
         # Execute the realize_future_tokens kernel.
         if my_inputs.spec_decode is not None:
             assert isinstance(model_inputs, _UnifiedEagleInputs)
-            (tokens, draft_tokens, cache_lengths) = out
+            (tokens, draft_tokens, *cache_lengths) = out
             model_inputs.tokens = tokens
             # This is pretty subtle. We copy the realized tokens into the original
             # draft tokens buffer so that when we read from draft_tokens later on
             # we get the real values...
             model_inputs.draft_tokens.inplace_copy_from(draft_tokens)
-            assert len(model_inputs.kv_cache_inputs.inputs) == 1
-            kv = model_inputs.kv_cache_inputs.inputs[0]
-            model_inputs.kv_cache_inputs.inputs[0] = dataclasses.replace(
-                kv, cache_lengths=cache_lengths
+            assert len(model_inputs.kv_cache_inputs.inputs) == len(
+                cache_lengths
             )
+            for i in range(len(model_inputs.kv_cache_inputs.inputs)):
+                model_inputs.kv_cache_inputs.inputs[i] = dataclasses.replace(
+                    model_inputs.kv_cache_inputs.inputs[i],
+                    cache_lengths=cache_lengths[i],
+                )
         else:
             (new_ragged_input_tokens,) = out
             model_inputs.tokens = new_ragged_input_tokens
@@ -1044,9 +1151,12 @@ class OverlapTextGenerationPipeline(
             RealizeFutureTokenProcessor | None
         ) = (
             RealizeFutureTokenProcessor(
-                session,
-                DeviceRef.from_device(self._devices[0]),
+                session=session,
+                devices=[
+                    DeviceRef.from_device(device) for device in self._devices
+                ],
                 num_speculative_tokens=num_speculative_tokens,
+                enable_dp=model_config.data_parallel_degree > 1,
             )
             if self._pipeline_config.runtime.pipeline_role
             in ("prefill_and_decode", "decode_only")
@@ -1057,13 +1167,6 @@ class OverlapTextGenerationPipeline(
         self._graph_capture_runner: ServeGraphCaptureRunner | None = None
         # set a default graph capture size, 128
         self._max_graph_capture_batch_size: int = _MAX_GRAPH_CAPTURE_BATCH_SIZE
-
-        # TODO: Enable overlap for speculative decoding with >1 draft tokens.
-        if num_speculative_tokens > 1 and not disable_overlap:
-            logger.info(
-                "Speculative decoding is enabled with >1 draft tokens while using OverlapTextGenerationPipeline. Overriding disable_overlap to True."
-            )
-            disable_overlap = True
 
         self._disable_overlap = disable_overlap
 

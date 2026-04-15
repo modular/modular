@@ -102,8 +102,10 @@ def _create_async_batch(
 def realize_future_token_processor() -> RealizeFutureTokenProcessor:
     device = Accelerator()
     return RealizeFutureTokenProcessor(
-        InferenceSession(devices=[device]),
-        DeviceRef.from_device(device),
+        session=InferenceSession(devices=[device]),
+        devices=[DeviceRef.from_device(device)],
+        num_speculative_tokens=0,
+        enable_dp=False,
     )
 
 

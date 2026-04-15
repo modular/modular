@@ -154,6 +154,16 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
             "--num-speculative-tokens 3"
         ),
     },
+    # Deepseek MTP + CUDA Graph only works when num_speculative_tokens == 1
+    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
+    "nvidia/deepseek-v3.1-nvfp4__mtp_1_draft_token": {
+        "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
+        "max_serve_args": (
+            "--speculative-method eagle "
+            "--kv-cache-format float8_e4m3fn "
+            "--num-speculative-tokens 1"
+        ),
+    },
     "nvidia/kimi-k2.5-nvfp4__eagle": {
         "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
         "max_serve_args": (
