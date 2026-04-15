@@ -203,8 +203,7 @@ class WanExecutor(
         )
 
         # Compile helper graphs.
-        self._guidance_graph = self._compile_guidance()
-        self._unipc_step_graph = self._compile_unipc_step()
+        self._guided_schedule_graph = self._compile_guided_schedule()
 
         # Runtime caches.
         self._guidance_scale_cache: dict[tuple[float, DType, str], Buffer] = {}
@@ -515,109 +514,91 @@ class WanExecutor(
         i2v_condition: Buffer | None = None,
     ) -> tuple[Buffer, WanUniPCState]:
         """Run a denoising phase (high-noise or low-noise)."""
+        # Select transformer call.
+        if use_secondary_transformer:
+            transformer_call = self.transformer.call_secondary
+        else:
+            transformer_call = self.transformer.__call__
+
+        # Non-CFG uses scale=1.0, which makes the guidance formula a no-op:
+        # zeros + 1.0 * (cond - zeros) = cond.
+        if do_cfg:
+            assert guidance_scale is not None
+            scale = guidance_scale
+        else:
+            scale = self._make_guidance_scale_buffer(
+                1.0, dtype=self._model_dtype, device=self._model_device
+            )
+
+        # Lazily-created zero buffer for the unconditional prediction
+        # when CFG is disabled.
+        noise_uncond_buf: Buffer | None = None
+
         for i in step_range:
             with Tracer(f"{desc}:step_{i}"):
                 dit_timestep = batched_timesteps[i]
 
-                # Transformer forward with optional CFG.
-                # Latents are f32; the cast + optional I2V concat
-                # happen inside the pre-processor graph.
+                # Transformer forward — positive prompt.
                 with Tracer("transformer"):
-                    noise_pred_buf = self._run_transformer_forward(
-                        use_secondary=use_secondary_transformer,
-                        latents=latents,
-                        dit_timestep=dit_timestep,
-                        prompt_embeds=prompt_embeds,
-                        negative_prompt_embeds=negative_prompt_embeds,
-                        rope_cos=rope_cos,
-                        rope_sin=rope_sin,
-                        spatial_shape=spatial_shape,
-                        do_cfg=do_cfg,
-                        guidance_scale=guidance_scale,
+                    noise_pred_cond = transformer_call(
+                        latents,
+                        dit_timestep,
+                        prompt_embeds,
+                        rope_cos,
+                        rope_sin,
+                        spatial_shape,
                         i2v_condition=i2v_condition,
                     )
 
-                # UniPC scheduler step.
-                with Tracer("scheduler_step"):
-                    latents, step_state = self._unipc_step(
+                    # Negative prompt (CFG) or zero buffer (no CFG).
+                    if do_cfg and negative_prompt_embeds is not None:
+                        noise_pred_uncond = transformer_call(
+                            latents,
+                            dit_timestep,
+                            negative_prompt_embeds,
+                            rope_cos,
+                            rope_sin,
+                            spatial_shape,
+                            i2v_condition=i2v_condition,
+                        )
+                    else:
+                        if noise_uncond_buf is None:
+                            shape = tuple(int(d) for d in noise_pred_cond.shape)
+                            noise_uncond_buf = self._make_zero_buffer(
+                                shape,
+                                dtype=self._model_dtype,
+                                device=latents.device,
+                            )
+                        noise_pred_uncond = noise_uncond_buf
+
+                # Fused guidance + UniPC scheduler step.
+                with Tracer("guided_schedule"):
+                    latents, step_state = self._guided_schedule_step(
+                        noise_pred_cond,
+                        noise_pred_uncond,
+                        scale,
                         latents,
-                        noise_pred_buf,
                         coeff_buffers[i],
                         step_state,
                     )
 
         return latents, step_state
 
-    def _run_transformer_forward(
+    def _guided_schedule_step(
         self,
-        *,
-        use_secondary: bool,
+        noise_pred_cond: Buffer,
+        noise_pred_uncond: Buffer,
+        guidance_scale: Buffer,
         latents: Buffer,
-        dit_timestep: Buffer,
-        prompt_embeds: Buffer,
-        negative_prompt_embeds: Buffer | None,
-        rope_cos: Buffer,
-        rope_sin: Buffer,
-        spatial_shape: Buffer,
-        do_cfg: bool,
-        guidance_scale: Buffer | None,
-        i2v_condition: Buffer | None = None,
-    ) -> Buffer:
-        """Run transformer + optional CFG guidance.
-
-        Latents are f32; the cast to model dtype and optional I2V concat
-        happen inside the pre-processor graph.
-        """
-        # Select transformer call.
-        if use_secondary:
-            transformer_call = self.transformer.call_secondary
-        else:
-            transformer_call = self.transformer.__call__
-
-        # Two separate forward passes for CFG (unbatched path).
-        noise_pred_buf = transformer_call(
-            latents,
-            dit_timestep,
-            prompt_embeds,
-            rope_cos,
-            rope_sin,
-            spatial_shape,
-            i2v_condition=i2v_condition,
-        )
-
-        if do_cfg and negative_prompt_embeds is not None:
-            assert guidance_scale is not None
-            noise_uncond_buf = transformer_call(
-                latents,
-                dit_timestep,
-                negative_prompt_embeds,
-                rope_cos,
-                rope_sin,
-                spatial_shape,
-                i2v_condition=i2v_condition,
-            )
-            guided = self._guidance_graph.execute(
-                noise_pred_buf,
-                noise_uncond_buf,
-                guidance_scale,
-            )
-            return guided[0]
-
-        return noise_pred_buf
-
-    def _unipc_step(
-        self,
-        latents: Buffer,
-        noise_pred: Buffer,
         coeffs: Buffer,
         step_state: WanUniPCState,
     ) -> tuple[Buffer, WanUniPCState]:
-        """Run a single UniPC scheduler step."""
+        """Run fused CFG guidance + UniPC scheduler step."""
         last_sample, prev_model_output, older_model_output = step_state
         if last_sample is None:
             shape = tuple(int(d) for d in latents.shape)
-            zero = Buffer.from_numpy(np.zeros(shape, dtype=np.float32)).to(
-                latents.device
+            zero = self._make_zero_buffer(
+                shape, dtype=DType.float32, device=latents.device
             )
             last_sample = zero
             prev_model_output = zero
@@ -627,9 +608,11 @@ class WanExecutor(
         assert older_model_output is not None
         assert last_sample is not None
 
-        result = self._unipc_step_graph.execute(
+        result = self._guided_schedule_graph.execute(
+            noise_pred_cond,
+            noise_pred_uncond,
+            guidance_scale,
             latents,
-            noise_pred,
             last_sample,
             prev_model_output,
             older_model_output,
@@ -647,60 +630,56 @@ class WanExecutor(
 
     # -- Helper graph compilation ---------------------------------------------
 
-    def _compile_guidance(self) -> Model:
-        """Compile CFG guidance: uncond + scale * (cond - uncond)."""
-        device = self._model_device
-        dtype = self._model_dtype
-        latent_type = TensorType(
-            dtype,
-            shape=["batch", "channels", "frames", "height", "width"],
-            device=device,
-        )
-        input_types = [
-            latent_type,  # noise_pred
-            latent_type,  # noise_uncond
-            TensorType(dtype, shape=[1], device=device),  # guidance_scale
-        ]
+    def _compile_guided_schedule(self) -> Model:
+        """Compile fused CFG guidance + UniPC scheduler step.
 
-        with Graph("wan_guidance", input_types=input_types) as g:
-            noise_pred = g.inputs[0].tensor
-            noise_uncond = g.inputs[1].tensor
-            scale = g.inputs[2].tensor
-            g.output(noise_uncond + scale * (noise_pred - noise_uncond))
-        return self._session.load(g)
-
-    def _compile_unipc_step(self) -> Model:
-        """Compile UniPC scheduler step."""
+        Internal computation:
+        1. ``guided = uncond + scale * (cond - uncond)``
+           (when scale=1.0 and uncond=zeros this is a no-op)
+        2. ``model_output = cast(guided, f32)``
+        3. UniPC corrector + predictor update
+        """
         device = self._model_device
         model_dtype = self._model_dtype
-        latent_type_f32 = TensorType(
-            DType.float32,
-            shape=["batch", "channels", "frames", "height", "width"],
-            device=device,
-        )
         latent_type_model = TensorType(
             model_dtype,
             shape=["batch", "channels", "frames", "height", "width"],
             device=device,
         )
+        latent_type_f32 = TensorType(
+            DType.float32,
+            shape=["batch", "channels", "frames", "height", "width"],
+            device=device,
+        )
         coeff_type = TensorType(DType.float32, shape=[9], device=device)
         input_types = [
-            latent_type_f32,  # sample (f32)
-            latent_type_model,  # model_output (model dtype)
+            latent_type_model,  # noise_pred_cond
+            latent_type_model,  # noise_pred_uncond
+            TensorType(model_dtype, shape=[1], device=device),  # scale
+            latent_type_f32,  # sample (latents)
             latent_type_f32,  # last_sample
             latent_type_f32,  # prev_model_output
             latent_type_f32,  # older_model_output
-            coeff_type,
+            coeff_type,  # coefficients
         ]
 
-        with Graph("wan_unipc_step", input_types=input_types) as g:
-            sample = g.inputs[0].tensor
-            model_output = ops.cast(g.inputs[1].tensor, DType.float32)
-            last_sample = g.inputs[2].tensor
-            prev_model_output = g.inputs[3].tensor
-            older_model_output = g.inputs[4].tensor
-            coeffs = g.inputs[5].tensor
+        with Graph("wan_guided_schedule", input_types=input_types) as g:
+            noise_pred_cond = g.inputs[0].tensor
+            noise_pred_uncond = g.inputs[1].tensor
+            scale = g.inputs[2].tensor
+            sample = g.inputs[3].tensor
+            last_sample = g.inputs[4].tensor
+            prev_model_output = g.inputs[5].tensor
+            older_model_output = g.inputs[6].tensor
+            coeffs = g.inputs[7].tensor
 
+            # CFG guidance.
+            guided = noise_pred_uncond + scale * (
+                noise_pred_cond - noise_pred_uncond
+            )
+            model_output = ops.cast(guided, DType.float32)
+
+            # UniPC scheduler step.
             sigma = coeffs[0:1]
             corrected_input_scale = coeffs[1:2]
             corrector_sample_scale = coeffs[2:3]
@@ -792,6 +771,20 @@ class WanExecutor(
             compatible,
         )
         return compatible
+
+    @staticmethod
+    def _make_zero_buffer(
+        shape: tuple[int, ...], *, dtype: DType, device: Device
+    ) -> Buffer:
+        """Create a zero-filled buffer with the given shape and dtype."""
+        if dtype == DType.bfloat16:
+            return (
+                Buffer.from_numpy(np.zeros(shape, dtype=np.uint16))
+                .to(device)
+                .view(dtype=DType.bfloat16, shape=list(shape))
+            )
+        np_dtype = np.float32
+        return Buffer.from_numpy(np.zeros(shape, dtype=np_dtype)).to(device)
 
     @staticmethod
     def _buffer_to_scalar_f32(buf: Buffer) -> float:
