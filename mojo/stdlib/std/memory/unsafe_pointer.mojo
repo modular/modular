@@ -34,6 +34,7 @@ from std.builtin.rebind import downcast
 from std.builtin.format_int import _write_int
 from std.builtin.simd import _simd_construction_checks
 from std.builtin.variadics import Variadic
+from std.collections import OptionalReg
 from std.compile import get_type_name
 from std.format._utils import FormatStruct, Named, TypeNames
 from std.memory import memcpy
@@ -136,6 +137,30 @@ def unsafe_cast[
         UnsafePointer[from_type, from_origin, address_space=from_address_space]
     ],
     out result: Optional[
+        UnsafePointer[Type, origin, address_space=address_space]
+    ],
+):
+    result = UnsafePointer(to=pointer).bitcast[type_of(result)]()[]
+
+
+@always_inline
+@doc_hidden
+def unsafe_cast[
+    from_mut: Bool,
+    from_type: AnyType,
+    from_origin: Origin[mut=from_mut],
+    from_address_space: AddressSpace,
+    mut: Bool = from_mut,
+    //,
+    *,
+    Type: AnyType = from_type,
+    origin: Origin[mut=mut] = from_origin,
+    address_space: AddressSpace = from_address_space,
+](
+    pointer: OptionalReg[
+        UnsafePointer[from_type, from_origin, address_space=from_address_space]
+    ],
+    out result: OptionalReg[
         UnsafePointer[Type, origin, address_space=address_space]
     ],
 ):

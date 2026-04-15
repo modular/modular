@@ -238,6 +238,16 @@ struct Optional[T: Movable](
         """
         self = Self()
 
+    @always_inline("nodebug")
+    @implicit
+    @doc_hidden
+    def __init__[
+        U: TrivialRegisterPassable
+    ](out self: Optional[U], optional_reg: OptionalReg[U]):
+        """Implicitly cast an `OptionalReg[T]` to an `Optional[T]`."""
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+        UnsafePointer(to=self).bitcast[OptionalReg[U]]()[] = optional_reg
+
     @always_inline
     @implicit
     @doc_hidden
@@ -1194,3 +1204,14 @@ struct OptionalReg[T: TrivialRegisterPassable](
         if self:
             return self.value()
         return default
+
+    @always_inline("nodebug")
+    def _unsafe_nullable[
+        U: AnyType, origin: Origin, address_space: AddressSpace
+    ](
+        self: OptionalReg[
+            UnsafePointer[U, origin, address_space=address_space]
+        ],
+        out result: type_of(self).T,
+    ):
+        result = UnsafePointer(to=self).bitcast[type_of(result)]()[]
