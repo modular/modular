@@ -254,11 +254,7 @@ def local_tensor_type[
         element_layout=element_layout,
     ]
 ):
-    dummy_arg = {
-        UnsafePointer[
-            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.LOCAL
-        ](_unsafe_null=())
-    }
+    dummy_arg = {None}
 
 
 trait AccumulatorTile(TrivialRegisterPassable):

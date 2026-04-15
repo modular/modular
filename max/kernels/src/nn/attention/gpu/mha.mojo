@@ -917,12 +917,8 @@ def flash_attention_dispatch[
                                     _optional_lt_to_tt(sink_weights),
                                 )
                         else:
-                            comptime nullptr = UnsafePointer[
-                                Scalar[accum_type], MutAnyOrigin
-                            ](_unsafe_null=())
-
-                            var nullptr_device = DeviceBuffer[accum_type](
-                                ctx, nullptr, 0, owning=False
+                            var nullptr_device = DeviceBuffer[accum_type].empty(
+                                ctx
                             )
                             ctx.enqueue_function[kernel, kernel](
                                 q_device,

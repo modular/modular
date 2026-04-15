@@ -2166,9 +2166,9 @@ def gpu_qint4_repack_GPTQ[
         ]
 
         # Create null tensor using MutExternalOrigin (null pointer with no real origin)
-        var null_tensor = LayoutTensor[DType.int32, Layout()](
-            UnsafePointer[Int32, MutExternalOrigin](_unsafe_null=())
-        )
+        var null_tensor = LayoutTensor[
+            DType.int32, Layout(), MutExternalOrigin
+        ](None)
 
         cuda_ctx.enqueue_function[repack, repack](
             b,

@@ -411,12 +411,12 @@ struct Device(Writable):
             def(
                 _DeviceImpl,
                 UnsafePointer[UInt32, MutAnyOrigin],
-                UnsafePointer[UInt32, MutAnyOrigin],
-            ) thin -> Result,
+                Optional[UnsafePointer[UInt32, MutAnyOrigin]],
+            ) thin abi("C") -> Result,
         ]()(
             self.device,
             UnsafePointer(to=num_clocks),
-            UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
+            None,
         )
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
@@ -449,13 +449,13 @@ struct Device(Writable):
                 _DeviceImpl,
                 UInt32,
                 UnsafePointer[UInt32, MutAnyOrigin],
-                UnsafePointer[UInt32, MutAnyOrigin],
-            ) thin -> Result,
+                Optional[UnsafePointer[UInt32, MutAnyOrigin]],
+            ) thin abi("C") -> Result,
         ]()(
             self.device,
             UInt32(memory_clock_mhz),
             UnsafePointer(to=num_clocks),
-            UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
+            None,
         )
 
         if result == Result.SUCCESS:

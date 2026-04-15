@@ -1117,9 +1117,7 @@ def _matmul_qint4_m_any[
                     alignment=alignment,
                 ]() if needs_correction else UnsafePointer[
                     Int32, MutExternalOrigin
-                ](
-                    _unsafe_null=()
-                )
+                ].unsafe_dangling()
 
                 _unpack_weights[
                     group_size,

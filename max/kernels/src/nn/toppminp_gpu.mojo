@@ -523,20 +523,13 @@ def radix_sort_pairs_kernel[
 
 struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
     var _d_buffers: InlineArray[
-        UnsafePointer[Scalar[Self.dtype], MutExternalOrigin], 2
+        Optional[UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]], 2
     ]
     var _selection: Int32
     var _size: Int
 
     def __init__(out self):
-        self._d_buffers = [
-            UnsafePointer[Scalar[Self.dtype], MutExternalOrigin](
-                _unsafe_null=()
-            ),
-            UnsafePointer[Scalar[Self.dtype], MutExternalOrigin](
-                _unsafe_null=()
-            ),
-        ]
+        self._d_buffers = {fill = None}
         self._selection = 0
         self._size = 0
 
@@ -557,21 +550,27 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
 
     @always_inline
     def current(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
-        return DeviceBuffer[Self.dtype](
-            ctx,
-            self._d_buffers[self._selection],
-            self._size,
-            owning=False,
-        )
+        if self._d_buffers[self._selection]:
+            return DeviceBuffer[Self.dtype](
+                ctx,
+                self._d_buffers[self._selection].unsafe_value(),
+                self._size,
+                owning=False,
+            )
+        else:
+            return DeviceBuffer[Self.dtype].empty(ctx)
 
     @always_inline
     def alternate(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
-        return DeviceBuffer[Self.dtype](
-            ctx,
-            self._d_buffers[self._selection ^ 1],
-            self._size,
-            owning=False,
-        )
+        if self._d_buffers[self._selection ^ 1]:
+            return DeviceBuffer[Self.dtype](
+                ctx,
+                self._d_buffers[self._selection ^ 1].unsafe_value(),
+                self._size,
+                owning=False,
+            )
+        else:
+            return DeviceBuffer[Self.dtype].empty(ctx)
 
     @always_inline
     def swap(mut self):

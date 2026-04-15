@@ -2476,30 +2476,6 @@ def gumbel_sampling_gpu[
         )
         var noised_input = TileTensor(noised_input_buf, input.layout)
 
-        # Handle optional temperature parameter
-        var temp_ptr: UnsafePointer[Float32, ImmutAnyOrigin]
-        if temperature:
-            temp_ptr = rebind[UnsafePointer[Float32, ImmutAnyOrigin]](
-                temperature.value().ptr
-            )
-        else:
-            temp_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
-                _unsafe_null=()
-            )  # null pointer
-        var temp_size = temperature.value().num_elements() if temperature else 0
-
-        # Handle optional seed parameter
-        var seed_ptr: UnsafePointer[UInt64, ImmutAnyOrigin]
-        if seed:
-            seed_ptr = rebind[UnsafePointer[UInt64, ImmutAnyOrigin]](
-                seed.value().ptr
-            )
-        else:
-            seed_ptr = UnsafePointer[UInt64, ImmutAnyOrigin](
-                _unsafe_null=()
-            )  # null pointer
-        var seed_size = seed.value().num_elements() if seed else 0
-
         comptime hw_info = ctx.default_device_info
         comptime gumbel_kernel = apply_gumbel_noise_kernel[
             dtype,

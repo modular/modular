@@ -1127,9 +1127,9 @@ def _mha_sm90[
     comptime mma_thread_layout = Layout.row_major(8, 4)
 
     # Handle sink_weights
-    var sink_weights_ptr = UnsafePointer[Scalar[kv_type], ImmutAnyOrigin](
-        _unsafe_null=()
-    )
+    var sink_weights_ptr = Optional[
+        UnsafePointer[Scalar[kv_type], ImmutAnyOrigin]
+    ]()
 
     comptime if not SinkType.is_null:
         sink_weights_ptr = rebind[
@@ -1643,12 +1643,17 @@ def _mha_sm90[
                 comptime for i in range(q_head_indices.size):
                     var head_idx = q_head_indices[i]
                     sink_weight = (
-                        sink_weights_ptr[head_idx].cast[accum_type]() * log2e
+                        sink_weights_ptr.unsafe_value()[head_idx].cast[
+                            accum_type
+                        ]()
+                        * log2e
                     )
                     rowmax[i] = sink_weight
             else:
                 sink_weight = (
-                    sink_weights_ptr[q_head_indices[0]].cast[accum_type]()
+                    sink_weights_ptr.unsafe_value()[q_head_indices[0]].cast[
+                        accum_type
+                    ]()
                     * log2e
                 )
 

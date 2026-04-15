@@ -780,9 +780,9 @@ struct NoPartition[dtype: DType](
     def get_exp_sum_qk_max_pointer(
         self,
     ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
-        return UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin](
-            _unsafe_null=()
-        )
+        return UnsafePointer[
+            Scalar[Self.accum_dtype], MutAnyOrigin
+        ].unsafe_dangling()
 
 
 struct SplitKPartition[dtype: DType](
