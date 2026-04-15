@@ -3865,6 +3865,90 @@ def _handle_distributed_broadcast(
     return output_buffers
 
 
+# Non-maximum suppression
+
+
+@register_op_handler(mo.NonMaximumSuppressionOp)
+def _handle_non_maximum_suppression(
+    op: mo.NonMaximumSuppressionOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.non_maximum_suppression via single-pass Mojo NMS kernel.
+
+    Operands (MO_HostOnly):
+      inputs[0]: boxes -- [batch, num_boxes, 4] float
+      inputs[1]: scores -- [batch, num_classes, num_boxes] float
+      inputs[2]: max_output_boxes_per_class -- scalar int64
+      inputs[3]: iou_threshold -- scalar float
+      inputs[4]: score_threshold -- scalar float
+
+    The output shape [num_selected, 3] is data-dependent.  We allocate an
+    upper-bound buffer (batch * classes * max_output_per_class), run NMS
+    once, then truncate to the actual result size.
+
+    Args:
+        op: The non-maximum suppression operation.
+        inputs: Five buffers as described above.
+
+    Returns:
+        List containing a single [num_selected, 3] int64 output buffer
+        where each row is [batch_index, class_index, box_index].
+    """
+    target_device = _get_target_device(op)
+
+    assert isinstance(inputs[0], Buffer)  # boxes
+    assert isinstance(inputs[1], Buffer)  # scores
+    assert isinstance(inputs[2], Buffer)  # max_output_boxes_per_class
+    assert isinstance(inputs[3], Buffer)  # iou_threshold
+    assert isinstance(inputs[4], Buffer)  # score_threshold
+
+    boxes_buffer = inputs[0]
+    scores_buffer = inputs[1]
+    max_output_boxes = int(inputs[2].to_numpy().item())
+    iou_threshold = float(inputs[3].to_numpy().item())
+    score_threshold = float(inputs[4].to_numpy().item())
+
+    boxes_shape = list(boxes_buffer.shape)
+    scores_shape = list(scores_buffer.shape)
+
+    batch_size = boxes_shape[0]
+    num_boxes = boxes_shape[1]
+    num_classes = scores_shape[1]
+
+    upper_bound = batch_size * num_classes * max_output_boxes
+    if upper_bound == 0:
+        return [Buffer(shape=[0, 3], dtype=DType.int64, device=CPU())]
+
+    ctx_ptr = target_device._device_context_ptr()
+
+    params = (
+        batch_size,
+        num_classes,
+        num_boxes,
+        max_output_boxes,
+        iou_threshold,
+        score_threshold,
+    )
+
+    # Single pass: run NMS into an upper-bound buffer.
+    count_buf = Buffer(shape=[1], dtype=DType.int64, device=CPU())
+    work_buf = Buffer(shape=[upper_bound, 3], dtype=DType.int64, device=CPU())
+    ops.nms_ops.NmsRun(
+        count_buf,
+        work_buf,
+        boxes_buffer,
+        scores_buffer,
+        params,
+        ctx_ptr,
+    )
+    num_selected = int(count_buf.to_numpy().item())
+
+    if num_selected == 0:
+        return [Buffer(shape=[0, 3], dtype=DType.int64, device=CPU())]
+
+    # Truncate upper-bound buffer to actual result size.
+    return [Buffer.from_numpy(work_buf.to_numpy()[:num_selected].copy())]
+
+
 @register_op_handler(mo.DistributedReducescatterSumOp)
 def _handle_distributed_reducescatter_sum(
     op: mo.DistributedReducescatterSumOp,

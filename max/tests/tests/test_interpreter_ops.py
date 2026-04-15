@@ -1003,6 +1003,385 @@ class TestShapeOps:
         np.testing.assert_array_almost_equal(np.from_dlpack(z), expected)
 
 
+class TestNonMaximumSuppressionOp:
+    """Tests for NMS interpreter op (mo.non_maximum_suppression).
+
+    Routes through F.non_maximum_suppression -> ops.non_maximum_suppression ->
+    rmo.MoNonMaximumSuppressionOp -> mo.NonMaximumSuppressionOp ->
+    _handle_non_maximum_suppression -> nms_ops.NmsCount / NmsFill.
+    CPU-only (MO_HostOnly).
+
+    The reference is a pure-NumPy greedy NMS implementation applied
+    independently per (batch, class) pair.
+    """
+
+    @staticmethod
+    def _nms_numpy_reference(
+        boxes_np: np.ndarray,
+        scores_np: np.ndarray,
+        max_output_boxes_per_class: int,
+        iou_threshold: float,
+        score_threshold: float,
+    ) -> np.ndarray:
+        """Pure-NumPy greedy NMS reference.
+
+        Args:
+            boxes_np: [batch, num_boxes, 4] float array (y1, x1, y2, x2).
+            scores_np: [batch, num_classes, num_boxes] float array.
+            max_output_boxes_per_class: Max selections per (batch, class).
+            iou_threshold: IoU suppression threshold.
+            score_threshold: Minimum score threshold.
+
+        Returns:
+            [num_selected, 3] int64 array with rows
+            [batch_idx, class_idx, box_idx].
+        """
+        batch_size, num_boxes, _ = boxes_np.shape
+        num_classes = scores_np.shape[1]
+        results: list[list[int]] = []
+
+        for b in range(batch_size):
+            for c in range(num_classes):
+                sc = scores_np[b, c]
+                # Filter by score threshold.
+                candidates = [
+                    i for i in range(num_boxes) if sc[i] > score_threshold
+                ]
+                # Sort by score descending.
+                candidates.sort(key=lambda i: -sc[i])
+
+                selected: list[int] = []
+                suppressed = set()
+                for idx in candidates:
+                    if idx in suppressed:
+                        continue
+                    if len(selected) >= max_output_boxes_per_class:
+                        break
+                    selected.append(idx)
+                    # Suppress overlapping boxes.
+                    bx = boxes_np[b]
+                    y1_a, x1_a, y2_a, x2_a = bx[idx]
+                    ay1, ay2 = min(y1_a, y2_a), max(y1_a, y2_a)
+                    ax1, ax2 = min(x1_a, x2_a), max(x1_a, x2_a)
+                    area_a = (ay2 - ay1) * (ax2 - ax1)
+
+                    for other in candidates:
+                        if other in suppressed or other == idx:
+                            continue
+                        y1_b, x1_b, y2_b, x2_b = bx[other]
+                        by1, by2 = min(y1_b, y2_b), max(y1_b, y2_b)
+                        bx1, bx2 = min(x1_b, x2_b), max(x1_b, x2_b)
+                        area_b = (by2 - by1) * (bx2 - bx1)
+
+                        iy1 = max(ay1, by1)
+                        ix1 = max(ax1, bx1)
+                        iy2 = min(ay2, by2)
+                        ix2 = min(ax2, bx2)
+                        inter = max(0.0, iy2 - iy1) * max(0.0, ix2 - ix1)
+                        union = area_a + area_b - inter
+                        if union > 0 and inter / union > iou_threshold:
+                            suppressed.add(other)
+
+                for box_idx in selected:
+                    results.append([b, c, box_idx])
+
+        if not results:
+            return np.zeros((0, 3), dtype=np.int64)
+        return np.array(results, dtype=np.int64)
+
+    def test_nms_basic(self) -> None:
+        """Test NMS with 1 batch, 1 class, 6 overlapping boxes."""
+        boxes_np = np.array(
+            [
+                [
+                    [0.0, 0.0, 1.0, 1.0],
+                    [0.05, 0.05, 1.05, 1.05],
+                    [2.0, 2.0, 3.0, 3.0],
+                    [2.1, 2.1, 3.1, 3.1],
+                    [5.0, 5.0, 6.0, 6.0],
+                    [8.0, 8.0, 9.0, 9.0],
+                ]
+            ],
+            dtype=np.float32,
+        )
+        scores_np = np.array(
+            [[[0.9, 0.75, 0.6, 0.5, 0.4, 0.3]]],
+            dtype=np.float32,
+        )
+
+        max_out = 10
+        iou_thresh = 0.5
+        score_thresh = 0.0
+
+        boxes = Tensor.from_dlpack(boxes_np)
+        scores = Tensor.from_dlpack(scores_np)
+        max_out_t = Tensor.from_dlpack(np.array(max_out, dtype=np.int64))
+        iou_t = Tensor.from_dlpack(np.array(iou_thresh, dtype=np.float32))
+        score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        result_np = np.from_dlpack(result)
+        ref = self._nms_numpy_reference(
+            boxes_np, scores_np, max_out, iou_thresh, score_thresh
+        )
+        np.testing.assert_array_equal(result_np, ref)
+
+    def test_nms_multi_class(self) -> None:
+        """Test NMS with 1 batch, 2 classes (NMS runs per class)."""
+        boxes_np = np.array(
+            [
+                [
+                    [0.0, 0.0, 1.0, 1.0],
+                    [0.05, 0.05, 1.05, 1.05],
+                    [5.0, 5.0, 6.0, 6.0],
+                ]
+            ],
+            dtype=np.float32,
+        )
+        scores_np = np.array(
+            [[[0.9, 0.8, 0.3], [0.1, 0.95, 0.5]]],
+            dtype=np.float32,
+        )
+
+        max_out = 10
+        iou_thresh = 0.5
+        score_thresh = 0.0
+
+        boxes = Tensor.from_dlpack(boxes_np)
+        scores = Tensor.from_dlpack(scores_np)
+        max_out_t = Tensor.from_dlpack(np.array(max_out, dtype=np.int64))
+        iou_t = Tensor.from_dlpack(np.array(iou_thresh, dtype=np.float32))
+        score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        result_np = np.from_dlpack(result)
+        ref = self._nms_numpy_reference(
+            boxes_np, scores_np, max_out, iou_thresh, score_thresh
+        )
+        np.testing.assert_array_equal(result_np, ref)
+
+    def test_nms_multi_batch(self) -> None:
+        """Test NMS with 2 batches, 1 class each."""
+        boxes_np = np.array(
+            [
+                [
+                    [0.0, 0.0, 1.0, 1.0],
+                    [0.05, 0.05, 1.05, 1.05],
+                ],
+                [
+                    [2.0, 2.0, 3.0, 3.0],
+                    [5.0, 5.0, 6.0, 6.0],
+                ],
+            ],
+            dtype=np.float32,
+        )
+        scores_np = np.array(
+            [[[0.9, 0.8]], [[0.7, 0.6]]],
+            dtype=np.float32,
+        )
+
+        max_out = 10
+        iou_thresh = 0.5
+        score_thresh = 0.0
+
+        boxes = Tensor.from_dlpack(boxes_np)
+        scores = Tensor.from_dlpack(scores_np)
+        max_out_t = Tensor.from_dlpack(np.array(max_out, dtype=np.int64))
+        iou_t = Tensor.from_dlpack(np.array(iou_thresh, dtype=np.float32))
+        score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        result_np = np.from_dlpack(result)
+        ref = self._nms_numpy_reference(
+            boxes_np, scores_np, max_out, iou_thresh, score_thresh
+        )
+        np.testing.assert_array_equal(result_np, ref)
+
+    def test_nms_score_threshold(self) -> None:
+        """Test that boxes below score_threshold are excluded."""
+        boxes_np = np.array(
+            [
+                [
+                    [0.0, 0.0, 1.0, 1.0],
+                    [5.0, 5.0, 6.0, 6.0],
+                    [10.0, 10.0, 11.0, 11.0],
+                ]
+            ],
+            dtype=np.float32,
+        )
+        scores_np = np.array(
+            [[[0.9, 0.3, 0.1]]],
+            dtype=np.float32,
+        )
+
+        max_out = 10
+        iou_thresh = 0.5
+        score_thresh = 0.5
+
+        boxes = Tensor.from_dlpack(boxes_np)
+        scores = Tensor.from_dlpack(scores_np)
+        max_out_t = Tensor.from_dlpack(np.array(max_out, dtype=np.int64))
+        iou_t = Tensor.from_dlpack(np.array(iou_thresh, dtype=np.float32))
+        score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        result_np = np.from_dlpack(result)
+        ref = self._nms_numpy_reference(
+            boxes_np, scores_np, max_out, iou_thresh, score_thresh
+        )
+        np.testing.assert_array_equal(result_np, ref)
+        assert result_np.shape[0] == 1
+
+    def test_nms_max_output_boxes(self) -> None:
+        """Test that max_output_boxes_per_class caps selections."""
+        boxes_np = np.array(
+            [
+                [
+                    [0.0, 0.0, 1.0, 1.0],
+                    [5.0, 5.0, 6.0, 6.0],
+                    [10.0, 10.0, 11.0, 11.0],
+                ]
+            ],
+            dtype=np.float32,
+        )
+        scores_np = np.array(
+            [[[0.9, 0.8, 0.7]]],
+            dtype=np.float32,
+        )
+
+        max_out = 2
+        iou_thresh = 0.5
+        score_thresh = 0.0
+
+        boxes = Tensor.from_dlpack(boxes_np)
+        scores = Tensor.from_dlpack(scores_np)
+        max_out_t = Tensor.from_dlpack(np.array(max_out, dtype=np.int64))
+        iou_t = Tensor.from_dlpack(np.array(iou_thresh, dtype=np.float32))
+        score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        result_np = np.from_dlpack(result)
+        ref = self._nms_numpy_reference(
+            boxes_np, scores_np, max_out, iou_thresh, score_thresh
+        )
+        np.testing.assert_array_equal(result_np, ref)
+        assert result_np.shape[0] == 2
+
+    def test_nms_all_suppressed(self) -> None:
+        """Test heavy overlap — only 1 box survives."""
+        boxes_np = np.array(
+            [
+                [
+                    [0.0, 0.0, 1.0, 1.0],
+                    [0.01, 0.01, 1.01, 1.01],
+                    [0.02, 0.02, 1.02, 1.02],
+                ]
+            ],
+            dtype=np.float32,
+        )
+        scores_np = np.array(
+            [[[0.9, 0.8, 0.7]]],
+            dtype=np.float32,
+        )
+
+        max_out = 10
+        iou_thresh = 0.5
+        score_thresh = 0.0
+
+        boxes = Tensor.from_dlpack(boxes_np)
+        scores = Tensor.from_dlpack(scores_np)
+        max_out_t = Tensor.from_dlpack(np.array(max_out, dtype=np.int64))
+        iou_t = Tensor.from_dlpack(np.array(iou_thresh, dtype=np.float32))
+        score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        result_np = np.from_dlpack(result)
+        ref = self._nms_numpy_reference(
+            boxes_np, scores_np, max_out, iou_thresh, score_thresh
+        )
+        np.testing.assert_array_equal(result_np, ref)
+        assert result_np.shape[0] == 1
+
+    def test_nms_empty_output(self) -> None:
+        """Test all scores below threshold — empty output."""
+        boxes_np = np.array(
+            [
+                [
+                    [0.0, 0.0, 1.0, 1.0],
+                    [5.0, 5.0, 6.0, 6.0],
+                ]
+            ],
+            dtype=np.float32,
+        )
+        scores_np = np.array(
+            [[[0.1, 0.2]]],
+            dtype=np.float32,
+        )
+
+        max_out = 10
+        iou_thresh = 0.5
+        score_thresh = 0.5
+
+        boxes = Tensor.from_dlpack(boxes_np)
+        scores = Tensor.from_dlpack(scores_np)
+        max_out_t = Tensor.from_dlpack(np.array(max_out, dtype=np.int64))
+        iou_t = Tensor.from_dlpack(np.array(iou_thresh, dtype=np.float32))
+        score_t = Tensor.from_dlpack(np.array(score_thresh, dtype=np.float32))
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        result_np = np.from_dlpack(result)
+        assert result_np.shape == (0, 3)
+
+
 class TestInterpreterVsCompiled:
     """Tests comparing interpreter results to compiled execution."""
 
@@ -1081,6 +1460,52 @@ class TestInterpreterVsCompiled:
             compiled_result = x * two + one
 
         np.testing.assert_array_almost_equal(
+            np.from_dlpack(interp_result), np.from_dlpack(compiled_result)
+        )
+
+    def test_interpreter_matches_compiled_nms(self) -> None:
+        """Test that interpreter NMS matches compiled NMS."""
+        boxes_np = np.array(
+            [
+                [
+                    [0.0, 0.0, 1.0, 1.0],
+                    [0.05, 0.05, 1.05, 1.05],
+                    [5.0, 5.0, 6.0, 6.0],
+                ]
+            ],
+            dtype=np.float32,
+        )
+        scores_np = np.array(
+            [[[0.9, 0.75, 0.4]]],
+            dtype=np.float32,
+        )
+
+        boxes = Tensor.from_dlpack(boxes_np)
+        scores = Tensor.from_dlpack(scores_np)
+        max_out_t = Tensor.from_dlpack(np.array(10, dtype=np.int64))
+        iou_t = Tensor.from_dlpack(np.array(0.5, dtype=np.float32))
+        score_t = Tensor.from_dlpack(np.array(0.0, dtype=np.float32))
+
+        # Execute via interpreter path
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            interp_result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        # Execute via compiled path
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            compiled_result = F.non_maximum_suppression(
+                boxes, scores, max_out_t, iou_t, score_t
+            )
+
+        # Results should match
+        np.testing.assert_array_equal(
             np.from_dlpack(interp_result), np.from_dlpack(compiled_result)
         )
 

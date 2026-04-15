@@ -191,6 +191,12 @@ This version is still a work in progress.
   without falling back to compilation.
 - Added `distributed_broadcast` collective to `distributed_functional` for
   hardware-accelerated root-to-all tensor replication.
+- Added `non_maximum_suppression` op handler to the experimental eager
+  interpreter (CPU), enabling NMS to run through the interpreter without
+  falling back to compilation.
+- Added `max.graph.ops.non_maximum_suppression` graph operation (and
+  `max.experimental.functional.non_maximum_suppression` wrapper) for
+  constructing ONNX-style non-maximum suppression in MAX graphs.
 - Added `distributed.reducescatter.sum` op handler to the eager interpreter,
   enabling multi-GPU eager execution of reduce-scatter collectives without
   falling back to compilation.

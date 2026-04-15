@@ -76,6 +76,7 @@ from .hann_window import hann_window
 from .irfft import irfft
 from .layer_norm import layer_norm
 from .matmul import matmul
+from .nms import non_maximum_suppression
 from .nonzero import nonzero
 from .outer import outer
 from .pad import pad

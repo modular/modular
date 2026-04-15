@@ -41,6 +41,7 @@ from . import (  # type: ignore[attr-defined]
     layer_norm_ops,
     matmul_ops,
     misc_ops,
+    nms_ops,
     pad_ops,
     pooling_ops,
     reduce_ops,

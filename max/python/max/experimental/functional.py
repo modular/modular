@@ -726,6 +726,9 @@ mul = functional(ops.mul)
 #: Negates a tensor element-wise.
 #: See :func:`max.graph.ops.negate` for details.
 negate = functional(ops.negate)
+#: Filters boxes with high intersection-over-union.
+#: See :func:`max.graph.ops.non_maximum_suppression` for details.
+non_maximum_suppression = functional(ops.non_maximum_suppression)
 #: Returns the indices of non-zero elements.
 #: See :func:`max.graph.ops.nonzero` for details.
 nonzero = functional(ops.nonzero)
