@@ -142,6 +142,7 @@ modular_cc_test(
     tags = ["manual"],
     deps = [
         ":Utils",
+        "//max:CAPI.headers",
     ],
 )
 
