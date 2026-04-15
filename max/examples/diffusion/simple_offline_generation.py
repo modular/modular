@@ -62,8 +62,10 @@ from max.interfaces.provider_options import (
 )
 from max.interfaces.request import OpenResponsesRequest
 from max.interfaces.request.open_responses import (
+    InputFileContent,
     InputImageContent,
     InputTextContent,
+    InputVideoContent,
     OpenResponsesRequestBody,
     OutputImageContent,
     UserMessage,
@@ -74,6 +76,7 @@ from max.pipelines.lib import PixelGenerationTokenizer
 from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.pipeline_executor import PipelineExecutor
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.pipeline_variants.pixel_generation import (
     PixelGenerationPipeline,
@@ -554,15 +557,22 @@ async def generate_image(args: argparse.Namespace) -> None:
     )
 
     # Step 3: Initialize the pipeline
-    # The pipeline executes the diffusion model
+    # The pipeline executes the diffusion model. PixelGenerationPipeline
+    # accepts either a DiffusionPipeline (ModuleV3) or a PipelineExecutor
+    # (ModuleV2) subclass, so the type check here mirrors that.
     if msg := getattr(arch.pipeline_model, "not_implemented_message", None):
         raise NotImplementedError(msg)
-    if not issubclass(arch.pipeline_model, DiffusionPipeline):
+    if not issubclass(
+        arch.pipeline_model, (DiffusionPipeline, PipelineExecutor)
+    ):
         raise TypeError(
-            "Selected architecture does not implement DiffusionPipeline: "
-            f"{arch.pipeline_model}"
+            "Selected architecture does not implement DiffusionPipeline or "
+            f"PipelineExecutor: {arch.pipeline_model}"
         )
-    pipeline_model = cast(type[DiffusionPipeline], arch.pipeline_model)
+    pipeline_model = cast(
+        "type[DiffusionPipeline] | type[PipelineExecutor[Any, Any, Any]]",
+        arch.pipeline_model,
+    )
     config.runtime.denoising_cache = DenoisingCacheConfig(
         first_block_caching=args.first_block_caching,
         taylorseer=args.taylorseer,
@@ -605,8 +615,13 @@ async def generate_image(args: argparse.Namespace) -> None:
 
     # Create request with structured message if images are provided
     if input_image_data_uris:
-        # Image-to-image: Use structured message with InputImageContent + InputTextContent
-        image_content_items: list[InputImageContent | InputTextContent] = [
+        # Image-to-image: Use structured message with InputImageContent + InputTextContent.
+        image_content_items: list[
+            InputTextContent
+            | InputImageContent
+            | InputFileContent
+            | InputVideoContent
+        ] = [
             InputImageContent(
                 type="input_image",
                 image_url=uri,
