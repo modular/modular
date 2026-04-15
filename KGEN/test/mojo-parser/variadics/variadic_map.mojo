@@ -28,7 +28,7 @@ struct DepT[T: AnyType](Movable):
     pass
 
 
-comptime ToDepT[From: Variadic.TypesOfTrait[Movable], i: Int] = DepT[From[i]]
+comptime ToDepT[From: Variadic.TypesOfTrait[Movable], i: Int] = DepT[TypeList[From]()[i]]
 comptime AnyToDepT[
     Ts: Variadic.TypesOfTrait[Movable]
 ] = MapVariadicAndIdxToType[
