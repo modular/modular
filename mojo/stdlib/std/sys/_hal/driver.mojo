@@ -59,7 +59,7 @@ struct Driver(Movable):
             minor=M_DRIVER_INTERFACE_VERSION_MINOR,
             patch=M_DRIVER_INTERFACE_VERSION_PATCH,
         )
-        var handle = UnsafeMaybeUninit(DriverHandle(_unsafe_null=()))
+        var handle = UnsafeMaybeUninit[DriverHandle]()
 
         var status = plugin.create.f(
             ImmutPointer(

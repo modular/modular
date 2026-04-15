@@ -3289,7 +3289,7 @@ struct DeviceExternalFunction:
                 UInt32,
                 UnsafePointer[OpaquePointer[MutAnyOrigin], MutAnyOrigin],
                 UInt32,
-                UnsafePointer[UInt64, MutAnyOrigin],
+                Optional[UnsafePointer[UInt64, MutAnyOrigin]],
             ](
                 ctx._handle,
                 self._handle,
@@ -3304,7 +3304,7 @@ struct DeviceExternalFunction:
                 UInt32(len(attributes)),
                 dense_args_addrs.unsafe_ptr(),
                 UInt32(num_args),
-                UnsafePointer[UInt64, MutAnyOrigin](_unsafe_null=()),
+                None,
             )
         )
 

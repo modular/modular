@@ -297,7 +297,7 @@ def dlerror(out result: _CPointer[c_char, MutExternalOrigin]):
 
 @always_inline
 def dlopen(
-    filename: UnsafePointer[mut=False, c_char, _], flags: c_int
+    filename: OptionalUnsafePointer[c_char, _], flags: c_int
 ) -> _CPointer[NoneType, MutExternalOrigin]:
     return external_call["dlopen", _CPointer[NoneType, MutExternalOrigin]](
         filename, flags

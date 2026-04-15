@@ -480,7 +480,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             If `dlopen(nullptr, flags)` fails.
         """
         self = Self._dlopen(
-            UnsafePointer[c_char, MutExternalOrigin](_unsafe_null=()), flags
+            Optional[UnsafePointer[c_char, ExternalOrigin[mut=False]]](), flags
         )
 
     def __init__[
@@ -505,7 +505,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
 
     @staticmethod
     def _dlopen(
-        file: UnsafePointer[mut=False, c_char, _], flags: Int
+        file: OptionalUnsafePointer[c_char, _], flags: Int
     ) raises -> _DLHandle:
         var handle = dlopen(file, Int32(flags))
         if not handle:
