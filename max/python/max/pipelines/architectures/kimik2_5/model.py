@@ -31,7 +31,7 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType
+from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.buffer_utils import cast_tensor_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces.request import RequestID
@@ -603,21 +603,6 @@ class KimiK2_5Model(
                 key: value.data() for key, value in self.weights.items()
             }
 
-        # Split state dict into vision and language model components.
-        # After weight adaptation, vision tower and patch merger weights
-        # are both under the ``vision_encoder.`` prefix.
-        vision_state_dict: dict[str, WeightData] = {}
-        llm_state_dict: dict[str, WeightData] = {}
-        for key, value in state_dict.items():
-            if key.startswith("vision_encoder."):
-                vision_state_dict[key] = value
-            elif key.startswith("language_"):
-                llm_state_dict[key] = value
-            else:
-                raise ValueError(
-                    f"Key: {key} is not part of the vision or language model"
-                )
-
         # Create the LM model first
         config = self._create_model_config(state_dict)
 
@@ -651,28 +636,28 @@ class KimiK2_5Model(
         self.state_dict = self.nn_model.state_dict()
         logger.info("Loaded Weights")
 
-        # Load the vision model.
-        with CompilationTimer("vision model") as timer:
-            vision_graph = self._build_vision_graph(
-                kimik2_5_config, vision_state_dict
-            )
-            timer.mark_build_complete()
-            vision_model = session.load(
-                vision_graph, weights_registry=self.state_dict
-            )
+        # Load the vision + language model.
+        with CompilationTimer("vision + language model") as timer:
+            # Create a new module to hold both models
+            module = Graph.empty_module()
 
-        # Load the language model.
-        with CompilationTimer("language model") as timer:
-            language_graph = self._build_language_graph(config)
+            # Build the vision graph in the module
+            self._build_vision_graph(kimik2_5_config, state_dict, module=module)
+
+            # Build the language graph in the module
+            language_graph = self._build_language_graph(config, module=module)
             timer.mark_build_complete()
-            language_model = session.load(
+            vision_model, language_model = session.load_all(
                 language_graph, weights_registry=self.state_dict
             )
 
         return vision_model, language_model
 
     def _build_vision_graph(
-        self, config: KimiK2_5Config, state_dict: dict[str, WeightData]
+        self,
+        config: KimiK2_5Config,
+        state_dict: dict[str, WeightData],
+        module: Module | None = None,
     ) -> Graph:
         """Build the vision model graph for processing images."""
         assert isinstance(self.nn_model, KimiK2_5)
@@ -749,6 +734,7 @@ class KimiK2_5Model(
                     *signal_buffer_types,
                 ]
             ),
+            module=module,
         ) as graph:
             # Extract inputs
             all_inputs = graph.inputs
@@ -793,7 +779,11 @@ class KimiK2_5Model(
 
             return graph
 
-    def _build_language_graph(self, config: KimiK2_5TextConfig) -> Graph:
+    def _build_language_graph(
+        self,
+        config: KimiK2_5TextConfig,
+        module: Module | None = None,
+    ) -> Graph:
         """Build the language model graph for text generation with image embeddings."""
         assert isinstance(self.nn_model, KimiK2_5)
         language_model = self.nn_model.language_model
@@ -803,6 +793,7 @@ class KimiK2_5Model(
         with Graph(
             "kimik2_5_language_graph",
             input_types=language_model.input_types(self.kv_params),
+            module=module,
         ) as graph:
             n = len(self.devices)
             tokens, all_inputs = graph.inputs[0], graph.inputs[1:]
