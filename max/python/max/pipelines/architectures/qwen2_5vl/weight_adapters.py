@@ -24,6 +24,8 @@ QWEN2_5_VL_MODEL_MAPPING = {
     "merger.ln_q.": "merger.norm.",
     "merger.mlp.0.": "merger.linear1.",
     "merger.mlp.2.": "merger.linear2.",
+    # Remap stacked QKV in vision attention to StackedLinear namespace.
+    "attn.qkv.": "attn.qkv_proj.",
 }
 
 

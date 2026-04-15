@@ -59,11 +59,18 @@ from transformers.models.gemma3.modeling_gemma3 import (
 )
 
 from testbed.harnesses.ragged_attention_harness import (
+    HF_TO_HARNESS_BASE,
     AttentionDynamicParams,
     AttentionStaticParams,
     RaggedAttentionHarness,
 )
 from testbed.registry import register_harness
+
+_HF_TO_HARNESS = {
+    **HF_TO_HARNESS_BASE,
+    "q_norm.weight": "q_norm.weight",
+    "k_norm.weight": "k_norm.weight",
+}
 
 
 @dataclass
@@ -159,15 +166,15 @@ class Gemma3AttentionHarness(
         kv_dim = n_kv_heads * head_dim
 
         weights: dict[str, torch.Tensor] = {
-            "q_proj.weight": torch.randn(
+            "qkv_proj.q.weight": torch.randn(
                 q_dim, hidden_size, dtype=torch.bfloat16
             )
             * 0.0284,
-            "k_proj.weight": torch.randn(
+            "qkv_proj.k.weight": torch.randn(
                 kv_dim, hidden_size, dtype=torch.bfloat16
             )
             * 0.0309,
-            "v_proj.weight": torch.randn(
+            "qkv_proj.v.weight": torch.randn(
                 kv_dim, hidden_size, dtype=torch.bfloat16
             )
             * 0.0309,
@@ -270,8 +277,9 @@ class Gemma3AttentionHarness(
         # q_norm/k_norm. Gemma3RMSNorm also applies weight_offset=1.0
         # (effective scale = 1 + weight), so we can load weights directly.
         for name, param in layer.named_parameters():
-            if name in self._torch_weights:
-                param.data = self._torch_weights[name].to(
+            harness_name = _HF_TO_HARNESS.get(name, name)
+            if harness_name in self._torch_weights:
+                param.data = self._torch_weights[harness_name].to(
                     device=device, dtype=torch.bfloat16
                 )
 

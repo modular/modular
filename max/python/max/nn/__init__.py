@@ -81,6 +81,7 @@ from .sampling import (
     RejectionSamplerWithResiduals,
 )
 from .sequential import Sequential
+from .stacked_linear import StackedLinear
 from .transformer import (
     DistributedTransformer,
     DistributedTransformerBlock,
@@ -147,6 +148,7 @@ __all__ = [
     "Sequential",
     "Shardable",
     "Signals",
+    "StackedLinear",
     "SupportsLoRA",
     "TensorParallelAttentionWithRope",
     "TensorParallelLatentAttentionWithRope",

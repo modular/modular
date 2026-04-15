@@ -24,6 +24,10 @@ from transformers import LlamaConfig
 LLAMA_SAFETENSOR_MAPPING = {
     "model.": "",  # Removes the "model" prefix.
     "g_idx": "perm_idx",  # Specific to Llama GPT-Q weights.
+    # Remap unfused Q/K/V projections into StackedLinear namespace.
+    "self_attn.q_proj.": "self_attn.qkv_proj.q.",
+    "self_attn.k_proj.": "self_attn.qkv_proj.k.",
+    "self_attn.v_proj.": "self_attn.qkv_proj.v.",
 }
 
 

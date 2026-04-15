@@ -18,13 +18,14 @@ import math
 from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
-from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
+from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
 from max.nn.attention import num_heads_for_device
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.kernels import flash_attention_ragged_gpu
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.quant_config import QuantConfig
+from max.nn.stacked_linear import StackedLinear
 
 
 class DistributedVisionWindowAttention(Module, Shardable):
@@ -61,17 +62,14 @@ class DistributedVisionWindowAttention(Module, Shardable):
         self.flash_attention = flash_attention
         self.quant_config = quant_config
 
-        self.qkv_proj = Weight(
-            name="qkv.weight",
+        self.qkv_proj = StackedLinear(
+            in_dim=hidden_size,
+            out_dims=[hidden_size, hidden_size, hidden_size],
+            names=["q", "k", "v"],
             dtype=self.dtype,
-            shape=(3 * hidden_size, hidden_size),
             device=self.devices[0],
-        )
-        self.qkv_proj_bias = Weight(
-            name="qkv.bias",
-            dtype=self.dtype,
-            shape=(3 * hidden_size,),
-            device=self.devices[0],
+            stacked=True,
+            has_bias=True,
         )
 
         self.proj = Linear(
@@ -83,16 +81,6 @@ class DistributedVisionWindowAttention(Module, Shardable):
             quant_config=quant_config,
         )
 
-    @property
-    def wqkv(self) -> TensorValue:
-        """The concatenation of q, k, and v weight vectors."""
-        return self.qkv_proj
-
-    @property
-    def wqkv_bias(self) -> TensorValue | None:
-        """The concatenation of q, k, and v bias weight vectors."""
-        return self.qkv_proj_bias
-
     def _compute_qkv(
         self, x: TensorValue
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
@@ -100,10 +88,8 @@ class DistributedVisionWindowAttention(Module, Shardable):
         # x: [seq_len, hidden_size]
         seq_len = x.shape[0]
 
-        # Fused in-projection for Q, K, V using stacked weights
-        qkv = x @ self.wqkv.T
-        if self.wqkv_bias is not None:
-            qkv += self.wqkv_bias
+        # Fused in-projection for Q, K, V via StackedLinear.
+        qkv = self.qkv_proj(x)
         # For tensor parallel attention with uneven head distribution,
         # the QKV output dimension matches the weight's row dimension
         # which is 3 * (num_heads_for_this_device * head_dim)
@@ -212,18 +198,13 @@ class DistributedVisionWindowAttention(Module, Shardable):
             strategy: The sharding strategy to apply.
         """
         if strategy.is_replicate:
-            # For replicate strategy, all weights use the same strategy
             self.qkv_proj.sharding_strategy = strategy
-            self.qkv_proj_bias.sharding_strategy = strategy
             self.proj.sharding_strategy = strategy
         else:
             # For tensor parallel: QKV stacked sharding, output column-wise
             num_devices = strategy.num_devices
 
             self.qkv_proj.sharding_strategy = ShardingStrategy.stacked_qkv(
-                num_devices, self.n_heads, self.head_dim
-            )
-            self.qkv_proj_bias.sharding_strategy = ShardingStrategy.stacked_qkv(
                 num_devices, self.n_heads, self.head_dim
             )
             self.proj.sharding_strategy = (
@@ -250,8 +231,6 @@ class DistributedVisionWindowAttention(Module, Shardable):
 
         # Get sharded weights
         qkv_proj_shards = self.qkv_proj.shard(devices)
-        qkv_proj_bias_shards = self.qkv_proj_bias.shard(devices)
-
         proj_shards = self.proj.shard(devices)
 
         shards = []
@@ -276,8 +255,6 @@ class DistributedVisionWindowAttention(Module, Shardable):
 
             # Assign sharded weights
             sharded.qkv_proj = qkv_proj_shards[shard_idx]
-            sharded.qkv_proj_bias = qkv_proj_bias_shards[shard_idx]
-
             sharded.proj = proj_shards[shard_idx]
 
             shards.append(sharded)

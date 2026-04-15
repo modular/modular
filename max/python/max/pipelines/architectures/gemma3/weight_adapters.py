@@ -21,6 +21,9 @@ GEMMA3_SAFETENSOR_MAP: dict[str, str] = {
     "model.norm.": "language_model.norm.",
     "lm_head.": "language_model.lm_head.",
     "model.layers.": "language_model.layers.",
+    "self_attn.q_proj.": "self_attn.qkv_proj.q.",
+    "self_attn.k_proj.": "self_attn.qkv_proj.k.",
+    "self_attn.v_proj.": "self_attn.qkv_proj.v.",
 }
 
 

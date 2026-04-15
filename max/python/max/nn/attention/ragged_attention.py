@@ -19,9 +19,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, Weight, ops
+from max.graph import DeviceRef, TensorValue, ops
 
-from ..clamp import clamp
 from ..kernels import (
     flash_attention_ragged,
     store_k_cache_ragged,
@@ -33,6 +32,7 @@ from ..kv_cache import (
 )
 from ..layer import Module
 from ..linear import Linear
+from ..stacked_linear import StackedLinear
 from .mask_config import MHAMaskVariant
 
 
@@ -78,10 +78,6 @@ class RaggedAttention(Module):
             raise ValueError(
                 "RaggedAttention does not yet support `has_bias=True`."
             )
-        if stacked_qkv and clip_qkv:
-            raise ValueError(
-                "`clip_qkv` not yet supported when `stack_qkv=True`."
-            )
 
         super().__init__()
         self.mask_variant = mask_variant
@@ -94,7 +90,6 @@ class RaggedAttention(Module):
             if scale is not None
             else math.sqrt(1.0 / self.kv_params.head_dim)
         )
-        self.clip_qkv = clip_qkv
         self.devices = devices or [DeviceRef.CPU()]
 
         kv_weight_dim = (
@@ -103,56 +98,17 @@ class RaggedAttention(Module):
 
         self.stacked_qkv = stacked_qkv
 
-        if stacked_qkv:
-            # To keep the weight names consistent with the transformers attention,
-            # the names are suffixed ".weight".
-            self.qkv_proj = Weight(
-                name="qkv_proj.weight",
-                dtype=dtype,
-                shape=[hidden_size + 2 * kv_weight_dim, hidden_size],
-                device=self.devices[0],
-            )
-        else:
-            self.q_proj = Weight(
-                name="q_proj.weight",
-                dtype=dtype,
-                shape=[hidden_size, hidden_size],
-                device=self.devices[0],
-            )
-            self.k_proj = Weight(
-                name="k_proj.weight",
-                dtype=dtype,
-                shape=[kv_weight_dim, hidden_size],
-                device=self.devices[0],
-            )
-            self.v_proj = Weight(
-                name="v_proj.weight",
-                dtype=dtype,
-                shape=[kv_weight_dim, hidden_size],
-                device=self.devices[0],
-            )
-
-        if has_bias:
-            assert not stacked_qkv, "Bias is not supported with stacked qkv."
-
-            self.bias_q = Weight(
-                name="q_proj.bias",
-                dtype=dtype,
-                shape=[hidden_size],
-                device=self.devices[0],
-            )
-            self.bias_k = Weight(
-                name="k_proj.bias",
-                dtype=dtype,
-                shape=[kv_weight_dim],
-                device=self.devices[0],
-            )
-            self.bias_v = Weight(
-                name="v_proj.bias",
-                dtype=dtype,
-                shape=[kv_weight_dim],
-                device=self.devices[0],
-            )
+        self.qkv_proj = StackedLinear(
+            in_dim=hidden_size,
+            out_dims=[hidden_size, kv_weight_dim, kv_weight_dim],
+            names=["q", "k", "v"],
+            dtype=dtype,
+            device=self.devices[0],
+            stacked=stacked_qkv,
+            has_bias=has_bias,
+            linear_cls=linear_cls,
+            clip_weight=clip_qkv,
+        )
 
         self.o_proj = linear_cls(
             in_dim=hidden_size,
@@ -160,21 +116,6 @@ class RaggedAttention(Module):
             dtype=dtype,
             device=self.devices[0],
         )
-
-    @property
-    def wqkv(self) -> TensorValue:
-        """The concatenation of q, k, and v weight vectors."""
-        if self.stacked_qkv:
-            return self.qkv_proj
-        else:
-            wq: TensorValue = self.q_proj
-            wk: TensorValue = self.k_proj
-            wv: TensorValue = self.v_proj
-            if self.clip_qkv:
-                wq = clamp(wq, min=-self.clip_qkv, max=self.clip_qkv)
-                wk = clamp(wk, min=-self.clip_qkv, max=self.clip_qkv)
-                wv = clamp(wv, min=-self.clip_qkv, max=self.clip_qkv)
-            return ops.concat((wq, wk, wv))
 
     def __call__(
         self,
@@ -187,8 +128,7 @@ class RaggedAttention(Module):
         total_seq_len = x.shape[0]
 
         # QKV matmul.
-        wqkv = self.wqkv
-        qkv = x @ wqkv.T
+        qkv = self.qkv_proj(x)
 
         # Split into Q, K, V and store K/V to cache.
         head_dim = self.kv_params.head_dim

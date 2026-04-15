@@ -44,8 +44,8 @@ from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import Module, Shardable
 from ..linear import Linear
 from ..norm import RMSNorm
-from ..quant_ops import quantized_matmul
 from ..rotary_embedding import RotaryEmbedding
+from ..stacked_linear import StackedLinear
 from .interfaces import DistributedAttentionImpl
 from .mask_config import MHAMaskVariant
 
@@ -133,66 +133,22 @@ class AttentionWithRope(Module, Shardable):
                 num_devices
             )
 
-        if stacked_qkv and clip_qkv:
-            raise ValueError(
-                "`clip_qkv` not yet supported when `stacked_qkv=True`."
-            )
-
-        if stacked_qkv and has_bias:
-            raise ValueError("Bias is not supported with stacked_qkv.")
-
-        if quant_config and has_bias and not stacked_qkv:
-            raise ValueError(
-                "Bias is not supported with quantized non-stacked QKV."
-            )
-
-        # Static FP8 + stacked QKV needs special scale plumbing; not wired up yet.
-        if (
-            stacked_qkv
-            and (quant_config is not None)
-            and quant_config.is_static
-        ):
-            raise NotImplementedError(
-                "Float8 static scaling with stacked_qkv=True is not supported yet."
-            )
-
         q_weight_dim = self.kv_params.head_dim * num_attention_heads
         kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
         self.q_weight_dim = q_weight_dim
 
-        if stacked_qkv:
-            # Keep names consistent with other stacks by suffixing ".weight".
-            self.qkv_proj = Weight(
-                name="qkv_proj.weight",
-                dtype=dtype,
-                shape=[q_weight_dim + 2 * kv_weight_dim, hidden_size],
-                device=self.devices[0],
-            )
-        else:
-            self.q_proj = linear_cls(
-                in_dim=hidden_size,
-                out_dim=q_weight_dim,
-                dtype=dtype,
-                device=self.devices[0],
-                has_bias=has_bias,
-                quant_config=quant_config,
-            )
-            self.k_proj = linear_cls(
-                in_dim=hidden_size,
-                out_dim=kv_weight_dim,
-                dtype=dtype,
-                device=self.devices[0],
-                has_bias=has_bias,
-                quant_config=quant_config,
-            )
-            self.v_proj = linear_cls(
-                in_dim=hidden_size,
-                out_dim=kv_weight_dim,
-                dtype=dtype,
-                device=self.devices[0],
-                has_bias=has_bias,
-                quant_config=quant_config,
-            )
+        self.qkv_proj = StackedLinear(
+            in_dim=hidden_size,
+            out_dims=[q_weight_dim, kv_weight_dim, kv_weight_dim],
+            names=["q", "k", "v"],
+            dtype=dtype,
+            device=self.devices[0],
+            stacked=stacked_qkv,
+            has_bias=has_bias,
+            linear_cls=linear_cls,
+            quant_config=quant_config,
+            clip_weight=clip_qkv,
+        )
 
         self.o_proj = linear_cls(
             in_dim=q_weight_dim,
@@ -227,13 +183,7 @@ class AttentionWithRope(Module, Shardable):
                 )
             else:
                 # Column-shard by output channels (heads) for each projection.
-                self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
-                    num_devices
-                )
-                self.k_proj.sharding_strategy = ShardingStrategy.rowwise(
-                    num_devices
-                )
-                self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
+                self.qkv_proj.sharding_strategy = ShardingStrategy.rowwise(
                     num_devices
                 )
 
@@ -247,20 +197,9 @@ class AttentionWithRope(Module, Shardable):
             self._sharding_strategy = strategy
 
             num_devices = strategy.num_devices
-            if self.stacked_qkv:
-                self.qkv_proj.sharding_strategy = ShardingStrategy.replicate(
-                    num_devices
-                )
-            else:
-                self.q_proj.sharding_strategy = ShardingStrategy.replicate(
-                    num_devices
-                )
-                self.k_proj.sharding_strategy = ShardingStrategy.replicate(
-                    num_devices
-                )
-                self.v_proj.sharding_strategy = ShardingStrategy.replicate(
-                    num_devices
-                )
+            self.qkv_proj.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
             self.o_proj.sharding_strategy = ShardingStrategy.replicate(
                 num_devices
             )
@@ -287,12 +226,7 @@ class AttentionWithRope(Module, Shardable):
                     "Tensor-parallel AttentionWithRope does not support CPU devices"
                 )
 
-            if self.stacked_qkv:
-                qkv_proj_shards = self.qkv_proj.shard(devices)
-            else:
-                q_proj_shards = self.q_proj.shard(devices)
-                k_proj_shards = self.k_proj.shard(devices)
-                v_proj_shards = self.v_proj.shard(devices)
+            qkv_proj_shards = self.qkv_proj.shard(devices)
             o_proj_shards = self.o_proj.shard(devices)
 
             # Replicate Q/K RMSNorm gamma across devices (per-head gamma is shared).
@@ -343,12 +277,7 @@ class AttentionWithRope(Module, Shardable):
                     clip_qkv=self.clip_qkv,
                 )
 
-                if self.stacked_qkv:
-                    layer.qkv_proj = qkv_proj_shards[n]
-                else:
-                    layer.q_proj = q_proj_shards[n]
-                    layer.k_proj = k_proj_shards[n]
-                    layer.v_proj = v_proj_shards[n]
+                layer.qkv_proj = qkv_proj_shards[n]
                 layer.o_proj = o_proj_shards[n]
 
                 if self.use_qk_norm:
@@ -366,12 +295,7 @@ class AttentionWithRope(Module, Shardable):
 
         elif self.sharding_strategy.is_replicate:
             # Replicate full weights to each device (no head split).
-            if self.stacked_qkv:
-                qkv_proj_replicas = self.qkv_proj.shard(devices)
-            else:
-                q_proj_replicas = self.q_proj.shard(devices)
-                k_proj_replicas = self.k_proj.shard(devices)
-                v_proj_replicas = self.v_proj.shard(devices)
+            qkv_proj_replicas = self.qkv_proj.shard(devices)
             o_proj_replicas = self.o_proj.shard(devices)
 
             # Replicate Q/K RMSNorm gamma as well if used.
@@ -402,12 +326,7 @@ class AttentionWithRope(Module, Shardable):
                     quant_config=self.quant_config,
                     clip_qkv=self.clip_qkv,
                 )
-                if self.stacked_qkv:
-                    replica.qkv_proj = qkv_proj_replicas[i]
-                else:
-                    replica.q_proj = q_proj_replicas[i]
-                    replica.k_proj = k_proj_replicas[i]
-                    replica.v_proj = v_proj_replicas[i]
+                replica.qkv_proj = qkv_proj_replicas[i]
                 replica.o_proj = o_proj_replicas[i]
 
                 if self.use_qk_norm:
@@ -433,11 +352,11 @@ class AttentionWithRope(Module, Shardable):
     def wqkv(self) -> TensorValue:
         """The concatenation of q, k, and v weight vectors."""
         if self.stacked_qkv:
-            return self.qkv_proj
+            return self.qkv_proj.weight
         else:
-            wq: TensorValue = self.q_proj.weight
-            wk: TensorValue = self.k_proj.weight
-            wv: TensorValue = self.v_proj.weight
+            wq: TensorValue = self.qkv_proj._child("q").weight
+            wk: TensorValue = self.qkv_proj._child("k").weight
+            wv: TensorValue = self.qkv_proj._child("v").weight
             if self.clip_qkv:
                 wq = clamp(wq, min=-self.clip_qkv, max=self.clip_qkv)
                 wk = clamp(wk, min=-self.clip_qkv, max=self.clip_qkv)
@@ -455,12 +374,13 @@ class AttentionWithRope(Module, Shardable):
         assert not self.stacked_qkv
 
         # Access bias, which should all exist since has_bias=True.
-        assert self.q_proj.bias is not None
-        assert self.k_proj.bias is not None
-        assert self.v_proj.bias is not None
-        return ops.concat(
-            (self.q_proj.bias, self.k_proj.bias, self.v_proj.bias)
-        )
+        q_bias = self.qkv_proj._child("q").bias
+        k_bias = self.qkv_proj._child("k").bias
+        v_bias = self.qkv_proj._child("v").bias
+        assert q_bias is not None
+        assert k_bias is not None
+        assert v_bias is not None
+        return ops.concat((q_bias, k_bias, v_bias))
 
     @property
     def qkv_input_scale(self) -> TensorValue | None:
@@ -473,17 +393,16 @@ class AttentionWithRope(Module, Shardable):
                 "QKV input scale not implemented for stacked_qkv=True"
             )
 
-        assert self.q_proj.input_scale is not None
-        assert self.k_proj.input_scale is not None
-        assert self.v_proj.input_scale is not None
+        q_is = self.qkv_proj._child("q").input_scale
+        k_is = self.qkv_proj._child("k").input_scale
+        v_is = self.qkv_proj._child("v").input_scale
+        assert q_is is not None
+        assert k_is is not None
+        assert v_is is not None
 
         return ops.max(
             ops.concat(
-                (
-                    self.q_proj.input_scale.reshape((1,)),
-                    self.k_proj.input_scale.reshape((1,)),
-                    self.v_proj.input_scale.reshape((1,)),
-                )
+                (q_is.reshape((1,)), k_is.reshape((1,)), v_is.reshape((1,)))
             )
         ).reshape(())
 
@@ -497,19 +416,21 @@ class AttentionWithRope(Module, Shardable):
                 "QKV weight scale not implemented for stacked_qkv=True"
             )
 
-        assert self.q_proj.weight_scale is not None
-        assert self.k_proj.weight_scale is not None
-        assert self.v_proj.weight_scale is not None
-
-        q_scale: TensorValue = self.q_proj.weight_scale
-        k_scale: TensorValue = self.k_proj.weight_scale
-        v_scale: TensorValue = self.v_proj.weight_scale
-        if len(q_scale.shape) == 0:
-            q_scale = q_scale.reshape((1,))
-        if len(k_scale.shape) == 0:
-            k_scale = k_scale.reshape((1,))
-        if len(v_scale.shape) == 0:
-            v_scale = v_scale.reshape((1,))
+        q_ws = self.qkv_proj._child("q").weight_scale
+        k_ws = self.qkv_proj._child("k").weight_scale
+        v_ws = self.qkv_proj._child("v").weight_scale
+        assert q_ws is not None
+        assert k_ws is not None
+        assert v_ws is not None
+        q_scale: TensorValue = (
+            q_ws.reshape((1,)) if len(q_ws.shape) == 0 else q_ws
+        )
+        k_scale: TensorValue = (
+            k_ws.reshape((1,)) if len(k_ws.shape) == 0 else k_ws
+        )
+        v_scale: TensorValue = (
+            v_ws.reshape((1,)) if len(v_ws.shape) == 0 else v_ws
+        )
 
         weight_scale = ops.concat((q_scale, k_scale, v_scale))
 
@@ -543,16 +464,19 @@ class AttentionWithRope(Module, Shardable):
                 "QKV input scale not implemented for stacked_qkv=True"
             )
 
-        assert self.q_proj.weight_scale_2 is not None
-        assert self.k_proj.weight_scale_2 is not None
-        assert self.v_proj.weight_scale_2 is not None
+        q_ws2 = self.qkv_proj._child("q").weight_scale_2
+        k_ws2 = self.qkv_proj._child("k").weight_scale_2
+        v_ws2 = self.qkv_proj._child("v").weight_scale_2
+        assert q_ws2 is not None
+        assert k_ws2 is not None
+        assert v_ws2 is not None
 
         return ops.max(
             ops.concat(
                 (
-                    self.q_proj.weight_scale_2.reshape((1,)),
-                    self.k_proj.weight_scale_2.reshape((1,)),
-                    self.v_proj.weight_scale_2.reshape((1,)),
+                    q_ws2.reshape((1,)),
+                    k_ws2.reshape((1,)),
+                    v_ws2.reshape((1,)),
                 )
             )
         ).reshape(())
@@ -568,22 +492,9 @@ class AttentionWithRope(Module, Shardable):
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
-        # QKV matmul: graph-level weight concat via wqkv property,
-        # then a single matmul (quantized or bf16).
-        wqkv = self.wqkv.to(x.device)
-        if self.quant_config:
-            qkv = quantized_matmul(
-                x,
-                wqkv,
-                weight_scale=self.qkv_weight_scale,
-                input_scale=self.qkv_input_scale,
-                quant_config=self.quant_config,
-                weight_scale_2=self.qkv_weight_scale_2,
-            )
-        else:
-            qkv = x @ wqkv.T
-            if self.wqkv_bias is not None:
-                qkv = qkv + self.wqkv_bias.to(x.device)
+        # QKV matmul via StackedLinear (handles stacked vs unfused,
+        # quantization, bias, and weight clipping).
+        qkv = self.qkv_proj(x)
 
         if self.use_qk_norm:
             # QK norm must happen before rope. Split Q/K from the flat QKV
@@ -1165,24 +1076,10 @@ class DataParallelAttentionWithRope(AttentionWithRope):
         num_devices = len(self.devices)
 
         # Replicate component weights/modules to each device.
-        if self.stacked_qkv:
-            self.qkv_proj.sharding_strategy = ShardingStrategy.replicate(
-                num_devices
-            )
-            qkv_proj_replicas = self.qkv_proj.shard(self.devices)
-        else:
-            self.q_proj.sharding_strategy = ShardingStrategy.replicate(
-                num_devices
-            )
-            self.k_proj.sharding_strategy = ShardingStrategy.replicate(
-                num_devices
-            )
-            self.v_proj.sharding_strategy = ShardingStrategy.replicate(
-                num_devices
-            )
-            q_proj_replicas = self.q_proj.shard(self.devices)
-            k_proj_replicas = self.k_proj.shard(self.devices)
-            v_proj_replicas = self.v_proj.shard(self.devices)
+        self.qkv_proj.sharding_strategy = ShardingStrategy.replicate(
+            num_devices
+        )
+        qkv_proj_replicas = self.qkv_proj.shard(self.devices)
 
         self.o_proj.sharding_strategy = ShardingStrategy.replicate(num_devices)
         if self.use_qk_norm:
@@ -1221,12 +1118,7 @@ class DataParallelAttentionWithRope(AttentionWithRope):
                 quant_config=self.quant_config,
                 clip_qkv=self.clip_qkv,
             )
-            if self.stacked_qkv:
-                replica.qkv_proj = qkv_proj_replicas[i]
-            else:
-                replica.q_proj = q_proj_replicas[i]
-                replica.k_proj = k_proj_replicas[i]
-                replica.v_proj = v_proj_replicas[i]
+            replica.qkv_proj = qkv_proj_replicas[i]
             replica.o_proj = o_proj_replicas[i]
 
             if self.use_qk_norm:

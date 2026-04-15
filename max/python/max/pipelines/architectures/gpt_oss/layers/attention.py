@@ -32,6 +32,7 @@ from max.nn.kv_cache import (
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.rotary_embedding import YarnRotaryEmbedding
+from max.nn.stacked_linear import StackedLinear
 
 
 class GptOssAttention(Module, Shardable):
@@ -111,26 +112,18 @@ class GptOssAttention(Module, Shardable):
         self.q_weight_dim = self.kv_params.head_dim * num_attention_heads
         self.kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
 
-        self.q_proj = Linear(
+        self.qkv_proj = StackedLinear(
             in_dim=hidden_size,
-            out_dim=self.q_weight_dim,
+            out_dims=[
+                self.q_weight_dim,
+                self.kv_weight_dim,
+                self.kv_weight_dim,
+            ],
+            names=["q", "k", "v"],
             dtype=dtype,
             device=devices[0],
-            has_bias=self.has_bias,
-        )
-        self.k_proj = Linear(
-            in_dim=hidden_size,
-            out_dim=self.kv_weight_dim,
-            dtype=dtype,
-            device=devices[0],
-            has_bias=self.has_bias,
-        )
-        self.v_proj = Linear(
-            in_dim=hidden_size,
-            out_dim=self.kv_weight_dim,
-            dtype=dtype,
-            device=devices[0],
-            has_bias=self.has_bias,
+            stacked=False,
+            has_bias=has_bias,
         )
 
         self.o_proj = Linear(
@@ -139,33 +132,6 @@ class GptOssAttention(Module, Shardable):
             dtype=dtype,
             device=devices[0],
             has_bias=self.has_bias,
-        )
-
-    @property
-    def wqkv(self) -> TensorValue:
-        """The concatenation of q, k, and v weight vectors."""
-        wq: TensorValue = self.q_proj.weight
-        wk: TensorValue = self.k_proj.weight
-        wv: TensorValue = self.v_proj.weight
-        return ops.concat([wq, wk, wv], axis=0)
-
-    @property
-    def wqkv_bias(self) -> TensorValue | None:
-        """The concatenation of q, k, and v bias weight vectors."""
-        if not self.has_bias:
-            return None
-
-        if (
-            self.q_proj.bias is None
-            or self.k_proj.bias is None
-            or self.v_proj.bias is None
-        ):
-            raise ValueError(
-                "Projection bias is None, but has_bias=True was specified."
-            )
-
-        return ops.concat(
-            [self.q_proj.bias, self.k_proj.bias, self.v_proj.bias], axis=0
         )
 
     def __call__(
@@ -181,11 +147,8 @@ class GptOssAttention(Module, Shardable):
             self.layer_idx, DType.uint32, device=DeviceRef.CPU()
         )
 
-        # QKV matmul: graph-level weight concat, then a single matmul.
-        wqkv = self.wqkv.to(x.device)
-        qkv = x @ wqkv.T
-        if self.wqkv_bias is not None:
-            qkv = qkv + self.wqkv_bias.to(x.device)
+        # QKV matmul.
+        qkv = self.qkv_proj(x)
 
         # Fused rope + split + KV store.
         rope = self.rope
@@ -234,19 +197,11 @@ class GptOssAttention(Module, Shardable):
         num_devices = sharding_strategy.num_devices
 
         if sharding_strategy.is_replicate:
-            self.q_proj.sharding_strategy = sharding_strategy
-            self.k_proj.sharding_strategy = sharding_strategy
-            self.v_proj.sharding_strategy = sharding_strategy
+            self.qkv_proj.sharding_strategy = sharding_strategy
             self.o_proj.sharding_strategy = sharding_strategy
 
         elif sharding_strategy.is_tensor_parallel:
-            self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-            self.k_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-            self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
+            self.qkv_proj.sharding_strategy = ShardingStrategy.rowwise(
                 num_devices
             )
             self.o_proj.sharding_strategy = (
@@ -279,9 +234,7 @@ class GptOssAttention(Module, Shardable):
             )
 
         # Get sharded weights
-        q_proj_shards = self.q_proj.shard(devices)
-        k_proj_shards = self.k_proj.shard(devices)
-        v_proj_shards = self.v_proj.shard(devices)
+        qkv_proj_shards = self.qkv_proj.shard(devices)
         o_proj_shards = self.o_proj.shard(devices)
 
         # Shard sinks parameter
@@ -310,7 +263,7 @@ class GptOssAttention(Module, Shardable):
                 kv_params=self.kv_params,
                 layer_idx=self.layer_idx,
                 layer_type=self.layer_type,
-                dtype=self.q_proj.weight.dtype,
+                dtype=o_proj_shards[0].weight.dtype,
                 devices=[device],
                 scale=self.scale,
                 has_bias=self.has_bias,
@@ -318,9 +271,7 @@ class GptOssAttention(Module, Shardable):
             )
 
             # Assign sharded weights
-            sharded.q_proj = q_proj_shards[shard_idx]
-            sharded.k_proj = k_proj_shards[shard_idx]
-            sharded.v_proj = v_proj_shards[shard_idx]
+            sharded.qkv_proj = qkv_proj_shards[shard_idx]
             sharded.o_proj = o_proj_shards[shard_idx]
 
             # Assign sinks parameter

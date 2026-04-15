@@ -26,6 +26,10 @@ INTERNVL_LANGUAGE_MODEL_MAPPING = {
     # InternVL checkpoint: "language_model.lm_head.weight"
     # InternVLLanguageModel expects: "lm_head.weight"
     "language_model.lm_head.": "lm_head.",
+    # Remap unfused Q/K/V projections into StackedLinear namespace.
+    "self_attn.q_proj.": "self_attn.qkv_proj.q.",
+    "self_attn.k_proj.": "self_attn.qkv_proj.k.",
+    "self_attn.v_proj.": "self_attn.qkv_proj.v.",
 }
 
 # Maps from InternVL checkpoint names to InternVLVisionModel weight names.
@@ -35,9 +39,9 @@ INTERNVL_VISION_MODEL_MAPPING = {
     "vision_model.": "",
     # Map encoder.layers to encoder_layers to match LayerList attribute naming
     "encoder.layers.": "encoder_layers.",
-    # Map attention weight names: checkpoint has "qkv" but model expects "qkv_proj"
+    # Map attention weight names: checkpoint has "qkv" but model expects
+    # StackedLinear sublayer "qkv_proj" (stacked mode: weight/bias directly).
     ".attn.qkv.": ".attn.qkv_proj.",
-    ".attn.qkv_bias.": ".attn.qkv_proj_bias.",
     ".attn.proj.": ".attn.o_proj.",
     # Map mlp1 numbered layers to descriptive names
     "mlp1.0.": "mlp1.layer_norm.",  # Layer normalization

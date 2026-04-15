@@ -19,7 +19,7 @@ import math
 from collections.abc import Callable
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, Weight, ops
+from max.graph import DeviceRef, TensorValue, ops
 from max.nn.kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
@@ -33,6 +33,7 @@ from max.nn.layer import Module
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.stacked_linear import StackedLinear
 
 
 class Olmo2Attention(Module):
@@ -106,44 +107,19 @@ class Olmo2Attention(Module):
         self.q_weight_dim = self.kv_params.head_dim * num_attention_heads
         self.kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
 
-        self.q_proj = Weight(
-            name="q_proj.weight",
+        self.qkv_proj = StackedLinear(
+            in_dim=hidden_size,
+            out_dims=[
+                self.q_weight_dim,
+                self.kv_weight_dim,
+                self.kv_weight_dim,
+            ],
+            names=["q", "k", "v"],
             dtype=dtype,
-            shape=[self.q_weight_dim, hidden_size],
             device=devices[0],
+            stacked=False,
+            has_bias=has_bias,
         )
-        self.k_proj = Weight(
-            name="k_proj.weight",
-            dtype=dtype,
-            shape=[self.kv_weight_dim, hidden_size],
-            device=devices[0],
-        )
-        self.v_proj = Weight(
-            name="v_proj.weight",
-            dtype=dtype,
-            shape=[self.kv_weight_dim, hidden_size],
-            device=devices[0],
-        )
-
-        if has_bias:
-            self.bias_q = Weight(
-                name="q_proj.bias",
-                dtype=dtype,
-                shape=[self.q_weight_dim],
-                device=devices[0],
-            )
-            self.bias_k = Weight(
-                name="k_proj.bias",
-                dtype=dtype,
-                shape=[self.kv_weight_dim],
-                device=devices[0],
-            )
-            self.bias_v = Weight(
-                name="v_proj.bias",
-                dtype=dtype,
-                shape=[self.kv_weight_dim],
-                device=devices[0],
-            )
 
         self.o_proj = linear_cls(
             in_dim=self.q_weight_dim,
@@ -151,21 +127,6 @@ class Olmo2Attention(Module):
             dtype=dtype,
             device=devices[0],
         )
-
-    @property
-    def wqkv(self) -> TensorValue:
-        """The concatenation of q, k, and v weight vectors."""
-        wq: TensorValue = self.q_proj
-        wk: TensorValue = self.k_proj
-        wv: TensorValue = self.v_proj
-        return ops.concat((wq, wk, wv)).to(self.devices[0])
-
-    @property
-    def wqkv_bias(self) -> TensorValue | None:
-        """The concatenation of q, k, and v bias weight vectors."""
-        if not self.has_bias:
-            return None
-        return ops.concat((self.bias_q, self.bias_k, self.bias_v))
 
     def __call__(
         self,
@@ -178,10 +139,7 @@ class Olmo2Attention(Module):
         total_seq_len = x.shape[0]
 
         # QKV matmul.
-        wqkv = self.wqkv
-        qkv = x @ wqkv.T
-        if self.wqkv_bias is not None:
-            qkv = qkv + self.wqkv_bias
+        qkv = self.qkv_proj(x)
 
         # Apply full-dimension QK norm before rope.
         head_dim = self.kv_params.head_dim

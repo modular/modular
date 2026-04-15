@@ -42,6 +42,7 @@ from transformers.models.llama.modeling_llama import (
 )
 
 from testbed.harnesses.ragged_attention_harness import (
+    HF_TO_HARNESS_BASE,
     AttentionDynamicParams,
     AttentionStaticParams,
     RaggedAttentionHarness,
@@ -49,6 +50,8 @@ from testbed.harnesses.ragged_attention_harness import (
 from testbed.registry import register_harness
 
 _VARIANTS = {"bf16", "fp8", "fp4"}
+
+_HF_TO_HARNESS = HF_TO_HARNESS_BASE
 
 
 def wrap_fp8(tensor: torch.Tensor, name: str) -> WeightData:
@@ -197,7 +200,7 @@ class AttentionWithRopeHarness(
 
         if dtype == "bf16":
             layer_dtype = DType.bfloat16
-            stacked_qkv = True
+            stacked_qkv = False
         elif dtype == "fp8":
             layer_dtype = DType.float8_e4m3fn
             stacked_qkv = False
@@ -242,46 +245,35 @@ class AttentionWithRopeHarness(
             # Large random weights cause softmax saturation and bf16 overflow,
             # making MAX vs torch comparison unreliable.
             std = 0.02
-            q_weight = (
-                torch.randn(q_dim, hidden_size, dtype=torch.bfloat16) * std
-            )
-            k_weight = (
-                torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * std
-            )
-            v_weight = (
-                torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * std
-            )
-            o_weight = (
-                torch.randn(hidden_size, q_dim, dtype=torch.bfloat16) * std
-            )
-
-            # MAX layer uses a single stacked QKV weight.
-            qkv_stacked = torch.cat([q_weight, k_weight, v_weight], dim=0)
-            layer.load_state_dict(
-                {
-                    "qkv_proj.weight": qkv_stacked,
-                    "o_proj.weight": o_weight,
-                }
-            )
-            # Keep separate weights for torch correctness comparison.
-            self._torch_weights = {
-                "q_proj.weight": q_weight,
-                "k_proj.weight": k_weight,
-                "v_proj.weight": v_weight,
-                "o_proj.weight": o_weight,
+            weights = {
+                "qkv_proj.q.weight": (
+                    torch.randn(q_dim, hidden_size, dtype=torch.bfloat16) * std
+                ),
+                "qkv_proj.k.weight": (
+                    torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * std
+                ),
+                "qkv_proj.v.weight": (
+                    torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * std
+                ),
+                "o_proj.weight": (
+                    torch.randn(hidden_size, q_dim, dtype=torch.bfloat16) * std
+                ),
             }
+            layer.load_state_dict(weights)
+            # Keep weights for torch correctness comparison.
+            self._torch_weights = weights
         elif dtype == "fp8":
             state: dict[str, Any] = {}
-            state.update(_make_fp8_weights("q_proj", q_dim, hidden_size))
-            state.update(_make_fp8_weights("k_proj", kv_dim, hidden_size))
-            state.update(_make_fp8_weights("v_proj", kv_dim, hidden_size))
+            state.update(_make_fp8_weights("qkv_proj.q", q_dim, hidden_size))
+            state.update(_make_fp8_weights("qkv_proj.k", kv_dim, hidden_size))
+            state.update(_make_fp8_weights("qkv_proj.v", kv_dim, hidden_size))
             state.update(_make_fp8_weights("o_proj", hidden_size, q_dim))
             layer.load_state_dict(state)
         elif dtype == "fp4":
             state = {}
-            state.update(_make_fp4_weights("q_proj", q_dim, hidden_size))
-            state.update(_make_fp4_weights("k_proj", kv_dim, hidden_size))
-            state.update(_make_fp4_weights("v_proj", kv_dim, hidden_size))
+            state.update(_make_fp4_weights("qkv_proj.q", q_dim, hidden_size))
+            state.update(_make_fp4_weights("qkv_proj.k", kv_dim, hidden_size))
+            state.update(_make_fp4_weights("qkv_proj.v", kv_dim, hidden_size))
             state.update(_make_fp4_weights("o_proj", hidden_size, q_dim))
             layer.load_state_dict(state)
 
@@ -359,8 +351,9 @@ class AttentionWithRopeHarness(
             device=device, dtype=torch.bfloat16
         )
         for name, param in layer.named_parameters():
-            if name in self._torch_weights:
-                param.data = self._torch_weights[name].to(
+            harness_name = _HF_TO_HARNESS.get(name, name)
+            if harness_name in self._torch_weights:
+                param.data = self._torch_weights[harness_name].to(
                     device=device, dtype=torch.bfloat16
                 )
 
