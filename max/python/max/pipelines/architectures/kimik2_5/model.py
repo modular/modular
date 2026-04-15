@@ -262,10 +262,7 @@ class KimiK2_5Model(
             graph_mode = "auto"
 
         dtype = self.dtype
-        if dtype in (DType.float8_e4m3fn, DType.uint8, DType.float4_e2m1fn):
-            quant_config = parse_quant_config(config, state_dict, dtype)
-        else:
-            quant_config = None
+        quant_config = parse_quant_config(config, state_dict, dtype)
 
         # Check if EP should be configured
         ep_size = self.pipeline_config.runtime.ep_size

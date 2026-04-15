@@ -323,7 +323,9 @@ class DeepseekV3DecoderLayer(Module):
         nvfp4_enabled = (
             config.quant_config is not None and config.quant_config.is_nvfp4
         )
-        use_fp8_mla = config.quant_config is not None and not nvfp4_enabled
+        use_fp8_mla = (
+            config.quant_config is not None and not config.quant_config.is_fp4
+        )
 
         if (
             nvfp4_enabled

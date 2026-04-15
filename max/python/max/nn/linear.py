@@ -217,13 +217,16 @@ class Linear(Module, Shardable):
             weight_scale_shape = ()
         elif weight_scale.is_block:
             assert quant_config.weight_scale.block_size is not None
+            k_dim = int(self.weight.shape[1])
+            if quant_config.is_mxfp4:
+                k_dim *= 2  # MXFP4 weights are packed 2x as uint8 (TODO: fix for NVFP4 too)
             weight_scale_shape = (
                 ceildiv(
                     int(self.weight.shape[0]),
                     quant_config.weight_scale.block_size[0],
                 ),
                 ceildiv(
-                    int(self.weight.shape[1]),
+                    k_dim,
                     quant_config.weight_scale.block_size[1],
                 ),
             )

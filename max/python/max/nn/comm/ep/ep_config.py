@@ -111,9 +111,9 @@ class EPConfig:
                     )
 
             elif self.dispatch_dtype in (DType.uint8, DType.float4_e2m1fn):
-                if not self.dispatch_quant_config.is_nvfp4:
+                if not self.dispatch_quant_config.is_fp4:
                     raise ValueError(
-                        "dispatch_quant_config must be an NVFP4 configuration when dispatch_dtype is uint8 or float4_e2m1fn"
+                        "dispatch_quant_config must be an FP4 configuration when dispatch_dtype is uint8 or float4_e2m1fn"
                     )
 
             else:
