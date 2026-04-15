@@ -205,12 +205,6 @@ class WanExecutor(
         # Compile helper graphs.
         self._guidance_graph = self._compile_guidance()
         self._unipc_step_graph = self._compile_unipc_step()
-        self._cast_f32_to_model_dtype_graph = (
-            self._compile_cast_f32_to_model_dtype()
-        )
-
-        # I2V concat graph compiled lazily on first use.
-        self._i2v_concat_graph: Model | None = None
 
         # Runtime caches.
         self._guidance_scale_cache: dict[tuple[float, DType, str], Buffer] = {}
@@ -525,22 +519,13 @@ class WanExecutor(
             with Tracer(f"{desc}:step_{i}"):
                 dit_timestep = batched_timesteps[i]
 
-                # Cast latents f32 -> model dtype.
-                latent_model_input = (
-                    self._cast_f32_to_model_dtype_graph.execute(latents)[0]
-                )
-
-                # Optional: I2V concat.
-                if i2v_condition is not None:
-                    latent_model_input = self._i2v_concat(
-                        latent_model_input, i2v_condition
-                    )
-
                 # Transformer forward with optional CFG.
+                # Latents are f32; the cast + optional I2V concat
+                # happen inside the pre-processor graph.
                 with Tracer("transformer"):
                     noise_pred_buf = self._run_transformer_forward(
                         use_secondary=use_secondary_transformer,
-                        latent_model_input=latent_model_input,
+                        latents=latents,
                         dit_timestep=dit_timestep,
                         prompt_embeds=prompt_embeds,
                         negative_prompt_embeds=negative_prompt_embeds,
@@ -549,6 +534,7 @@ class WanExecutor(
                         spatial_shape=spatial_shape,
                         do_cfg=do_cfg,
                         guidance_scale=guidance_scale,
+                        i2v_condition=i2v_condition,
                     )
 
                 # UniPC scheduler step.
@@ -566,7 +552,7 @@ class WanExecutor(
         self,
         *,
         use_secondary: bool,
-        latent_model_input: Buffer,
+        latents: Buffer,
         dit_timestep: Buffer,
         prompt_embeds: Buffer,
         negative_prompt_embeds: Buffer | None,
@@ -575,8 +561,13 @@ class WanExecutor(
         spatial_shape: Buffer,
         do_cfg: bool,
         guidance_scale: Buffer | None,
+        i2v_condition: Buffer | None = None,
     ) -> Buffer:
-        """Run transformer + optional CFG guidance."""
+        """Run transformer + optional CFG guidance.
+
+        Latents are f32; the cast to model dtype and optional I2V concat
+        happen inside the pre-processor graph.
+        """
         # Select transformer call.
         if use_secondary:
             transformer_call = self.transformer.call_secondary
@@ -585,23 +576,25 @@ class WanExecutor(
 
         # Two separate forward passes for CFG (unbatched path).
         noise_pred_buf = transformer_call(
-            latent_model_input,
+            latents,
             dit_timestep,
             prompt_embeds,
             rope_cos,
             rope_sin,
             spatial_shape,
+            i2v_condition=i2v_condition,
         )
 
         if do_cfg and negative_prompt_embeds is not None:
             assert guidance_scale is not None
             noise_uncond_buf = transformer_call(
-                latent_model_input,
+                latents,
                 dit_timestep,
                 negative_prompt_embeds,
                 rope_cos,
                 rope_sin,
                 spatial_shape,
+                i2v_condition=i2v_condition,
             )
             guided = self._guidance_graph.execute(
                 noise_pred_buf,
@@ -651,16 +644,6 @@ class WanExecutor(
             converted,
             prev_model_output,
         )
-
-    def _i2v_concat(
-        self, latent_model_input: Buffer, condition: Buffer
-    ) -> Buffer:
-        """Concat latents with I2V condition along channel axis."""
-        if self._i2v_concat_graph is None:
-            self._i2v_concat_graph = self._compile_i2v_concat(
-                latent_model_input, condition
-            )
-        return self._i2v_concat_graph.execute(latent_model_input, condition)[0]
 
     # -- Helper graph compilation ---------------------------------------------
 
@@ -742,52 +725,6 @@ class WanExecutor(
                 + predictor_m1_scale * prev_model_output
             )
             g.output(previous_sample, converted, corrected_sample)
-        return self._session.load(g)
-
-    def _compile_cast_f32_to_model_dtype(self) -> Model:
-        """Compile float32 -> model dtype cast graph."""
-        device = self._model_device
-        model_dtype = self._model_dtype
-        latent_5d = ["batch", "channels", "frames", "height", "width"]
-
-        with Graph(
-            "wan_cast_f32_to_mdtype",
-            input_types=[TensorType(DType.float32, latent_5d, device=device)],
-        ) as g:
-            g.output(ops.cast(g.inputs[0].tensor, model_dtype))
-        return self._session.load(g)
-
-    def _compile_i2v_concat(
-        self, latent_model_input: Buffer, condition: Buffer
-    ) -> Model:
-        """Compile I2V condition concat graph (lazy, on first use)."""
-        device = self._model_device
-        dtype = latent_model_input.dtype
-        lat_shape: list[Any] = [
-            int(latent_model_input.shape[0]),
-            int(latent_model_input.shape[1]),
-            "T",
-            "H",
-            "W",
-        ]
-        cond_shape: list[Any] = [
-            int(condition.shape[0]),
-            int(condition.shape[1]),
-            "T",
-            "H",
-            "W",
-        ]
-
-        with Graph(
-            "wan_i2v_concat",
-            input_types=[
-                TensorType(dtype, lat_shape, device=device),
-                TensorType(dtype, cond_shape, device=device),
-            ],
-        ) as g:
-            g.output(
-                ops.concat([g.inputs[0].tensor, g.inputs[1].tensor], axis=1)
-            )
         return self._session.load(g)
 
     # -- Utilities ------------------------------------------------------------

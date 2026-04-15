@@ -235,10 +235,12 @@ class BlockLevelModel:
         rope_cos: Buffer,
         rope_sin: Buffer,
         spatial_shape: Buffer,
+        i2v_condition: Buffer | None = None,
     ) -> Buffer:
-        pre_out = self.pre.execute(
-            hidden_states, timestep, encoder_hidden_states
-        )
+        pre_args = [hidden_states, timestep, encoder_hidden_states]
+        if i2v_condition is not None:
+            pre_args.append(i2v_condition)
+        pre_out = self.pre.execute(*pre_args)
         hs, temb, timestep_proj, text_emb = (
             pre_out[0],
             pre_out[1],

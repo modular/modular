@@ -270,6 +270,7 @@ class WanTransformer(CompiledComponent):
         rope_cos: Buffer,
         rope_sin: Buffer,
         spatial_shape: Buffer,
+        i2v_condition: Buffer | None = None,
     ) -> Buffer:
         """Execute the block-level transformer forward pass.
 
@@ -282,6 +283,7 @@ class WanTransformer(CompiledComponent):
             rope_cos: RoPE cosine, shape ``(seq_len, head_dim)`` float32.
             rope_sin: RoPE sine, shape ``(seq_len, head_dim)`` float32.
             spatial_shape: Shape carrier ``(ppf, pph, ppw)`` int8.
+            i2v_condition: Optional I2V condition tensor for image-to-video.
 
         Returns:
             Noise prediction, shape ``(B, C, T, H, W)`` in model dtype.
@@ -298,6 +300,7 @@ class WanTransformer(CompiledComponent):
             rope_cos,
             rope_sin,
             spatial_shape,
+            i2v_condition=i2v_condition,
         )
 
     def call_secondary(
@@ -308,6 +311,7 @@ class WanTransformer(CompiledComponent):
         rope_cos: Buffer,
         rope_sin: Buffer,
         spatial_shape: Buffer,
+        i2v_condition: Buffer | None = None,
     ) -> Buffer:
         """Execute the secondary (low-noise) transformer for dual-load MoE."""
         if self._model_2 is None:
@@ -321,6 +325,7 @@ class WanTransformer(CompiledComponent):
             rope_cos,
             rope_sin,
             spatial_shape,
+            i2v_condition=i2v_condition,
         )
 
     def compute_rope(

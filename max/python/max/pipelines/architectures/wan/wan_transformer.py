@@ -670,7 +670,12 @@ class WanTransformerBlock(Module):
 
 
 class WanTransformerPreProcess(Module):
-    """Patch embedding + condition embedding (compiled separately)."""
+    """Patch embedding + condition embedding (compiled separately).
+
+    Accepts f32 latents and an optional I2V condition tensor. The graph
+    casts to model dtype and (for I2V) concatenates the condition along
+    the channel axis before patch embedding.
+    """
 
     def __init__(
         self,
@@ -682,6 +687,7 @@ class WanTransformerPreProcess(Module):
         super().__init__()
         dim = config.num_attention_heads * config.attention_head_dim
         self.inner_dim = dim
+        self._dtype = dtype
 
         self.patch_embedding = WanConv3d(
             kernel_size=config.patch_size,
@@ -706,7 +712,15 @@ class WanTransformerPreProcess(Module):
         hidden_states: TensorValue,
         timestep: TensorValue,
         encoder_hidden_states: TensorValue,
+        i2v_condition: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
+        # Cast f32 latents to model dtype.
+        hidden_states = ops.cast(hidden_states, self._dtype)
+
+        # Concat I2V condition along channel axis if present.
+        if i2v_condition is not None:
+            hidden_states = ops.concat([hidden_states, i2v_condition], axis=1)
+
         batch_size = hidden_states.shape[0]
         hs = ops.permute(hidden_states, [0, 2, 3, 4, 1])
         hs = self.patch_embedding(hs)
