@@ -28,7 +28,6 @@ import yaml
 from max.benchmark.benchmark_shared.config import (
     BaseBenchmarkConfig,
     ServingBenchmarkConfig,
-    SweepServingBenchmarkConfig,
     _add_config_file_arg_to_parser,
     _load_user_provided_config,
     _resolve_user_provided_config_file_cli_arg,
@@ -1590,14 +1589,13 @@ class TestIntegration:
         assert remaining_args == ["--help"]
 
 
-class TestSweepServingBenchmarkConfig:
-    """Test class for SweepServingBenchmarkConfig."""
+class TestServingSweepFields:
+    """Test that sweep/workload-related fields exist on ServingBenchmarkConfig."""
 
-    def test_sweep_config_creation(self) -> None:
-        """Test that SweepServingBenchmarkConfig can be created with default values."""
-        config = SweepServingBenchmarkConfig()
+    def test_sweep_fields_on_serving_config(self) -> None:
+        """Test that sweep-related fields exist on ServingBenchmarkConfig with correct defaults."""
+        config = ServingBenchmarkConfig()
 
-        # Test that all sweep-specific fields have correct default values
         assert config.workload_config == ""
         assert config.log_dir is None
         assert config.dry_run is False
@@ -1608,53 +1606,22 @@ class TestSweepServingBenchmarkConfig:
         assert config.metadata == []
         assert config.latency_percentiles == "50,90,95,99"
         assert config.num_iters == 1
+        assert config.num_prompts_multiplier is None
+        assert config.flush_prefix_cache is True
         assert config.max_concurrency is None
         assert config.request_rate == "inf"
 
-    def test_sweep_config_inheritance(self) -> None:
-        """Test that SweepServingBenchmarkConfig inherits from ServingBenchmarkConfig."""
-        config = SweepServingBenchmarkConfig()
-
-        # Test that it inherits serving-specific fields
-        assert hasattr(config, "backend")
-        assert hasattr(config, "host")
-        assert hasattr(config, "port")
-        assert hasattr(config, "endpoint")
-
-        # Test that it inherits base fields
-        assert hasattr(config, "model")
-        assert hasattr(config, "dataset_name")
-        assert hasattr(config, "num_prompts")
-        assert hasattr(config, "seed")
-
-    def test_sweep_config_required_fields(self) -> None:
-        """Test that SweepServingBenchmarkConfig has correct required fields."""
-        required_fields = (
-            SweepServingBenchmarkConfig.get_default_required_fields()
-        )
-
-        # Should include workload_config as required
-        assert "workload_config" in required_fields
-
-        # Should include inherited required fields
-        assert "model" in required_fields
-        # dataset_name is not required for SweepServingBenchmarkConfig
-        # (it's parsed from workload config instead)
-
     def test_sweep_config_field_metadata(self) -> None:
-        """Test that SweepServingBenchmarkConfig fields have proper json_schema_extra metadata."""
-        model_fields = SweepServingBenchmarkConfig.model_fields
+        """Test that sweep-related fields have proper json_schema_extra metadata."""
+        model_fields = ServingBenchmarkConfig.model_fields
 
         for name, field_info in model_fields.items():
             extra = field_info.json_schema_extra
             if extra is None or not isinstance(extra, dict):
                 continue
-            if name in ["workload_config", "log_dir", "dry_run"]:
+            if name in ["workload_config"]:
                 assert "group" in extra
-                assert extra["group"] in [
-                    "Workload Configuration",
-                    "Logging and Debugging",
-                ]
+                assert extra["group"] == "Workload Configuration"
             elif name in [
                 "upload_results",
                 "benchmark_sha",
@@ -1663,10 +1630,11 @@ class TestSweepServingBenchmarkConfig:
             ]:
                 assert "group" in extra
                 assert extra["group"] == "Result Upload Configuration"
-            elif name in ["metadata", "latency_percentiles"]:
-                assert "group" in extra
-                assert extra["group"] == "Metadata and Result Tracking"
-            elif name in ["num_iters"]:
+            elif name in [
+                "num_iters",
+                "flush_prefix_cache",
+                "num_prompts_multiplier",
+            ]:
                 assert "group" in extra
                 assert extra["group"] == "Sweep Configuration"
             elif name in ["max_concurrency"]:

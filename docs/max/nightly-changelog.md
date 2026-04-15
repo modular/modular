@@ -34,6 +34,10 @@ This version is still a work in progress.
 
 ### `max` CLI {#26-3-max-cli}
 
+- Added sweep benchmarking capabilities to `max benchmark`: iterate over
+  multiple concurrency and request-rate combinations, flush the prefix cache
+  between runs, and collect per-run structured JSON results.
+
 ### Python API {#26-3-max-python}
 
 - Fixed tensor slicing with negative integer indices (e.g. `hidden[:, -1]`)

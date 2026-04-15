@@ -890,6 +890,12 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={"group": "Control Flags"},
     )
 
+    dry_run: bool = Field(
+        default=False,
+        description="Dry run the benchmark. If true, the benchmark will not be run but all the commands that would have run will be printed.",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
     trace: bool = Field(
         default=False,
         description="Enable nsys tracing. Requires server run under 'nsys launch'. Using '--gpu-profiling detailed' is recommended. Currently only supported on NVIDIA GPUs.",
@@ -923,8 +929,74 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
 
     metadata: list[str] = Field(
         default_factory=list,
-        description='Key-value pairs for metadata (format: ["key=value", ...]).',
+        description="Key-value pairs (e.g, --metadata version=0.3.3 tp=1) for metadata of this run to be saved in the result JSON file for record keeping purposes.",
         json_schema_extra={"group": "Result Saving"},
+    )
+
+    log_dir: str | None = Field(
+        default=None,
+        description="Path to save logs. Default: <backend>-latency-Y.m.d-H.M.S",
+        json_schema_extra={"group": "Result Saving"},
+    )
+
+    latency_percentiles: str = Field(
+        default="50,90,95,99",
+        description="Comma separated list of latency percentiles to include in CSV output. Only P50, P90, P95, and P99 are supported.",
+        json_schema_extra={"group": "Result Saving"},
+    )
+
+    # Workload config file
+    workload_config: str = Field(
+        default="",
+        description="YAML file specifying the workload to benchmark.",
+        json_schema_extra={"group": "Workload Configuration"},
+    )
+
+    # Result upload configuration
+    upload_results: bool = Field(
+        default=False,
+        description="Upload results to BigQuery.",
+        json_schema_extra={"group": "Result Upload Configuration"},
+    )
+
+    benchmark_sha: str | None = Field(
+        default=None,
+        description="Commit hash of the docker image used for load generation.",
+        json_schema_extra={"group": "Result Upload Configuration"},
+    )
+
+    cluster_information_path: str | None = Field(
+        default=None,
+        description="Path to the cluster information file. Usually a json file with metadata about the cluster setup if you're benchmarking more than a single node.",
+        json_schema_extra={"group": "Result Upload Configuration"},
+    )
+
+    benchmark_config_name: str | None = Field(
+        default=None,
+        description="(For serving benchmarks) config name for tracking.",
+        json_schema_extra={"group": "Result Upload Configuration"},
+    )
+
+    # Sweep configuration
+    num_iters: int = Field(
+        default=1,
+        description="Number of iterations to run per configuration.",
+        json_schema_extra={"group": "Sweep Configuration"},
+    )
+
+    flush_prefix_cache: bool = Field(
+        default=True,
+        description="Flush the prefix cache between iterations.",
+        json_schema_extra={"group": "Sweep Configuration"},
+    )
+
+    num_prompts_multiplier: int | None = Field(
+        default=None,
+        description=(
+            "When set, num_prompts is computed as num_prompts_multiplier * max_concurrency "
+            "for each concurrency level, replacing the default 300s duration timeout."
+        ),
+        json_schema_extra={"group": "Sweep Configuration"},
     )
 
     lora_paths: list[str] = Field(
@@ -963,137 +1035,6 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     def get_default_required_fields(cls) -> set[str]:
         """Get required fields for the benchmark config."""
         return super().get_default_required_fields().union({"dataset_name"})
-
-
-class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
-    """Configuration class for sweep serving benchmarks (sweep_benchmark_serving.py).
-
-    Inherits from ServingBenchmarkConfig and adds sweep-specific parameters:
-    - Workload configuration
-    - Logging and debugging options
-    - Result upload configuration
-    - Sweep-specific concurrency and duration parameters
-    - Metadata and result tracking
-    """
-
-    # Workload configuration (sweep-specific)
-    workload_config: str = Field(
-        default="",
-        description="YAML file specifying the workload to benchmark.",
-        json_schema_extra={
-            "group": "Workload Configuration",
-            "group_description": "Parameters controlling workload and dataset configuration",
-        },
-    )
-
-    # Logging and debugging (sweep-specific)
-    log_dir: str | None = Field(
-        default=None,
-        description="Path to save logs (in event of command failure only). Default: <backend>-latency-Y.m.d-H.M.S",
-        json_schema_extra={
-            "group": "Logging and Debugging",
-            "group_description": "Parameters controlling logging and debugging behavior",
-        },
-    )
-
-    dry_run: bool = Field(
-        default=False,
-        description="Dry run the benchmark. If true, the benchmark will not be run but all the commands that would have run will be printed.",
-        json_schema_extra={"group": "Logging and Debugging"},
-    )
-
-    # Result upload configuration (sweep-specific)
-    upload_results: bool = Field(
-        default=False,
-        description="Upload results to BigQuery.",
-        json_schema_extra={
-            "group": "Result Upload Configuration",
-            "group_description": "Parameters controlling result upload to BigQuery",
-        },
-    )
-
-    benchmark_sha: str | None = Field(
-        default=None,
-        description="Commit hash of the docker image used for load generation.",
-        json_schema_extra={"group": "Result Upload Configuration"},
-    )
-
-    cluster_information_path: str | None = Field(
-        default=None,
-        description="Path to the cluster information file. Usually a json file with metadata about the cluster setup if you're benchmarking more than a single node.",
-        json_schema_extra={"group": "Result Upload Configuration"},
-    )
-
-    benchmark_config_name: str | None = Field(
-        default=None,
-        description="(For serving benchmarks) config name for tracking.",
-        json_schema_extra={"group": "Result Upload Configuration"},
-    )
-
-    # Metadata and result tracking (sweep-specific)
-    metadata: list[str] = Field(
-        default_factory=list,
-        description="Key-value pairs (e.g, --metadata version=0.3.3 tp=1) for metadata of this run to be saved in the result JSON file for record keeping purposes.",
-        json_schema_extra={
-            "group": "Metadata and Result Tracking",
-            "group_description": "Parameters for metadata and result tracking",
-        },
-    )
-
-    latency_percentiles: str = Field(
-        default="50,90,95,99",
-        description="Comma separated list of latency percentiles to include in CSV output. Only P50, P90, P95, and P99 are supported (default: 50,90,95,99).",
-        json_schema_extra={"group": "Metadata and Result Tracking"},
-    )
-
-    # Sweep-specific concurrency and duration parameters
-    num_iters: int = Field(
-        default=1,
-        description="Number of iterations to run per configuration.",
-        json_schema_extra={
-            "group": "Sweep Configuration",
-            "group_description": "Parameters controlling sweep behavior and iteration",
-        },
-    )
-
-    flush_prefix_cache: bool = Field(
-        default=True,
-        description="Flush the prefix cache between iterations.",
-        json_schema_extra={"group": "Sweep Configuration"},
-    )
-
-    num_prompts_multiplier: int | None = Field(
-        default=None,
-        description=(
-            "When set, num_prompts is computed as num_prompts_multiplier * max_concurrency "
-            "for each concurrency level, replacing the default 300s duration timeout."
-        ),
-        json_schema_extra={
-            "group": "Sweep Configuration",
-            "cli_flag": "--num-prompts-multiplier",
-        },
-    )
-
-    collect_gpu_stats: bool = Field(
-        default=True,
-        description="Enable GPU stats collection for serving benchmarks.",
-        json_schema_extra={"group": "Control Flags"},
-    )
-
-    @classmethod
-    def get_default_required_fields(cls) -> set[str]:
-        """Get required fields for the sweep benchmark config."""
-
-        # TODO: This is really lame. dataset_name is a required flag in benchmark_serving.py,
-        # so you'd think it would also be required here, but it's not. This is
-        # because we only parse dataset_name from the workload config file and not
-        # through the command line in sweep_benchmark_serving.py. Turns out we
-        # also can't quite easily pull that apart trivially when we roll this
-        # part. Will circle back in a follow up PR. the --dataset-name flag
-        # is set to optional here and is a no-op.
-        parent_required_fields = super().get_default_required_fields()
-        parent_required_fields.remove("dataset_name")
-        return parent_required_fields.union({"workload_config"})
 
 
 def _load_user_provided_config(
