@@ -88,10 +88,12 @@ struct Variadic:
         //,
         element_types: TypeList[Trait=From, ...],
         Mapper: _TypeToTypeGenerator[From, To],
-    ] = _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[To],
-        ParamListType=element_types.values,
-        Reducer=_MapTypeToTypeReducer[From, To, Mapper, ...],
+    ] = TypeList[
+        _ReduceVariadicAndIdxToVariadic[
+            BaseVal=Variadic.empty_of_trait[To],
+            ParamListType=element_types.values,
+            Reducer=_MapTypeToTypeReducer[From, To, Mapper, ...],
+        ]
     ]
     comptime slice_types[
         T: type_of(AnyType),
