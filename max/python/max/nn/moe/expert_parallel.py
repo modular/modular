@@ -13,7 +13,7 @@
 """Expert-parallel forward pass for MoE layers.
 
 Provides :func:`forward_moe_sharded_layers`, the single entry point for
-running DP-sharded layers (EP MoE *or* replicated MLP/MoE) in the
+running EP-sharded layers (EP MoE *or* DP replicated MLP) in the
 forward pass.  Internally it checks whether the shards are EP-enabled
 MoE and dispatches to the EP-specific logic; otherwise it falls back to
 :func:`forward_sharded_layers`.
@@ -41,31 +41,67 @@ def _ep_forward(
     moe_shards: list[MoE],
     xs: list[TensorValue],
 ) -> list[TensorValue]:
-    """Runs the EP MoE forward pass with centralized communication.
+    """Runs the EP MoE forward pass using multi-device dispatch and combine.
 
-    For each device shard, this function orchestrates:
-    gate -> ep_dispatch -> local expert compute -> ep_combine -> shared experts.
+    Uses single multi-device graph ops for both dispatch and combine,
+    with per-shard gate and local expert compute in between:
+    gate -> multi-device dispatch -> local compute -> multi-device combine.
     """
-    outputs: list[TensorValue] = []
+
+    all_topk_ids: list[TensorValue] = []
+    all_router_weights: list[TensorValue] = []
+    all_input_scales: list[TensorValue | None] = []
+    device_ids: list[int] = []
+
     for shard, x in zip(moe_shards, xs, strict=True):
         router_idx, router_weight = shard.gate(x)
-        device_id = shard.devices[0].id
+        all_topk_ids.append(ops.cast(router_idx, DType.int32))
+        all_router_weights.append(router_weight)
+        all_input_scales.append(shard._ep_dispatch_input_scales())
+        device_ids.append(shard.devices[0].id)
 
-        input_scales = shard._ep_dispatch_input_scales()
-        expert_inputs = shard.ep_batch_manager.ep_dispatch(
-            x, ops.cast(router_idx, DType.int32), device_id, input_scales
-        )
+    # Collect non-None scales into a list (all-or-nothing for NVFP4).
+    scales: list[TensorValue] | None = None
+    if all_input_scales[0] is not None:
+        scales = [s for s in all_input_scales if s is not None]
 
-        down = shard._local_ep_compute(expert_inputs, x)
+    batch_mgr = moe_shards[0].ep_batch_manager
 
-        out = shard.ep_batch_manager.ep_combine(down, router_weight, device_id)
+    # Multi-device dispatch (single op).
+    all_dispatch_results = batch_mgr.ep_dispatch_all(
+        xs, all_topk_ids, device_ids, input_scales=scales
+    )
 
+    # Estimated total token-expert pairs across all devices.
+    total_tokens = ops.shape_to_tensor(xs[0].shape)[0]
+    for x in xs[1:]:
+        total_tokens = total_tokens + ops.shape_to_tensor(x.shape)[0]
+    estimated_total_m = (
+        total_tokens
+        * moe_shards[0].num_experts_per_token
+        // batch_mgr.config.n_gpus_per_node
+    ).cast(DType.uint32)
+
+    # Per-shard local expert compute.
+    all_down_projs: list[TensorValue] = []
+    for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
+        expert_inputs = all_dispatch_results[i]
+        down = shard._local_ep_compute(expert_inputs, x, estimated_total_m)
+        all_down_projs.append(down)
+
+    # Multi-device combine (single op).
+    combine_results = batch_mgr.ep_combine_all(
+        all_down_projs, all_router_weights, device_ids
+    )
+
+    outputs: list[TensorValue] = []
+    for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
+        out = combine_results[i]
         if (
             shard.has_shared_experts
             and not shard.ep_batch_manager.config.fused_shared_expert
         ):
             out += shard.shared_experts(x)
-
         outputs.append(out.cast(x.dtype))
     return outputs
 

@@ -193,6 +193,7 @@ class MoEQuantized(MoE):
         self,
         expert_inputs: tuple[TensorValue, ...],
         x: TensorValue,
+        estimated_total_m: TensorValue,
     ) -> TensorValue:
         """Runs quantized local expert matmuls on dispatched tokens."""
         # TODO: swiglu_limit is not supported here because
@@ -208,11 +209,6 @@ class MoEQuantized(MoE):
             )
         strategy = self._strategy()
         nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
-
-        estimated_total_m = (
-            ops.shape_to_tensor(x.shape)[0].cast(DType.uint32)
-            * self.num_experts_per_token
-        )
 
         gate_up_scales, down_scales = strategy.prepare_weight_scales(
             self.gate_up_proj_scales, self.down_proj_scales, x.device

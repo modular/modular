@@ -468,12 +468,19 @@ class MoE(Module, Shardable):
         self,
         expert_inputs: tuple[TensorValue, ...],
         x: TensorValue,
+        estimated_total_m: TensorValue,
     ) -> TensorValue:
         """Runs local expert matmuls on dispatched tokens.
 
         This is the computation between ``ep_dispatch`` and
         ``ep_combine``.  ``x`` is unused by :class:`MoE` but accepted
         for interface consistency with :class:`MoEQuantized`.
+
+        Args:
+            expert_inputs: Dispatch outputs (tokens, row_offsets, ...).
+            x: Original input (unused by base MoE, used by subclasses).
+            estimated_total_m: Estimated total received tokens for the current
+                device. Used as a matmul shape hint.
         """
         gate_up_projs = grouped_matmul_ragged(
             expert_inputs[0],
