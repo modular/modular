@@ -1047,10 +1047,7 @@ struct TypeList[
         pass
 
     # TODO: Support implicit conversion from a more derived trait to a base one.
-    @always_inline("builtin")
-    def upcast[
-        dst_trait: type_of(AnyType)
-    ](self) -> TypeList[
+    comptime upcast[dst_trait: type_of(AnyType)] = TypeList[
         Trait=dst_trait,
         __mlir_attr[
             `#kgen.upcast<`,
@@ -1058,8 +1055,7 @@ struct TypeList[
             `> : `,
             Variadic.TypesOfTrait[dst_trait],
         ],
-    ]:
-        return {}
+    ]
 
     comptime tabulate[
         Trait: type_of(AnyType),
