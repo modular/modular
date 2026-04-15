@@ -3343,30 +3343,34 @@ struct CuDNNConvMeta(ImplicitlyCopyable, RegisterPassable):
     var ptr_output_desc: UnsafePointer[cudnnTensorStruct, AnyOrigin[mut=True]]
 
     def __init__(out self) raises:
-        self.ptr_handle = {_unsafe_null = ()}
-        check_cudnn_error(cudnnCreate(UnsafePointer(to=self.ptr_handle)))
+        var ptr_handle: Optional[type_of(self.ptr_handle)] = None
+        check_cudnn_error(cudnnCreate(UnsafePointer(to=ptr_handle)))
 
-        self.ptr_input_desc = {_unsafe_null = ()}
+        var ptr_input_desc: Optional[type_of(self.ptr_input_desc)] = None
         check_cudnn_error(
-            cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_input_desc))
+            cudnnCreateTensorDescriptor(UnsafePointer(to=ptr_input_desc))
         )
 
-        self.ptr_filter_desc = {_unsafe_null = ()}
+        var ptr_filter_desc: Optional[type_of(self.ptr_filter_desc)] = None
         check_cudnn_error(
-            cudnnCreateFilterDescriptor(UnsafePointer(to=self.ptr_filter_desc))
+            cudnnCreateFilterDescriptor(UnsafePointer(to=ptr_filter_desc))
         )
 
-        self.ptr_conv_desc = {_unsafe_null = ()}
+        var ptr_conv_desc: Optional[type_of(self.ptr_conv_desc)] = None
         check_cudnn_error(
-            cudnnCreateConvolutionDescriptor(
-                UnsafePointer(to=self.ptr_conv_desc)
-            )
+            cudnnCreateConvolutionDescriptor(UnsafePointer(to=ptr_conv_desc))
         )
 
-        self.ptr_output_desc = {_unsafe_null = ()}
+        var ptr_output_desc: Optional[type_of(self.ptr_output_desc)] = None
         check_cudnn_error(
-            cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_output_desc))
+            cudnnCreateTensorDescriptor(UnsafePointer(to=ptr_output_desc))
         )
+
+        self.ptr_handle = ptr_handle.value()
+        self.ptr_input_desc = ptr_input_desc.value()
+        self.ptr_filter_desc = ptr_filter_desc.value()
+        self.ptr_conv_desc = ptr_conv_desc.value()
+        self.ptr_output_desc = ptr_output_desc.value()
 
     def __del__(deinit self):
         try:
@@ -3476,30 +3480,34 @@ struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable):
     var dil: Tuple[Int, Int]
 
     def __init__(out self) raises:
-        self.ptr_handle = {_unsafe_null = ()}
-        check_cudnn_error(cudnnCreate(UnsafePointer(to=self.ptr_handle)))
+        var ptr_handle: Optional[type_of(self.ptr_handle)] = None
+        check_cudnn_error(cudnnCreate(UnsafePointer(to=ptr_handle)))
 
-        self.ptr_input_desc = {_unsafe_null = ()}
+        var ptr_input_desc: Optional[type_of(self.ptr_input_desc)] = None
         check_cudnn_error(
-            cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_input_desc))
+            cudnnCreateTensorDescriptor(UnsafePointer(to=ptr_input_desc))
         )
 
-        self.ptr_filter_desc = {_unsafe_null = ()}
+        var ptr_filter_desc: Optional[type_of(self.ptr_filter_desc)] = None
         check_cudnn_error(
-            cudnnCreateFilterDescriptor(UnsafePointer(to=self.ptr_filter_desc))
+            cudnnCreateFilterDescriptor(UnsafePointer(to=ptr_filter_desc))
         )
 
-        self.ptr_conv_desc = {_unsafe_null = ()}
+        var ptr_conv_desc: Optional[type_of(self.ptr_conv_desc)] = None
         check_cudnn_error(
-            cudnnCreateConvolutionDescriptor(
-                UnsafePointer(to=self.ptr_conv_desc)
-            )
+            cudnnCreateConvolutionDescriptor(UnsafePointer(to=ptr_conv_desc))
         )
 
-        self.ptr_output_desc = {_unsafe_null = ()}
+        var ptr_output_desc: Optional[type_of(self.ptr_output_desc)] = None
         check_cudnn_error(
-            cudnnCreateTensorDescriptor(UnsafePointer(to=self.ptr_output_desc))
+            cudnnCreateTensorDescriptor(UnsafePointer(to=ptr_output_desc))
         )
+
+        self.ptr_handle = ptr_handle.value()
+        self.ptr_input_desc = ptr_input_desc.value()
+        self.ptr_filter_desc = ptr_filter_desc.value()
+        self.ptr_conv_desc = ptr_conv_desc.value()
+        self.ptr_output_desc = ptr_output_desc.value()
 
         self.workspace_size = 0
         self.best_algo = (

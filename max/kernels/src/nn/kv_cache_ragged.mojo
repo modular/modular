@@ -1411,9 +1411,7 @@ def _matmul_common[
         }
     else:
         c_nd = {
-            UnsafePointer[Scalar[output_dtype], MutExternalOrigin](
-                _unsafe_null=()
-            ),
+            None,
             RuntimeLayout[c_nd.layout].row_major(
                 IndexList[2](TOTAL_SEQ_LEN, N)
             ),
@@ -1451,7 +1449,7 @@ def _qmatmul_common[
     ]
 
     c_nd = {
-        UnsafePointer[Scalar[dtype], MutAnyOrigin](_unsafe_null=()),
+        None,
         RuntimeLayout[c_nd.layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
     }
 
