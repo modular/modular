@@ -922,17 +922,19 @@ def bench_max(
         torch.cuda.synchronize()
         return 1.0, total_bytes
 
-    # Benchmark with CUPTI warmup
-    # Note: Split-K implementation uses two kernels (decode + combine), so we
-    # need with_multiple_kernels=True to sum their times.
-    # kernel_names="nn_attention" matches both the decode and combine CUDA
-    # kernels: the MOGG compiler mangles the Mojo module path
-    # nn.attention.gpu.nvidia.sm100.mla_decode_* into names like
-    # nn_attention_gpu_nvidia_sm10x_mla_decode_..._<hash>.
+    # Benchmark with CUPTI warmup.
+    # Split-K launches two kernels (decode + combine), so we use
+    # with_multiple_kernels=True to sum their times.
+    # Kernel names use the @__name decorator pattern, e.g.
+    #   sm100_mla_decode_kv_bf16_..._<hash>   (main decode)
+    #   sm100_mla_decode_combine_..._<hash>    (reduction)
+    # The substring "sm100_mla_decode" matches all MLA decode variants
+    # (kv_bf16, kv_fp8, qkv_fp8, qkv_fp8_per_token_scale_rope_aware,
+    # and the combine kernel).
     try:
         time_s = bench_kineto_with_cupti_warmup(
             run_kernel,
-            kernel_names="nn_attention",
+            kernel_names="sm100_mla_decode",
             num_tests=num_iters,
             suppress_kineto_output=True,
             flush_l2=True,
