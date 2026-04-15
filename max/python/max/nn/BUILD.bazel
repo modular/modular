@@ -17,7 +17,6 @@ modular_py_library(
         requirement("numpy"),
         requirement("rich"),
         requirement("typing-extensions"),
-        "//max/python/max:_core",
         "//max/python/max:tensor",
         "//max/python/max/_kv_cache_ops",
         "//max/python/max/driver",

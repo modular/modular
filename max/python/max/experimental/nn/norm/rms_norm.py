@@ -15,62 +15,17 @@
 
 from __future__ import annotations
 
-from max._core.dialects import builtin, kgen, mo
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, Dim, TensorType, ops
-from max.graph.graph import Graph
+from max.graph import Dim, ops
 
 from ..module import Module
 
+rms_norm = F.functional(ops.rms_norm)
+"""Applies Root Mean Square layer normalization to an input tensor.
 
-@F.functional
-def rms_norm(
-    x: Tensor,
-    weight: Tensor,
-    eps: float,
-    weight_offset: float = 0.0,
-    multiply_before_cast: bool = False,
-) -> Tensor:
-    """Applies Root Mean Square layer normalization to an input tensor.
-
-    See https://arxiv.org/abs/1910.07467
-
-    Args:
-        x: The input tensor
-        weight: The weights for the normalization
-        eps: A value added to the denominator of the normalization for
-            numerical stability
-        weight_offset: A value added to the weights before normalization.
-            Typically 1 for Gemma-like normalization and 0 otherwise.
-        multiply_before_cast: Whether to multiply before or after
-            casting to the output dtype. Typically True for Gemma-like
-            normalization and False otherwise.
-
-    Returns:
-        A layer-normalized tensor with the same shape and type as `x`.
-    """
-    if x.shape[-1:] != weight.shape:
-        raise ValueError(
-            f"RMSNorm: Could not apply {weight.type=} to input "
-            f"{x.type=}, weight shape must match the final input dimension."
-        )
-
-    x_val = x.__tensorvalue__()
-    weight_val = weight.__tensorvalue__()
-    result = Graph.current._add_op_generated(
-        mo.ReduceRmsNormOp,
-        result=TensorType(dtype=x.dtype, shape=x.shape, device=x.device),
-        input=x_val,
-        weight=weight_val,
-        epsilon=ops.constant(eps, dtype=x.dtype, device=DeviceRef.CPU()),
-        weight_offset=ops.constant(
-            weight_offset, dtype=x.dtype, device=DeviceRef.CPU()
-        ),
-        multiply_before_cast=builtin.BoolAttr(multiply_before_cast),
-        output_param_decls=kgen.ParamDeclArrayAttr([]),
-    )[0].tensor
-    return Tensor.from_graph_value(result)
+See :func:`max.graph.ops.rms_norm` for details.
+"""
 
 
 class RMSNorm(Module[[Tensor], Tensor]):

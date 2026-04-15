@@ -17,17 +17,14 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from max._core.dialects import builtin, kgen, mo
 from max.dtype import DType
 from max.graph import (
     DeviceRef,
     ShardingStrategy,
-    TensorType,
     TensorValue,
     Weight,
     ops,
 )
-from max.graph.graph import Graph
 
 from ..layer import Module, Shardable
 
@@ -88,20 +85,13 @@ class RMSNorm(Module, Shardable):
         if x.device:
             weight = weight.to(x.device)
 
-        return Graph.current._add_op_generated(
-            mo.ReduceRmsNormOp,
-            result=TensorType(dtype=x.dtype, shape=x.shape, device=x.device),
-            input=x,
-            weight=weight,
-            epsilon=ops.constant(
-                self.eps, dtype=x.dtype, device=DeviceRef.CPU()
-            ),
-            weight_offset=ops.constant(
-                self.weight_offset, dtype=x.dtype, device=DeviceRef.CPU()
-            ),
-            multiply_before_cast=builtin.BoolAttr(self.multiply_before_cast),
-            output_param_decls=kgen.ParamDeclArrayAttr([]),
-        )[0].tensor
+        return ops.rms_norm(
+            x,
+            weight,
+            self.eps,
+            weight_offset=self.weight_offset,
+            multiply_before_cast=self.multiply_before_cast,
+        )
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:

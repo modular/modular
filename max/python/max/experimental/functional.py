@@ -567,6 +567,9 @@ greater = functional(ops.greater)
 #: Computes element-wise greater-than-or-equal comparison.
 #: See :func:`max.graph.ops.greater_equal` for details.
 greater_equal = functional(ops.greater_equal)
+#: Applies group normalization.
+#: See :func:`max.graph.ops.group_norm` for details.
+group_norm = functional(ops.group_norm)
 #: Creates a Hann window.
 #: See :func:`max.graph.ops.hann_window` for details.
 hann_window = functional(ops.hann_window)
@@ -776,6 +779,9 @@ repeat_interleave = functional(ops.repeat_interleave)
 #: Reshapes a tensor to a new shape.
 #: See :func:`max.graph.ops.reshape` for details.
 reshape = functional(ops.reshape)
+#: Applies Root Mean Square layer normalization.
+#: See :func:`max.graph.ops.rms_norm` for details.
+rms_norm = functional(ops.rms_norm)
 #: Resizes a tensor using linear (bilinear) interpolation.
 #: See :func:`max.graph.ops.resize_linear` for details.
 resize_linear = functional(ops.resize_linear)

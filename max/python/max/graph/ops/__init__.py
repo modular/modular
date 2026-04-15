@@ -71,6 +71,7 @@ from .elementwise import min as _elementwise_min
 from .flatten import flatten
 from .fold import fold
 from .gather import gather, gather_nd
+from .group_norm import group_norm
 from .hann_window import hann_window
 from .irfft import irfft
 from .layer_norm import layer_norm
@@ -96,6 +97,7 @@ from .resize import (
     resize_linear,
     resize_nearest,
 )
+from .rms_norm import rms_norm
 from .scatter import (
     masked_scatter,
     scatter,
