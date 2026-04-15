@@ -55,19 +55,6 @@ def test_registry__retrieve_architecture_default() -> None:
     )
     PIPELINE_REGISTRY.register(v2_arch)
 
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-                    quantization_encoding="float32",
-                    max_length=128,
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(max_batch_size=1),
-    )
-
     arch = PIPELINE_REGISTRY.retrieve_architecture(
         architecture_name="LlamaForCausalLM",
         prefer_module_v3=False,
@@ -96,19 +83,6 @@ def test_registry__retrieve_architecture_v3_falls_back_to_v2() -> None:
         multi_gpu_supported=True,
     )
     PIPELINE_REGISTRY.register(v2_arch)
-
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-                    quantization_encoding="float32",
-                    max_length=128,
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(max_batch_size=1),
-    )
 
     # When prefer_module_v3=True but only ModuleV2 exists, should fall back
     arch = PIPELINE_REGISTRY.retrieve_architecture(
@@ -158,19 +132,6 @@ def test_registry__retrieve_architecture_module_v3() -> None:
         multi_gpu_supported=True,
     )
     PIPELINE_REGISTRY.register(v3_arch)
-
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-                    quantization_encoding="float32",
-                    max_length=128,
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(max_batch_size=1),
-    )
 
     arch_v3 = PIPELINE_REGISTRY.retrieve_architecture(
         architecture_name="LlamaForCausalLM",
@@ -321,19 +282,6 @@ def test_registry__retrieve_architecture_falls_back_to_v3() -> None:
         multi_gpu_supported=True,
     )
     PIPELINE_REGISTRY.register(v3_arch)
-
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path="trl-internal-testing/tiny-random-LlamaForCausalLM",
-                    quantization_encoding="float32",
-                    max_length=128,
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(max_batch_size=1),
-    )
 
     # Default prefer_module_v3=False, but only ModuleV3 exists — should fall back
     arch = PIPELINE_REGISTRY.retrieve_architecture(

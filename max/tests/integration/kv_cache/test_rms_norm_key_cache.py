@@ -386,7 +386,7 @@ def test_rms_norm_key_cache_dtype_mismatch(
         f"expected gamma dtype {gamma_dtype} to match KV dtype {kv_dtype}"
     )
     with pytest.raises(TypeError, match=expected_msg):
-        graph = Graph(
+        Graph(
             "matmul_kv_cache_ragged",
             forward=RMSNormKeyCacheModel(
                 kv_params, layer_idx=0, total_seq_len=sum(seq_lens)

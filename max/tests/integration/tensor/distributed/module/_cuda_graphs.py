@@ -175,8 +175,6 @@ class CUDAGraphTests:
         x = self._gpu_buf(np.ones((3, D), dtype=np.float32))
         raw_outputs = compiled.execute_raw(x)
         assert len(raw_outputs) == 1
-        eager_result = to_np(Tensor(storage=raw_outputs[0]))
-
         # Warmup: capture graphs for batch sizes 1..3 (like ServeGraphCaptureRunner).
         captured: dict[int, tuple[Buffer, list[Buffer]]] = {}
         for bs in [1, 2, 3]:

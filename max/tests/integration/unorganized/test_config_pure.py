@@ -92,7 +92,7 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_extract_kwargs_for_config_basic(self) -> None:
         """Test basic kwargs extraction for a config class."""
-        config = PipelineConfig(
+        PipelineConfig(
             models=ModelManifest(
                 {"main": MAXModelConfig(model_path="test/model")}
             ),
@@ -130,7 +130,7 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_extract_kwargs_for_config_with_prefix(self) -> None:
         """Test kwargs extraction with prefix filtering."""
-        config = PipelineConfig(
+        PipelineConfig(
             models=ModelManifest(
                 {"main": MAXModelConfig(model_path="test/model")}
             ),
@@ -166,7 +166,7 @@ class TestPipelineConfigUtilityMethods:
     @mock_pipeline_config_resolve
     def test_extract_kwargs_for_config_empty_result(self) -> None:
         """Test extraction when no matching kwargs exist."""
-        config = PipelineConfig(
+        PipelineConfig(
             models=ModelManifest(
                 {"main": MAXModelConfig(model_path="test/model")}
             ),
@@ -655,7 +655,7 @@ def test_config__test_incompatible_quantization_encoding(
 
     with pytest.raises(ValueError):
         # This should raise, as q4_k != f32.
-        config = PipelineConfig(
+        PipelineConfig(
             models=ModelManifest(
                 {
                     "main": MAXModelConfig(
@@ -677,7 +677,7 @@ def test_config__test_incompatible_quantization_encoding(
         )
 
     # This should not raise, as float32 == f32.
-    config = PipelineConfig(
+    PipelineConfig(
         models=ModelManifest(
             {
                 "main": MAXModelConfig(
@@ -829,7 +829,7 @@ def test_config__test_retrieve_factory_with_unsupported_model_path(
     with pytest.raises(
         ValueError, match="MAX-optimized architecture not available"
     ):
-        config = PipelineConfig(
+        PipelineConfig(
             models=ModelManifest(
                 {
                     "main": MAXModelConfig(
@@ -954,7 +954,7 @@ def test_config__validates_supported_device(
         ValueError, match="not compatible with the selected device type 'cpu'"
     ):
         # Invalid device/encoding combinations.
-        config = PipelineConfig(
+        PipelineConfig(
             models=ModelManifest(
                 {
                     "main": MAXModelConfig(

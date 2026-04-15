@@ -1238,8 +1238,6 @@ class TestReconnection:
         # Track call ordering via side effects.
         call_order: list[str] = []
 
-        original_disconnect = connector._engine.disconnect
-
         def track_disconnect(name: str) -> None:
             call_order.append("disconnect")
             # Actually remove from remote_connections so the loop works.
