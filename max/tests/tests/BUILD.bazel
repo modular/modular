@@ -86,11 +86,15 @@ modular_py_test(
 modular_py_test(
     name = "test_interpreter",
     srcs = ["test_interpreter.py"],
+    ignore_unresolved_imports = [
+        "max._interpreter_ops.handlers._handle_constant_scalar",
+    ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:_core",
         "//max/python/max:interpreter",
         "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",

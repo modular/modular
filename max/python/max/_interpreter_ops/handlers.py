@@ -20,14 +20,14 @@ the operation, and input buffers, and returns output buffers.
 Handlers are registered using the @register_op_handler decorator.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from math import ceil, prod
 from typing import Any
 
 import max._interpreter_ops as ops
 import numpy as np
 from max import _core, graph
-from max._core.dialects import mo, mosh
+from max._core.dialects import builtin, mo, mosh
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 
@@ -184,6 +184,86 @@ def _handle_constant(
         return [cpu_buffer.to(target_device)]
 
     return [cpu_buffer]
+
+
+@register_op_handler(mo.ConstantScalarOp)
+def _handle_constant_scalar(
+    op: mo.ConstantScalarOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.constant.scalar by extracting the scalar value attribute.
+
+    Scalar constants have a ``value`` attribute that is an ``IntegerAttr``,
+    ``FloatAttr``, or ``BoolAttr``.  The result type is ``!mo.scalar<dtype>``
+    which we materialise as a rank-0 ``Buffer`` on CPU.
+
+    Args:
+        op: The constant scalar operation.
+        inputs: Input buffers (empty for constants).
+
+    Returns:
+        List containing a rank-0 Buffer with the scalar value.
+    """
+    result_type: mo.ScalarType = op.results[0].type  # type: ignore[assignment]
+    dtype = DType(result_type.dtype)
+
+    attr = op.value
+    value: bool | int | float
+    if isinstance(attr, builtin.BoolAttr):
+        value = attr.value
+    elif isinstance(attr, builtin.IntegerAttr):
+        value = attr.value
+    elif isinstance(attr, builtin.FloatAttr):
+        value = attr.value
+    else:
+        raise ValueError(
+            f"Unsupported scalar attribute type: {type(attr).__name__}"
+        )
+
+    np_val = np.array(value, dtype=dtype.to_numpy())
+    # Rank-0 bool arrays are not supported by Buffer.from_dlpack;
+    # wrap as int8 (same underlying representation).
+    if np_val.dtype == np.bool_:
+        np_val = np_val.view(np.int8)
+    return [Buffer.from_numpy(np_val)]
+
+
+# Module-level weights registry set by MOInterpreter during execution.
+_weights_registry: Mapping[str, Buffer] | None = None
+
+
+@register_op_handler(mo.ConstantExternalOp)
+def _handle_constant_external(
+    op: mo.ConstantExternalOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.constant.external by looking up the named weight.
+
+    External constants reference named weights whose backing data is provided
+    at runtime via the weights registry.  The interpreter stashes the registry
+    in the module-level ``_weights_registry`` for the duration of execution.
+
+    Args:
+        op: The constant external operation.
+        inputs: Input buffers (empty for constants).
+
+    Returns:
+        List containing the looked-up weight buffer.
+
+    Raises:
+        RuntimeError: If no weights registry is available or the name is
+            not found.
+    """
+    name = op.name
+    if _weights_registry is None:
+        raise RuntimeError(
+            f"No weights registry provided to interpreter, cannot resolve "
+            f"external constant '{name}'"
+        )
+    if name not in _weights_registry:
+        raise RuntimeError(
+            f"Weight '{name}' not found in weights registry. "
+            f"Available: {list(_weights_registry.keys())}"
+        )
+    return [_weights_registry[name]]
 
 
 # Mutable load operations

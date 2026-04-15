@@ -45,6 +45,9 @@ This version is still a work in progress.
   ratio, alignment mode, and AVG/MAX pooling.
 - Added `roi_align` op handler to the MO eager interpreter, enabling
   eager-mode execution of ROI Align pooling without graph compilation.
+- Added `ConstantExternalOp` and `ConstantScalarOp` handlers to the MO eager
+  interpreter, allowing graphs with external weights and scalar constants to
+  run without falling back to full compilation.
 - Fixed tensor slicing with negative integer indices (e.g. `hidden[:, -1]`)
   which previously raised a `RuntimeError` at compile time.
 - Setting `MODULAR_MAX_UNINITIALIZED_READ_CHECK=true` enables detection of
