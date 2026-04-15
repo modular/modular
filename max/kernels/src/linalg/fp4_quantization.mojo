@@ -57,7 +57,10 @@ from .fp4_utils import (
 from std.gpu.host.info import B200, MI355X, _is_sm10x_gpu
 from std.utils import StaticTuple
 from std.collections import Optional
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import (
+    elementwise_epilogue_type,
+    elementwise_compute_lambda_type,
+)
 from std.utils.index import Index, IndexList
 from linalg.matmul.vendor.blas import matmul
 from std.memory import bitcast
@@ -1333,6 +1336,9 @@ def block_scaled_matmul[
     transpose_b: Bool = True,
     transpose_a: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
@@ -1420,6 +1426,31 @@ def block_scaled_matmul[
         "]",
     )
 
+    comptime assert (
+        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
+    ), "Either the epilogue lambda or the compute lambda can be used"
+
+    # vendor block scaled matmul kernels don't support compute lambda, so we wrap it around an epilogue lambda instead.
+    @parameter
+    @always_inline
+    @__copy_capture(c)
+    def compute_lambda_wrapper[
+        _dtype: DType, _width: Int, *, alignment: Int = 1
+    ](coords: IndexList[2], val: SIMD[_dtype, _width]):
+        comptime if elementwise_compute_lambda_fn:
+            comptime compute_lambda = elementwise_compute_lambda_fn.value()
+            var output = compute_lambda(coords, val)
+            comptime assert (
+                output.dtype == c_type
+            ), "compute epilogue lambda output and c type mismatch"
+            c.store_linear[alignment=alignment * size_of[c_type]()](
+                coords, rebind[SIMD[c_type, _width]](output)
+            )
+
+    comptime elementwise_lambda_wrapper = Optional[elementwise_epilogue_type](
+        compute_lambda_wrapper
+    ) if elementwise_compute_lambda_fn else elementwise_lambda_fn
+
     comptime static_N = c_device.static_shape[1]
     comptime static_K = a_device.static_shape[1] * (
         2 if a_type == DType.uint8 else 1
@@ -1477,6 +1508,7 @@ def block_scaled_matmul[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
         ](c_device, a_device, b_device, a_scales, b_scales, tensor_sf, ctx)
 
@@ -1548,6 +1580,7 @@ def block_scaled_matmul[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                 ](
                     c_device,
@@ -1568,6 +1601,7 @@ def block_scaled_matmul[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                 ](
                     c_device,
@@ -1588,6 +1622,7 @@ def block_scaled_matmul[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                 ](
                     c_device,
@@ -1608,6 +1643,7 @@ def block_scaled_matmul[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
+                    elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                     pdl_level=pdl_level,
                 ](
                     c_device,
@@ -1621,9 +1657,11 @@ def block_scaled_matmul[
                 if status == DISPATCH_HIT:
                     return
 
+        # vendor matmul only supports epilogue lambda, so we wrap it around an epilogue lambda instead.
         block_scaled_matmul_with_epilogue[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_wrapper,
         ](
             c,
             a,

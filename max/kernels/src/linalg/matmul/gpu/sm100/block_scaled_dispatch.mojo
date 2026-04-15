@@ -177,6 +177,7 @@ def heuristic_and_outliers_dispatch[
                 transpose_b=transpose_b,
                 config=matmul_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
             ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
 
@@ -203,6 +204,7 @@ def heuristic_and_outliers_dispatch[
             transpose_b=transpose_b,
             config=config,
             elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
         ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
 
@@ -231,6 +233,7 @@ def heuristic_and_outliers_dispatch[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
             ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
             return DISPATCH_HIT
@@ -256,6 +259,9 @@ def _block_scaled_matmul_with_epilogue[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: NullableTileTensor[mut=True, c_type, ...],
@@ -286,6 +292,7 @@ def _block_scaled_matmul_with_epilogue[
             transpose_b=transpose_b,
             K=K_phys,
             config=config,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
         ](
             c.value(),
@@ -331,6 +338,7 @@ def _block_scaled_matmul_with_epilogue[
                 transpose_b=transpose_b,
                 K=K_phys,
                 config=config,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
             ](
                 c_tt,
@@ -361,6 +369,8 @@ def _block_scaled_matmul_with_epilogue[
             transpose_b=transpose_b,
             config=config,
             elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
         ](
             c_tmp,
             a,
