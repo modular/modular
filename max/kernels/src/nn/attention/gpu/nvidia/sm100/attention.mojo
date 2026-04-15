@@ -62,6 +62,7 @@ struct FA4Config[
     var fuse_gqa: Bool
     var swizzle_mode: TensorMapSwizzle
     var use_fused_kv: Bool
+    var pair_cta: Bool
 
     comptime qkv_dtype_size: Int = size_of[Self.qkv_dtype]()
     comptime rope_dtype_size: Int = size_of[Self.rope_dtype]()
@@ -85,6 +86,29 @@ struct FA4Config[
     @always_inline
     def num_qo(self) -> Int:
         return 2
+
+    @always_inline
+    def cta_group(self) -> Int:
+        return 2 if self.pair_cta else 1
+
+    @always_inline
+    def PairBM_eff(self) -> Int:
+        """Sequence positions covered by both CTAs in a pair."""
+        return self.BM_eff() * self.cta_group()
+
+    @always_inline
+    def v_cols_per_cta(self) -> Int:
+        """V columns stored in this CTA's SMEM."""
+        if self.pair_cta:
+            return self.padded_ov_depth // 2
+        return self.padded_ov_depth
+
+    @always_inline
+    def k_rows_per_cta(self) -> Int:
+        """K rows stored in this CTA's SMEM."""
+        if self.pair_cta:
+            return self.BN // 2
+        return self.BN
 
     @always_inline
     def q_nope_bytes(self) -> Int:
@@ -142,13 +166,15 @@ struct FA4Config[
         swizzle_mode: TensorMapSwizzle,
         page_size: Int,
         is_mla: Bool,
+        pair_cta: Bool = False,
     ):
         self.num_q_heads = num_q_heads
         self.num_kv_heads = num_q_heads // group
         self.group = group
         self.qk_depth = qk_depth
+        self.pair_cta = pair_cta
         self.BM = 256
-        self.MMA_M = 128
+        self.MMA_M = 256 if pair_cta else 128
         self.fuse_gqa = group > 1 and (self.MMA_M % group == 0) and not is_mla
         self.swizzle_mode = swizzle_mode
         swizzle_elems = swizzle_mode.bytes() // Self.qkv_dtype_size
@@ -275,13 +301,18 @@ struct FA4Config[
         #              then splitting would require us to round down to
         #              an even number of stages. Fusing avoids this.
         # We divide bytes needed by `k` and `v` into shared and k-specific:
+        # In pair-CTA mode each CTA stores half of K/V:
+        # K: BN/2 rows × full depth, V: full BN rows × ov_depth/2 cols.
+        kv_data_elems = self.BN * self.padded_ov_depth
+        if pair_cta:
+            kv_data_elems //= 2
         bytes_per_kv = (
-            self.BN * self.padded_ov_depth * Self.qkv_dtype_size
-            + 2 * Self.mbar_size
+            kv_data_elems * Self.qkv_dtype_size + 2 * Self.mbar_size
         )  # KV barriers
+        kv_rows = self.BN // 2 if pair_cta else self.BN
         bytes_per_k = (
-            self.BN * rope_depth * Self.rope_dtype_size
-            + self.BN * Self.scale_dtype_size
+            kv_rows * rope_depth * Self.rope_dtype_size
+            + kv_rows * Self.scale_dtype_size
         )  # k scale buffers
 
         # total k + v bytes is thus
@@ -343,17 +374,24 @@ struct FA4Config[
         self.smem_used = smem_use
 
     def supported(self) -> Bool:
-        return (
-            self.qk_depth >= 64
-            and self.BN >= 64
+        base = (
+            self.BN >= 64
             and self.num_kv_stages >= 2
             and self.tmem_used <= Self.sm100_tmem_cols
             and self.smem_used <= Self.sm100_smem_carveout
         )
+        if self.pair_cta:
+            # Pair-CTA: depth > 64 (depth=64 needs 32B swizzles) and <= 128.
+            return base and self.qk_depth > 64 and self.qk_depth <= 128
+        return base and self.qk_depth >= 64
 
     def description(self) -> String:
         return String(
-            "qk_depth = ",
+            "pair_cta = ",
+            self.pair_cta,
+            "\nMMA_M = ",
+            self.MMA_M,
+            "\nqk_depth = ",
             self.qk_depth,
             "\nBN = ",
             self.BN,

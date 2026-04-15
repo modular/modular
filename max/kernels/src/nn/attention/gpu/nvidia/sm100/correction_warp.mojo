@@ -21,6 +21,7 @@ from std.gpu.compute.arch.tcgen05 import (
     tcgen05_fence_before,
 )
 from std.gpu.primitives.warp import _vote_nvidia_helper
+from std.gpu.sync import umma_arrive_leader_cta
 from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
     TmemAddress,
 )
@@ -56,8 +57,13 @@ def fa4_correction[
 
     # Dummy arrives for the prologue iteration (no previous O to protect).
     # This satisfies the combined barrier's correction half for the first P@V.
-    _ = mbars.combined_p_o_consumer(0)[].arrive()
-    _ = mbars.combined_p_o_consumer(1)[].arrive()
+    # Cluster-scope arrive so both CTAs' signals reach the leader.
+    comptime if config.pair_cta:
+        umma_arrive_leader_cta(mbars.combined_p_o_consumer(0))
+        umma_arrive_leader_cta(mbars.combined_p_o_consumer(1))
+    else:
+        _ = mbars.combined_p_o_consumer(0)[].arrive()
+        _ = mbars.combined_p_o_consumer(1)[].arrive()
 
     var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
     o0_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O0))
@@ -68,7 +74,7 @@ def fa4_correction[
     pipeline_c1 = mbars.consumer_c1()
     pipeline_o = mbars.consumer_o()
 
-    comptime BM_mask: Int = config.BM_eff()
+    comptime BM_mask: Int = config.PairBM_eff()
     var iter_count: UInt32 = (
         mask.total_iters[BM_mask, BN, page_size](score_row, num_keys) - 1
     )
@@ -220,7 +226,11 @@ def fa4_correction[
                 tcgen05_store_wait()
                 tcgen05_fence_before()
 
-            pipeline_o.release()
+            comptime if config.pair_cta:
+                umma_arrive_leader_cta(pipeline_o.consumer_mbar())
+                pipeline_o.step()
+            else:
+                pipeline_o.release()
 
             comptime if i == 0:
                 pipeline_c0.release()

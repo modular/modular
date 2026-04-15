@@ -657,12 +657,20 @@ def flash_attention_dispatch[
                             _optional_lt_to_tt(sink_weights),
                         )
                     else:
+                        comptime use_pair_cta = (
+                            depth > 64
+                            and depth <= 128
+                            and get_defined_bool[
+                                "ENABLE_MHA_PREFILL_PAIR_CTA", False
+                            ]()
+                        )
                         mha_sm100_2q_dispatch[
                             config=config,
                             group=group,
                             ragged=ragged,
                             sink=sink,
                             _is_cache_length_accurate=_is_cache_length_accurate,
+                            pair_cta=use_pair_cta,
                         ](
                             output.to_device_buffer(ctx),
                             q.to_device_buffer(ctx).unsafe_ptr(),

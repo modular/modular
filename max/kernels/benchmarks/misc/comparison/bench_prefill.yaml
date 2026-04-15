@@ -21,8 +21,8 @@ deepseek-v2-commons: &deepseek-v2-commons
   $causal: [True]
   # $causal: [True, False]
   # $dtype: [bfloat16]
-  $engine: ["tridao", "modular_max"]
-  # $engine: ["flashinfer", "tridao", "modular_max"]
+  # $engine: ["tridao", "modular_max"]
+  $engine: ["flashinfer", "tridao", "modular_max"]
   model: "deepseek-v2"
 
 params:
