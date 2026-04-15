@@ -1092,15 +1092,6 @@ class PipelineConfig(ConfigFileModel):
                 "structured outputs not currently supported with speculative decoding enabled"
             )
 
-        if self.model.kv_cache.enable_prefix_caching and not self.runtime.force:
-            logging.warning(
-                "Prefix caching is not supported with speculative decoding. "
-                "Overriding user setting to False. Pass --force to bypass this "
-                "validation, though this may result in unexpected behavior or errors."
-            )
-            self.model.kv_cache.enable_prefix_caching = False
-            self.draft_model.kv_cache.enable_prefix_caching = False
-
     def _validate_and_resolve_architecture(
         self, model_config: MAXModelConfig
     ) -> SupportedArchitecture:

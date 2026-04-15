@@ -1267,6 +1267,7 @@ class OverlapTextGenerationPipeline(
                 if self._spec_decode_state is not None
                 else 0
             )
+
             with Tracer("prepare_initial_token_inputs"):
                 model_inputs = (
                     self._pipeline_model.prepare_initial_token_inputs(
