@@ -626,6 +626,8 @@ def _sfb_cpasync_produce_tile[
     sfb_batch_stride: Int,
     sfb_n_stride: Int,
     sfb_k_tiles: Int,
+    load_mma_pipeline: ProducerConsumerPipeline[num_sfb_pipeline_stages],
+    mut smem_release_state: PipelineState[num_sfb_pipeline_stages],
 ):
     """Produce SFB data from global to shared memory using cp.async.
 
@@ -636,6 +638,10 @@ def _sfb_cpasync_produce_tile[
     cp.async does not auto-fill zeros like TMA, and garbage bytes
     that decode as NaN in float8_e4m3fn would corrupt the accumulator
     (NaN * 0 = NaN).
+
+    Waits on load_mma_pipeline's empty barriers (fired by
+    tcgen05.commit) instead of sfb_pipeline.wait_consumer() to
+    ensure MMA has finished reading SFB SMEM before overwriting.
     """
     comptime ROW_STRIDE = SF_ATOM_M[1] * SF_ATOM_K
     comptime K_TILE_ELEMS = SF_ATOM_M[0] * ROW_STRIDE
@@ -666,7 +672,12 @@ def _sfb_cpasync_produce_tile[
     comptime num_passes = ceildiv(MMA_N, WARP_SIZE)
 
     for i in range(num_iters // UInt32(k_group_size)):
-        sfb_pipeline.wait_consumer()
+        # Wait for MMA to release SMEM (via tcgen05.commit on
+        # load_mma_pipeline's empty barrier).
+        load_mma_pipeline.consumer_mbar(smem_release_state.index())[0].wait(
+            smem_release_state.phase()
+        )
+        smem_release_state.step()
 
         var stage = sfb_pipeline.producer_stage()
         var sfb_mbar = sfb_pipeline.producer_mbar(stage)
@@ -759,6 +770,8 @@ def _sfb_cpasync_produce_tile_warpwide[
     sfb_batch_stride: Int,
     sfb_n_stride: Int,
     sfb_k_tiles: Int,
+    load_mma_pipeline: ProducerConsumerPipeline[num_sfb_pipeline_stages],
+    mut smem_release_state: PipelineState[num_sfb_pipeline_stages],
 ):
     """Produce SFB data from global to shared memory using cp.async,
     utilizing the full warp (32 threads) when MMA_N * num_sf_k_tiles <= 32.
@@ -771,6 +784,10 @@ def _sfb_cpasync_produce_tile_warpwide[
 
     The pipeline's producer arrive_count must be MMA_N * num_sf_k_tiles
     (= 32 in the expected configuration).
+
+    Waits on load_mma_pipeline's empty barriers (fired by
+    tcgen05.commit) instead of sfb_pipeline.wait_consumer() to
+    ensure MMA has finished reading SFB SMEM before overwriting.
     """
     comptime assert (
         MMA_N * num_sf_k_tiles <= 32
@@ -812,7 +829,12 @@ def _sfb_cpasync_produce_tile_warpwide[
     var batch = Int(work_info.k_start)
 
     for i in range(num_iters // UInt32(k_group_size)):
-        sfb_pipeline.wait_consumer()
+        # Wait for MMA to release SMEM (via tcgen05.commit on
+        # load_mma_pipeline's empty barrier).
+        load_mma_pipeline.consumer_mbar(smem_release_state.index())[0].wait(
+            smem_release_state.phase()
+        )
+        smem_release_state.step()
 
         var stage = sfb_pipeline.producer_stage()
         var sfb_mbar = sfb_pipeline.producer_mbar(stage)
@@ -1425,6 +1447,13 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     if WarpRole.is_sfb_load():
         with MatmulProfilerType[0](workspace, 0):
+            # Track load_mma_pipeline consumer (empty) barrier phase.
+            # Phase=1 matches load_mma_pipeline's producer_phase so
+            # first wait passes trivially (pipeline initially empty).
+            var smem_release_state = PipelineState[
+                config.num_pipeline_stages // config.k_group_size
+            ](0, 1, 0)
+
             while work_info.is_valid():
                 next_work_info = scheduler.fetch_next_work(
                     work_info, clc_pipe_consumer_state
@@ -1448,6 +1477,8 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         sfb_batch_stride,
                         sfb_n_stride,
                         sfb_k_tiles,
+                        load_mma_pipeline,
+                        smem_release_state,
                     )
                 else:
                     _sfb_cpasync_produce_tile[
@@ -1466,15 +1497,19 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         sfb_batch_stride,
                         sfb_n_stride,
                         sfb_k_tiles,
+                        load_mma_pipeline,
+                        smem_release_state,
                     )
-
                 work_info = next_work_info
 
             # Drain: prevent exit while MMA is still consuming SFB SMEM.
             comptime for i in range(
                 config.num_pipeline_stages // config.k_group_size
             ):
-                sfb_pipeline.wait_consumer()
+                load_mma_pipeline.consumer_mbar(smem_release_state.index())[
+                    0
+                ].wait(smem_release_state.phase())
+                smem_release_state.step()
                 sfb_pipeline.producer_step()
 
     # 2CTA only: SfbReady warp observes sfb_pipeline producer barrier
@@ -1620,20 +1655,9 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         comptime if config.cta_group == 2:
                             sfb_ready_state.step()
 
-                        # Signal SfbLoad that this SMEM slot is consumed.
-                        # 2CTA: leader signals both CTAs' private pipelines.
-                        if elect_one_sync():
-                            # Arrive on own (leader) CTA's barrier.
-                            _ = sfb_pipeline.consumer_mbar(
-                                sfb_pipeline.consumer_stage()
-                            )[0].arrive()
-                            # Arrive on peer CTA's barrier.
-                            comptime if config.cta_group == 2:
-                                umma_arrive_peer_cta(
-                                    sfb_pipeline.consumer_mbar(
-                                        sfb_pipeline.consumer_stage()
-                                    )[0].unsafe_ptr()
-                                )
+                        # SFB SMEM release is handled by load_mma_pipeline's
+                        # commit (tcgen05.commit fires on empty barriers).
+                        # SfbLoad waits on those barriers directly.
                         sfb_pipeline.consumer_step()
 
                     # mma arrive multicast will track completion of all mma prior to this barrier.
