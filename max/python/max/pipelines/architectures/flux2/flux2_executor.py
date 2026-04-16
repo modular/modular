@@ -188,16 +188,19 @@ class Flux2Executor(
 
     Graph structure (4 graphs, 3 for t2i):
 
-    +---------+-----------------------------------------+-----------------------+
-    | Graph   | Purpose                                 | Called                |
-    +---------+-----------------------------------------+-----------------------+
-    | 1       | Text Encode: Mistral3 -> embeddings      | Once per request      |
-    | 2       | Image Encode: VAE encode + BN-norm + pack | Once (img2img only)  |
-    | 3       | Denoise Step: concat + transformer +     | Every denoising step  |
-    |         |   scheduler step                         |                       |
-    | 4       | Decode: BN-denorm + unpatchify +         | Once per request      |
-    |         |   VAE decode -> uint8                    |                       |
-    +---------+-----------------------------------------+-----------------------+
+    +---------+-------------------------------------------+------------------------+
+    | Graph   | Purpose                                   | Called                 |
+    +=========+===========================================+========================+
+    | 1       | Text Encode: Mistral3 -> embeddings       | Once per request       |
+    +---------+-------------------------------------------+------------------------+
+    | 2       | Image Encode: VAE encode + BN-norm + pack | Once (img2img only)    |
+    +---------+-------------------------------------------+------------------------+
+    | 3       | Denoise Step: concat + transformer +      | Every denoising step   |
+    |         | scheduler step                            |                        |
+    +---------+-------------------------------------------+------------------------+
+    | 4       | Decode: BN-denorm + unpatchify +          | Once per request       |
+    |         | VAE decode -> uint8                       |                        |
+    +---------+-------------------------------------------+------------------------+
     """
 
     # -- Compiled graphs (set during __init__) --------------------------------

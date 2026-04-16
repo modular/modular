@@ -39,6 +39,7 @@ def convert_qwen2_5vl_model_state_dict(
     naming without this prefix.
 
     This adapter:
+
     1. Filters to only include language model weights (those with
        `language_model.` prefix).
     2. Strips the `language_model.model.` prefix to match Qwen2.5VLLanguageModel
