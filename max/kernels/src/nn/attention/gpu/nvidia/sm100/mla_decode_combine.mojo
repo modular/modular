@@ -26,6 +26,7 @@ Algorithm:
 
 """
 
+from std.collections import OptionalReg
 from std.math import ceildiv, exp2, log2, max, min
 from std.math.constants import log2e
 
@@ -74,7 +75,9 @@ struct CombineParams[
     # Per-head attn_sink values: shape [num_heads_q], float32, nullable.
     # Contains log-sum-exp of non-selected tokens' attention scores (natural log).
     # Only used when has_attn_sink is True at compile time.
-    var attn_sink_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
+    var attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
+    ]
     var batch_size: Int
     var seq_len: Int
     var num_heads: Int
@@ -116,8 +119,8 @@ struct CombineParams[
         input_row_offsets_ptr: UnsafePointer[
             Scalar[DType.uint32], origin=MutAnyOrigin
         ],
-        attn_sink_ptr: UnsafePointer[
-            Scalar[DType.float32], origin=MutAnyOrigin
+        attn_sink_ptr: OptionalReg[
+            UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
         ],
         batch_size: Int,
         seq_len: Int,
@@ -319,7 +322,7 @@ def mla_combine_kernel[
     # double-counting across splits.
     # FlashMLA reference: combine.cu:101-112
     comptime if has_attn_sink:
-        var attn_sink_val = params.attn_sink_ptr[head_idx]
+        var attn_sink_val = params.attn_sink_ptr.unsafe_value()[head_idx]
         var attn_sink_log2_val = attn_sink_val * Float32(log2e)
         if global_lse != Float32.MAX:
             # Normal case: merge attn_sink into the global LSE.
@@ -427,7 +430,9 @@ def launch_mla_combine_kernel[
     input_row_offsets_ptr: UnsafePointer[
         Scalar[DType.uint32], origin=MutAnyOrigin
     ],
-    attn_sink_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ],
     batch_size: Int,
     seq_len: Int,
     num_heads: Int,
@@ -520,7 +525,9 @@ def mla_decode_combine_partial_outputs[
     input_row_offsets_ptr: UnsafePointer[
         Scalar[DType.uint32], origin=MutAnyOrigin
     ],
-    attn_sink_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ],
     batch_size: Int,
     seq_len: Int,
     num_heads: Int,

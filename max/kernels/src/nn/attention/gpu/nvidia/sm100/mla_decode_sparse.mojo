@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.collections import OptionalReg
 from std.math import ceildiv, clamp
 from std.math.constants import log2e
+from std.memory.unsafe_pointer import pointer_offset
 from std.sys import size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -355,12 +357,12 @@ struct MLA_SM100_Decode_Sparse[
             MaskType=Self.MaskType,
             SplitAccumType=Self.SplitAccumType,
         ],
-        d_indices: UnsafePointer[Int32, MutAnyOrigin],
+        d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         indices_stride: Int,
-        topk_lengths: UnsafePointer[Int32, MutAnyOrigin],
+        topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
-        attn_sink_ptr: UnsafePointer[
-            Scalar[DType.float32], origin=MutAnyOrigin
+        attn_sink_ptr: OptionalReg[
+            UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
         ],
         # Extra KV parameters: separate cache for always-attend tokens.
         # When has_extra_kv is True, these provide a second KV cache
@@ -378,11 +380,11 @@ struct MLA_SM100_Decode_Sparse[
             desc_shape=IndexList[2](1, Self.rope_gather4_box_w),
         ],
         extra_kv_lut: Self.KVLUTType,
-        extra_d_indices: UnsafePointer[Int32, MutAnyOrigin],
-        extra_topk_lengths: UnsafePointer[Int32, MutAnyOrigin],
+        extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+        extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         extra_indices_stride: Int,
-        extra_scales_ptr: UnsafePointer[
-            Scalar[DType.float32], origin=MutAnyOrigin
+        extra_scales_ptr: OptionalReg[
+            UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
         ],
         scalar_args: TileTensor[
             DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
@@ -436,14 +438,18 @@ struct MLA_SM100_Decode_Sparse[
         # cache vs the extra cache in the kernel loop.
         var topk: Int
         comptime if Self.has_variable_topk:
-            topk = Int(topk_lengths[Int(offset_position.batch_idx)])
+            topk = Int(
+                topk_lengths.unsafe_value()[Int(offset_position.batch_idx)]
+            )
         else:
             topk = indices_stride
         var extra_topk: Int = 0
         comptime if Self.has_extra_kv:
             comptime if Self.has_variable_topk:
                 extra_topk = Int(
-                    extra_topk_lengths[Int(offset_position.batch_idx)]
+                    extra_topk_lengths.unsafe_value()[
+                        Int(offset_position.batch_idx)
+                    ]
                 )
             else:
                 extra_topk = extra_indices_stride
@@ -715,9 +721,9 @@ struct MLA_SM100_Decode_Sparse[
                 var row = lane_idx & 0x3F
                 var head_idx_local = Int(block_idx.x) * Self.config.BM + row
                 if head_idx_local < Self.config.num_q_heads:
-                    attn_sink_log2 = attn_sink_ptr[head_idx_local] * Scalar[
-                        DType.float32
-                    ](log2e)
+                    attn_sink_log2 = attn_sink_ptr.unsafe_value()[
+                        head_idx_local
+                    ] * Scalar[DType.float32](log2e)
 
             Self.Common_MLA_Op.Softmax[has_attn_sink=Self.has_attn_sink,](
                 ptr_tmem_addr[0],
@@ -795,15 +801,17 @@ struct MLA_SM100_Decode_Sparse[
                 # activates in the epilogue), so we use it to
                 # transform d_indices → TMA rows and load scales
                 # into SMEM, one tile ahead of warp 8's TMA loads.
-                var batch_d_indices_w11 = (
-                    d_indices + offset_position.batch_idx * indices_stride
+                var batch_d_indices_w11 = pointer_offset(
+                    d_indices, offset_position.batch_idx * indices_stride
                 )
+
                 var batch_extra_d_indices_w11 = extra_d_indices
                 comptime if Self.has_extra_kv:
-                    batch_extra_d_indices_w11 = (
-                        extra_d_indices
-                        + offset_position.batch_idx * extra_indices_stride
+                    batch_extra_d_indices_w11 = pointer_offset(
+                        extra_d_indices,
+                        offset_position.batch_idx * extra_indices_stride,
                     )
+
                 Self.idx_producer(
                     idx_bars,
                     idx_smem_base,
@@ -853,7 +861,7 @@ struct MLA_SM100_Decode_Sparse[
     @staticmethod
     @always_inline
     def _transform_indices_to_smem(
-        d_indices: UnsafePointer[Int32, MutAnyOrigin],
+        d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         idx_smem: SharedMemPointer[Int32],
         indices_base: Int,
         kv_lut: Self.KVLUTType,
@@ -875,7 +883,7 @@ struct MLA_SM100_Decode_Sparse[
             var row_in_tile = lane + row_pass * 32
             var idx_pos = UInt32(indices_base + row_in_tile)
             var clamped_pos = min(idx_pos, max_idx)
-            var raw_index = d_indices[Int(clamped_pos)]
+            var raw_index = d_indices.unsafe_value()[Int(clamped_pos)]
             # Convert encoded index to TMA row via the KV cache.
             var tma_row = kv_lut.get_tma_row(raw_index)
             # Preserve -1 for invalid entries.
@@ -896,7 +904,7 @@ struct MLA_SM100_Decode_Sparse[
         ],
         idx_smem_base: SharedMemPointer[Int32],
         kv_lut: Self.KVLUTType,
-        d_indices: UnsafePointer[Int32, MutAnyOrigin],
+        d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         topk: Int,
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         scale_smem_base: SharedMemPointer[Scalar[DType.uint8]],
@@ -913,10 +921,10 @@ struct MLA_SM100_Decode_Sparse[
         ],
         num_orig_blocks: Int,
         extra_kv_lut: Self.KVLUTType,
-        extra_d_indices: UnsafePointer[Int32, MutAnyOrigin],
+        extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         extra_topk: Int,
-        extra_scales_ptr: UnsafePointer[
-            Scalar[DType.float32], origin=MutAnyOrigin
+        extra_scales_ptr: OptionalReg[
+            UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin]
         ],
     ):
         """Index transform producer running on warp 11 (32 threads).
@@ -1439,9 +1447,11 @@ struct MLA_SM100_Decode_Sparse[
     @always_inline
     def _load_scales_for_tile_sparse(
         scale_smem_base: SharedMemPointer[Scalar[DType.uint8]],
-        scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+        scales_ptr: OptionalReg[
+            UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+        ],
         stage_idx: UInt32,
-        d_indices: UnsafePointer[Int32, MutAnyOrigin],
+        d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         indices_base: Int,
         kv_lut: Self.KVLUTType,
         topk: UInt32,
@@ -1469,13 +1479,15 @@ struct MLA_SM100_Decode_Sparse[
             # Clamp to valid range within topk.
             var clamped_pos = min(idx_pos, max_idx)
             # Read encoded index and convert to TMA row via the KV cache.
-            var raw_index = d_indices[Int(clamped_pos)]
+            var raw_index = d_indices.unsafe_value()[Int(clamped_pos)]
             var gmem_row = Int(kv_lut.get_tma_row(raw_index))
-            var row_base = scales_ptr + gmem_row * scales_per_token
+            var row_base = pointer_offset(
+                scales_ptr, gmem_row * scales_per_token
+            )
             var smem_off = row_in_tile * scales_per_token
 
             comptime for s in range(scales_per_token):
-                var fp32_val = row_base[s]
+                var fp32_val = row_base.unsafe_value()[s]
                 scale_smem_stage[smem_off + s] = bitcast[DType.uint8](
                     fp32_val.cast[DType.float8_e8m0fnu]()
                 )

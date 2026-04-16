@@ -4290,9 +4290,9 @@ def conv_gpu[
     padding: IndexList[2 * conv_rank],
     num_groups: Int,
     ctx: DeviceContext,
-    source_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
+    source_ptr: Optional[
+        UnsafePointer[Scalar[output_type], MutAnyOrigin]
+    ] = None,
     beta: Float32 = 0.0,
 ) raises:
     # Bridge to LayoutTensor for internal GPU kernel dispatch and cuDNN/MIOpen

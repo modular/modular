@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.collections import OptionalReg
 from std.math import exp2, recip, align_up, log2, ceildiv
 from std.math.constants import log2e
 from std.sys import size_of, _RegisterPackType
@@ -598,13 +599,13 @@ struct OffsetPosition[
         batch_size: Int,
         # Sparse attention parameters — only used when sparse=True (comptime).
         sparse_indices_stride: Int = 0,
-        sparse_topk_lengths: UnsafePointer[Int32, MutAnyOrigin] = {
-            _unsafe_null = ()
-        },
+        sparse_topk_lengths: OptionalReg[
+            UnsafePointer[Int32, MutAnyOrigin]
+        ] = None,
         sparse_extra_indices_stride: Int = 0,
-        sparse_extra_topk_lengths: UnsafePointer[Int32, MutAnyOrigin] = {
-            _unsafe_null = ()
-        },
+        sparse_extra_topk_lengths: OptionalReg[
+            UnsafePointer[Int32, MutAnyOrigin]
+        ] = None,
     ):
         self.seq_len = 0
         self.max_seq_len = max_seq_len
@@ -738,7 +739,9 @@ struct OffsetPosition[
 
             var topk: Int
             comptime if Self.has_variable_topk:
-                topk = Int(sparse_topk_lengths[Int(self.batch_idx)])
+                topk = Int(
+                    sparse_topk_lengths.unsafe_value()[Int(self.batch_idx)]
+                )
             else:
                 topk = sparse_indices_stride
 
@@ -750,7 +753,9 @@ struct OffsetPosition[
             comptime if Self.has_extra_kv:
                 comptime if Self.has_variable_topk:
                     extra_topk = Int(
-                        sparse_extra_topk_lengths[Int(self.batch_idx)]
+                        sparse_extra_topk_lengths.unsafe_value()[
+                            Int(self.batch_idx)
+                        ]
                     )
                 else:
                     extra_topk = sparse_extra_indices_stride
@@ -3149,12 +3154,12 @@ struct MLA_SM100_Decode_Common[
         prompt_idx: UInt32,  # batch index
         lse_accum_split_ptr: Self.SplitAccumType,
         batch_size: Int,
-        scale_k_smem: SharedMemPointer[Scalar[DType.float32]] = {
-            _unsafe_null = ()
-        },
-        q_scale_ptr: UnsafePointer[
-            Scalar[DType.float32], origin=MutAnyOrigin
-        ] = {_unsafe_null = ()},
+        scale_k_smem: OptionalReg[
+            SharedMemPointer[Scalar[DType.float32]]
+        ] = None,
+        q_scale_ptr: OptionalReg[
+            UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+        ] = None,
         attn_sink_log2: Scalar[DType.float32] = Scalar[DType.float32](
             min_or_neg_inf[DType.float32]()
         ),
@@ -3235,7 +3240,7 @@ struct MLA_SM100_Decode_Common[
         var effective_scale = scale
         comptime if has_per_token_scales:
             var _q_token_idx = offset_position.q_token_idx
-            effective_scale = scale * q_scale_ptr[_q_token_idx]
+            effective_scale = scale * q_scale_ptr.unsafe_value()[_q_token_idx]
         var scale_log2e = effective_scale.cast[Self.AccumType]()
 
         var tiles_done: Int = 0
@@ -3286,8 +3291,9 @@ struct MLA_SM100_Decode_Common[
                 # per_token_scales_per_stage bytes = BN * 1 * sizeof(f32) = 256
                 # In float32 elements per stage: BN = 64.
                 comptime _scale_elems_per_stage = Self.config.BN
-                var _scale_stage_ptr = scale_k_smem + slot_idx * UInt32(
-                    _scale_elems_per_stage
+                var _scale_stage_ptr = (
+                    scale_k_smem.unsafe_value()
+                    + slot_idx * UInt32(_scale_elems_per_stage)
                 )
                 # Load all 32 sigma_KV values for this thread's columns into
                 # registers ONCE.  This is the ONLY SMEM read for scales in the

@@ -19,6 +19,7 @@ is only compiled when `dispatch_sm100_conv2d` is called with a supported
 dtype inside a @parameter if guard.
 """
 
+from std.collections import OptionalReg
 from std.math import ceildiv
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
@@ -96,7 +97,7 @@ def dispatch_sm100_conv2d[
     output: TileTensor[mut=True, output_type, ...],
     symmetric_padding: IndexList[2],
     ctx: DeviceContext,
-    source_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
+    source_ptr: OptionalReg[UnsafePointer[Scalar[output_type], MutAnyOrigin]],
     beta: Float32 = 0.0,
 ) raises:
     """Dispatch to SM100 structured conv2d with filter transpose.

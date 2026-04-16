@@ -2938,9 +2938,9 @@ def generic_flare_mla_decode_kv_cache_ragged[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
-    q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
+    q_scale_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
 ) raises:
     @always_inline
     @parameter
@@ -3012,9 +3012,10 @@ def _flare_mla_decode_kv_cache_ragged[
         mut=False, DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     context: DeviceContextPtr,
-    q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
+    # TODO: Must use OptionalReg as Optional does not work with @__copy_capture.
+    q_scale_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom dtypes.
 

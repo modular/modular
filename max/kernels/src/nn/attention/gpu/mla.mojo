@@ -159,32 +159,30 @@ def flare_mla_decoding[
     # Per-token Q scale pointer: float32 array with one scale per Q token.
     # sigma_Q[q_token_idx] is folded into scale_log2e inside the Softmax function.
     # Default is null (sigma_Q = 1.0, no effect).
-    q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
+    q_scale_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
     # Sparse indices: when non-null, the kernel uses gather4 TMA with
     # pre-computed physical row indices instead of page-table lookups.
     # d_indices[batch * indices_stride + token] = physical KV row index.
-    d_indices: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
     # Per-batch topk lengths: when non-null, topk_lengths[batch_idx] gives
     # the actual number of valid sparse indices for that batch. indices_stride
     # is the allocation stride (max topk across all batches).
-    topk_lengths: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
-    attn_sink_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
+    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
     # Extra KV: separate always-attend cache. Tokens from extra_k are
     # appended after the topk tokens in a unified attention loop.
     extra_k: OptionalReg[cache_t] = None,
-    extra_d_indices: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
+    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
-    extra_topk_lengths: UnsafePointer[Int32, MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
-    extra_scales_ptr: UnsafePointer[
-        Scalar[DType.float32], origin=MutAnyOrigin
-    ] = {_unsafe_null = ()},
+    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_scales_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
     graph.
@@ -443,25 +441,23 @@ def flare_mla_decoding_dispatch[
         ]
     ] = None,
     num_partitions: Optional[Int] = None,
-    q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
-    d_indices: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
+    q_scale_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
-    topk_lengths: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
-    attn_sink_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
+    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
     # Extra KV: separate always-attend cache operand.
     extra_k: OptionalReg[k_t] = None,
-    extra_d_indices: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
+    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
-    extra_topk_lengths: UnsafePointer[Int32, MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
-    extra_scales_ptr: UnsafePointer[
-        Scalar[DType.float32], origin=MutAnyOrigin
-    ] = {_unsafe_null = ()},
+    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_scales_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
 ) raises:
     comptime num_heads = config.num_heads
     comptime depth = config.depth

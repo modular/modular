@@ -704,25 +704,23 @@ def mla_decode_sm100_dispatch[
     q_max_seq_len: Int,
     max_cache_valid_length: Int,
     ctx: DeviceContext,
-    q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
-    d_indices: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
+    q_scale_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
-    topk_lengths: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
-    attn_sink_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
+    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
     # Extra KV parameters (forwarded to mla_decode_sm100_sink_split_k).
     extra_k: OptionalReg[k_t] = None,
-    extra_d_indices: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
+    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
-    extra_topk_lengths: UnsafePointer[Int32, MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
-    extra_scales_ptr: UnsafePointer[
-        Scalar[DType.float32], origin=MutAnyOrigin
-    ] = {_unsafe_null = ()},
+    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_scales_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
 ) raises:
     var scales_ptr = k.scales_raw_ptr()
 
@@ -878,25 +876,23 @@ def _mla_decode_sm100_dispatch_impl[
     num_partitions: Int,
     effective_max_cache_len: Int,
     ctx: DeviceContext,
-    q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
-    d_indices: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
+    q_scale_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
-    topk_lengths: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
-    attn_sink_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
+    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
     # Extra KV parameters (forwarded to mla_decode_sm100_sink_split_k).
     extra_k: OptionalReg[k_t] = None,
-    extra_d_indices: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
+    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
-    extra_topk_lengths: UnsafePointer[Int32, MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
-    extra_scales_ptr: UnsafePointer[
-        Scalar[DType.float32], origin=MutAnyOrigin
-    ] = {_unsafe_null = ()},
+    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_scales_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
 ) raises:
     comptime hw_info = ctx.default_device_info
     comptime sm_count = hw_info.sm_count
@@ -1244,27 +1240,25 @@ def mla_decode_sm100_sink_split_k[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
-    q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
-    d_indices: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
+    q_scale_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
-    topk_lengths: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
-    attn_sink_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
+    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
     # Extra KV: separate always-attend cache. When extra_k is provided
     # (non-default), the sparse kernel appends extra_topk tokens after
     # the original topk tokens in a unified loop.
     extra_k: OptionalReg[k_t] = None,
-    extra_d_indices: UnsafePointer[Int32, MutAnyOrigin] = {_unsafe_null = ()},
+    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
-    extra_topk_lengths: UnsafePointer[Int32, MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
-    extra_scales_ptr: UnsafePointer[
-        Scalar[DType.float32], origin=MutAnyOrigin
-    ] = {_unsafe_null = ()},
+    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_scales_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
 ) raises:
     comptime _scale_block_size = k_t.quantization_granularity if k_t.quantization_enabled else 0
     # Use native FP8 path when:
@@ -2082,7 +2076,9 @@ def launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
     q_max_seq_len: Int,
     valid_len: ValidLengthType,
     mask: MaskType,
-    q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    q_scale_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ],
     scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
@@ -2222,11 +2218,13 @@ def launch_mla_sm100_decode_sparse[
     q_max_seq_len: Int,
     valid_len: ValidLengthType,
     mask: MaskType,
-    d_indices: UnsafePointer[Int32, MutAnyOrigin],
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     indices_stride: Int,
-    topk_lengths: UnsafePointer[Int32, MutAnyOrigin],
+    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
-    attn_sink_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ],
     # Extra KV parameters (separate always-attend cache).
     extra_k_nope_tma: TMATensorTile[
         DType.int64,
@@ -2269,10 +2267,12 @@ def launch_mla_sm100_decode_sparse[
         ),
     ],
     extra_kv_lut: KVLUTType,
-    extra_d_indices: UnsafePointer[Int32, MutAnyOrigin],
-    extra_topk_lengths: UnsafePointer[Int32, MutAnyOrigin],
+    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
     extra_indices_stride: Int,
-    extra_scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+    extra_scales_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ],
     scalar_args_buf: TileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],

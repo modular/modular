@@ -63,6 +63,7 @@ SMEM Layout:
   barriers:       (6N+11) fixed + output barriers
 """
 
+from std.collections import OptionalReg
 from std.math import ceildiv
 from std.math.constants import log2e
 from std.sys import size_of
@@ -310,7 +311,9 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # Per-token Q scale pointer: float32 array with one scale per Q token.
         # sigma_Q[q_token_idx] is folded into scale_log2e inside Softmax.
         # Null pointer means no Q scale (sigma_Q = 1.0).
-        q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+        q_scale_ptr: OptionalReg[
+            UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+        ],
         scalar_args: TileTensor[
             DType.int64,
             RowMajorLayout[ComptimeInt[3]],

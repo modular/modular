@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from std.collections import OptionalReg
 from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.sys import size_of
@@ -531,7 +532,7 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @always_inline
     def get_block_swizzle(
-        lut_ptr: UnsafePointer[UInt32, MutAnyOrigin] = {_unsafe_null = ()},
+        lut_ptr: OptionalReg[UnsafePointer[UInt32, MutAnyOrigin]] = None,
     ) -> IndexList[2, element_type=DType.uint32]:
         """Calculate block swizzle for better L2 cache locality.
 
@@ -547,7 +548,7 @@ struct HopperMatmulSM90Kernel[
             comptime if Self.hilbert_swizzle:
                 # Hilbert curve ordering maximizes spatial locality
                 var linear = UInt32(block_idx.y * grid_dim.x + block_idx.x)
-                var packed = lut_ptr[linear]
+                var packed = lut_ptr.unsafe_value()[linear]
                 var new_x = packed & 0xFFFF
                 var new_y = packed >> 16
                 return Index[dtype=DType.uint32](new_x, new_y)
