@@ -281,27 +281,21 @@ def run_mma_test_runtime_transpose(ctx: DeviceContext) raises:
     ctx.enqueue_copy(d_tt, d_tt_dev)
     ctx.synchronize()
 
-    var a_ptr = a_host.unsafe_ptr().value()
-    var b_ptr = b_host.unsafe_ptr().value()
+    var a_ptr = a_host.unsafe_ptr()
+    var b_ptr = b_host.unsafe_ptr()
     var pass_ = _check_transpose(
-        "(F,F)", a_ptr, b_ptr, d_ff.unsafe_ptr().value(), False, False
+        "(F,F)", a_ptr, b_ptr, d_ff.unsafe_ptr(), False, False
     )
     pass_ = (
-        _check_transpose(
-            "(T,F)", a_ptr, b_ptr, d_tf.unsafe_ptr().value(), True, False
-        )
+        _check_transpose("(T,F)", a_ptr, b_ptr, d_tf.unsafe_ptr(), True, False)
         and pass_
     )
     pass_ = (
-        _check_transpose(
-            "(F,T)", a_ptr, b_ptr, d_ft.unsafe_ptr().value(), False, True
-        )
+        _check_transpose("(F,T)", a_ptr, b_ptr, d_ft.unsafe_ptr(), False, True)
         and pass_
     )
     pass_ = (
-        _check_transpose(
-            "(T,T)", a_ptr, b_ptr, d_tt.unsafe_ptr().value(), True, True
-        )
+        _check_transpose("(T,T)", a_ptr, b_ptr, d_tt.unsafe_ptr(), True, True)
         and pass_
     )
 

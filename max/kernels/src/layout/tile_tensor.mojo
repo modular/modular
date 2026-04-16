@@ -348,9 +348,9 @@ struct TileTensor[
             layout: The layout of the tensor.
         """
         self = Self.GenericType(
-            unsafe_cast[origin=Self.origin](
-                host_buffer.unsafe_ptr()
-            )._unsafe_nullable(),
+            host_buffer.unsafe_ptr()
+            .unsafe_mut_cast[Self.mut]()
+            .unsafe_origin_cast[Self.origin](),
             layout,
         )
 

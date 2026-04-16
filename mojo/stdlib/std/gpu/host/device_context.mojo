@@ -314,9 +314,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         dtype: Data type to be stored in the buffer.
     """
 
-    comptime _HostPtr = Optional[
-        UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
-    ]
+    comptime _HostPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
 
     # We cache the pointer of the buffer here to provide access to elements.
     var _host_ptr: Self._HostPtr
@@ -334,20 +332,13 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
         comptime elem_size = size_of[Self.dtype]()
         var cpp_handle: _DeviceBufferPtr[mut=True] = {}
-        var host_ptr = Self._HostPtr()
+        var host_ptr: Optional[Self._HostPtr] = {}
 
         # const char *AsyncRT_DeviceContext_createHostBuffer(const DeviceBuffer **result, void **device_ptr, const DeviceContext *ctx, size_t len, size_t elem_size)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_createHostBuffer",
                 _CString[],
-                UnsafePointer[
-                    _DeviceBufferPtr[mut=True], origin_of(cpp_handle)
-                ],
-                UnsafePointer[Self._HostPtr, origin_of(host_ptr)],
-                _DeviceContextPtr[mut=True],
-                c_size_t,
-                c_size_t,
             ](
                 UnsafePointer(to=cpp_handle),
                 UnsafePointer(to=host_ptr),
@@ -357,7 +348,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
             )
         )
 
-        self._host_ptr = host_ptr
+        self._host_ptr = host_ptr._unsafe_nullable()
         self._handle = cpp_handle
 
     @doc_hidden
@@ -503,7 +494,9 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
                 c_size_t(elem_size),
             )
         )
-        return HostBuffer[view_type](new_handle, new_host_ptr)
+        return HostBuffer[view_type](
+            new_handle, new_host_ptr._unsafe_nullable()
+        )
 
     def enqueue_copy_to(self, dst: HostBuffer[Self.dtype, ...]) raises:
         """Enqueues an asynchronous copy from this buffer to another host buffer.
@@ -786,7 +779,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
             The scalar value at the specified index.
         """
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
-        return self._host_ptr.unsafe_value()[idx]
+        return self._host_ptr[idx]
 
     @always_inline
     def __setitem__(
@@ -802,7 +795,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
             val: The new value to store at the specified index.
         """
         comptime assert not is_gpu(), "HostBuffer is not supported on GPUs"
-        self._host_ptr.unsafe_value()[idx] = val
+        self._host_ptr[idx] = val
 
     def as_span[
         mut: Bool, origin: Origin[mut=mut], //
@@ -818,12 +811,10 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         """
         # Safety: We are casting the pointer to the mutability and origin of
         # self and `_host_ptr` is already mutable.
-        assert (
-            self._host_ptr or len(self) == 0
-        ), "null HostBuffer with non-zero length"
-        var ptr = self._host_ptr.or_else(Self._HostPtr.T.unsafe_dangling())
         return {
-            ptr = ptr.unsafe_mut_cast[mut]().unsafe_origin_cast[origin](),
+            ptr = self._host_ptr.unsafe_mut_cast[mut]().unsafe_origin_cast[
+                origin
+            ](),
             length = len(self),
         }
 
