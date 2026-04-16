@@ -69,11 +69,11 @@ class OutputAllocatingModel:
         raise AssertionError("debug_verify_replay is not used in warmup")
 
 
-def _make_kv_per_device() -> KVCacheInputsPerDevice:
+def _make_kv_per_device() -> KVCacheInputsPerDevice[Buffer, Buffer]:
     max_lengths = np.array([[0, 1]], dtype=np.uint32)
     dispatch = np.array([1, 1, 1, 1], dtype=np.int64)
     return KVCacheInputsPerDevice(
-        blocks=Buffer.zeros((1,), dtype=DType.float32),
+        kv_blocks=Buffer.zeros((1,), dtype=DType.float32),
         cache_lengths=Buffer.from_numpy(np.array([0], dtype=np.uint32)),
         lookup_table=Buffer.from_numpy(np.array([0], dtype=np.uint32)),
         max_lengths=Buffer.from_numpy(max_lengths),
@@ -86,7 +86,9 @@ def _warmup_model_inputs(batch_size: int) -> Iterator[MockModelInputs]:
     yield MockModelInputs(
         active_batch_size=batch_size,
         eos_prob=0.0,
-        kv_cache_inputs=KVCacheInputs(inputs=[_make_kv_per_device()]),
+        kv_cache_inputs=KVCacheInputs[Buffer, Buffer](
+            inputs=[_make_kv_per_device()]
+        ),
     )
 
 

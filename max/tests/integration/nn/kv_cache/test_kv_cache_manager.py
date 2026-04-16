@@ -415,7 +415,7 @@ async def test_multi_cache_runtime_inputs_combined() -> None:
     assert inputs.inputs[0].lookup_table is inputs.inputs[1].lookup_table
 
     # But they have different block buffers (different caches).
-    assert inputs.inputs[0].blocks is not inputs.inputs[1].blocks
+    assert inputs.inputs[0].kv_blocks is not inputs.inputs[1].kv_blocks
 
 
 @pytest.mark.asyncio

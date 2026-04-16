@@ -25,7 +25,7 @@ from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import masked_flash_attention_gpu
-from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
+from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen3.layers.attention import (
     Qwen3Attention as MaxQwen3Attention,
@@ -194,9 +194,9 @@ def generate_max_outputs(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = unflatten_ragged_attention_inputs(
-            kv_cache, n_devices=1
-        )[0]
+        kv_collection = (
+            kv_params.get_symbolic_inputs().unflatten(iter(kv_cache)).inputs[0]
+        )
 
         graph.output(
             attention(
@@ -222,7 +222,7 @@ def generate_max_outputs(
         Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
             device
         ),
-        kv_runtime_inputs.blocks.to(device),
+        kv_runtime_inputs.kv_blocks.to(device),
         kv_runtime_inputs.cache_lengths.to(device),
         kv_runtime_inputs.lookup_table.to(device),
         kv_runtime_inputs.max_lengths,

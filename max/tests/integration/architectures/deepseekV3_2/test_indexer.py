@@ -279,9 +279,6 @@ def run_max_indexer(
         DType.uint32, ["batch_size_plus_1"], DeviceRef.GPU()
     )
 
-    # Get KV cache symbolic inputs
-    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
-
     # Build the graph
     with Graph(
         "IndexerTest",
@@ -289,11 +286,7 @@ def run_max_indexer(
             x_type,
             qr_type,
             input_row_offsets_type,
-            kv_symbolic_inputs.kv_blocks,
-            kv_symbolic_inputs.cache_lengths,
-            kv_symbolic_inputs.lookup_table,
-            kv_symbolic_inputs.max_lengths,
-            kv_symbolic_inputs.kv_scales,
+            *kv_params.get_symbolic_inputs().flatten(),
         ),
     ) as graph:
         x_in = graph.inputs[0].tensor
@@ -361,11 +354,7 @@ def run_max_indexer(
         x_device,
         qr_device,
         input_row_offsets_device,
-        kv_inputs.blocks,
-        kv_inputs.cache_lengths,
-        kv_inputs.lookup_table,
-        kv_inputs.max_lengths,
-        kv_inputs.kv_scales,
+        *kv_inputs.flatten(),
     )
 
     # Verify output is not all zeros

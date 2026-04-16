@@ -76,7 +76,7 @@ class MockModelInputs(ModelInputs):
     def __init__(
         self,
         batch_size: int,
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
     ) -> None:
         self._batch_size = batch_size
         self.kv_cache_inputs = MagicMock()
@@ -152,7 +152,7 @@ class MockPipelineModel(PipelineModelWithKVCache[ContextT]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[ContextT]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         if len(replica_batches) > 1:

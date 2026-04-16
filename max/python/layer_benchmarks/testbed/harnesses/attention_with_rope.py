@@ -26,7 +26,7 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.type import Shape
 from max.graph.weights import WeightData
 from max.nn import AttentionWithRope, RotaryEmbedding
-from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
+from max.nn.kv_cache import KVCacheParams
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -304,9 +304,11 @@ class AttentionWithRopeHarness(
             ),
         ) as graph:
             inputs, input_row_offsets, *kv_cache = graph.inputs
-            kv_collection = unflatten_ragged_attention_inputs(
-                kv_cache, n_devices=1
-            )[0]
+            kv_collection = (
+                kv_params.get_symbolic_inputs()
+                .unflatten(iter(kv_cache))
+                .inputs[0]
+            )
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
             graph.output(
                 layer(

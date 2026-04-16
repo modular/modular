@@ -30,10 +30,7 @@ from max.kv_cache.paged_kv_cache.increment_cache_lengths import (
     IncrementCacheLengthsProcessor,
 )
 from max.nn.comm import Signals
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    MultiKVCacheParams,
-)
+from max.nn.kv_cache import KVCacheInputs, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -113,7 +110,7 @@ class Gemma3MultiModalModelInputs(ModelInputs):
             *self.combined_embeds,
             *self.combined_indices,
             *self.signal_buffers,
-            *self.kv_cache_inputs,
+            *self.kv_cache_inputs.flatten(),
         )
 
 
@@ -425,8 +422,11 @@ class Gemma3_MultiModalModel(
             variadic_args = variadic_args[len(self.devices) :]
 
             # Extract KV cache inputs
-            kv_cache_local = self._unflatten_kv_inputs(variadic_args[:5])
-            kv_cache_global = self._unflatten_kv_inputs(variadic_args[5:])
+            kv_cache = self._unflatten_kv_inputs(variadic_args)
+            kv_cache_local, kv_cache_global = (
+                kv_cache[: len(kv_cache) // 2],
+                kv_cache[len(kv_cache) // 2 :],
+            )
 
             outputs = language_model(
                 tokens=tokens.tensor,
@@ -547,7 +547,7 @@ class Gemma3_MultiModalModel(
             *combined_embeds,
             *combined_indices,
             *model_inputs.signal_buffers,
-            *model_inputs.kv_cache_inputs,
+            *model_inputs.kv_cache_inputs.flatten(),
         )
 
         if len(model_outputs) == 3:
@@ -570,7 +570,7 @@ class Gemma3_MultiModalModel(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[Gemma4Context]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepare inputs for the first execution pass."""

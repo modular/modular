@@ -246,7 +246,8 @@ class GptOssModel(PipelineModelWithKVCache[TextContext]):
             An object containing the output logits from the model execution.
         """
         model_inputs = cast(GptOssInputs, model_inputs)
-        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
+        curr_kv_cache_inputs = model_inputs.kv_cache_inputs
+        assert curr_kv_cache_inputs is not None
 
         # For backward compatibility, distribute the single tensor to all devices
         if isinstance(model_inputs.input_row_offsets, np.ndarray):
@@ -261,7 +262,7 @@ class GptOssModel(PipelineModelWithKVCache[TextContext]):
             model_inputs.tokens,
             model_inputs.return_n_logits,
             input_row_offsets,
-            *curr_kv_cache_inputs,
+            *curr_kv_cache_inputs.flatten(),
         )
         if len(model_outputs) == 3:
             return ModelOutputs(
@@ -278,7 +279,7 @@ class GptOssModel(PipelineModelWithKVCache[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs for the first execution pass of the GPT OSS model.

@@ -196,5 +196,5 @@ class Olmo2(Transformer):
             tokens_type,
             input_row_offsets_type,
             return_n_logits_type,
-            *kv_inputs[0],
+            *kv_inputs.flatten(),
         )

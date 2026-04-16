@@ -24,15 +24,8 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-    MultiKVCacheParams,
-)
-from max.pipelines.lib import (
-    CompilationTimer,
-    KVCacheConfig,
-    PipelineConfig,
-)
+from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
+from max.pipelines.lib import CompilationTimer, KVCacheConfig, PipelineConfig
 from max.pipelines.lib.quant import parse_quant_config
 from transformers import AutoConfig
 from typing_extensions import override
@@ -251,7 +244,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 # Unmarshal the KV cache arguments.
                 assert isinstance(self.kv_params, MultiKVCacheParams)
                 len_of_mla_kv_inputs = len(
-                    self.kv_params.get_symbolic_inputs()[0].flatten()
+                    self.kv_params.get_symbolic_inputs().inputs[0].flatten()
                 )
                 mla_kv_caches_per_dev = self._unflatten_kv_inputs(
                     [
@@ -262,7 +255,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 )
 
                 len_of_indexer_kv_inputs = len(
-                    self.kv_params.get_symbolic_inputs()[1].flatten()
+                    self.kv_params.get_symbolic_inputs().inputs[-1].flatten()
                 )
                 indexer_kv_caches_per_dev = self._unflatten_kv_inputs(
                     [

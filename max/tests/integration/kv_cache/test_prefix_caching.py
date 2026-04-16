@@ -17,7 +17,7 @@ from collections import defaultdict
 
 import numpy as np
 import pytest
-from max.driver import CPU
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
@@ -34,13 +34,15 @@ def gen_prompt(length: int) -> np.ndarray:
     return np.random.randint(0, 2, size=length)
 
 
-def get_blocks_from_kv_tuple(kv_tuple: KVCacheInputs) -> list[list[int]]:
+def get_blocks_from_kv_tuple(
+    kv_tuple: KVCacheInputs[Buffer, Buffer],
+) -> list[list[int]]:
     return kv_tuple.inputs[0].lookup_table.to_numpy().tolist()
 
 
 # Runtime lookup tables are padded with sentinel `total_num_pages` in any
 # unused columns, so tests should compare only assigned block ids.
-def assigned_blocks(kv_tuple: KVCacheInputs) -> list[list[int]]:
+def assigned_blocks(kv_tuple: KVCacheInputs[Buffer, Buffer]) -> list[list[int]]:
     total_num_pages = kv_tuple.inputs[0].lookup_table.shape[1]
     return [
         [block for block in row if block != total_num_pages]
@@ -49,12 +51,14 @@ def assigned_blocks(kv_tuple: KVCacheInputs) -> list[list[int]]:
 
 
 def get_uncommitted_and_committed_block_counts(
-    kv_tuple: KVCacheInputs,
+    kv_tuple: KVCacheInputs[Buffer, Buffer],
 ) -> list[list[int]]:
     return kv_tuple.inputs[0].max_lengths.to_numpy().tolist()
 
 
-def get_cache_lengths_from_kv_tuple(kv_tuple: KVCacheInputs) -> list[int]:
+def get_cache_lengths_from_kv_tuple(
+    kv_tuple: KVCacheInputs[Buffer, Buffer],
+) -> list[int]:
     return kv_tuple.inputs[0].cache_lengths.to_numpy().tolist()
 
 
@@ -489,7 +493,7 @@ class FakeModel:
     def run(
         self,
         request_ids_and_prompts: dict[RequestID, np.ndarray],
-        kv_inputs: KVCacheInputs,
+        kv_inputs: KVCacheInputs[Buffer, Buffer],
         num_steps: int,
         request_ids_and_new_tokens: dict[RequestID, np.ndarray] | None = None,
     ) -> dict[RequestID, np.ndarray]:

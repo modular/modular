@@ -33,16 +33,15 @@ import numpy as np
 from max._core.driver import _release_buffers_to_borrowed
 from max.driver import Buffer
 from max.engine import InferenceSession, Model
-from max.nn.kv_cache import (
-    AttentionDispatchResolver,
-    KVCacheInputs,
-    KVCacheInputsPerDevice,
-    KVCacheParams,
-)
+from max.nn.kv_cache import AttentionDispatchResolver, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs as _KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsPerDevice as _KVCacheInputsPerDevice
 from max.profiler import traced
 
 from .interfaces import ModelInputs, ModelOutputs, UnifiedEagleOutputs
 
+KVCacheInputsPerDevice = _KVCacheInputsPerDevice[Buffer, Buffer]
+KVCacheInputs = _KVCacheInputs[Buffer, Buffer]
 logger = logging.getLogger("max.pipelines")
 
 
@@ -189,7 +188,7 @@ def _create_model_inputs_with_dispatch_metadata(
         ml = kv.max_lengths.to_numpy().copy()
         ml[:, 1] = max_cache_u32
         metadata = (
-            dispatch_metadata.to(kv.blocks.device)
+            dispatch_metadata.to(kv.kv_blocks.device)
             if is_mla
             else dispatch_metadata
         )

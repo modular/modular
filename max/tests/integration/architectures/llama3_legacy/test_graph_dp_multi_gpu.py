@@ -24,10 +24,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
 from max.nn.kv_cache import KVCacheInputs
-from max.pipelines.architectures.llama3.model import (
-    Llama3Inputs,
-    Llama3Model,
-)
+from max.pipelines.architectures.llama3.model import Llama3Inputs, Llama3Model
 from max.pipelines.lib import ModelOutputs
 from test_common.mocks import DummyPipelineConfig
 from transformers import LlamaForCausalLM
@@ -74,7 +71,7 @@ def weights_from_hf_config_dp(hf_config: LlamaConfig) -> SafetensorWeights:
 def test_build_compile_and_execute_dp_llama3_graph(
     hf_config: LlamaConfig,
     make_pipeline_config: Callable[..., DummyPipelineConfig],
-    make_kv_inputs: Callable[..., KVCacheInputs],
+    make_kv_inputs: Callable[..., KVCacheInputs[Buffer, Buffer]],
     make_inputs: Callable[..., Llama3Inputs],
     assert_model_outputs: Callable[
         [ModelOutputs, Llama3Inputs, list[Device]], None

@@ -30,11 +30,11 @@ from max.kv_cache.kv_connector import KVConnector
 from max.nn.kv_cache import (
     KVCacheBuffer,
     KVCacheInputs,
-    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
 )
+from max.nn.kv_cache import KVCacheInputsPerDevice as _KVCacheInputsPerDevice
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.nn.kv_cache.utils import (
@@ -49,6 +49,8 @@ from ..connectors import create_connector
 from .block_manager import BlockManager, _compute_seq_len
 
 logger = logging.getLogger("max.pipelines")
+
+KVCacheInputsPerDevice = _KVCacheInputsPerDevice[Buffer, Buffer]
 
 
 def _contiguous_prefix_2d(buffer: Buffer, rows: int, cols: int) -> Buffer:
@@ -371,7 +373,7 @@ class PagedKVCacheManager:
         *,
         max_cache_length: int | None = None,
         num_speculative_steps: int = 0,
-    ) -> Sequence[KVCacheInputsPerDevice]:
+    ) -> list[KVCacheInputsPerDevice]:
         """Gets runtime inputs for a batch of requests.
 
         Args:
@@ -564,7 +566,7 @@ class PagedKVCacheManager:
 
                 ret_list.append(
                     KVCacheInputsPerDevice(
-                        blocks=device_buffer.values[tp_shard],
+                        kv_blocks=device_buffer.values[tp_shard],
                         cache_lengths=cache_lengths_by_device[tp_shard],
                         lookup_table=lut_table_by_device[tp_shard],
                         max_lengths=max_lengths_host,
@@ -586,7 +588,7 @@ class PagedKVCacheManager:
         *,
         max_cache_length: int | None = None,
         num_speculative_steps: int = 0,
-    ) -> KVCacheInputs:
+    ) -> KVCacheInputs[Buffer, Buffer]:
         """Gets the graph inputs for per-replica batches of requests.
 
         This method will raise a RuntimeError if any request has insufficient blocks

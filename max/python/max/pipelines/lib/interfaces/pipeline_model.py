@@ -36,7 +36,6 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParamInterface,
     PagedCacheValues,
-    unflatten_ragged_attention_inputs,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
@@ -184,7 +183,7 @@ class ModelInputs:
         list(inputs) == [tokens, input_row_offsets]  # Output: True
     """
 
-    kv_cache_inputs: KVCacheInputs | None = None
+    kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None
 
     lora_ids: Buffer | None = None
     """Buffer containing the LoRA ids."""
@@ -442,7 +441,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[BaseContextType]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs to be passed to ``execute()``.
@@ -536,8 +535,10 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
-        return unflatten_ragged_attention_inputs(
-            kv_inputs_flat, n_devices=self.kv_params.n_devices
+        return list(
+            self.kv_params.get_symbolic_inputs()
+            .unflatten(iter(kv_inputs_flat))
+            .inputs
         )
 
     # TODO(AITLIB-265): Remove this altogether from all PipelineModels.

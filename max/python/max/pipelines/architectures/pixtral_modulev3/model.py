@@ -132,7 +132,7 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
             model_inputs.return_n_logits,
             image_embeddings,
             image_token_indices,
-            *model_inputs.kv_cache_inputs,
+            *model_inputs.kv_cache_inputs.flatten(),
         )
 
         if len(model_outputs) == 3:
@@ -150,7 +150,7 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> PixtralInputs:
         if len(replica_batches) > 1:
@@ -472,10 +472,7 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
                 device=device_ref,
             )
 
-            kv_inputs = self.kv_params.get_symbolic_inputs()
-            flattened_kv_types = [
-                kv_type for sublist in kv_inputs for kv_type in sublist
-            ]
+            kv_inputs = self.kv_params.get_symbolic_inputs().flatten()
 
             timer.mark_build_complete()
             compiled_language = language_nn.compile(
@@ -484,7 +481,7 @@ class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
                 return_n_logits_type,
                 image_embeddings_type,
                 image_token_indices_type,
-                *flattened_kv_types,
+                *kv_inputs,
                 weights=language_state_dict,
             )
 

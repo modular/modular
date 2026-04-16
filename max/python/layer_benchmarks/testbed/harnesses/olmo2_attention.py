@@ -42,18 +42,14 @@ import torch
 from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
+from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import RotaryEmbedding
-from max.pipelines.architectures.olmo2.layers.attention import (
-    Olmo2Attention,
-)
+from max.pipelines.architectures.olmo2.layers.attention import Olmo2Attention
 from transformers.models.olmo2.configuration_olmo2 import Olmo2Config
 from transformers.models.olmo2.modeling_olmo2 import (
     Olmo2Attention as HFOlmo2Attention,
 )
-from transformers.models.olmo2.modeling_olmo2 import (
-    Olmo2RotaryEmbedding,
-)
+from transformers.models.olmo2.modeling_olmo2 import Olmo2RotaryEmbedding
 
 from testbed.harnesses.ragged_attention_harness import (
     HF_TO_HARNESS_BASE,
@@ -184,9 +180,11 @@ class Olmo2AttentionHarness(RaggedAttentionHarness[Olmo2AttentionStaticParams]):
             ),
         ) as graph:
             inputs, input_row_offsets, *kv_cache = graph.inputs
-            kv_collection = unflatten_ragged_attention_inputs(
-                kv_cache, n_devices=1
-            )[0]
+            kv_collection = (
+                kv_params.get_symbolic_inputs()
+                .unflatten(iter(kv_cache))
+                .inputs[0]
+            )
             layer_idx_const = ops.constant(
                 0, DType.uint32, device=DeviceRef.CPU()
             )

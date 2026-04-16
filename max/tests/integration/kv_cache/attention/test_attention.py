@@ -26,11 +26,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import MHAMaskVariant, flash_attention_ragged
-from max.nn.kv_cache import (
-    AttentionDispatchMetadata,
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from modular_graph_test import modular_graph_test
 from test_common.context_utils import create_text_context
 
@@ -85,9 +81,7 @@ def test_kv_cache_ragged_attention(
         max_batch_size=128,
     )
 
-    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
-    dispatch_metadata_symbol = kv_symbolic_inputs.dispatch_metadata
-    assert dispatch_metadata_symbol is not None
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs()
 
     def construct() -> Graph:
         with Graph(
@@ -95,7 +89,7 @@ def test_kv_cache_ragged_attention(
             input_types=[
                 input_type,
                 input_row_offsets_type,
-                *kv_symbolic_inputs,
+                *kv_symbolic_inputs.flatten(),
             ],
         ) as g:
             (
@@ -114,9 +108,7 @@ def test_kv_cache_ragged_attention(
                 cache_lengths.tensor,
                 lookup_table.tensor,
                 max_lengths.tensor,
-                dispatch_metadata=AttentionDispatchMetadata(
-                    attention_dispatch_metadata.tensor
-                ),
+                attention_dispatch_metadata=attention_dispatch_metadata.tensor,
             )
             result = flash_attention_ragged(
                 kv_params,
@@ -163,7 +155,7 @@ def test_kv_cache_ragged_attention(
         },
         provided_inputs={
             1: input_row_offsets,
-            2: kv_runtime_inputs.blocks,
+            2: kv_runtime_inputs.kv_blocks,
             3: kv_runtime_inputs.cache_lengths,
             4: kv_runtime_inputs.lookup_table,
             5: kv_runtime_inputs.max_lengths,

@@ -605,7 +605,7 @@ def test_kv_cache_ragged_rope(
             input_type,
             input_row_offsets_type,
             freqs_cis_type,
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs().flatten(),
         ]
 
         if use_position_ids:
@@ -685,7 +685,7 @@ def test_kv_cache_ragged_rope(
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
     provided_inputs = {
         1: input_row_offsets,
-        3 + offset: kv_runtime_inputs.blocks,
+        3 + offset: kv_runtime_inputs.kv_blocks,
         4 + offset: kv_runtime_inputs.cache_lengths,
         5 + offset: kv_runtime_inputs.lookup_table,
         6 + offset: kv_runtime_inputs.max_lengths,
@@ -774,7 +774,7 @@ def test_rope_split_store_ragged(
             qkv_type,
             input_row_offsets_type,
             freqs_cis_type,
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs().flatten(),
         ]
 
         if use_position_ids:
@@ -854,7 +854,7 @@ def test_rope_split_store_ragged(
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
     provided_inputs = {
         1: input_row_offsets,
-        3 + offset: kv_runtime_inputs.blocks,
+        3 + offset: kv_runtime_inputs.kv_blocks,
         4 + offset: kv_runtime_inputs.cache_lengths,
         5 + offset: kv_runtime_inputs.lookup_table,
         6 + offset: kv_runtime_inputs.max_lengths,

@@ -647,8 +647,10 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             attn_kwargs["w_uk_scale"] = w_uk_scale
             attn_kwargs["w_uv"] = w_uv
             attn_kwargs["w_uv_scale"] = w_uv_scale
-            assert kv_collection.dispatch_metadata is not None
-            attn_kwargs["scalar_args"] = kv_collection.dispatch_metadata.tensor
+            assert kv_collection.attention_dispatch_metadata is not None
+            attn_kwargs["scalar_args"] = (
+                kv_collection.attention_dispatch_metadata
+            )
 
         if self.graph_mode == "prefill":
             result = mla_prefill_graph(**attn_kwargs)

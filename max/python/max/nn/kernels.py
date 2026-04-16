@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import MutableSequence
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 from max.driver import accelerator_architecture_name
@@ -39,11 +39,7 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.nn.quant_config import InputScaleSpec, QuantConfig, WeightScaleSpec
 
 from .attention.mask_config import AttentionMaskVariant, MHAMaskVariant
-from .kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-    attention_dispatch_metadata,
-)
+from .kv_cache import KVCacheParams, PagedCacheValues
 
 _MHA_MASK_VARIANT_TO_ATTENTION_MASK = {
     MHAMaskVariant.CAUSAL_MASK: AttentionMaskVariant.CAUSAL_MASK,
@@ -154,7 +150,7 @@ def fused_qkv_padded_matmul(
         values=[
             input,
             wqkv,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
             valid_lengths,
         ],
@@ -223,7 +219,13 @@ def fused_qkv_ragged_matmul(
         )
 
     op_name = "mo.fused_qkv_matmul.ragged.paged"
-    values = [input, input_row_offsets, wqkv, *kv_collection, layer_idx]
+    values = [
+        input,
+        input_row_offsets,
+        wqkv,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+    ]
 
     if bias is not None:
         op_name += ".bias"
@@ -333,8 +335,7 @@ def rope_split_store_ragged(
     if position_ids is not None:
         if position_ids.dtype != DType.uint32:
             raise ValueError(
-                "expected position_ids to have dtype uint32, was"
-                f" {position_ids.dtype}"
+                f"expected position_ids to have dtype uint32, was {position_ids.dtype}"
             )
         if position_ids.rank != 2:
             raise ValueError(
@@ -358,7 +359,7 @@ def rope_split_store_ragged(
             qkv,
             input_row_offsets,
             freqs_cis,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             position_ids,
             layer_idx,
         ]
@@ -368,7 +369,7 @@ def rope_split_store_ragged(
             qkv,
             input_row_offsets,
             freqs_cis,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ]
 
@@ -632,7 +633,7 @@ def _fused_qkv_ragged_matmul_scaled_float8(
         wqkv,
         input_scale,
         weight_scale,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
     ]
     if bias is not None:
@@ -771,7 +772,7 @@ def _fused_qkv_ragged_matmul_scaled_float4(
         input_scale,
         weight_scale,
         tensor_sf,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
     ]
 
@@ -865,7 +866,7 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
             repack_gguf_quantized_weights(q_weight, quantization_encoding_q),
             repack_gguf_quantized_weights(k_weight, quantization_encoding_k),
             repack_gguf_quantized_weights(v_weight, quantization_encoding_v),
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ],
         out_types=[
@@ -957,7 +958,13 @@ def fused_qkv_ragged_matmul_quantized(
             ],
         )[0].tensor
 
-    args = [input, input_row_offsets, wqkv, *kv_collection, layer_idx]
+    args = [
+        input,
+        input_row_offsets,
+        wqkv,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+    ]
     if bias is not None:
         args.append(bias)
         bias_name_str = "bias."
@@ -1023,7 +1030,7 @@ def matmul_kv_cache_ragged(
             hidden_states,
             input_row_offsets,
             weight,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ],
     )
@@ -1071,7 +1078,7 @@ def matmul_k_cache_ragged(
             hidden_states,
             input_row_offsets,
             weight,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ],
     )
@@ -1152,7 +1159,7 @@ def matmul_k_cache_ragged_scaled_float8(
             weight,
             input_scale,
             weight_scale,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ],
         parameters=parameters,
@@ -1246,7 +1253,7 @@ def fused_qk_ragged_rope(
         values = [
             input,
             input_row_offsets,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             freqs_cis,
             position_ids,
             layer_idx,
@@ -1256,7 +1263,7 @@ def fused_qk_ragged_rope(
         values = [
             input,
             input_row_offsets,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             freqs_cis,
             layer_idx,
         ]
@@ -1338,7 +1345,7 @@ def fused_qk_padded_rope(
         device=input.device,
         values=[
             input,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             freqs_cis,
             layer_idx,
             valid_lengths,
@@ -1875,7 +1882,7 @@ def flash_attention_padded_kv_cache(
         device=q.device,
         values=[
             q,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
             valid_lengths,
             ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -2000,7 +2007,7 @@ def mla_fp8_index_top_k(
             q,
             q_s,
             input_row_offsets,
-            *k_collection,
+            *k_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ],
         out_types=[
@@ -2152,8 +2159,7 @@ def masked_flash_attention_gpu(
 
     if mask.shape[0] != q.shape[0]:
         raise ValueError(
-            f"mask batch size ({mask.shape[0]}) must match q batch size "
-            f"({q.shape[0]})"
+            f"mask batch size ({mask.shape[0]}) must match q batch size ({q.shape[0]})"
         )
 
     if mask.shape[1] != q.shape[1]:
@@ -2246,7 +2252,11 @@ def flash_attention_ragged(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    dispatch_metadata = attention_dispatch_metadata(kv_collection)
+    dispatch_metadata = kv_collection.attention_dispatch_metadata
+    if dispatch_metadata is None:
+        raise ValueError(
+            "Expected attention_dispatch_metadata in kv_collection"
+        )
 
     if sink_weights is not None:
         if sink_weights.rank != 1:
@@ -2272,14 +2282,14 @@ def flash_attention_ragged(
     values: MutableSequence[Value[Any]] = [
         input,
         input_row_offsets,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         # NOTE: The scale argument to flash attention is constrained to float32.
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
     if sink_weights is not None:
         values.append(sink_weights)
-    values.append(cast(TensorValue, dispatch_metadata.tensor))
+    values.append(dispatch_metadata.tensor)
 
     return ops.inplace_custom(
         op_name,
@@ -2455,7 +2465,7 @@ def flare_mla_decode_ragged(
     input_values: MutableSequence[Value[Any]] = [
         input,
         input_row_offsets,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         # NOTE: The scale argument to flash attention is constrained to float32.
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -2533,8 +2543,7 @@ def flare_mla_decode_ragged_scaled(
 
     if input_row_offsets.dtype != DType.uint32:
         raise ValueError(
-            f"expected uint32 input_row_offsets but got"
-            f" {input_row_offsets.dtype}"
+            f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
     if kv_collection.kv_blocks.shape[1] != 1:
@@ -2564,7 +2573,7 @@ def flare_mla_decode_ragged_scaled(
         values=[
             input,
             input_row_offsets,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             kv_scales,
             q_scales,
             layer_idx,
@@ -2652,7 +2661,7 @@ def flare_mla_prefill_ragged(
         buffer_row_offsets,
         cache_offsets,
         input_row_offsets,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
@@ -2717,7 +2726,7 @@ def flare_mla_prefill_plan(
         device=input_row_offsets.device,
         values=[
             input_row_offsets,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
             buffer_size_tensor,
         ],
@@ -2875,7 +2884,7 @@ def mla_prefill_graph(
         buffer_length[0],  # one-shot prefill.
         w_k,
         w_uv,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
         ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -3071,7 +3080,7 @@ def mla_decode_graph(
         kv_norm_gamma,
         w_uk,
         w_uv,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
         ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -3186,7 +3195,7 @@ def mla_prefill_decode_graph(
         w_k,
         w_uk,
         w_uv,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
         ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -3263,7 +3272,7 @@ def flare_mla_decompress_k_cache(
             cache_offsets_1d,
             buffer_length,
             weight,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ],
         out_types=[
@@ -3346,7 +3355,7 @@ def cross_attention_ragged(
             # on the kv_collection, but that isn't the case for cross attention.
             q_max_seq_len,
             kv_input_row_offsets,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
             # NOTE: The scale argument to flash attention is constrained to float32.
             ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -3402,7 +3411,7 @@ def kv_cache_ragged_radd(
         device=input_row_offsets.device,
         values=[
             a,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             input_row_offsets,
             batch_offset,
             ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
@@ -3481,7 +3490,7 @@ def rms_norm_key_cache(
         "mo.rms_norm_kv_cache.ragged.paged",
         device=input_row_offsets.device,
         values=[
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             gamma,
             ops.constant(epsilon, gamma.dtype, device=DeviceRef.CPU()),
             layer_idx,
@@ -3543,7 +3552,7 @@ def rms_norm_value_cache(
         "mo.rms_norm_value_cache.ragged.paged",
         device=input_row_offsets.device,
         values=[
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             gamma,
             ops.constant(epsilon, gamma.dtype, device=DeviceRef.CPU()),
             layer_idx,
@@ -4767,8 +4776,7 @@ def quantize_dynamic_block_scaled_fp4(
 
     if scales_type not in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
         raise ValueError(
-            "scales_type must be float8_e4m3fn (NVFP4) or"
-            " float8_e8m0fnu (MXFP4)"
+            "scales_type must be float8_e4m3fn (NVFP4) or float8_e8m0fnu (MXFP4)"
         )
 
     if sf_vector_size not in (16, 32):
@@ -4861,8 +4869,7 @@ def block_scales_interleave(
 
     if scales.dtype not in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
         raise ValueError(
-            "scales dtype must be float8_e4m3fn (NVFP4) or"
-            " float8_e8m0fnu (MXFP4)"
+            "scales dtype must be float8_e4m3fn (NVFP4) or float8_e8m0fnu (MXFP4)"
         )
 
     expected_sf_vector_size = 32 if scales.dtype == DType.float8_e8m0fnu else 16
@@ -5959,7 +5966,7 @@ def kv_cache_ragged_2m_iadd(
         device=input_row_offsets.device,
         values=[
             a,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             input_row_offsets,
             lora_end_idx,
             batch_seq_len,

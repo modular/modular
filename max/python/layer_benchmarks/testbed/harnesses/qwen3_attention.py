@@ -42,18 +42,14 @@ import torch
 from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
+from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import RotaryEmbedding
-from max.pipelines.architectures.qwen3.layers.attention import (
-    Qwen3Attention,
-)
+from max.pipelines.architectures.qwen3.layers.attention import Qwen3Attention
 from transformers.models.qwen3.configuration_qwen3 import Qwen3Config
 from transformers.models.qwen3.modeling_qwen3 import (
     Qwen3Attention as HFQwen3Attention,
 )
-from transformers.models.qwen3.modeling_qwen3 import (
-    Qwen3RotaryEmbedding,
-)
+from transformers.models.qwen3.modeling_qwen3 import Qwen3RotaryEmbedding
 
 from testbed.harnesses.ragged_attention_harness import (
     HF_TO_HARNESS_BASE,
@@ -184,9 +180,11 @@ class Qwen3AttentionHarness(RaggedAttentionHarness[Qwen3AttentionStaticParams]):
             ),
         ) as graph:
             inputs, input_row_offsets, *kv_cache = graph.inputs
-            kv_collection = unflatten_ragged_attention_inputs(
-                kv_cache, n_devices=1
-            )[0]
+            kv_collection = (
+                kv_params.get_symbolic_inputs()
+                .unflatten(iter(kv_cache))
+                .inputs[0]
+            )
             layer_idx_const = ops.constant(
                 0, DType.uint32, device=DeviceRef.CPU()
             )

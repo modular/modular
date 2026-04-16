@@ -43,11 +43,7 @@ from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import (
-    AttentionDispatchMetadata,
-    KVCacheParamInterface,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear
 from max.nn.moe import MoE, MoEQuantized
@@ -491,9 +487,7 @@ class DeepseekV3DecoderLayer(Module):
                 kv_lookup_table[i],
                 kv_max_lengths[i],
                 kv_scales=kv_scales[i] if kv_scales else None,
-                dispatch_metadata=AttentionDispatchMetadata(
-                    mla_decode_scalar_args[i]
-                )
+                attention_dispatch_metadata=mla_decode_scalar_args[i]
                 if mla_decode_scalar_args is not None
                 else None,
             )
@@ -766,11 +760,11 @@ class DeepseekV3(Module):
         # Extract dispatch metadata from KV collections (already on GPU
         # for MLA, on CPU for MHA — placed by the KV cache manager).
         mla_decode_scalar_args: list[TensorValue] | None = None
-        if kv_collections[0].dispatch_metadata is not None:
+        if kv_collections[0].attention_dispatch_metadata is not None:
             mla_decode_scalar_args = [
-                kv.dispatch_metadata.tensor
+                kv.attention_dispatch_metadata
                 for kv in kv_collections
-                if kv.dispatch_metadata is not None
+                if kv.attention_dispatch_metadata is not None
             ]
 
         subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [

@@ -158,7 +158,7 @@ _MAGIC_DRAFT_TOKEN_ID = 42
 class _UnifiedEagleInputs(Protocol):
     tokens: Buffer
     input_row_offsets: Buffer
-    kv_cache_inputs: KVCacheInputs
+    kv_cache_inputs: KVCacheInputs[Buffer, Buffer]
 
     draft_tokens: Buffer | None
     draft_kv_blocks: list[Buffer] | None
@@ -176,7 +176,7 @@ def _get_draft_kv_blocks(
     draft_kv_inputs = draft_kv_manager.runtime_inputs(
         [[] for _ in range(data_parallel_degree)]
     )
-    return [per_dev.blocks for per_dev in draft_kv_inputs.inputs]
+    return [per_dev.kv_blocks for per_dev in draft_kv_inputs.inputs]
 
 
 @dataclass

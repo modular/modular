@@ -24,7 +24,6 @@ from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
 from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.kv_cache.input_types import unflatten_ragged_attention_inputs
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from ..llama3_modulev3.layers.transformer_block import LlamaTransformerBlock
@@ -185,9 +184,9 @@ class PixtralLanguage(Module[..., tuple[Tensor, ...]]):
         *variadic_args: Tensor,
     ) -> tuple[Tensor, ...]:
         assert self.kv_params is not None
-        kv_collection = unflatten_ragged_attention_inputs(
-            [t._graph_value for t in variadic_args],
-            n_devices=self.kv_params.n_devices,
+        kv_inputs = iter(x._graph_value for x in variadic_args)
+        kv_collections = (
+            self.kv_params.get_symbolic_inputs().unflatten(kv_inputs).inputs
         )
 
         inputs_embeds = self.language_model.embed_tokens(input_ids)
@@ -201,7 +200,7 @@ class PixtralLanguage(Module[..., tuple[Tensor, ...]]):
         merged = Tensor.from_graph_value(merged_value)
 
         return self.language_model(
-            merged, kv_collection[0], return_n_logits, input_row_offsets
+            merged, kv_collections[0], return_n_logits, input_row_offsets
         )
 
     @staticmethod

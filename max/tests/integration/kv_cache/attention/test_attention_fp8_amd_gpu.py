@@ -28,11 +28,7 @@ from max.nn import (
     ScaleOrigin,
 )
 from max.nn.attention.attention_with_rope import AttentionWithRope
-from max.nn.kv_cache import (
-    AttentionDispatchMetadata,
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.quant_config import WeightScaleSpec
 from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context
@@ -182,8 +178,8 @@ def _build_and_execute_attention_graph(
     graph_name: str,
 ) -> torch.Tensor:
     """Build graph, execute model, and return results."""
-    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
-    dispatch_metadata_symbol = kv_symbolic_inputs.dispatch_metadata
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs().inputs[0]
+    dispatch_metadata_symbol = kv_symbolic_inputs.attention_dispatch_metadata
     assert dispatch_metadata_symbol is not None
 
     # Prepare input data
@@ -212,7 +208,7 @@ def _build_and_execute_attention_graph(
                 shape=["row_offsets_length"],
                 device=DeviceRef.GPU(),
             ),
-            *kv_symbolic_inputs,
+            *kv_symbolic_inputs.flatten(),
         ],
     ) as graph:
         freqs_cis = rope.freqs_cis
@@ -233,9 +229,7 @@ def _build_and_execute_attention_graph(
             cache_lengths.tensor,
             lookup_table.tensor,
             max_lengths.tensor,
-            dispatch_metadata=AttentionDispatchMetadata(
-                attention_dispatch_metadata.tensor
-            ),
+            attention_dispatch_metadata=attention_dispatch_metadata.tensor,
         )
         output = attention(
             layer_idx=layer_idx.tensor,
@@ -270,7 +264,7 @@ def _build_and_execute_attention_graph(
     result = model.execute(
         input_tensor,
         input_row_offsets_tensor,
-        *kv_runtime_inputs,
+        *kv_runtime_inputs.flatten(),
     )[0]
 
     return torch.from_dlpack(result)

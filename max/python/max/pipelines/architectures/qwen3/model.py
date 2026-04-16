@@ -87,7 +87,7 @@ class Qwen3Inputs(Llama3Inputs):
         return (
             *base,
             *self.signal_buffers,
-            *(self.kv_cache_inputs or ()),
+            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
             *self.ep_inputs,
         )
 
@@ -339,7 +339,7 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Llama3Inputs | Qwen3Inputs:
         dp = self.pipeline_config.model.data_parallel_degree

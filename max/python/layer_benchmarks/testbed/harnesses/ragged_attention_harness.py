@@ -187,7 +187,7 @@ class RaggedAttentionHarness(
         execute_args: list[Buffer] = [
             input_tensor,
             row_offsets,
-            kv_runtime.blocks.to(device),
+            kv_runtime.kv_blocks.to(device),
             kv_runtime.cache_lengths.to(device),
             kv_runtime.lookup_table.to(device),
             kv_runtime.max_lengths,

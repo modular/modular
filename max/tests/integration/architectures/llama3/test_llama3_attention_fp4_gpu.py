@@ -29,7 +29,7 @@ from max.graph.weights import WeightData
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
 from max.nn import AttentionWithRope, Linear, RotaryEmbedding
-from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.llama3.model_config import (
     create_rope_embedding,
@@ -255,9 +255,9 @@ def generate_max_outputs_fp4(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = unflatten_ragged_attention_inputs(
-            kv_cache, n_devices=1
-        )[0]
+        kv_collection: PagedCacheValues = (
+            kv_params.get_symbolic_inputs().unflatten(iter(kv_cache)).inputs[0]
+        )
 
         # Create layer_idx constant
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
@@ -291,7 +291,7 @@ def generate_max_outputs_fp4(
     out = compiled.execute(
         Buffer.from_dlpack(input_tensor_flat).to(device),
         Buffer.from_numpy(input_row_offsets_input).to(device),
-        kv_runtime_inputs.blocks.to(device),
+        kv_runtime_inputs.kv_blocks.to(device),
         kv_runtime_inputs.cache_lengths.to(device),
         kv_runtime_inputs.lookup_table.to(device),
         kv_runtime_inputs.max_lengths,

@@ -48,11 +48,9 @@ import torch
 from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
+from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
-from max.pipelines.architectures.gemma4.layers.attention import (
-    Gemma4Attention,
-)
+from max.pipelines.architectures.gemma4.layers.attention import Gemma4Attention
 
 from testbed.harnesses.ragged_attention_harness import (
     AttentionDynamicParams,
@@ -212,9 +210,11 @@ class Gemma4AttentionHarness(
             ),
         ) as graph:
             inputs, input_row_offsets, *kv_cache = graph.inputs
-            kv_collection = unflatten_ragged_attention_inputs(
-                kv_cache, n_devices=1
-            )[0]
+            kv_collection = (
+                kv_params.get_symbolic_inputs()
+                .unflatten(iter(kv_cache))
+                .inputs[0]
+            )
             graph.output(
                 layer(
                     inputs.tensor,

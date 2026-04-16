@@ -106,7 +106,11 @@ class Llama3Inputs(ModelInputs):
                 self.input_row_offsets,
                 self.return_n_logits,
                 splits_tensor,
-                *(self.kv_cache_inputs or ()),
+                *(
+                    self.kv_cache_inputs.flatten()
+                    if self.kv_cache_inputs is not None
+                    else ()
+                ),
             )
 
         return (
@@ -114,7 +118,11 @@ class Llama3Inputs(ModelInputs):
             self.input_row_offsets,
             self.return_n_logits,
             *self.signal_buffers,
-            *(self.kv_cache_inputs or ()),
+            *(
+                self.kv_cache_inputs.flatten()
+                if self.kv_cache_inputs is not None
+                else ()
+            ),
         )
 
 
@@ -204,7 +212,7 @@ class LlamaModelBase(
                 model_inputs.lora_ids_kv,  # type: ignore
                 model_inputs.lora_grouped_offsets_kv,  # type: ignore
                 *model_inputs.signal_buffers,
-                *model_inputs.kv_cache_inputs,
+                *model_inputs.kv_cache_inputs.flatten(),
             )
         else:
             model_outputs = self.model.execute(*model_inputs.buffers)
@@ -254,7 +262,7 @@ class LlamaModelBase(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Llama3Inputs:
         """Prepare the inputs for the first pass in multistep execution."""

@@ -44,7 +44,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.interfaces import RequestID, TextGenerationContext, TokenBuffer
 from max.kv_cache import PagedKVCacheManager
-from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
+from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen2_5vl.nn.decoder import (
     Qwen25VLDecoderAttentionWithRope,
@@ -197,9 +197,11 @@ class Qwen25VLAttentionHarness(
             ),
         ) as graph:
             inputs, input_row_offsets, position_ids, *kv_cache = graph.inputs
-            kv_collection = unflatten_ragged_attention_inputs(
-                kv_cache, n_devices=1
-            )[0]
+            kv_collection = (
+                kv_params.get_symbolic_inputs()
+                .unflatten(iter(kv_cache))
+                .inputs[0]
+            )
             layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
             freqs_cis = rope.freqs_cis.to(device_ref)
             graph.output(
@@ -278,7 +280,7 @@ class Qwen25VLAttentionHarness(
             input_tensor,
             row_offsets,
             position_ids_buf,
-            kv_runtime.blocks.to(device),
+            kv_runtime.kv_blocks.to(device),
             kv_runtime.cache_lengths.to(device),
             kv_runtime.lookup_table.to(device),
             kv_runtime.max_lengths,

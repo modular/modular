@@ -33,10 +33,7 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
@@ -566,7 +563,7 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
             model_inputs.return_n_logits,
             image_embeddings,
             image_token_indices,
-            *model_inputs.kv_cache_inputs,
+            *model_inputs.kv_cache_inputs.flatten(),
         )
 
         # Return model outputs based on what the language model returns
@@ -589,7 +586,7 @@ class Idefics3Model(PipelineModelWithKVCache[TextAndVisionContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs for the first execution pass of the Idefics3 model."""

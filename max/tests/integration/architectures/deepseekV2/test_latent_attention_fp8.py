@@ -24,10 +24,7 @@ from max.kv_cache import PagedKVCacheManager
 from max.nn.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.kv_cache import (
-    KVCacheParams,
-    unflatten_ragged_attention_inputs,
-)
+from max.nn.kv_cache import KVCacheParams
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -300,14 +297,16 @@ def generate_max_outputs_fp8(
             input_types=(
                 hidden_state_type,
                 input_row_offsets_type,
-                *kv_params.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs().flatten(),
             ),
         ) as graph:
             hidden_states = graph.inputs[0].tensor
             input_row_offsets = graph.inputs[1].tensor
-            kv_collection = unflatten_ragged_attention_inputs(
-                graph.inputs[2:], n_devices=1
-            )[0]
+            kv_collection = (
+                kv_params.get_symbolic_inputs()
+                .unflatten(iter(graph.inputs[2:]))
+                .inputs[0]
+            )
 
             result = latent_attention(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
@@ -352,7 +351,9 @@ def generate_max_outputs_fp8(
                 .to(device0)
             )
             max_output = compiled.execute(
-                input_tensor_device, input_row_offsets.to(device0), *kv_inputs
+                input_tensor_device,
+                input_row_offsets.to(device0),
+                *kv_inputs.flatten(),
             )
 
             for ctx in batch:
@@ -372,7 +373,7 @@ def generate_max_outputs_fp8(
         .to(device0)
     )
     max_output = compiled.execute(
-        input_tensor_device, input_row_offsets.to(device0), *kv_inputs
+        input_tensor_device, input_row_offsets.to(device0), *kv_inputs.flatten()
     )
     torch_output = from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
     return torch_output[None, :, :]

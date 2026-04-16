@@ -77,7 +77,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             for replica_input, draft_blocks in zip(
                 kv_cache_inputs.inputs, self._draft_kv_buffers, strict=True
             ):
-                replica_input.blocks = draft_blocks
+                replica_input.kv_blocks = draft_blocks
             return (
                 model.prepare_initial_token_inputs(
                     replica_batches=replica_batches,

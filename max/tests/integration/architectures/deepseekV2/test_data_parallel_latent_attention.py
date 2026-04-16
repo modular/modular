@@ -25,10 +25,7 @@ from max.kv_cache import PagedKVCacheManager
 from max.nn.attention.multi_latent_attention import (
     DataParallelLatentAttentionWithRope,
 )
-from max.nn.kv_cache import (
-    KVCacheParams,
-    unflatten_ragged_attention_inputs,
-)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
@@ -121,14 +118,16 @@ def generate_latent_attention_max_outputs_dp(
             input_types=(
                 hidden_state_type,
                 input_row_offsets_type,
-                *kv_params.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs().flatten(),
             ),
         ) as graph:
             hidden_states = graph.inputs[0].tensor
             input_row_offsets = graph.inputs[1].tensor
-            kv_collection = unflatten_ragged_attention_inputs(
-                graph.inputs[2:], n_devices=1
-            )[0]
+            kv_collection: PagedCacheValues = (
+                kv_params.get_symbolic_inputs()
+                .unflatten(iter(graph.inputs[2:]))
+                .inputs[0]
+            )
             out_list = dp_attention(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
                 xs=[hidden_states],
@@ -173,7 +172,9 @@ def generate_latent_attention_max_outputs_dp(
                 .to(device0)
             )
             max_output = compiled.execute(
-                input_tensor_device, input_row_offsets.to(device0), *kv_inputs
+                input_tensor_device,
+                input_row_offsets.to(device0),
+                *kv_inputs.flatten(),
             )
 
             for ctx in batch:
@@ -193,7 +194,7 @@ def generate_latent_attention_max_outputs_dp(
         .to(device0)
     )
     max_output = compiled.execute(
-        input_tensor_device, input_row_offsets.to(device0), *kv_inputs
+        input_tensor_device, input_row_offsets.to(device0), *kv_inputs.flatten()
     )
     torch_output = from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
     return torch_output[None, :, :]

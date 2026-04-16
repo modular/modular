@@ -286,7 +286,7 @@ class Llama3(Transformer):
                 batch_seq_len,
                 lora_ids_kv,
                 lora_grouped_offsets_kv,
-                *kv_inputs[0],
+                *kv_inputs.flatten(),
             )
         # hidden state input is for EAGLE-like spec decoding draft models
         if needs_hidden_state_input:
@@ -300,12 +300,12 @@ class Llama3(Transformer):
                 input_row_offsets_type,
                 return_n_logits_type,
                 hidden_states_type,
-                *kv_inputs[0],
+                *kv_inputs.flatten(),
             )
 
         return (
             tokens_type,
             input_row_offsets_type,
             return_n_logits_type,
-            *kv_inputs[0],
+            *kv_inputs.flatten(),
         )

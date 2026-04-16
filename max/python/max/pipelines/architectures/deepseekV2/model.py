@@ -30,7 +30,6 @@ from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParamInterface,
     PagedCacheValues,
-    unflatten_ragged_attention_inputs,
 )
 from max.nn.layer import Module
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -108,13 +107,14 @@ class DeepseekV2Model(
     ) -> ModelOutputs:
         assert isinstance(model_inputs, DeepseekV2Inputs)
 
-        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
+        curr_kv_cache_inputs = model_inputs.kv_cache_inputs
+        assert curr_kv_cache_inputs is not None
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.input_row_offsets,
             model_inputs.return_n_logits,
             *model_inputs.signal_buffers,
-            *curr_kv_cache_inputs,
+            *curr_kv_cache_inputs.flatten(),
         )
         if len(model_outputs) == 3:
             assert isinstance(model_outputs[0], Buffer)
@@ -135,7 +135,7 @@ class DeepseekV2Model(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV2Inputs:
         if len(replica_batches) > 1:
@@ -261,8 +261,10 @@ class DeepseekV2Model(
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
         )
-        return unflatten_ragged_attention_inputs(
-            kv_inputs_flat, n_devices=kv_params.n_devices
+        return list(
+            kv_params.get_symbolic_inputs()
+            .unflatten(iter(kv_inputs_flat))
+            .inputs
         )
 
     def _build_graph(self) -> Graph:

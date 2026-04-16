@@ -215,7 +215,7 @@ def _make_kv_per_device(
     q_max_seq_len: int = 1,
     *,
     is_mla: bool = False,
-) -> KVCacheInputsPerDevice:
+) -> KVCacheInputsPerDevice[Buffer, Buffer]:
     """Creates a ``KVCacheInputsPerDevice`` with configurable metadata."""
     max_lengths = np.array([[0, max_cache_len]], dtype=np.uint32)
     # attention_dispatch_metadata layout:
@@ -227,7 +227,7 @@ def _make_kv_per_device(
         dtype=np.int64,
     )
     return KVCacheInputsPerDevice(
-        blocks=Buffer.zeros((1,), dtype=DType.float32),
+        kv_blocks=Buffer.zeros((1,), dtype=DType.float32),
         cache_lengths=Buffer.from_numpy(np.array([0], dtype=np.uint32)),
         lookup_table=Buffer.from_numpy(np.array([0], dtype=np.uint32)),
         max_lengths=Buffer.from_numpy(max_lengths),
@@ -237,7 +237,7 @@ def _make_kv_per_device(
 
 def _make_mock_inputs_with_kv(
     active_batch_size: int,
-    kv_per_device_list: list[KVCacheInputsPerDevice],
+    kv_per_device_list: list[KVCacheInputsPerDevice[Buffer, Buffer]],
 ) -> MockModelInputs:
     """Creates ``MockModelInputs`` with proper ``KVCacheInputs``."""
     return MockModelInputs(

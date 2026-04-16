@@ -21,10 +21,7 @@ from max.experimental.nn import Module
 from max.experimental.nn.norm.layer_norm import LayerNorm
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-    unflatten_ragged_attention_inputs,
-)
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3_modulev3.gemma3 import Gemma3TextModel
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
@@ -60,9 +57,9 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
         image_token_indices: Tensor,
         *variadic_args: Tensor,
     ) -> tuple[Tensor, ...]:
-        kv_collections = unflatten_ragged_attention_inputs(
-            [arg._graph_value for arg in variadic_args],
-            n_devices=self.kv_params.n_devices,
+        kv_inputs = iter(x._graph_value for x in variadic_args)
+        kv_collections = (
+            self.kv_params.get_symbolic_inputs().unflatten(kv_inputs).inputs
         )
 
         # Get text embeddings

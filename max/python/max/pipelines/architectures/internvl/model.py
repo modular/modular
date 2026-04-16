@@ -731,7 +731,7 @@ class InternVLModel(
             *image_embeddings,
             *image_token_indices,
             *model_inputs.signal_buffers,
-            *model_inputs.kv_cache_inputs,
+            *model_inputs.kv_cache_inputs.flatten(),
         )
 
         # Return model outputs based on what the language model returns
@@ -754,7 +754,7 @@ class InternVLModel(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs for the first execution pass of the InternVL model."""

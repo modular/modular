@@ -23,7 +23,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import KVCacheParams
-from max.nn.kv_cache import unflatten_ragged_attention_inputs
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.attention import (
     Gemma3Attention as MaxGemma3Attention,
@@ -246,9 +246,9 @@ def generate_max_outputs(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = unflatten_ragged_attention_inputs(
-            kv_cache, n_devices=1
-        )[0]
+        kv_collection: PagedCacheValues = (
+            kv_params.get_symbolic_inputs().unflatten(iter(kv_cache)).inputs[0]
+        )
 
         graph.output(
             attention(
@@ -272,7 +272,7 @@ def generate_max_outputs(
         Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
             device
         ),
-        kv_runtime_inputs.blocks.to(device),
+        kv_runtime_inputs.kv_blocks.to(device),
         kv_runtime_inputs.cache_lengths.to(device),
         kv_runtime_inputs.lookup_table.to(device),
         kv_runtime_inputs.max_lengths,

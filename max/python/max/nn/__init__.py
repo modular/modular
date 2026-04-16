@@ -48,7 +48,6 @@ from .kv_cache import (
     KVCacheInputs,
     KVCacheMetrics,
     KVCacheParams,
-    PagedCacheValues,
     build_max_lengths_tensor,
 )
 from .layer import Layer, LayerList, Module, Shardable

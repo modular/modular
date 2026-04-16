@@ -40,9 +40,7 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.transformer.distributed_transformer import (
-    forward_sharded_layers,
-)
+from max.nn.transformer.distributed_transformer import forward_sharded_layers
 
 from ..deepseekV3.deepseekV3 import (
     DeepseekV3DecoderLayer,
@@ -292,11 +290,11 @@ class DeepseekV3NextN(Module):
 
         # Extract dispatch metadata from KV collections for MLA decode.
         mla_decode_scalar_args: list[TensorValue] | None = None
-        if kv_collections[0].dispatch_metadata is not None:
+        if kv_collections[0].attention_dispatch_metadata is not None:
             mla_decode_scalar_args = [
-                kv.dispatch_metadata.tensor
+                kv.attention_dispatch_metadata
                 for kv in kv_collections
-                if kv.dispatch_metadata is not None
+                if kv.attention_dispatch_metadata is not None
             ]
 
         h = self.decoder_layer(

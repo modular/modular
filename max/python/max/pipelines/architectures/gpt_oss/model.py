@@ -26,10 +26,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm import Signals
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-)
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
@@ -338,7 +335,8 @@ class GptOssModel(
             An object containing the output logits from the model execution.
         """
         model_inputs = cast(GptOssInputs, model_inputs)
-        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
+        curr_kv_cache_inputs = model_inputs.kv_cache_inputs
+        assert curr_kv_cache_inputs is not None
 
         # Check if input_row_offsets is a list or a single tensor
         if isinstance(model_inputs.input_row_offsets, list):
@@ -363,7 +361,7 @@ class GptOssModel(
             model_inputs.return_n_logits,
             *input_row_offsets_list,
             *model_inputs.signal_buffers,
-            *curr_kv_cache_inputs,
+            *curr_kv_cache_inputs.flatten(),
         )
         if len(model_outputs) == 3:
             return ModelOutputs(
@@ -380,7 +378,7 @@ class GptOssModel(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs for the first execution pass of the GPT OSS model.

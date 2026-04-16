@@ -40,7 +40,6 @@ from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import (
-    AttentionDispatchMetadata,
     KVCacheParamInterface,
     MultiKVCacheParams,
     PagedCacheValues,
@@ -315,9 +314,7 @@ class DeepseekV3_2DecoderLayer(Module):
                 mla_kv_lookup_table[i],
                 mla_kv_max_lengths[i],
                 mla_kv_cache_scales[i] if mla_kv_cache_scales else None,
-                dispatch_metadata=AttentionDispatchMetadata(
-                    mla_decode_scalar_args[i]
-                )
+                attention_dispatch_metadata=mla_decode_scalar_args[i]
                 if mla_decode_scalar_args is not None
                 else None,
             )
@@ -583,11 +580,11 @@ class DeepseekV3_2(Module):
 
         # Extract dispatch metadata from MLA KV collections.
         mla_decode_scalar_args: list[TensorValue] | None = None
-        if mla_kv_collections[0].dispatch_metadata is not None:
+        if mla_kv_collections[0].attention_dispatch_metadata is not None:
             mla_decode_scalar_args = [
-                kv.dispatch_metadata.tensor
+                kv.attention_dispatch_metadata
                 for kv in mla_kv_collections
-                if kv.dispatch_metadata is not None
+                if kv.attention_dispatch_metadata is not None
             ]
 
         subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [
