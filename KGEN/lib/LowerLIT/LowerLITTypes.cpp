@@ -1042,23 +1042,9 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
     return failure();
 
   result = module.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    if (auto structGen = dyn_cast<StructGeneratorOp>(op)) {
-      // Make sure valueDomainType is translated in the value domain.
-      auto valueDomainTypeOr =
-          b.replace(structGen.getValueDomainType(), TypeDomain::AsValue);
-      if (failed(valueDomainTypeOr))
-        return WalkResult::interrupt();
-
-      LogicalResult res = b.replaceElementsIn(structGen, TypeDomain::AsType,
-                                              /*replaceAttrs=*/true,
-                                              /*replaceLocs=*/true,
-                                              /*replaceTypes=*/true);
-      if (failed(res))
-        return WalkResult::interrupt();
-
-      structGen.setValueDomainType(*valueDomainTypeOr);
+    // Skip StructGeneratorOps and lower them the last.
+    if (auto structGen = dyn_cast<StructGeneratorOp>(op))
       return WalkResult::skip();
-    }
 
     LogicalResult res =
         b.replaceElementsIn(op, TypeDomain::AsType, /*replaceAttrs=*/true,
@@ -1084,10 +1070,26 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
     return WalkResult::advance();
   });
 
-  // Lower types in StructGeneratorOps last because we need witness entries to
-  // keep using LIT types in order for ParameterEvaluator to work smoothly.
-  for (StructGeneratorOp op : module.getOps<StructGeneratorOp>()) {
-    op.getBody().walk([&](Operation *op) {
+  // Lower types in StructGeneratorOps last because we need signature and
+  // witness entries to keep using LIT types in order for ParameterEvaluator to
+  // work smoothly.
+  for (StructGeneratorOp structGen : module.getOps<StructGeneratorOp>()) {
+    // Make sure valueDomainType is translated in the value domain.
+    auto valueDomainTypeOr =
+        b.replace(structGen.getValueDomainType(), TypeDomain::AsValue);
+    if (failed(valueDomainTypeOr))
+      return failure();
+
+    LogicalResult res = b.replaceElementsIn(structGen, TypeDomain::AsType,
+                                            /*replaceAttrs=*/true,
+                                            /*replaceLocs=*/true,
+                                            /*replaceTypes=*/true);
+    if (failed(res))
+      return failure();
+    structGen.setValueDomainType(*valueDomainTypeOr);
+
+    // Then lower the body.
+    structGen.getBody().walk([&](Operation *op) {
       LogicalResult res =
           b.replaceElementsIn(op, TypeDomain::AsType, /*replaceAttrs=*/true,
                               /*replaceLocs=*/true,
