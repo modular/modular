@@ -396,7 +396,7 @@ class Eagle3KimiK25(Module):
         ret_val: tuple[TensorValue, ...] = (last_logits,)
 
         if self.return_logits == ReturnLogits.VARIABLE:
-            draft_rnl_range = ops.range(
+            draft_return_n_logits_range = ops.range(
                 start=return_n_logits[0],
                 stop=0,
                 step=-1,
@@ -405,14 +405,16 @@ class Eagle3KimiK25(Module):
                 device=devices[0],
             )
             if self.use_data_parallel_attention:
+                draft_return_n_logits_range_per_dev = ops.distributed_broadcast(
+                    draft_return_n_logits_range, signal_buffers
+                )
                 # DP: each device has a batch shard; gather per-device then
                 # allgather to reconstruct the full batch.
                 variable_per_dev: list[TensorValue] = []
                 for dev_idx in range(len(devices)):
-                    dev_range = draft_rnl_range.to(devices[dev_idx])
                     dev_offsets = (
                         ops.unsqueeze(input_row_offsets_[dev_idx][1:], -1)
-                        - dev_range
+                        - draft_return_n_logits_range_per_dev[dev_idx]
                     )
                     variable_per_dev.append(
                         ops.gather(
@@ -436,7 +438,7 @@ class Eagle3KimiK25(Module):
                 # then norm + lm_head across all devices.
                 last_offsets = (
                     ops.unsqueeze(input_row_offsets_[0][1:], -1)
-                    - draft_rnl_range
+                    - draft_return_n_logits_range
                 )
                 last_indices = ops.reshape(last_offsets, shape=(-1,))
                 variable_logits = ops.gather(
