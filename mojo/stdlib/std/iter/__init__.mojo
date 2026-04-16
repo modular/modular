@@ -55,6 +55,10 @@ for squared in map[square](values):
 
 from std.builtin.constrained import _constrained_conforms_to
 
+from std.builtin.variadics import Variadic
+from std.reflection.traits import AllImplicitlyDestructible, AllCopyable
+
+
 # ===-----------------------------------------------------------------------===#
 # Iterable
 # ===-----------------------------------------------------------------------===#
@@ -341,340 +345,93 @@ def enumerate(
 # ===-----------------------------------------------------------------------===#
 
 
-@fieldwise_init
-struct _Zip2[IteratorTypeA: Iterator, IteratorTypeB: Iterator](
-    Copyable where conforms_to(IteratorTypeA, Copyable) and conforms_to(
-        IteratorTypeB, Copyable
-    ),
-    Iterable where conforms_to(IteratorTypeA, Copyable) and conforms_to(
-        IteratorTypeB, Copyable
-    ),
+struct _ZipIterator[origin: Origin, *Ts: Iterator](
+    Copyable where AllCopyable[*Ts.upcast[AnyType]()],
+    Iterable where AllCopyable[*Ts.upcast[AnyType]()],
     IterableOwned,
     Iterator,
 ):
-    comptime Element = Tuple[
-        Self.IteratorTypeA.Element, Self.IteratorTypeB.Element
-    ]
+    comptime _InjectedValues = Tuple[*Self.Ts.upcast[Movable]()]
+    var _values: Self._InjectedValues
+
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
     comptime IteratorOwnedType: Iterator = Self
+    comptime _mapper[T: Iterator] = T.Element
+    comptime Element = Tuple[
+        *Variadic.map_types_to_types[Self.Ts.values, Self._mapper]()
+    ]
 
-    var _inner_a: Self.IteratorTypeA
-    var _inner_b: Self.IteratorTypeB
-
+    @always_inline
     def __iter__(
         ref self,
-    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
-        Self.IteratorTypeA, Copyable
-    ) and conforms_to(Self.IteratorTypeB, Copyable):
+    ) -> Self.IteratorType[origin_of(self)] where AllCopyable[
+        *Self.Ts.upcast[AnyType]()
+    ]:
         return self.copy()
 
     @always_inline
     def __iter__(var self) -> Self.IteratorOwnedType:
         return self^
 
-    def __init__(
-        out self, *, copy: Self
-    ) where conforms_to(Self.IteratorTypeA, Copyable) and conforms_to(
-        Self.IteratorTypeB, Copyable
-    ):
-        self._inner_a = rebind_var[Self.IteratorTypeA](
-            trait_downcast[Copyable](copy._inner_a).copy()
-        )
-        self._inner_b = rebind_var[Self.IteratorTypeB](
-            trait_downcast[Copyable](copy._inner_b).copy()
-        )
-
     def __next__(mut self) raises StopIteration -> Self.Element:
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeA, ImplicitlyDestructible),
-            Parent=Self,
-            Element=Self.IteratorTypeA,
-            ParentConformsTo="Iterator",
-            ElementConformsTo="ImplicitlyDestructible",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeB, ImplicitlyDestructible),
-            Parent=Self,
-            Element=Self.IteratorTypeB,
-            ParentConformsTo="Iterator",
-            ElementConformsTo="ImplicitlyDestructible",
-        ]()
+        var initialized = 0
+        var res: Self.Element
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
+        try:
+            comptime for i in range(Self._InjectedValues.__len__()):
+                UnsafePointer(to=res[i]).init_pointee_move(
+                    rebind_var[type_of(res[i])](next(self._values[i]))
+                )
+                initialized += 1
+            return res^
+        except StopIteration:
+            comptime for i in range(Self._InjectedValues.__len__()):
+                comptime assert conforms_to(
+                    type_of(res[i]), ImplicitlyDestructible
+                )
+                if i < initialized:
+                    UnsafePointer(
+                        to=trait_downcast[ImplicitlyDestructible](res[i])
+                    ).destroy_pointee()
 
-        var a = trait_downcast_var[Movable & ImplicitlyDestructible](
-            next(self._inner_a)
-        )
-        var b = trait_downcast_var[Movable & ImplicitlyDestructible](
-            next(self._inner_b)
-        )
-        return (
-            rebind_var[Self.IteratorTypeA.Element](a^),
-            rebind_var[Self.IteratorTypeB.Element](b^),
-        )
+            __mlir_op.`lit.ownership.mark_destroyed`(
+                __get_mvalue_as_litref(res)
+            )
+            raise StopIteration
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
-        return _min_bounds(self._inner_a.bounds(), self._inner_b.bounds())
+        var res_lower = Int.MAX
+        var res_upper = Optional[Int](None)
+        comptime for i in range(Self._InjectedValues.__len__()):
+            var lower, upper = self._values[i].bounds()
+            res_lower = min(res_lower, lower)
+            if upper:
+                res_upper = min(res_upper.or_else(Int.MAX), upper.value())
+
+        return (res_lower, res_upper)
 
 
-@fieldwise_init
-struct _Zip3[
-    IteratorTypeA: Iterator, IteratorTypeB: Iterator, IteratorTypeC: Iterator
-](
-    Copyable where (
-        conforms_to(IteratorTypeA, Copyable)
-        and conforms_to(IteratorTypeB, Copyable)
-        and conforms_to(IteratorTypeC, Copyable)
-    ),
-    Iterable where (
-        conforms_to(IteratorTypeA, Copyable)
-        and conforms_to(IteratorTypeB, Copyable)
-        and conforms_to(IteratorTypeC, Copyable)
-    ),
-    IterableOwned,
-    Iterator,
-):
-    comptime Element = Tuple[
-        Self.IteratorTypeA.Element,
-        Self.IteratorTypeB.Element,
-        Self.IteratorTypeC.Element,
-    ]
-    comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = Self
-    comptime IteratorOwnedType: Iterator = Self
-
-    var _inner_a: Self.IteratorTypeA
-    var _inner_b: Self.IteratorTypeB
-    var _inner_c: Self.IteratorTypeC
-
-    def __iter__(
-        ref self,
-    ) -> Self.IteratorType[origin_of(self)] where (
-        conforms_to(Self.IteratorTypeA, Copyable)
-        and conforms_to(Self.IteratorTypeB, Copyable)
-        and conforms_to(Self.IteratorTypeC, Copyable)
-    ):
-        return self.copy()
-
-    @always_inline
-    def __iter__(var self) -> Self.IteratorOwnedType:
-        return self^
-
-    def __init__(
-        out self, *, copy: Self
-    ) where (
-        conforms_to(Self.IteratorTypeA, Copyable)
-        and conforms_to(Self.IteratorTypeB, Copyable)
-        and conforms_to(Self.IteratorTypeC, Copyable)
-    ):
-        self._inner_a = rebind_var[Self.IteratorTypeA](
-            trait_downcast[Copyable](copy._inner_a).copy()
-        )
-        self._inner_b = rebind_var[Self.IteratorTypeB](
-            trait_downcast[Copyable](copy._inner_b).copy()
-        )
-        self._inner_c = rebind_var[Self.IteratorTypeC](
-            trait_downcast[Copyable](copy._inner_c).copy()
-        )
-
-    def __next__(mut self) raises StopIteration -> Self.Element:
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeA, ImplicitlyDestructible),
-            Parent=Self,
-            Element=Self.IteratorTypeA,
-            ParentConformsTo="Iterator",
-            ElementConformsTo="ImplicitlyDestructible",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeB, ImplicitlyDestructible),
-            Parent=Self,
-            Element=Self.IteratorTypeB,
-            ParentConformsTo="Iterator",
-            ElementConformsTo="ImplicitlyDestructible",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeC, ImplicitlyDestructible),
-            Parent=Self,
-            Element=Self.IteratorTypeC,
-            ParentConformsTo="Iterator",
-            ElementConformsTo="ImplicitlyDestructible",
-        ]()
-
-        var a = trait_downcast_var[Movable & ImplicitlyDestructible](
-            next(self._inner_a)
-        )
-        var b = trait_downcast_var[Movable & ImplicitlyDestructible](
-            next(self._inner_b)
-        )
-        var c = trait_downcast_var[Movable & ImplicitlyDestructible](
-            next(self._inner_c)
-        )
-        return (
-            rebind_var[Self.IteratorTypeA.Element](a^),
-            rebind_var[Self.IteratorTypeB.Element](b^),
-            rebind_var[Self.IteratorTypeC.Element](c^),
-        )
-
-    def bounds(self) -> Tuple[Int, Optional[Int]]:
-        return _min_bounds(
-            self._inner_a.bounds(),
-            self._inner_b.bounds(),
-            self._inner_c.bounds(),
-        )
-
-
-@fieldwise_init
-struct _Zip4[
-    IteratorTypeA: Iterator,
-    IteratorTypeB: Iterator,
-    IteratorTypeC: Iterator,
-    IteratorTypeD: Iterator,
-](
-    Copyable where (
-        conforms_to(IteratorTypeA, Copyable)
-        and conforms_to(IteratorTypeB, Copyable)
-        and conforms_to(IteratorTypeC, Copyable)
-        and conforms_to(IteratorTypeD, Copyable)
-    ),
-    Iterable where (
-        conforms_to(IteratorTypeA, Copyable)
-        and conforms_to(IteratorTypeB, Copyable)
-        and conforms_to(IteratorTypeC, Copyable)
-        and conforms_to(IteratorTypeD, Copyable)
-    ),
-    IterableOwned,
-    Iterator,
-):
-    comptime Element = Tuple[
-        Self.IteratorTypeA.Element,
-        Self.IteratorTypeB.Element,
-        Self.IteratorTypeC.Element,
-        Self.IteratorTypeD.Element,
-    ]
-    comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = Self
-    comptime IteratorOwnedType: Iterator = Self
-
-    var _inner_a: Self.IteratorTypeA
-    var _inner_b: Self.IteratorTypeB
-    var _inner_c: Self.IteratorTypeC
-    var _inner_d: Self.IteratorTypeD
-
-    def __iter__(
-        ref self,
-    ) -> Self.IteratorType[origin_of(self)] where (
-        conforms_to(Self.IteratorTypeA, Copyable)
-        and conforms_to(Self.IteratorTypeB, Copyable)
-        and conforms_to(Self.IteratorTypeC, Copyable)
-        and conforms_to(Self.IteratorTypeD, Copyable)
-    ):
-        return self.copy()
-
-    @always_inline
-    def __iter__(var self) -> Self.IteratorOwnedType:
-        return self^
-
-    def __init__(
-        out self, *, copy: Self
-    ) where (
-        conforms_to(Self.IteratorTypeA, Copyable)
-        and conforms_to(Self.IteratorTypeB, Copyable)
-        and conforms_to(Self.IteratorTypeC, Copyable)
-        and conforms_to(Self.IteratorTypeD, Copyable)
-    ):
-        self._inner_a = rebind_var[Self.IteratorTypeA](
-            trait_downcast[Copyable](copy._inner_a).copy()
-        )
-        self._inner_b = rebind_var[Self.IteratorTypeB](
-            trait_downcast[Copyable](copy._inner_b).copy()
-        )
-        self._inner_c = rebind_var[Self.IteratorTypeC](
-            trait_downcast[Copyable](copy._inner_c).copy()
-        )
-        self._inner_d = rebind_var[Self.IteratorTypeD](
-            trait_downcast[Copyable](copy._inner_d).copy()
-        )
-
-    def __next__(mut self) raises StopIteration -> Self.Element:
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeA, ImplicitlyDestructible),
-            Parent=Self,
-            Element=Self.IteratorTypeA,
-            ParentConformsTo="Iterator",
-            ElementConformsTo="ImplicitlyDestructible",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeB, ImplicitlyDestructible),
-            Parent=Self,
-            Element=Self.IteratorTypeB,
-            ParentConformsTo="Iterator",
-            ElementConformsTo="ImplicitlyDestructible",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeC, ImplicitlyDestructible),
-            Parent=Self,
-            Element=Self.IteratorTypeC,
-            ParentConformsTo="Iterator",
-            ElementConformsTo="ImplicitlyDestructible",
-        ]()
-        _constrained_conforms_to[
-            conforms_to(Self.IteratorTypeD, ImplicitlyDestructible),
-            Parent=Self,
-            Element=Self.IteratorTypeD,
-            ParentConformsTo="Iterator",
-            ElementConformsTo="ImplicitlyDestructible",
-        ]()
-
-        var a = trait_downcast_var[Movable & ImplicitlyDestructible](
-            next(self._inner_a)
-        )
-        var b = trait_downcast_var[Movable & ImplicitlyDestructible](
-            next(self._inner_b)
-        )
-        var c = trait_downcast_var[Movable & ImplicitlyDestructible](
-            next(self._inner_c)
-        )
-        var d = trait_downcast_var[Movable & ImplicitlyDestructible](
-            next(self._inner_d)
-        )
-        return (
-            rebind_var[Self.IteratorTypeA.Element](a^),
-            rebind_var[Self.IteratorTypeB.Element](b^),
-            rebind_var[Self.IteratorTypeC.Element](c^),
-            rebind_var[Self.IteratorTypeD.Element](d^),
-        )
-
-    def bounds(self) -> Tuple[Int, Optional[Int]]:
-        return _min_bounds(
-            self._inner_a.bounds(),
-            self._inner_b.bounds(),
-            self._inner_c.bounds(),
-            self._inner_d.bounds(),
-        )
-
-
-@always_inline
 def zip[
-    IterableTypeA: Iterable, IterableTypeB: Iterable
-](ref iterable_a: IterableTypeA, ref iterable_b: IterableTypeB) -> _Zip2[
-    IterableTypeA.IteratorType[origin_of(iterable_a)],
-    IterableTypeB.IteratorType[origin_of(iterable_b)],
-]:
+    *Ts: Iterable
+](
+    *iterables: *Ts,
+    out res: _ZipIterator[
+        iterables.origin, *_iterable_to_iterator[iterables.origin, *Ts]
+    ],
+) where AllImplicitlyDestructible[*res.Ts.upcast[AnyType]()]:
     """Returns an iterator that yields tuples of the elements of the original
     iterables.
 
     Parameters:
-        IterableTypeA: The type of the first iterable.
-        IterableTypeB: The type of the second iterable.
+        Ts: The type of the iterables.
 
     Args:
-        iterable_a: The first iterable.
-        iterable_b: The second iterable.
+        iterables: The iterables.
 
     Returns:
-        A zip iterator that yields tuples of elements from both iterables.
+        A zip iterator that yields tuples of elements from all iterables.
 
     Examples:
 
@@ -685,176 +442,48 @@ def zip[
         print(a, b)
     ```
     """
-    return _Zip2(iter(iterable_a), iter(iterable_b))
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
+
+    comptime for i in range(res._InjectedValues.__len__()):
+        UnsafePointer(to=res._values[i]).init_pointee_move(
+            rebind_var[type_of(res._values[i])](iter(iterables[i]))
+        )
 
 
-@always_inline
 def zip[
-    IterableTypeA: Iterable, IterableTypeB: Iterable, IterableTypeC: Iterable
+    *Ts: IterableOwned
 ](
-    ref iterable_a: IterableTypeA,
-    ref iterable_b: IterableTypeB,
-    ref iterable_c: IterableTypeC,
-) -> _Zip3[
-    IterableTypeA.IteratorType[origin_of(iterable_a)],
-    IterableTypeB.IteratorType[origin_of(iterable_b)],
-    IterableTypeC.IteratorType[origin_of(iterable_c)],
-]:
+    var *iterables: *Ts,
+    out res: _ZipIterator[MutExternalOrigin, *_iterable_owned_to_iterator[*Ts]],
+) where AllImplicitlyDestructible[*res.Ts.upcast[AnyType]()]:
     """Returns an iterator that yields tuples of the elements of the original
     iterables.
 
     Parameters:
-        IterableTypeA: The type of the first iterable.
-        IterableTypeB: The type of the second iterable.
-        IterableTypeC: The type of the third iterable.
+        Ts: The type of the iterables.
 
     Args:
-        iterable_a: The first iterable.
-        iterable_b: The second iterable.
-        iterable_c: The third iterable.
+        iterables: The iterables.
 
     Returns:
-        A zip iterator that yields tuples of elements from all three iterables.
+        A zip iterator that yields tuples of elements from all iterables.
 
     Examples:
 
     ```mojo
-    var l = ["hey", "hi", "hello"]
-    var l2 = [10, 20, 30]
-    var l3 = [100, 200, 300]
-    for a, b, c in zip(l, l2, l3):
-        print(a, b, c)
+    for a, b in zip(List(["hey", "hi", "hello"]), List([10, 20, 30])):
+        print(a, b)
     ```
     """
-    return _Zip3(iter(iterable_a), iter(iterable_b), iter(iterable_c))
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
 
+    @parameter
+    def init_elt[idx: Int](var elt: iterables.element_types[idx]):
+        UnsafePointer(to=res._values[idx]).init_pointee_move(
+            rebind_var[type_of(res._values[idx])](iter(elt^))
+        )
 
-@always_inline
-def zip[
-    IterableTypeA: Iterable,
-    IterableTypeB: Iterable,
-    IterableTypeC: Iterable,
-    IterableTypeD: Iterable,
-](
-    ref iterable_a: IterableTypeA,
-    ref iterable_b: IterableTypeB,
-    ref iterable_c: IterableTypeC,
-    ref iterable_d: IterableTypeD,
-) -> _Zip4[
-    IterableTypeA.IteratorType[origin_of(iterable_a)],
-    IterableTypeB.IteratorType[origin_of(iterable_b)],
-    IterableTypeC.IteratorType[origin_of(iterable_c)],
-    IterableTypeD.IteratorType[origin_of(iterable_d)],
-]:
-    """Returns an iterator that yields tuples of the elements of the original
-    iterables.
-
-    Parameters:
-        IterableTypeA: The type of the first iterable.
-        IterableTypeB: The type of the second iterable.
-        IterableTypeC: The type of the third iterable.
-        IterableTypeD: The type of the fourth iterable.
-
-    Args:
-        iterable_a: The first iterable.
-        iterable_b: The second iterable.
-        iterable_c: The third iterable.
-        iterable_d: The fourth iterable.
-
-    Returns:
-        A zip iterator that yields tuples of elements from all four iterables.
-
-    Examples:
-
-    ```mojo
-    var l = ["hey", "hi", "hello"]
-    var l2 = [10, 20, 30]
-    var l3 = [100, 200, 300]
-    var l4 = [1000, 2000, 3000]
-    for a, b, c, d in zip(l, l2, l3, l4):
-        print(a, b, c, d)
-    ```
-    """
-    return _Zip4(
-        iter(iterable_a), iter(iterable_b), iter(iterable_c), iter(iterable_d)
-    )
-
-
-@always_inline
-def zip(
-    var iterable_a: Some[IterableOwned],
-    var iterable_b: Some[IterableOwned],
-) -> _Zip2[
-    type_of(iterable_a).IteratorOwnedType,
-    type_of(iterable_b).IteratorOwnedType,
-]:
-    """Returns an iterator that yields tuples of the elements of the original
-    iterables, consuming both iterables.
-
-    Args:
-        iterable_a: The first iterable to consume.
-        iterable_b: The second iterable to consume.
-
-    Returns:
-        A zip iterator that yields tuples of elements from both iterables.
-    """
-    return _Zip2(iter(iterable_a^), iter(iterable_b^))
-
-
-@always_inline
-def zip(
-    var iterable_a: Some[IterableOwned],
-    var iterable_b: Some[IterableOwned],
-    var iterable_c: Some[IterableOwned],
-) -> _Zip3[
-    type_of(iterable_a).IteratorOwnedType,
-    type_of(iterable_b).IteratorOwnedType,
-    type_of(iterable_c).IteratorOwnedType,
-]:
-    """Returns an iterator that yields tuples of the elements of the original
-    iterables, consuming all three iterables.
-
-    Args:
-        iterable_a: The first iterable to consume.
-        iterable_b: The second iterable to consume.
-        iterable_c: The third iterable to consume.
-
-    Returns:
-        A zip iterator that yields tuples of elements from all three iterables.
-    """
-    return _Zip3(iter(iterable_a^), iter(iterable_b^), iter(iterable_c^))
-
-
-@always_inline
-def zip(
-    var iterable_a: Some[IterableOwned],
-    var iterable_b: Some[IterableOwned],
-    var iterable_c: Some[IterableOwned],
-    var iterable_d: Some[IterableOwned],
-) -> _Zip4[
-    type_of(iterable_a).IteratorOwnedType,
-    type_of(iterable_b).IteratorOwnedType,
-    type_of(iterable_c).IteratorOwnedType,
-    type_of(iterable_d).IteratorOwnedType,
-]:
-    """Returns an iterator that yields tuples of the elements of the original
-    iterables, consuming all four iterables.
-
-    Args:
-        iterable_a: The first iterable to consume.
-        iterable_b: The second iterable to consume.
-        iterable_c: The third iterable to consume.
-        iterable_d: The fourth iterable to consume.
-
-    Returns:
-        A zip iterator that yields tuples of elements from all four iterables.
-    """
-    return _Zip4(
-        iter(iterable_a^),
-        iter(iterable_b^),
-        iter(iterable_c^),
-        iter(iterable_d^),
-    )
+    iterables^.consume_elements[init_elt]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1098,16 +727,16 @@ def peekable(
 # ===-----------------------------------------------------------------------===#
 
 
-def _min_bounds(
-    *bounds: Tuple[Int, Optional[Int]]
-) -> Tuple[Int, Optional[Int]]:
-    var res_lower = Int.MAX
-    var res_upper = Optional[Int](None)
+comptime _map_iterable_iterator[origin: Origin, T: Iterable] = T.IteratorType[
+    origin
+]
+comptime _iterable_to_iterator[
+    origin: Origin, *Ts: Iterable
+] = Variadic.map_types_to_types[
+    Ts.values, _map_iterable_iterator[origin, ...]
+]()
 
-    for bound in bounds:
-        var lower, upper = bound
-        res_lower = min(res_lower, lower)
-        if upper:
-            res_upper = min(res_upper.or_else(Int.MAX), upper.value())
-
-    return (res_lower, res_upper)
+comptime _map_iterable_owned_iterator[T: IterableOwned] = T.IteratorOwnedType
+comptime _iterable_owned_to_iterator[
+    *Ts: IterableOwned
+] = Variadic.map_types_to_types[Ts.values, _map_iterable_owned_iterator]()

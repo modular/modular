@@ -613,7 +613,7 @@ struct Path(
         from std.pathlib import Path
         from std.testing import assert_true
 
-        for p, q in zip(Path("a/path/foo.txt").parts(), ["a", "path", "foo.txt"]):
+        for p, q in zip(Path("a/path/foo.txt").parts(), List(["a", "path", "foo.txt"])):
             assert_true(p == q)
         ```
         """
