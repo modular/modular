@@ -2128,15 +2128,11 @@ class FnEffects(enum.Enum):
 
     capturing = 4
 
-    escaping = 16
-
     refresult = 32
 
     unified = 64
 
     register_passable = 128
-
-    extern = 256
 
     cabi = 512
 
