@@ -1533,6 +1533,53 @@ def _handle_layer_norm(
     return [output]
 
 
+# RMS norm operations
+
+
+@register_op_handler(mo.ReduceRmsNormOp)
+def _handle_rms_norm(
+    op: mo.ReduceRmsNormOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.reduce.rms_norm by dispatching to Mojo rms_norm kernel.
+
+    Args:
+        op: The rms_norm operation.
+        inputs: Input buffers - input tensor, weight, epsilon, weight_offset.
+            Epsilon and weight_offset are always on CPU
+            (MO_SingleDeviceWithHostOperands).
+
+    Returns:
+        List containing the normalized tensor buffer.
+    """
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # weight
+    assert isinstance(inputs[2], Buffer)  # epsilon (always CPU)
+    assert isinstance(inputs[3], Buffer)  # weight_offset (always CPU)
+
+    output = Buffer(
+        shape=inputs[0].shape,
+        dtype=inputs[0].dtype,
+        device=target_device,
+    )
+
+    multiply_before_cast = int(bool(op.multiply_before_cast))
+
+    ops.rms_norm_ops.RmsNorm(
+        output,
+        inputs[0],
+        inputs[1],
+        inputs[2],
+        (inputs[3], multiply_before_cast),
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
+
+
 # Range operations
 
 

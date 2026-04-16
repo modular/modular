@@ -3435,6 +3435,132 @@ class TestLayerNormOps:
         np.testing.assert_array_almost_equal(np.from_dlpack(y), expected)
 
 
+class TestRmsNormOp:
+    """Tests for rms_norm interpreter op via F.rms_norm.
+
+    Routes through F.rms_norm -> ops.rms_norm -> mo.ReduceRmsNormOp ->
+    _handle_rms_norm -> rms_norm_ops.RmsNorm.
+    """
+
+    @staticmethod
+    def _rms_norm_ref(
+        x: np.ndarray,
+        weight: np.ndarray,
+        eps: float,
+        weight_offset: float = 0.0,
+        multiply_before_cast: bool = False,
+    ) -> np.ndarray:
+        """Pure-numpy RMS norm reference.
+
+        output = x / rms(x) * (weight + weight_offset)
+        rms(x) = sqrt(mean(x^2) + eps)
+        """
+        x_f64 = x.astype(np.float64)
+        rms = np.sqrt(np.mean(x_f64**2, axis=-1, keepdims=True) + eps)
+        normed = x_f64 / rms
+        w = weight.astype(np.float64) + weight_offset
+        return (normed * w).astype(x.dtype)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_basic_2d(self, dtype: DType) -> None:
+        """Test rms_norm on a 2D tensor."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((4, 5)).astype(np_dtype)
+        w_np = rng.standard_normal(5).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        w = Tensor.from_dlpack(w_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.rms_norm(x, w, epsilon=1e-5)
+
+        expected = self._rms_norm_ref(x_np, w_np, 1e-5)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-4, atol=1e-4
+        )
+
+    def test_3d_input(self) -> None:
+        """Test rms_norm on a 3D tensor (batch + sequence + feature)."""
+        rng = np.random.default_rng(43)
+        x_np = rng.standard_normal((2, 3, 8)).astype(np.float32)
+        w_np = rng.standard_normal(8).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        w = Tensor.from_dlpack(w_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.rms_norm(x, w, epsilon=1e-5)
+
+        expected = self._rms_norm_ref(x_np, w_np, 1e-5)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_multiply_before_cast(self) -> None:
+        """Test Gemma-style multiply_before_cast=True."""
+        rng = np.random.default_rng(44)
+        x_np = rng.standard_normal((4, 6)).astype(np.float32)
+        w_np = rng.standard_normal(6).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        w = Tensor.from_dlpack(w_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.rms_norm(x, w, epsilon=1e-5, multiply_before_cast=True)
+
+        expected = self._rms_norm_ref(
+            x_np, w_np, 1e-5, multiply_before_cast=True
+        )
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_weight_offset(self) -> None:
+        """Test rms_norm with non-zero weight_offset (Gemma-style +1)."""
+        rng = np.random.default_rng(45)
+        x_np = rng.standard_normal((3, 4)).astype(np.float32)
+        w_np = rng.standard_normal(4).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        w = Tensor.from_dlpack(w_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.rms_norm(x, w, epsilon=1e-5, weight_offset=1.0)
+
+        expected = self._rms_norm_ref(x_np, w_np, 1e-5, weight_offset=1.0)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_large_feature_dim(self) -> None:
+        """Test rms_norm with a large feature dimension."""
+        rng = np.random.default_rng(46)
+        x_np = rng.standard_normal((8, 128)).astype(np.float32)
+        w_np = rng.standard_normal(128).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        w = Tensor.from_dlpack(w_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.rms_norm(x, w, epsilon=1e-6)
+
+        expected = self._rms_norm_ref(x_np, w_np, 1e-6)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+
 class TestSliceOp:
     """Tests for slice operations."""
 

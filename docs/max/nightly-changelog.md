@@ -48,6 +48,8 @@ This version is still a work in progress.
 - Added `ConstantExternalOp` and `ConstantScalarOp` handlers to the MO eager
   interpreter, allowing graphs with external weights and scalar constants to
   run without falling back to full compilation.
+- Added `ReduceRmsNormOp` handler to the MO eager interpreter, enabling
+  eager-mode execution of RMS normalization without graph compilation.
 - Fixed tensor slicing with negative integer indices (e.g. `hidden[:, -1]`)
   which previously raised a `RuntimeError` at compile time.
 - Setting `MODULAR_MAX_UNINITIALIZED_READ_CHECK=true` enables detection of
