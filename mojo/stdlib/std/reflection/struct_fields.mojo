@@ -289,71 +289,55 @@ def struct_field_count[T: AnyType]() -> Int:
     """
     # Use variadic.size on struct_field_types to get the count.
     # This avoids needing a dedicated struct_field_count attribute.
-    return Int(
-        mlir_value=__mlir_attr[
-            `#kgen.param_list.size<:!kgen.param_list<!kgen.type> `,
-            `#kgen.struct_field_types<`,
-            T,
-            `>> : index`,
-        ]
-    )
+    return struct_field_types[T]().size
 
 
-def struct_field_types[
+comptime struct_field_types[
     T: AnyType,
-]() -> Variadic.TypesOfTrait[AnyType]:
-    """Returns the types of all fields in struct `T` as a variadic.
+] = TypeList[
+    __mlir_attr[
+        `#kgen.struct_field_types<`, T, `> : !kgen.param_list<`, AnyType, `>`
+    ]
+]
+"""Returns the types of all fields in struct `T` as a TypeList.
 
-    This function works with both concrete types and generic type parameters.
+This function works with both concrete types and generic type parameters.
 
-    For nested structs, this returns the struct type itself, not its flattened
-    fields. Use recursive calls to introspect nested types.
+For nested structs, this returns the struct type itself, not its flattened
+fields. Use recursive calls to introspect nested types.
 
-    Note: For best performance, assign the result to a `comptime` variable to
-    ensure compile-time evaluation:
-        `comptime types = struct_field_types[T]()`
+Parameters:
+    T: A struct type.
 
-    Parameters:
-        T: A struct type.
+Returns:
+    A list of types, one for each field in the struct.
 
-    Constraints:
-        T must be a struct type. Passing a non-struct type results in a
-        compile-time error.
+Example:
+    ```mojo
+    from std.reflection import get_type_name
+    from std.reflection.struct_fields import struct_field_types, struct_field_count
 
-    Returns:
-        A variadic of types, one for each field in the struct. Access individual
-        types by indexing: `types[i]`.
+    struct MyStruct:
+        var x: Int
+        var y: Float64
 
-    Example:
-        ```mojo
-        from std.reflection import get_type_name
-        from std.reflection.struct_fields import struct_field_types, struct_field_count
+    def print_field_types[T: AnyType]():
+        comptime types = struct_field_types[T]()
+        comptime for i in range(struct_field_count[T]()):
+            print(get_type_name[types[i]]())
 
-        struct MyStruct:
-            var x: Int
-            var y: Float64
+    def main():
+        print_field_types[MyStruct]()  # Works with any struct!
+    ```
+"""
 
-        def print_field_types[T: AnyType]():
-            comptime types = struct_field_types[T]()
-            comptime for i in range(struct_field_count[T]()):
-                print(get_type_name[types[i]]())
-
-        def main():
-            print_field_types[MyStruct]()  # Works with any struct!
-        ```
-    """
-    return __struct_field_types(T).values
-
-
-def _struct_field_names_raw[
+comptime _struct_field_names_raw[
     T: AnyType,
-]() -> __mlir_type[`!kgen.param_list<!kgen.string>`]:
-    """Returns the names of all fields in struct `T` as a raw variadic.
-
-    This is an internal helper. Use `struct_field_names` for a more
-    ergonomic API that returns `InlineArray[StaticString, N]`.
-    """
-    return __struct_field_names(T).values
+] = ParameterList[
+    __mlir_attr[
+        `#kgen.struct_field_names<`, T, `> : !kgen.param_list<!kgen.string>`
+    ]
+]
 
 
 def struct_field_names[
@@ -399,10 +383,12 @@ def struct_field_names[
 
     # Safety: uninitialized=True is safe here because the comptime for loop
     # guarantees complete initialization of all elements at compile time.
-    var result = InlineArray[StaticString, count](uninitialized=True)
+    var result = InlineArray[StaticString, struct_field_count[T]()](
+        uninitialized=True
+    )
 
-    comptime for i in range(count):
-        result[i] = StaticString(raw[i])
+    comptime for i in range(raw.size):
+        result[i] = comptime (StaticString(raw[i]))
 
     return result^
 
