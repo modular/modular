@@ -303,13 +303,13 @@ class MAXModelConfig(MAXModelConfigBase):
     if not TYPE_CHECKING:
 
         def __init__(self, **data: Any) -> None:
-            """Initialize config, allowing tests/internal callers to seed PrivateAttrs.
+            """Initialize config, allowing tests/internal callers to seed private attributes.
 
-            Pydantic PrivateAttrs are not regular model fields, so they are not
-            accepted as constructor kwargs by default. Some tests (and debugging
-            utilities) intentionally seed `_huggingface_config` to avoid network
+            Pydantic private attributes (``PrivateAttr``) are not regular model fields,
+            so they are not accepted as constructor kwargs by default. Some tests (and debugging
+            utilities) intentionally seed ``_huggingface_config`` to avoid network
             access and to validate config override plumbing. Hence, we need to
-            explicitly define this __init__ method to seed the PrivateAttr(s).
+            explicitly define this ``__init__`` method to seed the private attributes.
             """
             seeded_huggingface_config = data.pop("_huggingface_config", None)
             super().__init__(**data)

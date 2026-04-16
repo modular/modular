@@ -96,7 +96,7 @@ class EmbeddingsGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
         """Indicates whether the embedding generation process is complete.
 
         Returns:
-            bool: Always True, as embedding generation is a single-step operation.
+            Always ``True``, as embedding generation is a single-step operation.
         """
         return True
 

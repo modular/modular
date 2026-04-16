@@ -89,7 +89,7 @@ class GenerationOutput(BaseModel):
         """Indicates whether the pipeline operation has completed.
 
         Returns:
-            bool: True if the generation is done (status is not ACTIVE),
-                  False otherwise.
+            ``True`` if the generation is done (status is not ACTIVE),
+            ``False`` otherwise.
         """
         return self.final_status.is_done

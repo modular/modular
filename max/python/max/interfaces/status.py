@@ -32,6 +32,6 @@ class GenerationStatus(str, Enum):
         """Returns True if the generation process is complete (not ACTIVE).
 
         Returns:
-            bool: True if the status is not ACTIVE, indicating completion.
+            ``True`` if the status is not ``ACTIVE``, indicating completion.
         """
         return self is not GenerationStatus.ACTIVE

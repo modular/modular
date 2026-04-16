@@ -407,7 +407,7 @@ class TokenBuffer:
         This includes both prompt and generated tokens currently held in the buffer.
 
         Returns:
-            int: The current total number of tokens.
+            The current total number of tokens.
         """
         return len(self.all)
 
@@ -604,7 +604,7 @@ class TokenBuffer:
         """Indicates whether there are generated tokens that have not yet been consumed.
 
         Returns:
-            bool: True if there are outstanding generated tokens to be streamed or processed; False otherwise.
+            ``True`` if there are outstanding generated tokens to be streamed or processed, ``False`` otherwise.
         """
         return len(self._completion_range) > 0
 
