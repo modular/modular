@@ -124,7 +124,9 @@ class Qwen3TextEncoderModel(ComponentModel):
                 adapted_key = adapted_key.replace(before, after)
             # The text-encoder module uses local names without language_model prefix.
             adapted_key = adapted_key.removeprefix("language_model.")
-
+            # Skip checkpoint keys the encoder-only module doesn't use.
+            if adapted_key in ("norm.weight", "lm_head.weight"):
+                continue
             state_dict[adapted_key] = value.data()
         return state_dict
 

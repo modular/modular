@@ -127,9 +127,8 @@ class Qwen3TextEncoderModel(ComponentModel):
             for before, after in QWEN3_TEXT_ENCODER_SAFETENSOR_MAP.items():
                 adapted_key = adapted_key.replace(before, after)
             adapted_key = adapted_key.removeprefix("language_model.")
-            # The Klein text encoder fuses selected hidden states before the
-            # final RMSNorm, so the checkpoint's terminal norm is unused.
-            if adapted_key == "norm.weight":
+            # Skip checkpoint keys the encoder-only module doesn't use.
+            if adapted_key in ("norm.weight", "lm_head.weight"):
                 continue
             state_dict[adapted_key] = value.data()
         return state_dict
