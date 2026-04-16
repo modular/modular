@@ -664,9 +664,23 @@ def setup(app):
 
     AttributeDocumenter.get_attribute_comment = _get_attr_comment_with_pyi
 
+    def process_bases(app, name, obj, options, bases):
+        """Strip type parameters from Module generic aliases for cleaner display.
+
+        Converts ``Module[(<class 'max.experimental.tensor.Tensor'>,), Tensor]``
+        to ``Module`` so that type-checking generics don't leak into the docs.
+        Scoped to Module only to avoid stripping meaningful type parameters
+        from other generic base classes.
+        """
+        for i, base in enumerate(bases):
+            origin = getattr(base, '__origin__', None)
+            if origin is not None and getattr(origin, '__name__', None) == 'Module':
+                bases[i] = origin
+
     app.connect("autodoc-process-docstring", strip_pydantic_init_docstring)
     app.connect("autodoc-process-docstring", process_links)
     app.connect("autodoc-process-signature", process_signature)
+    app.connect("autodoc-process-bases", process_bases)
     app.connect("autodoc-skip-member", skip_imported_for_modules)
     app.connect("missing-reference", resolve_type_alias_references)
     app.add_role('code_link', code_link_role)
