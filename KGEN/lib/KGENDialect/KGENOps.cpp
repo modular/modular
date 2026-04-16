@@ -698,8 +698,11 @@ void StructGeneratorOp::getFieldNames(SmallVectorImpl<StringAttr> &names) {
 void StructGeneratorOp::getFieldTypes(SmallVectorImpl<TypedAttr> &types,
                                       Type metaType) {
   auto structType = cast<StructInstanceType>(getValueDomainType());
-  for (StructDefFieldAttr field : structType.getFields())
-    types.push_back(field.getTypeValue());
+  for (StructDefFieldAttr field : structType.getFields()) {
+    // Convert from !kgen.type to (eg) AnyType.
+    auto asType = ParamType::get(field.getTypeValue());
+    types.push_back(TypeParamAttr::get(asType, metaType));
+  }
 }
 
 //===----------------------------------------------------------------------===//

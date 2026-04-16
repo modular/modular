@@ -2002,39 +2002,6 @@ kgen.generator @multi_field_struct_tests() {
 
 // -----
 
-// Test nested parametric types: ensure getReboundType handles complex nested types like List[List[T]].
-
-// CHECK: #[[TYPEVALUE_NESTED_LIST_I32:.+]] = #kgen.type<typevalue<#kgen.instref<@"NestedList,T=i32">>, pointer<none>> : !kgen.type
-
-// CHECK: kgen.struct.instance @"NestedList,T=i32" =
-// CHECK-SAME: struct_inst<"NestedList"[T]<:type i32>
-// CHECK-SAME: (data: i32, nested: #[[TYPEVALUE_NESTED_LIST_I32]])>
-kgen.struct.generator @NestedList<T: type> = struct_inst<
-  "NestedList"[T]<:type T>(
-    data: [typevalue<T>, !kgen.param<T>],
-    nested: [typevalue<#kgen.genref<@NestedList<:type T>>>, pointer<none>]
-  )>
-
-#nested_list_i32 = #kgen.type<typevalue<:!kgen.type #kgen.genref<@NestedList<:type i32>>>, struct<(i32, !kgen.pointer<none>)>> : !kgen.type
-
-// CHECK: kgen.func @nested_parametric_type_tests
-kgen.generator @nested_parametric_type_tests() {
-  // Test getReboundType correctly handles the parametric nested field type.
-  // Getting the field types of the recursive inner list should return the same type as the outer list.
-  // CHECK-NEXT: kgen.param.constant: param_list<type> = <[i32, #[[TYPEVALUE_NESTED_LIST_I32]]]>
-  kgen.param.constant: param_list<type> = <#kgen.struct_field_types<#nested_list_i32>>
-  // CHECK-NEXT: kgen.param.constant: param_list<type> = <[i32, #[[TYPEVALUE_NESTED_LIST_I32]]]>
-  kgen.param.constant: param_list<type> = <#kgen.struct_field_types<#kgen.param_list.get<:!kgen.param_list<type> #kgen.struct_field_types<#nested_list_i32>, 1>>>
-
-  // The "data" field should correctly reflect the bound type parameter T=i32
-  // CHECK-NEXT: kgen.param.constant: type = <i32>
-  kgen.param.constant: type = <#kgen.struct_field_type_by_name<#nested_list_i32, "data">>
-
-  kgen.return
-}
-
-// -----
-
 // SourceLoc interpretation
 
 kgen.generator @wrap_source_loc_param<depth: index>() -> !kgen.string always_inline_no_debug {

@@ -413,9 +413,6 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw_type_of:
   case Token::kw___functions_in_module:
   case Token::kw___get_current_function_name:
-  case Token::kw___struct_field_types:
-  case Token::kw___struct_field_names:
-  case Token::kw___struct_field_type_at_index:
   case Token::kw___struct_field_ref:
   case Token::kw___is_run_in_comptime_interpreter:
 #ifndef MODULAR_PRODUCTION
@@ -627,9 +624,6 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   case Token::kw_conforms_to:
   case Token::kw___functions_in_module:
   case Token::kw___get_current_function_name:
-  case Token::kw___struct_field_types:
-  case Token::kw___struct_field_names:
-  case Token::kw___struct_field_type_at_index:
   case Token::kw___struct_field_ref:
     if (failed(parseMagicFunction(result)))
       return failure();
@@ -1455,15 +1449,6 @@ ParseResult ExprParser::parseMagicFunction(ExprNode *&result) {
     break;
   case Token::kw___get_current_function_name:
     nodeKind = ExprNode::kGetCurrentFunctionName;
-    break;
-  case Token::kw___struct_field_types:
-    nodeKind = ExprNode::kStructFieldTypes;
-    break;
-  case Token::kw___struct_field_names:
-    nodeKind = ExprNode::kStructFieldNames;
-    break;
-  case Token::kw___struct_field_type_at_index:
-    nodeKind = ExprNode::kStructFieldTypeAtIndex;
     break;
   case Token::kw___struct_field_ref:
     nodeKind = ExprNode::kStructFieldRef;

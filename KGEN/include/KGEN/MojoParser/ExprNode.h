@@ -88,9 +88,6 @@ public:
     kConformsTo,                 // conforms_to(T, Trait)
     kFunctionsInModule,          // __functions_in_module()
     kGetCurrentFunctionName,     // __get_current_function_name()
-    kStructFieldTypes,           // __struct_field_types[T]()
-    kStructFieldNames,           // __struct_field_names[T]()
-    kStructFieldTypeAtIndex,     // __struct_field_type_at_index(T, idx)
     kStructFieldRef,             // __struct_field_ref(idx, s)
     kIsRunInComptimeInterpreter, // __is_run_in_comptime_interpreter
     kFirstMagicFunction = kGetMValueAsLitRef,

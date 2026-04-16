@@ -4244,22 +4244,6 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     return emitConformsTo(dest, emitter);
   }
 
-  // Struct field reflection magic functions take exactly one argument (a type).
-  if (kind == kStructFieldTypes || kind == kStructFieldNames) {
-    if (!checkArgCount(1))
-      return {};
-    if (kind == kStructFieldTypes)
-      return emitStructFieldTypes(dest, emitter);
-    return emitStructFieldNames(dest, emitter);
-  }
-
-  // struct_field_type_at_index takes two arguments: type and index.
-  if (kind == kStructFieldTypeAtIndex) {
-    if (!checkArgCount(2))
-      return {};
-    return emitStructFieldTypeAtIndex(dest, emitter);
-  }
-
   // struct_field_ref takes two arguments: index and struct reference.
   if (kind == kStructFieldRef) {
     if (!checkArgCount(2))
@@ -4555,37 +4539,7 @@ AnyValue MagicFunctionNode::emitFunctionsInModule(ValueDest &dest,
 // allows them to be evaluated during elaboration after generic type parameters
 // have been specialized.
 //
-// Note: struct_field_count is implemented purely in stdlib using
-// #kgen.param_list.size<#kgen.struct_field_types<T>> without a magic function.
-//
 // See stdlib/std/reflection/reflection.mojo for detailed documentation.
-
-std::optional<PValue>
-MagicFunctionNode::getValidatedStructTypeArg(IREmitter &emitter,
-                                             StringRef publicApiName) const {
-  // Get the type argument as a PValue.
-  PValue typeArg = emitter.emitExprPValue(subExprs[0], EC_TypeOf);
-  if (!typeArg || !typeArg.getIfTypeValue()) {
-    emitter.emitError(subExprs[0]->getLoc(),
-                      Twine("expected a type for ") + publicApiName)
-        << subExprs[0]->getRange();
-    return std::nullopt;
-  }
-
-  // Verify that the type is a struct type or trait-bound type parameter.
-  // For trait-bound types (T: AnyType), the actual struct type will be
-  // resolved when the function is instantiated.
-  auto metaType = ASTType(typeArg.getIfTypeValue()).extractMetaType();
-  if (!sugarIsaAndNonNull<LIT::StructMetaType>(metaType) &&
-      !sugarIsaAndNonNull<LIT::TraitType>(metaType)) {
-    emitter.emitError(subExprs[0]->getLoc())
-        << typeArg << " is not a struct type" << subExprs[0]->getRange();
-    return std::nullopt;
-  }
-
-  return typeArg;
-}
-
 static TraitType getAnyTypeTraitType(IREmitter &emitter, SMLoc loc) {
   TraitType anyType = emitter.shared.lookupBuiltinTraitType("AnyType", loc);
   if (!anyType) {
@@ -4593,140 +4547,6 @@ static TraitType getAnyTypeTraitType(IREmitter &emitter, SMLoc loc) {
     return {};
   }
   return anyType;
-}
-
-AnyValue MagicFunctionNode::emitStructFieldTypes(ValueDest &dest,
-                                                 IREmitter &emitter) const {
-  auto typeArg = getValidatedStructTypeArg(emitter, "struct_field_types");
-  if (!typeArg)
-    return {};
-
-  TraitType anyTypeTraitType = getAnyTypeTraitType(emitter, getLoc());
-  if (!anyTypeTraitType)
-    return {};
-
-  // Create the struct_field_types attribute. It will be evaluated during
-  // elaboration to return the actual field types.
-  MLIRContext *ctx = emitter.getContext();
-  auto paramListAttr =
-      emitter.shared.getEvaluationContext().getAndFold<StructFieldTypesAttr>(
-          ctx, typeArg->get(), ParamListType::get(anyTypeTraitType));
-
-  // Convert to a TypeList.
-  //     TypeList[Trait=AnyType, values: __mlir_type.`!kgen.param_list`]
-  auto listType =
-      emitter.shared.lookupBuiltinType("TypeList", emitter.declScope, getLoc());
-  if (!paramListAttr || sugarIsa<TypeCheckErrorType>(listType))
-    return {};
-
-  ASTDecl *decl = listType.getDecl(emitter.shared);
-  auto litStruct = dyn_cast_if_present<StructDeclOp>(decl->getIfOperation());
-  if (!litStruct || litStruct.getParams().size() != 2 ||
-      !sugarIsa<ParamListType>(litStruct.getParams()[1].getType())) {
-    emitter.emitError(getLoc(), "malformed TypeList type");
-    return {};
-  }
-
-  // Bind the TypeList[trait, value] parameter.
-  listType = litStruct.bindReference({PValue(anyTypeTraitType), paramListAttr});
-
-  // Create an instance of IntLiteral[val]()
-  return emitter.emitConstructorCall(
-      listType, CallOperands(CallSyntax::kTypeCall, this, {}), dest);
-}
-
-AnyValue MagicFunctionNode::emitStructFieldNames(ValueDest &dest,
-                                                 IREmitter &emitter) const {
-  auto typeArg = getValidatedStructTypeArg(emitter, "struct_field_names");
-  if (!typeArg)
-    return {};
-
-  // Create the struct_field_names attribute. It will be evaluated during
-  // elaboration to return the actual field names.
-  MLIRContext *ctx = emitter.getContext();
-  auto variadicType = ParamListType::get(StringType::get(ctx));
-  auto paramListAttr =
-      emitter.shared.getEvaluationContext().getAndFold<StructFieldNamesAttr>(
-          ctx, typeArg->get(), variadicType);
-
-  // Convert to a ParameterList.
-  //     ParameterList[type, values: __mlir_type.`!kgen.param_list`]
-  auto listType = emitter.shared.lookupBuiltinType("ParameterList",
-                                                   emitter.declScope, getLoc());
-  if (!paramListAttr || sugarIsa<TypeCheckErrorType>(listType))
-    return {};
-
-  ASTDecl *decl = listType.getDecl(emitter.shared);
-  auto litStruct = dyn_cast_if_present<StructDeclOp>(decl->getIfOperation());
-  if (!litStruct || litStruct.getParams().size() != 2 ||
-      !sugarIsa<ParamListType>(litStruct.getParams()[1].getType())) {
-    emitter.emitError(getLoc(), "malformed ParameterList type");
-    return {};
-  }
-
-  // Bind the TypeList[trait, value] parameter.
-  listType = litStruct.bindReference(
-      {PValue(variadicType.getElementType()), paramListAttr});
-
-  // Create an instance of IntLiteral[val]()
-  return emitter.emitConstructorCall(
-      listType, CallOperands(CallSyntax::kTypeCall, this, {}), dest);
-}
-
-AnyValue
-MagicFunctionNode::emitStructFieldTypeAtIndex(ValueDest &dest,
-                                              IREmitter &emitter) const {
-  MLIRContext *ctx = emitter.getContext();
-
-  // First argument: the struct type T
-  // getValidatedStructTypeArg returns a PValue with metatype wrapping, but we
-  // need the inner type wrapped with TypeParamAttr for StructFieldTypesAttr.
-  auto typeArg =
-      getValidatedStructTypeArg(emitter, "struct_field_type_at_index");
-  if (!typeArg)
-    return {};
-
-  // Extract the inner type from the metatype and wrap it fresh with
-  // TypeParamAttr for StructFieldTypesAttr.
-  Type innerType = typeArg->getIfTypeValue();
-  if (!innerType) {
-    emitter.emitError(subExprs[0]->getLoc(),
-                      "struct_field_type_at_index requires a type argument")
-        << subExprs[0]->getRange();
-    return {};
-  }
-
-  // Second argument: the index (can be parametric)
-  CValue indexCValue = emitter.emitIndex(subExprs[1], EC_MLIRMagic);
-  if (!indexCValue)
-    return {};
-
-  PValue indexPValue = indexCValue.getIfPValue();
-  if (!indexPValue) {
-    emitter.emitError(
-        subExprs[1]->getLoc(),
-        "struct_field_type_at_index requires a compile-time index")
-        << subExprs[1]->getRange();
-    return {};
-  }
-
-  TraitType anyTypeTraitType = getAnyTypeTraitType(emitter, getLoc());
-  if (!anyTypeTraitType)
-    return {};
-
-  // Create StructFieldTypesAttr: wrap the inner type with TypeParamAttr
-  auto variadicType = ParamListType::get(anyTypeTraitType);
-  TypedAttr structTypeAttr = TypeParamAttr::get(innerType, anyTypeTraitType);
-  auto fieldTypesAttr =
-      emitter.shared.getEvaluationContext().getAndFold<StructFieldTypesAttr>(
-          ctx, structTypeAttr, variadicType);
-
-  // Compute element type as VariadicGet(fieldTypes, index)
-  auto elementTypeAttr =
-      ParamListGetAttr::get(fieldTypesAttr, indexPValue.get());
-
-  // Return the type as a PValue (can be used in type position)
-  return emitter.emitResult(PValue(elementTypeAttr), this, dest);
 }
 
 AnyValue MagicFunctionNode::emitStructFieldRef(ValueDest &dest,
