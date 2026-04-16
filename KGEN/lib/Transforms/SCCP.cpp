@@ -396,7 +396,11 @@ LogicalResult SCCPAnalysis::processControlFlowNode(
       ++loopIter;
     }
 
-    if (workList.empty() && !skip) {
+    // If the exit state is empty, we might hit unreachable in the loop without
+    // visiting a break terminator. In that case, simply mark the loop results
+    // as Unknown in the else branch.
+    if (!cfStates->exitStates.valueLattices.empty() && workList.empty() &&
+        !skip) {
       // Merge analysis states if analyze loop converges.
       (void)mergeStates(state, cfStates->exitStates);
     } else {
