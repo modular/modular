@@ -271,31 +271,32 @@ class NamedMapping(DeviceMapping):
     """
 
     _mesh: DeviceMesh
-    _spec: tuple[SpecEntry, ...]
+    _spec: tuple[SpecEntry, ...] = ()
     _unreduced: frozenset[str] = frozenset()
     _priorities: tuple[int | None, ...] = ()
     _memory_kind: str | None = None
 
     def __post_init__(self) -> None:
-        # Validate axis names in spec entries.
-        for i, entry in enumerate(self._spec):
+        # Resolve spec entries that reference axis names not present in the
+        # mesh.  For example, a model defined with ("dp", "tp") placed on a
+        # TP-only mesh will have "dp" silently replaced by None (Replicated).
+        # This enables reuse of the same NamedMapping across different meshes.
+        mesh_axes = set(self._mesh.axis_names)
+        needs_resolve = False
+        for entry in self._spec:
             if entry is None:
                 continue
             axes = (entry,) if isinstance(entry, str) else entry
-            for axis_name in axes:
-                if axis_name not in self._mesh.axis_names:
-                    raise ValueError(
-                        f"Unknown mesh axis {axis_name!r} at tensor dim {i}. "
-                        f"Available: {self._mesh.axis_names}"
-                    )
-
-        # Validate unreduced axis names.
-        for axis_name in self._unreduced:
-            if axis_name not in self._mesh.axis_names:
-                raise ValueError(
-                    f"Unknown mesh axis {axis_name!r} in unreduced set. "
-                    f"Available: {self._mesh.axis_names}"
-                )
+            for a in axes:
+                if a not in mesh_axes:
+                    needs_resolve = True
+                    break
+        if not needs_resolve and self._unreduced - mesh_axes:
+            needs_resolve = True
+        if needs_resolve:
+            resolved = self._resolve(self._mesh)
+            object.__setattr__(self, "_spec", resolved._spec)
+            object.__setattr__(self, "_unreduced", resolved._unreduced)
 
         # Validate priorities length if provided.
         if self._priorities and len(self._priorities) != len(self._spec):
@@ -352,16 +353,81 @@ class NamedMapping(DeviceMapping):
     @property
     def is_fully_resolved(self) -> bool:
         """Returns True if every dimension has a concrete sharding decision."""
-        has_priorities = bool(self._priorities)
-        return not has_priorities
+        return not bool(self._priorities)
+
+    def _resolve(self, mesh: DeviceMesh) -> NamedMapping:
+        """Binds this spec to a mesh, dropping axes not present in the mesh.
+
+        Axis names in the spec that don't exist in the mesh are treated as
+        ``None`` (Replicated) — this enables graceful degradation when a
+        model defined for ``("dp", "tp")`` is placed on a TP-only mesh.
+
+        Args:
+            mesh: The device mesh to resolve against.
+
+        Returns:
+            A new ``NamedMapping`` with the mesh set and unknown axes
+            replaced by ``None``.
+        """
+        mesh_axes = set(mesh.axis_names)
+
+        def _filter_entry(entry: SpecEntry) -> SpecEntry:
+            if entry is None:
+                return None
+            if isinstance(entry, str):
+                return entry if entry in mesh_axes else None
+            # Multi-axis tuple: keep only axes present in mesh.
+            kept = tuple(a for a in entry if a in mesh_axes)
+            if not kept:
+                return None
+            return kept[0] if len(kept) == 1 else kept
+
+        resolved_spec = tuple(_filter_entry(e) for e in self._spec)
+        resolved_unreduced = self._unreduced & mesh_axes
+
+        return NamedMapping(
+            _mesh=mesh,
+            _spec=resolved_spec,
+            _unreduced=frozenset(resolved_unreduced),
+            _priorities=self._priorities,
+            _memory_kind=self._memory_kind,
+        )
+
+    @classmethod
+    def from_spec(
+        cls,
+        spec: tuple[SpecEntry, ...] = (),
+        mesh: DeviceMesh | None = None,
+        *,
+        _unreduced: frozenset[str] = frozenset(),
+        _priorities: tuple[int | None, ...] = (),
+        _memory_kind: str | None = None,
+    ) -> NamedMapping:
+        """Creates a NamedMapping, resolving mesh from context if needed.
+
+        This is the preferred constructor when the mesh may come from an
+        ambient context rather than being passed explicitly.
+
+        Args:
+            spec: One entry per tensor dimension.
+            mesh: The device mesh. If ``None``, falls back to
+                ``DeviceMesh.default()``.
+            _unreduced: Mesh axes with pending reductions.
+            _priorities: Per-dimension propagation priority (compiler-only).
+            _memory_kind: Memory tier for shard placement.
+        """
+        if mesh is None:
+            mesh = DeviceMesh.default()
+        return cls(
+            _mesh=mesh,
+            _spec=spec,
+            _unreduced=_unreduced,
+            _priorities=_priorities,
+            _memory_kind=_memory_kind,
+        )
 
     def to_placements(self) -> tuple[Placement, ...]:
-        """Converts to mesh-axis-indexed placements for eager dispatch.
-
-        Raises:
-            ConversionError: If the spec contains priorities
-                (which are compiler-only).
-        """
+        """Converts to mesh-axis-indexed placements for eager dispatch."""
         if not self.is_fully_resolved:
             if self._priorities:
                 raise ConversionError(
@@ -414,7 +480,8 @@ class NamedMapping(DeviceMapping):
             else:
                 entries.append(repr(e))
         spec_str = ", ".join(entries)
-        parts = [f"{self._mesh}, ({spec_str})"]
+        mesh_str = repr(self._mesh)
+        parts = [f"{mesh_str}, ({spec_str})"]
         if self._unreduced:
             parts.append(f"unreduced={set(self._unreduced)!r}")
         if self._priorities:

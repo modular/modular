@@ -18,7 +18,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from max.driver import Device
+from max.driver import CPU, Device
 
 
 @dataclass(frozen=True)
@@ -111,6 +111,11 @@ class DeviceMesh:
     def single(device: Device) -> DeviceMesh:
         """Creates a trivial single-device mesh."""
         return DeviceMesh(devices=(device,), mesh_shape=(1,), axis_names=("_",))
+
+    @staticmethod
+    def default() -> DeviceMesh:
+        """Returns a single-device mesh on the default device (CPU)."""
+        return DeviceMesh.single(CPU())
 
     @property
     def is_single(self) -> bool:

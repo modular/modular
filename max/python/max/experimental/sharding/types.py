@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Generic, TypeVar
 
 from max.dtype import DType
@@ -36,6 +37,7 @@ from max.graph import (
 )
 from max.graph.shape import ShapeLike
 
+from .mappings import DeviceMapping
 from .mesh import DeviceMesh
 from .placements import Placement, Sharded
 
@@ -190,4 +192,50 @@ class DistributedBufferType(DistributedType[BufferType]):
         return (
             f"DistributedBufferType(dtype={self.dtype}, shape=[{shape_str}], "
             f"mesh={self.mesh}, placements=[{placement_str}])"
+        )
+
+
+# ═════════════════════════════════════════════════════════════════════════
+#  TensorLayout — metadata snapshot for rule evaluation
+# ═════════════════════════════════════════════════════════════════════════
+
+
+@dataclass(frozen=True)
+class TensorLayout:
+    """Metadata snapshot of a distributed tensor for rule evaluation.
+
+    Bundles the tensor's dtype, shape, and distribution mapping.
+    The mapping stays abstract (DeviceMapping) — rules work with
+    any concrete mapping type (PlacementMapping, NamedMapping, etc.).
+
+    The shape is a Shape (list[Dim]), supporting both static and
+    symbolic dimensions for graph compilation compatibility.
+    """
+
+    dtype: DType
+    shape: Shape
+    mapping: DeviceMapping
+
+    def __init__(
+        self, dtype: DType, shape: ShapeLike, mapping: DeviceMapping
+    ) -> None:
+        object.__setattr__(self, "dtype", dtype)
+        object.__setattr__(self, "shape", Shape(shape))
+        object.__setattr__(self, "mapping", mapping)
+
+    @property
+    def rank(self) -> int:
+        """Number of dimensions."""
+        return len(self.shape)
+
+    @property
+    def mesh(self) -> DeviceMesh:
+        """The device mesh from the mapping."""
+        return self.mapping.mesh
+
+    def __repr__(self) -> str:
+        shape_str = ", ".join(str(d) for d in self.shape)
+        return (
+            f"TensorLayout(dtype={self.dtype}, shape=[{shape_str}], "
+            f"mapping={self.mapping})"
         )
