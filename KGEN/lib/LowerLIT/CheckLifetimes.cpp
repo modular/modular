@@ -19,6 +19,7 @@
 #include "KGEN/LITDialect/OriginTrackable.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/Compiler/Threading.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/Dominance.h"
@@ -196,18 +197,31 @@ insertDebugVariableForArg(OpBuilder &builder, FunctionLikeOp func,
 // TypeDeclInfo
 //===----------------------------------------------------------------------===//
 
-/// Information about a struct declarations, used for field sensitive analysis.
-/// Value tracking is completely field sensitive, tracking values at the level
-/// of individual fields in their flattened representation.  To do this, we need
-/// an efficient mapping that tells us the number of (fully flattened) fields in
-/// struct.
-struct TypeDeclInfo {
-  TypeDeclInfo(DenseMap<SymbolRefAttr, LIT::StructDeclOp> &&structMap,
-               DenseMap<SymbolRefAttr, FnOp> &&funcMap,
-               DenseMap<SymbolRefAttr, LIT::TraitDeclOp> &&traitMap,
-               Operation *module, mlir::LockedSymbolTableCollection *symtab)
+/// Module-level state shared across all worker threads in the CheckLifetimes
+/// pass. The declaration maps are immutable after construction; the counter
+/// uses atomic operations so no external lock is needed.
+struct WholeProgramState {
+  WholeProgramState(DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap,
+                    DenseMap<SymbolRefAttr, FnOp> funcMap,
+                    DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap)
       : structMap(std::move(structMap)), funcMap(std::move(funcMap)),
-        traitMap(std::move(traitMap)), evaluationContext(module, *symtab) {}
+        traitMap(std::move(traitMap)) {}
+
+  /// Immutable declaration maps, populated once before threading begins.
+  DenseMap<SymbolRefAttr, LIT::StructDeclOp> structMap;
+  DenseMap<SymbolRefAttr, FnOp> funcMap;
+  DenseMap<SymbolRefAttr, LIT::TraitDeclOp> traitMap;
+};
+
+/// Per-thread information about struct declarations, used for field sensitive
+/// analysis. Value tracking is completely field sensitive, tracking values at
+/// the level of individual fields in their flattened representation. To do
+/// this, we need an efficient mapping that tells us the number of (fully
+/// flattened) fields in a struct.
+struct TypeDeclInfo {
+  TypeDeclInfo(const WholeProgramState *shared, Operation *module,
+               mlir::LockedSymbolTableCollection *symtab)
+      : shared(shared), evaluationContext(module, *symtab) {}
 
   /// Return the total number of flattened fields in the specified type.
   unsigned getNumFieldsInType(Type type) const;
@@ -225,8 +239,9 @@ struct TypeDeclInfo {
 
   /// Return the struct decl for the specified StructType.
   LIT::StructDeclOp getStructDeclForType(LIT::StructType type) const {
-    auto it = structMap.find(type.getSymbol());
-    assert(it != structMap.end() && "reference to struct that wasn't declared");
+    auto it = shared->structMap.find(type.getSymbol());
+    assert(it != shared->structMap.end() &&
+           "reference to struct that wasn't declared");
     return it->second;
   }
   /// Return the trait decls for the specified TraitType (which may be a
@@ -235,8 +250,9 @@ struct TypeDeclInfo {
   getTraitDeclsForType(LIT::TraitType type) const {
     SmallVector<LIT::TraitDeclOp, 2> result;
     for (auto symbol : type.getSymbols()) {
-      auto it = traitMap.find(symbol);
-      assert(it != traitMap.end() && "reference to trait that wasn't declared");
+      auto it = shared->traitMap.find(symbol);
+      assert(it != shared->traitMap.end() &&
+             "reference to trait that wasn't declared");
       result.push_back(it->second);
     }
     return result;
@@ -256,21 +272,17 @@ struct TypeDeclInfo {
 
   /// Return the function for a given symbol name if known.
   FnOp getFuncForSymbol(SymbolRefAttr symbolRef) const {
-    auto it = funcMap.find(symbolRef);
-    return it != funcMap.end() ? it->second : FnOp();
+    auto it = shared->funcMap.find(symbolRef);
+    return it != shared->funcMap.end() ? it->second : FnOp();
   }
-
-  /// The next anonymous origin number to use in this function.
-  size_t nextAnonOriginNumber = 0;
 
   LIT::LITSymTabEvaluationContext *getEvaluationContext() const {
     return &evaluationContext;
   }
 
-private:
-  DenseMap<SymbolRefAttr, StructDeclOp> structMap;
-  DenseMap<SymbolRefAttr, FnOp> funcMap;
-  DenseMap<SymbolRefAttr, TraitDeclOp> traitMap;
+  /// Shared, immutable module-level state (declaration maps + anonymous-origin
+  /// counter). Not owned here.
+  const WholeProgramState *shared;
 
   /// Used for evaluating things like get_witness when we generate destructor
   /// calls.
@@ -389,7 +401,7 @@ TypeDeclInfo::getErrorMsgIfLinearType(Type type) const {
   if (auto generic = sugarDynCast<ParamType>(type)) {
     if (auto trait = sugarDynCast<TraitType>(generic.getParam().getType())) {
       for (SymbolRefAttr symbol : trait.getSymbols()) {
-        TraitDeclOp traitDecl(traitMap.at(symbol));
+        TraitDeclOp traitDecl(shared->traitMap.at(symbol));
 
         // If the trait has a linear type error message set, it means it does
         // not conform to ImplicitlyDestructible and is a linear type.
@@ -417,9 +429,8 @@ unsigned TypeDeclInfo::getNumFieldsInType(Type type) const {
 
   // If not, we compute it recursively.  Structs cannot be infinitely deep, so
   // we can just do this recursively.
-  SymbolRefAttr structSymbol = structType.getSymbol();
-  auto smIt = structMap.find(structSymbol);
-  assert(smIt != structMap.end() && smIt->second &&
+  auto smIt = shared->structMap.find(structType.getSymbol());
+  assert(smIt != shared->structMap.end() && smIt->second &&
          "reference to struct that wasn't declared");
   LIT::StructDeclOp decl = smIt->second;
 
@@ -487,6 +498,23 @@ TypeDeclInfo::getFieldContaining(LIT::StructType declRef,
 
   llvm_unreachable("invalid index into struct field numbering");
 }
+
+/// Per-thread cache for the CheckLifetimes pass. One instance is created per
+/// worker thread and reused across all functions processed by that thread,
+/// so struct field-layout results and origin finder results accumulate across
+/// functions rather than being recomputed for each one.
+struct PerThreadCache {
+  PerThreadCache(TypeDeclInfo &&typeDeclInfo)
+      : typeDeclInfo(std::move(typeDeclInfo)), originFinder() {}
+
+  /// Reset any shared state which could cause non-determinism in the
+  /// compiler.
+  void reset() { nextAnonOriginNumber = 0; }
+
+  TypeDeclInfo typeDeclInfo;
+  CachedOriginFinder originFinder;
+  size_t nextAnonOriginNumber{0};
+};
 
 //===----------------------------------------------------------------------===//
 // ValueInfo / ValueSet tracking
@@ -683,12 +711,9 @@ struct ValueSet {
   // This allows cached dominance computation within the current function.
   mlir::DominanceInfo domInfo;
 
-  /// This provides information about the types referenced from values, e.g. the
-  /// number of fields they have.
-  TypeDeclInfo &typeDeclInfo;
-
-  /// This provides efficient lookup for origins buried in MLIR types.
-  CachedOriginFinder &originFinder;
+  /// Per-thread analysis state cache. Stores the CachedOriginFinder and
+  /// TypeDeclInfo.
+  PerThreadCache &perThreadCache;
 
   /// When true, suppress debuginfo.kill markers for values whose type has
   /// no destructor.  This keeps trivially-destructible variables visible in
@@ -701,8 +726,7 @@ struct ValueSet {
   ///
   /// This sentinel is also used by DestructorInsertion as a marker for
   /// "unreachable" code to avoid unnecessary meets.
-  ValueSet(TypeDeclInfo &typeDeclInfo, FunctionLikeOp func,
-           CachedOriginFinder &originFinder,
+  ValueSet(PerThreadCache &perThreadCache, FunctionLikeOp func,
            bool extendTrivialDebugLifetimes = false);
 
   /// Return the number of values we are tracking.
@@ -713,6 +737,14 @@ struct ValueSet {
   /// Remove a tracked value from the valueset maps, and reset its ValueEntry to
   /// have a null Value.
   void eraseValueInfo(Value value);
+
+  CachedOriginFinder &getOriginFinder() const {
+    return perThreadCache.originFinder;
+  }
+
+  TypeDeclInfo &getTypeDeclInfo() const { return perThreadCache.typeDeclInfo; }
+
+  size_t nextCounterValue() { return perThreadCache.nextAnonOriginNumber++; }
 
   /// Return a reference to the entire value with the specified ID.
   ValueRef getFullValueRef(unsigned valueId) const {
@@ -748,7 +780,7 @@ struct ValueSet {
   /// for liveness.
   bool isTrivial(Type type, bool isIndirect) const {
     auto eltType = ValueRef::getDereferencedType(type, isIndirect);
-    return typeDeclInfo.isRegisterPassableTrivial(eltType);
+    return perThreadCache.typeDeclInfo.isRegisterPassableTrivial(eltType);
   }
 
   bool isTrivial(Value value, bool isIndirect) const {
@@ -783,7 +815,8 @@ struct ValueSet {
     auto structType = sugarDynCast<LIT::StructType>(eltType);
     if (!structType)
       return false;
-    return !typeDeclInfo.getStructDeclForType(structType).getDestructorAttr();
+    return !perThreadCache.typeDeclInfo.getStructDeclForType(structType)
+                .getDestructorAttr();
   }
 
   raw_ostream &printBV(const BitVector &bits, raw_ostream &os) const;
@@ -825,10 +858,9 @@ private:
 ///
 /// This sentinel is also used by DestructorInsertion as a marker for
 /// "unreachable" code to avoid unnecessary meets.
-ValueSet::ValueSet(TypeDeclInfo &typeDeclInfo, FunctionLikeOp func,
-                   CachedOriginFinder &originFinder,
+ValueSet::ValueSet(PerThreadCache &perThreadCache, FunctionLikeOp func,
                    bool extendTrivialDebugLifetimes)
-    : typeDeclInfo(typeDeclInfo), originFinder(originFinder),
+    : perThreadCache(perThreadCache),
       extendTrivialDebugLifetimes(extendTrivialDebugLifetimes), func(func) {
   addValue(Value(), OriginTrackable(Value()), DebugInfo::DILocalVariableAttr());
 
@@ -909,7 +941,7 @@ void ValueSet::addValue(Value val, const OriginTrackable &trackable,
       return;
     }
     Type valType = refType.getElementType();
-    numValueBits = typeDeclInfo.getNumFieldsInType(valType);
+    numValueBits = getTypeDeclInfo().getNumFieldsInType(valType);
 
     // Remember the origin if not unknown.
     auto origin = getCanonicalAttr(refType.getOrigin());
@@ -917,7 +949,7 @@ void ValueSet::addValue(Value val, const OriginTrackable &trackable,
       valueOrigin = origin;
   } else {
     // We don't track trivial values of register type.
-    if (typeDeclInfo.isRegisterPassableTrivial(val.getType()))
+    if (getTypeDeclInfo().isRegisterPassableTrivial(val.getType()))
       return;
     // We are only field sensitive for memory objects, not in-register values.
     numValueBits = 1;
@@ -1047,13 +1079,13 @@ ValueSet::getValueRefAndTypeForOrigin(TypedAttr origin) const {
     if (!containerType)
       return {valueRef, Type()};
     int fieldOffset =
-        typeDeclInfo.getFieldIndexOrInvalid(containerType, fieldName);
+        getTypeDeclInfo().getFieldIndexOrInvalid(containerType, fieldName);
     if (fieldOffset == -1)
       return {valueRef, Type()};
 
     // Figure out the declared type of the field.
     auto [fieldDecl, _, numFieldBits] =
-        typeDeclInfo.getFieldContaining(containerType, fieldOffset);
+        getTypeDeclInfo().getFieldContaining(containerType, fieldOffset);
     assert(fieldDecl.getNameAttr() == fieldName && "index/name mismatch");
 
     // Refine the ValueRef and type.
@@ -1107,12 +1139,12 @@ ValueRef ValueSet::getDirectValueRef(Value value, bool isDeref) const {
 
     // Figure out what subset of elements we have indexed to.
     auto containerType = structGER.getContainer().getType().getElementType();
-    unsigned fieldOffset = typeDeclInfo.getFieldIndex(
+    unsigned fieldOffset = getTypeDeclInfo().getFieldIndex(
         sugarCast<LIT::StructType>(containerType), structGER.getFieldAttr());
     unsigned startBit = baseVal.startBit + fieldOffset;
     auto resultType = structGER.getType().getElementType();
     return ValueRef{baseVal.valueId, startBit,
-                    startBit + typeDeclInfo.getNumFieldsInType(resultType),
+                    startBit + getTypeDeclInfo().getNumFieldsInType(resultType),
                     /*isIndirect=*/true};
   }
 
@@ -1345,7 +1377,7 @@ static void addBadValueNameToDiag(ValueRef valueRef, const BitVector &bits,
   // Emit the field prefix for the specified type.
   digIntoTypeAtFieldOffset(type, firstMissingFieldNo - fullValueStartBit,
                            firstPresentFieldNo - fullValueStartBit, diag,
-                           valueSet.typeDeclInfo);
+                           valueSet.getTypeDeclInfo());
   diag << "'";
 }
 
@@ -1633,8 +1665,9 @@ void UninitializedValueScan::scanBlock(Block &block) {
     resultEffects.clear();
     originEffects.clear();
     definedOrigins.clear();
-    auto overall = getOperationEffects(op, operandEffects, resultEffects,
-                                       originEffects, valueSet.originFinder);
+    auto overall =
+        getOperationEffects(op, operandEffects, resultEffects, originEffects,
+                            valueSet.getOriginFinder());
     /// If the operation is unknown, ignore it.
     if (overall == OverallOpValueEffect::unknownOp) {
       // NOTE: Can log here when extending things.
@@ -2221,7 +2254,7 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
   // that are missing.
   auto valueType = sugarCast<LIT::StructType>(valueRef.getValueType(value));
   LIT::StructDeclOp structDecl =
-      valueSet.typeDeclInfo.getStructDeclForType(valueType);
+      valueSet.getTypeDeclInfo().getStructDeclForType(valueType);
 
   // Initialize an evaluator so that we can resolve the field types.
   ParameterEvaluator evaluator;
@@ -2234,7 +2267,7 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
   unsigned nextBit = 0;
   for (StructFieldOp field : structDecl.getFieldDecls()) {
     auto fieldVal = RefStructGEROp::create(builder, value, field);
-    unsigned numBits = valueSet.typeDeclInfo.getNumFieldsInType(
+    unsigned numBits = valueSet.getTypeDeclInfo().getNumFieldsInType(
         evaluator.getReboundType(field.getType()));
     destroyValueIfNeeded(fieldVal, valueRef.getSubfield(nextBit, numBits),
                          consumedValues, builder);
@@ -2274,13 +2307,13 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
                                             ImplicitLocOpBuilder &builder) {
   Type destroyedType =
       ValueRef::getDereferencedType(value.getType(), valueRef.isIndirect);
-  TypedAttr dtor = valueSet.typeDeclInfo.getDestructorForType(destroyedType,
-                                                              builder.getLoc());
+  TypedAttr dtor = valueSet.getTypeDeclInfo().getDestructorForType(
+      destroyedType, builder.getLoc());
   if (!dtor) {
     // If there is no destructor, then this is either a trivial type or a
     // linear type.  If linear, emit the error message.
     if (std::optional<StringRef> errorMsg =
-            valueSet.typeDeclInfo.getErrorMsgIfLinearType(destroyedType)) {
+            valueSet.getTypeDeclInfo().getErrorMsgIfLinearType(destroyedType)) {
       ValueInfo &valueInfo = valueSet.getValueInfo(valueRef.valueId);
       auto diagOr = valueInfo.emitErrorIfNotDiagnosed(builder.getLoc(), "'");
       if (!diagOr)
@@ -2331,7 +2364,7 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
   // var).  If so, it needs to be stored into a temporary to invoke the
   // destructor, because it takes it by-ref.
   if (!isa<RefType>(value.getType())) {
-    size_t originNum = valueSet.typeDeclInfo.nextAnonOriginNumber++;
+    size_t originNum = valueSet.nextCounterValue();
     StringAttr originAttr =
         builder.getStringAttr("__dtor_tmp__`" + Twine(originNum));
     auto tmpVar = VarDeclOp::create(
@@ -2427,8 +2460,8 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
     return DtorEmissionResult::KeepOp;
 
   // See if we can resolve the callee.
-  FnOp callee =
-      valueSet.typeDeclInfo.getFuncForSymbol(copyInitCall.getDirectCallee());
+  FnOp callee = valueSet.getTypeDeclInfo().getFuncForSymbol(
+      copyInitCall.getDirectCallee());
   if (!callee ||
       callee.getSpecialFunctionKind() != SpecialFunctionKind::kCopyCtor)
     return DtorEmissionResult::KeepOp;
@@ -2440,7 +2473,7 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
   // Linear types shouldn't "optimize things into working", they should
   // predictably generate an error message when an implicit destructor (such as
   // what we're processing in this code) is needed.
-  if (!valueSet.typeDeclInfo.getDestructorForType(
+  if (!valueSet.getTypeDeclInfo().getDestructorForType(
           cast<RefType>(copySrcMem.getType()).getElementType(),
           opWithUse->getLoc()))
     return DtorEmissionResult::KeepOp;
@@ -2786,8 +2819,8 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
   Type destroyedType = srcRefType.getElementType();
 
   // Otherwise, try to promote to a __moveinit__ call if present.
-  SymbolConstantAttr moveCtor =
-      valueSet.typeDeclInfo.getMoveInitForType(destroyedType, builder.getLoc());
+  SymbolConstantAttr moveCtor = valueSet.getTypeDeclInfo().getMoveInitForType(
+      destroyedType, builder.getLoc());
   if (!moveCtor)
     return CopyInitSuccess::Failed;
 
@@ -3006,8 +3039,9 @@ void DestructorInsertion::scanBlock(Block &block) {
     operandEffects.clear();
     resultEffects.clear();
     originEffects.clear();
-    auto overall = getOperationEffects(op, operandEffects, resultEffects,
-                                       originEffects, valueSet.originFinder);
+    auto overall =
+        getOperationEffects(op, operandEffects, resultEffects, originEffects,
+                            valueSet.getOriginFinder());
     switch (overall) {
     case OverallOpValueEffect::unknownOp:
       // NOTE: Enable logging when debugging.
@@ -3742,7 +3776,8 @@ static void clearTrivialFields(ValueRef valueRef, Type valueType,
   // Otherwise, this may be a subfield of an overall value.  Zoom in to see if
   // valueRef is referring to a trivial subfield of the overall object.
   unsigned nextBit = 0;
-  for (auto field : valueSet.typeDeclInfo.getStructDeclForType(valueDRType)
+  for (auto field : valueSet.getTypeDeclInfo()
+                        .getStructDeclForType(valueDRType)
                         .getFieldDecls()) {
     // Rebound the field type first before we query the number of fields. This
     // resolves potential generic fields.
@@ -3751,7 +3786,7 @@ static void clearTrivialFields(ValueRef valueRef, Type valueType,
     //    var first: T
     // ```
     Type fieldType = field.getReboundType(valueDRType);
-    unsigned numBits = valueSet.typeDeclInfo.getNumFieldsInType(fieldType);
+    unsigned numBits = valueSet.getTypeDeclInfo().getNumFieldsInType(fieldType);
     // If this field has consumed bits, and if has trivial type, force it
     // back to being non-consumed.  This can allow the proper correctness
     // check to work and make the error diagnostic more accurate.
@@ -3882,7 +3917,7 @@ bool DestructorInsertion::scheduleNeededDtors(ValueRef use,
   // we have to destroy 'aggregate.field1'.  Figure out what access path we need
   // to destroy.
   auto [accessPath, adjustedUse] = computeAccessPathForMaxUnconsumedField(
-      use, consumedValues, valueInfo, valueSet.typeDeclInfo);
+      use, consumedValues, valueInfo, valueSet.getTypeDeclInfo());
 
   // If we were passed in a field that matches what we need, use it to avoid
   // inserting additional GER operations.  Otherwise we re-derive from the root.
@@ -4037,6 +4072,7 @@ namespace M::KGEN {
 } // namespace M::KGEN
 
 namespace {
+
 struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
   using CheckLifetimesBase::CheckLifetimesBase;
 
@@ -4048,30 +4084,37 @@ struct CheckLifetimes : impl::CheckLifetimesBase<CheckLifetimes> {
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     mlir::LockedSymbolTableCollection sharedSymtabs(analysis.getSymbolTables());
 
-    // Process all the structs into TypeDeclInfo.
-    TypeDeclInfo typeDeclInfo(std::move(structMap), std::move(funcMap),
-                              std::move(traitMap), getOperation(),
-                              &sharedSymtabs);
-    CachedOriginFinder originFinder;
+    // Build the shared, immutable module-level state.
+    WholeProgramState sharedState(std::move(structMap), std::move(funcMap),
+                                  std::move(traitMap));
 
-    // TODO: Do in parallel, watch out for mutations of TypeDeclInfo and
-    // originFinder though!
-    bool hadError = false;
-    for (auto func : functionVector)
-      hadError |= failed(processFunction(func, typeDeclInfo, originFinder));
+    TypeDeclInfo typeDeclInfo(&sharedState, getOperation(), &sharedSymtabs);
+
+    std::atomic<bool> hadError = false;
+    // Each worker thread gets its own Cache (TypeDeclInfo + CachedOriginFinder)
+    // that persists across all functions it processes.
+    PerThreadCache cache(std::move(typeDeclInfo));
+    M::parallelForEach(
+        &getContext(), functionVector,
+        [&](PerThreadCache &cache, FunctionLikeOp func) {
+          if (failed(processFunction(func, cache)))
+            hadError = true;
+
+          cache.reset();
+        },
+        cache);
 
     if (hadError)
-      return signalPassFailure();
+      signalPassFailure();
   }
 
-  LogicalResult processFunction(FunctionLikeOp func, TypeDeclInfo &typeDeclInfo,
-                                CachedOriginFinder &originFinder);
+  LogicalResult processFunction(FunctionLikeOp func,
+                                PerThreadCache &perThreadCache);
 };
 } // namespace
 
-LogicalResult
-CheckLifetimes::processFunction(FunctionLikeOp func, TypeDeclInfo &typeDeclInfo,
-                                CachedOriginFinder &originFinder) {
+LogicalResult CheckLifetimes::processFunction(FunctionLikeOp func,
+                                              PerThreadCache &perThreadCache) {
 
   // If the function is a trait function or something else unreachable, we don't
   // need to process it.
@@ -4087,8 +4130,7 @@ CheckLifetimes::processFunction(FunctionLikeOp func, TypeDeclInfo &typeDeclInfo,
 
   // Walk #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
-  ValueSet valueSet(typeDeclInfo, func, originFinder,
-                    extendTrivialDebugLifetimes);
+  ValueSet valueSet(perThreadCache, func, extendTrivialDebugLifetimes);
 
   // Walk #2: Scan the function and identify any uses of values that are not
   // defined, emitting diagnostics as we go.
