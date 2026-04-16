@@ -147,11 +147,9 @@ struct Variadic:
         type: Trait,
         element_types: Variadic.TypesOfTrait[Trait],
     ] = _ReduceVariadicAndIdxToValue[
-        BaseVal=Variadic.values[False],
+        BaseVal=False,
         ParamListType=element_types,
         Reducer=_ContainsReducer[Trait=Trait, Type=type, ...],
-    ][
-        0
     ]
     """
     Check if a type is contained in a variadic sequence.
@@ -168,12 +166,10 @@ struct Variadic:
         value: T,
         element_values: Variadic.ValuesOfType[T],
     ] = _ReduceValueAndIdxToValue[
-        BaseVal=Variadic.values[False],
+        BaseVal=False,
         ParamListType=element_values,
         #  Curry `_ContainsValueReducer` to fit the reducer signature
         Reducer=_ContainsValueReducer[T=T, value=value, ...],
-    ][
-        0
     ]
     """
     Check if a value is contained in a variadic sequence of values.
@@ -570,10 +566,10 @@ struct TypeList[
     """Returns this type list in reverse order."""
 
     comptime contains[type: Self.Trait] = _ReduceVariadicAndIdxToValue[
-        BaseVal=Variadic.values[False],
+        BaseVal=False,
         ParamListType=Self.values,
         Reducer=_ContainsReducer[Trait=Self.Trait, Type=type, ...],
-    ][0]
+    ]
     """Checks if a type is contained in this type list.
 
     Parameters:
@@ -1726,66 +1722,62 @@ Parameters:
 
 
 comptime _ReduceValueAndIdxToValue[
-    To: AnyType,
-    From: AnyType,
+    FromAndTo: AnyType,
+    ListEltType: AnyType,
     //,
     *,
-    BaseVal: Variadic.ValuesOfType[To],
-    ParamListType: Variadic.ValuesOfType[From],
-    Reducer: _ReduceValueIdxGeneratorTypeGenerator[
-        Variadic.ValuesOfType[To], From
-    ],
+    BaseVal: FromAndTo,
+    ParamListType: Variadic.ValuesOfType[ListEltType],
+    Reducer: _ReduceValueIdxGeneratorTypeGenerator[FromAndTo, ListEltType],
 ] = __mlir_attr[
     `#kgen.param_list.reduce<`,
     BaseVal,
     `,`,
     ParamListType,
     `,`,
-    _IndexToIntValueWrap[From, Variadic.ValuesOfType[To], Reducer, ...],
+    _IndexToIntValueWrap[ListEltType, FromAndTo, Reducer, ...],
     `> : `,
-    type_of(BaseVal),
+    +FromAndTo,
 ]
 """Construct a new variadic of values using a reducer over an input variadic of
 values.
 
 Parameters:
-    To: The type of the output variadic values.
-    From: The type of the input variadic values.
+    FromAndTo: The type of the input and output result.
+    ListEltType: The common trait bound for the input list.
     BaseVal: The initial value to reduce on.
     ParamListType: The variadic of values to be reduced.
-    Reducer: A `[BaseVal: Variadic.ValuesOfType[To], Ts: Variadic.ValuesOfType[From], idx: Int] -> Variadic.ValuesOfType[To]` that does the reduction.
+    Reducer: A `[BaseVal: FromAndTo, Ts: *ListEltType, idx: Int] -> FromAndTo` that does the reduction.
 """
 
 
 comptime _ReduceVariadicAndIdxToValue[
-    To: AnyType,
-    From: type_of(AnyType),
+    FromAndTo: AnyType,
+    ListEltType: type_of(AnyType),
     //,
     *,
-    BaseVal: Variadic.ValuesOfType[To],
-    ParamListType: Variadic.TypesOfTrait[From],
-    Reducer: _ReduceVariadicIdxGeneratorTypeGenerator[
-        Variadic.ValuesOfType[To], From
-    ],
+    BaseVal: FromAndTo,
+    ParamListType: Variadic.TypesOfTrait[ListEltType],
+    Reducer: _ReduceVariadicIdxGeneratorTypeGenerator[FromAndTo, ListEltType],
 ] = __mlir_attr[
     `#kgen.param_list.reduce<`,
     BaseVal,
     `,`,
     ParamListType,
     `,`,
-    _IndexToIntWrap[From, Variadic.ValuesOfType[To], Reducer, ...],
+    _IndexToIntWrap[ListEltType, FromAndTo, Reducer, ...],
     `> : `,
-    type_of(BaseVal),
+    +FromAndTo,
 ]
 """Construct a new variadic of types using a reducer. To reduce to a single
 type, one could reduce the input to a single element variadic instead.
 
 Parameters:
-    To: The type of the output variadic values.
-    From: The common trait bound for the input variadic types.
+    FromAndTo: The type of the input and output result.
+    ListEltType: The common trait bound for the input list.
     BaseVal: The initial value to reduce on.
     ParamListType: The variadic to be reduced.
-    Reducer: A `[BaseVal: Variadic.ValuesOfType[To], Ts: *From, idx: index] -> To` that does the reduction.
+    Reducer: A `[BaseVal: FromAndTo, Ts: *ListEltType, idx: index] -> To` that does the reduction.
 """
 
 
@@ -1889,18 +1881,18 @@ Parameters:
 comptime _ContainsReducer[
     Trait: type_of(AnyType),
     Type: Trait,
-    Prev: Variadic.ValuesOfType[Bool],
+    Prev: Bool,
     From: Variadic.TypesOfTrait[Trait],
     idx: SIMDSize,
-] = Variadic.values[_type_is_eq_parse_time[From[idx], Type]() or Prev[0]]
+] = _type_is_eq_parse_time[From[idx], Type]() or Prev
 
 comptime _ContainsValueReducer[
     T: Equatable,
     value: T,
-    Prev: Variadic.ValuesOfType[Bool],
+    Prev: Bool,
     From: Variadic.ValuesOfType[T],
     idx: SIMDSize,
-] = Variadic.values[From[idx] == value or Prev[0]]
+] = From[idx] == value or Prev
 
 comptime _MapTypeToTypeReducer[
     FromTrait: type_of(AnyType),

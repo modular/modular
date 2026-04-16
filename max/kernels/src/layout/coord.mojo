@@ -1555,55 +1555,46 @@ def _get_flattened[
 
 
 comptime _AllStaticReducer[
-    Prev: Variadic.ValuesOfType[Bool],
+    Prev: Bool,
     From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = (Variadic.values[From[idx].is_static_value and Prev[0]])
+] = From[idx].is_static_value and Prev
 
 
 comptime _AllStatic[*element_types: CoordLike] = _ReduceVariadicAndIdxToValue[
-    BaseVal=Variadic.values[True],
+    BaseVal=True,
     ParamListType=element_types.values,
     Reducer=_AllStaticReducer,
-][0]
+]
 
 comptime _AllEqualReducer[
     T: AnyType,
-    Prev: Variadic.ValuesOfType[Bool],
+    Prev: Bool,
     From: Variadic.TypesOfTrait[AnyType],
     idx: Int,
-] = (
-    Variadic.values[
-        _type_is_eq_parse_time[From[idx], T]() and (Prev[0] or idx == 0)
-    ]
-)
-
+] = _type_is_eq_parse_time[From[idx], T]() and (Prev or idx == 0)
 
 comptime _AllEqual[
     T: AnyType, *element_types: AnyType
 ] = _ReduceVariadicAndIdxToValue[
-    BaseVal=Variadic.values[False],
+    BaseVal=False,
     ParamListType=element_types.values,
     Reducer=_AllEqualReducer[T, ...],
-][
-    0
 ]
 
 comptime _StaticProductReducer[
-    Prev: Variadic.ValuesOfType[Int],
+    Prev: Int,
     From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = (Variadic.values[From[idx].static_value * Prev[0]])
+] = From[idx].static_value * Prev
 
 
 comptime _StaticProduct[
     *element_types: CoordLike
 ] = _ReduceVariadicAndIdxToValue[
-    BaseVal=Variadic.values[1],
+    BaseVal=1,
     ParamListType=element_types.values,
     Reducer=_StaticProductReducer,
-][
-    0
 ]
 
 comptime _IntToComptimeIntMapper[

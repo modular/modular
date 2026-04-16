@@ -16,10 +16,10 @@
 from std.builtin.variadics import _ReduceVariadicAndIdxToValue
 
 comptime AllWritable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=Variadic.values[True],
+    BaseVal=True,
     ParamListType=Ts.values,
     Reducer=_AllWritableReducer,
-][0]
+]
 """Evaluates to `True` if all types in `Ts` conform to `Writable`, `False` otherwise.
 
 Parameters:
@@ -27,16 +27,16 @@ Parameters:
 """
 
 comptime _AllWritableReducer[
-    Prev: Variadic.ValuesOfType[Bool],
+    Prev: Bool,
     From: Variadic.TypesOfTrait[AnyType],
     idx: SIMDSize,
-] = Variadic.values[conforms_to(From[idx], Writable) and Prev[0]]
+] = conforms_to(From[idx], Writable) and Prev
 
 comptime AllMovable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=Variadic.values[True],
+    BaseVal=True,
     ParamListType=Ts.values,
     Reducer=_AllMovableReducer,
-][0]
+]
 """Evaluates to `True` if all types in `Ts` conform to `Movable`, `False` otherwise.
 
 Parameters:
@@ -44,16 +44,16 @@ Parameters:
 """
 
 comptime _AllMovableReducer[
-    Prev: Variadic.ValuesOfType[Bool],
+    Prev: Bool,
     From: Variadic.TypesOfTrait[AnyType],
     idx: SIMDSize,
-] = Variadic.values[conforms_to(From[idx], Movable) and Prev[0]]
+] = conforms_to(From[idx], Movable) and Prev
 
 comptime AllCopyable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=Variadic.values[True],
+    BaseVal=True,
     ParamListType=Ts.values,
     Reducer=_AllCopyableReducer,
-][0]
+]
 """Evaluates to `True` if all types in `Ts` conform to `Copyable`, `False` otherwise.
 
 Parameters:
@@ -61,19 +61,17 @@ Parameters:
 """
 
 comptime _AllCopyableReducer[
-    Prev: Variadic.ValuesOfType[Bool],
+    Prev: Bool,
     From: Variadic.TypesOfTrait[AnyType],
     idx: SIMDSize,
-] = Variadic.values[conforms_to(From[idx], Copyable) and Prev[0]]
+] = conforms_to(From[idx], Copyable) and Prev
 
 comptime AllImplicitlyCopyable[
     *Ts: AnyType
 ]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=Variadic.values[True],
+    BaseVal=True,
     ParamListType=Ts.values,
     Reducer=_AllImplicitlyCopyableReducer,
-][
-    0
 ]
 """Evaluates to `True` if all types in `Ts` conform to `ImplicitlyCopyable`, `False` otherwise.
 
@@ -82,16 +80,16 @@ Parameters:
 """
 
 comptime _AllImplicitlyCopyableReducer[
-    Prev: Variadic.ValuesOfType[Bool],
+    Prev: Bool,
     From: Variadic.TypesOfTrait[AnyType],
     idx: SIMDSize,
-] = Variadic.values[conforms_to(From[idx], ImplicitlyCopyable) and Prev[0]]
+] = conforms_to(From[idx], ImplicitlyCopyable) and Prev
 
 comptime AllDefaultable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=Variadic.values[True],
+    BaseVal=True,
     ParamListType=Ts.values,
     Reducer=_AllDefaultableReducer,
-][0]
+]
 """Evaluates to `True` if all types in `Ts` conform to `Defaultable`, `False` otherwise.
 
 Parameters:
@@ -99,16 +97,16 @@ Parameters:
 """
 
 comptime _AllDefaultableReducer[
-    Prev: Variadic.ValuesOfType[Bool],
+    Prev: Bool,
     From: Variadic.TypesOfTrait[AnyType],
     idx: SIMDSize,
-] = Variadic.values[conforms_to(From[idx], Defaultable) and Prev[0]]
+] = conforms_to(From[idx], Defaultable) and Prev
 
 comptime AllEquatable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=Variadic.values[True],
+    BaseVal=True,
     ParamListType=Ts.values,
     Reducer=_AllEquatableReducer,
-][0]
+]
 """Evaluates to `True` if all types in `Ts` conform to `Equatable`, `False` otherwise.
 
 Parameters:
@@ -116,16 +114,16 @@ Parameters:
 """
 
 comptime _AllEquatableReducer[
-    Prev: Variadic.ValuesOfType[Bool],
+    Prev: Bool,
     From: Variadic.TypesOfTrait[AnyType],
     idx: SIMDSize,
-] = Variadic.values[conforms_to(From[idx], Equatable) and Prev[0]]
+] = conforms_to(From[idx], Equatable) and Prev
 
 comptime AllHashable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=Variadic.values[True],
+    BaseVal=True,
     ParamListType=Ts.values,
     Reducer=_AllHashableReducer,
-][0]
+]
 """Evaluates to `True` if all types in `Ts` conform to `Hashable`, `False` otherwise.
 
 Parameters:
@@ -133,19 +131,17 @@ Parameters:
 """
 
 comptime _AllHashableReducer[
-    Prev: Variadic.ValuesOfType[Bool],
+    Prev: Bool,
     From: Variadic.TypesOfTrait[AnyType],
     idx: SIMDSize,
-] = Variadic.values[conforms_to(From[idx], Hashable) and Prev[0]]
+] = conforms_to(From[idx], Hashable) and Prev
 
 comptime AllImplicitlyDestructible[
     *Ts: AnyType
 ]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=Variadic.values[True],
+    BaseVal=True,
     ParamListType=Ts.values,
     Reducer=_AllImplicitlyDestructibleReducer,
-][
-    0
 ]
 """Evaluates to `True` if all types in `Ts` conform to `ImplicitlyDestructible`, `False` otherwise.
 
@@ -154,16 +150,16 @@ Parameters:
 """
 
 comptime _AllImplicitlyDestructibleReducer[
-    Prev: Variadic.ValuesOfType[Bool],
+    Prev: Bool,
     From: Variadic.TypesOfTrait[AnyType],
     idx: SIMDSize,
-] = Variadic.values[conforms_to(From[idx], ImplicitlyDestructible) and Prev[0]]
+] = conforms_to(From[idx], ImplicitlyDestructible) and Prev
 
 comptime AllRegisterPassable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=Variadic.values[True],
+    BaseVal=True,
     ParamListType=Ts.values,
     Reducer=_AllRegisterPassableReducer,
-][0]
+]
 """Evaluates to `True` if all types in `Ts` conform to `RegisterPassable`, `False` otherwise.
 
 Parameters:
@@ -171,7 +167,7 @@ Parameters:
 """
 
 comptime _AllRegisterPassableReducer[
-    Prev: Variadic.ValuesOfType[Bool],
+    Prev: Bool,
     From: Variadic.TypesOfTrait[AnyType],
     idx: SIMDSize,
-] = Variadic.values[conforms_to(From[idx], RegisterPassable) and Prev[0]]
+] = conforms_to(From[idx], RegisterPassable) and Prev

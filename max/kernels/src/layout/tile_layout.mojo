@@ -755,23 +755,19 @@ def _types_to_int_tuple[Types: TypeList[Trait=CoordLike, ...]]() -> IntTuple:
 
 comptime _StaticCosizeReducer[
     Strides: Variadic.TypesOfTrait[CoordLike],
-    Prev: Variadic.ValuesOfType[Int],
+    Prev: Int,
     From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = Variadic.values[
-    (From[idx].static_value - 1) * Strides[idx].static_value + Prev[0]
-]
+] = (From[idx].static_value - 1) * Strides[idx].static_value + Prev
 
 
 comptime _StaticCosize[
     Shapes: Variadic.TypesOfTrait[CoordLike],
     Strides: Variadic.TypesOfTrait[CoordLike],
 ] = _ReduceVariadicAndIdxToValue[
-    BaseVal=Variadic.values[1],
+    BaseVal=1,
     ParamListType=Shapes,
     Reducer=_StaticCosizeReducer[Strides=Strides, ...],
-][
-    0
 ]
 
 
@@ -2111,10 +2107,10 @@ check length match without descending further."""
 comptime _WCReducer3[
     layout_types: Variadic.TypesOfTrait[CoordLike],
     coord_types: Variadic.TypesOfTrait[CoordLike],
-    Prev: Variadic.ValuesOfType[Bool],
+    Prev: Bool,
     From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = Variadic.values[Prev[0] and _WCPair3[layout_types[idx], coord_types[idx]]]
+] = Prev and _WCPair3[layout_types[idx], coord_types[idx]]
 """AND-accumulates depth-3 pair checks over element pairs."""
 
 
@@ -2123,10 +2119,10 @@ comptime _WCPair2[L: CoordLike, C: CoordLike] = (
         False if not L.is_tuple else (
             False if TypeList[L.ParamListType].size
             != TypeList[C.ParamListType].size else _ReduceVariadicAndIdxToValue[
-                BaseVal=Variadic.values[True],
+                BaseVal=True,
                 ParamListType=C.ParamListType,
                 Reducer=_WCReducer3[L.ParamListType, C.ParamListType, ...],
-            ][0]
+            ]
         )
     )
 )
@@ -2136,10 +2132,10 @@ comptime _WCPair2[L: CoordLike, C: CoordLike] = (
 comptime _WCReducer2[
     layout_types: Variadic.TypesOfTrait[CoordLike],
     coord_types: Variadic.TypesOfTrait[CoordLike],
-    Prev: Variadic.ValuesOfType[Bool],
+    Prev: Bool,
     From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = Variadic.values[Prev[0] and _WCPair2[layout_types[idx], coord_types[idx]]]
+] = Prev and _WCPair2[layout_types[idx], coord_types[idx]]
 """AND-accumulates depth-2 pair checks over element pairs."""
 
 
@@ -2148,10 +2144,10 @@ comptime _WCPair1[L: CoordLike, C: CoordLike] = (
         False if not L.is_tuple else (
             False if TypeList[L.ParamListType].size
             != TypeList[C.ParamListType].size else _ReduceVariadicAndIdxToValue[
-                BaseVal=Variadic.values[True],
+                BaseVal=True,
                 ParamListType=C.ParamListType,
                 Reducer=_WCReducer2[L.ParamListType, C.ParamListType, ...],
-            ][0]
+            ]
         )
     )
 )
@@ -2161,10 +2157,10 @@ comptime _WCPair1[L: CoordLike, C: CoordLike] = (
 comptime _WCReducer1[
     layout_types: Variadic.TypesOfTrait[CoordLike],
     coord_types: Variadic.TypesOfTrait[CoordLike],
-    Prev: Variadic.ValuesOfType[Bool],
+    Prev: Bool,
     From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = Variadic.values[Prev[0] and _WCPair1[layout_types[idx], coord_types[idx]]]
+] = Prev and _WCPair1[layout_types[idx], coord_types[idx]]
 """AND-accumulates depth-1 pair checks over element pairs."""
 
 
@@ -2174,10 +2170,10 @@ comptime _WeaklyCompatible[
 ] = (
     False if TypeList[layout_types].size
     != TypeList[coord_types].size else _ReduceVariadicAndIdxToValue[
-        BaseVal=Variadic.values[True],
+        BaseVal=True,
         ParamListType=coord_types,
         Reducer=_WCReducer1[layout_types, coord_types, ...],
-    ][0]
+    ]
 )
 """Top-level variadic pair check (depth 0): checks that both variadics have
 the same length and all element pairs are weakly compatible."""
