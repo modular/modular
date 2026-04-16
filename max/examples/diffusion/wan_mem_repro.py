@@ -41,8 +41,9 @@ from max.pipelines.lib.pipeline_variants.pixel_generation import (
 )
 
 CONFIGS = {
-    "480p": (480, 832, 49, 30),
-    "720p": (720, 1280, 49, 30),
+    "480p_49f": (480, 832, 49, 30),
+    "480p_81f": (480, 832, 81, 50),
+    "720p_49f": (720, 1280, 49, 30),
 }
 
 
@@ -115,16 +116,24 @@ async def _build_inputs(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="Wan-AI/Wan2.1-T2V-14B-Diffusers")
+    parser.add_argument("--model", default="Wan-AI/Wan2.2-T2V-A14B-Diffusers")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--order",
-        default="720-first",
-        choices=["720-first", "480-first"],
+        default="escalating",
+        choices=["escalating", "descending"],
+        help=(
+            "escalating: 480p/49f -> 480p/81f -> 720p/49f (OOM repro);"
+            " descending: 720p/49f -> 480p/81f -> 480p/49f"
+        ),
     )
     args = parser.parse_args()
 
-    order = ["720p", "480p"] if args.order == "720-first" else ["480p", "720p"]
+    orders = {
+        "escalating": ["480p_49f", "480p_81f", "720p_49f"],
+        "descending": ["720p_49f", "480p_81f", "480p_49f"],
+    }
+    order = orders[args.order]
 
     print(f"Loading pipeline ({args.model})...", flush=True)
     pipeline, tokenizer = _load_pipeline(args.model)

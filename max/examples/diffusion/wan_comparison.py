@@ -76,8 +76,9 @@ from PIL import Image
 
 # Varying-input configurations for systematic memory/performance testing.
 # Each tuple is `(height, width, num_frames, num_inference_steps)`.
-# Ordered from smallest to largest estimated memory footprint so we can
-# identify the exact configuration that causes an OOM or other failure.
+# Ordered from largest to smallest estimated memory footprint so the
+# biggest allocation lands first while the memory manager has maximum
+# headroom, allowing more configurations to succeed before OOM.
 #
 # B200 memory budget (192 GB HBM3e, ~185 GB usable):
 #   - DiT weights (14B, bf16) x 2 experts (MoE dual-load): ~56 GB
@@ -95,12 +96,16 @@ from PIL import Image
 #   720p/81f   → ~80 GB   (seq_len ~76k)
 #
 VARIED_CONFIGS: list[tuple[int, int, int, int]] = [
-    # --- Tier 1: Small / fast (well under 80 GB) ---
-    (480, 832, 49, 30),  # ~74 GB — baseline sanity check
-    (480, 832, 81, 50),  # ~76 GB — standard 480p
+    # Ordered from largest to smallest estimated memory footprint
+    # (descending) so the biggest allocation happens first while the
+    # memory manager has maximum headroom — matching the descending
+    # strategy in wan_mem_repro.py.
     # --- Tier 2: Medium 720p (80-90 GB) ---
-    (720, 1280, 49, 30),  # ~77 GB — 720p short clip
     (720, 1280, 81, 50),  # ~80 GB — standard 720p, 81 frames
+    (720, 1280, 49, 30),  # ~77 GB — 720p short clip
+    # --- Tier 1: Small / fast (well under 80 GB) ---
+    (480, 832, 81, 50),  # ~76 GB — standard 480p
+    (480, 832, 49, 30),  # ~74 GB — baseline sanity check
 ]
 
 # Prompts following the Wan2.1 recommended formula:
