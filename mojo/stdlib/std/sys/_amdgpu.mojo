@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import InlineArray
-from std.os import Atomic
+from std.os.atomic import Atomic, Consistency
 from std.sys.intrinsics import (
     ballot,
     implicitarg_ptr,
@@ -62,7 +62,7 @@ def update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, ...]):
             UInt64, ExternalOrigin[mut=True], address_space=AddressSpace.GLOBAL
         ](unsafe_from_address=Int(mb))
         var id = sig[].event_id.cast[DType.uint64]()
-        Atomic.store(mb_ptr, id)
+        Atomic.store[ordering=Consistency.RELEASE](mb_ptr, id)
         sendmsg(1 | (0 << 4), readfirstlane(id.cast[DType.int32]()) & 0xFF)
 
 
@@ -75,7 +75,9 @@ def hsa_signal_add(sig: UInt64, value: UInt64):
             address_space=AddressSpace.GLOBAL,
         ]
     ]()[]
-    _ = Atomic.fetch_add(UnsafePointer(to=s[].value), value)
+    _ = Atomic.fetch_add[ordering=Consistency.RELEASE](
+        UnsafePointer(to=s[].value), value
+    )
     update_mbox(s)
 
 
@@ -585,7 +587,7 @@ struct Header(TrivialRegisterPassable):
             var ready_flag = UInt32(1)
             if me == low:
                 var ptr = UnsafePointer(to=self._handle[].control)
-                var control = Atomic.fetch_add(ptr, 0)
+                var control = Atomic.load[ordering=Consistency.ACQUIRE](ptr)
                 ready_flag = get_ready_flag(control)
 
             ready_flag = readfirstlane(ready_flag.cast[DType.int32]()).cast[
@@ -652,17 +654,19 @@ struct Buffer(TrivialRegisterPassable):
         )
 
     def pop(mut self, top: UnsafePointer[mut=True, UInt64, ...]) -> UInt64:
-        var f = Atomic.fetch_add(top, 0)
+        var f = Atomic.load[ordering=Consistency.ACQUIRE](top)
         # F is guaranteed to be non-zero, since there are at least as
         # many packets as there are waves, and each wave can hold at most
         # one packet.
         while True:
             var p = self.get_header(f)
-            var n = Atomic.fetch_add(
-                UnsafePointer(to=p._handle[].next),
-                0,
+            var n = Atomic.load[ordering=Consistency.MONOTONIC](
+                UnsafePointer(to=p._handle[].next)
             )
-            if Atomic.compare_exchange(top, f, n):
+            if Atomic.compare_exchange[
+                success_ordering=Consistency.ACQUIRE,
+                failure_ordering=Consistency.MONOTONIC,
+            ](top, f, n):
                 break
             llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
         return f
@@ -690,11 +694,14 @@ struct Buffer(TrivialRegisterPassable):
         )
 
     def push(mut self, top: UnsafePointer[mut=True, UInt64, ...], ptr: UInt64):
-        var f = Atomic.fetch_add(top, 0)
+        var f = Atomic.load[ordering=Consistency.MONOTONIC](top)
         var p = self.get_header(ptr)
         while True:
             p._handle[].next = f
-            if Atomic.compare_exchange(top, f, ptr):
+            if Atomic.compare_exchange[
+                success_ordering=Consistency.RELEASE,
+                failure_ordering=Consistency.MONOTONIC,
+            ](top, f, ptr):
                 break
             llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
 
