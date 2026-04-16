@@ -18,7 +18,7 @@ Validates mxfp4_grouped_matmul_amd against a reference path that:
   3. Runs vendor BLAS per-expert
 
 This layered approach isolates errors to the grouped dispatch logic since
-the underlying dequant and FP8 GEMM are validated by test_mxfp4_matmul_amd.
+the underlying dequant and FP8 GEMM are validated by test_mxfp4_dequant_matmul_amd.
 """
 
 from std.math import ceildiv
@@ -28,7 +28,7 @@ from std.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
 from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
 from linalg.mxfp4_dequant import dequant_mxfp4
-from linalg.matmul.gpu.amd.mxfp4_matmul_amd import _cast_bf16_to_fp8
+from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
 from linalg.matmul.gpu.amd.mxfp4_grouped_matmul_amd import (
     mxfp4_grouped_matmul_amd,
 )

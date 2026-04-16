@@ -53,7 +53,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from linalg.matmul.gpu.amd.mxfp4_grouped_matmul_amd import (
     mxfp4_grouped_matmul_amd,
 )
-from linalg.matmul.gpu.amd.mxfp4_matmul_amd import _cast_bf16_to_fp8
+from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
 from linalg.mxfp4_dequant import dequant_mxfp4
 
 
