@@ -29,7 +29,7 @@ import subprocess
 import sys
 import time
 import warnings
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -2631,7 +2631,7 @@ def flush_prefix_cache(
 class BenchmarkRunResult:
     """Result of one (max_concurrency, request_rate) benchmark configuration.
 
-    Returned by :func:`main_with_parsed_args` — one entry per (mc, rr) combo
+    Yielded by :func:`main_with_parsed_args` — one entry per (mc, rr) combo
     after median selection across ``num_iters`` iterations.
     """
 
@@ -2853,7 +2853,7 @@ def _save_output_lengths(
 
 def main_with_parsed_args(
     args: ServingBenchmarkConfig,
-) -> list[BenchmarkRunResult]:
+) -> Iterator[BenchmarkRunResult]:
     logging.basicConfig(
         format="%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
         datefmt="%H:%M:%S",
@@ -2931,7 +2931,6 @@ def main_with_parsed_args(
 
     # ---- Dry run ----
     if args.dry_run:
-        results: list[BenchmarkRunResult] = []
         for mc in concurrency_range:
             for rr in request_rate_range:
                 print(
@@ -2944,14 +2943,12 @@ def main_with_parsed_args(
                     f" max_benchmark_duration_s="
                     f"{args.max_benchmark_duration_s}"
                 )
-                results.append(
-                    BenchmarkRunResult(
-                        max_concurrency=mc,
-                        request_rate=rr,
-                        num_prompts=args.num_prompts or 0,
-                    )
+                yield BenchmarkRunResult(
+                    max_concurrency=mc,
+                    request_rate=rr,
+                    num_prompts=args.num_prompts or 0,
                 )
-        return results
+        return
 
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -3380,8 +3377,6 @@ def main_with_parsed_args(
     )
 
     # ---- Sweep loop ----
-    run_results: list[BenchmarkRunResult] = []
-
     for mc in concurrency_range:
         if use_dynamic_num_prompts:
             assert args.num_prompts_multiplier is not None
@@ -3437,17 +3432,13 @@ def main_with_parsed_args(
             # Output lengths recording (for the median iteration).
             _save_output_lengths(args, best_result, session.benchmark_task)
 
-            run_results.append(
-                BenchmarkRunResult(
-                    mc,
-                    rr,
-                    args.num_prompts or 0,
-                    best_metrics,
-                    best_result,
-                )
+            yield BenchmarkRunResult(
+                mc,
+                rr,
+                args.num_prompts or 0,
+                best_metrics,
+                best_result,
             )
-
-    return run_results
 
 
 def _extract_metadata_args(
