@@ -226,7 +226,8 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         return self.issubset(other)
 
     def __ge__(self, other: Self) -> Bool where conforms_to(Self.T, Equatable):
-        """Overloads the >= operator for sets. Works like as `issuperset` method.
+        """Overloads the >= operator for sets. Works like as `issuperset`
+        method.
 
         Args:
             other: Another Set instance to check against.
@@ -240,10 +241,12 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """Overloads the > operator for strict superset comparison of sets.
 
         Args:
-            other: The set to compare against for the strict superset relationship.
+            other: The set to compare against for the strict superset
+                relationship.
 
         Returns:
-            True if the set is a strict superset of the `other` set, False otherwise.
+            True if the set is a strict superset of the `other` set, False
+            otherwise.
         """
         return len(self) > len(other) and other.issubset(self)
 
@@ -251,15 +254,18 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         """Overloads the < operator for strict subset comparison of sets.
 
         Args:
-            other: The set to compare against for the strict subset relationship.
+            other: The set to compare against for the strict subset
+                relationship.
 
         Returns:
-            True if the set is a strict subset of the `other` set, False otherwise.
+            True if the set is a strict subset of the `other` set, False
+            otherwise.
         """
         return len(self) < len(other) and self.issubset(other)
 
     def __xor__(self, other: Self) -> Self:
-        """Overloads the ^ operator for sets. Works like as `symmetric_difference` method.
+        """Overloads the ^ operator for sets. Works like as
+        `symmetric_difference` method.
 
         Args:
             other: The set to find the symmetric difference with.
@@ -270,7 +276,8 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         return self.symmetric_difference(other)
 
     def __ixor__(mut self, other: Self):
-        """Overloads the ^= operator. Works like as `symmetric_difference_update` method.
+        """Overloads the ^= operator. Works like as
+        `symmetric_difference_update` method.
 
         Updates the set with the symmetric difference of itself and another set.
 
@@ -488,8 +495,9 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     def intersection_update(mut self, other: Self):
         """In-place set intersection update.
 
-        Updates the set by retaining only elements found in both this set and the `other` set,
-        removing all other elements. The result is the intersection of this set with `other`.
+        Updates the set by retaining only elements found in both this set and
+        the `other` set, removing all other elements. The result is the
+        intersection of this set with `other`.
 
         Args:
             other: Another Set instance to intersect with this one.
@@ -599,7 +607,8 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
         return result^
 
     def symmetric_difference_update(mut self, other: Self):
-        """Updates the set with the symmetric difference of itself and another set.
+        """Updates the set with the symmetric difference of itself and another
+        set.
 
         Args:
             other: The set to find the symmetric difference with.

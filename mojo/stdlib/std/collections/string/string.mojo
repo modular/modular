@@ -123,8 +123,8 @@ struct String(
 
       ```mojo
       var text = "café"                # 4 Unicode characters
-      print(len(text))                 # Prints 5 (é is 2 bytes in UTF-8)
-      print(len(text.codepoints()))    # Prints 4 (correct Unicode count)
+      print(text.byte_length())        # Prints 5 (é is 2 bytes in UTF-8)
+      print(text.count_codepoints())   # Prints 4 (correct Unicode count)
       ```
 
     - **Always mutable**: You can modify strings in-place:
@@ -160,9 +160,9 @@ struct String(
     var text = "Hello"
 
     # String properties and indexing
-    print(len(text))            # 5
+    print(text.byte_length())            # 5
     print(text[byte=1])              # e (byte slice)
-    print(text[byte=len(text) - 1])  # o (last character)
+    print(text[byte=text.byte_length() - 1])  # o (last character)
 
     # In-place concatenation
     text += " World"
@@ -190,22 +190,22 @@ struct String(
     Related functions:
 
     - String-to-number conversions:
-      [`atof()`](/mojo/std/collections/string/string/atof),
-      [`atol()`](/mojo/std/collections/string/string/atol)).
+        [`atof()`](/mojo/std/collections/string/string/atof),
+        [`atol()`](/mojo/std/collections/string/string/atol)).
     - Character code conversions:
-      [`chr()`](/mojo/std/collections/string/string/chr),
-      [`ord()`](/mojo/std/collections/string/string/ord)).
+        [`chr()`](/mojo/std/collections/string/string/chr),
+        [`ord()`](/mojo/std/collections/string/string/ord)).
     - String formatting:
-      [`format()`](/mojo/std/collections/string/string/String/#format).
+        [`format()`](/mojo/std/collections/string/string/String/#format).
 
     Related types:
 
-    - [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice): A non-owning
-      view of string data, which can be either mutable or immutable.
+    - [`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice): A
+        non-owning view of string data, which can be either mutable or immutable.
     - [`StaticString`](/mojo/std/collections/string/string_slice/#StaticString): An
-      alias for an immutable constant `StringSlice`.
+        alias for an immutable constant `StringSlice`.
     - [`StringLiteral`](/mojo/std/builtin/string_literal/StringLiteral/): A
-      string literal. String literals are compile-time values.
+        string literal. String literals are compile-time values.
     """
 
     # Fields: String has two forms - the declared form here, and the "inline"
@@ -241,7 +241,9 @@ struct String(
     comptime PUNCTUATION = """!"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"""
     """All ASCII punctuation characters."""
 
-    comptime PRINTABLE = Self.DIGITS + Self.ASCII_LETTERS + Self.PUNCTUATION + " \t\n\r\v\f"
+    comptime PRINTABLE = (
+        Self.DIGITS + Self.ASCII_LETTERS + Self.PUNCTUATION + " \t\n\r\v\f"
+    )
     """All printable ASCII characters."""
 
     # ===------------------------------------------------------------------=== #
@@ -400,7 +402,7 @@ struct String(
         Examples:
 
         ```mojo
-        from testing import assert_equal
+        %# from std.testing import assert_equal
 
         # Valid UTF-8 sequence
         var fire_emoji_bytes = [Byte(0xF0), 0x9F, 0x94, 0xA5]
@@ -589,7 +591,8 @@ struct String(
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
         Args:
-            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated bytes encoded in UTF-8.
+            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated
+                bytes encoded in UTF-8.
 
         Safety:
             - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
@@ -604,7 +607,8 @@ struct String(
         """Creates a string from a UTF-8 encoded nul-terminated pointer.
 
         Args:
-            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated bytes encoded in UTF-8.
+            unsafe_from_utf8_ptr: An `UnsafePointer[Byte]` of null-terminated
+                bytes encoded in UTF-8.
 
         Safety:
             - `unsafe_from_utf8_ptr` MUST be valid UTF-8 encoded data.
@@ -1072,11 +1076,12 @@ struct String(
         return StringSlice(self).join(elems)
 
     def codepoints(self) -> CodepointsIter[origin_of(self)]:
-        """Returns an iterator over the `Codepoint`s encoded in this string slice.
+        """Returns an iterator over the `Codepoint`s encoded in this string
+        slice.
 
         Returns:
-            An iterator type that returns successive `Codepoint` values stored in
-            this string slice.
+            An iterator type that returns successive `Codepoint` values stored
+            in this string slice.
 
         Examples:
 
@@ -1144,7 +1149,8 @@ struct String(
     def codepoint_slices_reversed(
         self,
     ) -> CodepointSliceIter[origin_of(self), False]:
-        """Iterates backwards over the string, returning single-character slices.
+        """Iterates backwards over the string, returning single-character
+        slices.
 
         Each returned slice points to a single Unicode codepoint encoded in the
         underlying UTF-8 representation of this string, starting from the end
@@ -1281,7 +1287,7 @@ struct String(
             Query the length of a string, in bytes and Unicode codepoints:
 
             ```mojo
-            %# from testing import assert_equal
+            %# from std.testing import assert_equal
 
             var s = StringSlice("ನಮಸ್ಕಾರ")
             assert_equal(s.count_codepoints(), 7)
@@ -1292,7 +1298,7 @@ struct String(
             Unicode codepoint length:
 
             ```mojo
-            %# from testing import assert_equal
+            %# from std.testing import assert_equal
 
             var s = StringSlice("abc")
             assert_equal(s.count_codepoints(), 3)
@@ -1303,7 +1309,7 @@ struct String(
             the length in Unicode codepoints, not grapheme clusters:
 
             ```mojo
-            %# from testing import assert_equal
+            %# from std.testing import assert_equal
 
             var s = StringSlice("á")
             assert_equal(s.count_codepoints(), 2)
@@ -1768,8 +1774,8 @@ struct String(
         return _FormatUtils.format(self, *args)
 
     def is_ascii_digit(self) -> Bool:
-        """A string is a digit string if all characters in the string are ASCII digits
-        and there is at least one character in the string.
+        """A string is a digit string if all characters in the string are ASCII
+        digits and there is at least one character in the string.
 
         Note that this currently only works with ASCII strings.
 
@@ -1812,9 +1818,9 @@ struct String(
         """Returns the string right justified in a string of specified width.
 
         Pads the string on the left with the specified fill character so that
-        the total (byte) length of the resulting string equals `width`. If the original
-        string is already longer than or equal to `width`, returns the original
-        string unchanged.
+        the total (byte) length of the resulting string equals `width`. If the
+        original string is already longer than or equal to `width`, returns the
+        original string unchanged.
 
         Args:
             width: The total width (in bytes) of the resulting string. This is
@@ -1824,8 +1830,8 @@ struct String(
                 a single-byte character.
 
         Returns:
-            A right-justified string of (byte) length `width`, or the original string
-            if its length is already greater than or equal to `width`.
+            A right-justified string of (byte) length `width`, or the original
+            string if its length is already greater than or equal to `width`.
 
         Examples:
 
@@ -1842,9 +1848,9 @@ struct String(
         """Returns the string left justified in a string of specified width.
 
         Pads the string on the right with the specified fill character so that
-        the total (byte) length of the resulting string equals `width`. If the original
-        string is already longer than or equal to `width`, returns the original
-        string unchanged.
+        the total (byte) length of the resulting string equals `width`. If the
+        original string is already longer than or equal to `width`, returns the
+        original string unchanged.
 
         Args:
             width: The total width (in bytes) of the resulting string. This is
@@ -1854,8 +1860,8 @@ struct String(
                 a single-byte character.
 
         Returns:
-            A left-justified string of (byte) length `width`, or the original string
-            if its length is already greater than or equal to `width`.
+            A left-justified string of (byte) length `width`, or the original
+            string if its length is already greater than or equal to `width`.
 
         Examples:
 
@@ -1905,8 +1911,8 @@ struct String(
 
         Args:
             length: The new length of the string.
-            fill_byte: The byte to fill any new space with. Must be a valid single-byte
-                       utf-8 character.
+            fill_byte: The byte to fill any new space with. Must be a valid
+                single-byte utf-8 character.
 
         Notes:
             If the new length is greater than the current length, the string is

@@ -435,7 +435,8 @@ struct Optional[T: Movable](
         """Return the bounds of the `Optional`, which is 0 or 1.
 
         Returns:
-            A tuple containing the length (0 or 1) and an `Optional` containing the length.
+            A tuple containing the length (0 or 1) and an `Optional` containing
+            the length.
 
         Examples:
 
@@ -837,7 +838,7 @@ struct Optional[T: Movable](
 
         ```mojo
         var opt = Optional("hello")
-        var length = opt.map[To=Int](String.__len__)
+        var length = opt.map[To=Int](String.byte_length)
         print(length.value())  # Output: 5
         ```
 
@@ -845,7 +846,7 @@ struct Optional[T: Movable](
 
         ```mojo
         var opt = Optional[String](None)
-        var length = opt.map[To=Int](String.__len__)
+        var length = opt.map[To=Int](String.byte_length)
         print(length.or_else(-1))  # Output: -1
         ```
         """

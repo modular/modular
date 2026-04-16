@@ -752,9 +752,9 @@ struct Dict[
 
       Note that indexing into a `Dict` with a key that's a reference to the
       key owned by the `Dict` produces a confusing error related to
-      [argument exclusivity](/mojo/manual/values/ownership#argument-exclusivity).
-      Using `var key` in the previous example creates an owned copy of the key,
-      avoiding the error.
+      [argument exclusivity](/mojo/manual/values/ownership#argument-exclusivity
+      ). Using `var key` in the previous example creates an owned copy of the
+      key, avoiding the error.
 
     - **KeyError handling**: Directly accessing values with the `[]` operator
       will raise `DictKeyError` if the key is not found:
@@ -1724,7 +1724,8 @@ struct Dict[
 
     @always_inline
     def _set_ctrl(mut self, index: Int, value: UInt8):
-        """Set a control byte, maintaining the mirror for wrap-around SIMD loads.
+        """Set a control byte, maintaining the mirror for wrap-around SIMD
+        loads.
 
         Args:
             index: The slot index.

@@ -31,13 +31,15 @@ def _uppercase_mapping_index(rune: Codepoint) -> Int:
 
 
 def _uppercase_mapping2_index(rune: Codepoint) -> Int:
-    """Return index for upper case mapping converting the rune to 2 runes, or -1 if no mapping is given.
+    """Return index for upper case mapping converting the rune to 2 runes, or
+    -1 if no mapping is given.
     """
     return _to_index[has_uppercase_mapping2](rune)
 
 
 def _uppercase_mapping3_index(rune: Codepoint) -> Int:
-    """Return index for upper case mapping converting the rune to 3 runes, or -1 if no mapping is given.
+    """Return index for upper case mapping converting the rune to 3 runes, or -1
+    if no mapping is given.
     """
     return _to_index[has_uppercase_mapping3](rune)
 

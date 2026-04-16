@@ -55,7 +55,8 @@ struct UInt128Decomposed(ImplicitlyCopyable, RegisterPassable):
 def _get_w_and_q_from_float_string(
     input_string: StringSlice[mut=False, _],
 ) raises -> Tuple[UInt64, Int64]:
-    """We suppose the number is in the form '123.2481' or '123' or '123e-2' or '12.3e2'.
+    """We suppose the number is in the form '123.2481' or '123' or '123e-2' or
+    '12.3e2'.
 
     Returns a tuple (w, q) where w is the significand and q is the exponent.
     w is an unsigned integer and q is a signed integer. (64 bits each)

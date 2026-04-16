@@ -15,11 +15,11 @@
 A self-balancing interval tree is a specialized binary search tree designed to
 efficiently store and query intervals.
 
-It maintains intervals sorted by their low endpoints and augments each node with a
-`max_high` attribute, representing the maximum high endpoint in its subtree. This
-`max_high` value enables efficient overlap searching by pruning the search space.
-Self-balancing mechanisms, such as Red-Black or AVL trees, ensure logarithmic time
-complexity for operations.
+It maintains intervals sorted by their low endpoints and augments each node with
+a `max_high` attribute, representing the maximum high endpoint in its subtree.
+This `max_high` value enables efficient overlap searching by pruning the search
+space. Self-balancing mechanisms, such as Red-Black or AVL trees, ensure
+logarithmic time complexity for operations.
 
 Key Features:
   - Stores intervals (low, high).
@@ -30,8 +30,8 @@ Key Features:
 Operations:
   - Insertion: O(log n) - Adds a new interval, maintaining balance and updating
     `max_high`.
-  - Overlap Search: O(log n) - Finds intervals overlapping a query interval using
-    `max_high` for pruning.
+  - Overlap Search: O(log n) - Finds intervals overlapping a query interval
+    using `max_high` for pruning.
   - Deletion: O(log n) - Removes an interval, maintaining balance and updating
     `max_high`.
 
@@ -218,7 +218,8 @@ struct Interval[T: IntervalElement](
             other: The interval to compare with.
 
         Returns:
-            True if this interval's start is less than or equal to the other interval's start.
+            True if this interval's start is less than or equal to the other
+            interval's start.
         """
         return self.start <= other.start
 
@@ -230,7 +231,8 @@ struct Interval[T: IntervalElement](
             other: The interval to compare with.
 
         Returns:
-            True if this interval's end is greater than or equal to the other interval's end.
+            True if this interval's end is greater than or equal to the other
+            interval's end.
         """
         return self.end >= other.end
 
@@ -241,7 +243,8 @@ struct Interval[T: IntervalElement](
             other: The interval to compare with.
 
         Returns:
-            True if this interval's start is less than the other interval's start.
+            True if this interval's start is less than the other interval's
+            start.
         """
         return self.start < other.start
 
@@ -252,7 +255,8 @@ struct Interval[T: IntervalElement](
             other: The interval to compare with.
 
         Returns:
-            True if this interval's end is greater than the other interval's end.
+            True if this interval's end is greater than the other interval's
+            end.
         """
         return self.end > other.end
 
@@ -498,8 +502,9 @@ struct IntervalTree[
         """Performs a left rotation around node x in the red-black tree.
 
         This method performs a left rotation around the given node x, which is a
-        standard operation in red-black trees used to maintain balance. The rotation
-        preserves the binary search tree property while changing the structure.
+        standard operation in red-black trees used to maintain balance. The
+        rotation preserves the binary search tree property while changing the
+        structure.
 
         Before:          After:
              x            y
@@ -509,11 +514,12 @@ struct IntervalTree[
              b   c    a   b
 
         Args:
-            rotation_node: A pointer to the node around which to perform the left rotation.
+            rotation_node: A pointer to the node around which to perform the
+                left rotation.
 
-        Note:
-            The rotation assumes that x has a right child. The method will assert if
-            either the root or x's right child is not set.
+        Notes:
+            The rotation assumes that x has a right child. The method will
+            assert if either the root or x's right child is not set.
         """
         assert Bool(self._root), "node is not set"
         var rotation_node_nn = rotation_node.value()
@@ -566,9 +572,10 @@ struct IntervalTree[
     def _right_rotate(mut self, rotation_node: Self._IntervalNodePointer):
         """Performs a right rotation around node y in the red-black tree.
 
-        This method performs a right rotation around the given node y, which is a
-        standard operation in red-black trees used to maintain balance. The rotation
-        preserves the binary search tree property while changing the structure.
+        This method performs a right rotation around the given node y, which is
+        a standard operation in red-black trees used to maintain balance. The
+        rotation preserves the binary search tree property while changing the
+        structure.
 
         Before:          After:
              y            x
@@ -578,11 +585,12 @@ struct IntervalTree[
          a   b        b   c
 
         Args:
-            rotation_node: A pointer to the node around which to perform the right rotation.
+            rotation_node: A pointer to the node around which to perform the
+                right rotation.
 
-        Note:
-            The rotation assumes that y has a left child. The method will assert if
-            either the root or y's left child is not set.
+        Notes:
+            The rotation assumes that y has a left child. The method will assert
+            if either the root or y's left child is not set.
         """
         assert Bool(self._root), "root node is not set"
         var rotation_node_nn = rotation_node.value()
@@ -631,7 +639,8 @@ struct IntervalTree[
         """Insert a new interval into the tree using a tuple representation.
 
         Args:
-            interval: A tuple containing the start and end values of the interval.
+            interval: A tuple containing the start and end values of the
+                interval.
             data: The data value to associate with this interval.
         """
         self.insert(Interval(interval[0], interval[1]), data)
@@ -639,9 +648,10 @@ struct IntervalTree[
     def insert(mut self, interval: Interval[Self.T], data: Self.U):
         """Insert a new interval into the tree.
 
-        This method inserts a new interval and its associated data into the interval tree.
-        It maintains the binary search tree property based on interval start times and
-        updates the tree structure to preserve red-black tree properties.
+        This method inserts a new interval and its associated data into the
+        interval tree. It maintains the binary search tree property based on
+        interval start times and updates the tree structure to preserve
+        red-black tree properties.
 
         Args:
             interval: The interval to insert into the tree.
@@ -688,13 +698,14 @@ struct IntervalTree[
     def _insert_fixup(mut self, current_node0: Self._IntervalNodePointer):
         """Fixes up the red-black tree properties after an insertion.
 
-        This method restores the red-black tree properties that may have been violated
-        during insertion of a new node. It performs rotations and color changes to
-        maintain the balance and color properties of the red-black tree.
+        This method restores the red-black tree properties that may have been
+        violated during insertion of a new node. It performs rotations and color
+        changes to maintain the balance and color properties of the red-black
+        tree.
 
         Args:
-            current_node0: A pointer to the newly inserted node that may violate red-black
-                properties.
+            current_node0: A pointer to the newly inserted node that may violate
+                red-black properties.
         """
         var current_node = current_node0
 
@@ -780,9 +791,9 @@ struct IntervalTree[
     def _draw[w: Writer](self, mut writer: w):
         """Draws the interval tree in a simple ASCII tree format.
 
-        Creates a text representation of the tree using ASCII characters, with each node
-        indented according to its depth. Uses '├─' and '└─' characters to show the tree
-        structure.
+        Creates a text representation of the tree using ASCII characters, with
+        each node indented according to its depth. Uses '├─' and '└─' characters
+        to show the tree structure.
 
         Parameters:
             w: The writer type that implements the Writer trait.
@@ -804,8 +815,8 @@ struct IntervalTree[
     ):
         """Helper function to recursively draw the interval tree.
 
-        Recursively traverses the tree and draws each node with proper indentation
-        and branch characters to show the tree structure.
+        Recursively traverses the tree and draws each node with proper
+        indentation and branch characters to show the tree structure.
 
         Parameters:
             w: The writer type that implements the Writer trait.
@@ -837,9 +848,9 @@ struct IntervalTree[
     def _draw3[w: Writer](self, mut writer: w) raises:
         """Draws the interval tree in a simple ASCII tree format.
 
-        Creates a text representation of the tree using ASCII characters, with each node
-        indented according to its depth. Uses '├─' and '└─' characters to show the tree
-        structure.
+        Creates a text representation of the tree using ASCII characters, with
+        each node indented according to its depth. Uses '├─' and '└─' characters
+        to show the tree structure.
 
         Parameters:
             w: The writer type that implements the Writer trait.
@@ -873,9 +884,10 @@ struct IntervalTree[
     def _draw2[w: Writer](self, mut writer: w) raises:
         """Draws the interval tree in a visual ASCII art format.
 
-        Creates a grid representation of the tree with nodes and connecting branches.
-        Each level of the tree is separated by 3 rows vertically.
-        Nodes are connected by '/' and '\' characters for left and right children.
+        Creates a grid representation of the tree with nodes and connecting
+        branches. Each level of the tree is separated by 3 rows vertically.
+        Nodes are connected by '/' and '\' characters for left and right
+        children.
 
         Parameters:
             w: The writer type that implements the Writer trait.
@@ -960,7 +972,8 @@ struct IntervalTree[
         mut u: Self._IntervalNodePointer,
         mut v: Self._IntervalNodePointer,
     ):
-        """Transplants the subtree rooted at node u with the subtree rooted at node v.
+        """Transplants the subtree rooted at node u with the subtree rooted at
+        node v.
 
         Args:
             u: The node to transplant.
