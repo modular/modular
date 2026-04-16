@@ -847,7 +847,7 @@ struct Optional[T: Movable](
 
         ```mojo
         var opt = Optional("hello")
-        var length = opt.map[To=Int](String.__len__)
+        var length = opt.map[To=Int](String.byte_length)
         print(length.value())  # Output: 5
         ```
 
@@ -855,7 +855,7 @@ struct Optional[T: Movable](
 
         ```mojo
         var opt = Optional[String](None)
-        var length = opt.map[To=Int](String.__len__)
+        var length = opt.map[To=Int](String.byte_length)
         print(length.or_else(-1))  # Output: -1
         ```
         """
