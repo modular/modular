@@ -3561,6 +3561,148 @@ class TestRmsNormOp:
         )
 
 
+class TestGroupNormOp:
+    """Tests for group_norm interpreter op via F.group_norm.
+
+    Routes through F.group_norm -> ops.group_norm -> mo.ReduceGroupNormOp ->
+    _handle_group_norm -> group_norm_ops.GroupNorm.
+    """
+
+    @staticmethod
+    def _group_norm_ref(
+        x: np.ndarray,
+        gamma: np.ndarray,
+        beta: np.ndarray,
+        num_groups: int,
+        eps: float,
+    ) -> np.ndarray:
+        """Pure-numpy group norm reference.
+
+        Input layout: [N, C, ...]. Channels at dim 1.
+        """
+        x_f64 = x.astype(np.float64)
+        N = x.shape[0]
+        C = x.shape[1]
+        spatial = x_f64.reshape(N, C, -1)
+        channels_per_group = C // num_groups
+        grouped = spatial.reshape(N, num_groups, channels_per_group, -1)
+        mean = grouped.mean(axis=(2, 3), keepdims=True)
+        var = grouped.var(axis=(2, 3), keepdims=True)
+        normed = (grouped - mean) / np.sqrt(var + eps)
+        normed = normed.reshape(N, C, -1)
+        gamma_f64 = gamma.astype(np.float64).reshape(1, C, 1)
+        beta_f64 = beta.astype(np.float64).reshape(1, C, 1)
+        result = normed * gamma_f64 + beta_f64
+        return result.reshape(x.shape).astype(x.dtype)
+
+    @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+    def test_basic_4d(self, dtype: DType) -> None:
+        """Test group_norm on a 4D NCHW tensor."""
+        np_dtype = dtype.to_numpy()
+        rng = np.random.default_rng(50)
+        x_np = rng.standard_normal((2, 4, 3, 3)).astype(np_dtype)
+        gamma_np = rng.standard_normal(4).astype(np_dtype)
+        beta_np = rng.standard_normal(4).astype(np_dtype)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.group_norm(x, gamma, beta, num_groups=2, epsilon=1e-5)
+
+        expected = self._group_norm_ref(x_np, gamma_np, beta_np, 2, 1e-5)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-4, atol=1e-4
+        )
+
+    def test_3d_input(self) -> None:
+        """Test group_norm on a 3D [N, C, L] tensor."""
+        rng = np.random.default_rng(51)
+        x_np = rng.standard_normal((2, 6, 8)).astype(np.float32)
+        gamma_np = rng.standard_normal(6).astype(np.float32)
+        beta_np = rng.standard_normal(6).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.group_norm(x, gamma, beta, num_groups=3, epsilon=1e-5)
+
+        expected = self._group_norm_ref(x_np, gamma_np, beta_np, 3, 1e-5)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_single_group(self) -> None:
+        """Test group_norm with num_groups=1 (like layer norm over C+spatial)."""
+        rng = np.random.default_rng(52)
+        x_np = rng.standard_normal((2, 4, 3, 3)).astype(np.float32)
+        gamma_np = rng.standard_normal(4).astype(np.float32)
+        beta_np = rng.standard_normal(4).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.group_norm(x, gamma, beta, num_groups=1, epsilon=1e-5)
+
+        expected = self._group_norm_ref(x_np, gamma_np, beta_np, 1, 1e-5)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_groups_equal_channels(self) -> None:
+        """Test group_norm with num_groups=C (instance norm)."""
+        rng = np.random.default_rng(53)
+        x_np = rng.standard_normal((2, 4, 5, 5)).astype(np.float32)
+        gamma_np = rng.standard_normal(4).astype(np.float32)
+        beta_np = rng.standard_normal(4).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.group_norm(x, gamma, beta, num_groups=4, epsilon=1e-5)
+
+        expected = self._group_norm_ref(x_np, gamma_np, beta_np, 4, 1e-5)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+    def test_large_spatial(self) -> None:
+        """Test group_norm with larger spatial dimensions."""
+        rng = np.random.default_rng(54)
+        x_np = rng.standard_normal((1, 8, 16, 16)).astype(np.float32)
+        gamma_np = rng.standard_normal(8).astype(np.float32)
+        beta_np = rng.standard_normal(8).astype(np.float32)
+
+        x = Tensor.from_dlpack(x_np)
+        gamma = Tensor.from_dlpack(gamma_np)
+        beta = Tensor.from_dlpack(beta_np)
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            y = F.group_norm(x, gamma, beta, num_groups=4, epsilon=1e-6)
+
+        expected = self._group_norm_ref(x_np, gamma_np, beta_np, 4, 1e-6)
+        np.testing.assert_allclose(
+            np.from_dlpack(y), expected, rtol=1e-5, atol=1e-5
+        )
+
+
 class TestSliceOp:
     """Tests for slice operations."""
 

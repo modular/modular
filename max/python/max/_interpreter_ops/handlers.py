@@ -1580,6 +1580,52 @@ def _handle_rms_norm(
     return [output]
 
 
+# Group norm operations
+
+
+@register_op_handler(mo.ReduceGroupNormOp)
+def _handle_group_norm(
+    op: mo.ReduceGroupNormOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer]:
+    """Handle mo.reduce.group_norm by dispatching to Mojo group_norm kernel.
+
+    Args:
+        op: The group_norm operation.
+        inputs: Input buffers - input tensor, gamma, beta, epsilon,
+            num_groups. Epsilon and num_groups are always on CPU
+            (MO_SingleDeviceWithHostOperands).
+
+    Returns:
+        List containing the normalized tensor buffer.
+    """
+    result_type = graph.Type.from_mlir(list(op.results)[0].type)
+    assert isinstance(result_type, graph.TensorType)
+    target_device = result_type.device.to_device()
+
+    assert isinstance(inputs[0], Buffer)  # input
+    assert isinstance(inputs[1], Buffer)  # gamma
+    assert isinstance(inputs[2], Buffer)  # beta
+    assert isinstance(inputs[3], Buffer)  # epsilon (always CPU)
+    assert isinstance(inputs[4], Buffer)  # num_groups (always CPU, int32)
+
+    output = Buffer(
+        shape=inputs[0].shape,
+        dtype=inputs[0].dtype,
+        device=target_device,
+    )
+
+    ops.group_norm_ops.GroupNorm(
+        output,
+        inputs[0],
+        inputs[1],
+        inputs[2],
+        (inputs[3], inputs[4]),
+        target_device._device_context_ptr(),
+    )
+
+    return [output]
+
+
 # Range operations
 
 

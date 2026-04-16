@@ -38,6 +38,7 @@ from . import (  # type: ignore[attr-defined]
     elementwise_comparison_ops,
     elementwise_unary_ops,
     gather_scatter_ops,
+    group_norm_ops,
     layer_norm_ops,
     matmul_ops,
     misc_ops,
