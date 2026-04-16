@@ -79,6 +79,7 @@ class BatchMetrics:
     draft_tokens_accepted: int
     avg_acceptance_length: float
     max_acceptance_length: int
+    acceptance_rate_per_position: list[float]
 
     nixl_read_latency_avg_ms: float
     nixl_write_latency_avg_ms: float
@@ -196,6 +197,7 @@ class BatchMetrics:
         draft_tokens_accepted = 0
         avg_acceptance_length = 0.0
         max_acceptance_length = 0
+        acceptance_rate_per_position: list[float] = []
         if speculative_decoding_metrics is not None:
             draft_tokens_generated = (
                 speculative_decoding_metrics.draft_tokens_generated
@@ -208,6 +210,9 @@ class BatchMetrics:
             )
             max_acceptance_length = (
                 speculative_decoding_metrics.num_speculative_tokens
+            )
+            acceptance_rate_per_position = (
+                speculative_decoding_metrics.acceptance_rate_per_position
             )
 
         return cls(
@@ -241,6 +246,7 @@ class BatchMetrics:
             draft_tokens_accepted=draft_tokens_accepted,
             avg_acceptance_length=avg_acceptance_length,
             max_acceptance_length=max_acceptance_length,
+            acceptance_rate_per_position=acceptance_rate_per_position,
             nixl_read_latency_avg_ms=nixl_read_latency_avg_ms,
             nixl_write_latency_avg_ms=nixl_write_latency_avg_ms,
             rpc_acquire_latency_avg_ms=rpc_acquire_latency_avg_ms,
@@ -278,7 +284,16 @@ class BatchMetrics:
             acceptance_rate = (
                 self.draft_tokens_accepted / self.draft_tokens_generated
             )
-            spec_decode_str = f"Draft Tokens: {self.draft_tokens_accepted}/{self.draft_tokens_generated} ({acceptance_rate:.2%}) accepted, Acceptance Len: {self.avg_acceptance_length:.2f} / {self.max_acceptance_length} toks | "
+            # Format per-position acceptance rates
+            if self.acceptance_rate_per_position:
+                pos_rates_str = ", ".join(
+                    f"p{i}={rate:.0%}"
+                    for i, rate in enumerate(self.acceptance_rate_per_position)
+                )
+                per_pos_str = f", Per-Pos: [{pos_rates_str}]"
+            else:
+                per_pos_str = ""
+            spec_decode_str = f"Draft Tokens: {self.draft_tokens_accepted}/{self.draft_tokens_generated} ({acceptance_rate:.2%}) accepted, Acceptance Len: {self.avg_acceptance_length:.2f} / {self.max_acceptance_length} toks{per_pos_str} | "
         else:
             spec_decode_str = ""
 
@@ -339,6 +354,13 @@ class BatchMetrics:
             METRICS.dkv_rpc_acquire_latency(self.rpc_acquire_latency_avg_ms)
         if self.rpc_read_latency_avg_ms > 0:
             METRICS.dkv_rpc_read_latency(self.rpc_read_latency_avg_ms)
+
+        # Emit per-position acceptance rate metrics for speculative decoding
+        for position, rate in enumerate(self.acceptance_rate_per_position):
+            METRICS.spec_decode_acceptance_rate_per_position(
+                position=position,
+                acceptance_rate=rate * 100,  # Convert to percentage
+            )
 
 
 class SchedulerLogger:

@@ -428,12 +428,24 @@ class AsyncBatch(Generic[TextGenerationContextType]):
 
             num_speculative_tokens = next_draft_tokens.shape[1]
             num_draft_tokens_to_verify = draft_tokens_np.shape[1]
+            batch_size = len(self.inputs.flat_batch)
+
+            # Compute per-position acceptance counts.
+            # For each position i, count how many requests accepted at least i+1 tokens.
+            accepted_per_position = [0] * num_draft_tokens_to_verify
+            for accepted_count in num_accepted_draft_tokens:
+                for pos in range(int(accepted_count)):
+                    if pos < num_draft_tokens_to_verify:
+                        accepted_per_position[pos] += 1
 
             metrics = SpeculativeDecodingMetrics(
                 num_speculative_tokens=num_speculative_tokens,
-                draft_tokens_accepted=num_accepted_draft_tokens.sum(),
-                draft_tokens_generated=num_draft_tokens_to_verify
-                * len(self.inputs.flat_batch),
+                accepted_per_position=accepted_per_position,
+                # Only count verifications when there are draft tokens to verify.
+                # Otherwise we'd dilute the per-position acceptance rate.
+                num_verifications=batch_size
+                if num_draft_tokens_to_verify > 0
+                else 0,
             )
 
             wrapped_outputs = _AsyncBatchOutput(

@@ -201,18 +201,23 @@ def test_speculative_decoding_no_rejection(
     # If the draft and target models are the same then no tokens are rejected.
     assert np.all(first_rejected_tokens.to_numpy() == num_steps)
 
-    update_contexts_and_compute_metrics_standalone(
-        context_batch=context_batch,
-        first_rejected_tokens=first_rejected_tokens.to_numpy(),
-        recovered_tokens=recovered_tokens.to_numpy(),
-        bonus_tokens=bonus_tokens.to_numpy()
-        if bonus_tokens is not None
-        else None,
-        draft_tokens=draft_tokens.to_numpy(),
-        num_draft_tokens_generated=num_steps,
+    _, _, accepted_per_position = (
+        update_contexts_and_compute_metrics_standalone(
+            context_batch=context_batch,
+            first_rejected_tokens=first_rejected_tokens.to_numpy(),
+            recovered_tokens=recovered_tokens.to_numpy(),
+            bonus_tokens=bonus_tokens.to_numpy()
+            if bonus_tokens is not None
+            else None,
+            draft_tokens=draft_tokens.to_numpy(),
+            num_draft_tokens_generated=num_steps,
+        )
     )
 
     context1, context2 = context_batch
+
+    # All draft tokens accepted means per-position acceptance should be 2 for all positions
+    assert accepted_per_position == [2] * num_steps
 
     # subtract 1 because all draft tokens are accepted, next draft input includes the token generated from the target model
     assert context1.tokens.processed_length == (
@@ -302,18 +307,29 @@ def test_speculative_decoding_partial_rejection(
 
     draft_tokens_host = draft_tokens.to_numpy()
 
-    update_contexts_and_compute_metrics_standalone(
-        context_batch=context_batch,
-        first_rejected_tokens=first_rejected_tokens_host,
-        recovered_tokens=recovered_tokens.to_numpy(),
-        bonus_tokens=bonus_tokens.to_numpy()
-        if bonus_tokens is not None
-        else None,
-        draft_tokens=draft_tokens_host,
-        num_draft_tokens_generated=num_steps,
+    _, _, accepted_per_position = (
+        update_contexts_and_compute_metrics_standalone(
+            context_batch=context_batch,
+            first_rejected_tokens=first_rejected_tokens_host,
+            recovered_tokens=recovered_tokens.to_numpy(),
+            bonus_tokens=bonus_tokens.to_numpy()
+            if bonus_tokens is not None
+            else None,
+            draft_tokens=draft_tokens_host,
+            num_draft_tokens_generated=num_steps,
+        )
     )
 
     context1, context2 = context_batch
+
+    # For partial rejection:
+    # - context1 accepted tokens at positions 0..4 (half of 10)
+    # - context2 accepted all 10 tokens
+    # So per-position counts should be:
+    # - positions 0..4: 2 (both contexts accepted)
+    # - positions 5..9: 1 (only context2 accepted)
+    expected_per_position = [2] * (num_steps // 2) + [1] * (num_steps // 2)
+    assert accepted_per_position == expected_per_position
 
     # subtract 1 because recovered token has not been processed by either model
     assert context1.tokens.processed_length == (

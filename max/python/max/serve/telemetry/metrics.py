@@ -200,6 +200,11 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="ms",
         description="dKV read_blocks RPC latency",
     ),  # type: ignore
+    "maxserve.spec_decode.acceptance_rate_per_position": _meter.create_histogram(
+        "maxserve.spec_decode.acceptance_rate_per_position",
+        unit="percent",
+        description="Draft token acceptance rate per position (0-100%)",
+    ),  # type: ignore
 }
 
 
@@ -582,6 +587,24 @@ class _AsyncMetrics:
                 "maxserve.dkv.rpc_read_latency",
                 latency_ms,
                 self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def spec_decode_acceptance_rate_per_position(
+        self, position: int, acceptance_rate: float
+    ) -> None:
+        """Emit draft token acceptance rate for a specific position.
+
+        Args:
+            position: The draft token position (0-indexed).
+            acceptance_rate: The acceptance rate as a percentage (0-100).
+        """
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.spec_decode.acceptance_rate_per_position",
+                acceptance_rate,
+                {**self.extra_attributes, "position": str(position)},
             ),
             MetricLevel.DETAILED,
         )
