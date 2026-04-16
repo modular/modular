@@ -22,6 +22,7 @@ from std.runtime.tracing import Trace, TraceLevel
 
 from std.utils.numerics import FlushDenormals
 
+from std.gpu.host import DeviceContext
 
 # ===-----------------------------------------------------------------------===#
 # Parallelize
@@ -33,7 +34,7 @@ def sync_parallelize[
     origins: OriginSet,
     //,
     func: def(Int) raises capturing[origins] -> None,
-](num_work_items: Int):
+](num_work_items: Int, ctx: Optional[DeviceContext] = None):
     """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
     and returns when all are complete.
 
@@ -46,6 +47,7 @@ def sync_parallelize[
 
     Args:
         num_work_items: Number of parallel tasks.
+        ctx: Optional CPU DeviceContext to execute the tasks on.
     """
 
     # The try/except here is required to satisfy the non-raising
@@ -58,13 +60,13 @@ def sync_parallelize[
         except e:
             abort(String(e))
 
-    sync_parallelize(func_unified, num_work_items)
+    sync_parallelize(func_unified, num_work_items, ctx)
 
 
 @always_inline
 def sync_parallelize[
     FuncType: def(Int) unified register_passable -> None,
-](func: FuncType, num_work_items: Int):
+](func: FuncType, num_work_items: Int, ctx: Optional[DeviceContext] = None):
     """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
     and returns when all are complete.
 
@@ -74,6 +76,7 @@ def sync_parallelize[
     Args:
         func: The closure carrying the captured state of the body function.
         num_work_items: Number of parallel tasks.
+        ctx: The CPU DeviceContext to enqueue the work on.
     """
     # We have no tasks, so do nothing.
     if num_work_items <= 0:
@@ -102,34 +105,12 @@ def sync_parallelize[
         func_wrapped(0)
         return
 
-    @always_inline
-    @parameter
-    async def task_fn(i: Int):
-        func_wrapped(i)
-
-    # Run sub-tasks using the 'default' runtime. If the caller is part of
-    # Mojo kernel executing within the Modular Inference Engine then the
-    # default runtime will be that established by the engine. Otherwise a
-    # suitable runtime will be created if it does not already exist.
-    var num_threads = parallelism_level()
-    var num_per_lq_tasks, num_global_queue_tasks = divmod(
-        num_work_items, num_threads
-    )
-    var tg = TaskGroup()
-    var count = 0
-    for _ in range(num_per_lq_tasks):
-        for j in range(num_threads):
-            tg._create_task(task_fn(count), j)
-            count += 1
-    for _ in range(num_global_queue_tasks):
-        tg.create_task(task_fn(count))
-        count += 1
-
-    # execute Nth task inline. When using local queues, we need to know
-    # this threads tid so that we do not push tasks into its queue.
-    # This involves plumbing workerIDTLS from the threadpool. It may be
-    # worth to do this. Until then we schedule all tasks through addTask
-    tg.wait()
+    try:
+        var cpu_ctx = ctx.or_else(DeviceContext(api="cpu"))
+        cpu_ctx.enqueue_cpu_range[func_wrapped](count=num_work_items)
+        cpu_ctx.synchronize()
+    except e:
+        abort(String(e))
 
 
 @always_inline
