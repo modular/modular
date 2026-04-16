@@ -148,6 +148,7 @@ Quantization
    :template: autosummary/class.rst
 
    QuantConfig
+   QuantFormat
    InputScaleSpec
    ScaleGranularity
    ScaleOrigin

@@ -69,10 +69,19 @@ class QuantFormat(Enum):
     """Identifies the quantization format of a model checkpoint."""
 
     COMPRESSED_TENSORS_FP8 = "compressed-tensors-fp8"
+    """FP8 quantization using the compressed-tensors format."""
+
     FBGEMM_FP8 = "fbgemm-fp8"
+    """FP8 quantization using the FBGEMM format."""
+
     BLOCKSCALED_FP8 = "blockscaled-fp8"
+    """FP8 quantization with block-level scaling."""
+
     NVFP4 = "nvfp4"
+    """NVIDIA FP4 quantization format."""
+
     MXFP4 = "mxfp4"
+    """Microscaling FP4 (MX) quantization format."""
 
 
 @dataclass
@@ -169,7 +178,43 @@ class InputScaleSpec:
 
 @dataclass
 class QuantConfig:
-    """Configures scaled quantization settings for a layer or model section."""
+    """Configures scaled quantization settings for a layer or model section.
+
+    For example, to configure NVFP4 block-scaled quantization for all layers
+    in a 19-layer model:
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.nn import QuantConfig, QuantFormat
+        from max.nn.quant_config import (
+            InputScaleSpec,
+            ScaleGranularity,
+            ScaleOrigin,
+            WeightScaleSpec,
+        )
+
+        all_layers = set(range(19))
+
+        input_spec = InputScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.STATIC,
+            dtype=DType.float32,
+            block_size=(1, 16),
+        )
+        weight_spec = WeightScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            dtype=DType.float8_e4m3fn,
+            block_size=(1, 8),
+        )
+        config = QuantConfig(
+            input_scale=input_spec,
+            weight_scale=weight_spec,
+            mlp_quantized_layers=all_layers,
+            attn_quantized_layers=all_layers,
+            format=QuantFormat.NVFP4,
+        )
+    """
 
     input_scale: InputScaleSpec
     """:class:`~max.nn.quant_config.InputScaleSpec` for input activation scaling."""
@@ -180,17 +225,17 @@ class QuantConfig:
     mlp_quantized_layers: set[int]
     """Set of layer indices with quantized MLPs.
 
-    MLPs are considered to be either "all quantized" or all not quantized per
-    layer.
-    So either all of gate proj, down proj, and up proj are quantized, or all bfloat16.
+    MLPs are quantized on an all-or-nothing basis per layer: either all of
+    ``gate_proj``, ``down_proj``, and ``up_proj`` are quantized, or all three
+    remain in ``bfloat16``.
     """
 
     attn_quantized_layers: set[int]
-    """Set of layer indices with quantized attention QKV projections.
+    """Set of layer indices with quantized attention projections.
 
-    QKV projections are considered to be either "all quantized" or all not
-    quantized per layer.
-    So either all of {q,k,v,o}_proj are quantized, or all bfloat16.
+    Attention projections are quantized on an all-or-nothing basis per layer:
+    either all of ``q_proj``, ``k_proj``, ``v_proj``, and ``o_proj`` are
+    quantized, or all four remain in ``bfloat16``.
     """
 
     format: QuantFormat
@@ -208,8 +253,8 @@ class QuantConfig:
     scales_pre_interleaved: bool = False
     """Whether weight scales in the checkpoint are already stored in the 5D
     TCGEN-interleaved layout expected by the FP4 matmul kernel (NVFP4 only).
-    Note that scales in the 5D TCGEN-interleaved layout are typically flattened 
-    to 2D `[M, K//16]` in the checkpoint."""
+    Note that scales in the 5D TCGEN-interleaved layout are typically flattened
+    to 2D ``[M, K//16]`` in the checkpoint."""
 
     @property
     def scales_granularity_mnk(self) -> tuple[int, int, int]:
