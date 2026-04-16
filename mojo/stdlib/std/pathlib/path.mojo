@@ -357,7 +357,7 @@ struct Path(
 
         ```mojo
         from std.pathlib import Path
-        from std.testing import assert_false
+        from std.testing import assert_true
 
         var p = Path.home()
         assert_true(p.is_dir())

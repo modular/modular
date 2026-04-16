@@ -49,6 +49,7 @@ def vectorize[
 
     ```mojo
     from std.algorithm.functional import vectorize
+    from std.memory import alloc
     from std.sys import simd_width_of
 
     # The amount of elements to loop through
@@ -163,6 +164,7 @@ def vectorize[
 
     ```mojo
     from std.algorithm.functional import vectorize
+    from std.memory import alloc
     from std.sys import simd_width_of
     from std.math import iota
     from std.sys.intrinsics import masked_store
@@ -281,6 +283,7 @@ def vectorize[
 
     ```mojo
     from std.algorithm.functional import vectorize
+    from std.memory import alloc
     from std.sys import simd_width_of
 
     # The amount of elements to loop through
@@ -289,7 +292,7 @@ def vectorize[
     comptime simd_width = simd_width_of[DType.int32]()  # assumed to be 4 in this example
 
     def main():
-        var p = UnsafePointer[Int32].alloc(size)
+        var p = alloc[Int32](size)
 
         # The closure can capture the `p` pointer with unified {mut}
         def closure[width: Int](i: Int) unified {mut}:

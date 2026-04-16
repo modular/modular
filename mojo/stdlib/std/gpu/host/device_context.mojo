@@ -1567,6 +1567,11 @@ struct DeviceStream(ImplicitlyCopyable):
         Example:
 
         ```mojo
+        from std.gpu.host import DeviceContext
+
+        var ctx = DeviceContext()
+        var stream = ctx.create_stream()
+
         # Launch kernel or memory operations on the stream
         # ...
 
@@ -1630,8 +1635,8 @@ struct DeviceStream(ImplicitlyCopyable):
         var default_stream = ctx.stream()
         var new_stream = ctx.create_stream()
 
-        # Create event on the default stream
-        var event = default_stream.create_event()
+        # Create event on the context
+        var event = ctx.create_event()
 
         # Wait for the event on the new stream
         new_stream.enqueue_wait_for(event)
@@ -1941,15 +1946,15 @@ struct DeviceFunction[
     Example:
 
     ```mojo
-    from std.gpu.host import DeviceContext, DeviceFunction
+    from std.gpu.host import DeviceContext
 
-    def my_kernel(x: Int, y: Int):
+    def my_kernel():
         # Kernel implementation
         pass
 
     var ctx = DeviceContext()
-    var kernel = ctx.compile_function[my_kernel, my_kernel]()
-    ctx.enqueue_function(kernel, grid_dim=(1,1,1), block_dim=(32,1,1))
+    ctx.enqueue_function[my_kernel, my_kernel](grid_dim=1, block_dim=32)
+    ctx.synchronize()
     ```
     """
 
@@ -2971,9 +2976,13 @@ struct DeviceFunction[
         Example:
 
         ```mojo
-        from std.gpu.host import Attribute, DeviceFunction
+        from std.gpu.host import Attribute, DeviceContext
 
-        var device_function = DeviceFunction(...)
+        def kernel():
+            pass
+
+        var ctx = DeviceContext()
+        var device_function = ctx.compile_function[kernel, kernel]()
 
         # Get the maximum number of threads per block for this function
         var max_threads = device_function.get_attribute(Attribute.MAX_THREADS_PER_BLOCK)
@@ -3368,7 +3377,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     A custom operation receives an opaque `DeviceContextPtr`, which provides
     a `get_device_context()` method to retrieve the device context:
 
-    ```mojo
+    ```text
     from std.runtime.asyncrt import DeviceContextPtr
 
     @register("custom_op")
@@ -3508,6 +3517,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         with DeviceContext() as ctx:
             # Perform GPU operations
             # Resources are automatically released when exiting the block
+            pass
         ```
         """
         return self^
@@ -4156,7 +4166,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
         Example:
 
-        ```mojo
+        ```text
         from std.gpu.host import DeviceContext
         from std.gpu.host.device_context import DeviceExternalFunction
 
@@ -4259,6 +4269,11 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         first to remove the overhead:
 
         ```mojo
+        from std.gpu.host import DeviceContext
+
+        def kernel():
+            print("hello from the GPU")
+
         with DeviceContext() as ctx:
             var compiled_func = ctx.compile_function_unchecked[kernel]()
             ctx.enqueue_function_unchecked(compiled_func, grid_dim=1, block_dim=1)
@@ -4360,6 +4375,9 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
         ```mojo
         from std.gpu.host import DeviceContext
+
+        def kernel():
+            print("hello from the GPU")
 
         with DeviceContext() as ctx:
             var compiled_func = ctx.compile_function_unchecked[kernel]()
@@ -4516,7 +4534,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
         Example:
 
-        ```mojo
+        ```text
         from std.gpu.host import DeviceContext
 
         def vec_add_sig(
@@ -4633,7 +4651,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Most parameters are inferred automatically. In typical usage, you only
         need to pass the kernel function twice (as both `func` and `signature_func`):
 
-        ```mojo
+        ```text
         from std.gpu.host import DeviceContext
         from layout import Layout, LayoutTensor
 
@@ -4773,6 +4791,11 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         first to remove the overhead:
 
         ```mojo
+        from std.gpu.host import DeviceContext
+
+        def kernel():
+            print("hello from the GPU")
+
         with DeviceContext() as ctx:
             var compiled_func = ctx.compile_function_experimental[kernel]()
             ctx.enqueue_function_experimental(compiled_func, grid_dim=1, block_dim=1)
@@ -4890,7 +4913,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Most parameters are inferred automatically. This overload is selected when
         your kernel captures variables from its surrounding scope:
 
-        ```mojo
+        ```text
         from std.gpu.host import DeviceContext
         from layout import Layout, LayoutTensor
 
@@ -5011,7 +5034,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Most parameters are inferred automatically. This overload is selected when
         your kernel captures variables from its surrounding scope:
 
-        ```mojo
+        ```text
         from std.gpu import DeviceContext, global_idx
         from layout import TileTensor, row_major
 
@@ -5141,6 +5164,11 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         first to remove the overhead:
 
         ```mojo
+        from std.gpu.host import DeviceContext
+
+        def kernel():
+            print("hello from the GPU")
+
         with DeviceContext() as ctx:
             var compiled_func = ctx.compile_function_experimental[kernel]()
             ctx.enqueue_function_experimental(compiled_func, grid_dim=1, block_dim=1)
@@ -5253,6 +5281,9 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
         ```mojo
         from std.gpu.host import DeviceContext
+
+        def kernel():
+            print("hello from the GPU")
 
         with DeviceContext() as ctx:
             var compiled_func = ctx.compile_function_experimental[kernel]()
@@ -5394,10 +5425,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
         Example:
 
-        ```mojo
+        ```text
         from std.gpu.host import DeviceContext
 
-        def gpu_operation(ctx: DeviceContext) raises capturing [_] -> None:
+        def gpu_operation(ctx: DeviceContext) raises -> None:
             # Perform some GPU operation using ctx
             pass
 
@@ -5479,6 +5510,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
+        from std.gpu.host import DeviceContext
+
         var ctx = DeviceContext(device_id=1)
         # Ensure GPU 1's context is active for these operations.
         with ctx.push_context():
@@ -5537,16 +5570,16 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
         Example:
 
-        ```mojo
+        ```text
         from std.gpu.host import DeviceContext
 
-        def some_gpu_operation() raises capturing [_] -> None:
+        def some_gpu_operation() raises -> None:
             # Perform some GPU operation
             pass
 
         with DeviceContext() as ctx:
             # Measure execution time of a function
-            var time_ns = ctx.execution_time[some_gpu_operation]
+            var time_ns = ctx.execution_time[some_gpu_operation](10)
             print("Execution time:", time_ns, "ns")
         ```
         """
@@ -5630,14 +5663,12 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
         Example:
 
-        ```mojo
+        ```text
         from std.gpu.host import DeviceContext
 
-        var my_kernel = DeviceFunction(...)
-
-        def benchmark_kernel(ctx: DeviceContext, i: Int) raises capturing [_] -> None:
-            # Run kernel with different parameters based on iteration
-            ctx.enqueue_function[my_kernel, my_kernel](grid_dim=Dim(i), block_dim=Dim(256))
+        def benchmark_kernel(ctx: DeviceContext, i: Int) raises -> None:
+            # Perform GPU operations using ctx, potentially varying by iteration
+            pass
 
         with DeviceContext() as ctx:
             # Measure execution time with iteration awareness
@@ -6358,7 +6389,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         ```mojo
         from std.gpu.host import DeviceContext
         var ctx = DeviceContext()
-        var priority = ctx.stream_priority_range().largest
+        var priority = ctx.stream_priority_range().greatest
         var stream = ctx.create_stream(priority=priority)
         ```
 
@@ -6639,6 +6670,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Example:
 
         ```mojo
+        from std.gpu.host import DeviceContext
+
         var ctx = DeviceContext()
         try:
             var device_id = ctx.id()

@@ -153,6 +153,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     Example for C FFI:
 
     ```mojo
+    from std.ffi import UnsafeUnion
+
     # Matches C: union { int32_t i; float f; }
     comptime CUnion = UnsafeUnion[Int32, Float32]
 
@@ -216,6 +218,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         Example:
 
         ```mojo
+        from std.ffi import UnsafeUnion
+
         var u = UnsafeUnion[Int32, Float32](Int32(42))
         ```
         """
@@ -287,6 +291,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         Example:
 
         ```mojo
+        from std.ffi import UnsafeUnion
+
         var u = UnsafeUnion[Int32, Float32](Int32(42))
         ref val = u.unsafe_get[Int32]()
         print(val)  # => 42
@@ -307,6 +313,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         Example:
 
         ```mojo
+        from std.ffi import UnsafeUnion
+
         var u = UnsafeUnion[Int32, Float32](Int32(42))
         print(u)  # => UnsafeUnion[Int32, Float32](size=4, align=4)
         ```
@@ -353,6 +361,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         Example:
 
         ```mojo
+        from std.ffi import UnsafeUnion
+
         var u = UnsafeUnion[Int32, Float32](Int32(42))
         var val = u.unsafe_take[Int32]()  # val = 42, u is now uninitialized
         ```
@@ -379,6 +389,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         Example:
 
         ```mojo
+        from std.ffi import UnsafeUnion
+
         var u = UnsafeUnion[Int32, Float32](Int32(0))
         u.unsafe_set(Float32(3.14))
         ```
@@ -410,6 +422,8 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         Example:
 
         ```mojo
+        from std.ffi import UnsafeUnion
+
         var u = UnsafeUnion[Int32, Float32](Int32(0))
         var ptr = u.unsafe_ptr[Int32]()
         ptr[] = 42

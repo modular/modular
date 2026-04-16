@@ -108,7 +108,9 @@ def gather[
     In general, for some vector of pointers `base`, mask `mask`, and passthrough
     `passthrough` a call of the form:
 
-    ```mojo
+    ```text
+    from std.sys.intrinsics import gather
+
     result = gather(base, mask, passthrough)
     ```
 
@@ -207,7 +209,9 @@ def scatter[
     In general, for some vector `value`, vector of pointers `base`, and mask
     `mask` a call of the form:
 
-    ```mojo
+    ```text
+    from std.sys.intrinsics import scatter
+
     scatter(value, base, mask)
     ```
 

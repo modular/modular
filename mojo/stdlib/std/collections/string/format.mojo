@@ -39,7 +39,7 @@ indicate whether the argument should be formatted using `repr()` or `String()`,
 respectively:
 
 ```mojo
-var s = "{!r}".format(myComplicatedObject)
+var s = "{!r}".format("test")
 ```
 
 Note that the following features from Python's `str.format()` are

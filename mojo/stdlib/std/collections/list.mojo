@@ -188,7 +188,7 @@ struct List[T: Copyable](
       ```mojo
       var int_list = [1, 2, 3]        # List[Int]
       var str_list = ["a", "b", "c"]  # List[String]
-      var mixed = [1, "hello"]        # Error! All elements must be same type
+      # var mixed = [1, "hello"]      # Error! All elements must be same type
       ```
 
       However, you can get around this by defining your list type as
@@ -218,9 +218,9 @@ struct List[T: Copyable](
       ```mojo
       var numbers = [10, 20, 30]
 
-      # Default behavior creates immutable (read-only) references
-      for num in numbers:
-          num += 1  # error: expression must be mutable
+      # Default behavior creates immutable (read-only) references:
+      # for num in numbers:
+      #     num += 1  # error: expression must be mutable
 
       # Using `ref` gets mutable (read-write) references
       for ref num in numbers:
@@ -245,7 +245,7 @@ struct List[T: Copyable](
 
       ```mojo
       var my_list = [1, 2, 3]
-      print(my_list[5])  # Undefined behavior (out of bounds)
+      # print(my_list[5])  # Undefined behavior (out of bounds)
       ```
 
       For safe access, you should manually check bounds or use methods that

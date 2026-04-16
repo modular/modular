@@ -385,7 +385,9 @@ def platform_map[
     Example:
 
     ```mojo
-    comptime EDEADLK = platform_alias["EDEADLK", linux=35, macos=11]()
+    from std.sys.info import platform_map
+
+    comptime EDEADLK = platform_map["EDEADLK", linux=35, macos=11]()
     ```
     """
 

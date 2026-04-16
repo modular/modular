@@ -29,6 +29,12 @@ For field lookup by name (concrete types only):
 Example iterating over all fields (works with generics):
 
 ```mojo
+from std.reflection.struct_fields import struct_field_names, struct_field_count
+
+struct Point:
+    var x: Int
+    var y: Float64
+
 def print_fields[T: AnyType]():
     comptime names = struct_field_names[T]()
     comptime for i in range(struct_field_count[T]()):
@@ -41,9 +47,19 @@ def main():
 Example looking up a field by name:
 
 ```mojo
-comptime idx = struct_field_index_by_name[Point, "x"]()  # 0
-comptime field_type = struct_field_type_by_name[Point, "y"]()
-var value: field_type.T = 3.14  # field_type.T is Float64
+from std.reflection.struct_fields import (
+    struct_field_index_by_name,
+    struct_field_type_by_name,
+)
+
+struct Point:
+    var x: Int
+    var y: Float64
+
+def main():
+    comptime idx = struct_field_index_by_name[Point, "x"]()  # 0
+    comptime field_type = struct_field_type_by_name[Point, "y"]()
+    var value: field_type.T = 3.14  # field_type.T is Float64
 ```
 
 For accessing struct field values by index (returns a reference, not a copy):
@@ -56,25 +72,24 @@ both literal indices and parametric indices (such as loop variables in
 `comptime for` loops):
 
 ```mojo
+from std.reflection.struct_fields import struct_field_names, struct_field_count
+
+@fieldwise_init
 struct Container:
     var id: Int
-    var resource: NonCopyableResource
+    var name: String
 
-def inspect(ref c: Container):
+def inspect(mut c: Container):
     # Get references to fields without copying
     ref id_ref = __struct_field_ref(0, c)
-    ref resource_ref = __struct_field_ref(1, c)
-    print("id:", id_ref)
-    print("resource:", resource_ref.data)
+    ref name_ref = __struct_field_ref(1, c)
 
-    # Mutation through reference also works
+    # Mutation through reference
     __struct_field_ref(0, c) = 42
 
-# Works in generic contexts with parameter indices
-def print_all_fields[T: AnyType](ref s: T):
-    comptime names = struct_field_names[T]()
-    comptime for i in range(struct_field_count[T]()):
-        print(names[i], "=", __struct_field_ref(i, s))
+def main():
+    var c = Container(id=1, name="test")
+    inspect(c)
 ```
 
 For struct field byte offsets (useful for low-level memory operations):
@@ -85,6 +100,8 @@ For struct field byte offsets (useful for low-level memory operations):
 Example:
 
 ```mojo
+from std.reflection.struct_fields import offset_of
+
 struct Point:
     var x: Int      # offset 0
     var y: Float64  # offset 8 (aligned to 8 bytes)
@@ -141,10 +158,17 @@ struct ReflectedType[T: AnyType](TrivialRegisterPassable):
 
     Example:
         ```mojo
-        # Get the type of field "x" in MyStruct
-        comptime field_type = struct_field_type_by_name[MyStruct, "x"]()
-        # Access the underlying type via the T parameter
-        var value: field_type.T = 42
+        from std.reflection.struct_fields import struct_field_type_by_name
+
+        struct MyStruct:
+            var x: Int
+            var y: Float64
+
+        def main():
+            # Get the type of field "x" in MyStruct
+            comptime field_type = struct_field_type_by_name[MyStruct, "x"]()
+            # Access the underlying type via the T parameter
+            var value: field_type.T = 42
         ```
     """
 
@@ -187,6 +211,8 @@ def struct_field_type_by_name[
 
     Example:
         ```mojo
+        from std.reflection.struct_fields import struct_field_type_by_name
+
         struct Point:
             var x: Int
             var y: Float64
@@ -248,6 +274,12 @@ def struct_field_count[T: AnyType]() -> Int:
 
     Example:
         ```mojo
+        from std.reflection.struct_fields import struct_field_count
+
+        struct MyStruct:
+            var x: Int
+            var y: Float64
+
         def count_fields[T: AnyType]() -> Int:
             return struct_field_count[T]()
 
@@ -295,6 +327,11 @@ def struct_field_types[
     Example:
         ```mojo
         from std.reflection import get_type_name
+        from std.reflection.struct_fields import struct_field_types, struct_field_count
+
+        struct MyStruct:
+            var x: Int
+            var y: Float64
 
         def print_field_types[T: AnyType]():
             comptime types = struct_field_types[T]()
@@ -342,6 +379,12 @@ def struct_field_names[
 
     Example:
         ```mojo
+        from std.reflection.struct_fields import struct_field_names, struct_field_count
+
+        struct MyStruct:
+            var x: Int
+            var y: Float64
+
         def print_field_names[T: AnyType]():
             comptime names = struct_field_names[T]()
             comptime for i in range(struct_field_count[T]()):
@@ -401,6 +444,7 @@ def is_struct_type[T: AnyType]() -> Bool:
     Example:
         ```mojo
         from std.reflection import get_type_name
+        from std.reflection.struct_fields import is_struct_type, struct_field_count
 
         def process_type[T: AnyType]():
             comptime if is_struct_type[T]():
@@ -488,6 +532,8 @@ def offset_of[
 
     Example:
         ```mojo
+        from std.reflection.struct_fields import offset_of
+
         struct Point:
             var x: Int      # offset 0
             var y: Float64  # offset 8 (aligned to 8 bytes)
@@ -527,6 +573,8 @@ def offset_of[
 
     Example:
         ```mojo
+        from std.reflection.struct_fields import offset_of
+
         struct Point:
             var x: Int      # offset 0
             var y: Float64  # offset 8 (aligned to 8 bytes)

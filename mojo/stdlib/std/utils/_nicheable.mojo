@@ -106,6 +106,9 @@ trait UnsafeNicheable:
     A `NonMaxUInt` that uses `UInt.MAX` as its single niche:
 
     ```mojo
+    from std.utils._nicheable import UnsafeNicheable, NicheIndex
+    from std.memory import UnsafeMaybeUninit
+
     struct NonMaxUInt(UnsafeNicheable):
         var _n: UInt
 
@@ -121,7 +124,7 @@ trait UnsafeNicheable:
             return 1
 
         @staticmethod
-        def write_niche[index: NicheIndex](
+        def write_niche[index: Int](
             memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
         ):
             # Write UInt.MAX into the storage, not a valid NonMaxUInt.
@@ -222,6 +225,9 @@ trait UnsafeSingleNicheable(UnsafeNicheable):
     A `NonMaxUInt` that uses `UInt.MAX` as its single niche:
 
     ```mojo
+    from std.utils._nicheable import UnsafeSingleNicheable
+    from std.memory import UnsafeMaybeUninit
+
     struct NonMaxUInt(UnsafeSingleNicheable):
         var _n: UInt
 

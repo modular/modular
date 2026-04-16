@@ -95,6 +95,7 @@ trait Intable(ImplicitlyDestructible):
     example:
 
     ```mojo
+    @fieldwise_init
     struct Foo(Intable):
         var i: Int
 
@@ -106,6 +107,13 @@ trait Intable(ImplicitlyDestructible):
 
     ```mojo
     %# from testing import assert_equal
+    @fieldwise_init
+    struct Foo(Intable):
+        var i: Int
+
+        def __int__(self) -> Int:
+            return self.i
+
     foo = Foo(42)
     assert_equal(Int(foo), 42)
     ```
@@ -136,6 +144,7 @@ trait IntableRaising:
     raise an error. For example:
 
     ```mojo
+    @fieldwise_init
     struct Foo(IntableRaising):
         var i: Int
 
@@ -147,6 +156,13 @@ trait IntableRaising:
 
     ```mojo
     %# from testing import assert_equal
+    @fieldwise_init
+    struct Foo(IntableRaising):
+        var i: Int
+
+        def __int__(self) raises -> Int:
+            return self.i
+
     foo = Foo(42)
     assert_equal(Int(foo), 42)
     ```

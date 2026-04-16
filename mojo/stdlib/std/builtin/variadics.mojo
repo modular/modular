@@ -210,8 +210,9 @@ struct Variadic:
 
     Examples:
 
-    ```mojo
+    ```text
     from std.builtin.variadics import Variadic
+    from std.sys.intrinsics import _type_is_eq
     from std.testing import *
 
     trait MyError:
@@ -232,9 +233,10 @@ struct Variadic:
     # The resulting variadic of types is [Int, String]
     comptime output = Variadic.map_types_to_types[input_types, mapper]
 
-    assert_equal(output.size, 2)
-    assert_true(_type_is_eq[output[0], Int]())
-    assert_true(_type_is_eq[output[1], String]())
+    def main():
+        assert_equal(output.size, 2)
+        assert_true(_type_is_eq[output[0], Int]())
+        assert_true(_type_is_eq[output[1], String]())
     ```
     """
 
@@ -268,8 +270,9 @@ struct Variadic:
         - 0 <= start <= end <= TypeList[element_types].size
 
     Examples:
-        ```mojo
+        ```text
         from std.builtin.variadics import Variadic
+
         # Given a variadic of types [Int, String, Float64, Bool]
         comptime MyTypes = Tuple[Int, String, Float64, Bool].element_types
         # Extract middle elements: [String, Float64]
@@ -337,7 +340,7 @@ struct Variadic:
 
     Examples:
 
-    ```mojo
+    ```text
     from std.builtin.variadics import Variadic
     from std.utils import Variant
     from std.sys.intrinsics import _type_is_eq
@@ -368,8 +371,14 @@ struct Variadic:
 
     Filter operations can be chained for complex transformations:
 
-    ```mojo
+    ```text
+    from std.builtin.variadics import Variadic
+    from std.utils import Variant
+    from std.sys.intrinsics import _type_is_eq
+
+    comptime FullVariant = Variant[Int, String, Float64, Bool]
     comptime IsNotBool[Type: AnyType] = not _type_is_eq[Type, Bool]()
+    comptime IsNotInt[Type: AnyType] = not _type_is_eq[Type, Int]()
     comptime Step1 = Variadic.filter_types[*FullVariant.Ts, predicate=IsNotBool]
     comptime Step2 = Variadic.filter_types[*Step1, predicate=IsNotInt]
     comptime ChainedVariant = Variant[*Step2]
@@ -424,22 +433,24 @@ struct TypeList[
 
     Examples:
 
-    ```mojo
+    ```text
     from std.builtin.variadics import TypeList
     from std.sys.intrinsics import _type_is_eq
+    from std.testing import assert_equal
 
     # Create a type list
     comptime tl = TypeList[Trait=AnyType, Int, String, Float64]()
 
-    # Query size
-    assert_equal(tl.size, 3)
+    def main():
+        # Query size
+        assert_equal(tl.size, 3)
 
-    # Check membership
-    comptime assert tl.contains[Int]
-    comptime assert not tl.contains[Bool]
+        # Check membership
+        comptime assert tl.contains[Int]
+        comptime assert not tl.contains[Bool]
 
-    # Index into the list
-    comptime assert _type_is_eq[tl[0], Int]()
+        # Index into the list
+        comptime assert _type_is_eq[tl[0], Int]()
     ```
     """
 
@@ -716,7 +727,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         return total
 
     def main():
-        print(sum_values(1, 2, 3, 4, 5))
+        print(sum_values[1, 2, 3, 4, 5]())
     ```
 
     Parameters:
@@ -1257,8 +1268,8 @@ struct VariadicPack[
 
         return total
 
-    def main() raises:
-        print(count_many_things(5, 11.7, 12))  # Prints: 28
+    def main():
+        print(count_many_things(Int8(5), UInt32(11), Int(12)))  # Prints: 28
     ```
 
     Parameters:

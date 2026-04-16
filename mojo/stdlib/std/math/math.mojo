@@ -3704,12 +3704,14 @@ trait Absable:
 
     For example:
     ```mojo
-    struct Point(Absable):
-        var x: Float64
-        var y: Float64
+    struct Celsius(Absable):
+        var degrees: Float64
+
+        def __init__(out self, degrees: Float64):
+            self.degrees = degrees
 
         def __abs__(self) -> Self:
-            return sqrt(self.x * self.x + self.y * self.y)
+            return Self(abs(self.degrees))
     ```
     """
 
@@ -3755,6 +3757,8 @@ trait DivModable(ImplicitlyCopyable):
 
     For example:
     ```mojo
+    from std.math import DivModable
+
     @fieldwise_init
     struct Bytes(DivModable):
         var size: Int

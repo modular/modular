@@ -49,6 +49,7 @@ def inlined_assembly[
 
     # Convert bfloat16 to float32 on NVIDIA GPU using PTX assembly.
     # "$0" is the output (float32), "$1" is the input (int16 bitcast of bf16).
+    var my_bf16_as_int16 = Int16(0x3F80)  # Example bf16 bit pattern
     var result = inlined_assembly[
         "cvt.f32.bf16 $0, $1;",
         Float32,

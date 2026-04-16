@@ -60,15 +60,14 @@ struct Progress(ImplicitlyCopyable):
     Implements a basic progress bar with the following usage.
 
     ```mojo
-    import std.time
+    from std.time import sleep
+    from std.benchmark._progress import Progress
 
-
-    def main():
+    def main() raises:
         with Progress(10) as p:
             for i in range(10):
                 p.advance()
-                time.sleep(0.1)
-
+                sleep(0.1)
     ```
     """
 
@@ -115,5 +114,6 @@ struct Progress(ImplicitlyCopyable):
         _hide_cursor()
         _show_cursor()
 
-    def __exit__(self, err: Error):
+    def __exit__(self, err: Error) -> Bool:
         self.__exit__()
+        return False

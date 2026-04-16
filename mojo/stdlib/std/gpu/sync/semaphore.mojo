@@ -19,10 +19,11 @@ to implement efficient thread synchronization.
 
 Example:
 
-    ```mojo
+    ```text
     from std.gpu import Semaphore
 
     var lock = UnsafePointer[Int32](...)
+    var thread_id = 0
     var sem = Semaphore(lock, thread_id)
 
     # Wait for a specific state

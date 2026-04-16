@@ -165,12 +165,12 @@ trait Iterator(ImplicitlyDestructible, Movable):
         Examples:
 
         ```mojo
-        def to_int_list[I: Iterable](iter: I) -> List[Int]:
+        from std.iter import Iterator
+
+        def preallocate[I: Iterator](mut iter: I) -> List[Int]:
             var lower, _upper = iter.bounds()
-            var list = List[Int](capacity=lower)
-            for element in iter:
-                list.append(rebind[Int](element))
-            return list^
+            # Pre-allocate based on estimated iterator length
+            return List[Int](capacity=lower)
         ```
         """
         return (0, None)

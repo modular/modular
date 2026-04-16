@@ -436,7 +436,7 @@ def shuffle_idx[
     Example:
 
         ```mojo
-            from std.gpu import shuffle_idx
+            from std.gpu.primitives.warp import shuffle_idx
 
             val = SIMD[DType.float32, 16](1.0)
 
@@ -495,7 +495,7 @@ def shuffle_idx[
     Example:
 
         ```mojo
-            from std.gpu import shuffle_idx
+            from std.gpu.primitives.warp import shuffle_idx
 
             # Only broadcast to first 16 lanes
             var mask = 0xFFFF  # 16 ones
@@ -792,7 +792,7 @@ def shuffle_xor[
     Example:
 
         ```mojo
-            from std.gpu import shuffle_xor
+            from std.gpu.primitives.warp import shuffle_xor
 
             # Exchange values between even-numbered threads 4 lanes apart
             mask = 0xAAAAAAAA  # Even threads only
@@ -859,7 +859,7 @@ def lane_group_reduce[
     Example:
 
         ```mojo
-            from std.gpu import lane_group_reduce, shuffle_down
+            from std.gpu.primitives.warp import lane_group_reduce, shuffle_down
 
             # Compute sum across 16 threads using shuffle down
             @parameter
@@ -912,7 +912,7 @@ def reduce[
     Example:
 
     ```mojo
-        from std.gpu import reduce, shuffle_down
+        from std.gpu.primitives.warp import reduce, shuffle_down
 
         # Compute warp-wide sum using shuffle down
         @parameter

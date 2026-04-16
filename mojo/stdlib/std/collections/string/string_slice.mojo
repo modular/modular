@@ -1119,7 +1119,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Print the characters in a string:
 
         ```mojo
-
         from std.testing import assert_equal, assert_raises
 
         var s = StringSlice("abc")
@@ -1135,7 +1134,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         codepoints:
 
         ```mojo
-
         from std.testing import assert_equal, assert_raises
 
         # A visual character composed of a combining sequence of 2 codepoints.
@@ -2023,9 +2021,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
         var s = StringSlice("hello")
-        print(s.center(10))        # "  hello   "
-        print(s.center(11, "*"))   # "***hello***"
-        print(s.center(3))         # "hello" (no padding)
+        print(s.ascii_center(10))        # "  hello   "
+        print(s.ascii_center(11, "*"))   # "***hello***"
+        print(s.ascii_center(3))         # "hello" (no padding)
         ```
         """
         return self._justify(width - self.byte_length() >> 1, width, fillchar)

@@ -165,11 +165,11 @@ def mkdtemp(
 
     ```mojo
     from std.tempfile import mkdtemp
-    from import os import rmdir
+    from std.os import rmdir
 
     var temp_dir = mkdtemp()
     print(temp_dir)
-    os.rmdir(temp_dir)
+    rmdir(temp_dir)
     ```
     """
     var final_dir = Path(dir.value()) if dir else Path(_get_default_tempdir())
@@ -208,8 +208,8 @@ def _rmtree(path: String, ignore_errors: Bool = False) raises:
     Example:
 
     ```mojo
-    from std.tempfile import mkdtemp, _rmtree
-    import std.os
+    from std.tempfile import mkdtemp
+    from std.tempfile.tempfile import _rmtree
 
     var dir_path = mkdtemp()
 
@@ -256,10 +256,10 @@ struct TemporaryDirectory:
         var temp_path: String
         with TemporaryDirectory() as tmpdir:
             temp_path = tmpdir
-            print(os.path.exists(tmpdir))  # True
+            print(std.os.path.exists(tmpdir))  # True
             # Use tmpdir for temporary work
 
-        print(os.path.exists(temp_path))  # False - cleaned up
+        print(std.os.path.exists(temp_path))  # False - cleaned up
     ```
 
     The directory and all its contents are removed on exit, even if an error occurs.

@@ -271,12 +271,17 @@ def ld_matrix[
 
         ```mojo
         from std.gpu.compute.mma import ld_matrix
+        from std.memory import UnsafePointer, alloc
+
+        var ptr = alloc[Scalar[DType.float16]](8)
 
         # Load 8x8 matrix of float16 values
-        var data = ld_matrix[DType.float16, 8](ptr)
+        var data = ld_matrix[simd_width=8](ptr)
 
         # Load transposed matrix
-        var transposed = ld_matrix[DType.float16, 8, transpose=True](ptr)
+        var transposed = ld_matrix[simd_width=8, transpose=True](ptr)
+
+        ptr.free()
         ```
     """
 

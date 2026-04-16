@@ -96,22 +96,24 @@ trait AnyType:
     a named destructor method:
 
     ```mojo
+    from std.pathlib import Path
+
     @explicit_destroy
     struct FileBuffer:
         def __init__(out self, path: Path):
-            # ... open the file at the specified `path` ...
+            pass  # ... open the file at the specified `path` ...
 
         def write(self, data: Some[Writable]):
-            # ... buffered write of the specified data to this file ...
+            pass  # ... buffered write of the specified data to this file ...
 
         def save_and_close(deinit self):
-            # ... save out the buffered data ...
+            pass  # ... save out the buffered data ...
 
-    # 🔴 ERROR: 'file' abandoned without being explicitly destroyed
-    def write_greeting_to_file(var file: FileBuffer):
-        file.write("Hello there!")
-
-        # 🟢 FIX: add `file^.save_and_close()`
+    # ERROR: 'file' abandoned without being explicitly destroyed
+    # def write_greeting_to_file(var file: FileBuffer):
+    #     file.write("Hello there!")
+    #
+    # FIX: add `file^.save_and_close()`
     ```
 
     In the above example, the user is saved from forgetting to flush any
@@ -151,11 +153,13 @@ trait ImplicitlyDestructible:
     Example:
 
     ```mojo
+    from std.memory import UnsafePointer, alloc
+
     struct ResourceOwner(ImplicitlyDestructible):
-        var ptr: UnsafePointer[Int]
+        var ptr: UnsafePointer[Int, MutAnyOrigin]
 
         def __init__(out self, size: Int):
-            self.ptr = UnsafePointer[Int].alloc(size)
+            self.ptr = alloc[Int](size)
 
         def __del__(deinit self):
             # Clean up owned resources

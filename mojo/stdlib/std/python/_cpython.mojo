@@ -1217,10 +1217,13 @@ struct GILAcquired(Movable):
 
     Example:
         ```mojo
+        from std.python import Python
+        from std.python._cpython import GILAcquired
+
         var python = Python()
-        with GILAcquired(Python(python)):
+        with GILAcquired(python):
             # Python objects can be safely accessed here
-            var py_obj = python.cpython().Py_None()
+            pass
         # GIL is automatically released here
         ```
     """
@@ -1259,11 +1262,16 @@ struct GILReleased(Movable):
 
     Example:
         ```mojo
+        from std.python import Python
+        from std.python._cpython import GILReleased
+
         var python = Python()
         with GILReleased(python):
             # GIL is released here, other threads can run
             # Perform CPU-intensive work without Python object access
-            perform_heavy_computation()
+            var total = 0
+            for i in range(1000):
+                total += i
         # Thread state is automatically restored here
         ```
     """
