@@ -659,8 +659,8 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
 
     # Workload config file
-    workload_config: str = Field(
-        default="",
+    workload_config: str | None = Field(
+        default=None,
         description="YAML file specifying the workload to benchmark.",
         json_schema_extra={"group": "Workload Configuration"},
     )

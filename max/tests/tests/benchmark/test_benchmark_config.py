@@ -34,7 +34,7 @@ class TestServingSweepFields:
         """Test that sweep-related fields exist on ServingBenchmarkConfig with correct defaults."""
         config = ServingBenchmarkConfig()
 
-        assert config.workload_config == ""
+        assert config.workload_config is None
         assert config.log_dir is None
         assert config.dry_run is False
         assert config.upload_results is False

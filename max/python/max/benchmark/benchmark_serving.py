@@ -2581,16 +2581,28 @@ def _apply_workload_to_config(
 
     Keys are converted from kebab-case to snake_case.  Path objects are
     stringified and env vars in string values are expanded.
+
+    Fields already in `config.model_fields_set` (i.e. explicitly provided
+    by the caller, whether via CLI args or direct construction) are left
+    unchanged so that CLI values always take precedence over workload YAML.
     """
     for k, v in workload.items():
         field_name = k.replace("-", "_")
-        if field_name not in config.model_fields:
+        if field_name not in ServingBenchmarkConfig.model_fields:
             logger.warning(f"Ignoring unknown workload key: {k}")
+            continue
+        if field_name in config.model_fields_set:
+            logger.info(
+                f"CLI flag --{k} takes precedence over workload YAML"
+                f" (CLI: {getattr(config, field_name)!r},"
+                f" workload: {v!r})"
+            )
             continue
         if isinstance(v, Path):
             v = str(v)
         elif isinstance(v, str):
             v = os.path.expandvars(v)
+        logger.info(f"Applying workload YAML value: --{k}={v!r}")
         setattr(config, field_name, v)
 
 
@@ -2890,25 +2902,26 @@ def main_with_parsed_args(
         w_duration = workload.pop("max-benchmark-duration-s", None)
         if w_duration is not None and args.max_benchmark_duration_s is None:
             args.max_benchmark_duration_s = int(w_duration)
-        # Warn + default when nothing constrains run length.
-        has_prompts = args.num_prompts is not None
-        has_duration = args.max_benchmark_duration_s is not None
-        has_multiplier = args.num_prompts_multiplier is not None
-        # The multiplier dynamically computes num_prompts per-mc, but only
-        # when no explicit duration also constrains the run.
-        multiplier_will_resolve = has_multiplier and not has_duration
-        if not has_prompts and not has_duration and not has_multiplier:
-            logger.warning(
-                "Neither --num-prompts nor --max-benchmark-duration-s is"
-                " specified. Defaulting to --num-prompts 1000 and"
-                " --max-benchmark-duration-s 300"
-            )
-            args.num_prompts = 1000
-            args.max_benchmark_duration_s = 300
-        elif not has_prompts and not multiplier_will_resolve:
-            args.num_prompts = 1000
         _apply_workload_to_config(args, workload)
         args.skip_test_prompt = True
+
+    # Warn + default when nothing constrains run length (common to both paths).
+    has_prompts = args.num_prompts is not None
+    has_duration = args.max_benchmark_duration_s is not None
+    has_multiplier = args.num_prompts_multiplier is not None
+    # The multiplier dynamically computes num_prompts per-mc, but only
+    # when no explicit duration also constrains the run.
+    multiplier_will_resolve = has_multiplier and not has_duration
+    if not has_prompts and not has_duration and not has_multiplier:
+        logger.warning(
+            "Neither --num-prompts nor --max-benchmark-duration-s is"
+            " specified. Defaulting to --num-prompts 1000 and"
+            " --max-benchmark-duration-s 300"
+        )
+        args.num_prompts = 1000
+        args.max_benchmark_duration_s = 300
+    elif not has_prompts and not multiplier_will_resolve:
+        args.num_prompts = 1000
 
     # ---- Parse sweep ranges ----
     concurrency_range = parse_comma_separated(args.max_concurrency, int_or_none)
