@@ -13,7 +13,7 @@
 """This module implements the low level concurrency library."""
 
 from std.os import abort
-from std.os.atomic import Atomic
+from std.atomic import Atomic
 from std.ffi import _CPointer, external_call
 from std.gpu.host.device_context import _DeviceContextPtr
 

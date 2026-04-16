@@ -32,7 +32,7 @@ from std.format._utils import (
     _WriteBufferStack,
 )
 from std.os import PathLike, abort
-from std.os.atomic import Atomic, Consistency, fence
+from std.atomic import Atomic, Consistency, fence
 from std.sys import size_of, bit_width_of
 from std.ffi import c_char, CStringSlice
 from std.sys.info import is_32bit

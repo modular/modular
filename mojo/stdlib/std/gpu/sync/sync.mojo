@@ -24,7 +24,7 @@ thread blocks and warps, and manage memory consistency across different memory s
 """
 
 from std.os import abort
-from std.os.atomic import Consistency, fence
+from std.atomic import Consistency, fence
 from std.sys import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, llvm_intrinsic
 from std.sys._assembly import inlined_assembly
 from std.sys.info import CompilationTarget, _is_amd_cdna

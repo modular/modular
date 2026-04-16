@@ -14,7 +14,7 @@
 from std.collections.string.string_slice import get_static_string
 from std.math import ceildiv
 from std.math.uutils import ufloordiv
-from std.os.atomic import Atomic
+from std.atomic import Atomic
 from std.sys import simd_width_of, has_nvidia_gpu_accelerator
 from std.sys import align_of, size_of, get_defined_bool
 import std.gpu.primitives.block as block

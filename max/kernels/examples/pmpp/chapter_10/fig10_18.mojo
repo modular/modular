@@ -20,7 +20,7 @@ from std.gpu.primitives.id import (
     lane_id,
     warp_id,
 )
-from std.os import Atomic
+from std.atomic import Atomic
 from std.random import random_float64
 from std.math import abs, ceildiv
 from std.bit import log2_floor

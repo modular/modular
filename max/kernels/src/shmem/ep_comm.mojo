@@ -13,7 +13,7 @@
 
 from std.math import align_up, ceildiv
 from std.math.uutils import umod, ufloordiv
-from std.os.atomic import Atomic, Consistency
+from std.atomic import Atomic, Consistency
 from std.sys import is_amd_gpu, is_nvidia_gpu
 from std.sys.info import CompilationTarget, align_of, simd_width_of, size_of
 from std.ffi import c_size_t

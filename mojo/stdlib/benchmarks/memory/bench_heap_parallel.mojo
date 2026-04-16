@@ -36,7 +36,7 @@ from std.benchmark import (
 )
 from std.math import ceildiv
 from std.memory import alloc
-from std.os.atomic import Atomic
+from std.atomic import Atomic
 from std.sys.info import num_physical_cores
 
 # Elements per ``alloc[Int](...)`` slab; ``black_box`` keeps the count opaque.

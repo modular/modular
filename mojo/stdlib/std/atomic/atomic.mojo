@@ -12,15 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the `Atomic` struct.
 
-You can import these APIs from the `os` package. For example:
+You can import these APIs from the `atomic` package. For example:
 
 ```mojo
-from std.os import Atomic
+from std.atomic import Atomic
 ```
 """
 
 from std.collections.string.string_slice import _get_kgen_string
 from std.memory._poison import _check_not_poison
+from std.os import abort
 from std.sys.info import is_nvidia_gpu, is_apple_gpu
 
 from std.builtin.dtype import _integral_type_of, _unsigned_integral_type_of

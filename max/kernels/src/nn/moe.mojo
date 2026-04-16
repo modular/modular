@@ -17,7 +17,7 @@ from std.math import align_up, ceildiv
 from std.math.uutils import umod
 from std.memory import stack_allocation
 
-from std.os.atomic import Atomic
+from std.atomic import Atomic
 from std.sys.info import simd_width_of
 
 import std.gpu.primitives.warp as warp

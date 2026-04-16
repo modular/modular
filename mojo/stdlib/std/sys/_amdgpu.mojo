@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import InlineArray
-from std.os.atomic import Atomic, Consistency
+from std.atomic import Atomic, Consistency
 from std.sys.intrinsics import (
     ballot,
     implicitarg_ptr,

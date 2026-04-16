@@ -20,7 +20,7 @@ and if so, marks the destination vertex as visited at the current level.
 
 from std.gpu import block_idx, thread_idx, block_dim, grid_dim
 from std.gpu.host import DeviceContext
-from std.os import Atomic
+from std.atomic import Atomic
 from std.collections import List
 
 from graph_utils import (

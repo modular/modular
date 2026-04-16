@@ -19,7 +19,7 @@ from std.memory import ArcPointer
 ```
 """
 
-from std.os.atomic import Atomic, Consistency, fence
+from std.atomic import Atomic, Consistency, fence
 from std.sys.info import size_of
 from std.format._utils import (
     Repr,

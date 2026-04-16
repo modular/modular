@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.os import Atomic
+from std.atomic import Atomic
 
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx
 from std.gpu.host.info import is_cpu

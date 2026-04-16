@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.os.atomic import Atomic
+from std.atomic import Atomic
 from std.random import randint
 from std.sys import has_accelerator, size_of
 

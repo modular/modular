@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.os import Atomic
+from std.atomic import Atomic
 from std.time import time_function
 
 from std.runtime.asyncrt import TaskGroup

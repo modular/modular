@@ -105,6 +105,18 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Atomic operations have moved to a dedicated `std.atomic` module. Update
+  existing code as follows:
+
+  ```mojo
+  # Before
+  from std.os import Atomic
+  from std.os.atomic import Atomic, Consistency, fence
+
+  # After
+  from std.atomic import Atomic, Consistency, fence
+  ```
+
 - `assert_raises` now catches custom `Writable` error types, not just `Error`.
 
 - Variadics of types have been moved to the `TypeList` struct.

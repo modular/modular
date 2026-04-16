@@ -26,7 +26,7 @@ underlying GPU architecture.
 """
 
 from std.collections.string.string_slice import get_static_string
-from std.os.atomic import Consistency
+from std.atomic import Consistency
 from std.ffi import external_call
 from std.sys import (
     is_amd_gpu,

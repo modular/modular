@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.os.atomic import Atomic, fence
+from std.atomic import Atomic, fence
 
 from std.compile import compile_info
 from std.testing import TestSuite, assert_false, assert_true

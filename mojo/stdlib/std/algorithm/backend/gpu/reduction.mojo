@@ -39,7 +39,7 @@ from std.gpu.primitives.grid_controls import (
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import warp
 from std.memory import stack_allocation
-from std.os.atomic import Atomic
+from std.atomic import Atomic
 
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type

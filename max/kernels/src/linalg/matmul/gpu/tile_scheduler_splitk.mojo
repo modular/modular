@@ -13,7 +13,7 @@
 
 from std.math import align_up, ceildiv
 from std.math.uutils import umod, ualign_up
-from std.os.atomic import Atomic
+from std.atomic import Atomic
 from std.sys import size_of
 
 from std.gpu import NamedBarrierSemaphore

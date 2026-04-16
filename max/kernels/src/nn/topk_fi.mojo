@@ -44,7 +44,7 @@ from layout.tile_layout import Layout
 from std.math import ceildiv, gcd, exp
 from std.math.uutils import ufloordiv
 from std.memory import stack_allocation
-from std.os import Atomic
+from std.atomic import Atomic
 from std.random import Random
 from std.sys import align_of, simd_width_of, size_of
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
