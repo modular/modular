@@ -210,6 +210,33 @@ def test_shard_stacked() -> None:
         assert shards[0]._stacked
 
 
+def test_shard_stacked_with_bias_preserves_bias_state() -> None:
+    """Stacked sharding preserves bias metadata and tensors."""
+    with Graph(
+        "test_shard_stacked_with_bias",
+        input_types=[
+            TensorType(DType.float32, (1, 64), device=DeviceRef.GPU(0))
+        ],
+    ):
+        sl = StackedLinear(
+            in_dim=64,
+            out_dims=[32, 16, 16],
+            names=["q", "k", "v"],
+            dtype=DType.float32,
+            device=DeviceRef.GPU(0),
+            stacked=True,
+            has_bias=True,
+        )
+        sl.sharding_strategy = ShardingStrategy.rowwise(num_devices=2)
+        devices = [DeviceRef.GPU(0), DeviceRef.GPU(1)]
+        shards = sl.shard(devices)
+
+        assert len(shards) == 2
+        assert shards[0]._stacked
+        assert shards[0]._has_bias
+        assert shards[0].stacked_bias is not None
+
+
 def test_clip_weight_not_supported_stacked() -> None:
     """clip_weight raises ValueError in stacked mode."""
     with pytest.raises(ValueError, match="clip_weight"):

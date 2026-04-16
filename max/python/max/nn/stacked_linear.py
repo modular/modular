@@ -321,6 +321,7 @@ class StackedLinear(Module):
                     dtype=self.weight.dtype,
                     device=device,
                     stacked=True,
+                    has_bias=self._has_bias,
                     _is_sharding=True,
                 )
                 sl.weight = weight_shards[i]
