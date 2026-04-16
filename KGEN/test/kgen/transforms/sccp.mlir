@@ -86,6 +86,22 @@ kgen.func @not_much_can_be_known(%cond: i1) -> (index, index) {
   kgen.return %1, %2 : index, index
 }
 
+// CHECK-LABEL: @should_not_crash
+kgen.func @should_not_crash() -> (i1) {
+  %idx0 = index.constant 0
+
+  %2 = hlcf.loop(%arg0 = %idx0: index) -> index {
+    hlcf.loop "_loop_0" {
+        hlcf.continue "_loop_0"
+    }
+    kgen.unreachable
+  }
+
+  %6 = index.cmp slt(%2, %idx0)
+  kgen.return %6 : i1
+}
+
+
 // CHECK-LABEL: @nested_if_constant_result
 kgen.func @nested_if_constant_result(%cond: i1) -> index {
   %idx0 = index.constant 0
