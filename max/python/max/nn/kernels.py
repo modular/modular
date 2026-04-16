@@ -3775,7 +3775,7 @@ def grouped_matmul_ragged(
     return output
 
 
-def grouped_dynamic_scaled_nvfp4_matmul(
+def grouped_matmul_block_scaled(
     hidden_states: TensorValue,
     weight: TensorValue,
     a_scales: TensorValue,
@@ -3846,12 +3846,15 @@ def grouped_dynamic_scaled_nvfp4_matmul(
             f"{hidden_states.dtype}, {weight.dtype}"
         )
 
-    if (a_scales.dtype != b_scales.dtype) or (
-        a_scales.dtype != DType.float8_e4m3fn
-    ):
+    if a_scales.dtype != b_scales.dtype:
         raise TypeError(
-            "a_scales and b_scales dtypes must be float8_e4m3fn for NVFP4, "
+            "a_scales and b_scales dtypes must match, "
             f"but got {a_scales.dtype}, {b_scales.dtype}"
+        )
+    if a_scales.dtype not in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
+        raise TypeError(
+            "a_scales dtype must be float8_e4m3fn (NVFP4) or"
+            f" float8_e8m0fnu (MXFP4), but got {a_scales.dtype}"
         )
 
     if expert_ids.dtype != DType.int32:
@@ -3891,7 +3894,8 @@ def grouped_dynamic_scaled_nvfp4_matmul(
 
     SF_ATOM_M = [32, 4]
     SF_ATOM_K = 4
-    SF_VECTOR_SIZE = 16
+    # Infer SF_VECTOR_SIZE from scale dtype: NVFP4=16, MXFP4=32
+    SF_VECTOR_SIZE = 32 if a_scales.dtype == DType.float8_e8m0fnu else 16
     SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
     SF_K_GROUP_SIZE = SF_ATOM_K * SF_VECTOR_SIZE
 
