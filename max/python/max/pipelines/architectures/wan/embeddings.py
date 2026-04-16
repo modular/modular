@@ -69,8 +69,6 @@ def apply_rotary_emb(
     else:
         raise ValueError(f"`sequence_dim={sequence_dim}` but should be 1 or 2.")
 
-    input_dtype = x.dtype
-
     if use_real_unbind_dim == -1:
         x_shape: list[Any] = list(x.shape)
         new_shape: list[Any] = x_shape[:-1] + [x_shape[-1] // 2, 2]
@@ -91,10 +89,12 @@ def apply_rotary_emb(
             f"`use_real_unbind_dim={use_real_unbind_dim}` but should be -1 or -2."
         )
 
-    out = ops.cast(x, DType.float32) * ops.cast(cos, DType.float32) + ops.cast(
-        x_rotated, DType.float32
-    ) * ops.cast(sin, DType.float32)
-    return ops.cast(out, input_dtype)
+    # RoPE multiply-add in the input dtype (bf16). This matches the
+    # diffusers reference and avoids materializing large f32 scratchpad
+    # tensors that scale with seq_len.
+    cos = ops.cast(cos, x.dtype)
+    sin = ops.cast(sin, x.dtype)
+    return x * cos + x_rotated * sin
 
 
 class Timesteps(Module):

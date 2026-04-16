@@ -58,11 +58,11 @@ class WanConv3d(Module):
 
 
 class WanLayerNorm(Module):
-    """LayerNorm using decomposed ops for float32 numerical stability.
+    """LayerNorm using the fused ``ops.layer_norm`` kernel.
 
-    The built-in ``layer_norm_gpu_block`` kernel hits
-    ``CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES`` for dim=5120, so we decompose
-    into basic ops (mean, rsqrt, multiply) that each launch small kernels.
+    The fused kernel accumulates in f32 internally (via ``get_accum_type``)
+    so bf16 inputs get full-precision normalization without graph-level f32
+    scratchpad tensors.
     """
 
     def __init__(
@@ -86,24 +86,28 @@ class WanLayerNorm(Module):
                 self.bias = Weight("bias", dtype, [dim], device)
 
     def __call__(self, x: TensorValue) -> TensorValue:
-        original_dtype = x.dtype
-        x = ops.cast(x, DType.float32)
-        mean = ops.mean(x, axis=-1)
-        x = x - mean
-        var = ops.mean(x * x, axis=-1)
-        x = x * ops.rsqrt(var + self.eps)
-        if self.has_weight:
-            x = x * ops.cast(self.weight, DType.float32)
-            if self.has_bias:
-                x = x + ops.cast(self.bias, DType.float32)
-        return ops.cast(x, original_dtype)
+        gamma = ops.cast(self.weight, x.dtype) if self.has_weight else None
+        if self.has_bias:
+            beta = ops.cast(self.bias, x.dtype)
+        else:
+            beta = ops.broadcast_to(
+                ops.constant(0.0, x.dtype, x.device),
+                shape=(x.shape[-1],),
+            )
+        if gamma is None:
+            gamma = ops.broadcast_to(
+                ops.constant(1.0, x.dtype, x.device),
+                shape=(x.shape[-1],),
+            )
+        return ops.layer_norm(x, gamma=gamma, beta=beta, epsilon=self.eps)
 
 
 class WanRMSNorm(Module):
-    """RMSNorm using decomposed ops for float32 numerical stability.
+    """RMSNorm using the fused ``ops.rms_norm`` kernel.
 
-    Same reason as WanLayerNorm: the built-in ``rms_norm`` custom kernel
-    may also hit resource limits for dim=5120.
+    The fused kernel accumulates in f32 internally (via ``get_accum_type``)
+    so bf16 inputs get full-precision normalization without graph-level f32
+    scratchpad tensors.
     """
 
     def __init__(
@@ -119,12 +123,7 @@ class WanRMSNorm(Module):
         self.eps = eps
 
     def __call__(self, x: TensorValue) -> TensorValue:
-        original_dtype = x.dtype
-        x = ops.cast(x, DType.float32)
-        rms = ops.mean(x * x, axis=-1)
-        x = x * ops.rsqrt(rms + self.eps)
-        x = x * ops.cast(self.weight, DType.float32)
-        return ops.cast(x, original_dtype)
+        return ops.rms_norm(x, ops.cast(self.weight, x.dtype), self.eps)
 
 
 class WanTextProjection(Module):
@@ -483,7 +482,6 @@ class WanCrossAttention(Module):
         )
 
         # Flash attention (no RoPE for cross-attention)
-        original_dtype = query.dtype
         scale = 1.0 / (self.head_dim**0.5)
         hidden_states = flash_attention_gpu(
             query,
@@ -493,12 +491,11 @@ class WanCrossAttention(Module):
             scale=scale,
         )
 
-        # Reshape back
+        # Reshape back: [B, S, H, head_dim] -> [B, S, D]
         hidden_states = ops.reshape(
             hidden_states,
             [hidden_states.shape[0], hidden_states.shape[1], self.inner_dim],
         )
-        hidden_states = ops.cast(hidden_states, original_dtype)
 
         return self.to_out(hidden_states)
 

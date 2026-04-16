@@ -142,7 +142,7 @@ class WanTransformer(CompiledComponent):
             # Pre-processor graph.
             pre_input_types = [
                 TensorType(
-                    dtype,
+                    DType.float32,
                     [
                         "batch",
                         self.config.in_channels,
