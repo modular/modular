@@ -201,8 +201,35 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
 }
 
 
+# TODO Refactor this to a model list/matrix specifying type of model
+def is_vision_model(model: str) -> bool:
+    """Check if the model supports vision tasks."""
+    model = model.casefold()
+    if any(
+        kw in model for kw in ("no_vision", "__eagle", "__mtp", "gemma-3-1b")
+    ):
+        return False
+    return any(
+        kw in model
+        for kw in (
+            "gemma-3",
+            "gemma-4",
+            "idefics",
+            "internvl",
+            "kimi-k2",
+            "kimi-vl",
+            "olmocr",
+            "pixtral",
+            "qwen2.5-vl",
+            "qwen3-vl",
+            "vision",
+        )
+    )
+
+
 def is_huge_moe(model: str) -> bool:
     """Large MoE models that need expert parallelism instead of tensor parallelism."""
+    model = model.casefold()
     if "deepseek" in model and "lite" not in model:
         return True
     return any(x in model for x in ["minimax-m", "kimi-k", "qwen3-235b"])
@@ -648,33 +675,8 @@ def smoke_test(
         serve_extra_args=serve_extra_args,
     )
 
-    # TODO Refactor this to a model list/matrix specifying type of model
-    is_vision_model = any(
-        kw in model
-        for kw in (
-            "gemma-3",
-            "gemma-4",
-            "idefics",
-            "internvl",
-            "kimi-k2",
-            "olmocr",
-            "pixtral",
-            "qwen2.5-vl",
-            "qwen3-vl",
-            "vision",
-            "kimi-vl",
-        )
-    )
-    # 1b is non-vision
-    if "gemma-3-1b" in model:
-        is_vision_model = False
-    if "no-vision" in model or model.endswith("__no_vision"):
-        is_vision_model = False
-    if "__eagle" in model or "__mtp" in model:
-        is_vision_model = False
-
     tasks = [TEXT_TASK]
-    if is_vision_model:
+    if is_vision_model(model):
         tasks = [VISION_TASK] + tasks
 
     logger.info(f"Starting server with command:\n {' '.join(cmd)}")
