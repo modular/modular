@@ -326,8 +326,7 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
   llvm::append_range(argPogs, argListAttr.getPogs());
   assert(argPogs.size() == argConventions.size());
 
-  // A closure signature is not escaping because its 'escaping' state is
-  // captured in the self argument we are inserting in this function.
+  // Closure storage is carried by the inserted self argument, not by FnEffects.
   auto metadata = FnMetadataAttr::get(
       argListAttr.cloneWith(argPogs), oldFnMetadata.getNumImplicitOriginDecls(),
       oldFnMetadata.getCaptureOrigins(),
@@ -336,7 +335,7 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
   return FuncTypeGeneratorType::get(
       sig.getInputParamTypes(),
       FunctionType::get(ctx, signatureInputs, sig.getResults()), argConventions,
-      sig.getFnEffects().setEscaping(false), metadata, sig.getMetadata());
+      sig.getFnEffects(), metadata, sig.getMetadata());
 }
 
 std::pair<TraitDeclOp, ASTDecl *> ClosureEmitter::createTraitOp(
@@ -1652,8 +1651,7 @@ ASTDecl *ClosureEmitter::createClosureTrait(
         sig.getFnEffects()
             .setUnified(false)
             .setRegisterPassable(false)
-            .setCapturing(true)
-            .setExtern(false),
+            .setCapturing(true),
         "", true, InlineLevel::Always);
     builder.setInsertionPointToEnd(&fnOp.getBodyRegion().front());
     UnreachableOp::create(builder);
@@ -1686,15 +1684,13 @@ ASTDecl *ClosureEmitter::promoteStatelessClosure(ASTDecl &nestedFnDecl) {
 
   FnTypeGeneratorType nestedSignature = nestedFn.getFuncTypeGenerator();
   // The promoted signature will not have the unified/register_passable effects.
-  // Setting the legacy capturing/escaping effects to false just in case.
   FnTypeGeneratorType promotedSignature = FnTypeGeneratorType::get(
       nestedSignature.getInputParamTypes(), nestedSignature.getValues(),
       nestedSignature.getArgConventions(),
       nestedSignature.getFnEffects()
           .setUnified(false)
           .setRegisterPassable(false)
-          .setCapturing(false)
-          .setEscaping(false),
+          .setCapturing(false),
       nestedSignature.getFnMetadata(), nestedSignature.getMetadata());
 
   OpBuilder builder = moduleDecl->getDeclEndBuilder();

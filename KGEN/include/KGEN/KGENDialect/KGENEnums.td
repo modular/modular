@@ -249,19 +249,15 @@ def KGEN_FnEffectsImpl : I16BitEnumAttr<"FnEffects", "Function effects", [
   I16BitEnumAttrCaseBit<"Async", 1, "async">,
   /// This function captures state.
   I16BitEnumAttrCaseBit<"Capturing", 2, "capturing">,
-  /// This local function has state that may live beyond its defined scope.
-  I16BitEnumAttrCaseBit<"Escaping", 4, "escaping">,
   /// This function has a auto-derefed result of !lit.ref or !kgen.pointer type.
   I16BitEnumAttrCaseBit<"RefResult", 5, "refresult">,
   /// Temporary effect to distinguish a closure under construction from current implementation.
   I16BitEnumAttrCaseBit<"Unified", 6, "unified">,
   /// Temporary effect to special case memory type for closures.
   I16BitEnumAttrCaseBit<"RegisterPassable", 7, "register_passable">,
-  /// The 'extern' effect switches the semantics of function typed values from a closure state to a function pointer
-  I16BitEnumAttrCaseBit<"Extern", 8, "extern">,
   /// This function uses the C ABI for argument and return value passing.
   /// Lowering must apply platform C ABI coercion (via CABIInfo) rather than
-  /// the default Mojo calling convention, independent of the Extern bit.
+  /// the default Mojo calling convention.
   I16BitEnumAttrCaseBit<"CABI", 9, "cabi">,
 ]> {
   let cppNamespace = "M::KGEN::impl";

@@ -306,9 +306,7 @@ def KGEN_FuncType : KGENType<"Func", "func", [
     bool isThrows() const { return getFnEffects().isThrows(); }
     bool isAsync() const { return getFnEffects().isAsync(); }
     bool isCapturing() const { return getFnEffects().isCapturing(); }
-    bool isEscaping() const { return getFnEffects().isEscaping(); }
     bool isRefResult() const { return getFnEffects().isRefResult(); }
-    bool isExtern() const { return getFnEffects().isExtern(); }
     bool isCABI() const { return getFnEffects().isCABI(); }
 
     /// Return the convention for the specified value argument.

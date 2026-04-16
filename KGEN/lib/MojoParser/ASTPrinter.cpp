@@ -1760,7 +1760,6 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
     for (auto [enabled, effect] :
          {std::make_pair(sig.isThrows(), "raises"),
           std::make_pair(sig.isCapturing(), "capturing"),
-          std::make_pair(sig.isEscaping(), "escaping"),
           std::make_pair(sig.isCABI(), "abi(\"C\")")})
 
       if (enabled)
