@@ -494,8 +494,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @always_inline("nodebug")
     def compare_exchange[
         *,
-        failure_ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY,
         success_ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY,
+        failure_ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY,
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         mut expected: Scalar[Self.dtype],
@@ -507,8 +507,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         the expected value is rewritten with the ptr value.
 
         Parameters:
-            failure_ordering: The memory ordering for the failure case.
             success_ordering: The memory ordering for the success case.
+            failure_ordering: The memory ordering for the failure case.
 
         Args:
           ptr: The source pointer.
@@ -533,8 +533,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         comptime if Self.dtype.is_integral():
             return _compare_exchange_integral_impl[
                 scope=Self.scope,
-                failure_ordering=failure_ordering,
                 success_ordering=success_ordering,
+                failure_ordering=failure_ordering,
             ](ptr, UnsafePointer(to=expected), desired)
 
         # For the floating point case, we need to bitcast the floating point
@@ -551,15 +551,15 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
         return _compare_exchange_integral_impl[
             scope=Self.scope,
-            failure_ordering=failure_ordering,
             success_ordering=success_ordering,
+            failure_ordering=failure_ordering,
         ](atomic_integral_ptr, expected_integral_ptr, desired_integral)
 
     @always_inline("nodebug")
     def compare_exchange[
         *,
-        failure_ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY,
         success_ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY,
+        failure_ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY,
     ](
         mut self, mut expected: Scalar[Self.dtype], desired: Scalar[Self.dtype]
     ) -> Bool:
@@ -569,8 +569,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         the expected value is rewritten with the self value.
 
         Parameters:
-            failure_ordering: The memory ordering for the failure case.
             success_ordering: The memory ordering for the success case.
+            failure_ordering: The memory ordering for the failure case.
 
         Args:
           expected: The expected value.
@@ -581,8 +581,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         """
 
         return Self.compare_exchange[
-            failure_ordering=failure_ordering,
             success_ordering=success_ordering,
+            failure_ordering=failure_ordering,
         ](UnsafePointer(to=self.value), expected, desired)
 
     @staticmethod
@@ -711,8 +711,8 @@ def _compare_exchange_integral_impl[
     //,
     *,
     scope: StaticString,
-    failure_ordering: Consistency,
     success_ordering: Consistency,
+    failure_ordering: Consistency,
 ](
     atomic_ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
     expected_ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
