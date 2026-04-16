@@ -192,24 +192,14 @@ struct Struct_ep_init:
             atomic_counters_0.static_spec.static_size
             == EPLocalSyncCounters[n_experts].total_size()
         ), "Atomic counters 0 size doesn't match expected size."
-        var atomic_counters_0_buf = DeviceBuffer(
-            gpu_ctx,
-            atomic_counters_0._ptr,
-            atomic_counters_0.size(),
-            owning=False,
-        )
+        var atomic_counters_0_buf = atomic_counters_0.to_device_buffer(gpu_ctx)
         gpu_ctx.enqueue_memset(atomic_counters_0_buf, Int32(0))
 
         comptime assert (
             atomic_counters_1.static_spec.static_size
             == EPLocalSyncCounters[n_experts].total_size()
         ), "Atomic counters 1 size doesn't match expected size."
-        var atomic_counters_1_buf = DeviceBuffer(
-            gpu_ctx,
-            atomic_counters_1._ptr,
-            atomic_counters_1.size(),
-            owning=False,
-        )
+        var atomic_counters_1_buf = atomic_counters_1.to_device_buffer(gpu_ctx)
         gpu_ctx.enqueue_memset(atomic_counters_1_buf, Int32(0))
 
         var dispatch_send_p: UnsafePointer[UInt8, MutAnyOrigin]

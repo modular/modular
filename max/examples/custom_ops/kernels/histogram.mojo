@@ -84,12 +84,8 @@ def _histogram_gpu(
 
     var ctx = ctx_ptr.get_device_context()
 
-    var output_device = DeviceBuffer[output.dtype](
-        ctx, output.unsafe_ptr(), output.size(), owning=False
-    )
-    var input_device = DeviceBuffer[input.dtype](
-        ctx, input.unsafe_ptr(), input.size(), owning=False
-    )
+    var output_device = output.to_device_buffer(ctx)
+    var input_device = input.to_device_buffer(ctx)
 
     # Zero initialize the output buffer
     ctx.enqueue_memset(output_device, 0)

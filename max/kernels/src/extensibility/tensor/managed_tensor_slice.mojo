@@ -15,6 +15,7 @@ Implements the `ManagedTensorSlice` type - a view of a tensor that doesn't own
 the underlying data. This type is used to build custom graph operations.
 """
 from std.collections import Optional
+from std.gpu.host import DeviceBuffer, DeviceContext
 from std.math import ceil, fma
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, is_gpu
@@ -805,6 +806,19 @@ struct ManagedTensorSlice[
             The `UnsafePointer` which contains the data for this tensor slice.
         """
         return rebind[UnsafePointer[Scalar[_dtype], MutAnyOrigin]](self._ptr)
+
+    @always_inline
+    def to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
+        var size = self.size()
+        if size > 0:
+            return DeviceBuffer[Self.dtype](
+                ctx,
+                self.unsafe_ptr(),
+                size,
+                owning=False,
+            )
+        else:
+            return DeviceBuffer[Self.dtype].empty(ctx)
 
     @always_inline
     def load[

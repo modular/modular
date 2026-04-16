@@ -550,12 +550,7 @@ def mgp_buffer_device_to_host[
     comptime if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
         dev_ctx[].enqueue_copy[DType.int8](
             host_buf.unsafe_ptr(),
-            DeviceBuffer[DType.int8](
-                dev_ctx[],
-                dev_buf.unsafe_ptr(),
-                dev_buf.size(),
-                owning=False,
-            ),
+            dev_buf.to_device_buffer(dev_ctx[]),
         )
     else:
         raise Error("mgp.buffer.device_to_host must be scheduled on gpu device")
@@ -574,18 +569,8 @@ def mgp_buffer_device_to_device[
 ) raises:
     comptime if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
         dst_dev_ctx[].enqueue_copy[DType.int8](
-            DeviceBuffer[DType.int8](
-                dst_dev_ctx[],
-                dst_buf.unsafe_ptr(),
-                dst_buf.size(),
-                owning=False,
-            ),
-            DeviceBuffer[DType.int8](
-                src_dev_ctx[],
-                src_buf.unsafe_ptr(),
-                src_buf.size(),
-                owning=False,
-            ),
+            dst_buf.to_device_buffer(dst_dev_ctx[]),
+            src_buf.to_device_buffer(src_dev_ctx[]),
         )
     elif is_cpu[cSrcDevice]() and is_cpu[dDstDevice]():
         memcpy(
@@ -612,12 +597,7 @@ def mgp_buffer_host_to_device[
 ) raises:
     comptime if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
         dev_ctx[].enqueue_copy[DType.int8](
-            DeviceBuffer[DType.int8](
-                dev_ctx[],
-                dev_buf.unsafe_ptr(),
-                dev_buf.size(),
-                owning=False,
-            ),
+            dev_buf.to_device_buffer(dev_ctx[]),
             host_buf.unsafe_ptr(),
         )
     else:
