@@ -1383,7 +1383,7 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
       // Otherwise maybe it was misspelled, just eat it.
       p.emitError(loc, "unknown function effect '")
           << spelling
-          << "', expected 'raises', 'capturing', 'thin', 'unified', or "
+          << "', expected 'raises', 'capturing', 'abi', 'thin', 'unified', or "
              "'register_passable'";
     } else if (spelling == "raises") {
       handleEffect(&FnEffects::isThrows, &FnEffects::setThrows);
@@ -1449,11 +1449,8 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
       if (hasExplicitABI)
         p.emitError(loc, "an abi() effect was already specified");
       hasExplicitABI = true;
-      if (isCABI) {
+      if (isCABI)
         effects.setCABI(true);
-        // abi("C") implies extern (function pointer, not closure).
-        effects.setExtern(true);
-      }
       // abi("Mojo") is the default Mojo calling convention — recorded as
       // explicit but leaves the CABI bit unset.
       continue; // tokens already consumed; skip bottom p.consumeIdentifier()
