@@ -42,9 +42,8 @@ def register_all_models() -> None:
     from .exaone import exaone_arch
     from .exaone_modulev3 import exaone_modulev3_arch
     from .flux1_modulev3 import flux1_arch, flux1_modulev3_arch
-    from .flux2 import flux2_arch
+    from .flux2 import flux2_arch, flux2_klein_arch
     from .flux2_modulev3 import (
-        flux2_klein_arch,
         flux2_klein_modulev3_arch,
         flux2_modulev3_arch,
     )

@@ -214,7 +214,6 @@ class Qwen3TextEncoderModel(ComponentModel):
         attention_bias = Buffer.from_numpy(attention_bias_np).to(
             self.devices[0]
         )
-        outputs = self.model.execute(tokens, attention_bias)
 
         if hidden_state_index is not None and hidden_state_index not in (0, -1):
             raise ValueError(
@@ -222,6 +221,28 @@ class Qwen3TextEncoderModel(ComponentModel):
                 f"{hidden_state_index}. Valid range is [-1, 0]."
             )
 
+        return self.encode_with_bias(tokens, attention_bias)
+
+    def encode_with_bias(
+        self, tokens: Buffer, attention_bias: Buffer
+    ) -> Buffer:
+        """Execute the compiled encoder with an already-built attention bias.
+
+        Use this when the caller has pre-computed the additive bias (e.g.,
+        to share bias construction across positive and negative CFG
+        streams). ``tokens`` may be 1D ``(S,)`` or 2D ``(1, S)``; 2D
+        tokens are squeezed. ``attention_bias`` must be shape
+        ``(1, 1, S, S)`` float32 and already resident on the encoder's
+        device.
+        """
+        if len(tokens.shape) == 2:
+            if int(tokens.shape[0]) != 1:
+                raise ValueError(
+                    "Qwen3TextEncoderModel expects batch_size=1 for 2D "
+                    "token input."
+                )
+            tokens = tokens[0]
+        outputs = self.model.execute(tokens, attention_bias)
         if isinstance(outputs, (list, tuple)):
             return cast(Buffer, outputs[0])
         return cast(Buffer, outputs)
