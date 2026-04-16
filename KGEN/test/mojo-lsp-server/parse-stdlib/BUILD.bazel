@@ -40,51 +40,6 @@ _NO_RUN_LIST = [
 #
 # The long-term goal is to drive this list to empty by fixing the docstrings.
 _NO_DOCSTRING_LIST = [
-    "algorithm/backend/vectorize.mojo",  # docstring fix needed: stale UnsafePointer.alloc() API
-    "benchmark/__init__.mojo",  # docstring fix needed: 'benchmark'/'report' not in scope in later blocks
-    "benchmark/_progress.mojo",  # docstring fix needed: missing import of 'Progress'
-    "benchmark/benchmark.mojo",  # docstring fix needed: 'benchmark' not in scope in later blocks
-    "bit/_mask.mojo",  # docstring fix needed: wrong import path 'std.bit.mask' → 'std.bit._mask'
-    "builtin/anytype.mojo",  # docstring fix needed: missing 'Path' import; stale UnsafePointer.alloc API
-    "builtin/debug_assert.mojo",  # docstring fix needed: split examples; vars defined in block 1, used in block 2
-    "builtin/floatable.mojo",  # docstring fix needed: struct missing @fieldwise_init
-    "builtin/int.mojo",  # docstring fix needed: struct missing @fieldwise_init
-    "builtin/len.mojo",  # docstring fix needed: struct missing @fieldwise_init
-    "builtin/variadics.mojo",  # docstring fix needed: missing '_type_is_eq' import; wrong trait constraint
-    "collections/dict.mojo",  # docstring fix needed: intentional error illustrations need LSP exclusion
-    "collections/list.mojo",  # docstring fix needed: intentional error illustrations need LSP exclusion
-    "collections/string/format.mojo",  # docstring fix needed: undefined placeholder 'myComplicatedObject'
-    "collections/string/string_slice.mojo",  # docstring fix needed: blank line after ```mojo confuses lexer; '.center()' renamed
-    "ffi/unsafe_union.mojo",  # docstring fix needed: missing 'from std.ffi import UnsafeUnion'
-    "format/__init__.mojo",  # docstring fix needed: missing @fieldwise_init; bare method snippets need struct context
-    "format/_utils.mojo",  # docstring fix needed: wrong import paths for _hex_digits_to_hex_chars/_write_hex
-    "gpu/compute/__init__.mojo",  # docstring fix needed: undeclared placeholder vars 'a', 'b', 'c'
-    "gpu/compute/arch/__init__.mojo",  # docstring fix needed (doc update required): relative imports in illustration snippets
-    "gpu/compute/mma.mojo",  # docstring fix needed: undeclared 'ptr' placeholder
-    "gpu/host/device_context.mojo",  # docstring fix needed: stale API; wrong field name; missing imports
-    "gpu/host/info.mojo",  # docstring fix needed: escaped triple-quote confuses lexer; missing imports
-    "gpu/memory/memory.mojo",  # docstring fix needed: wrong 'Scope.CTA' (should be 'Scope.BLOCK'); undeclared 'addr'
-    "gpu/primitives/warp.mojo",  # docstring fix needed: wrong import paths; not re-exported from std.gpu
-    "gpu/profiler.mojo",  # docstring fix needed: undefined placeholder 'run_gpu_kernel'
-    "gpu/sync/semaphore.mojo",  # docstring fix needed: undefined 'thread_id' placeholder
-    "io/file.mojo",  # docstring fix needed: missing 'import std.os' for os.SEEK_*
-    "io/file_descriptor.mojo",  # docstring fix needed: passes FileHandle where FileDescriptor expected
-    "iter/__init__.mojo",  # docstring fix needed: wrong constraint ('Iterable' should be 'Iterator')
-    "itertools/itertools.mojo",  # docstring fix needed: missing imports for 'product'/'cycle'/'repeat'
-    "math/math.mojo",  # docstring fix needed: missing 'from std.math import sqrt'; DivModable self-reference
-    "memory/_nonnull.mojo",  # docstring fix needed: missing 'UnsafePointer' import
-    "pathlib/path.mojo",  # docstring fix needed: imports assert_false but calls assert_true
-    "python/_cpython.mojo",  # docstring fix needed: missing imports for Python/GILAcquired/GILReleased
-    "python/bindings.mojo",  # docstring fix needed: undefined placeholders; missing PythonObject/OwnedKwargsDict imports
-    "python/python.mojo",  # docstring fix needed: ListLiteral does not implement ConvertibleToPython
-    "reflection/struct_fields.mojo",  # docstring fix needed: missing imports + undefined example structs
-    "reflection/type_info.mojo",  # docstring fix needed: missing import of get_base_type_name
-    "sys/_assembly.mojo",  # docstring fix needed: undefined 'my_bf16_as_int16' placeholder
-    "sys/_libc_errno.mojo",  # docstring fix needed: missing 'import std.os'
-    "sys/info.mojo",  # docstring fix needed: wrong name 'platform_alias' → 'platform_map'; missing import
-    "sys/intrinsics.mojo",  # docstring fix needed: missing import of 'gather'/'scatter' in docstring examples
-    "tempfile/tempfile.mojo",  # docstring fix needed: typo in import; uses private _rmtree; missing os imports
-    "utils/_nicheable.mojo",  # docstring fix needed: missing import of UnsafeNicheable/UnsafeSingleNicheable
 ]
 
 # One sharded test target covering the entire stdlib:
