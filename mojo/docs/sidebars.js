@@ -164,6 +164,7 @@ const mojoSidebars = {
       className: 'sidebar-heading',
       collapsed: false,
       items: [
+        'mojo/reference/index',
         'mojo/reference/mojo-keywords',
         'mojo/reference/mojo-literals',
         'mojo/reference/mojo-operators',
