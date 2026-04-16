@@ -750,11 +750,6 @@ struct MagicFunctionNode final : public ExprNode {
   AnyValue emitConformsTo(ValueDest &dest, IREmitter &emitter) const;
   AnyValue emitGetCurrentFunctionName(ValueDest &dest,
                                       IREmitter &emitter) const;
-  AnyValue emitStructFieldTypes(ValueDest &dest, IREmitter &emitter) const;
-  AnyValue emitStructFieldNames(ValueDest &dest, IREmitter &emitter) const;
-  AnyValue emitStructFieldCount(ValueDest &dest, IREmitter &emitter) const;
-  AnyValue emitStructFieldTypeAtIndex(ValueDest &dest,
-                                      IREmitter &emitter) const;
   AnyValue emitStructFieldRef(ValueDest &dest, IREmitter &emitter) const;
   AnyValue emitIsRunInComptimeInterpreter(ValueDest &dest,
                                           IREmitter &emitter) const;
