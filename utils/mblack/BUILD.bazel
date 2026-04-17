@@ -45,6 +45,7 @@ modular_py_test(
             # We don't support blackd or ipynb notebooks.
             "tests/test_blackd.py",
             "tests/test_ipynb.py",
+            "tests/test_no_ipynb.py",
         ],
     ),
     data = glob(["tests/data/**"]) + [
