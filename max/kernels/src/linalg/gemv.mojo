@@ -401,7 +401,9 @@ def gemv_split_k[
         @always_inline
         def _k_iter_body_direct_scalar_acc():
             """Single K-iteration for the kept sw16/tile_n=4 mid-band family."""
-            var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
+            var weight_tile = weight.tile[tile_n, tile_k](
+                block_idx.y, iteration
+            )
             var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
             var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
             var act_vec = act_tile.vectorize[1, simd_width]()[0, thread_idx.x]
@@ -482,11 +484,16 @@ def gemv_split_k[
             @parameter
             @always_inline
             def _k_iter_body_direct_scalar_pair():
-                """Exact-multiple long-K body with scalar tile_n=2 accumulation."""
-                var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
+                """Exact-multiple long-K body with scalar tile_n=2 accumulation.
+                """
+                var weight_tile = weight.tile[tile_n, tile_k](
+                    block_idx.y, iteration
+                )
                 var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
                 var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
-                var act_vec = act_tile.vectorize[1, simd_width]()[0, thread_idx.x]
+                var act_vec = act_tile.vectorize[1, simd_width]()[
+                    0, thread_idx.x
+                ]
                 var act_native = rebind[NativeVecType](act_vec)
 
                 acc0 = _dot_accum(
@@ -533,7 +540,9 @@ def gemv_split_k[
             if tid < tile_n:
                 var val = rebind[Scalar[accum_type]](shmem[0, tid])
                 comptime for jj in range(1, k_warp_num):
-                    val += rebind[Scalar[accum_type]](shmem[0, jj * tile_n + tid])
+                    val += rebind[Scalar[accum_type]](
+                        shmem[0, jj * tile_n + tid]
+                    )
 
                 var idx = output_idx + tid
                 comptime if elementwise_lambda_fn:
@@ -567,8 +576,11 @@ def gemv_split_k[
             @parameter
             @always_inline
             def _k_iter_body():
-                """Single K-iteration: load weights, load activations, accumulate."""
-                var weight_tile = weight.tile[tile_n, tile_k](block_idx.y, iteration)
+                """Single K-iteration: load weights, load activations, accumulate.
+                """
+                var weight_tile = weight.tile[tile_n, tile_k](
+                    block_idx.y, iteration
+                )
                 var act_tile = act.tile[tile_m, tile_k](block_idx.x, iteration)
 
                 comptime if is_amd_gpu() or check_bounds:
@@ -579,12 +591,18 @@ def gemv_split_k[
                             if i + tile_id_n >= n:
                                 continue
                         comptime if is_amd_gpu():
-                            var b_vec = weight_tile.load[simd_width, non_temporal=True](
-                                Coord(Idx(i), Idx(Int(thread_idx.x) * simd_width))
+                            var b_vec = weight_tile.load[
+                                simd_width, non_temporal=True
+                            ](
+                                Coord(
+                                    Idx(i), Idx(Int(thread_idx.x) * simd_width)
+                                )
                             )
                             tile_w.store(i, 0, rebind[WeightVecType](b_vec))
                         else:
-                            var vec_weight_tile = weight_tile.vectorize[1, simd_width]()
+                            var vec_weight_tile = weight_tile.vectorize[
+                                1, simd_width
+                            ]()
                             var b_vec = vec_weight_tile[i, thread_idx.x]
                             tile_w.store(i, 0, rebind[WeightVecType](b_vec))
 
@@ -593,7 +611,9 @@ def gemv_split_k[
                         comptime if check_bounds:
                             if i + tile_id_m >= m:
                                 continue
-                        var act_vec = act_tile.vectorize[1, simd_width]()[i, thread_idx.x]
+                        var act_vec = act_tile.vectorize[1, simd_width]()[
+                            i, thread_idx.x
+                        ]
 
                         comptime NativeVecType = SIMD[a_type, simd_width]
                         var act_native = rebind[NativeVecType](act_vec)
@@ -601,7 +621,9 @@ def gemv_split_k[
                             var weight_native = rebind[NativeVecType](
                                 tile_w.vectorize[1, simd_width]()[j, 0]
                             )
-                            var local_accum = rebind[Scalar[accum_type]](acc[i, j])
+                            var local_accum = rebind[Scalar[accum_type]](
+                                acc[i, j]
+                            )
                             local_accum = _dot_accum(
                                 act_native, weight_native, local_accum
                             )
@@ -611,7 +633,9 @@ def gemv_split_k[
 
                     # Load activations and accumulate dot products.
                     comptime for i in range(tile_m):
-                        var act_vec = act_tile.vectorize[1, simd_width]()[i, thread_idx.x]
+                        var act_vec = act_tile.vectorize[1, simd_width]()[
+                            i, thread_idx.x
+                        ]
 
                         comptime NativeVecType = SIMD[a_type, simd_width]
                         var act_native = rebind[NativeVecType](act_vec)
@@ -619,7 +643,9 @@ def gemv_split_k[
                             var weight_native = rebind[NativeVecType](
                                 vec_weight_tile[j, thread_idx.x]
                             )
-                            var local_accum = rebind[Scalar[accum_type]](acc[i, j])
+                            var local_accum = rebind[Scalar[accum_type]](
+                                acc[i, j]
+                            )
                             local_accum = _dot_accum(
                                 act_native, weight_native, local_accum
                             )
@@ -641,7 +667,9 @@ def gemv_split_k[
             else:
                 # Unrolled loop for ILP — comptime for duplicates the body.
                 comptime if known_k_iterations > 0:
-                    comptime main_iters = align_down(known_k_iterations, unroll_factor)
+                    comptime main_iters = align_down(
+                        known_k_iterations, unroll_factor
+                    )
 
                     # Main unrolled loop with fixed trip count.
                     for _outer in range(0, main_iters, unroll_factor):
@@ -653,7 +681,9 @@ def gemv_split_k[
                         _k_iter_body()
                 else:
                     var k_start = tid * simd_width
-                    var num_k_iters = ceildiv(k - k_start, tile_k) if k > k_start else 0
+                    var num_k_iters = (
+                        ceildiv(k - k_start, tile_k) if k > k_start else 0
+                    )
                     var main_iters = align_down(num_k_iters, unroll_factor)
 
                     # Main unrolled loop.
@@ -685,10 +715,7 @@ def gemv_split_k[
                 and a_type == DType.bfloat16
                 and b_type == DType.bfloat16
                 and c_type == DType.bfloat16
-                and (
-                    unroll_factor == 2
-                    and known_k_iterations == 8
-                )
+                and (unroll_factor == 2 and known_k_iterations == 8)
             )
             comptime use_tile_n4_fixed_fanin_fastpath = False and (
                 is_nvidia_gpu()
@@ -745,7 +772,9 @@ def gemv_split_k[
                     comptime for ni in range(tile_n):
                         var val = warp.sum(acc[mi, ni])
                         if lane_id == 0:
-                            shmem[0, mi * tile_n + ni + warp_id * tile_m * tile_n] = val
+                            shmem[
+                                0, mi * tile_n + ni + warp_id * tile_m * tile_n
+                            ] = val
             barrier()
             # Sum across warps' results in shared memory then output.
             # TODO: should be able to vectorize and maybe use larger tile_n.
@@ -753,7 +782,9 @@ def gemv_split_k[
                 if tid < tile_n:
                     var val = rebind[Scalar[accum_type]](shmem[0, tid])
                     comptime for jj in range(1, k_warp_num):
-                        val += rebind[Scalar[accum_type]](shmem[0, jj * tile_n + tid])
+                        val += rebind[Scalar[accum_type]](
+                            shmem[0, jj * tile_n + tid]
+                        )
 
                     var idx = output_idx + tid
                     comptime if elementwise_lambda_fn:
@@ -765,7 +796,9 @@ def gemv_split_k[
                 if tid < tile_n:
                     var val = rebind[Scalar[accum_type]](shmem[0, tid])
                     comptime for jj in range(1, k_warp_num):
-                        val += rebind[Scalar[accum_type]](shmem[0, jj * tile_n + tid])
+                        val += rebind[Scalar[accum_type]](
+                            shmem[0, jj * tile_n + tid]
+                        )
 
                     var idx = output_idx + tid
                     comptime if elementwise_lambda_fn:
@@ -778,13 +811,13 @@ def gemv_split_k[
                     var shmem_pairs = shmem.vectorize[1, 2]()
                     var pair_sum = SIMD[accum_type, 2](0)
                     comptime for jj in range(k_warp_num):
-                        pair_sum += rebind[SIMD[accum_type, 2]](shmem_pairs[0, jj])
+                        pair_sum += rebind[SIMD[accum_type, 2]](
+                            shmem_pairs[0, jj]
+                        )
 
-                    var val = (
-                        rebind[Scalar[accum_type]](pair_sum[0])
-                        if tid == 0
-                        else rebind[Scalar[accum_type]](pair_sum[1])
-                    )
+                    var val = rebind[Scalar[accum_type]](
+                        pair_sum[0]
+                    ) if tid == 0 else rebind[Scalar[accum_type]](pair_sum[1])
                     var idx = output_idx + tid
                     comptime if elementwise_lambda_fn:
                         comptime elementwise_lambda = elementwise_lambda_fn.value()
@@ -798,7 +831,9 @@ def gemv_split_k[
                     comptime ValType = type_of(val)
 
                     comptime for jj in range(k_warp_num):
-                        val += rebind[ValType](shmem[0, jj * tile_m * tile_n + ii])
+                        val += rebind[ValType](
+                            shmem[0, jj * tile_m * tile_n + ii]
+                        )
 
                     var idx = output_idx + mid * n + nid
 
@@ -1089,9 +1124,8 @@ def gemv_gpu_dispatch[
                 static_K // (num_threads * simd_width)
             ) if use_known_k_iterations else 0
             comptime known_k_iterations = (
-                known_k_iterations_override
-                if known_k_iterations_override > 0
-                else default_known_k_iterations
+                known_k_iterations_override if known_k_iterations_override
+                > 0 else default_known_k_iterations
             )
             comptime kernel = gemv_split_k[
                 c_type,
@@ -1137,9 +1171,7 @@ def gemv_gpu_dispatch[
             ]()
         else:
             comptime if (
-                simd_width == 8
-                and static_K >= 16384
-                and static_K % 16 == 0
+                simd_width == 8 and static_K >= 16384 and static_K % 16 == 0
             ):
                 # Long-K BF16 shapes are HBM-bound on B200; a 16-wide split-K
                 # path halves the number of K iterations without touching
