@@ -26,7 +26,8 @@ struct Parametric[a: Int]:
 
 def test_suppressed_dyn_binding_error[
     x: Int
-    # expected-error @below {{parametric functions may not be used as arguments; consider passing as a parameter instead}}
+    # expected-error @below {{parametric functions must not be used as arguments; pass as a parameter instead}}
+    # expected-note @below {{alternatively, bind its type parameters to create a concrete function}}
 ](pval: Parametric[x], func: def[y: Int](p: Parametric[y]) thin -> None):
     def nested():
         func(pval)

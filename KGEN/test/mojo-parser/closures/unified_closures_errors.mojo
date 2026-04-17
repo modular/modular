@@ -34,7 +34,7 @@ def foo(a: Mem):
 
 
 def bar(a: Mem):
-    # expected-error @below {{a function cannot be register passable unless it is unified}}
+    # expected-error @below {{'register_passable' functions must be 'unified'}}
     def closure() register_passable {var}:
         use(a)
 
@@ -215,7 +215,8 @@ def incompatible_param_signature() raises:
 
 
 def multiple_default_capture_conventions(x: Int):
-    # expected-error @below {{multiple default capture conventions specified}}
+    # expected-error @below {{default capture convention was already specified; remove the duplicate}}
+    # expected-note @below {{a capture convention (like 'mut' or 'var') before the capture list sets the default for all captured variables}}
     def my_closure(y: Int) unified {var, ref} -> Int:
         return y
 
@@ -225,7 +226,7 @@ def multiple_default_capture_conventions(x: Int):
 
 
 def incompatible_capture_conventions(x: Int):
-    # expected-error @below {{expected 'var' capture convention for moved objects}}
+    # expected-error @below {{'^' requires 'var' convention; write 'var x^' to move a capture}}
     def my_closure(y: Int) unified {ref x^} -> Int:
         return y
 

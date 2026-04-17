@@ -8,7 +8,7 @@
 
 
 def make_closure(x: Int):
-    # CHECK: error: expected a capture convention list
+    # CHECK: error: expected '{' to begin capture list
     def my_closure(y: Int) unified -> Int:
         return x + y
 

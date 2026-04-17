@@ -37,7 +37,7 @@ def test_bool_context(a: NotBoolConvertible) raises:
      pass
 
 def test_if_decorator(a: Bool):
-  @not_good() # expected-error {{'if' statement does not support decorators; remove, replace, or correct the decorator}}
+  @not_good() # expected-error {{'if' statement does not support decorators; remove the decorator}}
   if a:
     pass
 

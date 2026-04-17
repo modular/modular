@@ -37,15 +37,15 @@ def missing_colon()  # expected-error {{expected ':' in function definition}}
 def missing_colon_2()
     test_never_declared_fn()
 
-# expected-error @+1 {{function effect 'thin' is only allowed on function types}}
+# expected-error @+1 {{function effect 'thin' must only be used on function types}}
 def invalid_thin_effect() thin:
     pass
 
-# expected-error @+1 {{function effect 'thin' is only allowed on function types}}
+# expected-error @+1 {{function effect 'thin' must only be used on function types}}
 def invalid_thin_before_abi() thin abi("C"):
     pass
 
-# expected-error @+1 {{function effect 'thin' is only allowed on function types}}
+# expected-error @+1 {{function effect 'thin' must only be used on function types}}
 def invalid_abi_before_thin() abi("C") thin:
     pass
 
@@ -88,7 +88,8 @@ def two_variadics(*a: Int, *b: Int):
 def two_variadic_packs[*Ts: TrivialRegisterPassable](*a: *Ts, *b: *Ts):
     pass
 
-# expected-error @+1 {{parametric functions may not be used as arguments; consider passing as a parameter instead}}
+# expected-error @+2 {{parametric functions must not be used as arguments; pass as a parameter instead}}
+# expected-note @+1 {{alternatively, bind its type parameters to create a concrete function}}
 def foo(x: def[a: Int] () thin -> None):
     pass
 
@@ -104,7 +105,7 @@ def invalid_inferred[//, x: Int]():
 def invalid_inferred_kw_only[*, x: Int, //, y: Int]():
     pass
 
-# expected-error @below {{'//' can only be used in parameter lists to denote inferred parameters}}
+# expected-error @below {{'//' is reserved for parameter lists; it marks the end of 'infer-only' parameter listings}}
 def invalid_inferred_argument(x: Int, //):
     pass
 
@@ -185,7 +186,7 @@ async def borrowed_generic_arg[T: AnyType](value: T):
 def valid_sbvalue_borrow(value: SBValue):
     _ = borrowed_generic_arg(value)
 
-# expected-error @+1 {{multiple specification of address space isn't valid}}
+# expected-error @+1 {{address space must be specified once; remove duplicate address space specifications}}
 def bad_ref_as[a: AddressSpace](ref [a, a] x: Int):
     pass
 
