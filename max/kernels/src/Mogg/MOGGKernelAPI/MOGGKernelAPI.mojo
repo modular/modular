@@ -1999,7 +1999,7 @@ comptime _TransposeStrideTypes[
     input_stride_types: Variadic.TypesOfTrait[CoordLike],
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=Variadic.types[
+    ParamListType=Variadic.types[
         T=CoordLike,
         *Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[]],
     ],
@@ -2140,7 +2140,7 @@ comptime _SliceStrideTypes[
     step_types: Variadic.TypesOfTrait[CoordLike],
 ] = _ReduceVariadicAndIdxToVariadic[
     BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=Variadic.types[
+    ParamListType=Variadic.types[
         T=CoordLike,
         *Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[]],
     ],

@@ -137,12 +137,8 @@ class Gemma3TransformerBlock(Module):
             gemma3_rms_norm_fused_residual_add(
                 attn_out[i],
                 residual[i],
-                cast(
-                    Gemma3RMSNorm, self.post_attention_layernorm_shards[i]
-                ),
-                cast(
-                    Gemma3RMSNorm, self.pre_feedforward_layernorm_shards[i]
-                ),
+                cast(Gemma3RMSNorm, self.post_attention_layernorm_shards[i]),
+                cast(Gemma3RMSNorm, self.pre_feedforward_layernorm_shards[i]),
             )
             for i in range(len(attn_out))
         ]
@@ -168,9 +164,7 @@ class Gemma3TransformerBlock(Module):
             gemma3_rms_norm_fused_residual_add(
                 hidden_states[i],
                 residual[i],
-                cast(
-                    Gemma3RMSNorm, self.post_feedforward_layernorm_shards[i]
-                ),
+                cast(Gemma3RMSNorm, self.post_feedforward_layernorm_shards[i]),
                 next_input_layernorm_shards[i],
             )
             for i in range(len(hidden_states))
