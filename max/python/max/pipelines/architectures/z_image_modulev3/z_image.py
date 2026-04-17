@@ -60,6 +60,7 @@ class ZImageTransformerBlock(Module[..., Tensor]):
 
         self.layer_id = layer_id
         self.modulation = modulation
+        self.dim = dim
 
         self.attention = ZImageAttention(
             dim=dim,
@@ -84,7 +85,7 @@ class ZImageTransformerBlock(Module[..., Tensor]):
     def forward(
         self,
         x: Tensor,
-        freqs_cis: tuple[Tensor, Tensor],
+        freqs_cis: Tensor,
         adaln_input: Tensor | None = None,
     ) -> Tensor:
         if self.modulation:
@@ -93,14 +94,12 @@ class ZImageTransformerBlock(Module[..., Tensor]):
             if self.adaLN_modulation is None:
                 raise ValueError("adaLN_modulation is not initialized")
 
-            mod = self.adaLN_modulation(adaln_input)
-            mod = F.unsqueeze(mod, 1)
-            scale_msa, gate_msa, scale_mlp, gate_mlp = F.chunk(mod, 4, axis=2)
-
-            gate_msa = F.tanh(gate_msa)
-            gate_mlp = F.tanh(gate_mlp)
-            scale_msa = 1.0 + scale_msa
-            scale_mlp = 1.0 + scale_mlp
+            mod = F.unsqueeze(self.adaLN_modulation(adaln_input), 1)
+            d = self.dim
+            scale_msa = 1.0 + mod[:, :, :d]
+            gate_msa = F.tanh(mod[:, :, d : 2 * d])
+            scale_mlp = 1.0 + mod[:, :, 2 * d : 3 * d]
+            gate_mlp = F.tanh(mod[:, :, 3 * d :])
 
             attn_out = self.attention(
                 self.attention_norm1(x) * scale_msa,
@@ -332,24 +331,19 @@ class ZImageTransformer2DModel(Module[..., Sequence[Tensor]]):
         timestep: Tensor,
         img_ids: Tensor,
         txt_ids: Tensor,
-    ) -> tuple[Tensor, Any, Tensor, tuple[Tensor, Tensor]]:
+    ) -> tuple[Tensor, Any, Tensor, Tensor]:
         """Embed inputs, run refiners, return unified seq before main ``layers[0]``."""
         x = self.x_embedder(hidden_states)
         t_emb = self.t_embedder(timestep * self.t_scale).cast(x.dtype)
 
         cap = self.cap_proj(self.cap_norm(encoder_hidden_states))
 
-        if txt_ids.rank == 3:
-            txt_ids = txt_ids[0]
-        if img_ids.rank == 3:
-            img_ids = img_ids[0]
+        img_seq_len = img_ids.shape[0]
+        unified_ids = F.concat([img_ids, txt_ids], axis=0)
+        unified_freqs = self.rope_embedder(unified_ids).cast(x.dtype)
 
-        txt_freqs = self.rope_embedder(txt_ids)
-        img_freqs = self.rope_embedder(img_ids)
-        unified_freqs = (
-            F.concat([img_freqs[0], txt_freqs[0]], axis=0),
-            F.concat([img_freqs[1], txt_freqs[1]], axis=0),
-        )
+        img_freqs = unified_freqs[:img_seq_len]
+        txt_freqs = unified_freqs[img_seq_len:]
 
         for layer in self.noise_refiner:
             x = layer(x, freqs_cis=img_freqs, adaln_input=t_emb)
@@ -365,7 +359,7 @@ class ZImageTransformer2DModel(Module[..., Sequence[Tensor]]):
         self,
         unified0: Tensor,
         t_emb: Tensor,
-        unified_freqs: tuple[Tensor, Tensor],
+        unified_freqs: Tensor,
     ) -> Tensor:
         return self.layers[0](
             unified0,
@@ -379,7 +373,7 @@ class ZImageTransformer2DModel(Module[..., Sequence[Tensor]]):
         *,
         img_len: Any,
         t_emb: Tensor,
-        freqs_cis: tuple[Tensor, Tensor],
+        freqs_cis: Tensor,
     ) -> Tensor:
         u = unified
         for i in range(1, len(self.layers)):
