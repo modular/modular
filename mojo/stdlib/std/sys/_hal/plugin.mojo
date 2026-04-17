@@ -32,6 +32,7 @@ from std.memory import (
     alloc,
     ImmutPointer,
     MutPointer,
+    OpaquePointer,
     UnsafePointer,
     UnsafeMaybeUninit,
 )
@@ -186,13 +187,321 @@ struct HALFunction[name: StaticString, fn_type: TrivialRegisterPassable](
     #    return self.f(*args)
 
 
-# ===-----------------------------------------------------------------------===#
-# Plugin
-# ===-----------------------------------------------------------------------===#
+@fieldwise_init
+struct RawDriver(Movable):
+    var _raw: RawPlugin
+
+    # Set by `Driver.create` after `M_driver_create` succeeds.
+    # None until the driver handle is bound.
+    # Used to avoid every HAL struct needing to carry around
+    # a DriverHandle or indirect through the ownership hierarchy
+    # to obtain it.
+    var _driver_handle: DriverHandle
+
+    @staticmethod
+    def load(plugin_spec: String) raises HALError -> Self:
+        """Load a plugin from a spec string of the form 'name@/path/to/lib.so'.
+
+        If no '@' is present, the entire string is used as both name and path.
+        """
+        var name: String
+        var so_path: String
+        var parts = plugin_spec.split("@", maxsplit=1)
+        if len(parts) == 2:
+            name = String(parts[0])
+            so_path = String(parts[1])
+        else:
+            name = plugin_spec
+            so_path = plugin_spec
+
+        var raw: RawPlugin
+        var driver_handle: DriverHandle
+        try:
+            var lib = OwnedDLHandle(so_path, RTLD.NOW)
+            raw = RawPlugin(lib^, so_path)
+            raw.name = name
+            raw.so_path = so_path
+
+            driver_handle = raw._create_init_driver()
+        except e:
+            raise HALError(
+                STATUS_UNKNOWN_ERROR,
+                message=String(t"failed to load plugin '{so_path}': {e}"),
+            )
+
+        return RawDriver(raw^, driver_handle)
+
+    def __del__(deinit self):
+        # Move `_plugin` into a local so its `OwnedDLHandle` stays alive
+        # until after the `destroy` call returns — ASAP destruction would
+        # otherwise `dlclose` the `.so` (unmapping the code page) before
+        # we call through the function pointer.
+        var plugin = self._raw^
+        var status = plugin.destroy.f(self._driver_handle)
+        if status != STATUS_SUCCESS:
+            print("warning: driver destroy failed with status:", status)
+        _ = plugin^
+
+    # TODO: `HALFunction` should, eventually, be able to
+    # do the vast majority of this automagically with a _partially_ bound
+    # thin fn type that can ensure safety at call site, and a rebind
+    # to some concrete type internally.
+    # See DRIV-6, MOCO-3661
+
+    def get_device_count(mut self) raises HALError -> Int64:
+        var num_devices = UnsafeMaybeUninit(Int64(0))
+        var status = self._raw.device_count.f(
+            self._driver_handle, OutParam[Int64](to=num_devices)
+        )
+
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise err^
+
+        return num_devices.unsafe_assume_init_ref()
+
+    # ===-------------------------------------------------------------------===#
+    # Queue operations
+    # ===-------------------------------------------------------------------===#
+
+    def create_queue(
+        self, context: ContextHandle
+    ) raises HALError -> QueueHandle:
+        var queue = UnsafeMaybeUninit[QueueHandle]()
+        var status = self._raw.queue_create.f(
+            context, OutParam[QueueHandle](to=queue)
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to create queue: {err.message}"),
+            )
+        return queue.unsafe_assume_init_ref()
+
+    def destroy_queue(
+        self,
+        context: ContextHandle,
+        queue: QueueHandle,
+    ) raises HALError:
+        var status = self._raw.queue_destroy.f(context, queue)
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to destroy queue: {err.message}"),
+            )
+
+    # ===-------------------------------------------------------------------===#
+    # Memory operations
+    # ===-------------------------------------------------------------------===#
+
+    def alloc_sync(
+        self, context: ContextHandle, byte_size: UInt64
+    ) raises HALError -> MemoryHandle:
+        var mem = UnsafeMaybeUninit[MemoryHandle]()
+        var status = self._raw.memory_alloc_sync.f(
+            context, byte_size, OutParam[MemoryHandle](to=mem)
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to alloc_sync: {err.message}"),
+            )
+        return mem.unsafe_assume_init_ref()
+
+    def free_sync(
+        self,
+        context: ContextHandle,
+        mem: MemoryHandle,
+    ) raises HALError:
+        var status = self._raw.memory_free_sync.f(context, mem)
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to free_sync: {err.message}"),
+            )
+
+    def get_memory_property[
+        name: StringLiteral, T: TrivialRegisterPassable
+    ](self, mem: MemoryHandle) raises HALError -> T:
+        """Query a named property of a device memory allocation."""
+        var value = UnsafeMaybeUninit[T]()
+        var status = self._raw.memory_property.f(
+            mem,
+            rebind[CStringSlice[ImmutAnyOrigin]](name.as_c_string_slice()),
+            rebind[OpaquePointer[MutAnyOrigin]](OutParam[T](to=value)),
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to get memory property '{name}': {err.message}"
+                ),
+            )
+        return value.unsafe_assume_init_ref()
+
+    # ===-------------------------------------------------------------------===#
+    # Copy operations
+    # ===-------------------------------------------------------------------===#
+
+    def copy_to_device(
+        self,
+        queue: QueueHandle,
+        dst: MemoryHandle,
+        src: UnsafePointer[UInt8, MutAnyOrigin],
+        size: UInt64,
+    ) raises HALError:
+        var status = self._raw.queue_copy_to_device.f(queue, dst, src, size)
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to copy to device: {err.message}"),
+            )
+
+    def copy_from_device(
+        self,
+        queue: QueueHandle,
+        dst: UnsafePointer[UInt8, MutAnyOrigin],
+        src: MemoryHandle,
+        size: UInt64,
+    ) raises HALError:
+        var status = self._raw.queue_copy_from_device.f(queue, dst, src, size)
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to copy from device: {err.message}"),
+            )
+
+    def synchronize_queue(self, queue: QueueHandle) raises HALError:
+        var status = self._raw.queue_synchronize.f(queue)
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to synchronize queue: {err.message}"),
+            )
+
+    # ===-------------------------------------------------------------------===#
+    # Function execution
+    # ===-------------------------------------------------------------------===#
+
+    def load_function(
+        self,
+        context: ContextHandle,
+        bundle: RuntimeBundleHandle,
+        mut name: String,
+    ) raises HALError -> FunctionHandle:
+        var func = UnsafeMaybeUninit[FunctionHandle]()
+        var status = self._raw.function_load.f(
+            context,
+            bundle,
+            rebind[CStringSlice[ImmutAnyOrigin]](name.as_c_string_slice()),
+            UInt64(name.byte_length()),
+            OutParam[FunctionHandle](to=func),
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(
+                    t"failed to load function '{name}': {err.message}"
+                ),
+            )
+        return func.unsafe_assume_init_ref()
+
+    def unload_function(
+        self,
+        context: ContextHandle,
+        func: FunctionHandle,
+    ) raises HALError:
+        var status = self._raw.function_unload.f(context, func)
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to unload function: {err.message}"),
+            )
+
+    def execute_function(
+        self,
+        queue: QueueHandle,
+        func: FunctionHandle,
+        grid: Tuple[UInt32, UInt32, UInt32],
+        block: Tuple[UInt32, UInt32, UInt32],
+        args: UnsafePointer[OpaquePointer[MutExternalOrigin], MutAnyOrigin],
+        arg_sizes: UnsafePointer[UInt64, MutAnyOrigin],
+        num_args: UInt32,
+    ) raises HALError:
+        var config = M_driver_queue_execute_config(
+            mode=M_driver_queue_execute_mode.GPU,
+            config=UnsafeUnion[M_driver_queue_execute_config_gpu](
+                M_driver_queue_execute_config_gpu(
+                    grid=M_driver_dim(x=grid[0], y=grid[1], z=grid[2]),
+                    block=M_driver_dim(x=block[0], y=block[1], z=block[2]),
+                    shared_mem_bytes=UInt32(0),
+                    attributes=OpaquePointer[MutExternalOrigin](),
+                    num_attributes=UInt32(0),
+                )
+            ),
+        )
+        var status = self._raw.queue_execute.f(
+            queue,
+            func,
+            rebind[ExecuteConfigHandle](UnsafePointer(to=config)),
+            args,
+            arg_sizes,
+            num_args,
+        )
+        if status != STATUS_SUCCESS:
+            var err = self.get_status_message(status)
+            raise HALError(
+                err.status,
+                message=String(t"failed to execute function: {err.message}"),
+            )
+
+    # ===-------------------------------------------------------------------===#
+    # Status
+    # ===-------------------------------------------------------------------===#
+
+    def get_status_message(self, status: Int64) raises HALError -> HALError:
+        """Retrieve the human-readable message associated with a status code."""
+        var buf = List[Int8](length=1024, fill=0)
+        var ret = self._raw.status_message.f(
+            self._driver_handle,
+            status,
+            MutPointer(
+                to=UnsafePointer[Int8, MutAnyOrigin](buf.unsafe_ptr())[]
+            ),
+            Int64(len(buf)),
+        )
+
+        if ret == STATUS_SUCCESS:
+            try:
+                return HALError(
+                    status,
+                    message=CStringSlice(
+                        unsafe_from_ptr=UnsafePointer(to=buf[0])
+                    ),
+                )
+            except:
+                return HALError(
+                    status, message="(failed to decode status message)"
+                )
+        else:
+            return HALError(
+                status,
+                message="(problem retrieving status message)",
+            )
 
 
 @fieldwise_init
-struct Plugin(Movable):
+struct RawPlugin(Movable):
     """Loaded HAL plugin with resolved function pointers.
 
     Owns the dlopen'd shared library handle and all resolved symbols.
@@ -228,7 +537,7 @@ struct Plugin(Movable):
         "M_driver_property",
         def(
             handle: DriverHandle,
-            property_name: CStringSlice,
+            property_name: CStringSlice[ImmutAnyOrigin],
             value: OutParam[OpaquePointer[ImmutExternalOrigin]],
         ) thin -> PluginResultCode,
     ]
@@ -372,7 +681,7 @@ struct Plugin(Movable):
         def(
             context: ContextHandle,
             bundle: RuntimeBundleHandle,
-            function_name: CStringSlice,
+            function_name: CStringSlice[ImmutAnyOrigin],
             function_name_len: UInt64,
             function: OutParam[FunctionHandle],
         ) thin -> PluginResultCode,
@@ -387,7 +696,7 @@ struct Plugin(Movable):
         "M_driver_device_property",
         def(
             device: DeviceHandle,
-            property_name: CStringSlice,
+            property_name: CStringSlice[ImmutAnyOrigin],
             value: OpaquePointer[MutAnyOrigin],
         ) thin -> PluginResultCode,
     ]
@@ -395,7 +704,7 @@ struct Plugin(Movable):
         "M_driver_memory_property",
         def(
             memory: MemoryHandle,
-            property_name: CStringSlice,
+            property_name: CStringSlice[ImmutAnyOrigin],
             value: OpaquePointer[MutAnyOrigin],
         ) thin -> PluginResultCode,
     ]
@@ -502,62 +811,30 @@ struct Plugin(Movable):
         self.bundle_load = type_of(self.bundle_load)(handle, so_path)
         self.bundle_unload = type_of(self.bundle_unload)(handle, so_path)
 
-    @staticmethod
-    def load(plugin_spec: String) raises HALError -> Self:
-        """Load a plugin from a spec string of the form 'name@/path/to/lib.so'.
-
-        If no '@' is present, the entire string is used as both name and path.
-        """
-        var name: String
-        var so_path: String
-        var parts = plugin_spec.split("@", maxsplit=1)
-        if len(parts) == 2:
-            name = String(parts[0])
-            so_path = String(parts[1])
-        else:
-            name = plugin_spec
-            so_path = plugin_spec
-
-        try:
-            var lib = OwnedDLHandle(so_path, RTLD.NOW)
-            var plugin = Plugin(lib^, so_path)
-            plugin.name = name
-            plugin.so_path = so_path
-            return plugin^
-        except e:
-            raise HALError(
-                STATUS_UNKNOWN_ERROR,
-                message=String(t"Failed to load plugin '{so_path}': {e}"),
-            )
-
-    def get_status_message(
-        self, driver: DriverHandle, status: Int64
-    ) raises HALError -> HALError:
-        """Retrieve the human-readable message associated with a status code."""
-        var buf = List[Int8](length=1024, fill=0)
-        var ret = self.status_message.f(
-            driver,
-            status,
-            MutPointer(
-                to=UnsafePointer[Int8, MutAnyOrigin](buf.unsafe_ptr())[]
-            ),
-            Int64(len(buf)),
+    def _create_init_driver(mut self) raises HALError -> DriverHandle:
+        var handle = UnsafeMaybeUninit(DriverHandle(_unsafe_null=()))
+        var version = DriverVersion(
+            major=M_DRIVER_INTERFACE_VERSION_MAJOR,
+            minor=M_DRIVER_INTERFACE_VERSION_MINOR,
+            patch=M_DRIVER_INTERFACE_VERSION_PATCH,
         )
 
-        if ret == STATUS_SUCCESS:
-            try:
-                return HALError(
-                    status,
-                    message=CStringSlice(
-                        unsafe_from_ptr=UnsafePointer(to=buf[0])
-                    ),
-                )
-            except:
-                return HALError(
-                    status, message="(failed to decode status message)"
-                )
-        else:
-            return HALError(
-                STATUS_UNKNOWN_ERROR,
-                message="(problem retrieving status message)",
+        var status = self.create.f(
+            ImmutPointer(
+                to=UnsafePointer[DriverVersion, ImmutAnyOrigin](
+                    UnsafePointer(to=version)
+                )[]
+            ),
+            OutParam[DriverHandle](to=handle),
+        )
+        if status != STATUS_SUCCESS:
+            raise HALError(
+                status,
+                message=String(
+                    t"failed to initialise driver plugin from {self.so_path}"
+                ),
             )
+
+        var driver_handle = handle.unsafe_assume_init_ref()
+
+        return driver_handle

@@ -16,7 +16,8 @@ Provides a Mojo-native library layer around the HAL C plugin API.
 """
 
 from .status import HALError, STATUS_SUCCESS
-from .plugin import Plugin
+from .plugin import RawDriver
 from .driver import Driver
 from .device import Device
-from .context import Context, Buffer, Queue, Event
+from .context import Context, Buffer, Event, RuntimeBundle
+from .queue import Queue

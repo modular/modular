@@ -45,6 +45,10 @@ struct CompilationTarget[value: _TargetType = _current_target()](
         value: The target architecture to query. Defaults to the current target.
     """
 
+    def __init__(out self):
+        """Initialize a `CompilationTarget` with the default target."""
+        pass
+
     @always_inline("nodebug")
     @staticmethod
     def unsupported_target_error[
