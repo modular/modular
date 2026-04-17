@@ -60,9 +60,7 @@ def _env_int_tuple(name: str, default: tuple[int, ...]) -> tuple[int, ...]:
     value = os.environ.get(name)
     if value is None:
         return default
-    return tuple(
-        int(part.strip()) for part in value.split(",") if part.strip()
-    )
+    return tuple(int(part.strip()) for part in value.split(",") if part.strip())
 
 
 PAGE_SIZE = 128
@@ -125,9 +123,9 @@ def _resolve_layer_metadata(config: dict[str, Any]) -> tuple[int, str]:
         os.environ.get("PROFILE_ATTENTION_LAYER_IDX", str(DEFAULT_LAYER_IDX))
     )
     num_hidden_layers = int(config["num_hidden_layers"])
-    assert 0 <= layer_idx < num_hidden_layers, (
-        f"layer_idx={layer_idx} must be in [0, {num_hidden_layers})"
-    )
+    assert (
+        0 <= layer_idx < num_hidden_layers
+    ), f"layer_idx={layer_idx} must be in [0, {num_hidden_layers})"
     layer_type = (
         "local"
         if bool((layer_idx + 1) % config["sliding_window_pattern"])
@@ -147,9 +145,9 @@ def _resolve_kv_num_layers(config: dict[str, Any], layer_idx: int) -> int:
     kv_num_layers = int(
         os.environ.get("PROFILE_ATTENTION_KV_NUM_LAYERS", str(min_num_layers))
     )
-    assert kv_num_layers >= min_num_layers, (
-        f"kv_num_layers={kv_num_layers} must cover layer_idx={layer_idx}"
-    )
+    assert (
+        kv_num_layers >= min_num_layers
+    ), f"kv_num_layers={kv_num_layers} must cover layer_idx={layer_idx}"
     assert kv_num_layers <= int(config["num_hidden_layers"]), (
         "kv_num_layers cannot exceed the model layer count "
         f"({config['num_hidden_layers']})"
@@ -162,9 +160,9 @@ def _resolve_fused_variant() -> str:
         "PROFILE_ATTENTION_DECODE_FUSED_VARIANT",
         DEFAULT_FUSED_VARIANT,
     )
-    assert fused_variant in FUSED_VARIANTS, (
-        f"fused variant must be one of {FUSED_VARIANTS}, got {fused_variant!r}"
-    )
+    assert (
+        fused_variant in FUSED_VARIANTS
+    ), f"fused variant must be one of {FUSED_VARIANTS}, got {fused_variant!r}"
     return fused_variant
 
 
@@ -267,30 +265,24 @@ def _make_weight_registry(config: dict[str, Any]) -> dict[str, torch.Tensor]:
     kv_dim = config["head_dim"] * config["num_key_value_heads"]
     hidden_size = config["hidden_size"]
     return {
-        "k_norm.weight": torch.randn(
-            config["head_dim"], dtype=torch.bfloat16
-        )
-        * K_NORM_STD,
-        "k_proj.weight": torch.randn(
-            kv_dim, hidden_size, dtype=torch.bfloat16
-        )
-        * K_PROJ_STD,
-        "o_proj.weight": torch.randn(
-            hidden_size, q_dim, dtype=torch.bfloat16
-        )
-        * O_PROJ_STD,
-        "q_norm.weight": torch.randn(
-            config["head_dim"], dtype=torch.bfloat16
-        )
-        * Q_NORM_STD,
-        "q_proj.weight": torch.randn(
-            q_dim, hidden_size, dtype=torch.bfloat16
-        )
-        * Q_PROJ_STD,
-        "v_proj.weight": torch.randn(
-            kv_dim, hidden_size, dtype=torch.bfloat16
-        )
-        * V_PROJ_STD,
+        "k_norm.weight": (
+            torch.randn(config["head_dim"], dtype=torch.bfloat16) * K_NORM_STD
+        ),
+        "k_proj.weight": (
+            torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * K_PROJ_STD
+        ),
+        "o_proj.weight": (
+            torch.randn(hidden_size, q_dim, dtype=torch.bfloat16) * O_PROJ_STD
+        ),
+        "q_norm.weight": (
+            torch.randn(config["head_dim"], dtype=torch.bfloat16) * Q_NORM_STD
+        ),
+        "q_proj.weight": (
+            torch.randn(q_dim, hidden_size, dtype=torch.bfloat16) * Q_PROJ_STD
+        ),
+        "v_proj.weight": (
+            torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * V_PROJ_STD
+        ),
     }
 
 
@@ -736,14 +728,18 @@ def _make_runtime_inputs(
         )
         contexts.append(context)
 
-    runtime_inputs = kv_manager.runtime_inputs([contexts], num_steps=1).inputs[0]
+    runtime_inputs = kv_manager.runtime_inputs([contexts], num_steps=1).inputs[
+        0
+    ]
     return cache_lengths, runtime_inputs
 
 
 def _clone_kv_blocks(blocks: Buffer, seed: int) -> Buffer:
     torch.manual_seed(seed)
     shape = tuple(int(dim) for dim in blocks.shape)
-    tensor = torch.randn(shape, dtype=torch.bfloat16, device="cuda").contiguous()
+    tensor = torch.randn(
+        shape, dtype=torch.bfloat16, device="cuda"
+    ).contiguous()
     return Buffer.from_dlpack(tensor)
 
 
@@ -778,7 +774,9 @@ def _build_gpu_isolation_guard() -> dict[str, Any] | None:
 
     cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
     target_gpu_index = (
-        0 if cuda_visible_devices == "" else int(cuda_visible_devices.split(",")[0])
+        0
+        if cuda_visible_devices == ""
+        else int(cuda_visible_devices.split(",")[0])
     )
 
     for index_text, gpu_uuid in _run_nvidia_smi_query("gpu=index,uuid"):
@@ -820,10 +818,13 @@ def _assert_gpu_isolation(
 
     resident_compute_apps = []
     unexpected_apps = []
-    for gpu_uuid, pid_text, process_name, used_gpu_memory_mib in (
-        _run_nvidia_smi_query(
-            "compute-apps=gpu_uuid,pid,process_name,used_gpu_memory"
-        )
+    for (
+        gpu_uuid,
+        pid_text,
+        process_name,
+        used_gpu_memory_mib,
+    ) in _run_nvidia_smi_query(
+        "compute-apps=gpu_uuid,pid,process_name,used_gpu_memory"
     ):
         if gpu_uuid != gpu_isolation_guard["target_gpu_uuid"]:
             continue
@@ -1117,14 +1118,16 @@ def test_profile_attention_decode() -> None:
             f"{CACHE_LEN_BASE}_step{CACHE_LEN_STEP}{run_name_suffix}"
         )
 
-        correctness_baseline_args, correctness_baseline_blocks = _make_benchmark_args(
-            batch_size=batch_size,
-            hidden_size=config["hidden_size"],
-            cache_lengths=cache_lengths,
-            runtime_inputs=runtime_inputs,
-            device=device,
-            x_seed=100 + batch_size,
-            blocks_seed=200 + batch_size,
+        correctness_baseline_args, correctness_baseline_blocks = (
+            _make_benchmark_args(
+                batch_size=batch_size,
+                hidden_size=config["hidden_size"],
+                cache_lengths=cache_lengths,
+                runtime_inputs=runtime_inputs,
+                device=device,
+                x_seed=100 + batch_size,
+                blocks_seed=200 + batch_size,
+            )
         )
         correctness_fused_args, correctness_fused_blocks = _make_benchmark_args(
             batch_size=batch_size,
@@ -1230,7 +1233,9 @@ def test_profile_attention_decode() -> None:
                 "fused_second": forward_order["fused"],
             }
             results["order_slowdown_ratio_when_second"][run_name] = {
-                "baseline": reverse_order["baseline"] / forward_order["baseline"],
+                "baseline": (
+                    reverse_order["baseline"] / forward_order["baseline"]
+                ),
                 "fused": forward_order["fused"] / reverse_order["fused"],
             }
             results["pair_speedup_ratio_by_order"][run_name] = {
@@ -1335,11 +1340,15 @@ def test_profile_attention_decode() -> None:
     if timing_order_mode == "both_orders":
         baseline_slowdowns = [
             run_results["baseline"]
-            for run_results in results["order_slowdown_ratio_when_second"].values()
+            for run_results in results[
+                "order_slowdown_ratio_when_second"
+            ].values()
         ]
         fused_slowdowns = [
             run_results["fused"]
-            for run_results in results["order_slowdown_ratio_when_second"].values()
+            for run_results in results[
+                "order_slowdown_ratio_when_second"
+            ].values()
         ]
         results["order_slowdown_geomean_when_second"] = {
             "baseline": float(np.exp(np.mean(np.log(baseline_slowdowns)))),

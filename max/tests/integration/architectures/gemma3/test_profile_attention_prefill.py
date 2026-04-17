@@ -116,9 +116,9 @@ def _resolve_layer_metadata(config: dict[str, Any]) -> tuple[int, str]:
         os.environ.get("PROFILE_ATTENTION_LAYER_IDX", str(DEFAULT_LAYER_IDX))
     )
     num_hidden_layers = int(config["num_hidden_layers"])
-    assert 0 <= layer_idx < num_hidden_layers, (
-        f"layer_idx={layer_idx} must be in [0, {num_hidden_layers})"
-    )
+    assert (
+        0 <= layer_idx < num_hidden_layers
+    ), f"layer_idx={layer_idx} must be in [0, {num_hidden_layers})"
     layer_type = (
         "local"
         if bool((layer_idx + 1) % config["sliding_window_pattern"])
@@ -138,9 +138,9 @@ def _resolve_kv_num_layers(config: dict[str, Any], layer_idx: int) -> int:
     kv_num_layers = int(
         os.environ.get("PROFILE_ATTENTION_KV_NUM_LAYERS", str(min_num_layers))
     )
-    assert kv_num_layers >= min_num_layers, (
-        f"kv_num_layers={kv_num_layers} must cover layer_idx={layer_idx}"
-    )
+    assert (
+        kv_num_layers >= min_num_layers
+    ), f"kv_num_layers={kv_num_layers} must cover layer_idx={layer_idx}"
     assert kv_num_layers <= int(config["num_hidden_layers"]), (
         "kv_num_layers cannot exceed the model layer count "
         f"({config['num_hidden_layers']})"
@@ -229,30 +229,24 @@ def _make_weight_registry(config: dict[str, Any]) -> dict[str, torch.Tensor]:
     kv_dim = config["head_dim"] * config["num_key_value_heads"]
     hidden_size = config["hidden_size"]
     return {
-        "k_norm.weight": torch.randn(
-            config["head_dim"], dtype=torch.bfloat16
-        )
-        * K_NORM_STD,
-        "k_proj.weight": torch.randn(
-            kv_dim, hidden_size, dtype=torch.bfloat16
-        )
-        * K_PROJ_STD,
-        "o_proj.weight": torch.randn(
-            hidden_size, q_dim, dtype=torch.bfloat16
-        )
-        * O_PROJ_STD,
-        "q_norm.weight": torch.randn(
-            config["head_dim"], dtype=torch.bfloat16
-        )
-        * Q_NORM_STD,
-        "q_proj.weight": torch.randn(
-            q_dim, hidden_size, dtype=torch.bfloat16
-        )
-        * Q_PROJ_STD,
-        "v_proj.weight": torch.randn(
-            kv_dim, hidden_size, dtype=torch.bfloat16
-        )
-        * V_PROJ_STD,
+        "k_norm.weight": (
+            torch.randn(config["head_dim"], dtype=torch.bfloat16) * K_NORM_STD
+        ),
+        "k_proj.weight": (
+            torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * K_PROJ_STD
+        ),
+        "o_proj.weight": (
+            torch.randn(hidden_size, q_dim, dtype=torch.bfloat16) * O_PROJ_STD
+        ),
+        "q_norm.weight": (
+            torch.randn(config["head_dim"], dtype=torch.bfloat16) * Q_NORM_STD
+        ),
+        "q_proj.weight": (
+            torch.randn(q_dim, hidden_size, dtype=torch.bfloat16) * Q_PROJ_STD
+        ),
+        "v_proj.weight": (
+            torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * V_PROJ_STD
+        ),
     }
 
 
@@ -422,7 +416,9 @@ def _manual_attention_output(
     )
     xq = xq.reshape((-1, attention.n_heads, kv_params.head_dim))
 
-    use_local = bool((attention.layer_idx + 1) % attention.sliding_window_pattern)
+    use_local = bool(
+        (attention.layer_idx + 1) % attention.sliding_window_pattern
+    )
     rope = attention.rope_local if use_local else attention.rope_global
     freqs_cis = ops.cast(rope.freqs_cis, xq.dtype).to(xq.device)
 
@@ -562,7 +558,9 @@ def _build_gpu_isolation_guard() -> dict[str, Any] | None:
 
     cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
     target_gpu_index = (
-        0 if cuda_visible_devices == "" else int(cuda_visible_devices.split(",")[0])
+        0
+        if cuda_visible_devices == ""
+        else int(cuda_visible_devices.split(",")[0])
     )
 
     for index_text, gpu_uuid in _run_nvidia_smi_query("gpu=index,uuid"):
@@ -589,10 +587,13 @@ def _assert_gpu_isolation(
 
     resident_compute_apps = []
     unexpected_apps = []
-    for gpu_uuid, pid_text, process_name, used_gpu_memory_mib in (
-        _run_nvidia_smi_query(
-            "compute-apps=gpu_uuid,pid,process_name,used_gpu_memory"
-        )
+    for (
+        gpu_uuid,
+        pid_text,
+        process_name,
+        used_gpu_memory_mib,
+    ) in _run_nvidia_smi_query(
+        "compute-apps=gpu_uuid,pid,process_name,used_gpu_memory"
     ):
         if gpu_uuid != gpu_isolation_guard["target_gpu_uuid"]:
             continue
@@ -678,9 +679,7 @@ def _build_graph(
             graph_variant = "KOnlyFused"
         else:
             attention_cls = (
-                MaxGemma3Attention
-                if use_fused
-                else _Gemma3AttentionBaseline
+                MaxGemma3Attention if use_fused else _Gemma3AttentionBaseline
             )
             graph_variant = "Fused" if use_fused else "Baseline"
     attention = attention_cls(
@@ -819,11 +818,7 @@ def _make_runtime_inputs(
         n_kv_heads_per_device=kv_params.n_kv_heads_per_device,
         num_q_heads_per_device=kv_params.num_q_heads_per_device,
         is_fp8_kv=kv_params.is_fp8_kv_dtype,
-    ).resolve_for_replica(
-        batch_size,
-        seq_len,
-        seq_len,
-    )[0]
+    ).resolve_for_replica(batch_size, seq_len, seq_len,)[0]
 
     return KVCacheInputsPerDevice(
         blocks=runtime_inputs.blocks,
@@ -840,7 +835,9 @@ def _make_runtime_inputs(
 def _clone_kv_blocks(blocks: Buffer, seed: int) -> Buffer:
     torch.manual_seed(seed)
     shape = tuple(int(dim) for dim in blocks.shape)
-    tensor = torch.randn(shape, dtype=torch.bfloat16, device="cuda").contiguous()
+    tensor = torch.randn(
+        shape, dtype=torch.bfloat16, device="cuda"
+    ).contiguous()
     return Buffer.from_dlpack(tensor)
 
 
@@ -1026,7 +1023,9 @@ def _run_pair_matrix_correctness_check(
     layer_idx: int,
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     outputs = {
-        graph_name: _to_bfloat16_tensor(compiled_graph.execute(*execution_args[graph_name])[0])
+        graph_name: _to_bfloat16_tensor(
+            compiled_graph.execute(*execution_args[graph_name])[0]
+        )
         for graph_name, compiled_graph in compiled.items()
     }
     torch.cuda.synchronize()
@@ -1288,7 +1287,9 @@ def test_profile_attention_prefill() -> None:
                 "mode": "prefill-ragged-full-attention-pair-matrix",
                 "compare_mode": compare_mode,
                 "fused_variant": fused_variant,
-                "graph_names": [graph_name for graph_name, _, _ in PAIR_MATRIX_GRAPH_SPECS],
+                "graph_names": [
+                    graph_name for graph_name, _, _ in PAIR_MATRIX_GRAPH_SPECS
+                ],
                 "pairs": [
                     _pair_matrix_name(lhs_name, rhs_name)
                     for lhs_name, rhs_name in PAIR_MATRIX_PAIRS
@@ -1356,9 +1357,7 @@ def test_profile_attention_prefill() -> None:
                 results["correctness"] = "failed"
                 results["failure_shape"] = run_name
                 results["failures"] = failures
-                results["localization"] = _pair_matrix_localization(
-                    failures
-                )
+                results["localization"] = _pair_matrix_localization(failures)
                 print("GEMMA3_ATTENTION_PREFILL_PROFILE_START")
                 print(json.dumps(results, indent=2, sort_keys=True))
                 print("GEMMA3_ATTENTION_PREFILL_PROFILE_END")
@@ -1546,7 +1545,9 @@ def test_profile_attention_prefill() -> None:
             "baseline": average_baseline_us,
             "fused": average_fused_us,
         }
-        results[ratio_metric_key][run_name] = average_baseline_us / average_fused_us
+        results[ratio_metric_key][run_name] = (
+            average_baseline_us / average_fused_us
+        )
 
         del baseline
         del fused
@@ -1555,10 +1556,7 @@ def test_profile_attention_prefill() -> None:
     ratios = list(results[ratio_metric_key].values())
     results[average_geomean_key] = _geomean(ratios)
     results[average_large_geomean_key] = _geomean(
-        [
-            results[ratio_metric_key][run_name]
-            for run_name in large_shape_names
-        ]
+        [results[ratio_metric_key][run_name] for run_name in large_shape_names]
     )
 
     confirm_ratios = [

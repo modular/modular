@@ -77,9 +77,9 @@ def _resolve_layer_metadata(config: dict[str, Any]) -> tuple[int, str]:
         os.environ.get("PROFILE_ATTENTION_LAYER_IDX", str(DEFAULT_LAYER_IDX))
     )
     num_hidden_layers = int(config["num_hidden_layers"])
-    assert 0 <= layer_idx < num_hidden_layers, (
-        f"layer_idx={layer_idx} must be in [0, {num_hidden_layers})"
-    )
+    assert (
+        0 <= layer_idx < num_hidden_layers
+    ), f"layer_idx={layer_idx} must be in [0, {num_hidden_layers})"
     layer_type = (
         "local"
         if bool((layer_idx + 1) % config["sliding_window_pattern"])
@@ -99,9 +99,9 @@ def _resolve_kv_num_layers(config: dict[str, Any], layer_idx: int) -> int:
     kv_num_layers = int(
         os.environ.get("PROFILE_ATTENTION_KV_NUM_LAYERS", str(min_num_layers))
     )
-    assert kv_num_layers >= min_num_layers, (
-        f"kv_num_layers={kv_num_layers} must cover layer_idx={layer_idx}"
-    )
+    assert (
+        kv_num_layers >= min_num_layers
+    ), f"kv_num_layers={kv_num_layers} must cover layer_idx={layer_idx}"
     assert kv_num_layers <= int(config["num_hidden_layers"]), (
         "kv_num_layers cannot exceed the model layer count "
         f"({config['num_hidden_layers']})"
@@ -167,30 +167,24 @@ def _make_weight_registry(config: dict[str, Any]) -> dict[str, torch.Tensor]:
     kv_dim = config["head_dim"] * config["num_key_value_heads"]
     hidden_size = config["hidden_size"]
     return {
-        "k_norm.weight": torch.randn(
-            config["head_dim"], dtype=torch.bfloat16
-        )
-        * K_NORM_STD,
-        "k_proj.weight": torch.randn(
-            kv_dim, hidden_size, dtype=torch.bfloat16
-        )
-        * K_PROJ_STD,
-        "o_proj.weight": torch.randn(
-            hidden_size, q_dim, dtype=torch.bfloat16
-        )
-        * O_PROJ_STD,
-        "q_norm.weight": torch.randn(
-            config["head_dim"], dtype=torch.bfloat16
-        )
-        * Q_NORM_STD,
-        "q_proj.weight": torch.randn(
-            q_dim, hidden_size, dtype=torch.bfloat16
-        )
-        * Q_PROJ_STD,
-        "v_proj.weight": torch.randn(
-            kv_dim, hidden_size, dtype=torch.bfloat16
-        )
-        * V_PROJ_STD,
+        "k_norm.weight": (
+            torch.randn(config["head_dim"], dtype=torch.bfloat16) * K_NORM_STD
+        ),
+        "k_proj.weight": (
+            torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * K_PROJ_STD
+        ),
+        "o_proj.weight": (
+            torch.randn(hidden_size, q_dim, dtype=torch.bfloat16) * O_PROJ_STD
+        ),
+        "q_norm.weight": (
+            torch.randn(config["head_dim"], dtype=torch.bfloat16) * Q_NORM_STD
+        ),
+        "q_proj.weight": (
+            torch.randn(q_dim, hidden_size, dtype=torch.bfloat16) * Q_PROJ_STD
+        ),
+        "v_proj.weight": (
+            torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * V_PROJ_STD
+        ),
     }
 
 
@@ -423,11 +417,7 @@ def _make_runtime_inputs(
         n_kv_heads_per_device=kv_params.n_kv_heads_per_device,
         num_q_heads_per_device=kv_params.num_q_heads_per_device,
         is_fp8_kv=kv_params.is_fp8_kv_dtype,
-    ).resolve_for_replica(
-        batch_size,
-        seq_len,
-        seq_len,
-    )[0]
+    ).resolve_for_replica(batch_size, seq_len, seq_len,)[0]
 
     return KVCacheInputsPerDevice(
         blocks=runtime_inputs.blocks,
@@ -444,7 +434,9 @@ def _make_runtime_inputs(
 def _clone_kv_blocks(blocks: Buffer, seed: int) -> Buffer:
     torch.manual_seed(seed)
     shape = tuple(int(dim) for dim in blocks.shape)
-    tensor = torch.randn(shape, dtype=torch.bfloat16, device="cuda").contiguous()
+    tensor = torch.randn(
+        shape, dtype=torch.bfloat16, device="cuda"
+    ).contiguous()
     return Buffer.from_dlpack(tensor)
 
 
@@ -765,5 +757,7 @@ def test_profile_flash_attention_prefill_bridge() -> None:
     results["confirm_large_shape_geomean_speedup_vs_flash_bridge_baseline"] = (
         _geomean(confirm_large_ratios)
     )
-    results["localization"] = "flash_bridge_passes_mismatch_is_downstream_of_flash"
+    results["localization"] = (
+        "flash_bridge_passes_mismatch_is_downstream_of_flash"
+    )
     print(json.dumps(results, indent=2, sort_keys=True))

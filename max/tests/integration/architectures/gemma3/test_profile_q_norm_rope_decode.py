@@ -58,9 +58,7 @@ def _env_int_tuple(name: str, default: tuple[int, ...]) -> tuple[int, ...]:
     value = os.environ.get(name)
     if value is None:
         return default
-    return tuple(
-        int(part.strip()) for part in value.split(",") if part.strip()
-    )
+    return tuple(int(part.strip()) for part in value.split(",") if part.strip())
 
 
 def _profile_config(config: dict[str, Any]) -> dict[str, Any]:
@@ -250,9 +248,7 @@ def _make_benchmark_args(
     args: list[tuple[Any, ...]] = []
     for step in range(MAX_EXTRA_STEPS + 1):
         step_offset = np.uint32(step * iteration_step)
-        start_pos = _device_uint32_buffer(
-            base_start_pos + step_offset, device
-        )
+        start_pos = _device_uint32_buffer(base_start_pos + step_offset, device)
         args.append((xq_buffer, row_offsets, start_pos))
 
     return args, xq_buffer

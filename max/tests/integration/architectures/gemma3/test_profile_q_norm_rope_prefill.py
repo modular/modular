@@ -50,7 +50,9 @@ def _env_int(name: str, default: int) -> int:
 
 
 def _resolve_prefill_shapes() -> tuple[tuple[int, int], ...]:
-    raw_shapes = os.environ.get("PROFILE_Q_NORM_ROPE_PREFILL_SHAPES", "").strip()
+    raw_shapes = os.environ.get(
+        "PROFILE_Q_NORM_ROPE_PREFILL_SHAPES", ""
+    ).strip()
     if raw_shapes == "":
         return PREFILL_SHAPES
 
@@ -101,7 +103,9 @@ def _profile_config(config: dict[str, Any]) -> dict[str, Any]:
         resolved_hidden_size = num_attention_heads * head_dim
     else:
         resolved_hidden_size = (
-            int(hidden_size) if hidden_size is not None else config["hidden_size"]
+            int(hidden_size)
+            if hidden_size is not None
+            else config["hidden_size"]
         )
 
     return {
@@ -166,7 +170,11 @@ def _build_graph(
 
     input_type = TensorType(
         DType.bfloat16,
-        [batch_size * seq_len, config["num_attention_heads"], config["head_dim"]],
+        [
+            batch_size * seq_len,
+            config["num_attention_heads"],
+            config["head_dim"],
+        ],
         device=device_ref,
     )
     input_row_offsets_type = TensorType(
@@ -434,8 +442,8 @@ def test_profile_q_norm_rope_prefill() -> None:
 
     ratios = list(results["average_speedup_ratio_vs_graph_baseline"].values())
     results["average_geomean_speedup_vs_graph_baseline"] = _geomean(ratios)
-    large_shape_ratio_names = (
-        large_shape_names or list(results["average_speedup_ratio_vs_graph_baseline"].keys())
+    large_shape_ratio_names = large_shape_names or list(
+        results["average_speedup_ratio_vs_graph_baseline"].keys()
     )
     results["average_large_shape_geomean_speedup_vs_graph_baseline"] = _geomean(
         [
@@ -452,8 +460,8 @@ def test_profile_q_norm_rope_prefill() -> None:
     results["confirm_geomean_speedup_vs_graph_baseline"] = _geomean(
         confirm_ratios
     )
-    confirm_large_shape_names = (
-        large_shape_names or list(results["confirm_sweep_us"].keys())
+    confirm_large_shape_names = large_shape_names or list(
+        results["confirm_sweep_us"].keys()
     )
     results["confirm_large_shape_geomean_speedup_vs_graph_baseline"] = _geomean(
         [

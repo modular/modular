@@ -73,9 +73,9 @@ def _resolve_layer_metadata(config: dict[str, Any]) -> tuple[int, str]:
         os.environ.get("PROFILE_ATTENTION_LAYER_IDX", str(DEFAULT_LAYER_IDX))
     )
     num_hidden_layers = int(config["num_hidden_layers"])
-    assert 0 <= layer_idx < num_hidden_layers, (
-        f"layer_idx={layer_idx} must be in [0, {num_hidden_layers})"
-    )
+    assert (
+        0 <= layer_idx < num_hidden_layers
+    ), f"layer_idx={layer_idx} must be in [0, {num_hidden_layers})"
     layer_type = (
         "local"
         if bool((layer_idx + 1) % config["sliding_window_pattern"])
@@ -95,9 +95,9 @@ def _resolve_kv_num_layers(config: dict[str, Any], layer_idx: int) -> int:
     kv_num_layers = int(
         os.environ.get("PROFILE_ATTENTION_KV_NUM_LAYERS", str(min_num_layers))
     )
-    assert kv_num_layers >= min_num_layers, (
-        f"kv_num_layers={kv_num_layers} must cover layer_idx={layer_idx}"
-    )
+    assert (
+        kv_num_layers >= min_num_layers
+    ), f"kv_num_layers={kv_num_layers} must cover layer_idx={layer_idx}"
     assert kv_num_layers <= int(config["num_hidden_layers"]), (
         "kv_num_layers cannot exceed the model layer count "
         f"({config['num_hidden_layers']})"
@@ -118,30 +118,24 @@ def _make_weight_registry(config: dict[str, Any]) -> dict[str, torch.Tensor]:
     kv_dim = config["head_dim"] * config["num_key_value_heads"]
     hidden_size = config["hidden_size"]
     return {
-        "k_norm.weight": torch.randn(
-            config["head_dim"], dtype=torch.bfloat16
-        )
-        * K_NORM_STD,
-        "k_proj.weight": torch.randn(
-            kv_dim, hidden_size, dtype=torch.bfloat16
-        )
-        * K_PROJ_STD,
-        "o_proj.weight": torch.randn(
-            hidden_size, q_dim, dtype=torch.bfloat16
-        )
-        * O_PROJ_STD,
-        "q_norm.weight": torch.randn(
-            config["head_dim"], dtype=torch.bfloat16
-        )
-        * Q_NORM_STD,
-        "q_proj.weight": torch.randn(
-            q_dim, hidden_size, dtype=torch.bfloat16
-        )
-        * Q_PROJ_STD,
-        "v_proj.weight": torch.randn(
-            kv_dim, hidden_size, dtype=torch.bfloat16
-        )
-        * V_PROJ_STD,
+        "k_norm.weight": (
+            torch.randn(config["head_dim"], dtype=torch.bfloat16) * K_NORM_STD
+        ),
+        "k_proj.weight": (
+            torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * K_PROJ_STD
+        ),
+        "o_proj.weight": (
+            torch.randn(hidden_size, q_dim, dtype=torch.bfloat16) * O_PROJ_STD
+        ),
+        "q_norm.weight": (
+            torch.randn(config["head_dim"], dtype=torch.bfloat16) * Q_NORM_STD
+        ),
+        "q_proj.weight": (
+            torch.randn(q_dim, hidden_size, dtype=torch.bfloat16) * Q_PROJ_STD
+        ),
+        "v_proj.weight": (
+            torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * V_PROJ_STD
+        ),
     }
 
 
@@ -363,7 +357,9 @@ def _make_runtime_inputs(
 def _clone_kv_blocks(blocks: Buffer, seed: int) -> Buffer:
     torch.manual_seed(seed)
     shape = tuple(int(dim) for dim in blocks.shape)
-    tensor = torch.randn(shape, dtype=torch.bfloat16, device="cuda").contiguous()
+    tensor = torch.randn(
+        shape, dtype=torch.bfloat16, device="cuda"
+    ).contiguous()
     return Buffer.from_dlpack(tensor)
 
 
@@ -650,11 +646,13 @@ def test_profile_qkv_qk_prefill_bridge() -> None:
 
     ratios = list(results["average_speedup_ratio_vs_bridge_baseline"].values())
     results["average_geomean_speedup_vs_bridge_baseline"] = _geomean(ratios)
-    results["average_large_shape_geomean_speedup_vs_bridge_baseline"] = _geomean(
-        [
-            results["average_speedup_ratio_vs_bridge_baseline"][run_name]
-            for run_name in large_shape_names
-        ]
+    results["average_large_shape_geomean_speedup_vs_bridge_baseline"] = (
+        _geomean(
+            [
+                results["average_speedup_ratio_vs_bridge_baseline"][run_name]
+                for run_name in large_shape_names
+            ]
+        )
     )
 
     confirm_ratios = [
@@ -665,12 +663,14 @@ def test_profile_qkv_qk_prefill_bridge() -> None:
     results["confirm_geomean_speedup_vs_bridge_baseline"] = _geomean(
         confirm_ratios
     )
-    results["confirm_large_shape_geomean_speedup_vs_bridge_baseline"] = _geomean(
-        [
-            results["confirm_sweep_us"][run_name]["baseline"]
-            / results["confirm_sweep_us"][run_name]["fused"]
-            for run_name in large_shape_names
-        ]
+    results["confirm_large_shape_geomean_speedup_vs_bridge_baseline"] = (
+        _geomean(
+            [
+                results["confirm_sweep_us"][run_name]["baseline"]
+                / results["confirm_sweep_us"][run_name]["fused"]
+                for run_name in large_shape_names
+            ]
+        )
     )
 
     print("GEMMA3_QKV_QK_PREFILL_BRIDGE_PROFILE_START")

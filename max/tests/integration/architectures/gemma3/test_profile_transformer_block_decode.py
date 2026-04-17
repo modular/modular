@@ -114,9 +114,9 @@ def _resolve_layer_metadata(config: dict[str, Any]) -> tuple[int, str]:
         )
     )
     num_hidden_layers = int(config["num_hidden_layers"])
-    assert 0 <= layer_idx < num_hidden_layers, (
-        f"layer_idx={layer_idx} must be in [0, {num_hidden_layers})"
-    )
+    assert (
+        0 <= layer_idx < num_hidden_layers
+    ), f"layer_idx={layer_idx} must be in [0, {num_hidden_layers})"
     layer_type = (
         "local"
         if bool((layer_idx + 1) % config["sliding_window_pattern"])
@@ -138,9 +138,9 @@ def _resolve_kv_num_layers(config: dict[str, Any], layer_idx: int) -> int:
             "PROFILE_TRANSFORMER_BLOCK_KV_NUM_LAYERS", str(min_num_layers)
         )
     )
-    assert kv_num_layers >= min_num_layers, (
-        f"kv_num_layers={kv_num_layers} must cover layer_idx={layer_idx}"
-    )
+    assert (
+        kv_num_layers >= min_num_layers
+    ), f"kv_num_layers={kv_num_layers} must cover layer_idx={layer_idx}"
     assert kv_num_layers <= int(config["num_hidden_layers"]), (
         "kv_num_layers cannot exceed the model layer count "
         f"({config['num_hidden_layers']})"
@@ -295,62 +295,51 @@ def _make_weight_registry(config: dict[str, Any]) -> dict[str, torch.Tensor]:
     hidden_size = config["hidden_size"]
     intermediate_size = config["intermediate_size"]
     return {
-        "block.self_attn.k_norm.weight": torch.randn(
-            config["head_dim"], dtype=torch.bfloat16
-        )
-        * K_NORM_STD,
-        "block.self_attn.k_proj.weight": torch.randn(
-            kv_dim, hidden_size, dtype=torch.bfloat16
-        )
-        * K_PROJ_STD,
-        "block.self_attn.o_proj.weight": torch.randn(
-            hidden_size, q_dim, dtype=torch.bfloat16
-        )
-        * O_PROJ_STD,
-        "block.self_attn.q_norm.weight": torch.randn(
-            config["head_dim"], dtype=torch.bfloat16
-        )
-        * Q_NORM_STD,
-        "block.self_attn.q_proj.weight": torch.randn(
-            q_dim, hidden_size, dtype=torch.bfloat16
-        )
-        * Q_PROJ_STD,
-        "block.self_attn.v_proj.weight": torch.randn(
-            kv_dim, hidden_size, dtype=torch.bfloat16
-        )
-        * V_PROJ_STD,
-        "block.mlp.gate_proj.weight": torch.randn(
-            intermediate_size, hidden_size, dtype=torch.bfloat16
-        )
-        * MLP_GATE_STD,
-        "block.mlp.down_proj.weight": torch.randn(
-            hidden_size, intermediate_size, dtype=torch.bfloat16
-        )
-        * MLP_DOWN_STD,
-        "block.mlp.up_proj.weight": torch.randn(
-            intermediate_size, hidden_size, dtype=torch.bfloat16
-        )
-        * MLP_UP_STD,
-        "block.input_layernorm.weight": torch.randn(
-            hidden_size, dtype=torch.bfloat16
-        )
-        * RMS_NORM_STD,
-        "block.post_attention_layernorm.weight": torch.randn(
-            hidden_size, dtype=torch.bfloat16
-        )
-        * RMS_NORM_STD,
-        "block.pre_feedforward_layernorm.weight": torch.randn(
-            hidden_size, dtype=torch.bfloat16
-        )
-        * RMS_NORM_STD,
-        "block.post_feedforward_layernorm.weight": torch.randn(
-            hidden_size, dtype=torch.bfloat16
-        )
-        * RMS_NORM_STD,
-        "next_input_layernorm.weight": torch.randn(
-            hidden_size, dtype=torch.bfloat16
-        )
-        * RMS_NORM_STD,
+        "block.self_attn.k_norm.weight": (
+            torch.randn(config["head_dim"], dtype=torch.bfloat16) * K_NORM_STD
+        ),
+        "block.self_attn.k_proj.weight": (
+            torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * K_PROJ_STD
+        ),
+        "block.self_attn.o_proj.weight": (
+            torch.randn(hidden_size, q_dim, dtype=torch.bfloat16) * O_PROJ_STD
+        ),
+        "block.self_attn.q_norm.weight": (
+            torch.randn(config["head_dim"], dtype=torch.bfloat16) * Q_NORM_STD
+        ),
+        "block.self_attn.q_proj.weight": (
+            torch.randn(q_dim, hidden_size, dtype=torch.bfloat16) * Q_PROJ_STD
+        ),
+        "block.self_attn.v_proj.weight": (
+            torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * V_PROJ_STD
+        ),
+        "block.mlp.gate_proj.weight": (
+            torch.randn(intermediate_size, hidden_size, dtype=torch.bfloat16)
+            * MLP_GATE_STD
+        ),
+        "block.mlp.down_proj.weight": (
+            torch.randn(hidden_size, intermediate_size, dtype=torch.bfloat16)
+            * MLP_DOWN_STD
+        ),
+        "block.mlp.up_proj.weight": (
+            torch.randn(intermediate_size, hidden_size, dtype=torch.bfloat16)
+            * MLP_UP_STD
+        ),
+        "block.input_layernorm.weight": (
+            torch.randn(hidden_size, dtype=torch.bfloat16) * RMS_NORM_STD
+        ),
+        "block.post_attention_layernorm.weight": (
+            torch.randn(hidden_size, dtype=torch.bfloat16) * RMS_NORM_STD
+        ),
+        "block.pre_feedforward_layernorm.weight": (
+            torch.randn(hidden_size, dtype=torch.bfloat16) * RMS_NORM_STD
+        ),
+        "block.post_feedforward_layernorm.weight": (
+            torch.randn(hidden_size, dtype=torch.bfloat16) * RMS_NORM_STD
+        ),
+        "next_input_layernorm.weight": (
+            torch.randn(hidden_size, dtype=torch.bfloat16) * RMS_NORM_STD
+        ),
     }
 
 
@@ -515,9 +504,7 @@ class _Gemma3TransformerBlockVariant(MaxGemma3TransformerBlock):
         self.use_fused_post_attention_residual_add = (
             use_fused_post_attention_residual_add
         )
-        self.use_fused_post_mlp_residual_add = (
-            use_fused_post_mlp_residual_add
-        )
+        self.use_fused_post_mlp_residual_add = use_fused_post_mlp_residual_add
         self.producer_variant = producer_variant
 
     def _make_down_proj_only_input(
@@ -565,10 +552,9 @@ class _Gemma3TransformerBlockVariant(MaxGemma3TransformerBlock):
         mlp_shard: MLP,
     ) -> TensorValue:
         if not mlp_shard._can_used_fused_mlp():
-            return (
-                mlp_shard.activation_function(mlp_shard.gate_proj(x))
-                * mlp_shard.up_proj(x)
-            )
+            return mlp_shard.activation_function(
+                mlp_shard.gate_proj(x)
+            ) * mlp_shard.up_proj(x)
 
         output = linear(
             x,
@@ -634,9 +620,7 @@ class _Gemma3TransformerBlockVariant(MaxGemma3TransformerBlock):
         hidden: TensorValue,
         mlp_shard: MLP,
     ) -> TensorValue:
-        return self._permute_feed_forward_tensor(
-            hidden, mlp_shard, axis=1
-        )
+        return self._permute_feed_forward_tensor(hidden, mlp_shard, axis=1)
 
     def _make_permuted_down_proj_weight(
         self,
@@ -644,9 +628,7 @@ class _Gemma3TransformerBlockVariant(MaxGemma3TransformerBlock):
         device: DeviceRef,
     ) -> TensorValue:
         weight = mlp_shard.down_proj.weight.to(device)
-        return self._permute_feed_forward_tensor(
-            weight, mlp_shard, axis=1
-        )
+        return self._permute_feed_forward_tensor(weight, mlp_shard, axis=1)
 
     def _make_permuted_gate_up_tensor(
         self,
@@ -664,9 +646,7 @@ class _Gemma3TransformerBlockVariant(MaxGemma3TransformerBlock):
             up_tensor = self._permute_feed_forward_tensor(
                 up_tensor.to(device), mlp_shard, axis=0
             )
-        return mlp_shard._concat_or_max_gate_up_tensors(
-            gate_tensor, up_tensor
-        )
+        return mlp_shard._concat_or_max_gate_up_tensors(gate_tensor, up_tensor)
 
     def _materialize_feed_forward_hidden(
         self,
@@ -696,9 +676,7 @@ class _Gemma3TransformerBlockVariant(MaxGemma3TransformerBlock):
         mlp_shard: MLP,
     ) -> TensorValue:
         hidden = self._make_gate_up_activation_hidden(x, mlp_shard)
-        return self._project_feed_forward_hidden_to_model_dim(
-            hidden, mlp_shard
-        )
+        return self._project_feed_forward_hidden_to_model_dim(hidden, mlp_shard)
 
     def _make_materialized_mlp_output(
         self,
@@ -857,9 +835,7 @@ class _Gemma3TransformerBlockVariant(MaxGemma3TransformerBlock):
                 for i in range(len(attn_out))
             ]
             norm_xs = [fused_output for fused_output, _ in fused_attn_norm]
-            residual = [
-                fused_residual for _, fused_residual in fused_attn_norm
-            ]
+            residual = [fused_residual for _, fused_residual in fused_attn_norm]
         else:
             norm_xs = forward_sharded_layers(
                 self.post_attention_layernorm_shards, attn_out
@@ -888,9 +864,7 @@ class _Gemma3TransformerBlockVariant(MaxGemma3TransformerBlock):
             for i, norm_x in enumerate(norm_xs):
                 mlp_shard = cast(MLP, self.mlp_shards[i])
                 hidden_states.append(
-                    self._make_gate_up_activation_only_output(
-                        norm_x, mlp_shard
-                    )
+                    self._make_gate_up_activation_only_output(norm_x, mlp_shard)
                 )
             hidden_states = self.allreduce(hidden_states, signal_buffers)
         elif self.producer_variant == "materialized_mlp":
@@ -914,9 +888,7 @@ class _Gemma3TransformerBlockVariant(MaxGemma3TransformerBlock):
             for i, norm_x in enumerate(norm_xs):
                 mlp_shard = cast(MLP, self.mlp_shards[i])
                 hidden_states.append(
-                    self._make_hidden_permuted_mlp_output(
-                        norm_x, mlp_shard
-                    )
+                    self._make_hidden_permuted_mlp_output(norm_x, mlp_shard)
                 )
             hidden_states = self.allreduce(hidden_states, signal_buffers)
         elif self.producer_variant == "upstream_permuted_mlp":
@@ -924,9 +896,7 @@ class _Gemma3TransformerBlockVariant(MaxGemma3TransformerBlock):
             for i, norm_x in enumerate(norm_xs):
                 mlp_shard = cast(MLP, self.mlp_shards[i])
                 hidden_states.append(
-                    self._make_upstream_permuted_mlp_output(
-                        norm_x, mlp_shard
-                    )
+                    self._make_upstream_permuted_mlp_output(norm_x, mlp_shard)
                 )
             hidden_states = self.allreduce(hidden_states, signal_buffers)
         else:
@@ -960,10 +930,7 @@ class _Gemma3TransformerBlockVariant(MaxGemma3TransformerBlock):
                 for i in range(len(hidden_states))
             ]
             return (
-                [
-                    fused_residual
-                    for _, fused_residual in fused_mlp_norm
-                ],
+                [fused_residual for _, fused_residual in fused_mlp_norm],
                 [fused_output for fused_output, _ in fused_mlp_norm],
             )
 
@@ -1059,9 +1026,7 @@ class _Gemma3TransformerBlockDecodeHarness:
             use_fused_post_attention_residual_add=(
                 use_fused_post_attention_residual_add
             ),
-            use_fused_post_mlp_residual_add=(
-                use_fused_post_mlp_residual_add
-            ),
+            use_fused_post_mlp_residual_add=(use_fused_post_mlp_residual_add),
             producer_variant=producer_variant,
         )
         self.layer_idx = layer_idx
@@ -1151,9 +1116,7 @@ def _build_graph(
         use_fused_post_attention_residual_add=(
             use_fused_post_attention_residual_add
         ),
-        use_fused_post_mlp_residual_add=(
-            use_fused_post_mlp_residual_add
-        ),
+        use_fused_post_mlp_residual_add=(use_fused_post_mlp_residual_add),
         producer_variant=block_producer_variant,
         layer_idx=layer_idx,
     )
@@ -1233,7 +1196,9 @@ def _run_compile_only_smoke(
             "producer_variant": "pre_ffn_norm",
         },
         {
-            "name": "FusedAttentionFusedPostAttentionBaselinePostMlpResidualPreFfnNorm",
+            "name": (
+                "FusedAttentionFusedPostAttentionBaselinePostMlpResidualPreFfnNorm"
+            ),
             "use_fused_attention": True,
             "use_fused_post_attention_residual_add": True,
             "use_fused_post_mlp_residual_add": False,
@@ -1282,12 +1247,12 @@ def _run_compile_only_smoke(
             ),
             "producer_variant": case["producer_variant"],
             "use_fused_attention": case["use_fused_attention"],
-            "use_fused_post_attention_residual_add": (
-                case["use_fused_post_attention_residual_add"]
-            ),
-            "use_fused_post_mlp_residual_add": (
-                case["use_fused_post_mlp_residual_add"]
-            ),
+            "use_fused_post_attention_residual_add": case[
+                "use_fused_post_attention_residual_add"
+            ],
+            "use_fused_post_mlp_residual_add": case[
+                "use_fused_post_mlp_residual_add"
+            ],
         }
         try:
             compiled = _build_graph(
@@ -1368,7 +1333,9 @@ def _make_runtime_inputs(
         )
         contexts.append(context)
 
-    runtime_inputs = kv_manager.runtime_inputs([contexts], num_steps=1).inputs[0]
+    runtime_inputs = kv_manager.runtime_inputs([contexts], num_steps=1).inputs[
+        0
+    ]
     return cache_lengths, runtime_inputs
 
 
@@ -1522,7 +1489,9 @@ def _build_gpu_isolation_guard() -> dict[str, Any] | None:
 
     cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
     target_gpu_index = (
-        0 if cuda_visible_devices == "" else int(cuda_visible_devices.split(",")[0])
+        0
+        if cuda_visible_devices == ""
+        else int(cuda_visible_devices.split(",")[0])
     )
 
     for index_text, gpu_uuid in _run_nvidia_smi_query("gpu=index,uuid"):
@@ -1549,10 +1518,13 @@ def _assert_gpu_isolation(
 
     resident_compute_apps = []
     unexpected_apps = []
-    for gpu_uuid, pid_text, process_name, used_gpu_memory_mib in (
-        _run_nvidia_smi_query(
-            "compute-apps=gpu_uuid,pid,process_name,used_gpu_memory"
-        )
+    for (
+        gpu_uuid,
+        pid_text,
+        process_name,
+        used_gpu_memory_mib,
+    ) in _run_nvidia_smi_query(
+        "compute-apps=gpu_uuid,pid,process_name,used_gpu_memory"
     ):
         if gpu_uuid != gpu_isolation_guard["target_gpu_uuid"]:
             continue

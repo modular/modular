@@ -48,16 +48,20 @@ def _load_text_config() -> dict[str, Any]:
 def _make_weight_registry(hidden_size: int) -> dict[str, torch.Tensor]:
     torch.manual_seed(42)
     return {
-        "post_feedforward_layernorm.weight": torch.randn(
-            hidden_size,
-            dtype=torch.bfloat16,
-        )
-        * RMS_NORM_STD,
-        "next_input_layernorm.weight": torch.randn(
-            hidden_size,
-            dtype=torch.bfloat16,
-        )
-        * RMS_NORM_STD,
+        "post_feedforward_layernorm.weight": (
+            torch.randn(
+                hidden_size,
+                dtype=torch.bfloat16,
+            )
+            * RMS_NORM_STD
+        ),
+        "next_input_layernorm.weight": (
+            torch.randn(
+                hidden_size,
+                dtype=torch.bfloat16,
+            )
+            * RMS_NORM_STD
+        ),
     }
 
 

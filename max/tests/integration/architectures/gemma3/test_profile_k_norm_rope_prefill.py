@@ -59,7 +59,9 @@ PLACEHOLDER_CACHE_LEN = 1
 
 
 def _resolve_prefill_shapes() -> tuple[tuple[int, int], ...]:
-    raw_shapes = os.environ.get("PROFILE_K_NORM_ROPE_PREFILL_SHAPES", "").strip()
+    raw_shapes = os.environ.get(
+        "PROFILE_K_NORM_ROPE_PREFILL_SHAPES", ""
+    ).strip()
     if raw_shapes == "":
         return PREFILL_SHAPES
 
@@ -108,9 +110,7 @@ def _make_placeholder_text_context(max_length: int) -> TextContext:
     return TextContext(
         request_id=RequestID(),
         max_length=max_length,
-        tokens=TokenBuffer(
-            np.zeros(PLACEHOLDER_CACHE_LEN, dtype=np.int64)
-        ),
+        tokens=TokenBuffer(np.zeros(PLACEHOLDER_CACHE_LEN, dtype=np.int64)),
     )
 
 
@@ -266,7 +266,9 @@ def _make_runtime_inputs(
 def _clone_kv_blocks(blocks: Buffer, seed: int) -> Buffer:
     torch.manual_seed(seed)
     shape = tuple(int(dim) for dim in blocks.shape)
-    tensor = torch.randn(shape, dtype=torch.bfloat16, device="cuda").contiguous()
+    tensor = torch.randn(
+        shape, dtype=torch.bfloat16, device="cuda"
+    ).contiguous()
     return Buffer.from_dlpack(tensor)
 
 

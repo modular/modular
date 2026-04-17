@@ -62,7 +62,9 @@ PLACEHOLDER_CACHE_LEN = 1
 
 
 def _resolve_prefill_shapes() -> tuple[tuple[int, int], ...]:
-    raw_shapes = os.environ.get("PROFILE_QK_NORM_ROPE_PREFILL_SHAPES", "").strip()
+    raw_shapes = os.environ.get(
+        "PROFILE_QK_NORM_ROPE_PREFILL_SHAPES", ""
+    ).strip()
     if raw_shapes == "":
         return PREFILL_SHAPES
 
@@ -112,9 +114,7 @@ def _make_placeholder_text_context(max_length: int) -> TextContext:
     return TextContext(
         request_id=RequestID(),
         max_length=max_length,
-        tokens=TokenBuffer(
-            np.zeros(PLACEHOLDER_CACHE_LEN, dtype=np.int64)
-        ),
+        tokens=TokenBuffer(np.zeros(PLACEHOLDER_CACHE_LEN, dtype=np.int64)),
     )
 
 
@@ -162,7 +162,11 @@ def _build_graph(
 
     input_type = TensorType(
         DType.bfloat16,
-        [batch_size * seq_len, config["num_attention_heads"], config["head_dim"]],
+        [
+            batch_size * seq_len,
+            config["num_attention_heads"],
+            config["head_dim"],
+        ],
         device=device_ref,
     )
     input_row_offsets_type = TensorType(
@@ -278,7 +282,9 @@ def _make_runtime_inputs(
 def _clone_kv_blocks(blocks: Buffer, seed: int) -> Buffer:
     torch.manual_seed(seed)
     shape = tuple(int(dim) for dim in blocks.shape)
-    tensor = torch.randn(shape, dtype=torch.bfloat16, device="cuda").contiguous()
+    tensor = torch.randn(
+        shape, dtype=torch.bfloat16, device="cuda"
+    ).contiguous()
     return Buffer.from_dlpack(tensor)
 
 
@@ -389,7 +395,9 @@ def _build_gpu_isolation_guard() -> dict[str, Any] | None:
 
     cuda_visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES", "").strip()
     target_gpu_index = (
-        0 if cuda_visible_devices == "" else int(cuda_visible_devices.split(",")[0])
+        0
+        if cuda_visible_devices == ""
+        else int(cuda_visible_devices.split(",")[0])
     )
 
     for index_text, gpu_uuid in _run_nvidia_smi_query("gpu=index,uuid"):
@@ -416,10 +424,13 @@ def _assert_gpu_isolation(
 
     resident_compute_apps = []
     unexpected_apps = []
-    for gpu_uuid, pid_text, process_name, used_gpu_memory_mib in (
-        _run_nvidia_smi_query(
-            "compute-apps=gpu_uuid,pid,process_name,used_gpu_memory"
-        )
+    for (
+        gpu_uuid,
+        pid_text,
+        process_name,
+        used_gpu_memory_mib,
+    ) in _run_nvidia_smi_query(
+        "compute-apps=gpu_uuid,pid,process_name,used_gpu_memory"
     ):
         if gpu_uuid != gpu_isolation_guard["target_gpu_uuid"]:
             continue

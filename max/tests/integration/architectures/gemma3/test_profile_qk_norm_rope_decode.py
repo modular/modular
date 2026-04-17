@@ -68,9 +68,7 @@ def _env_int_tuple(name: str, default: tuple[int, ...]) -> tuple[int, ...]:
     value = os.environ.get(name)
     if value is None:
         return default
-    return tuple(
-        int(part.strip()) for part in value.split(",") if part.strip()
-    )
+    return tuple(int(part.strip()) for part in value.split(",") if part.strip())
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -213,7 +211,11 @@ def _build_graph(
         if use_fused
         else "Gemma3WideQKNormRopeBaseline"
     )
-    graph_input_types = [input_type, input_row_offsets_type, *flattened_kv_types]
+    graph_input_types = [
+        input_type,
+        input_row_offsets_type,
+        *flattened_kv_types,
+    ]
     use_baseline_position_ids = baseline_use_position_ids and not use_fused
     if use_baseline_position_ids:
         graph_input_types.append(position_ids_type)
@@ -318,14 +320,18 @@ def _make_runtime_inputs(
         )
         contexts.append(context)
 
-    runtime_inputs = kv_manager.runtime_inputs([contexts], num_steps=1).inputs[0]
+    runtime_inputs = kv_manager.runtime_inputs([contexts], num_steps=1).inputs[
+        0
+    ]
     return cache_lengths, runtime_inputs
 
 
 def _clone_kv_blocks(blocks: Buffer, seed: int) -> Buffer:
     torch.manual_seed(seed)
     shape = tuple(int(dim) for dim in blocks.shape)
-    tensor = torch.randn(shape, dtype=torch.bfloat16, device="cuda").contiguous()
+    tensor = torch.randn(
+        shape, dtype=torch.bfloat16, device="cuda"
+    ).contiguous()
     return Buffer.from_dlpack(tensor)
 
 
@@ -559,7 +565,9 @@ def test_profile_qk_norm_rope_decode() -> None:
         ),
         "progress": {
             "last_completed_stage": "initialized",
-            "updated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "updated_at_utc": time.strftime(
+                "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
+            ),
         },
         "first_sweep_us": {},
         "confirm_sweep_us": {},

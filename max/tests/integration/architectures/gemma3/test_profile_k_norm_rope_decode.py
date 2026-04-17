@@ -67,15 +67,11 @@ def _env_int_tuple(name: str, default: tuple[int, ...]) -> tuple[int, ...]:
     value = os.environ.get(name)
     if value is None:
         return default
-    return tuple(
-        int(part.strip()) for part in value.split(",") if part.strip()
-    )
+    return tuple(int(part.strip()) for part in value.split(",") if part.strip())
 
 
 def _profile_config(config: dict[str, Any]) -> dict[str, Any]:
-    batch_sizes = _env_int_tuple(
-        "PROFILE_K_NORM_ROPE_BATCH_SIZES", BATCH_SIZES
-    )
+    batch_sizes = _env_int_tuple("PROFILE_K_NORM_ROPE_BATCH_SIZES", BATCH_SIZES)
     if not batch_sizes:
         raise ValueError(
             "PROFILE_K_NORM_ROPE_BATCH_SIZES must define at least one batch size"
@@ -157,7 +153,10 @@ def _build_graph(
         hidden_size,
         num_attention_heads,
         rope_theta,
-        cache_len_base + cache_len_step * (max_batch_size - 1) + max_extra_steps + 256,
+        cache_len_base
+        + cache_len_step * (max_batch_size - 1)
+        + max_extra_steps
+        + 256,
         interleaved=False,
         head_dim=head_dim,
     )
@@ -269,14 +268,18 @@ def _make_runtime_inputs(
         )
         contexts.append(context)
 
-    runtime_inputs = kv_manager.runtime_inputs([contexts], num_steps=1).inputs[0]
+    runtime_inputs = kv_manager.runtime_inputs([contexts], num_steps=1).inputs[
+        0
+    ]
     return cache_lengths, runtime_inputs
 
 
 def _clone_kv_blocks(blocks: Buffer, seed: int) -> Buffer:
     torch.manual_seed(seed)
     shape = tuple(int(dim) for dim in blocks.shape)
-    tensor = torch.randn(shape, dtype=torch.bfloat16, device="cuda").contiguous()
+    tensor = torch.randn(
+        shape, dtype=torch.bfloat16, device="cuda"
+    ).contiguous()
     return Buffer.from_dlpack(tensor)
 
 
