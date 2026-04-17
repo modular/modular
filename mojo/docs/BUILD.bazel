@@ -56,6 +56,7 @@ pkg_tar(
     srcs = [
         ":internal-docs",
         ":mojo",
+        ":mojo-layout-public-docs",
         ":mojo-std-public-docs",
     ],
     allow_duplicates_with_different_content = False,
@@ -124,6 +125,22 @@ pkg_filegroup(
     srcs = [
         "//oss/modular/mojo/stdlib/std:docs",
     ],
+    prefix = "mojo",
+    tags = ["manual"],
+)
+
+pkg_files(
+    name = "layout-docs-files",
+    srcs = ["//max/kernels/src/layout:layout.docs"],
+    renames = {
+        "//max/kernels/src/layout:layout.docs": "layout",
+    },
+    tags = ["manual"],
+)
+
+pkg_filegroup(
+    name = "mojo-layout-public-docs",
+    srcs = [":layout-docs-files"],
     prefix = "mojo",
     tags = ["manual"],
 )

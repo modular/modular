@@ -104,7 +104,7 @@ Top-level packages:
 export const StdLibCards = () => {
   const stdLib = useSidebarCategory('Standard library');
   if (!stdLib) return null;
-  // Don't show the index page (this page) as a card.
+  // Don't show the index page as a card.
   const items = stdLib.items.filter(
     item => !(item.type === 'link' && item.docId === 'mojo/std/index')
   );
@@ -112,6 +112,30 @@ export const StdLibCards = () => {
 };
 
 <StdLibCards />
+
+## Layout library
+
+The layout library allows you to describe the memory layout of multidimensional
+data and build high-performance GPU kernels on top of those layouts. It maps
+multidimensional coordinates to linear offsets in memory and provides tensor
+views that support tiling, vectorization, and distribution of work across GPU
+threads—all without copying the underlying data. To learn more, see
+[Introduction to layouts](/mojo/manual/layout/layouts) and [Using
+LayoutTensor](/mojo/manual/layout/tensors).
+
+Top-level packages:
+
+export const LayoutCards = () => {
+  const layout = useSidebarCategory('Layout library');
+  if (!layout) return null;
+  // Don't show the index page as a card.
+  const items = layout.items.filter(
+    item => !(item.type === 'link' && item.docId === 'mojo/layout/index')
+  );
+  return <DocCardList items={items} />;
+};
+
+<LayoutCards />
 
 ## MAX AI kernels library
 

@@ -621,7 +621,7 @@ the copy operations in the previous example with the following equivalent code:
 ## 8. Create `LayoutTensor` views
 
 One last step before writing the kernel function is that we're going to create a
-[`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor) view for each
+[`LayoutTensor`](/mojo/layout/layout_tensor/LayoutTensor) view for each
 of the vectors. `LayoutTensor` provides a powerful abstraction for
 multi-dimensional data with precise control over memory organization. It
 supports various memory layouts (row-major, column-major, tiled),
@@ -637,7 +637,7 @@ First, add the following import to the top of the file:
 from layout import Layout, LayoutTensor
 ```
 
-A [`Layout`](/mojo/kernels/layout/layout/Layout) is a representation of memory
+A [`Layout`](/mojo/layout/layout/Layout) is a representation of memory
 layouts using shape and stride information, and it maps between logical
 coordinates and linear memory indices. We'll need to use the same `Layout`
 definition multiple times, so add the following `comptime` value to the top of
