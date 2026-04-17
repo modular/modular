@@ -49,7 +49,7 @@ from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
 from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
-from .di_dispatchers import PrefillDispatcherServerV2
+from .di_dispatchers import PrefillDispatcherServer
 from .utils import SchedulerLogger
 
 logger = logging.getLogger("max.serve")
@@ -70,7 +70,7 @@ class PrefillScheduler(Scheduler):
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
         kv_cache: PagedKVCacheManager,
-        dispatcher: PrefillDispatcherServerV2,
+        dispatcher: PrefillDispatcherServer,
     ) -> None:
         self.pipeline = pipeline
         self.scheduler_config = scheduler_config
@@ -380,7 +380,5 @@ def load_prefill_scheduler(
         pipeline=pipeline,
         scheduler_config=scheduler_config,
         kv_cache=pipeline.kv_manager,
-        dispatcher=PrefillDispatcherServerV2(
-            bind_addr=settings.di_bind_address
-        ),
+        dispatcher=PrefillDispatcherServer(bind_addr=settings.di_bind_address),
     )

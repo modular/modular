@@ -35,7 +35,6 @@ from max.nn.kv_cache import KVConnectorType
 from max.pipelines.core import TextContext
 from max.pipelines.core.context import FUTURE_TOKEN
 from max.pipelines.lib import OverlapTextGenerationPipeline
-from max.serve.config import generate_zmq_ipc_path
 from max.serve.scheduler.base import (
     CancelRequest,
     PrefillRequest,
@@ -47,13 +46,16 @@ from max.serve.scheduler.decode_scheduler import (
     TokenGenerationSchedulerConfig,
 )
 from max.serve.scheduler.di_dispatchers import (
-    DecodeDispatcherClientV2,
-    PrefillDispatcherServerV2,
+    DecodeDispatcherClient,
+    PrefillDispatcherServer,
     ReplyType,
     RequestType,
 )
 from max.serve.scheduler.prefill_scheduler import PrefillScheduler
-from max.serve.worker_interface.zmq_queue import ClientIdentity
+from max.serve.worker_interface.zmq_queue import (
+    ClientIdentity,
+    generate_zmq_ipc_path,
+)
 from tests.serve.scheduler.common import (
     FakeOverlapPipeline,
     FakeTokenGeneratorPipeline,
@@ -84,7 +86,7 @@ def blocking_recv(fn: Callable[[], _T], timeout: float = TIMEOUT) -> _T:
     raise queue.Empty()
 
 
-class BasicDispatcherServer(PrefillDispatcherServerV2):
+class BasicDispatcherServer(PrefillDispatcherServer):
     def __init__(self, bind_addr: str):
         self.bind_addr = bind_addr
         super().__init__(bind_addr=bind_addr)
@@ -93,7 +95,7 @@ class BasicDispatcherServer(PrefillDispatcherServerV2):
         return blocking_recv(super().recv_request_nowait)
 
 
-class BasicDispatcherClient(DecodeDispatcherClientV2):
+class BasicDispatcherClient(DecodeDispatcherClient):
     def __init__(self, bind_addr: str):
         self.bind_addr = bind_addr
         super().__init__(bind_addr=bind_addr)

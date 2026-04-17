@@ -29,12 +29,10 @@ import numpy as np
 from max.driver import Device
 from max.dtype import DType
 from max.interfaces import RequestID, TextGenerationContext
+from max.kv_cache.memory_tier import MemoryTier
 from max.nn.kv_cache import KVCacheBuffer, KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
-from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
-    MemoryTier,
-)
 
 from ..paged_kv_cache.block_copy_engine import BlockOffloadEngine
 from ..paged_kv_cache.block_pool import BlockPool

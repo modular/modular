@@ -48,7 +48,7 @@ from max.serve.scheduler.base import (
     PrefillRequest,
     PrefillResponse,
 )
-from max.serve.scheduler.di_dispatchers import DecodeDispatcherClientV2
+from max.serve.scheduler.di_dispatchers import DecodeDispatcherClient
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
@@ -74,7 +74,7 @@ class DecodeScheduler(Scheduler):
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
-        dispatcher: DecodeDispatcherClientV2,
+        dispatcher: DecodeDispatcherClient,
         dp_padder: DPBatchPadder | None = None,
     ) -> None:
         # Initialize Pipeline and Config
@@ -487,6 +487,6 @@ def load_decode_scheduler(
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
-        dispatcher=DecodeDispatcherClientV2(bind_addr=settings.di_bind_address),
+        dispatcher=DecodeDispatcherClient(bind_addr=settings.di_bind_address),
         dp_padder=dp_padder,
     )

@@ -11,9 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .dispatcher_v2 import DispatcherClientV2, DispatcherServerV2
+"""Memory tier enum for the paged KV cache."""
 
-__all__ = [
-    "DispatcherClientV2",
-    "DispatcherServerV2",
-]
+from __future__ import annotations
+
+from enum import IntEnum
+
+
+class MemoryTier(IntEnum):
+    """Memory tier enum for the paged KV cache."""
+
+    MEMORY_TIER_UNSPECIFIED = 0
+    MEMORY_TIER_GPU = 1
+    MEMORY_TIER_CPU = 2
+    MEMORY_TIER_DISK = 3
+    MEMORY_TIER_OBJECT_STORE = 4

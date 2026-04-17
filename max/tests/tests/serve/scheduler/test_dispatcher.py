@@ -11,6 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""End-to-end tests for the inlined DispatcherClient / DispatcherServer.
+
+Exercises the ZMQ round-trip between ``DispatcherClient`` (dealer) and
+``DispatcherServer`` (router) at the scheduler boundary, parameterized with
+plain ``int`` request/reply types so the tests are decoupled from the
+disaggregated-inference scheduler payloads.
+"""
+
 from __future__ import annotations
 
 import queue
@@ -18,7 +26,10 @@ import time
 from collections.abc import Callable
 from typing import TypeVar
 
-from max.serve.kvcache_agent import DispatcherClientV2, DispatcherServerV2
+from max.serve.scheduler.di_dispatchers import (
+    DispatcherClient,
+    DispatcherServer,
+)
 from max.serve.worker_interface.zmq_queue import (
     ClientIdentity,
     generate_zmq_ipc_path,
@@ -39,7 +50,7 @@ def blocking_recv(fn: Callable[[], T], timeout: float = TIMEOUT) -> T:
     raise queue.Empty()
 
 
-class BasicDispatcherServer(DispatcherServerV2[int, int]):
+class BasicDispatcherServer(DispatcherServer[int, int]):
     def __init__(self, bind_addr: str):
         self.bind_addr = bind_addr
         super().__init__(endpoint=bind_addr, request_type=int, reply_type=int)
@@ -48,7 +59,7 @@ class BasicDispatcherServer(DispatcherServerV2[int, int]):
         return blocking_recv(self.recv_request_nowait)
 
 
-class BasicDispatcherClient(DispatcherClientV2[int, int]):
+class BasicDispatcherClient(DispatcherClient[int, int]):
     def __init__(self, bind_addr: str):
         self.bind_addr = bind_addr
         super().__init__(
@@ -83,22 +94,17 @@ def test_server_client() -> None:
     client = clients[0]
 
     for _ in range(100):
-        t0 = time.time()
         client.send_request_nowait(42, server.bind_addr)
         request, identity = server.recv_request_blocking()
         assert request == 42
         server.send_reply_nowait(99, identity)
         reply = client.recv_reply_blocking()
         assert reply == 99
-        t1 = time.time()
-
-        print(f"Time taken: {(t1 - t0) * 1000:.3f} ms")
 
 
 def test_many_clients_one_server() -> None:
     servers, clients = make_servers_and_clients(1, 10)
     server = servers[0]
-    clients = clients
 
     for i, client in enumerate(clients):
         client.send_request_nowait(i, server.bind_addr)

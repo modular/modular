@@ -14,25 +14,66 @@
 from __future__ import annotations
 
 import logging
+import queue
+from typing import Any, Generic, TypeVar
 
 from max.kv_cache import KVTransferEngineMetadata
-from max.serve.kvcache_agent.dispatcher_v2 import (
-    DispatcherClientV2,
-    DispatcherServerV2,
-)
 from max.serve.scheduler.base import (
     CancelRequest,
     PrefillRequest,
     PrefillResponse,
 )
+from max.serve.worker_interface.zmq_queue import (
+    ZmqDealerSocket,
+    ZmqRouterSocket,
+)
 
 logger = logging.getLogger("max.serve")
+
+Request = TypeVar("Request")
+Reply = TypeVar("Reply")
+
+DispatcherServer = ZmqRouterSocket[Request, Reply]
+
+
+class DispatcherClient(Generic[Request, Reply]):
+    def __init__(
+        self,
+        *,
+        bind_addr: str,
+        request_type: Any,
+        reply_type: Any,
+    ):
+        self._request_type = request_type
+        self._reply_type = reply_type
+
+        self._dealers: dict[str, ZmqDealerSocket[Request, Reply]] = {}
+
+    def send_request_nowait(self, request: Request, dest_addr: str) -> None:
+        if dest_addr not in self._dealers:
+            self._dealers[dest_addr] = ZmqDealerSocket[Request, Reply](
+                endpoint=dest_addr,
+                request_type=self._request_type,
+                reply_type=self._reply_type,
+            )
+        dealer = self._dealers[dest_addr]
+        dealer.send_request_nowait(request)
+
+    def recv_reply_nowait(self) -> Reply:
+        for dealer in self._dealers.values():
+            try:
+                reply = dealer.recv_reply_nowait()
+            except queue.Empty:
+                continue
+            return reply
+        raise queue.Empty()
+
 
 RequestType = PrefillRequest | KVTransferEngineMetadata | CancelRequest
 ReplyType = PrefillResponse | KVTransferEngineMetadata
 
 
-class PrefillDispatcherServerV2(DispatcherServerV2[RequestType, ReplyType]):
+class PrefillDispatcherServer(DispatcherServer[RequestType, ReplyType]):
     def __init__(self, bind_addr: str):
         logger.info(f"Starting Prefill Dispatcher Server on {bind_addr}")
         super().__init__(
@@ -42,7 +83,7 @@ class PrefillDispatcherServerV2(DispatcherServerV2[RequestType, ReplyType]):
         )
 
 
-class DecodeDispatcherClientV2(DispatcherClientV2[RequestType, ReplyType]):
+class DecodeDispatcherClient(DispatcherClient[RequestType, ReplyType]):
     def __init__(self, bind_addr: str):
         logger.info(f"Starting Decode Dispatcher Client on {bind_addr}")
         super().__init__(

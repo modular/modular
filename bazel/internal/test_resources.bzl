@@ -346,9 +346,6 @@ TEST_RESOURCES = {
         "cpu": 2,
         "memory": 8350,
     },
-    "//max/tests/integration/serve/kvcache_agent:tests": {
-        "cpu": 4,
-    },
     "//max/tests/integration/serve:test_sagemaker_cpu": {
         "cpu": 2,
         "memory": 1256,

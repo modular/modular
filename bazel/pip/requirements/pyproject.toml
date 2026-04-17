@@ -142,8 +142,6 @@ dependencies = [
   "openai==2.11.0",
   "librosa==0.10.2",
   "soundfile==0.12.1",
-  "grpcio",
-  "pytest-grpc",
 
   # mypy types
   "types-protobuf",

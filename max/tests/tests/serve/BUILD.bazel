@@ -45,7 +45,6 @@ package(default_visibility = [
             requirement("hypothesis"),
             requirement("opentelemetry-sdk"),
             requirement("pytest-asyncio"),
-            requirement("pytest-grpc"),
             requirement("sse-starlette"),
             requirement("sseclient-py"),
             requirement("torch"),
