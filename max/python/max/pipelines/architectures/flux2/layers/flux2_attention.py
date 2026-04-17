@@ -21,6 +21,7 @@ from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantConfig
 
+from ..model_config import Flux2BlockQuant
 from .embeddings import get_1d_rotary_pos_embed
 
 
@@ -221,7 +222,7 @@ class Flux2Attention(Module):
         *,
         dtype: DType,
         device: DeviceRef,
-        quant_config: QuantConfig | None = None,
+        quant: Flux2BlockQuant = Flux2BlockQuant(),
     ) -> None:
         """Initialize Flux2Attention.
 
@@ -238,6 +239,7 @@ class Flux2Attention(Module):
             out_dim: Output dimension (defaults to query_dim).
             dtype: Weight dtype.
             device: Weight device.
+            quant: Per-Linear quant plan; defaults to all-BF16.
         """
         super().__init__()
         del dropout
@@ -254,7 +256,7 @@ class Flux2Attention(Module):
             dtype,
             device,
             has_bias=bias,
-            quant_config=quant_config,
+            quant_config=quant.attn_qkv,
         )
         self.to_k = Linear(
             query_dim,
@@ -262,7 +264,7 @@ class Flux2Attention(Module):
             dtype,
             device,
             has_bias=bias,
-            quant_config=quant_config,
+            quant_config=quant.attn_qkv,
         )
         self.to_v = Linear(
             query_dim,
@@ -270,7 +272,7 @@ class Flux2Attention(Module):
             dtype,
             device,
             has_bias=bias,
-            quant_config=quant_config,
+            quant_config=quant.attn_qkv,
         )
         # QK normalization
         self.norm_q = RMSNorm(dim_head, dtype=dtype, eps=eps)
@@ -284,7 +286,7 @@ class Flux2Attention(Module):
                     dtype,
                     device,
                     has_bias=out_bias,
-                    quant_config=quant_config,
+                    quant_config=quant.attn_out,
                 )
             ]
         )
@@ -301,14 +303,13 @@ class Flux2Attention(Module):
             self.norm_added_q = RMSNorm(dim_head, dtype=dtype, eps=eps)
             self.norm_added_k = RMSNorm(dim_head, dtype=dtype, eps=eps)
             proj_bias = False if added_proj_bias is None else added_proj_bias
-            # Don't pass quant_config, since the encoder projections are not
-            # quantized in the BFL FLUX.2-NVFP4 checkpoint.
             self.add_q_proj = Linear(
                 added_kv_proj_dim,
                 self.inner_dim,
                 dtype,
                 device,
                 has_bias=proj_bias,
+                quant_config=quant.added_attn_qkv,
             )
             self.add_k_proj = Linear(
                 added_kv_proj_dim,
@@ -316,6 +317,7 @@ class Flux2Attention(Module):
                 dtype,
                 device,
                 has_bias=proj_bias,
+                quant_config=quant.added_attn_qkv,
             )
             self.add_v_proj = Linear(
                 added_kv_proj_dim,
@@ -323,6 +325,7 @@ class Flux2Attention(Module):
                 dtype,
                 device,
                 has_bias=proj_bias,
+                quant_config=quant.added_attn_qkv,
             )
             self.to_add_out = Linear(
                 self.inner_dim,
@@ -330,6 +333,7 @@ class Flux2Attention(Module):
                 dtype,
                 device,
                 has_bias=out_bias,
+                quant_config=quant.added_attn_out,
             )
         else:
             self.norm_added_q = None

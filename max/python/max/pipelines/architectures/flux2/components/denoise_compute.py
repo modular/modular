@@ -34,7 +34,10 @@ from max.profiler import traced
 
 from ..flux2 import Flux2Transformer2DModel
 from ..model_config import Flux2Config
-from ..weight_adapters import adapt_weights
+from ..weight_adapters import (
+    adapt_weights,
+    parse_nvfp4_quantization_metadata,
+)
 
 
 class DenoiseComputeStep(Module):
@@ -190,6 +193,12 @@ class DenoiseCompute(CompiledComponent):
         raw_state_dict = adapt_weights(
             raw_state_dict, transformer_config.quant_config
         )
+
+        nvfp4_layers_bfl = parse_nvfp4_quantization_metadata(paths)
+        if nvfp4_layers_bfl:
+            transformer_config = transformer_config.model_copy(
+                update={"nvfp4_layers_bfl": nvfp4_layers_bfl}
+            )
 
         has_guidance_embedder = any(
             "time_guidance_embed.guidance_embedder." in k
