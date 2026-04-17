@@ -28,7 +28,8 @@ from pathlib import Path
 from sysconfig import get_config_var
 ext = "dll" if os.name == "nt" else "dylib" if sys.platform == "darwin" else "so"
 pyver = get_config_var("py_version_short")
-binary = f"libpython{pyver}.{ext}"
+abiflags = get_config_var("ABIFLAGS") or ""
+binary = f"libpython{pyver}{abiflags}.{ext}"
 for libpython in [Path(get_config_var(p)) / binary for p in ["LIBPL", "LIBDIR"]]:
     if libpython.exists():
         print(libpython.resolve())
