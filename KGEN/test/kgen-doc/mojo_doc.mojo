@@ -723,7 +723,7 @@ def optional_default_arg_none2(input: Optional[SIMD[DType.int64, 4]] = None):
 
 
 # CHECK-LABEL: "name": "optional_default_arg_13"
-# CHECK: "signature": "optional_default_arg_13(input: Optional[Int64] = SIMD(13))"
+# CHECK: "signature": "optional_default_arg_13(input: Optional[Int64] = Int64(13))"
 def optional_default_arg_13(input: Optional[Int64] = Int64(13)):
     pass
 

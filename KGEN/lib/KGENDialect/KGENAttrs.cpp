@@ -4176,7 +4176,7 @@ static std::optional<SugarKind> canElideSugarFor(TypedAttr attr) {
 
   // Otherwise, see if the LIT type knows how to elide itself.  LIT::StructType
   // knows how to print literals for Int, IntegerLiteral, etc.
-  if (auto sugarItf = dyn_cast<SugaredTypeInterface>(attr.getType()))
+  if (auto sugarItf = sugarDynCast<SugaredTypeInterface>(attr.getType()))
     return sugarItf.canElideSugarFor(attr);
 
   return {};

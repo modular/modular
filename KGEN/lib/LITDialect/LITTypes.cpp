@@ -13,6 +13,7 @@
 #include "KGEN/LITDialect/LITDialect.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
+#include "KGEN/POPDialect/POPAttrs.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/SymbolTable.h"
@@ -339,17 +340,41 @@ parseStructTypeBody(AsmParser &p, SymbolAttr &symbol,
   return success();
 }
 
-// Sugar support: non-parameterized types get aliases.
 mlir::OpAsmAliasResult LIT::StructType::getAlias(raw_ostream &os) const {
-  // Don't alias types with parameter references.  We will instead alias the
-  // symbol attribute.
-  //     We want "!Int" but "!lit.struct<#SIMD<...>>"
-  if (getParamValues().empty()) {
-    if (auto nameOpt = getAliasName(getSymbol())) {
-      os << *nameOpt;
+  // Simple case: Types with no parameters.
+  std::optional<StringRef> symbolAliasName = getAliasName(getSymbol());
+  ArrayRef<TypedAttr> paramValues = getParamValues();
+  if (paramValues.empty()) {
+    if (symbolAliasName) {
+      os << *symbolAliasName;
       return mlir::OpAsmAliasResult::OverridableAlias;
     }
   }
+
+  // Special case: SIMD types.
+  if (symbolAliasName == "SIMD" && paramValues.size() == 2) {
+    auto getSingleEltStructAttr = [&](TypedAttr value) -> TypedAttr {
+      auto structAttr = dyn_cast<LITStructAttr>(value);
+      if (structAttr && structAttr.getValues().size() == 1)
+        return std::get<1>(structAttr.getValues().front());
+      return {};
+    };
+
+    auto dtype = dyn_cast_if_present<KGEN::DTypeConstantAttr>(
+        getSingleEltStructAttr(paramValues[0]));
+    auto size = dyn_cast_if_present<IntegerAttr>(
+        getSingleEltStructAttr(paramValues[1]));
+    if (dtype && size) {
+      if (dtype.getDType() == KGEN::KGENDType::index && size.getInt() == 1)
+        os << "Int";
+      else if (size.getInt() == 1)
+        os << "Scalar_" << dtype.getDType();
+      else
+        os << "SIMD_" << dtype.getDType() << "_" << size.getInt();
+      return mlir::OpAsmAliasResult::OverridableAlias;
+    }
+  }
+
   return mlir::OpAsmAliasResult::NoAlias;
 }
 
@@ -449,8 +474,12 @@ LIT::StructType::canElideSugarFor(TypedAttr attr) const {
   /// Int(42), but print it if it is something weird like IntLiteral(42)
   if (auto elt = getSingleEltStructAttr(attr)) {
     auto typeName = getTypeName();
-    if (typeName == "Int" || typeName == "UInt")
+    if (typeName == "Int" || typeName == "UInt" || typeName == "SIMDSize")
       if (isa<IntegerAttr>(elt))
+        return SugarKind::AlwaysInlineBuiltin;
+
+    if (typeName == "SIMD")
+      if (isa<POP::SIMDAttr>(elt))
         return SugarKind::AlwaysInlineBuiltin;
 
     if (typeName == "Bool" || typeName == "DType") {
