@@ -3514,11 +3514,17 @@ static TypedAttr simplifyPtrBitcast(ArrayRef<TypedAttr> operands,
 
 static TypedAttr simplifyLoadFromMem(ArrayRef<TypedAttr> operands,
                                      Type resultType) {
+  TypedAttr ptrValue = operands.front();
+
   // If we get a PointerAttr, then it must not be mapped to any persistent
   // memory. There is nothing we can ever do with it. Return a UninitMemAttr
   // value.
-  if (isa<PointerAttr>(operands.front()))
+  if (sugarIsa<PointerAttr>(ptrValue))
     return UninitMemAttr::get(resultType);
+
+  // If the operand is an immediate store_to_mem, just return the value.
+  if (auto storeToMem = sugarDynCast<StoreToMemAttr>(ptrValue))
+    return storeToMem.getValue();
 
   return {};
 }

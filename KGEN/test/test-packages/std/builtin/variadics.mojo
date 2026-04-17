@@ -35,9 +35,6 @@ struct Variadic:
     comptime empty_of_trait[T: type_of(AnyType)] = __mlir_attr[
         `#kgen.param_list<>: `, _MLIR.KGENTypeListType[T], `>`
     ]
-    comptime empty_of_type[T: AnyType] = __mlir_attr[
-        `#kgen.param_list<>: `, _MLIR.KGENParamListType[T], `>`
-    ]
     comptime types[T: type_of(AnyType), //, *Ts: T] = Ts.values
     comptime values[T: AnyType, //, *elts: T]: Variadic.ValuesOfType[
         T
