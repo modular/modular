@@ -386,3 +386,65 @@ struct StructWithDocHiddenField:
 
     @doc_hidden
     var hidden_field: Int
+
+
+# ===----------------------------------------------------------------------=== #
+# Inferred parameter doc string validation (MOTO-485)
+# ===----------------------------------------------------------------------=== #
+
+# Inferred parameters (before //) do not require documentation.
+# No warning should be emitted for undocumented inferred param 'T'.
+def fn_with_inferred_param[T: AnyType, //, U: AnyType]():
+    """This function has both inferred and regular parameters.
+
+    Parameters:
+        U: The user-visible parameter.
+    """
+    pass
+
+
+# Inferred parameters may also be documented without triggering "unknown
+# parameter" warnings, since they appear in the generated API docs.
+def fn_with_documented_inferred_param[T: AnyType, //, U: AnyType]():
+    """This function documents both its inferred and regular parameters.
+
+    Parameters:
+        T: The inferred parameter — documenting it is valid but not required.
+        U: The user-visible parameter.
+    """
+    pass
+
+
+# When all compile-time parameters are inferred, no 'Parameters' section is needed.
+def fn_with_only_inferred_params[T: AnyType, //](arg: ArgStruct):
+    """This function's only compile-time parameters are inferred.
+
+    Args:
+        arg: An argument.
+    """
+    pass
+
+
+# Structs: inferred parameters do not require documentation.
+struct StructWithInferredParam[T: AnyType, //, U: AnyType]:
+    """A struct with an inferred and a regular parameter.
+
+    Parameters:
+        U: The user-visible parameter.
+    """
+
+    pass
+
+
+# Aliases: inferred parameters do not require documentation.
+comptime AliasWithInferredParam[T: AnyType, //, U: AnyType] = U
+"""An alias with an inferred and a regular parameter.
+
+Parameters:
+    U: The user-visible parameter.
+"""
+
+
+# When all compile-time parameters are inferred, no 'Parameters' section is needed.
+comptime AliasWithOnlyInferredParams[T: AnyType, //] = T
+"""This alias's only compile-time parameter is inferred."""

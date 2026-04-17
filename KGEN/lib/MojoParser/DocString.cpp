@@ -401,6 +401,28 @@ static SmallVector<StringAttr> getAliasParameterNames(AliasDeclOp aliasOp) {
   return result;
 }
 
+/// Populate \p seenParameters and \p inferredParamNames from a pog list.
+/// Used by docstring validators that need to distinguish required parameters
+/// from inferred ones. Inferred parameters (PassingKind::Inferred) are added
+/// to both maps — they are valid to document but not required.
+static void
+collectPogParameters(PogListAttr pogList,
+                     llvm::MapVector<StringRef, const char *> &seenParameters,
+                     SmallVector<StringRef> &inferredParamNames) {
+  for (PogMetadataAttr pogAttr : pogList.getPogs()) {
+    PassingKind kind = pogAttr.getPassingKind();
+    if (kind == PassingKind::Implicit)
+      continue;
+    // Ignore name mangled parameters, which are autoparams.
+    StringAttr name = pogAttr.getName();
+    if (demangleParameterName(name, /*forUser*/ true) != name)
+      continue;
+    seenParameters.insert({name, nullptr});
+    if (kind == PassingKind::Inferred)
+      inferredParamNames.push_back(name);
+  }
+}
+
 namespace {
 /// Used to specify the level of validation to perform for doc strings. The idea
 /// is that some doc strings, such as ones added to non-public functions, act as
@@ -544,61 +566,71 @@ private:
   // Arguments and Parameters
 
   /// Process a parameter or argument section.
+  ///
+  /// \p optionalElements is a subset of element names that are valid to
+  /// document but not required — no "not documented" warning is emitted for
+  /// them when absent. Used for inferred parameters.
   void processParamOrArgs(const char *loc, StringRef tag,
                           llvm::MapVector<StringRef, const char *> &elements,
-                          ArrayRef<StringRef> &lines,
-                          ValidationKind validation) {
+                          ArrayRef<StringRef> &lines, ValidationKind validation,
+                          ArrayRef<StringRef> optionalElements = {}) {
     StringRef sectionLine = lines[0];
     bool emittedUnexpectedOrderWarning = false;
     ptrdiff_t nextEltIndex = 0;
     SmallVector<const char *> elementDocEndLocs(elements.size());
-    process2ColumnDocSection(
-        lines, [&](StringRef paramName, StringRef paramBody) {
-          const char *paramLoc = paramName.data();
-          size_t currentEltIndex = nextEltIndex++;
+    process2ColumnDocSection(lines, [&](StringRef paramName,
+                                        StringRef paramBody) {
+      const char *paramLoc = paramName.data();
+      size_t currentEltIndex = nextEltIndex++;
 
-          auto it = elements.find(paramName);
-          if (it == elements.end()) {
-            emitDiag(paramLoc)
-                << "unknown " << tag << " '" << paramName << "' in doc string";
-            return;
-          }
+      auto it = elements.find(paramName);
+      if (it == elements.end()) {
+        emitDiag(paramLoc) << "unknown " << tag << " '" << paramName
+                           << "' in doc string";
+        return;
+      }
 
-          // If we have already seen this element, emit a warning.
-          if (std::exchange(it->second, paramLoc)) {
-            emitDiag(paramLoc) << "duplicate " << tag << " '" << paramName
-                               << "' in doc string";
-            return;
-          }
+      // If we have already seen this element, emit a warning.
+      if (std::exchange(it->second, paramLoc)) {
+        emitDiag(paramLoc) << "duplicate " << tag << " '" << paramName
+                           << "' in doc string";
+        return;
+      }
 
-          // Ensure the elements are in the same order as the decl.
-          if (!emittedUnexpectedOrderWarning) {
-            size_t expectedEltIndex = it - elements.begin();
-            if (currentEltIndex != expectedEltIndex) {
-              emitDiag(paramLoc) << "'" << paramName << "' is defined at index "
-                                 << expectedEltIndex
-                                 << ", but specified in doc string at index "
-                                 << currentEltIndex;
-              emittedUnexpectedOrderWarning = true;
-            }
-          }
+      // Ensure the elements are in the same order as the decl.
+      if (!emittedUnexpectedOrderWarning) {
+        size_t expectedEltIndex = it - elements.begin();
+        // Adjust for any optional (inferred) elements before this one that
+        // haven't been documented — they don't occupy a docstring slot.
+        for (auto it2 = elements.begin(); it2 != it; ++it2) {
+          if (llvm::is_contained(optionalElements, it2->first) && !it2->second)
+            --expectedEltIndex;
+        }
+        if (currentEltIndex != expectedEltIndex) {
+          emitDiag(paramLoc)
+              << "'" << paramName << "' is defined at index "
+              << expectedEltIndex << ", but specified in doc string at index "
+              << currentEltIndex;
+          emittedUnexpectedOrderWarning = true;
+        }
+      }
 
-          // Diagnose empty element descriptions.
-          const char *docEndLoc = paramBody.end();
-          if (paramBody.empty()) {
-            emitDiag(paramLoc)
-                << "'" << paramName << "' does not have a description";
-            docEndLoc = paramName.end();
-          }
+      // Diagnose empty element descriptions.
+      const char *docEndLoc = paramBody.end();
+      if (paramBody.empty()) {
+        emitDiag(paramLoc) << "'" << paramName
+                           << "' does not have a description";
+        docEndLoc = paramName.end();
+      }
 
-          // Diagnose descriptions with poor style.
-          if (validation == ValidationKind::Strict && !paramBody.empty())
-            validateStyle((Twine("'") + paramName + "' description").str(),
-                          paramBody.begin(), paramBody.end() - 1);
+      // Diagnose descriptions with poor style.
+      if (validation == ValidationKind::Strict && !paramBody.empty())
+        validateStyle((Twine("'") + paramName + "' description").str(),
+                      paramBody.begin(), paramBody.end() - 1);
 
-          // Record the location of the end of the doc string for this element.
-          elementDocEndLocs[it - elements.begin()] = docEndLoc;
-        });
+      // Record the location of the end of the doc string for this element.
+      elementDocEndLocs[it - elements.begin()] = docEndLoc;
+    });
 
     // Emit warnings for any elements that were not documented.
     StringRef indentStr = sectionLine.take_front(loc - sectionLine.data());
@@ -607,6 +639,14 @@ private:
       auto &[element, seenLoc] = it;
       if (seenLoc)
         continue;
+      // Inferred parameters are optional — skip if not documented, but
+      // propagate the end-location chain so subsequent fix-its anchor
+      // correctly.
+      if (llvm::is_contained(optionalElements, element)) {
+        elementDocEndLocs[i] =
+            (i == 0) ? sectionEndLoc : elementDocEndLocs[i - 1];
+        continue;
+      }
       MojoInflightDiag diag = emitDiag(loc) << tag << " '" << element
                                             << "' is not documented";
 
@@ -629,9 +669,10 @@ private:
   }
   void processParameters(const char *loc,
                          llvm::MapVector<StringRef, const char *> &elements,
-                         ArrayRef<StringRef> &lines,
-                         ValidationKind validation) {
-    processParamOrArgs(loc, "parameter", elements, lines, validation);
+                         ArrayRef<StringRef> &lines, ValidationKind validation,
+                         ArrayRef<StringRef> optionalElements = {}) {
+    processParamOrArgs(loc, "parameter", elements, lines, validation,
+                       optionalElements);
   }
 
   /// Process the sections within the given doc string description.
@@ -692,10 +733,12 @@ private:
     for (StringAttr argName : getFunctionArgumentNames(funcOp))
       seenArguments.insert({argName, nullptr});
 
-    // Grab the parameters to the function.
+    // Grab the parameters to the function. Inferred parameters (before //) are
+    // valid to document but not required, so track them separately.
     llvm::MapVector<StringRef, const char *> seenParameters;
-    for (StringAttr paramName : getFunctionParameterNames(funcOp))
-      seenParameters.insert({paramName, nullptr});
+    SmallVector<StringRef> inferredParamNames;
+    collectPogParameters(funcOp.getFuncTypeGenerator().getParamListAttrs(),
+                         seenParameters, inferredParamNames);
 
     // Process the sections of the doc string.
     DenseMap<StringRef, const char *> sections = {
@@ -714,7 +757,8 @@ private:
         return processArguments(loc, seenArguments, description, validation);
 
       if (section == DocString::kSectionParameters)
-        return processParameters(loc, seenParameters, description, validation);
+        return processParameters(loc, seenParameters, description, validation,
+                                 inferredParamNames);
 
       if (section == DocString::kSectionReturns && !hasResults)
         emitDiag(loc, "unexpected 'Returns' in doc string for "
@@ -735,7 +779,10 @@ private:
 
     if (validation == ValidationKind::Strict && diagnoseMissingDocStrings &&
         !isOpInPrivateModule(funcOp)) {
-      if (!sections[DocString::kSectionParameters] && !seenParameters.empty())
+      // Only warn if there are required (non-inferred) parameters.
+      size_t numRequiredParams =
+          seenParameters.size() - inferredParamNames.size();
+      if (!sections[DocString::kSectionParameters] && numRequiredParams > 0)
         emitDiag(
             funcOp.getLoc(),
             "function takes parameters, but has no 'Parameters' in doc string");
@@ -758,14 +805,25 @@ private:
 
   void validateDecl(ASTDecl &decl, StructDeclOp structOp,
                     ValidationKind validation) {
-    // Grab the parameters to the struct.
+    // Grab the parameters to the struct. Inferred parameters are valid to
+    // document but not required, so track them separately.
     llvm::MapVector<StringRef, const char *> seenParameters;
-    for (ParamDeclAttr decl : structOp.getParams()) {
+    SmallVector<StringRef> inferredParamNames;
+    PogListAttr structPogList = structOp.getSignature().getParamListAttrs();
+    assert(structOp.getParams().size() == structPogList.getPogs().size() &&
+           "params and PogList must be the same size");
+    for (auto [idx, paramDecl] : llvm::enumerate(structOp.getParams())) {
+      PassingKind kind = structPogList.getPassingKind(idx);
+      if (kind == PassingKind::Implicit)
+        continue;
       StringRef demangled =
-          demangleParameterName(decl.getName(), /*forUser*/ true);
+          demangleParameterName(paramDecl.getName(), /*forUser*/ true);
       // Don't need to document auto-parameters.
-      if (demangled == decl.getName())
+      if (demangled == paramDecl.getName()) {
         seenParameters.insert({demangled, nullptr});
+        if (kind == PassingKind::Inferred)
+          inferredParamNames.push_back(demangled);
+      }
     }
 
     // Process the sections of the doc string.
@@ -775,13 +833,17 @@ private:
     ArrayRef<StringRef> description = docStr->getDescription();
     auto processFn = [&](StringRef section, const char *loc) mutable {
       if (section == DocString::kSectionParameters)
-        processParameters(loc, seenParameters, description, validation);
+        processParameters(loc, seenParameters, description, validation,
+                          inferredParamNames);
     };
     processDocSections(description, sections, processFn);
 
+    // Only warn if there are required (non-inferred) parameters.
+    size_t numRequiredParams =
+        seenParameters.size() - inferredParamNames.size();
     if (validation == ValidationKind::Strict && diagnoseMissingDocStrings &&
         !isOpInPrivateModule(structOp) &&
-        !sections[DocString::kSectionParameters] && !seenParameters.empty())
+        !sections[DocString::kSectionParameters] && numRequiredParams > 0)
       emitDiag(
           structOp.getLoc(),
           "struct takes parameters, but has no 'Parameters' in doc string");
@@ -816,10 +878,19 @@ private:
 
   void validateDecl(ASTDecl &decl, AliasDeclOp aliasOp,
                     ValidationKind validation) {
-    // Grab the parameters to the alias (for parametric aliases).
+    // Grab the parameters to the alias (for parametric aliases). Inferred
+    // parameters are valid to document but not required, so track separately.
     llvm::MapVector<StringRef, const char *> seenParameters;
-    for (StringAttr paramName : getAliasParameterNames(aliasOp))
-      seenParameters.insert({paramName, nullptr});
+    SmallVector<StringRef> inferredParamNames;
+    auto maybeValue = aliasOp.getValue();
+    auto generator =
+        maybeValue ? dyn_cast<GeneratorAttr>(*maybeValue) : GeneratorAttr();
+    auto generatorType = generator
+                             ? dyn_cast<LITGeneratorType>(generator.getType())
+                             : LITGeneratorType();
+    if (generatorType)
+      collectPogParameters(generatorType.getParamListAttrs(), seenParameters,
+                           inferredParamNames);
 
     // If the alias has no parameters, there's nothing to validate.
     if (seenParameters.empty())
@@ -832,13 +903,17 @@ private:
     ArrayRef<StringRef> description = docStr->getDescription();
     auto processFn = [&](StringRef section, const char *loc) mutable {
       if (section == DocString::kSectionParameters)
-        processParameters(loc, seenParameters, description, validation);
+        processParameters(loc, seenParameters, description, validation,
+                          inferredParamNames);
     };
     processDocSections(description, sections, processFn);
 
+    // Only warn if there are required (non-inferred) parameters.
+    size_t numRequiredParams =
+        seenParameters.size() - inferredParamNames.size();
     if (validation == ValidationKind::Strict && diagnoseMissingDocStrings &&
         !isOpInPrivateModule(aliasOp) &&
-        !sections[DocString::kSectionParameters] && !seenParameters.empty())
+        !sections[DocString::kSectionParameters] && numRequiredParams > 0)
       emitDiag(aliasOp.getLoc(), "comptime value has parameters, but has no "
                                  "'Parameters' in doc string");
   }
