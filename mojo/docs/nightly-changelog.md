@@ -105,16 +105,22 @@ This version is still a work in progress.
 
 ## Library changes
 
-- Atomic operations have moved to a dedicated `std.atomic` module. Update
-  existing code as follows:
+- Atomic operations have moved to a dedicated `std.atomic` module. The
+  `Consistency` type has been renamed to `Ordering` and its `MONOTONIC`
+  member has been renamed to `RELAXED` to align with conventions used by
+  other languages. Update existing code as follows:
 
   ```mojo
   # Before
   from std.os import Atomic
   from std.os.atomic import Atomic, Consistency, fence
 
+  _ = atom.load[ordering=Consistency.MONOTONIC]()
+
   # After
-  from std.atomic import Atomic, Consistency, fence
+  from std.atomic import Atomic, Ordering, fence
+
+  _ = atom.load[ordering=Ordering.RELAXED]()
   ```
 
 - `assert_raises` now catches custom `Writable` error types, not just `Error`.

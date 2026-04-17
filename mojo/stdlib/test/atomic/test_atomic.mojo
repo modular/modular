@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.atomic import Atomic, Consistency, fence
+from std.atomic import Atomic, Ordering, fence
 
 from std.testing import (
     TestSuite,
@@ -22,41 +22,39 @@ from std.testing import (
 )
 
 
-def test_consistency_equality_comparable() raises:
-    var ordering = Consistency.SEQUENTIAL
+def test_ordering_equality_comparable() raises:
+    var ordering = Ordering.SEQUENTIAL
 
-    assert_not_equal(ordering, Consistency(42))
-    assert_not_equal(ordering, Consistency.NOT_ATOMIC)
-    assert_not_equal(ordering, Consistency.UNORDERED)
-    assert_not_equal(ordering, Consistency.MONOTONIC)
-    assert_not_equal(ordering, Consistency.ACQUIRE)
-    assert_not_equal(ordering, Consistency.RELEASE)
-    assert_not_equal(ordering, Consistency.ACQUIRE_RELEASE)
-    assert_equal(ordering, Consistency.SEQUENTIAL)
-
-
-def test_consistency_representable() raises:
-    assert_equal(repr(Consistency(42)), "Consistency.UNKNOWN")
-    assert_equal(repr(Consistency.NOT_ATOMIC), "Consistency.NOT_ATOMIC")
-    assert_equal(repr(Consistency.UNORDERED), "Consistency.UNORDERED")
-    assert_equal(repr(Consistency.MONOTONIC), "Consistency.MONOTONIC")
-    assert_equal(repr(Consistency.ACQUIRE), "Consistency.ACQUIRE")
-    assert_equal(repr(Consistency.RELEASE), "Consistency.RELEASE")
-    assert_equal(
-        repr(Consistency.ACQUIRE_RELEASE), "Consistency.ACQUIRE_RELEASE"
-    )
-    assert_equal(repr(Consistency.SEQUENTIAL), "Consistency.SEQUENTIAL")
+    assert_not_equal(ordering, Ordering(42))
+    assert_not_equal(ordering, Ordering.NOT_ATOMIC)
+    assert_not_equal(ordering, Ordering.UNORDERED)
+    assert_not_equal(ordering, Ordering.RELAXED)
+    assert_not_equal(ordering, Ordering.ACQUIRE)
+    assert_not_equal(ordering, Ordering.RELEASE)
+    assert_not_equal(ordering, Ordering.ACQUIRE_RELEASE)
+    assert_equal(ordering, Ordering.SEQUENTIAL)
 
 
-def test_consistency_stringable() raises:
-    assert_equal(String(Consistency(42)), "UNKNOWN")
-    assert_equal(String(Consistency.NOT_ATOMIC), "NOT_ATOMIC")
-    assert_equal(String(Consistency.UNORDERED), "UNORDERED")
-    assert_equal(String(Consistency.MONOTONIC), "MONOTONIC")
-    assert_equal(String(Consistency.ACQUIRE), "ACQUIRE")
-    assert_equal(String(Consistency.RELEASE), "RELEASE")
-    assert_equal(String(Consistency.ACQUIRE_RELEASE), "ACQUIRE_RELEASE")
-    assert_equal(String(Consistency.SEQUENTIAL), "SEQUENTIAL")
+def test_ordering_representable() raises:
+    assert_equal(repr(Ordering(42)), "Ordering.UNKNOWN")
+    assert_equal(repr(Ordering.NOT_ATOMIC), "Ordering.NOT_ATOMIC")
+    assert_equal(repr(Ordering.UNORDERED), "Ordering.UNORDERED")
+    assert_equal(repr(Ordering.RELAXED), "Ordering.RELAXED")
+    assert_equal(repr(Ordering.ACQUIRE), "Ordering.ACQUIRE")
+    assert_equal(repr(Ordering.RELEASE), "Ordering.RELEASE")
+    assert_equal(repr(Ordering.ACQUIRE_RELEASE), "Ordering.ACQUIRE_RELEASE")
+    assert_equal(repr(Ordering.SEQUENTIAL), "Ordering.SEQUENTIAL")
+
+
+def test_ordering_stringable() raises:
+    assert_equal(String(Ordering(42)), "UNKNOWN")
+    assert_equal(String(Ordering.NOT_ATOMIC), "NOT_ATOMIC")
+    assert_equal(String(Ordering.UNORDERED), "UNORDERED")
+    assert_equal(String(Ordering.RELAXED), "RELAXED")
+    assert_equal(String(Ordering.ACQUIRE), "ACQUIRE")
+    assert_equal(String(Ordering.RELEASE), "RELEASE")
+    assert_equal(String(Ordering.ACQUIRE_RELEASE), "ACQUIRE_RELEASE")
+    assert_equal(String(Ordering.SEQUENTIAL), "SEQUENTIAL")
 
 
 def _test_atomic[dtype: DType]() raises:

@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Atomic operations and consistency models.
+"""Atomic operations and memory orderings.
 
 The `atomic` package provides the `Atomic` type for performing atomic
-read-modify-write operations on scalar values, along with the `Consistency`
-type for specifying the memory consistency model of those operations. It also
+read-modify-write operations on scalar values, along with the `Ordering`
+type for specifying the memory ordering of those operations. It also
 exposes the `fence` function to create standalone memory barriers.
 
 Use this package when implementing lock-free data structures, reference
@@ -22,4 +22,4 @@ counting, or any other synchronization primitive that requires fine-grained
 control over memory ordering between threads.
 """
 
-from .atomic import Atomic, Consistency, fence
+from .atomic import Atomic, Ordering, fence

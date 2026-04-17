@@ -13,7 +13,7 @@
 
 from std.math import align_up, ceildiv
 from std.math.uutils import umod, ufloordiv
-from std.atomic import Atomic, Consistency
+from std.atomic import Atomic, Ordering
 from std.sys import is_amd_gpu, is_nvidia_gpu
 from std.sys.info import CompilationTarget, align_of, simd_width_of, size_of
 from std.ffi import c_size_t
@@ -210,9 +210,9 @@ def ep_signal_completion[
     # receive count buffer.
     if my_p2p_world == dst_p2p_world:
         var dst_p2p_ptr = recv_count_ptrs[dst_p2p_rank] + signal_offset
-        var old_count = _counter_atomic.fetch_add[
-            ordering=Consistency.MONOTONIC
-        ](rank_completion_counter + Int(dst_p2p_rank), 1)
+        var old_count = _counter_atomic.fetch_add[ordering=Ordering.RELAXED](
+            rank_completion_counter + Int(dst_p2p_rank), 1
+        )
 
         # If this is the last expert for this destination rank,
         # use a release store to flush all pending stores.
@@ -224,9 +224,7 @@ def ep_signal_completion[
             # the arrival of the previous experts' signals to the target
             # device. However, this does not matter as we will check the
             # arrival signal individually in the dispatch_wait/combine_wait kernel.
-            _signal_atomic.store[ordering=Consistency.RELEASE](
-                dst_p2p_ptr, signal
-            )
+            _signal_atomic.store[ordering=Ordering.RELEASE](dst_p2p_ptr, signal)
             # Reset counter for next kernel invocation.
             rank_completion_counter[dst_p2p_rank] = 0
     else:
@@ -1670,7 +1668,7 @@ struct EPDispatchKernel[
             if lane_id() == 0:
                 # Wait until all the tokens for the expert have been sent.
                 while (
-                    _counter_atomic.load[ordering=Consistency.ACQUIRE](
+                    _counter_atomic.load[ordering=Ordering.ACQUIRE](
                         expert_finished_counter + expert_idx
                     )
                     != expert_count
@@ -1807,7 +1805,7 @@ struct EPDispatchKernel[
                     var slot_idx: Int32 = 0
                     if lane_id() == 0:
                         slot_idx = _counter_atomic.fetch_add[
-                            ordering=Consistency.MONOTONIC
+                            ordering=Ordering.RELAXED
                         ](expert_reserved_counter + target_expert, 1)
                     slot_idx = warp.broadcast(slot_idx)
 
@@ -1832,7 +1830,7 @@ struct EPDispatchKernel[
 
                     if lane_id() == 0:
                         _ = _counter_atomic.fetch_add[
-                            ordering=Consistency.RELEASE
+                            ordering=Ordering.RELEASE
                         ](expert_finished_counter + target_expert, 1)
 
             # We set up `n_rcs` Reliable Communications (RCs) for each
@@ -1862,7 +1860,7 @@ struct EPDispatchKernel[
                         and my_p2p_world != dst_p2p_world
                     ):
                         var slot_idx = _counter_atomic.fetch_add[
-                            ordering=Consistency.MONOTONIC
+                            ordering=Ordering.RELAXED
                         ](expert_reserved_counter + target_expert, 1)
                         var dst_recv_buf_ptr = recv_buf_ptrs[
                             my_p2p_rank
@@ -1882,7 +1880,7 @@ struct EPDispatchKernel[
                         )
 
                         _ = _counter_atomic.fetch_add[
-                            ordering=Consistency.RELEASE
+                            ordering=Ordering.RELEASE
                         ](expert_finished_counter + target_expert, 1)
 
     # ===-------------------------------------------------------------------===#
@@ -1943,13 +1941,13 @@ struct EPDispatchKernel[
         var token_count: UInt32 = 0
         if tid < Self.n_experts:
             var target_count_ptr = recv_count_p + tid
-            var _token_count = _signal_atomic.load[
-                ordering=Consistency.ACQUIRE
-            ](target_count_ptr)
+            var _token_count = _signal_atomic.load[ordering=Ordering.ACQUIRE](
+                target_count_ptr
+            )
             while _token_count == UInt64.MAX_FINITE:
-                _token_count = _signal_atomic.load[
-                    ordering=Consistency.ACQUIRE
-                ](target_count_ptr)
+                _token_count = _signal_atomic.load[ordering=Ordering.ACQUIRE](
+                    target_count_ptr
+                )
             token_count = UInt32(_token_count)
         barrier()
 
@@ -1996,7 +1994,7 @@ struct EPDispatchKernel[
                 expert_rank_linear_idx * 2 + 1,
                 Int32(aligned_expert_start_offset),
             )
-            _counter_atomic.store[ordering=Consistency.RELEASE](
+            _counter_atomic.store[ordering=Ordering.RELEASE](
                 atomic_counter + expert_rank_linear_idx * 2,
                 Int32(
                     EP_DATA_READY_FLAG
@@ -2059,11 +2057,11 @@ struct EPDispatchKernel[
         # Wait until the auxiliary SM has signaled that the data is ready, and
         # provided the offset where the tokens end in the output tensor.
         var offset_ptr = atomic_counter + expert_rank_offset * 2
-        var output_offset = _counter_atomic.load[ordering=Consistency.ACQUIRE](
+        var output_offset = _counter_atomic.load[ordering=Ordering.ACQUIRE](
             offset_ptr
         )
         while output_offset < EP_DATA_READY_FLAG:
-            output_offset = _counter_atomic.load[ordering=Consistency.ACQUIRE](
+            output_offset = _counter_atomic.load[ordering=Ordering.ACQUIRE](
                 offset_ptr
             )
         output_offset -= EP_DATA_READY_FLAG
@@ -2783,9 +2781,7 @@ struct EPCombineKernel[
         if thread_idx.x < Self.n_experts:
             var target_count_ptr = recv_count_p + thread_idx.x
             while (
-                _signal_atomic.load[ordering=Consistency.ACQUIRE](
-                    target_count_ptr
-                )
+                _signal_atomic.load[ordering=Ordering.ACQUIRE](target_count_ptr)
                 == UInt64.MAX_FINITE
             ):
                 pass
@@ -2843,7 +2839,7 @@ struct EPCombineKernel[
 
         if thread_idx.x == 0:
             while (
-                _counter_atomic.load[ordering=Consistency.ACQUIRE](
+                _counter_atomic.load[ordering=Ordering.ACQUIRE](
                     atomic_counter + sm_id
                 )
                 != DATA_READY_FLAG

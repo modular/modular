@@ -24,7 +24,7 @@ thread blocks and warps, and manage memory consistency across different memory s
 """
 
 from std.os import abort
-from std.atomic import Consistency, fence
+from std.atomic import Ordering, fence
 from std.sys import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, llvm_intrinsic
 from std.sys._assembly import inlined_assembly
 from std.sys.info import CompilationTarget, _is_amd_cdna
@@ -128,9 +128,9 @@ def barrier():
         llvm_intrinsic["llvm.amdgcn.s.waitcnt", NoneType](Int32(0xC07F))
         llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
     elif is_amd_gpu():
-        fence[Consistency.RELEASE, scope="workgroup"]()
+        fence[Ordering.RELEASE, scope="workgroup"]()
         llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
-        fence[Consistency.ACQUIRE, scope="workgroup"]()
+        fence[Ordering.ACQUIRE, scope="workgroup"]()
     elif is_apple_gpu():
         # threadgroup_barrier(mem_flags::mem_threadgroup)
         llvm_intrinsic["llvm.air.wg.barrier", NoneType](Int32(2), Int32(1))

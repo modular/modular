@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.atomic import Atomic, Consistency, fence
+from std.atomic import Atomic, Ordering, fence
 
 from std.compile import compile_info
 from std.testing import TestSuite, assert_false, assert_true
@@ -64,7 +64,7 @@ def test_compile_store() raises:
     def my_store_function(
         mut atm: Atomic[DType.int32, scope="agent"], v: Int32
     ):
-        Atomic[DType.int32, scope="agent"].store[ordering=Consistency.RELEASE](
+        Atomic[DType.int32, scope="agent"].store[ordering=Ordering.RELEASE](
             UnsafePointer(to=atm.value), v
         )
 
@@ -76,7 +76,7 @@ def test_compile_store() raises:
 
 def test_compile_store_default_scope() raises:
     def my_store_function(mut atm: Atomic[DType.int64], v: Int64):
-        Atomic[DType.int64].store[ordering=Consistency.RELEASE](
+        Atomic[DType.int64].store[ordering=Ordering.RELEASE](
             UnsafePointer(to=atm.value), v
         )
 
@@ -92,7 +92,7 @@ def test_compile_xchg() raises:
         mut atm: Atomic[DType.int32, scope="agent"], v: Int32
     ) -> Int32:
         return Atomic[DType.int32, scope="agent"]._xchg[
-            ordering=Consistency.SEQUENTIAL
+            ordering=Ordering.SEQUENTIAL
         ](UnsafePointer(to=atm.value), v)
 
     var asm = compile_info[my_xchg_function, emission_kind="llvm"]()

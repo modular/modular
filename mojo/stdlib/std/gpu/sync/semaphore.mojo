@@ -34,7 +34,7 @@ Example:
     ```
 """
 
-from std.atomic import Atomic, Consistency
+from std.atomic import Atomic, Ordering
 from std.sys import is_nvidia_gpu, llvm_intrinsic
 
 from .sync import MaxHardwareBarriers, barrier, named_barrier
@@ -90,7 +90,7 @@ struct Semaphore(TrivialRegisterPassable):
         using an acquire memory ordering to ensure proper synchronization.
         """
         if self._wait_thread:
-            self._state = _device_atomic.load[ordering=Consistency.ACQUIRE](
+            self._state = _device_atomic.load[ordering=Ordering.ACQUIRE](
                 self._lock
             )
 
@@ -129,9 +129,7 @@ struct Semaphore(TrivialRegisterPassable):
         """
         barrier()
         if self._wait_thread:
-            _device_atomic.store[ordering=Consistency.RELEASE](
-                self._lock, status
-            )
+            _device_atomic.store[ordering=Ordering.RELEASE](self._lock, status)
 
 
 struct NamedBarrierSemaphore[
@@ -197,7 +195,7 @@ struct NamedBarrierSemaphore[
         """
         if self._wait_thread:
             while self._state != status:
-                self._state = _device_atomic.load[ordering=Consistency.ACQUIRE](
+                self._state = _device_atomic.load[ordering=Ordering.ACQUIRE](
                     self._lock
                 )
 
@@ -213,7 +211,7 @@ struct NamedBarrierSemaphore[
         """
         if self._wait_thread:
             while self._state < count:
-                self._state = _device_atomic.load[ordering=Consistency.ACQUIRE](
+                self._state = _device_atomic.load[ordering=Ordering.ACQUIRE](
                     self._lock
                 )
 
@@ -230,6 +228,4 @@ struct NamedBarrierSemaphore[
         named_barrier[Self.thread_count,](Self.id_offset + id)
 
         if self._wait_thread:
-            _device_atomic.store[ordering=Consistency.RELEASE](
-                self._lock, status
-            )
+            _device_atomic.store[ordering=Ordering.RELEASE](self._lock, status)

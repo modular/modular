@@ -28,29 +28,29 @@ from std.builtin.dtype import _integral_type_of, _unsigned_integral_type_of
 from std.memory import bitcast
 
 # ===-----------------------------------------------------------------------===#
-# Consistency
+# Ordering
 # ===-----------------------------------------------------------------------===#
 
-comptime _DEFAULT_ARITHMETIC_CONSISTENCY = Consistency.MONOTONIC if is_apple_gpu() else Consistency.SEQUENTIAL
-comptime _DEFAULT_COMPARISON_CONSISTENCY = _DEFAULT_ARITHMETIC_CONSISTENCY
-comptime _DEFAULT_MEMORY_CONSISTENCY = Consistency.SEQUENTIAL
+comptime _DEFAULT_ARITHMETIC_ORDERING = Ordering.RELAXED if is_apple_gpu() else Ordering.SEQUENTIAL
+comptime _DEFAULT_COMPARISON_ORDERING = _DEFAULT_ARITHMETIC_ORDERING
+comptime _DEFAULT_MEMORY_ORDERING = Ordering.SEQUENTIAL
 
 
-struct Consistency(
+struct Ordering(
     Equatable,
     ImplicitlyCopyable,
     TrivialRegisterPassable,
     Writable,
 ):
-    """Represents the consistency model for atomic operations.
+    """Represents the memory ordering for atomic operations.
 
-    The class provides a set of constants that represent different consistency
-    models for atomic operations.
+    The class provides a set of constants that represent different memory
+    orderings for atomic operations.
 
     Attributes:
         NOT_ATOMIC: Not atomic.
         UNORDERED: Unordered.
-        MONOTONIC: Monotonic.
+        RELAXED: Relaxed.
         ACQUIRE: Acquire.
         RELEASE: Release.
         ACQUIRE_RELEASE: Acquire-release.
@@ -58,16 +58,16 @@ struct Consistency(
     """
 
     var _value: UInt8
-    """The value of the consistency model.
-    This is the underlying value of the consistency model.
+    """The value of the memory ordering.
+    This is the underlying value of the memory ordering.
     """
 
     comptime NOT_ATOMIC = Self(0)
     """Not atomic."""
     comptime UNORDERED = Self(1)
     """Unordered."""
-    comptime MONOTONIC = Self(2)
-    """Monotonic."""
+    comptime RELAXED = Self(2)
+    """Relaxed."""
     comptime ACQUIRE = Self(3)
     """Acquire."""
     comptime RELEASE = Self(4)
@@ -79,19 +79,19 @@ struct Consistency(
 
     @always_inline
     def __init__(out self, value: UInt8):
-        """Constructs a new Consistency object.
+        """Constructs a new Ordering object.
 
         Args:
-            value: The value of the consistency model.
+            value: The value of the memory ordering.
         """
         self._value = value
 
     @always_inline("builtin")
     def __eq__(self, other: Self) -> Bool:
-        """Compares two Consistency objects for equality.
+        """Compares two Ordering objects for equality.
 
         Args:
-            other: The other Consistency object to compare with.
+            other: The other Ordering object to compare with.
 
         Returns:
             True if the objects are equal, False otherwise.
@@ -100,10 +100,10 @@ struct Consistency(
 
     @always_inline
     def __ne__(self, other: Self) -> Bool:
-        """Compares two Consistency objects for inequality.
+        """Compares two Ordering objects for inequality.
 
         Args:
-            other: The other Consistency object to compare with.
+            other: The other Ordering object to compare with.
 
         Returns:
             True if the objects are not equal, False otherwise.
@@ -111,40 +111,40 @@ struct Consistency(
         return self._value != other._value
 
     def as_string_slice(self) -> StaticString:
-        """Returns a string slice representation of a `Consistency`.
+        """Returns a string slice representation of an `Ordering`.
 
         Returns:
-            A string slice representation of this consistency.
+            A string slice representation of this ordering.
         """
 
         if self == Self.NOT_ATOMIC:
-            return "Consistency.NOT_ATOMIC"
+            return "Ordering.NOT_ATOMIC"
         if self == Self.UNORDERED:
-            return "Consistency.UNORDERED"
-        if self == Self.MONOTONIC:
-            return "Consistency.MONOTONIC"
+            return "Ordering.UNORDERED"
+        if self == Self.RELAXED:
+            return "Ordering.RELAXED"
         if self == Self.ACQUIRE:
-            return "Consistency.ACQUIRE"
+            return "Ordering.ACQUIRE"
         if self == Self.RELEASE:
-            return "Consistency.RELEASE"
+            return "Ordering.RELEASE"
         if self == Self.ACQUIRE_RELEASE:
-            return "Consistency.ACQUIRE_RELEASE"
+            return "Ordering.ACQUIRE_RELEASE"
         if self == Self.SEQUENTIAL:
-            return "Consistency.SEQUENTIAL"
+            return "Ordering.SEQUENTIAL"
 
-        return "Consistency.UNKNOWN"
+        return "Ordering.UNKNOWN"
 
     def write_to(self, mut writer: Some[Writer]):
-        """Write the string representation of this `Consistency` to a writer.
+        """Write the string representation of this `Ordering` to a writer.
 
         Args:
             writer: The object to write to.
         """
-        comptime prefix_len = "Consistency.".byte_length()
+        comptime prefix_len = "Ordering.".byte_length()
         writer.write_string(self.as_string_slice()[byte=prefix_len:])
 
     def write_repr_to(self, mut writer: Some[Writer]):
-        """Write the repr of this `Consistency` to a writer.
+        """Write the repr of this `Ordering` to a writer.
 
         Args:
             writer: The object to write to.
@@ -153,16 +153,16 @@ struct Consistency(
 
     @always_inline("nodebug")
     def __mlir_attr(self) -> __mlir_type.`!kgen.deferred`:
-        """Returns the MLIR attribute representation of the Consistency object.
+        """Returns the MLIR attribute representation of the Ordering object.
 
         Returns:
-            The MLIR attribute representation of the Consistency object.
+            The MLIR attribute representation of the Ordering object.
         """
         if self == Self.NOT_ATOMIC:
             return __mlir_attr.`#pop<atomic_ordering not_atomic>`
         if self == Self.UNORDERED:
             return __mlir_attr.`#pop<atomic_ordering unordered>`
-        if self == Self.MONOTONIC:
+        if self == Self.RELAXED:
             return __mlir_attr.`#pop<atomic_ordering monotonic>`
         if self == Self.ACQUIRE:
             return __mlir_attr.`#pop<atomic_ordering acquire>`
@@ -183,7 +183,7 @@ struct Consistency(
 
 @always_inline("nodebug")
 def fence[
-    ordering: Consistency = _DEFAULT_MEMORY_CONSISTENCY,
+    ordering: Ordering = _DEFAULT_MEMORY_ORDERING,
     *,
     scope: StaticString = "",
 ]():
@@ -244,7 +244,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @always_inline("nodebug")
     def load[
         *,
-        ordering: Consistency = _DEFAULT_MEMORY_CONSISTENCY,
+        ordering: Ordering = _DEFAULT_MEMORY_ORDERING,
     ](ptr: UnsafePointer[mut=False, Scalar[Self.dtype], ...]) -> Scalar[
         Self.dtype
     ]:
@@ -273,7 +273,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @always_inline
     def load[
-        *, ordering: Consistency = _DEFAULT_MEMORY_CONSISTENCY
+        *, ordering: Ordering = _DEFAULT_MEMORY_ORDERING
     ](self) -> Scalar[Self.dtype]:
         """Loads the current value from the atomic.
 
@@ -288,7 +288,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @staticmethod
     @always_inline("nodebug")
     def fetch_add[
-        *, ordering: Consistency = _DEFAULT_ARITHMETIC_CONSISTENCY
+        *, ordering: Ordering = _DEFAULT_ARITHMETIC_ORDERING
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         rhs: Scalar[Self.dtype],
@@ -331,7 +331,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @staticmethod
     @always_inline
     def _xchg[
-        *, ordering: Consistency = _DEFAULT_MEMORY_CONSISTENCY
+        *, ordering: Ordering = _DEFAULT_MEMORY_ORDERING
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         value: Scalar[Self.dtype],
@@ -371,7 +371,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @staticmethod
     @always_inline
     def store[
-        *, ordering: Consistency = _DEFAULT_MEMORY_CONSISTENCY
+        *, ordering: Ordering = _DEFAULT_MEMORY_ORDERING
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         value: Scalar[Self.dtype],
@@ -397,7 +397,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @always_inline
     def fetch_add[
-        *, ordering: Consistency = _DEFAULT_ARITHMETIC_CONSISTENCY
+        *, ordering: Ordering = _DEFAULT_ARITHMETIC_ORDERING
     ](mut self, rhs: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
         """Performs atomic in-place add.
 
@@ -436,7 +436,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @always_inline
     def fetch_sub[
-        *, ordering: Consistency = _DEFAULT_ARITHMETIC_CONSISTENCY
+        *, ordering: Ordering = _DEFAULT_ARITHMETIC_ORDERING
     ](mut self, rhs: Scalar[Self.dtype]) -> Scalar[Self.dtype]:
         """Performs atomic in-place sub.
 
@@ -489,8 +489,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @always_inline("nodebug")
     def compare_exchange[
         *,
-        success_ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY,
-        failure_ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY,
+        success_ordering: Ordering = _DEFAULT_COMPARISON_ORDERING,
+        failure_ordering: Ordering = _DEFAULT_COMPARISON_ORDERING,
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         mut expected: Scalar[Self.dtype],
@@ -553,8 +553,8 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @always_inline("nodebug")
     def compare_exchange[
         *,
-        success_ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY,
-        failure_ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY,
+        success_ordering: Ordering = _DEFAULT_COMPARISON_ORDERING,
+        failure_ordering: Ordering = _DEFAULT_COMPARISON_ORDERING,
     ](
         mut self, mut expected: Scalar[Self.dtype], desired: Scalar[Self.dtype]
     ) -> Bool:
@@ -583,7 +583,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @staticmethod
     @always_inline
     def max[
-        *, ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY
+        *, ordering: Ordering = _DEFAULT_COMPARISON_ORDERING
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         rhs: Scalar[Self.dtype],
@@ -613,7 +613,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @always_inline
     def max[
-        *, ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY
+        *, ordering: Ordering = _DEFAULT_COMPARISON_ORDERING
     ](mut self, rhs: Scalar[Self.dtype]):
         """Performs atomic in-place max.
 
@@ -639,7 +639,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
     @staticmethod
     @always_inline
     def min[
-        *, ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY
+        *, ordering: Ordering = _DEFAULT_COMPARISON_ORDERING
     ](
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         rhs: Scalar[Self.dtype],
@@ -669,7 +669,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
 
     @always_inline
     def min[
-        *, ordering: Consistency = _DEFAULT_COMPARISON_CONSISTENCY
+        *, ordering: Ordering = _DEFAULT_COMPARISON_ORDERING
     ](mut self, rhs: Scalar[Self.dtype]):
         """Performs atomic in-place min.
 
@@ -706,8 +706,8 @@ def _compare_exchange_integral_impl[
     //,
     *,
     scope: StaticString,
-    success_ordering: Consistency,
-    failure_ordering: Consistency,
+    success_ordering: Ordering,
+    failure_ordering: Ordering,
 ](
     atomic_ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
     expected_ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
@@ -744,7 +744,7 @@ def _compare_exchange_integral_impl[
 
 @always_inline
 def _max_impl_base[
-    dtype: DType, //, *, scope: StaticString, ordering: Consistency
+    dtype: DType, //, *, scope: StaticString, ordering: Ordering
 ](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
     var value_addr = ptr.bitcast[Scalar[dtype]._mlir_type]()
     _ = __mlir_op.`pop.atomic.rmw`[
@@ -757,7 +757,7 @@ def _max_impl_base[
 
 @always_inline
 def _min_impl_base[
-    dtype: DType, //, *, scope: StaticString, ordering: Consistency
+    dtype: DType, //, *, scope: StaticString, ordering: Ordering
 ](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
     var value_addr = ptr.bitcast[Scalar[dtype]._mlir_type]()
     _ = __mlir_op.`pop.atomic.rmw`[
@@ -774,7 +774,7 @@ def _max_impl[
     //,
     *,
     scope: StaticString,
-    ordering: Consistency,
+    ordering: Ordering,
 ](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
     comptime if is_nvidia_gpu() and dtype.is_floating_point():
         comptime integral_type = _integral_type_of[dtype]()
@@ -800,7 +800,7 @@ def _min_impl[
     //,
     *,
     scope: StaticString,
-    ordering: Consistency,
+    ordering: Ordering,
 ](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], rhs: Scalar[dtype]):
     comptime if is_nvidia_gpu() and dtype.is_floating_point():
         comptime integral_type = _integral_type_of[dtype]()

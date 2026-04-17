@@ -26,7 +26,7 @@ underlying GPU architecture.
 """
 
 from std.collections.string.string_slice import get_static_string
-from std.atomic import Consistency
+from std.atomic import Ordering
 from std.ffi import external_call
 from std.sys import (
     is_amd_gpu,
@@ -805,7 +805,7 @@ def store_release[
     elif is_amd_gpu():
         __mlir_op.`pop.store`[
             alignment=alignment._int_mlir_index(),
-            ordering=Consistency.RELEASE.__mlir_attr(),
+            ordering=Ordering.RELEASE.__mlir_attr(),
         ](value, ptr.address)
     elif is_apple_gpu():
         comptime mem_flags = _AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else _AirMemFlags.Device
@@ -876,7 +876,7 @@ def store_relaxed[
     elif is_amd_gpu():
         __mlir_op.`pop.store`[
             alignment=alignment._int_mlir_index(),
-            ordering=Consistency.MONOTONIC.__mlir_attr(),
+            ordering=Ordering.RELAXED.__mlir_attr(),
         ](value, ptr.address)
     else:
         CompilationTarget.unsupported_target_error[
@@ -940,7 +940,7 @@ def load_acquire[
     elif is_amd_gpu():
         var result = __mlir_op.`pop.load`[
             alignment=alignment._int_mlir_index(),
-            ordering=Consistency.ACQUIRE.__mlir_attr(),
+            ordering=Ordering.ACQUIRE.__mlir_attr(),
         ](ptr.address)
         comptime if dtype.is_floating_point():
             _check_not_poison[dtype, 1](result)
@@ -1021,7 +1021,7 @@ def load_relaxed[
     elif is_amd_gpu():
         var result = __mlir_op.`pop.load`[
             alignment=alignment._int_mlir_index(),
-            ordering=Consistency.MONOTONIC.__mlir_attr(),
+            ordering=Ordering.RELAXED.__mlir_attr(),
         ](ptr.address)
         comptime if dtype.is_floating_point():
             _check_not_poison[dtype, 1](result)

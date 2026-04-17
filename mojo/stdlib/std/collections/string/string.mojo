@@ -32,7 +32,7 @@ from std.format._utils import (
     _WriteBufferStack,
 )
 from std.os import PathLike, abort
-from std.atomic import Atomic, Consistency, fence
+from std.atomic import Atomic, Ordering, fence
 from std.sys import size_of, bit_width_of
 from std.ffi import c_char, CStringSlice
 from std.sys.info import is_32bit
@@ -692,7 +692,7 @@ struct String(
     def _is_unique(mut self) -> Bool:
         """Return true if the refcount is 1."""
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
-            return self._refcount().load[ordering=Consistency.MONOTONIC]() == 1
+            return self._refcount().load[ordering=Ordering.RELAXED]() == 1
         else:
             return False
 
@@ -702,7 +702,7 @@ struct String(
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             # See `ArcPointer`'s refcount implementation for more details on the
             # use of memory orderings.
-            _ = self._refcount().fetch_add[ordering=Consistency.MONOTONIC](1)
+            _ = self._refcount().fetch_add[ordering=Ordering.RELAXED](1)
 
     @always_inline("nodebug")
     def _drop_ref(mut self):
@@ -713,7 +713,7 @@ struct String(
             var ptr = self._ptr_or_data - Self.REF_COUNT_SIZE
             var refcount = ptr.bitcast[Atomic[DType.int]]()
             if refcount[].fetch_sub(1) == 1:
-                fence[Consistency.ACQUIRE]()
+                fence[Ordering.ACQUIRE]()
                 ptr.free()
 
     @staticmethod
