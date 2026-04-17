@@ -966,10 +966,11 @@ Synchronization bugs can be tricky. Here are some strategies to find them:
 - Trace execution: Add `print()` statements to trace intermediate values and
   understand how data flows through your warp-level shuffles or reduction trees.
 
-  :::note
+  :::note Known limitation
 
-  Printing from within a kernel function is not currently supported on Apple
-  silicon GPUs.
+  On Apple silicon GPUs, each `print()` call inside a GPU kernel currently
+  supports at most one string literal argument. This restriction does not apply
+  to NVIDIA or AMD GPUs.
 
   :::
 

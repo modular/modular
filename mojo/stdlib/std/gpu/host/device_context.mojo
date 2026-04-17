@@ -3364,7 +3364,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     from std.gpu import thread_idx
 
     def kernel():
-        # `print()` does not work on Apple Silicon from GPU kernels
         print("hello from thread:", thread_idx.x, thread_idx.y, thread_idx.z)
 
     with DeviceContext() as ctx:
@@ -4254,7 +4253,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         from std.gpu.host import DeviceContext
 
         def kernel():
-            # `print()` does not work on Apple Silicon from GPU kernels
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
@@ -4359,7 +4357,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         from std.gpu.host import DeviceContext
 
         def kernel():
-            # `print()` does not work on Apple Silicon from GPU kernels
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
@@ -4460,7 +4457,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         from std.gpu.host import DeviceContext
 
         def kernel(x: Int):
-            # `print()` does not work on Apple Silicon from GPU kernels
             print("Value:", x)
 
         with DeviceContext() as ctx:
@@ -4776,7 +4772,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         from std.gpu.host import DeviceContext
 
         def kernel():
-            # `print()` does not work on Apple Silicon from GPU kernels
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
@@ -5149,7 +5144,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         from std.gpu.host import DeviceContext
 
         def kernel():
-            # `print()` does not work on Apple Silicon from GPU kernels
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
@@ -5265,7 +5259,6 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         from std.gpu.host import DeviceContext
 
         def kernel():
-            # `print()` does not work on Apple Silicon from GPU kernels
             print("hello from the GPU")
 
         with DeviceContext() as ctx:

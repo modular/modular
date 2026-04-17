@@ -326,50 +326,44 @@ All of these dimensions and indices are
 
 :::
 
-Here is a complete example showing a kernel function that simply prints the
-thread block index, thread index, and global index for each thread executed.
+The following example shows a kernel function that prints the
+thread block index, thread index, and global index for each thread.
 
 ```mojo title="print_threads.mojo"
-from std.sys import exit, has_accelerator, has_apple_gpu_accelerator
+from std.sys import has_accelerator
 
 from std.gpu.host import DeviceContext
-from std.gpu import block_dim, block_idx, global_idx, grid_dim, thread_idx
+from std.gpu import block_dim, block_idx, global_idx, thread_idx
 
 def print_threads():
     """Print thread block and thread indices."""
 
     print(
-        "block_idx: [",
-            block_idx.x,
-            block_idx.y,
-            block_idx.z,
-        "]\tthread_idx: [",
-            thread_idx.x,
-            thread_idx.y,
-            thread_idx.z,
-        "]\tglobal_idx: [",
-            global_idx.x,
-            global_idx.y,
-            global_idx.z,
-        "]\tcalculated global_idx: [",
-            block_dim.x * block_idx.x + thread_idx.x,
-            block_dim.y * block_idx.y + thread_idx.y,
-            block_dim.z * block_idx.z + thread_idx.z,
-        "]",
+        block_idx.x,
+        block_idx.y,
+        block_idx.z,
+        thread_idx.x,
+        thread_idx.y,
+        thread_idx.z,
+        global_idx.x,
+        global_idx.y,
+        global_idx.z,
+        block_dim.x * block_idx.x + thread_idx.x,
+        block_dim.y * block_idx.y + thread_idx.y,
+        block_dim.z * block_idx.z + thread_idx.z,
+        sep="\t",
     )
 
 def main() raises:
     comptime if not has_accelerator():
         print("No compatible GPU found")
-    elif has_apple_gpu_accelerator():
-        print(
-            "Printing from a kernel is not currently supported on Apple silicon"
-            " GPUs"
-        )
     else:
         # Initialize GPU context for device 0 (default GPU device).
         ctx = DeviceContext()
 
+        print("block_idx\t\tthread_idx\t\tglobal_idx\t\tcalculated global_idx")
+        print("x\ty\tz", "x\ty\tz", "x\ty\tz", "x\ty\tz", sep="\t")
+        print("-" * 20, "-" * 20, "-" * 20, "-" * 20, sep="\t")
         ctx.enqueue_function[print_threads, print_threads](
             grid_dim=(2, 2, 1),  # 2x2x1 blocks per grid
             block_dim=(4, 4, 2),  # 4x4x2 threads per block
@@ -379,22 +373,28 @@ def main() raises:
         print("Done")
 ```
 
-This application produces output similar to this (with the output order
+This example produces output similar to the following (with the output order
 indeterminate because of the concurrent execution of multiple threads):
 
 ```output
-block_idx: [ 0 1 0 ] thread_idx: [ 0 0 0 ] global_idx: [ 0 4 0 ] calculated global_idx: [ 0 4 0 ]
-block_idx: [ 0 1 0 ] thread_idx: [ 1 0 0 ] global_idx: [ 1 4 0 ] calculated global_idx: [ 1 4 0 ]
+block_idx		thread_idx		global_idx		calculated global_idx
+x	y	z	x	y	z	x	y	z	x	y	z
+--------------------	--------------------	--------------------	--------------------
+0	1	0	0	0	0	0	4	0	0	4	0
+0	1	0	1	0	0	1	4	0	1	4	0
 ...
-block_idx: [ 1 1 0 ] thread_idx: [ 2 3 1 ] global_idx: [ 6 7 1 ] calculated global_idx: [ 6 7 1 ]
-block_idx: [ 1 1 0 ] thread_idx: [ 3 3 1 ] global_idx: [ 7 7 1 ] calculated global_idx: [ 7 7 1 ]
+1	1	0	2	3	1	6	7	1	6	7	1
+1	1	0	3	3	1	7	7	1	7	7	1
 Done
 ```
 
-:::note
+:::note Known limitation
 
-Printing from within a kernel function is not currently supported on Apple
-silicon GPUs.
+On Apple silicon GPUs, each `print()` call inside a GPU kernel currently
+supports at most one string literal argument. To ensure readable output across
+all GPU platforms, the examples here print numeric values only, with the host
+printing column headers before launching the kernel. This restriction doesn't
+apply to NVIDIA or AMD GPUs.
 
 :::
 

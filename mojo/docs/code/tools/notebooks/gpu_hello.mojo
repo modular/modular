@@ -11,17 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# Tested on T4 GPU 2 Dec 2025
-
-
 from std.gpu.host import DeviceContext
 
 
 def kernel():
-    # Does not work on Apple Silicon
-    # Can't test due to CI
-    # print("Hello from the GPU")
-    pass
+    print("Hello from the GPU")
 
 
 def main() raises:

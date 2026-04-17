@@ -24,11 +24,3 @@ message:
 ```output
 No compatible GPU found
 ```
-
-Additionally, printing from a kernel is not currently supported for Apple
-silicon GPUs. If you compile and run `print_threads.mojo` on an Apple system,
-you'll see this message:
-
-```output
-Printing from a kernel is not currently supported on Apple silicon GPUs
-```

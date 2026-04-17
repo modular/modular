@@ -31,6 +31,6 @@ def main() raises:
         # Run it
         ctx.enqueue_function[kernel, kernel](out, grid_dim=1, block_dim=1)
 
-        # Print it
+        # Report the result
         with out.map_to_host() as out_host:
-            print("GPU responded:", "✅" if out_host[0] == `✅` else "❌")
+            print("GPU responded:", "👋, 🔥" if out_host[0] == `✅` else "😢")
