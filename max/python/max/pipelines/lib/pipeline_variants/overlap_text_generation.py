@@ -426,26 +426,39 @@ class AsyncBatch(Generic[TextGenerationContextType]):
                 max_seq_len=max_seq_len,
             )
 
+            batch_size = len(self.inputs.flat_batch)
+            is_dummy_draft_tokens: list[bool] = [
+                all(draft_tokens_np[batch_idx, :] == _MAGIC_DRAFT_TOKEN_ID)
+                for batch_idx in range(batch_size)
+            ]
+
             num_speculative_tokens = next_draft_tokens.shape[1]
             num_draft_tokens_to_verify = draft_tokens_np.shape[1]
-            batch_size = len(self.inputs.flat_batch)
 
             # Compute per-position acceptance counts.
             # For each position i, count how many requests accepted at least i+1 tokens.
             accepted_per_position = [0] * num_draft_tokens_to_verify
-            for accepted_count in num_accepted_draft_tokens:
+            for is_dummy, accepted_count in zip(
+                is_dummy_draft_tokens, num_accepted_draft_tokens, strict=True
+            ):
+                if is_dummy:
+                    continue
                 for pos in range(int(accepted_count)):
                     if pos < num_draft_tokens_to_verify:
                         accepted_per_position[pos] += 1
 
+            # Only count verifications when there are real draft tokens to verify.
+            # Otherwise we'd dilute the per-position acceptance rate.
+            num_verifications = (
+                batch_size - sum(is_dummy_draft_tokens)
+                if num_draft_tokens_to_verify > 0
+                else 0
+            )
+
             metrics = SpeculativeDecodingMetrics(
                 num_speculative_tokens=num_speculative_tokens,
                 accepted_per_position=accepted_per_position,
-                # Only count verifications when there are draft tokens to verify.
-                # Otherwise we'd dilute the per-position acceptance rate.
-                num_verifications=batch_size
-                if num_draft_tokens_to_verify > 0
-                else 0,
+                num_verifications=num_verifications,
             )
 
             wrapped_outputs = _AsyncBatchOutput(
@@ -1597,7 +1610,7 @@ class OverlapTextGenerationPipeline(
 
         context_batch = inputs.flat_batch
         verify_draft_tokens = all(
-            ctx.tokens.generated_length > 1 for ctx in context_batch
+            ctx.tokens.generated_length > 0 for ctx in context_batch
         )
         num_draft_tokens_to_verify = (
             num_speculative_tokens if verify_draft_tokens else 0
