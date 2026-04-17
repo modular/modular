@@ -413,3 +413,7 @@ This version is still a work in progress.
   AMDGPU. `Atomic.store` now lowers via `pop.store atomic syncscope(...)`,
   emitting `st.release.<scope>` on NVPTX and a properly-scoped LLVM atomic
   store on AMDGPU. The Mojo API surface is unchanged.
+
+- Fixed `Process.run()` not inheriting the parent's environment variables.
+  Child processes spawned via `Process.run()` now correctly receive the
+  parent's environment.

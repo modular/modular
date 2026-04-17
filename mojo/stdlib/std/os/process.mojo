@@ -26,6 +26,7 @@ from std.sys import CompilationTarget
 from std.sys._libc import (
     waitpid,
     posix_spawnp,
+    _get_environ,
     kill,
     SignalCodes,
     pipe,
@@ -417,7 +418,7 @@ struct Process:
             path.as_c_string_slice(),
             # Safety: `argv_array_ptr_cstr_ptr` has at least 2 elements so is non-null
             argv_array_ptr_cstr_ptr.unsafe_ptr(),
-            {},
+            _get_environ(),  # inherit parent's environment
         )
 
         if has_error_code > 0:

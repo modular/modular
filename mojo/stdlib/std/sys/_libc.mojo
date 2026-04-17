@@ -162,6 +162,37 @@ def posix_spawnp[
     )
 
 
+@always_inline
+def _get_environ() -> (
+    _CPointer[Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin]
+):
+    """Returns the process environment pointer (POSIX `environ`).
+
+    Returns:
+        A pointer to the null-terminated array of environment strings,
+        suitable for passing as the `envp` argument to `posix_spawnp`.
+    """
+    comptime _EnvpType = _CPointer[
+        Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin
+    ]
+    comptime if CompilationTarget.is_macos():
+        # _NSGetEnviron() from <crt_externs.h> returns char ***,
+        # a pointer to the `environ` variable.
+        return external_call[
+            "_NSGetEnviron",
+            _CPointer[_EnvpType, ExternalOrigin[mut=False]],
+        ]().value()[]
+    elif CompilationTarget.is_linux():
+        # On Linux, look up `environ` via dlsym(RTLD_DEFAULT, "environ").
+        # RTLD_DEFAULT is ((void *)0) on Linux.
+        return dlsym[_EnvpType](
+            _CPointer[NoneType, MutExternalOrigin](),
+            "environ".as_c_string_slice().unsafe_ptr(),
+        ).value()[]
+    else:
+        CompilationTarget.unsupported_target_error[operation="_get_environ"]()
+
+
 # ===-----------------------------------------------------------------------===#
 # unistd.h
 # ===-----------------------------------------------------------------------===#
