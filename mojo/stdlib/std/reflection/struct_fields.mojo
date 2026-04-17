@@ -115,6 +115,7 @@ def main():
 from std.sys.info import _current_target, _TargetType
 
 
+@always_inline("builtin")
 def struct_field_index_by_name[
     T: AnyType,
     name: StringLiteral,
@@ -172,12 +173,13 @@ struct ReflectedType[T: AnyType](TrivialRegisterPassable):
         ```
     """
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     def __init__(out self):
         """Create a ReflectedType instance."""
         pass
 
 
+@always_inline("builtin")
 def struct_field_type_by_name[
     StructT: AnyType,
     name: StringLiteral,
@@ -299,6 +301,7 @@ def struct_field_count[T: AnyType]() -> Int:
     )
 
 
+@always_inline("builtin")
 def struct_field_types[
     T: AnyType,
 ]() -> Variadic.TypesOfTrait[AnyType]:
@@ -345,6 +348,7 @@ def struct_field_types[
     return __struct_field_types(T).values
 
 
+@always_inline("builtin")
 def _struct_field_names_raw[
     T: AnyType,
 ]() -> __mlir_type[`!kgen.param_list<!kgen.string>`]:
@@ -407,6 +411,7 @@ def struct_field_names[
     return result^
 
 
+@always_inline("builtin")
 def is_struct_type[T: AnyType]() -> Bool:
     """Returns `True` if `T` is a Mojo struct type, `False` otherwise.
 
@@ -467,6 +472,7 @@ def is_struct_type[T: AnyType]() -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
+@always_inline("builtin")
 def _struct_field_offset_by_index[
     T: AnyType, idx: Int, target: _TargetType = _current_target()
 ]() -> Int:
@@ -485,6 +491,7 @@ def _struct_field_offset_by_index[
     )
 
 
+@always_inline("builtin")
 def _struct_field_offset_by_name[
     T: AnyType, name: StringLiteral, target: _TargetType = _current_target()
 ]() -> Int:
@@ -505,6 +512,7 @@ def _struct_field_offset_by_name[
     )
 
 
+@always_inline("builtin")
 def offset_of[
     T: AnyType, *, name: StringLiteral, target: _TargetType = _current_target()
 ]() -> Int:
@@ -546,6 +554,7 @@ def offset_of[
     return _struct_field_offset_by_name[T, name, target]()
 
 
+@always_inline("builtin")
 def offset_of[
     T: AnyType, *, index: Int, target: _TargetType = _current_target()
 ]() -> Int:
