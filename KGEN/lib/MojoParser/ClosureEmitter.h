@@ -81,7 +81,9 @@ public:
                               SMLoc nestedFunctionOrTypeLocation);
 
   /// Promote a stateless unified closure decl to a top-level function decl.
-  ASTDecl *promoteStatelessClosure(ASTDecl &nestedFnDecl);
+  ASTDecl *
+  promoteStatelessClosure(ASTDecl &nestedFnDecl,
+                          ArrayRef<ParamDeclRefAttr> paramCaptures = {});
   Value emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                       ArrayRef<Capture> captures, TraitDeclOp trait,
                       Location location, bool isCopyable,

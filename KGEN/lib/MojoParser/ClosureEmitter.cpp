@@ -1675,14 +1675,51 @@ ASTDecl *ClosureEmitter::createClosureTrait(
   return getOrCreateClosureTrait(key, createTraitFn);
 }
 
-ASTDecl *ClosureEmitter::promoteStatelessClosure(ASTDecl &nestedFnDecl) {
+static bool hasCapturingParameterType(SharedState &shared,
+                                      ArrayRef<ParamDeclAttr> params) {
+  mlir::AttrTypeWalker walker;
+  walker.addWalk([](FuncType sig) {
+    if (sig.isCapturing())
+      return WalkResult::interrupt();
+    return WalkResult::advance();
+  });
+  walker.addWalk([&](SymbolRefAttr symbol) {
+    ASTDecl *traitDecl =
+        shared.getDeclResolver().getDeclForTypeSymbolIfExists(symbol);
+    if (!traitDecl)
+      return WalkResult::advance();
+    auto traitDeclOp =
+        dyn_cast_if_present<TraitDeclOp>(traitDecl->getIfOperation());
+    if (traitDeclOp && traitDeclOp.getDefinesClosure())
+      return WalkResult::interrupt();
+    return WalkResult::advance();
+  });
+
+  return llvm::any_of(params, [&](ParamDeclAttr param) {
+    return walker.walk(param).wasInterrupted();
+  });
+}
+
+ASTDecl *ClosureEmitter::promoteStatelessClosure(
+    ASTDecl &nestedFnDecl, ArrayRef<ParamDeclRefAttr> paramCaptures) {
   assert(nestedFnDecl.resolvedness == DeclResolvedness::body &&
          "nested decl must be fully resolved to promote");
+  MLIRContext *ctx = shared.getContext();
   FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
   SMLoc loc = nestedFnDecl.getLoc();
   ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
 
   FnTypeGeneratorType nestedSignature = nestedFn.getFuncTypeGenerator();
+  SmallVector<ParamDeclAttr> promotedParams;
+  if (!paramCaptures.empty()) {
+    promotedParams = llvm::map_to_vector(paramCaptures, [](auto capture) {
+      return ParamDeclAttr::get(capture);
+    });
+    nestedSignature =
+        FnTypeGeneratorType::prependParams(nestedSignature, promotedParams);
+  }
+  bool shouldBeCapturing = nestedSignature.isCapturing() ||
+                           hasCapturingParameterType(shared, promotedParams);
   // The promoted signature will not have the unified/register_passable effects.
   FnTypeGeneratorType promotedSignature = FnTypeGeneratorType::get(
       nestedSignature.getInputParamTypes(), nestedSignature.getValues(),
@@ -1690,7 +1727,7 @@ ASTDecl *ClosureEmitter::promoteStatelessClosure(ASTDecl &nestedFnDecl) {
       nestedSignature.getFnEffects()
           .setUnified(false)
           .setRegisterPassable(false)
-          .setCapturing(false),
+          .setCapturing(shouldBeCapturing),
       nestedSignature.getFnMetadata(), nestedSignature.getMetadata());
 
   OpBuilder builder = moduleDecl->getDeclEndBuilder();
@@ -1704,6 +1741,12 @@ ASTDecl *ClosureEmitter::promoteStatelessClosure(ASTDecl &nestedFnDecl) {
   promotedFn.setSymName(
       moduleDecl->mangleParamName(nestedFn.getSymName()->str()));
   promotedFn.setFuncTypeGenerator(promotedSignature);
+  if (!promotedParams.empty()) {
+    SmallVector<ParamDeclAttr> allParams(promotedFn.getParams());
+    allParams.insert(allParams.begin(), promotedParams.begin(),
+                     promotedParams.end());
+    promotedFn.setParamsAttr(ParamDeclArrayAttr::get(ctx, allParams));
+  }
   // Transfer the linkage name to the promoted op: the mangled sym_name
   // above overwrites the original name, so preserve it so it survives
   // into elaboration.
@@ -1714,11 +1757,35 @@ ASTDecl *ClosureEmitter::promoteStatelessClosure(ASTDecl &nestedFnDecl) {
   // Transfer child decls from the original to the promoted decl. Since the op
   // was moved (not cloned), all mlir::Value pointers are still valid.
   decl.takeDecls(nestedFnDecl);
-  nestedFnDecl.setIRValue(nullptr);
   // Register the lifted function to the symbol table.
   [[maybe_unused]] Operation *existing =
       shared.declResolver->finalizeFuncSignature(promotedFn, decl);
   assert(!existing && "unexpected redefinition of promoted closure");
+
+  if (promotedParams.empty()) {
+    nestedFnDecl.setIRValue(promotedFn);
+    return &decl;
+  }
+
+  ArrayRef<ParamDeclAttr> promotedFnParams = promotedFn.getParams();
+  ArrayRef<ParamDeclAttr> captureParams =
+      promotedFnParams.take_front(promotedParams.size());
+
+  SmallVector<TypedAttr> bindings;
+  bindings.reserve(promotedFnParams.size());
+  size_t captureIndex = 0;
+  for (auto [paramIndex, param] : llvm::enumerate(promotedFnParams)) {
+    if (paramIndex < captureParams.size()) {
+      bindings.push_back(ParamDeclRefAttr::get(captureParams[captureIndex++]));
+      continue;
+    }
+    bindings.push_back(UnboundAttr::get(ctx, param.getType()));
+  }
+  assert(captureIndex == captureParams.size() &&
+         "all capture params must be rebound");
+  nestedFnDecl.setIRValue(PValue(promotedFn.getFuncLiteralGenerator(
+      shared.getEvaluationContext(),
+      ParameterExprArrayAttr::get(ctx, bindings))));
 
   return &decl;
 }
