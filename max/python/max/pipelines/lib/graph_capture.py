@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
@@ -37,6 +38,7 @@ from max.nn.kv_cache import AttentionDispatchResolver, KVCacheParams
 from max.nn.kv_cache import KVCacheInputs as _KVCacheInputs
 from max.nn.kv_cache import KVCacheInputsPerDevice as _KVCacheInputsPerDevice
 from max.profiler import traced
+from tqdm import tqdm
 
 from .interfaces import ModelInputs, ModelOutputs, UnifiedEagleOutputs
 
@@ -306,7 +308,14 @@ class ServeGraphCaptureRunner:
         # Conservative/defensive warmup: capture largest-first so peak
         # allocations happen up front and oversized configs fail fast.
         q_max_seq_len = self._num_speculative_tokens + 1
-        for batch_size in range(self._max_batch_size, 0, -1):
+        batch_sizes = range(self._max_batch_size, 0, -1)
+        # Disable progress bar in non-interactive environments (CI) where
+        # carriage return doesn't work and each update prints a new line.
+        for batch_size in tqdm(
+            batch_sizes,
+            desc="Capturing CUDA graph shapes",
+            disable=not sys.stderr.isatty(),
+        ):
             dispatch_entries = sorted(
                 self.dispatch_metadata(batch_size, q_max_seq_len),
                 key=lambda entry: _unpack_dispatch_metadata(entry[1])[0],
