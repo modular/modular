@@ -37,7 +37,7 @@ def test_bool_context(a: NotBoolConvertible) raises:
      pass
 
 def test_if_decorator(a: Bool):
-  @not_good() # expected-error {{unsupported decorator on 'if' statement}}
+  @not_good() # expected-error {{'if' statement does not support decorators; remove, replace, or correct the decorator}}
   if a:
     pass
 
@@ -58,7 +58,7 @@ def test_decorator_with_comptime_if():
     pass
 
   @not_good()
-  comptime if True:  # expected-error {{'comptime if' statement does not allow decorators}}
+  comptime if True:  # expected-error {{'comptime if' statement does not support decorators; remove the decorator}}
     pass
 
 def test_comptime_elif_not_allowed(a: Bool):
@@ -92,7 +92,8 @@ def test():
     var my_list_no_iter = MyList_no_iter()
 
 
-    # expected-error @+1 {{'my_iter_no_next' is not 'Iterable'; conform and add a '__next__' method to use it in a 'for' loop}}
+    # expected-error @+2 {{'my_iter_no_next' does not conform to 'Iterable'; add conformance to use in a 'for' loop}}
+    # expected-note @+1 {{to conform to 'Iterable', add it to the struct declaration: 'struct Foo(Iterable):'}}
     for item in my_list_no_next:
         pass
 
@@ -100,7 +101,8 @@ def test():
     for item in my_list_no_iter:
         pass
 
-    # expected-error @+1 {{'my_iter_no_next' is not 'Iterable'; conform and add a '__next__' method to use it in a 'for' loop}}
+    # expected-error @+2 {{'my_iter_no_next' does not conform to 'Iterable'; add conformance to use in a 'for' loop}}
+    # expected-note @+1 {{to conform to 'Iterable', add it to the struct declaration: 'struct Foo(Iterable):'}}
     for key, item in my_list_no_next:
         pass
 

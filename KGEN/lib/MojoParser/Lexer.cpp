@@ -241,7 +241,8 @@ void Lexer::lexToken() {
         indentation = -1;
         continue;
       }
-      emitErrorAt(tokStart, "unexpected '\\' character, isn't at end of line");
+      emitErrorAt(tokStart, "encountered unexpected '\\'; use line "
+                            "continuation at the end of lines");
       return;
     }
 
@@ -440,7 +441,8 @@ void Lexer::lexBacktickIdentifier(const char *tokStart, ssize_t indentation) {
     case '`':
       // Found the end character.
       if (curPtr - tokStart - 2 == 0)
-        emitErrorAt(tokStart, "empty backtick identifier isn't allowed");
+        emitErrorAt(tokStart, "backtick identifier must not be empty; add "
+                              "content between the backticks");
 
       formToken(Token::escaped_identifier,
                 StringRef(tokStart + 1, curPtr - tokStart - 2), indentation,
@@ -721,7 +723,8 @@ void Lexer::lexString(const char *tokStart, ssize_t indentation) {
   }
 
   if (*curPtr != '\'' && *curPtr != '"') {
-    emitErrorAt(tokStart, "expecting a string quoting character: `'` or `\"`");
+    emitErrorAt(tokStart,
+                "expected a quote to open the string; use ''' or '\"'");
     return;
   }
   char quoteChar = *curPtr;
@@ -979,8 +982,8 @@ void Lexer::lexInteger(const char *tokStart, ssize_t indentation) {
       while (*curPtr == '0' || *curPtr == '_');
     } else if (llvm::isDigit(*curPtr)) {
       // ex. 0123
-      emitErrorAt(curPtr, "leading zeros in decimal integer literals are not "
-                          "permitted; use an 0o prefix for octal integers");
+      emitErrorAt(curPtr, "decimal integer literals may not use leading zeros; "
+                          "add '0o' for octal literals");
       return;
     }
   } else {
@@ -1031,7 +1034,7 @@ void Lexer::lexFloat(const char *tokStart, ssize_t indentation) {
     if (*curPtr == '+' || *curPtr == '-')
       ++curPtr;
     if (!llvm::isDigit(*curPtr)) {
-      emitErrorAt(curPtr, "expecting a digit after the exponent");
+      emitErrorAt(curPtr, "expected a digit after the exponent");
       return;
     }
     while (llvm::isDigit(*curPtr) || *curPtr == '_')

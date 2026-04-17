@@ -686,7 +686,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     if (printToken)
       diag << "'" << getToken().getSpelling() << "' ";
     diag << "statement " << (inFunctionBody ? "in function body " : "")
-         << "does not allow decorators";
+         << "does not support decorators; remove the decorator";
   };
 
   switch (getToken().getKind()) {
@@ -895,7 +895,7 @@ ParseResult StmtParser::parseComptimeCompoundStmt(LexerCursor startCursor,
       if (isCompoundStmt)
         diag << " " << getToken().getSpelling();
       diag << "' statement " << (inFunctionBody ? "in function body " : "")
-           << "does not allow decorators";
+           << "does not support decorators; remove the decorator";
     }
   };
 
@@ -967,7 +967,10 @@ bool StmtParser::hasParameterDecorator(LexerCursor startCursor,
 
     if (emitErrors) {
       emitError(decorator->getLoc(),
-                "unsupported decorator on '" + stmtName + "' statement")
+                "'" + stmtName +
+                    "' "
+                    "statement does not support decorators; "
+                    "remove, replace, or correct the decorator")
           << decorator->getRange();
     }
   }
@@ -1698,11 +1701,14 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
     nextFn = OverloadSet::lookupAndResolve(iterType, "__next__", nextOperands,
                                            prefixEmitter);
     if (!nextFn) {
-      emitError(seqExpr->getLoc())
-          << iterType
-          << " is not 'Iterable'; conform and add a '__next__' method to use "
-             "it in a 'for' loop"
-          << seqExpr->getRange();
+      auto diag = emitError(seqExpr->getLoc());
+      diag << iterType
+           << " does not conform to 'Iterable'; add conformance to use in a "
+              "'for' loop"
+           << seqExpr->getRange();
+      diag.attachNote(seqExpr->getLoc())
+          << "to conform to 'Iterable', add it to the struct declaration: "
+             "'struct Foo(Iterable):'";
       return LoopResult(LoopResult::ErrorKind::inLoopStmt);
     }
   }
@@ -1800,8 +1806,9 @@ static StringAttr decodeTarget(ExprNode *targetExpr, SharedState &shared) {
   else if (auto dre = dyn_cast<DeclRefNode>(targetExpr))
     name = dre->spelling;
   else {
-    shared.emitError(targetExpr->getLoc(),
-                     "expected identifier for target in 'for'");
+    shared.emitError(
+        targetExpr->getLoc(),
+        "'for' loop variables must be identifiers; use a valid name");
     return {};
   }
   return StringAttr::get(shared.getContext(), name);
@@ -2720,8 +2727,9 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
       return failure();
     PValue condPVal = condRVal.getIfPValue();
     if (!condPVal)
-      return emitError(condExp->getLoc(), "'comptime if' requires a "
-                                          "parameter expression as a condition")
+      return emitError(
+                 condExp->getLoc(),
+                 "'comptime if' condition must be evaluable at compile-time")
              << condExp->getRange();
 
     paramIfOp = ParamIfOp::create(builder, loc, condPVal.get());
@@ -3049,8 +3057,9 @@ static bool parseFromImportDecorators(SharedState &shared,
         continue;
       }
     }
-    shared.emitError(expr->getLoc(),
-                     "'from' statement does not allow decorators");
+    shared.emitError(
+        expr->getLoc(),
+        "'from' statement does not support decorators; remove the decorator");
   }
   return hasStableOverride;
 }
@@ -3455,8 +3464,9 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
   auto rejectDecorator = [&, declTok = getToken()]() {
     if (!hasDecorators)
       return;
-    emitError(declTok.getLoc()) << "'" << declTok.getSpelling()
-                                << "' statement does not allow decorators";
+    emitError(declTok.getLoc())
+        << "'" << declTok.getSpelling()
+        << "' statement does not support decorators; remove the decorator";
   };
 
   auto smLoc = consumeToken().getLoc();
@@ -3485,10 +3495,8 @@ ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
     // same indent level (or less) as the current definition.
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
   } else {
-    emitError(loc,
-              "'var' not allowed at module scope; move this into a function, "
-              "declare it "
-              "as a 'struct' field, or use a module-level 'comptime' constant");
+    emitError(loc, "global variables are not supported; move this into "
+                   "a function body or use 'comptime' to declare a constant");
     skipUntilIndentation(stmtIndent, /*stopOnSemicolon=*/true);
     return success();
   }

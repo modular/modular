@@ -480,7 +480,7 @@ def list_literals():
   # expected-error @+1 {{no matching function in initialization}}
   var d: TwoAndThreeList = []
 
-  # expected-error @+1 {{expected a single expression in list comprehension}}
+  # expected-error @+1 {{list comprehension must have a single expression before 'for'; remove extra expressions}}
   _ = [x, x+1 for x in SimpleRange()]
 
   _ = [x for x in SimpleRange() if x * 2 == 0]
@@ -505,7 +505,7 @@ def dict_expression(a: Int):
   var comprehension = {elt:elt+1 for elt in SimpleRange()}
 
 def dict_parse_errors(a: Int):
-  # expected-error @+1 {{expected a single expression in comprehension}}
+  # expected-error @+1 {{comprehension must have a single expression before 'for'; remove extra expressions}}
   _ = {elt:elt+1, 1:2 for elt in SimpleRange()}
 
 

@@ -1178,7 +1178,7 @@ comptime a = 100
 # expected-error @below {{expressions are not allowed at global scope; move this into a function body}}
 top_level_func_param[a]()
 
-# expected-error @below {{'var' not allowed at module scope; move this into a function, declare it as a 'struct' field, or use a module-level 'comptime' constant}}
+# expected-error @below {{global variables are not supported; move this into a function body or use 'comptime' to declare a constant}}
 var globalVar = 1
 
 

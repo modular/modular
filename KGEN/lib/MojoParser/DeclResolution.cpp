@@ -403,7 +403,8 @@ void Decorators::applySignatureDecorators(
 
   if (!bodyDecorators.empty() && signatureOnly) {
     shared.emitError(bodyDecorators.front()->getLoc(),
-                     "unsupported decorator on this statement")
+                     "decorator on this statement is unsupported; remove, "
+                     "replace, or correct the decorator")
         << SourceRange(bodyDecorators.front()->getRangeStart(),
                        bodyDecorators.back()->getRangeEnd());
     return;

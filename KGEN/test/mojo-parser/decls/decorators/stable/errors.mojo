@@ -20,7 +20,7 @@ struct StableWithArg:
 
 # Error: @stable on local variable is not supported.
 def test_local_var():
-    # expected-error @+2 {{'var' statement in function body does not allow decorators}}
+    # expected-error @+2 {{'var' statement in function body does not support decorators; remove the decorator}}
     @stable
     var x = 1
 
