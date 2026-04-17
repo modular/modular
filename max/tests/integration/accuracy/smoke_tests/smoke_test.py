@@ -181,6 +181,25 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
             "--max-num-steps 1"
         ),
     },
+    # Kimi Eagle + CUDA Graph only works when num_speculative_tokens == 1
+    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
+    "nvidia/Kimi-K2.5-NVFP4__eagle_1_draft_token": {
+        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
+        "max_serve_args": (
+            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
+            "--draft-trust-remote-code "
+            "--draft-devices gpu:0,1,2,3,4,5,6,7 "
+            "--draft-data-parallel-degree 8 "
+            "--draft-quantization-encoding bfloat16 "
+            "--speculative-method eagle "
+            "--num-speculative-tokens 1 "
+            "--kv-cache-format float8_e4m3fn "
+            "--device-memory-utilization 0.75 "
+            "--max-batch-input-tokens 4096 "
+            "--max-length 163840 "
+            "--max-num-steps 1"
+        ),
+    },
     "nvidia/Kimi-K2.5-NVFP4__eagle_tp": {
         "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
         "max_serve_args": (
