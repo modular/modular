@@ -389,6 +389,16 @@ class PixelGenerationTokenizer(
     def _resize_with_center_crop(
         image: PIL.Image.Image, target_width: int, target_height: int
     ) -> PIL.Image.Image:
+        # When the source is already at or above the target on both dims,
+        # do a pure PIL center crop to match the reference behavior.
+        # See `Flux2ImageProcessor._resize_and_crop` in `diffusers`.
+        w, h = image.size
+        if w >= target_width and h >= target_height:
+            left = (w - target_width) // 2
+            top = (h - target_height) // 2
+            return image.crop(
+                (left, top, left + target_width, top + target_height)
+            )
         ratio = target_width / target_height
         src_ratio = image.width / image.height
 
