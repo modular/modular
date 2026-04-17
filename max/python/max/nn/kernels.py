@@ -1095,6 +1095,75 @@ def fused_qk_ragged_rope(
     )[0].tensor
 
 
+def q_rms_norm_fused_qk_ragged_rope(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    kv_collection: PagedCacheValues,
+    freqs_cis: TensorValue,
+    q_gamma: TensorValue,
+    k_gamma: TensorValue,
+    epsilon: float | np.floating[Any],
+    layer_idx: TensorValue,
+    weight_offset: float | np.floating[Any],
+    *,
+    interleaved: bool = False,
+) -> TensorValue:
+    """Apply fused Q RMSNorm + QK RoPE on ragged inputs while updating K cache."""
+    if input.rank != 3:
+        raise ValueError(f"expected input rank 3, was {input.rank}")
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
+
+    if q_gamma.rank != 1:
+        raise ValueError(f"expected q_gamma rank 1, was {q_gamma.rank}")
+
+    if k_gamma.rank != 1:
+        raise ValueError(f"expected k_gamma rank 1, was {k_gamma.rank}")
+
+    if q_gamma.dtype != kv_params.dtype or k_gamma.dtype != kv_params.dtype:
+        raise TypeError(
+            "expected q_gamma and k_gamma dtype to match KV cache dtype"
+            f" {kv_params.dtype}, but got {q_gamma.dtype} and {k_gamma.dtype}"
+        )
+
+    parameters: dict[str, bool | int | str | DType] = {
+        "interleaved": interleaved,
+        "cache_dtype": kv_params.dtype,
+    }
+
+    return ops.inplace_custom(
+        "mo.q_rms_norm_fused_qk_rope.ragged.paged",
+        device=input.device,
+        values=[
+            input,
+            input_row_offsets,
+            *kv_collection,
+            freqs_cis,
+            q_gamma,
+            k_gamma,
+            ops.constant(epsilon, q_gamma.dtype, device=DeviceRef.CPU()),
+            layer_idx,
+            ops.constant(weight_offset, q_gamma.dtype, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=input.dtype, shape=input.shape, device=input.device
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
 def fused_qk_padded_rope(
     kv_params: KVCacheParams,
     input: TensorValue,
