@@ -377,6 +377,11 @@ This version is still a work in progress.
 
 ## 🛠️ Fixed
 
+- Fixed `libpython` auto-discovery failing for Python 3.14 free-threaded builds.
+  The discovery script constructed the library filename without the ABI flags
+  suffix (e.g. looked for `libpython3.14.dylib` instead of
+  `libpython3.14t.dylib`).
+  ([Issue #6366](https://github.com/modular/modular/issues/6366))
 - Fixed `RTLD.LOCAL` having the wrong value on Linux. It was set to `4`
   (`RTLD_NOLOAD`) instead of `0`, causing `dlopen` with `RTLD.NOW | RTLD.LOCAL`
   to fail. ([Issue #6410](https://github.com/modular/modular/issues/6410))
