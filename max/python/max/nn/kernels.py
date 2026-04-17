@@ -3644,9 +3644,7 @@ def routed_expert_combine_then_rms_norm(
             down_output,
             gamma,
             ops.constant(epsilon, gamma.dtype, device=DeviceRef.CPU()),
-            ops.constant(
-                weight_offset, gamma.dtype, device=DeviceRef.CPU()
-            ),
+            ops.constant(weight_offset, gamma.dtype, device=DeviceRef.CPU()),
         ],
         out_types=[
             TensorType(

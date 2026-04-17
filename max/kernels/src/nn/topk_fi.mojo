@@ -2051,11 +2051,11 @@ def topk_softmax_sample[
             if shared_mem_bytes > _APPLE_STATIC_SHMEM_MAX_BYTES:
                 raise Error(
                     t"shared memory of {shared_mem_bytes} exceeds static"
-                    " allocation capacity of"
+                    t" allocation capacity of"
                     t" {_APPLE_STATIC_SHMEM_MAX_BYTES} when evaluating"
                     t" topk_softmax_sample with top_k_val={top_k_val}"
                     t" and vec_size={vec_size}. Consider reducing"
-                    " top_k_val or using a smaller block_size."
+                    t" top_k_val or using a smaller block_size."
                 )
 
         var top_k_buf: DeviceBuffer[out_idx_type]
