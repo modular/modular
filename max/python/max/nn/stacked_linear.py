@@ -308,12 +308,16 @@ class StackedLinear(Module):
         devices = list(devices)
         num_devices = len(devices)
 
+        # Per-shard out_dims so downstream consumers (notably
+        # ``stacked_weight_scale``'s broadcast for dynamic tensor-wise
+        # FP8) see shapes aligned with the sharded child weights.
+        shard_out_dims = [d // num_devices for d in self._out_dims]
+
         if self._stacked:
             weight_shards = self.weight.shard(devices)
             bias_shards = self.bias.shard(devices) if self._has_bias else None
             shards = []
             for i, device in enumerate(devices):
-                shard_out_dims = [d // num_devices for d in self._out_dims]
                 sl = StackedLinear(
                     in_dim=self._in_dim,
                     out_dims=shard_out_dims,
@@ -322,6 +326,8 @@ class StackedLinear(Module):
                     device=device,
                     stacked=True,
                     has_bias=self._has_bias,
+                    quant_config=self._quant_config,
+                    clip_weight=self._clip_weight,
                     _is_sharding=True,
                 )
                 sl.weight = weight_shards[i]
@@ -334,16 +340,21 @@ class StackedLinear(Module):
             for n in self._names:
                 child_shards[n] = self._child(n).shard(devices)
 
+            # Re-use the parent's linear_cls so a re-shard wouldn't
+            # silently fall back to the default ``Linear``.
+            linear_cls = type(self._child(self._names[0]))
+
             shards = []
             for i, device in enumerate(devices):
                 sl = StackedLinear(
                     in_dim=self._in_dim,
-                    out_dims=self._out_dims,
+                    out_dims=shard_out_dims,
                     names=self._names,
                     dtype=self._child(self._names[0]).weight.dtype,
                     device=device,
                     stacked=False,
                     has_bias=self._has_bias,
+                    linear_cls=linear_cls,
                     quant_config=self._quant_config,
                     clip_weight=self._clip_weight,
                     _is_sharding=True,

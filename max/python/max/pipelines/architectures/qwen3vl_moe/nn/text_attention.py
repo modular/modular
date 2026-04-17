@@ -23,9 +23,7 @@ from max.nn.attention import MHAMaskVariant
 from max.nn.attention.attention_with_rope import _compute_shard_range
 from max.nn.kernels import (
     flash_attention_ragged,
-    fused_qk_ragged_rope,
-    fused_qkv_ragged_matmul,
-    rms_norm_key_cache,
+    rope_split_store_ragged,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
@@ -128,76 +126,56 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
             x: Flattened input [T, H] for all sequences in the batch, where
                 T = sum_i L_i over all sequences.
             kv_collection: KV cache handle.
-            freqs_cis: RoPE coefficient table, shape [max_seq_len * 2, rope_dim].
+            freqs_cis: Per-token MRoPE frequency table of shape
+                ``[total_seq_len, head_dim]``. Row ``i`` corresponds to
+                token ``i`` (positions are pre-baked by
+                :class:`Qwen3VLTextRotaryEmbedding`).
             input_row_offsets: Ragged offsets [0, L0, L0+L1, ...]. For a single
                 contiguous sequence of length L this is simply [0, L].
         """
         total_seq_len = x.shape[0]
+        head_dim = self.kv_params.head_dim
+        n_kv_heads = self.kv_params.n_kv_heads
+        q_dim = head_dim * self.n_heads
+        kv_dim = head_dim * n_kv_heads
 
-        # Keep attention stack in BF16.
-        self.kv_params.dtype = DType.bfloat16
+        # QKV projection through StackedLinear. This handles FP8/BF16/NVFP4
+        # uniformly and returns a BF16 buffer.
+        qkv = self.qkv_proj(x)
 
-        # Make sure activations are BF16 for the fused kernel.
-        x_in = x if x.dtype == DType.bfloat16 else ops.cast(x, DType.bfloat16)
-
-        # Get concatenated QKV weights for the fused kernel.
-        wqkv = self.qkv_proj.stacked_weight
-        if wqkv.dtype != DType.bfloat16:
-            wqkv = ops.cast(wqkv, DType.bfloat16)
-
-        wqkv_bias = self.qkv_proj.stacked_bias
-        if wqkv_bias is not None:
-            wqkv_bias = wqkv_bias.to(x_in.device)
-
-        xq = fused_qkv_ragged_matmul(
-            self.kv_params,
-            input=x_in,
-            wqkv=wqkv,
-            bias=wqkv_bias,
-            input_row_offsets=input_row_offsets,
-            kv_collection=kv_collection,
-            layer_idx=layer_idx,
-            n_heads=self.n_heads,
+        # Per-head RMSNorm on Q and K before RoPE (Qwen3VL reference order).
+        x_q, x_k, x_v = ops.split(qkv, [q_dim, kv_dim, kv_dim], axis=-1)
+        x_q = self.q_norm(x_q.reshape((-1, self.n_heads, head_dim))).reshape(
+            (-1, q_dim)
         )
-
-        # [T, n_heads, head_dim]; per-head RMSNorm on Q.
-        xq = ops.reshape(xq, (-1, self.n_heads, self.kv_params.head_dim))
-        xq = self.q_norm(xq)
-
-        # Apply learned K RMSNorm in-place on new cache keys.
-        rms_norm_key_cache(
-            kv_params=self.kv_params,
-            kv_collection=kv_collection,
-            gamma=self.k_norm.weight,
-            epsilon=self.rms_norm_eps,
-            layer_idx=layer_idx,
-            total_seq_len=total_seq_len,
-            input_row_offsets=input_row_offsets,
-            weight_offset=0.0,
-            rms_norm_cols=None,
-            multiply_before_cast=True,
-            per_head_norm=True,
+        x_k = self.k_norm(x_k.reshape((-1, n_kv_heads, head_dim))).reshape(
+            (-1, kv_dim)
         )
+        qkv = ops.concat((x_q, x_k, x_v), axis=-1)
 
-        # Apply RoPE to Q and (read) K; positions are derived inside the fused
-        # kernel as cache_length + token_idx for each token.
+        # Fused RoPE + split + KV cache store. `freqs_cis` is per-token
+        # (row i = token i) so we pass explicit position_ids = [0..T-1] to
+        # override the kernel's default cache_length + token_idx indexing.
+        freqs_cis = ops.cast(freqs_cis, qkv.dtype).to(qkv.device)
         position_ids = ops.unsqueeze(
-            ops.range(0, xq.shape[0], 1, device=xq.device, dtype=DType.uint32),
+            ops.range(
+                0, total_seq_len, 1, device=qkv.device, dtype=DType.uint32
+            ),
             0,
         )
-        xq = fused_qk_ragged_rope(
+        xq = rope_split_store_ragged(
             self.kv_params,
-            xq,
+            qkv,
             input_row_offsets,
+            freqs_cis,
             kv_collection,
-            freqs_cis.to(xq.device),
-            layer_idx=layer_idx,
+            layer_idx,
+            n_heads=self.n_heads,
             interleaved=self.rope.interleaved,
-            mrope_section=None,
             position_ids=position_ids,
         )
+        xq = xq.reshape((-1, self.n_heads, head_dim))
 
-        # Flash attention over Q and normalized/rotated K/V.
         attn_out = flash_attention_ragged(
             self.kv_params,
             input=xq,
@@ -207,9 +185,6 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
             scale=self.scale,
         )
-
-        # Merge heads + output projection.
-        # The Linear layer handles FP8 internally via dynamic_scaled_matmul.
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
         return self.o_proj(attn_out)
 
