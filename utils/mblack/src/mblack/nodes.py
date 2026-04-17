@@ -283,12 +283,8 @@ def whitespace(
                     # that, too.
                     return prevp.prefix
 
-        elif (
-            prevp.type == token.STAR
-            and parent_type(prevp) == syms.star_expr
-            and parent_type(prevp.parent) == syms.subscriptlist
-        ):
-            # No space between typevar tuples.
+        elif prevp.type == token.STAR and parent_type(prevp) == syms.star_expr:
+            # `*expr` is always unary unpacking, no space after `*`.
             return NO
 
         elif prevp.type in VARARGS_SPECIALS:

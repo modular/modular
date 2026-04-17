@@ -100,7 +100,7 @@ def invoke_kernel[
     wrapped_kernel: def(
         UnsafePointer[KernelArgPack[kernel], MutAnyOrigin],
     ) thin -> kernel.declared_ret_type,
-    *args: * TypeList[kernel.declared_arg_types](),
+    *args: *TypeList[kernel.declared_arg_types](),
 ) -> kernel.declared_ret_type:
     var pa = KernelArgPack[kernel]()
     comptime for i in range(TypeList[kernel.declared_arg_types].size):
