@@ -4618,6 +4618,98 @@ struct Concat:
         return concat_shape_impl(Int(axis), inputs)
 
 
+@compiler.register("mo.fused_concat_slice")
+struct FusedConcatSlice:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        static_starts: IntTuple,
+        static_steps: IntTuple,
+    ](
+        concat_output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        slice_output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        axis: Scalar,
+        inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
+
+        comptime for i in range(inputs.size):
+            input_shapes[i] = inputs[i].shape()
+
+        @always_inline
+        @parameter
+        def inputs_lambda[
+            input_index: Int,
+            width: Int,
+            _rank: Int,
+        ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
+            comptime assert (
+                input_index < inputs.size
+            ), "tensor index out of bounds"
+            return inputs[input_index]._lambda_load[width=width](
+                rebind[IndexList[rank]](indices)
+            )
+
+        @always_inline
+        @parameter
+        def epilogue_wrapper[
+            _dtype: DType, _rank: Int, width: Int, *, alignment: Int = 1
+        ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
+            var concat_indices = rebind[IndexList[rank]](indices)
+
+            # Write to the full concat output.
+            concat_output._lambda_store[
+                width=width, element_alignment=alignment
+            ](
+                concat_indices,
+                rebind[SIMD[concat_output.dtype, width]](value),
+            )
+
+            # Check if the current position falls within the slice range.
+            # The inner dimension is guaranteed not to be sliced by the pattern,
+            # so we only check the outer rank-1 dimensions.
+            var slice_indices = IndexList[rank]()
+
+            comptime for i in range(rank - 1):
+                comptime start = Int(static_starts[i])
+                comptime step = Int(static_steps[i])
+                var start_norm = (
+                    start if start >= 0 else start + concat_output.dim_size[i]()
+                )
+                if (indices[i] - start_norm) % step != 0:
+                    return
+                var slice_idx = (indices[i] - start_norm) // step
+                if slice_idx < 0 or slice_idx >= slice_output.dim_size[i]():
+                    return
+                slice_indices[i] = slice_idx
+
+            # Inner dimension is not sliced: index passes through directly.
+            slice_indices[rank - 1] = concat_indices[rank - 1]
+            slice_output._lambda_store[
+                width=width, element_alignment=alignment
+            ](
+                slice_indices,
+                rebind[SIMD[slice_output.dtype, width]](value),
+            )
+
+        fused_concat[
+            dtype,
+            rank,
+            False,
+            inputs_lambda,
+            epilogue_wrapper,
+            target=target,
+        ](
+            normalize_neg_index(Int(axis), rank),
+            input_shapes,
+            concat_output.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+
 # NOTE: there are a lot of similarities between this and the shape func
 # for mo.concat.
 def concat_from_list_shape_impl[

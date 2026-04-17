@@ -3492,6 +3492,51 @@ class FloorOp(max._core.Operation):
     @property
     def input(self) -> max._core.Value[TensorType]: ...
 
+class FusedConcatSliceOp(max._core.Operation):
+    """
+    This operation peforms two operations at once:
+    %concat = mo.concat[axis](inputs)
+    %slice = mo.slice(%concat)
+    And returns both the concat and the slice result.
+    """
+
+    def __init__(
+        self,
+        builder: max._core.OpBuilder,
+        location: Location,
+        concat_result: TensorType,
+        slice_result: TensorType,
+        axis: max._core.Value[TensorType],
+        inputs: Sequence[max._core.Value[max._core.Type]],
+        static_starts: max._core.dialects.builtin.ArrayAttr,
+        static_steps: max._core.dialects.builtin.ArrayAttr,
+        output_param_decls: max._core.dialects.kgen.ParamDeclArrayAttr,
+    ) -> None: ...
+    @property
+    def axis(self) -> max._core.Value[TensorType]: ...
+    @property
+    def inputs(self) -> Sequence[max._core.Value[max._core.Type]]: ...
+    @property
+    def static_starts(self) -> max._core.dialects.builtin.ArrayAttr: ...
+    @static_starts.setter
+    def static_starts(
+        self, arg: max._core.dialects.builtin.ArrayAttr, /
+    ) -> None: ...
+    @property
+    def static_steps(self) -> max._core.dialects.builtin.ArrayAttr: ...
+    @static_steps.setter
+    def static_steps(
+        self, arg: max._core.dialects.builtin.ArrayAttr, /
+    ) -> None: ...
+    @property
+    def output_param_decls(
+        self,
+    ) -> Sequence[max._core.dialects.kgen.ParamDeclAttr]: ...
+    @output_param_decls.setter
+    def output_param_decls(
+        self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
+    ) -> None: ...
+
 class GatherNdOp(max._core.Operation):
     """
     Variant of `mo.gather` that accepts multi-dimensional indices.
