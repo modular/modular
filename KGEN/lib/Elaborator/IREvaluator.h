@@ -133,8 +133,8 @@ private:
 
   ImplNodeBase *getParentNode() override;
 
-  FailureOr<TypedAttr>
-  concretizeLinkageName(GeneratorOp gen, SymbolConstantAttr symbol) override;
+  FailureOr<TypedAttr> evaluateLinkageName(GeneratorOp gen,
+                                           SymbolConstantAttr symbol) override;
 
   /// The parameter evaluator for substituting parameter bindings.
   ParameterEvaluator evaluator;

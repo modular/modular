@@ -462,24 +462,8 @@ void IREvaluator::addDeferredFunction(OwningOpRef<FuncOp> func) {
 ImplNodeBase *IREvaluator::getParentNode() { return parent; }
 
 FailureOr<TypedAttr>
-IREvaluator::concretizeLinkageName(GeneratorOp gen, SymbolConstantAttr symbol) {
-  assert(gen.getLinkageNameAttr() &&
-         "concretizeLinkageName requires gen to have a linkageName attribute");
-
-  // Look up (or trigger elaboration of) the concrete FuncOp for this generator
-  // instantiation. The FuncOp's linkageName will be concretized during its own
-  // elaboration by processGenericOp.
-  FuncOp func;
-  ErrorTreeOr<FuncOp> funcOr =
-      elaborator->getConcreteFunction(parent, gen.getLoc(), symbol);
-  if (!funcOr.isError()) {
-    func = *funcOr;
-    if (!func)
-      // The FuncOp is not ready yet. getConcreteFunction has set up a blocker
-      // so the current node will be resumed when elaboration completes.
-      return TypedAttr();
-  }
-  return concretizeLinkageNameImpl(func, gen, symbol, *this);
+IREvaluator::evaluateLinkageName(GeneratorOp gen, SymbolConstantAttr symbol) {
+  return evaluateLinkageNameImpl(gen, symbol, *this);
 }
 
 //===----------------------------------------------------------------------===//
