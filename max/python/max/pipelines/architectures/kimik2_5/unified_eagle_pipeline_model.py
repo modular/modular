@@ -18,6 +18,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, fields, replace
 from typing import Any
+from unittest.mock import MagicMock
 
 import numpy as np
 from max._core.driver import is_virtual_device_mode
@@ -263,14 +264,19 @@ class Eagle3KimiK25Model(KimiK2_5Model):
                 continue
             self.state_dict[f"draft.{k}"] = v
 
-        with CompilationTimer("vision model") as timer:
-            vision_graph = self._build_vision_graph(
-                kimik2_5_config, vision_state_dict
-            )
-            timer.mark_build_complete()
-            vision_model = session.load(
-                vision_graph, weights_registry=self.state_dict
-            )
+        # TODO(SERVOPT-1304): Support kimi spec decode with vision model
+        # with CompilationTimer("vision model") as timer:
+        #     vision_graph = self._build_vision_graph(
+        #         kimik2_5_config, vision_state_dict
+        #     )
+        #     timer.mark_build_complete()
+        #     vision_model = session.load(
+        #         vision_graph, weights_registry=self.state_dict
+        #     )
+        vision_model = MagicMock(spec=Model)
+        logger.warning(
+            "Skipping vision model compilation. Vision support is not yet implemented for Kimi Eagle."
+        )
 
         with CompilationTimer("eagle3_language_model") as timer:
             with Graph(
