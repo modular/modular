@@ -146,6 +146,9 @@ def get_metrics_url(backend: Backend, base_url: str) -> str:
     """
     parsed_url = urlparse(base_url)
     host = parsed_url.hostname or "localhost"
+    # Re-bracket IPv6 addresses stripped by urlparse().hostname (RFC 3986).
+    if ":" in host:
+        host = f"[{host}]"
 
     # For MAX backends, use dedicated metrics port from SDK config
     # For other backends, use the same port as the base URL
