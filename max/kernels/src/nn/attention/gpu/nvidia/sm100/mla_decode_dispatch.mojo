@@ -1037,6 +1037,29 @@ def _mla_decode_sm100_dispatch_impl[
                 )
 
             @parameter
+            def launch_combine_split_parallel[n_splits: Int]() raises:
+                mla_decode_combine_partial_outputs[
+                    output_type=output_type,
+                    accum_type=AccumType,
+                    head_dim=v_depth,
+                    num_splits=n_splits,
+                    ragged=ragged,
+                    warps_per_head=1,
+                    has_attn_sink=_has_attn_sink,
+                    split_parallel=True,
+                ](
+                    o_accum_split,
+                    lse_accum_split,
+                    output,
+                    input_row_offsets_ptr,
+                    attn_sink_ptr,
+                    batch_size,
+                    q_max_seq_len,
+                    Int(num_heads),
+                    ctx,
+                )
+
+            @parameter
             def dispatch_combine[wph: Int]() raises:
                 """Dispatch the combine kernel with the given warps_per_head,
                 matching num_partitions to the correct compile-time bucket.
@@ -1054,7 +1077,42 @@ def _mla_decode_sm100_dispatch_impl[
                                 _get_partition_bucket[_half_sms, _b](), wph
                             ]()
 
-            # Choose warps_per_head (wph) for the combine kernel.
+            @parameter
+            def dispatch_combine_split_parallel() raises:
+                """Dispatch the split-parallel combine kernel, matching
+                num_partitions to the correct compile-time bucket.
+
+                Raises:
+                    If the kernel dispatch fails.
+                """
+                comptime for _b in range(_NUM_PARTITION_BUCKETS):
+                    comptime if _get_partition_bucket[_half_sms, _b]() >= 2:
+                        if (
+                            num_partitions
+                            == _get_partition_bucket[_half_sms, _b]()
+                        ):
+                            launch_combine_split_parallel[
+                                _get_partition_bucket[_half_sms, _b]()
+                            ]()
+
+            # Choose combine strategy based on split count and batch size.
+            #
+            # Split-parallel combine: 8 warps per CTA each process a range
+            # of splits independently, then tree-reduce in shared memory.
+            # This gives 8x memory stream parallelism and avoids the massive
+            # compile-time unrolled loop of the original kernel. Best for
+            # long KV cache (>= 16384 tokens) where the many splits benefit
+            # from 8x parallel memory streams.
+            #
+            # Original combine: warps cooperate on head_dim within each split.
+            # Better for moderate cache lengths where the per-split overhead
+            # of split-parallel dominates.
+            #
+            # Decision: use split-parallel when cache_length >= 16384.
+            # For shorter cache, use the original kernel with wph tuning.
+            #
+            # The original kernel's wph selection logic follows (unchanged):
+            #
             # The combine grid is (batch_size, seq_len, ceildiv(num_heads, hpb))
             # where hpb = heads_per_block = 8 // wph. Each CTA processes hpb
             # heads, using wph warps per head. The total combine CTA count is:
@@ -1092,10 +1150,11 @@ def _mla_decode_sm100_dispatch_impl[
             #   combine_ctas_base >= 512  <==> bs >= 16
             #
             # Decision matrix (empirically tuned for B200 with 148 SMs):
-            #   BF16: ctas >= 4096 AND np <= 4 AND cache <= 1280: wph=1
-            #   ctas >= 2048 AND np > 4:                          wph=2
-            #   ctas >= 512:                                      wph=4
-            #   ctas < 512 (small grid):                          wph=8
+            #   cache_len >= 16384:                                 split-parallel
+            #   BF16: ctas >= 4096 AND np <= 4 AND cache <= 1280:   wph=1
+            #   ctas >= 2048 AND np > 4:                            wph=2
+            #   ctas >= 512:                                        wph=4
+            #   ctas < 512 (small grid):                            wph=8
             #
             # The wph=1 path is BF16-only. FP8 decode finishes ~2x faster
             # (half the KV bytes), leaving less PDL overlap for the combine
@@ -1124,7 +1183,9 @@ def _mla_decode_sm100_dispatch_impl[
             #         256 CTAs (1.7 waves).
             comptime _ctas_wph8 = ceildiv(num_heads, 1)  # hpb=1 at wph=8
 
-            if (
+            if effective_max_cache_len >= 16384 and batch_size <= 2:
+                dispatch_combine_split_parallel()
+            elif (
                 combine_ctas_base >= 4096
                 and num_partitions <= 4
                 and effective_max_cache_len <= 1280
