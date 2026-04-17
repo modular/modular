@@ -265,8 +265,8 @@ def apple_gemv[
     var transposed_b_ptr = Optional[
         UnsafePointer[Scalar[b.dtype], MutExternalOrigin]
     ]()
-    var transposed_b = TileTensor(
-        UnsafePointer[Scalar[b.dtype], MutExternalOrigin](_unsafe_null=()),
+    var transposed_b = TileTensor[b.dtype, _, MutExternalOrigin](
+        None,
         row_major(Coord(Idx(Int(0)), Idx(Int(0)))),
     )
 

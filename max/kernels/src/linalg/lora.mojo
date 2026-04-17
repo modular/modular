@@ -96,8 +96,8 @@ def shrink_qkv_permute_3mn_sm100(
     # Create a null-backed TileTensor for C. This ensures GroupGEMM does NOT
     # write into C directly; any changes to the final C output must happen
     # exclusively via the epilogue function.
-    var c = TileTensor[c_type](
-        UnsafePointer[Scalar[c_type], MutExternalOrigin](_unsafe_null=()),
+    var c = TileTensor[c_type, _, MutExternalOrigin](
+        None,
         row_major(Coord(Idx(M), Idx(N_Total))),
     )
 

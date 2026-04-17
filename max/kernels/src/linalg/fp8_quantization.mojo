@@ -1070,10 +1070,8 @@ def _matmul_dynamic_scaled_fp8_impl[
             # the SM90 dispatch sees c.static_shape[1] > -1.
             comptime b_N = b.static_shape[b_row_axis]
             comptime if b_N > -1:
-                var c_dummy = TileTensor(
-                    UnsafePointer[Scalar[DType.float32], MutExternalOrigin](
-                        _unsafe_null=()
-                    ),
+                var c_dummy = TileTensor[DType.float32, _, MutExternalOrigin](
+                    None,
                     row_major(Coord(Idx(M), Idx[b_N]())),
                 )
 
@@ -1093,10 +1091,8 @@ def _matmul_dynamic_scaled_fp8_impl[
                     ](c_dummy, a, b, Optional[DeviceContext](ctx))
             else:
                 var N_rt = Int(b.dim[b_row_axis]())
-                var c_dummy = TileTensor(
-                    UnsafePointer[Scalar[DType.float32], MutExternalOrigin](
-                        _unsafe_null=()
-                    ),
+                var c_dummy = TileTensor[DType.float32, _, MutExternalOrigin](
+                    None,
                     row_major(Coord(Idx(M), Idx(N_rt))),
                 )
 

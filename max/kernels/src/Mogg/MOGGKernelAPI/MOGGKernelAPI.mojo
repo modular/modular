@@ -11515,8 +11515,8 @@ struct MatmulStaticScaledFloat8:
         # temp buffer; the epilogue lambda writes to the real output.
         comptime N = type_of(weight_tt).static_shape[0]
         var M = Int(input_tt.dim[0]())
-        var output_dummy = TileTensor(
-            UnsafePointer[Scalar[DType.float32], MutAnyOrigin](_unsafe_null=()),
+        var output_dummy = TileTensor[DType.float32, _, MutAnyOrigin](
+            None,
             row_major(Coord(RuntimeInt[DType.int64](Int64(M)), Idx[N]())),
         )
 

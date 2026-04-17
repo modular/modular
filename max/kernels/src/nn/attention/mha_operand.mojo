@@ -835,10 +835,8 @@ struct LayoutTensorMHAOperand[
         buffer: LayoutTensor[Self.dtype, Self.layout, Self.origin],
         scale_buffer: LayoutTensor[
             Self.scale_dtype, Self.scale_layout, Self.scale_origin
-        ] = LayoutTensor[Self.scale_dtype, Self.scale_layout](
-            UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin](
-                _unsafe_null=()
-            )
+        ] = LayoutTensor[Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin](
+            None
         ),
     ):
         self.buffer = buffer
@@ -1168,11 +1166,7 @@ struct RaggedMHAOperand[
         )
         self.scale_buffer = LayoutTensor[
             Self.scale_dtype, Self.scale_layout, ImmutAnyOrigin
-        ](
-            UnsafePointer[Scalar[Self.scale_dtype], ImmutAnyOrigin](
-                _unsafe_null=()
-            )
-        )
+        ](None)
 
     def __init__(
         out self,
