@@ -990,7 +990,8 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
     When using atomic ordering (`atomic` keyword), valid orderings are:
     `unordered`, `monotonic`, `release`, and `sequentially_consistent`.
     `acquire` and `acquire_release` orderings are invalid for store operations.
-    `volatile` stores cannot be atomic.
+    `volatile` stores cannot be atomic. An optional `syncscope` can be
+    provided for atomic stores.
 
     Example:
 
@@ -1000,6 +1001,7 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
     pop.store %1, %ptr1 align 8 : !kgen.pointer<simd<4, type>>
     pop.store volatile<1> %1, %ptr1 align 8: !kgen.pointer<simd<4, type>>
     pop.store atomic release %1, %ptr1 : !kgen.pointer<simd<4, type>>
+    pop.store atomic syncscope("agent") release %1, %ptr1 : !kgen.pointer<simd<4, type>>
     ```
   }];
 
@@ -1009,11 +1011,12 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
                        OptionalAttr<AttrOfType<I1>>:$isVolatile,
                        OptionalAttr<AttrOfType<I1>>:$isNonTemporal,
                        DefaultValuedAttr<
-                        POP_AtomicOrderingAttr, "AtomicOrdering::NOT_ATOMIC">:$ordering);
+                        POP_AtomicOrderingAttr, "AtomicOrdering::NOT_ATOMIC">:$ordering,
+                       OptionalAttr<AttrOfType<KGEN_StringType>>:$syncscope);
   let assemblyFormat = [{
     (`volatile` `<` custom<I1ParamValue>($isVolatile)^ `>`)?
     (`nontemporal` `<` custom<I1ParamValue>($isNonTemporal)^ `>`)?
-    (`atomic` $ordering^)?
+    (`atomic` (`syncscope` `(` custom<StringParam>($syncscope)^ `)`)? $ordering^)?
     $arg `,` $ptr
     (`align` `<` custom<IndexParamValue>($alignment)^ `>`)?
     attr-dict `:` qualified(type($ptr))
@@ -1024,7 +1027,8 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
                    CArg<"std::optional<unsigned>", "{}">:$alignment,
                    CArg<"bool", "false">:$isVolatile,
                    CArg<"bool", "false">:$isNonTemporal,
-                   CArg<"AtomicOrdering", "AtomicOrdering::NOT_ATOMIC">:$ordering)>
+                   CArg<"AtomicOrdering", "AtomicOrdering::NOT_ATOMIC">:$ordering,
+                   CArg<"std::optional<StringAttr>", "{}">:$syncscope)>
   ];
 
   let hasCanonicalizeMethod = 1;

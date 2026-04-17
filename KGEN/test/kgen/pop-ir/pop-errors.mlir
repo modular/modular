@@ -250,6 +250,14 @@ kgen.func @store_volatile_atomic(%p: !kgen.pointer<scalar<f32>>, %v: !pop.scalar
 
 // -----
 
+kgen.func @store_non_atomic_syncscope(%p: !kgen.pointer<scalar<f32>>, %v: !pop.scalar<f32>) {
+  // expected-error @below {{cannot specify syncscope without an atomic store}}
+  pop.store atomic syncscope("singlethread") not_atomic %v, %p : !kgen.pointer<scalar<f32>>
+  kgen.return
+}
+
+// -----
+
 kgen.func @fence() {
   // expected-error @below {{'pop.fence' op can be given only acquire, release, acq_rel, and seq_cst orderings}}
   pop.fence not_atomic

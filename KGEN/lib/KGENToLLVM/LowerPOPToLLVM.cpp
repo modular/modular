@@ -1961,7 +1961,10 @@ struct ConvertPOPStore : ConvertPOPToLLVMPattern<StoreOp> {
         /*isNonTemporal=*/
         getBoolAttrValue(adaptor.getIsNonTemporalAttr(), false),
         /*isInvariantGroup=*/false,
-        /*ordering=*/getAtomicOrdering(adaptor.getOrdering()));
+        /*ordering=*/getAtomicOrdering(adaptor.getOrdering()),
+        /*syncscope=*/adaptor.getSyncscope()
+            ? cast<StringAttr>(*adaptor.getSyncscope())
+            : StringRef());
     return success();
   }
 };

@@ -588,6 +588,8 @@ kgen.generator @pop_load_store<DT: dtype>(%p0: !kgen.pointer<scalar<f32>>, %p1: 
   pop.store atomic release %5, %p1 : !kgen.pointer<scalar<DT>>
   // CHECK: pop.store atomic seq_cst [[V5]], %{{.*}} : !kgen.pointer<scalar<DT>>
   pop.store atomic seq_cst %5, %p1 : !kgen.pointer<scalar<DT>>
+  // CHECK: pop.store atomic syncscope("singlethread") release [[V5]], %{{.*}} : !kgen.pointer<scalar<DT>>
+  pop.store atomic syncscope("singlethread") release %5, %p1 : !kgen.pointer<scalar<DT>>
   kgen.return
 }
 
