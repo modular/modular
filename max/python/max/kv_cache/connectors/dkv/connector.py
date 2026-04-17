@@ -32,6 +32,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 import msgspec
+from dkv import BlockDescriptor, DKVClient
 from max._core import nixl
 from max.driver import Device
 from max.interfaces import RequestID, TextGenerationContext
@@ -46,9 +47,6 @@ from max.kv_cache.paged_kv_cache.transfer_engine import (
 from max.nn.kv_cache import KVCacheBuffer, KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
-
-from .client import DKVClient
-from .protocol import BlockDescriptor
 
 logger = logging.getLogger("max.pipelines")
 

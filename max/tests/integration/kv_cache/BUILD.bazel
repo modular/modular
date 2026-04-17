@@ -14,7 +14,6 @@ modular_py_test(
         ["*.py"],
         exclude = [
             "*_gpu.py",
-            "test_dkv_cache_hint.py",
             "test_print_kv_cache.py",
             "test_rotary_embedding.py",
         ],
@@ -206,19 +205,4 @@ modular_py_test(
     ],
     target_compatible_with = ["//:b200_gpu"],
     deps = _LORA_TEST_DEPS,
-)
-
-modular_py_test(
-    name = "test_dkv_cache_hint",
-    srcs = ["test_dkv_cache_hint.py"],
-    tags = ["no-pydeps"],
-    # NIXL (used by _parse_dkv_cache_hint) only supports x86_64 Linux
-    target_compatible_with = [
-        "@platforms//cpu:x86_64",
-        "@platforms//os:linux",
-    ],
-    deps = [
-        "//max/python/max/kv_cache/connectors/dkv",
-        "//max/python/max/pipelines",
-    ],
 )
