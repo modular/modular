@@ -662,21 +662,25 @@ def smoke_test(
     if output_path and build_workspace and not output_path.is_absolute():
         output_path = Path(build_workspace) / output_path
 
-    model = hf_model_path.lower().strip()
-    alias = MODEL_ALIASES.get(model)
-    hf_model_path = alias["hf_model_path"] if alias else model
+    model = hf_model_path.strip().casefold()
+    model_aliases_lowercase = {
+        k.casefold(): v for k, v in MODEL_ALIASES.items()
+    }
+    alias = model_aliases_lowercase.get(model)
+    is_vision = is_vision_model(model)
+    model = (alias["hf_model_path"] if alias else model).casefold()
     if alias and framework in ["max-ci", "max"]:
         serve_extra_args = (
             f"{serve_extra_args} {alias['max_serve_args']}".strip()
         )
     cmd = get_server_cmd(
         framework,
-        hf_model_path,
+        model,
         serve_extra_args=serve_extra_args,
     )
 
     tasks = [TEXT_TASK]
-    if is_vision_model(model):
+    if is_vision:
         tasks = [VISION_TASK] + tasks
 
     logger.info(f"Starting server with command:\n {' '.join(cmd)}")
@@ -695,11 +699,9 @@ def smoke_test(
         write_github_output("startup_time", f"{server.startup_time:.2f}")
 
         for task in tasks:
-            test_single_request(
-                hf_model_path, task, disable_timeouts=disable_timeouts
-            )
+            test_single_request(model, task, disable_timeouts=disable_timeouts)
             result, samples = call_eval(
-                hf_model_path,
+                model,
                 task,
                 max_concurrent=max_concurrent,
                 num_questions=num_questions,
