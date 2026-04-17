@@ -175,6 +175,10 @@ This version is still a work in progress.
   - `Tuple`, `Optional`, `Variant`, and `UnsafeMaybeUninit`: `RegisterPassable`
   - `Variant`: `Copyable`, `ImplicitlyCopyable`
 
+- `Tuple` now conditionally conforms to `Defaultable`, so generic
+  `T: Defaultable` code can default-construct tuples when all element types are
+  `Defaultable`.
+
 - `OwnedDLHandle.get_symbol()` now returns `Optional[UnsafePointer[...]]`
   instead of aborting when a symbol is not found. This allows callers to handle
   missing symbols gracefully.

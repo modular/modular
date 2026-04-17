@@ -131,6 +131,25 @@ def test_tuple_default() raises:
     assert_equal(t[2], 0.0)
 
 
+def _default_construct[T: Defaultable]() -> T:
+    return T()
+
+
+def test_tuple_defaultable_generic_constraint() raises:
+    var direct = Tuple[Int, String]()
+    assert_equal(direct[0], 0)
+    assert_equal(direct[1], "")
+
+    var pair = _default_construct[Tuple[Int, String]]()
+    assert_equal(pair[0], 0)
+    assert_equal(pair[1], "")
+
+    var nested = _default_construct[Tuple[Int, Tuple[String, Float32]]]()
+    assert_equal(nested[0], 0)
+    assert_equal(nested[1][0], "")
+    assert_equal(nested[1][1], 0.0)
+
+
 def test_tuple_comparison() raises:
     assert_equal((1, 2, 3), (1, 2, 3))
     assert_false((1, 2, 3) != (1, 2, 3))
@@ -289,6 +308,13 @@ def test_tuple_conditional_conformances() raises:
     assert_true(conforms_to(Tuple[Int, String], Copyable))
     assert_true(conforms_to(Tuple[Int, Tuple[Int, Float32]], Copyable))
 
+    # Defaultable conformance is conditional on all element types being
+    # Defaultable.
+    assert_true(conforms_to(Tuple[], Defaultable))
+    assert_true(conforms_to(Tuple[Int], Defaultable))
+    assert_true(conforms_to(Tuple[Int, String], Defaultable))
+    assert_true(conforms_to(Tuple[Int, Tuple[Int, Float32]], Defaultable))
+
     # ImplicitlyCopyable conformance is conditional on all element types being
     # ImplicitlyCopyable (and Copyable).
     assert_true(conforms_to(Tuple[], ImplicitlyCopyable))
@@ -312,6 +338,7 @@ def test_tuple_conditional_conformances() raises:
 
     # conforms_to correctly returns False for non-conforming element types.
     assert_false(conforms_to(Tuple[MoveOnly[Int]], Copyable))
+    assert_false(conforms_to(Tuple[MoveOnly[Int]], Defaultable))
     assert_false(conforms_to(Tuple[MoveOnly[Int]], ImplicitlyCopyable))
     assert_false(conforms_to(Tuple[MoveOnly[Int]], Writable))
 

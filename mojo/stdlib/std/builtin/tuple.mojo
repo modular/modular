@@ -24,6 +24,7 @@ from std.format._utils import (
 from std.hashlib.hasher import Hasher
 from std.reflection.traits import (
     AllCopyable,
+    AllDefaultable,
     AllEquatable,
     AllHashable,
     AllImplicitlyCopyable,
@@ -44,6 +45,7 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 @lldb_formatter_wrapping_type
 struct Tuple[*element_types: Movable](
     Copyable where AllCopyable[*element_types.upcast[AnyType]()],
+    Defaultable where AllDefaultable[*element_types.upcast[AnyType]()],
     Equatable where AllEquatable[*element_types.upcast[AnyType]()],
     Hashable where AllHashable[*element_types.upcast[AnyType]()],
     # TODO(MOCO-3421): AllImplicitlyCopyable implies AllCopyable since
@@ -82,13 +84,35 @@ struct Tuple[*element_types: Movable](
     var _mlir_value: Self._mlir_type
     """The underlying storage for the tuple."""
 
-    # Overload that crushes down IR generated on the caller side.
     @always_inline("nodebug")
-    def __init__(out self: Tuple[]):
-        """Construct an empty tuple."""
+    def __init__(out self):
+        """Construct a tuple with default-initialized elements.
+
+        Constraints:
+            All `element_types` must conform to `Defaultable`. The constraint
+            is enforced via a per-element `comptime assert` in the body
+            instead of an explicit `where` clause so that callers whose
+            element types come from a comptime reducer (which the solver
+            can't reduce through when checking `AllDefaultable[...]`) can
+            still default-construct.
+        """
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(self._mlir_value)
         )
+
+        # TODO(MOCO-3791): Replace the per-element `comptime assert` below
+        # with `where AllDefaultable[*Self.element_types.upcast[AnyType]()]`
+        # once the solver can prove reducer-based `where` clauses for
+        # generic callers that forward parameter packs.
+        comptime for i in range(Self.__len__()):
+            comptime TUnknown = Self.element_types[i]
+            comptime assert conforms_to(TUnknown, Defaultable), (
+                "Tuple default-construction requires all element types to"
+                " conform to `Defaultable`"
+            )
+            UnsafePointer(
+                to=trait_downcast[Defaultable & Movable](self[i])
+            ).init_pointee_move({})
 
     @always_inline("nodebug")
     def __init__(out self, var *args: *Self.element_types):
@@ -234,24 +258,6 @@ struct Tuple[*element_types: Movable](
                     return True
 
         return False
-
-    @always_inline("nodebug")
-    def __init__[
-        *elt_types: Movable & Defaultable
-    ](out self: Tuple[*elt_types.upcast[Movable]()]):
-        """Construct a tuple with default-initialized elements.
-
-        Parameters:
-            elt_types: The types of the elements contained in the Tuple.
-        """
-
-        # Mark 'self._mlir_value' as being initialized so we can work on it.
-        __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self._mlir_value)
-        )
-
-        comptime for i in range(type_of(self).__len__()):
-            UnsafePointer(to=self[i]).init_pointee_move(elt_types[i]())
 
     @always_inline
     def __eq__(
