@@ -27,7 +27,7 @@ from mblack.mode import TargetVersion
 from mblack.output import diff, err, out
 
 PYTHON_SUFFIX = ".mojo"
-ALLOWED_SUFFIXES = (PYTHON_SUFFIX, ".pyi", ".out", ".diff", ".ipynb")
+ALLOWED_SUFFIXES = (PYTHON_SUFFIX, ".pyi", ".out", ".diff")
 
 THIS_DIR = Path(__file__).parent
 DATA_DIR = THIS_DIR / "data"
@@ -185,18 +185,6 @@ def read_data_from_file(file_name: Path) -> Tuple[str, str]:
         # If there's no output marker, treat the entire file as already pre-formatted.
         _output = _input[:]
     return "".join(_input).strip() + "\n", "".join(_output).strip() + "\n"
-
-
-def read_jupyter_notebook(subdir_name: str, name: str, data: bool = True) -> str:
-    return read_jupyter_notebook_from_file(
-        get_case_path(subdir_name, name, data, suffix=".ipynb")
-    )
-
-
-def read_jupyter_notebook_from_file(file_name: Path) -> str:
-    with open(file_name, mode="rb") as fd:
-        content_bytes = fd.read()
-    return content_bytes.decode()
 
 
 @contextmanager

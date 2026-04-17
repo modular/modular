@@ -39,15 +39,7 @@ modular_py_binary(
 modular_py_test(
     name = "unit_tests",
     # One layer deep, don't grab `data`
-    srcs = glob(
-        ["tests/*.py"],
-        exclude = [
-            # We don't support blackd or ipynb notebooks.
-            "tests/test_blackd.py",
-            "tests/test_ipynb.py",
-            "tests/test_no_ipynb.py",
-        ],
-    ),
+    srcs = glob(["tests/*.py"]),
     data = glob(["tests/data/**"]) + [
         "tests/empty.toml",
         "tests/test.toml",
