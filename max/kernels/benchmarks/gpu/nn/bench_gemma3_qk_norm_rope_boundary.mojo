@@ -84,7 +84,9 @@ def _gemma3_qk_norm_rope_single_launch_kernel[
     weight_offset: Scalar[dtype],
     total_rows: Int,
 ):
-    comptime assert head_dim == 128, "Prototype currently targets 128-wide heads"
+    comptime assert (
+        head_dim == 128
+    ), "Prototype currently targets 128-wide heads"
     comptime assert q.flat_rank == 3
     comptime assert output.flat_rank == 3
     comptime assert input_row_offsets.flat_rank == 1
@@ -107,7 +109,9 @@ def _gemma3_qk_norm_rope_single_launch_kernel[
     var warp_idx = tid // UInt(WARP_SIZE)
     var sub_warp_idx = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
     var local_tid = tid % UInt(half_warp_size)
-    var row = block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    var row = (
+        block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    )
     var col = local_tid * UInt(simd_width)
 
     var is_active_row = row < UInt(total_rows)
@@ -121,10 +125,10 @@ def _gemma3_qk_norm_rope_single_launch_kernel[
     if is_active_row:
         global_token_idx = flat_row // total_heads
         head_slot = flat_row % total_heads
-        batch_idx = get_batch_from_row_offsets(input_row_offsets, global_token_idx)
-        token_idx = Int(
-            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        batch_idx = get_batch_from_row_offsets(
+            input_row_offsets, global_token_idx
         )
+        token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
         post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
 
     var is_q_row = is_active_row and head_slot < num_q_heads
@@ -163,8 +167,8 @@ def _gemma3_qk_norm_rope_single_launch_kernel[
 
     if is_active_row and col < UInt(head_dim):
         var shared_offset = (
-            (Int(warp_idx) * 2 + Int(sub_warp_idx)) * head_dim + Int(col)
-        )
+            Int(warp_idx) * 2 + Int(sub_warp_idx)
+        ) * head_dim + Int(col)
         shared_norm.store[width=simd_width, alignment=align](
             shared_offset, norm_val
         )
@@ -287,7 +291,9 @@ def _gemma3_qk_norm_rope_decode_ragged_kernel[
     var warp_idx = tid // UInt(WARP_SIZE)
     var sub_warp_idx = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
     var local_tid = tid % UInt(half_warp_size)
-    var row = block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    var row = (
+        block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    )
     var col = local_tid * UInt(simd_width)
 
     var flat_row = Int(row)
@@ -326,7 +332,9 @@ def _gemma3_qk_norm_rope_decode_ragged_kernel[
             var thread_m2 = (q_re.cast[accum_type]() ** 2).reduce_add() + (
                 q_im.cast[accum_type]() ** 2
             ).reduce_add()
-            var row_m2 = warp.lane_group_sum[num_lanes=half_warp_size](thread_m2)
+            var row_m2 = warp.lane_group_sum[num_lanes=half_warp_size](
+                thread_m2
+            )
             var norm_factor = rsqrt(
                 (row_m2 / Scalar[accum_type](head_dim)) + epsilon_accum
             )
@@ -370,9 +378,9 @@ def _gemma3_qk_norm_rope_decode_ragged_kernel[
             var vec_data = k_cache.load[width=simd_width](
                 batch_idx, k_head_idx, post_seq_idx, Int(col)
             ).cast[accum_type]()
-            var gamma_val = k_gamma.load[width=simd_width, alignment=wide_align](
-                Coord(Idx(Int(col)))
-            )
+            var gamma_val = k_gamma.load[
+                width=simd_width, alignment=wide_align
+            ](Coord(Idx(Int(col))))
             var norm_val = _rms_norm_warp_tiling_subkernel[
                 warps_per_block,
                 True,
@@ -508,7 +516,9 @@ def _gemma3_qk_norm_rope_decode_uniform_kernel[
     var warp_idx = tid // UInt(WARP_SIZE)
     var sub_warp_idx = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
     var local_tid = tid % UInt(half_warp_size)
-    var row = block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    var row = (
+        block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    )
     var col = local_tid * UInt(simd_width)
 
     var flat_row = Int(row)
@@ -540,7 +550,9 @@ def _gemma3_qk_norm_rope_decode_uniform_kernel[
             var thread_m2 = (q_re.cast[accum_type]() ** 2).reduce_add() + (
                 q_im.cast[accum_type]() ** 2
             ).reduce_add()
-            var row_m2 = warp.lane_group_sum[num_lanes=half_warp_size](thread_m2)
+            var row_m2 = warp.lane_group_sum[num_lanes=half_warp_size](
+                thread_m2
+            )
             var norm_factor = rsqrt(
                 (row_m2 / Scalar[accum_type](head_dim)) + epsilon_accum
             )
@@ -584,9 +596,9 @@ def _gemma3_qk_norm_rope_decode_uniform_kernel[
             var vec_data = k_cache.load[width=simd_width](
                 batch_idx, k_head_idx, post_seq_idx, Int(col)
             ).cast[accum_type]()
-            var gamma_val = k_gamma.load[width=simd_width, alignment=wide_align](
-                Coord(Idx(Int(col)))
-            )
+            var gamma_val = k_gamma.load[
+                width=simd_width, alignment=wide_align
+            ](Coord(Idx(Int(col))))
             var norm_val = _rms_norm_warp_tiling_subkernel[
                 warps_per_block,
                 True,
@@ -785,11 +797,15 @@ def _gemma3_qk_norm_rope_decode_uniform_wide_kernel[
                     simd_width * 2,
                 ](rope_re, rope_im, q_freq)
                 output.store[alignment=align](
-                    Coord(Idx(global_token_idx), Idx(head_slot), Idx(re_offset)),
+                    Coord(
+                        Idx(global_token_idx), Idx(head_slot), Idx(re_offset)
+                    ),
                     q_rope[0],
                 )
                 output.store[alignment=align](
-                    Coord(Idx(global_token_idx), Idx(head_slot), Idx(im_offset)),
+                    Coord(
+                        Idx(global_token_idx), Idx(head_slot), Idx(im_offset)
+                    ),
                     q_rope[1],
                 )
         else:
@@ -805,8 +821,10 @@ def _gemma3_qk_norm_rope_decode_uniform_wide_kernel[
             var gamma_val = k_gamma.load[width=simd_width, alignment=align](
                 Coord(Idx(Int(col)))
             )
-            var norm_val = k_vec * norm_factor * (
-                gamma_val.cast[accum_type]() + weight_offset_accum
+            var norm_val = (
+                k_vec
+                * norm_factor
+                * (gamma_val.cast[accum_type]() + weight_offset_accum)
             )
             var shared_base = Int(warp_idx) * head_dim
             shared_norm.store[width=simd_width, alignment=align](
@@ -973,11 +991,15 @@ def _gemma3_qk_norm_rope_decode_ragged_wide_kernel[
                     simd_width * 2,
                 ](rope_re, rope_im, q_freq)
                 output.store[alignment=align](
-                    Coord(Idx(global_token_idx), Idx(head_slot), Idx(re_offset)),
+                    Coord(
+                        Idx(global_token_idx), Idx(head_slot), Idx(re_offset)
+                    ),
                     q_rope[0],
                 )
                 output.store[alignment=align](
-                    Coord(Idx(global_token_idx), Idx(head_slot), Idx(im_offset)),
+                    Coord(
+                        Idx(global_token_idx), Idx(head_slot), Idx(im_offset)
+                    ),
                     q_rope[1],
                 )
         else:
@@ -993,8 +1015,10 @@ def _gemma3_qk_norm_rope_decode_ragged_wide_kernel[
             var gamma_val = k_gamma.load[width=simd_width, alignment=align](
                 Coord(Idx(Int(col)))
             )
-            var norm_val = k_vec * norm_factor * (
-                gamma_val.cast[accum_type]() + weight_offset_accum
+            var norm_val = (
+                k_vec
+                * norm_factor
+                * (gamma_val.cast[accum_type]() + weight_offset_accum)
             )
             shared_norm.store[width=simd_width, alignment=align](
                 shared_base + Int(col), norm_val.cast[dtype]()
@@ -1058,7 +1082,9 @@ def bench_gemma3_qk_norm_rope_boundary[
     comptime kv_params = KVCacheStaticParams(
         num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
     )
-    comptime CollectionType = PagedKVCacheCollection[dtype, kv_params, page_size]
+    comptime CollectionType = PagedKVCacheCollection[
+        dtype, kv_params, page_size
+    ]
 
     var total_seq_len = UInt32(batch_size * seq_len)
     var max_cache_len = cache_len + (batch_size - 1) * cache_len_step
@@ -1089,9 +1115,9 @@ def bench_gemma3_qk_norm_rope_boundary[
     # live seam with separate deterministic gamma vectors.
     for i in range(head_dim):
         q_gamma_h[i] = (Float64(i + head_dim) / Float64(head_dim)).cast[dtype]()
-        k_gamma_h[i] = (
-            Float64(i + (head_dim // 2)) / Float64(head_dim)
-        ).cast[dtype]()
+        k_gamma_h[i] = (Float64(i + (head_dim // 2)) / Float64(head_dim)).cast[
+            dtype
+        ]()
 
     for i in range(max_seq_len * head_dim):
         freqs_h[i] = Scalar[dtype](random_float64(-1, 1).cast[dtype]())
@@ -1109,7 +1135,9 @@ def bench_gemma3_qk_norm_rope_boundary[
     )
     for bs in range(batch_size):
         for page_idx in range(paged_lut_cols):
-            paged_lut_host[bs, page_idx] = UInt32(bs * paged_lut_cols + page_idx)
+            paged_lut_host[bs, page_idx] = UInt32(
+                bs * paged_lut_cols + page_idx
+            )
 
     var input_row_offsets_d = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
@@ -1166,8 +1194,12 @@ def bench_gemma3_qk_norm_rope_boundary[
         (Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]())
     )
     var q_tensor = TileTensor(q_d.unsafe_ptr(), q_layout)
-    var baseline_q_norm_tensor = TileTensor(baseline_q_norm_d.unsafe_ptr(), q_layout)
-    var baseline_output_tensor = TileTensor(baseline_output_d.unsafe_ptr(), q_layout)
+    var baseline_q_norm_tensor = TileTensor(
+        baseline_q_norm_d.unsafe_ptr(), q_layout
+    )
+    var baseline_output_tensor = TileTensor(
+        baseline_output_d.unsafe_ptr(), q_layout
+    )
     var fused_output_tensor = TileTensor(fused_output_d.unsafe_ptr(), q_layout)
     var trial_output_tensor = TileTensor(trial_output_d.unsafe_ptr(), q_layout)
     var q_gamma_tensor = TileTensor(
@@ -1302,7 +1334,9 @@ def bench_gemma3_qk_norm_rope_boundary[
             input_row_offsets_tensor,
             ctx,
         )
-        fused_qk_rope_ragged[CollectionType.CacheType, interleaved=False, target="gpu"](
+        fused_qk_rope_ragged[
+            CollectionType.CacheType, interleaved=False, target="gpu"
+        ](
             baseline_q_norm_tensor,
             input_row_offsets_tensor,
             baseline_kv_collection,
@@ -1514,7 +1548,9 @@ def bench_gemma3_qk_norm_rope_boundary[
                         comptime total_heads = num_q_heads + num_kv_heads
 
                         var total_rows = Int(total_seq_len) * total_heads
-                        var k_cache = trial_kv_collection.get_key_cache(layer_idx)
+                        var k_cache = trial_kv_collection.get_key_cache(
+                            layer_idx
+                        )
 
                         if cache_len_step == 0:
                             comptime kernel = _gemma3_qk_norm_rope_decode_uniform_wide_kernel[
@@ -1625,7 +1661,9 @@ def bench_gemma3_qk_norm_rope_boundary[
             ),
         ),
     )
-    comptime if dtype == DType.bfloat16 and (head_dim == 128 or head_dim == 256):
+    comptime if dtype == DType.bfloat16 and (
+        head_dim == 128 or head_dim == 256
+    ):
         bench.bench_function[trial_bench](
             BenchId(
                 "gemma3_qk_norm_rope_boundary_trial",
@@ -1646,19 +1684,27 @@ def bench_gemma3_qk_norm_rope_boundary[
     if verify_results:
         ctx.enqueue_copy(baseline_kv_block_d, baseline_kv_block_h)
         ctx.enqueue_copy(fused_kv_block_d, baseline_kv_block_h)
-        comptime if dtype == DType.bfloat16 and (head_dim == 128 or head_dim == 256):
+        comptime if dtype == DType.bfloat16 and (
+            head_dim == 128 or head_dim == 256
+        ):
             ctx.enqueue_copy(trial_kv_block_d, baseline_kv_block_h)
         run_baseline(ctx)
         run_fused(ctx)
-        comptime if dtype == DType.bfloat16 and (head_dim == 128 or head_dim == 256):
+        comptime if dtype == DType.bfloat16 and (
+            head_dim == 128 or head_dim == 256
+        ):
             run_trial(ctx)
         ctx.enqueue_copy(baseline_output_h, baseline_output_d)
         ctx.enqueue_copy(fused_output_h, fused_output_d)
-        comptime if dtype == DType.bfloat16 and (head_dim == 128 or head_dim == 256):
+        comptime if dtype == DType.bfloat16 and (
+            head_dim == 128 or head_dim == 256
+        ):
             ctx.enqueue_copy(trial_output_h, trial_output_d)
         ctx.enqueue_copy(baseline_kv_block_h, baseline_kv_block_d)
         ctx.enqueue_copy(fused_kv_block_h, fused_kv_block_d)
-        comptime if dtype == DType.bfloat16 and (head_dim == 128 or head_dim == 256):
+        comptime if dtype == DType.bfloat16 and (
+            head_dim == 128 or head_dim == 256
+        ):
             ctx.enqueue_copy(trial_kv_block_h, trial_kv_block_d)
         ctx.synchronize()
 
@@ -1666,9 +1712,14 @@ def bench_gemma3_qk_norm_rope_boundary[
             assert_almost_equal(
                 baseline_output_h[i], fused_output_h[i], rtol=2e-2, atol=2e-2
             )
-            comptime if dtype == DType.bfloat16 and (head_dim == 128 or head_dim == 256):
+            comptime if dtype == DType.bfloat16 and (
+                head_dim == 128 or head_dim == 256
+            ):
                 assert_almost_equal(
-                    baseline_output_h[i], trial_output_h[i], rtol=2e-2, atol=2e-2
+                    baseline_output_h[i],
+                    trial_output_h[i],
+                    rtol=2e-2,
+                    atol=2e-2,
                 )
 
         var baseline_kv_collection_host = CollectionType(
@@ -1714,7 +1765,9 @@ def bench_gemma3_qk_norm_rope_boundary[
         var baseline_k_cache_host = baseline_kv_collection_host.get_key_cache(
             layer_idx
         )
-        var fused_k_cache_host = fused_kv_collection_host.get_key_cache(layer_idx)
+        var fused_k_cache_host = fused_kv_collection_host.get_key_cache(
+            layer_idx
+        )
 
         for bs_idx in range(batch_size):
             for tok_idx in range(seq_len):
@@ -1737,19 +1790,25 @@ def bench_gemma3_qk_norm_rope_boundary[
                             rtol=2e-2,
                             atol=2e-2,
                         )
-        comptime if dtype == DType.bfloat16 and (head_dim == 128 or head_dim == 256):
+        comptime if dtype == DType.bfloat16 and (
+            head_dim == 128 or head_dim == 256
+        ):
             var trial_kv_collection_host = CollectionType(
                 LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
                     trial_kv_block_h,
                     RuntimeLayout[kv_block_layout].row_major(kv_block_shape),
                 ),
-                LayoutTensor[DType.uint32, cache_lengths_layout, ImmutAnyOrigin](
+                LayoutTensor[
+                    DType.uint32, cache_lengths_layout, ImmutAnyOrigin
+                ](
                     cache_lengths_h,
                     RuntimeLayout[cache_lengths_layout].row_major(
                         IndexList[1](batch_size)
                     ),
                 ),
-                LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                LayoutTensor[
+                    DType.uint32, Layout.row_major[2](), ImmutAnyOrigin
+                ](
                     paged_lut_h,
                     RuntimeLayout[Layout.row_major[2]()].row_major(
                         IndexList[2](batch_size, paged_lut_cols)
@@ -1829,12 +1888,12 @@ def bench_gemma3_qk_norm_rope_boundary_pair[
     trial_baseline_disable_decode_fastpath: Bool,
     verify_results: Bool,
 ) raises:
-    comptime assert dtype == DType.bfloat16, (
-        "pair_only only supports the BF16 boundary trial"
-    )
-    comptime assert head_dim == 128 or head_dim == 256, (
-        "pair_only only supports head_dim 128 or 256"
-    )
+    comptime assert (
+        dtype == DType.bfloat16
+    ), "pair_only only supports the BF16 boundary trial"
+    comptime assert (
+        head_dim == 128 or head_dim == 256
+    ), "pair_only only supports head_dim 128 or 256"
     if verify_results:
         raise Error("pair_only requires --verify=False")
     if trial_baseline_disable_decode_fastpath:
@@ -1848,7 +1907,9 @@ def bench_gemma3_qk_norm_rope_boundary_pair[
     comptime kv_params = KVCacheStaticParams(
         num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
     )
-    comptime CollectionType = PagedKVCacheCollection[dtype, kv_params, page_size]
+    comptime CollectionType = PagedKVCacheCollection[
+        dtype, kv_params, page_size
+    ]
 
     var total_seq_len = UInt32(batch_size * seq_len)
     var max_cache_len = cache_len + (batch_size - 1) * cache_len_step
@@ -1874,9 +1935,9 @@ def bench_gemma3_qk_norm_rope_boundary_pair[
 
     for i in range(head_dim):
         q_gamma_h[i] = (Float64(i + head_dim) / Float64(head_dim)).cast[dtype]()
-        k_gamma_h[i] = (
-            Float64(i + (head_dim // 2)) / Float64(head_dim)
-        ).cast[dtype]()
+        k_gamma_h[i] = (Float64(i + (head_dim // 2)) / Float64(head_dim)).cast[
+            dtype
+        ]()
 
     for i in range(max_seq_len * head_dim):
         freqs_h[i] = Scalar[dtype](random_float64(-1, 1).cast[dtype]())
@@ -1894,7 +1955,9 @@ def bench_gemma3_qk_norm_rope_boundary_pair[
     )
     for bs in range(batch_size):
         for page_idx in range(paged_lut_cols):
-            paged_lut_host[bs, page_idx] = UInt32(bs * paged_lut_cols + page_idx)
+            paged_lut_host[bs, page_idx] = UInt32(
+                bs * paged_lut_cols + page_idx
+            )
 
     var input_row_offsets_d = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
@@ -2170,7 +2233,9 @@ def bench_gemma3_qk_norm_rope_boundary_pair[
                         comptime total_heads = num_q_heads + num_kv_heads
 
                         var total_rows = Int(total_seq_len) * total_heads
-                        var k_cache = trial_kv_collection.get_key_cache(layer_idx)
+                        var k_cache = trial_kv_collection.get_key_cache(
+                            layer_idx
+                        )
 
                         if cache_len_step == 0:
                             comptime kernel = _gemma3_qk_norm_rope_decode_uniform_wide_kernel[
@@ -2318,17 +2383,18 @@ def bench_gemma3_qk_norm_rope_boundary_pair_single_variant[
     trial_baseline_disable_decode_fastpath: Bool,
     verify_results: Bool,
 ) raises:
-    comptime assert dtype == DType.bfloat16, (
-        "single pair variant only supports the BF16 boundary trial"
-    )
-    comptime assert head_dim == 128 or head_dim == 256, (
-        "single pair variant only supports head_dim 128 or 256"
-    )
+    comptime assert (
+        dtype == DType.bfloat16
+    ), "single pair variant only supports the BF16 boundary trial"
+    comptime assert (
+        head_dim == 128 or head_dim == 256
+    ), "single pair variant only supports head_dim 128 or 256"
     if verify_results:
         raise Error("single pair variant requires --verify=False")
     if trial_baseline_disable_decode_fastpath:
         raise Error(
-            "single pair variant requires trial_baseline_disable_decode_fastpath=False"
+            "single pair variant requires"
+            " trial_baseline_disable_decode_fastpath=False"
         )
 
     comptime max_seq_len = 2048
@@ -2337,7 +2403,9 @@ def bench_gemma3_qk_norm_rope_boundary_pair_single_variant[
     comptime kv_params = KVCacheStaticParams(
         num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
     )
-    comptime CollectionType = PagedKVCacheCollection[dtype, kv_params, page_size]
+    comptime CollectionType = PagedKVCacheCollection[
+        dtype, kv_params, page_size
+    ]
 
     var total_seq_len = UInt32(batch_size * seq_len)
     var max_cache_len = cache_len + (batch_size - 1) * cache_len_step
@@ -2363,9 +2431,9 @@ def bench_gemma3_qk_norm_rope_boundary_pair_single_variant[
 
     for i in range(head_dim):
         q_gamma_h[i] = (Float64(i + head_dim) / Float64(head_dim)).cast[dtype]()
-        k_gamma_h[i] = (
-            Float64(i + (head_dim // 2)) / Float64(head_dim)
-        ).cast[dtype]()
+        k_gamma_h[i] = (Float64(i + (head_dim // 2)) / Float64(head_dim)).cast[
+            dtype
+        ]()
 
     for i in range(max_seq_len * head_dim):
         freqs_h[i] = Scalar[dtype](random_float64(-1, 1).cast[dtype]())
@@ -2383,7 +2451,9 @@ def bench_gemma3_qk_norm_rope_boundary_pair_single_variant[
     )
     for bs in range(batch_size):
         for page_idx in range(paged_lut_cols):
-            paged_lut_host[bs, page_idx] = UInt32(bs * paged_lut_cols + page_idx)
+            paged_lut_host[bs, page_idx] = UInt32(
+                bs * paged_lut_cols + page_idx
+            )
 
     var input_row_offsets_d = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
@@ -2473,6 +2543,7 @@ def bench_gemma3_qk_norm_rope_boundary_pair_single_variant[
     var weight_offset = Scalar[dtype](1.0)
 
     comptime if run_trial_variant:
+
         @always_inline
         @__copy_capture(
             q_tensor,
@@ -2559,7 +2630,9 @@ def bench_gemma3_qk_norm_rope_boundary_pair_single_variant[
                                 weight_offset,
                                 total_rows,
                                 cache_len,
-                                grid_dim=ceildiv(total_rows, warps_per_block * 2),
+                                grid_dim=ceildiv(
+                                    total_rows, warps_per_block * 2
+                                ),
                                 block_dim=block_size,
                             )
                         else:
@@ -2587,7 +2660,9 @@ def bench_gemma3_qk_norm_rope_boundary_pair_single_variant[
                                 epsilon,
                                 weight_offset,
                                 total_rows,
-                                grid_dim=ceildiv(total_rows, warps_per_block * 2),
+                                grid_dim=ceildiv(
+                                    total_rows, warps_per_block * 2
+                                ),
                                 block_dim=block_size,
                             )
                     else:
@@ -2626,7 +2701,9 @@ def bench_gemma3_qk_norm_rope_boundary_pair_single_variant[
                                     weight_offset,
                                     total_rows,
                                     cache_len,
-                                    grid_dim=ceildiv(total_rows, warps_per_block),
+                                    grid_dim=ceildiv(
+                                        total_rows, warps_per_block
+                                    ),
                                     block_dim=block_size,
                                 )
                             else:
@@ -2654,7 +2731,9 @@ def bench_gemma3_qk_norm_rope_boundary_pair_single_variant[
                                     epsilon,
                                     weight_offset,
                                     total_rows,
-                                    grid_dim=ceildiv(total_rows, warps_per_block),
+                                    grid_dim=ceildiv(
+                                        total_rows, warps_per_block
+                                    ),
                                     block_dim=block_size,
                                 )
                         else:
@@ -2687,6 +2766,7 @@ def bench_gemma3_qk_norm_rope_boundary_pair_single_variant[
             ),
         )
     else:
+
         @always_inline
         @__copy_capture(
             q_tensor,
