@@ -784,7 +784,8 @@ ParseResult ExprParser::parseTStringFromSpelling(
       // Check for empty braces.
       if (exprStart == exprEnd) {
         emitError(SMLoc::getFromPointer(exprStart - 1),
-                  "t-string expression cannot be empty");
+                  "t-string expression must not be empty; add an expression or "
+                  "remove these braces");
         return failure();
       }
 
@@ -951,7 +952,8 @@ ParseResult ExprParser::parsePrefixLSquare(ExprNode *&result,
     // Only a single expression is allowed in a comprehension.
     if (exprs.size() != 1)
       emitError(exprs[1]->getLoc(),
-                "expected a single expression in list comprehension")
+                "list comprehension must have a single expression before "
+                "'for'; remove extra expressions")
           << exprs[1]->getRange();
 
     return parseComprehension(result, ExprNode::kListComprehension, lsquareLoc,
@@ -1034,7 +1036,8 @@ ParseResult ExprParser::parsePrefixLBrace(ExprNode *&result, SMLoc lbraceLoc) {
   if (getToken().is(Token::kw_for)) {
     if (elements.size() != 1)
       emitError(elements[1].second->getLoc(),
-                "expected a single expression in comprehension")
+                "comprehension must have a single expression before 'for'; "
+                "remove extra expressions")
           << elements[1].second->getRange();
     else if (!isDict && elements[0].first)
       emitError(elements[0].first->getLoc(),
@@ -1357,9 +1360,8 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
 
   if (!fnSignature.effects.isCapturing() && !fnSignature.effects.isUnified() &&
       !fnSignature.isThin) {
-    emitWarning(baseLoc,
-                "omitting 'thin' in function types is deprecated; specify "
-                "'capturing', 'unified', or 'thin'");
+    emitWarning(baseLoc, "function pointer type without 'thin' is deprecated; "
+                         "add 'thin' before '->'");
   }
 
   // Parse the capture origin set if present.

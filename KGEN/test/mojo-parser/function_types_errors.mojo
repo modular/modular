@@ -11,7 +11,7 @@ def identity(x: Int) -> Int:
     return x
 
 
-# expected-warning @+1 {{omitting 'thin' in function types is deprecated; specify 'capturing', 'unified', or 'thin'}}
+# expected-warning @+1 {{function pointer type without 'thin' is deprecated; add 'thin' before '->'}}
 comptime invalid_bare_fn_type: def(Int) -> Int = identity
 
 

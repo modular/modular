@@ -66,7 +66,7 @@ def self_reference():
 # Doesn't reject empty identifier name
 # https://github.com/modular/mojo/issues/1232
 def empty_name():
-  # expected-error @+1 {{empty backtick identifier isn't allowed}}
+  # expected-error @+1 {{backtick identifier must not be empty; add content between the backticks}}
   var `` = 42
 
 # COM: Issue #957 https://github.com/modular/mojo/issues/957

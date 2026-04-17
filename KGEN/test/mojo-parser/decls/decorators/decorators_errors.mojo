@@ -27,17 +27,17 @@ def unknown_decorator(): pass
 
 def decorator_on_statements() raises:
     @invalid_dec
-    var decorated_var: Int  # expected-error {{'var' statement in function body does not allow decorators}}
+    var decorated_var: Int  # expected-error {{'var' statement in function body does not support decorators; remove the decorator}}
 
     @invalid_dec
-    comptime decorated_alias = 42  # expected-error {{'comptime' statement in function body does not allow decorators}}
+    comptime decorated_alias = 42  # expected-error {{'comptime' statement in function body does not support decorators; remove the decorator}}
 
     @invalid_dec
-    while True:  # expected-error {{'while' statement does not allow decorators}}
+    while True:  # expected-error {{'while' statement does not support decorators; remove the decorator}}
         pass
 
     @invalid_dec
-    _ = 1 + 1  # expected-error {{statement does not allow decorators}}
+    _ = 1 + 1  # expected-error {{statement does not support decorators; remove the decorator}}
 
 
 # expected-error @+1 {{decorators must be on their own line; add a newline after the decorator}}

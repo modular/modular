@@ -10,9 +10,9 @@
 # Regression test for MOCO-3517: a decorator preceding a struct must not be
 # mis-attributed to the plain statement that follows the struct body.
 # The specific bug was: "@fieldwise_init struct Foo { ... } var f = ..."
-# produced "'var' statement does not allow decorators".
+# produced "'var' statement does not support decorators; remove the decorator".
 #
-# CHECK-NOT: does not allow decorators
+# CHECK-NOT: does not support decorators
 
 
 def example_decorator_then_var():

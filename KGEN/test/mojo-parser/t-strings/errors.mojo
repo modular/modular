@@ -12,7 +12,7 @@
 
 def test_empty_braces():
     # Empty expression (just braces)
-    # expected-error @below {{t-string expression cannot be empty}}
+    # expected-error @below {{t-string expression must not be empty; add an expression or remove these braces}}
     _ = t"Hello {}"
 
 # =============================================================================
@@ -134,13 +134,13 @@ def test_runtime_value_in_comptime_tstring():
 
 def test_raw_empty_braces():
     # Empty expression in raw t-string (rt prefix)
-    # expected-error @below {{t-string expression cannot be empty}}
+    # expected-error @below {{t-string expression must not be empty; add an expression or remove these braces}}
     _ = rt"Hello {}"
 
 
 def test_raw_empty_braces_tr():
     # Empty expression in raw t-string (tr prefix)
-    # expected-error @below {{t-string expression cannot be empty}}
+    # expected-error @below {{t-string expression must not be empty; add an expression or remove these braces}}
     _ = tr"Hello {}"
 
 

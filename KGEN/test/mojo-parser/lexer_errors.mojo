@@ -16,7 +16,7 @@
 
 # // -----
 
-# expected-error @+1 {{leading zeros in decimal integer literals are not permitted; use an 0o prefix for octal integers}}
+# expected-error @+1 {{decimal integer literals may not use leading zeros; add '0o' for octal literals}}
 0123
 
 # // -----
@@ -26,12 +26,12 @@
 
 # // -----
 
-# expected-error @+1 {{expecting a digit after the exponent}}
+# expected-error @+1 {{expected a digit after the exponent}}
 1e+*
 
 # // -----
 
-# expected-error @+1 {{expecting a digit after the exponent}}
+# expected-error @+1 {{expected a digit after the exponent}}
 1e*
 
 # // -----
