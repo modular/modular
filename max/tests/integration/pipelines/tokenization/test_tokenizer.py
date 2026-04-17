@@ -593,6 +593,36 @@ async def test_tokenizer__apply_chat_template_dict_list_vs_str_content(
 
 
 @pytest.mark.asyncio
+async def test_tokenizer__apply_chat_template_preserves_default_options(
+    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
+) -> None:
+    """Caller-provided chat_template_options must not drop the implicit
+    add_generation_prompt=True default. Regression test: OpenRouter-style
+    callers send `chat_template_kwargs: {"thinking": true}` and expect the
+    assistant turn prefix to still be appended."""
+    pipeline_config = _create_mock_pipeline_config(
+        llama_3_1_8b_instruct_local_path
+    )
+    tokenizer = TextTokenizer(
+        model_path=llama_3_1_8b_instruct_local_path,
+        pipeline_config=pipeline_config,
+    )
+    messages = [
+        TextGenerationRequestMessage(role="user", content="Hi"),
+    ]
+
+    prompt_text = tokenizer.apply_chat_template(
+        messages,
+        tools=None,
+        chat_template_options={"date_string": "26 Jul 2024"},
+    )
+
+    assert prompt_text.endswith(
+        "<|start_header_id|>assistant<|end_header_id|>\n\n"
+    )
+
+
+@pytest.mark.asyncio
 async def test_tokenizer__generate_prompt_and_token_ids(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:

@@ -443,8 +443,9 @@ class TextTokenizer(
         chat_template_options: dict[str, Any] | None = None,
     ) -> str:
         """Applies the delegate chat template to messages (and optional tools)."""
-        chat_template_options = chat_template_options or {
-            "add_generation_prompt": True
+        chat_template_options = {
+            "add_generation_prompt": True,
+            **(chat_template_options or {}),
         }
 
         try:
