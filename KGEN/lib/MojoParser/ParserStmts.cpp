@@ -2734,31 +2734,44 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
     return success();
   };
 
-  // Parse a nested suite inside a param-if region. Inserts the param-if's
-  // condition as a known assumption before parsing the suite.
-  auto parseParamIfRegion = [&](Location loc) -> ParseResult {
+  auto buildBranchAssumption = [&](Location loc,
+                                   bool invertCondition) -> ConstraintAttr {
+    // Convert `x and y` to `x & y` so we get better canonicalization.
+    TypedAttr branchCondition = LIT::deShortCircuitCond(paramIfOp.getCond());
+    if (invertCondition)
+      branchCondition = ParamOperatorAttr::getNot(branchCondition);
+    return ConstraintAttr::get(branchCondition, loc);
+  };
+
+  // Parse a nested suite inside a param-if region. Inserts the branch
+  // assumptions before parsing the suite.
+  auto parseParamIfRegion =
+      [&](ArrayRef<ConstraintAttr> assumptions) -> ParseResult {
     DebugInfo::DIBuilder::ScopeGuard scopeGuard;
     llvm::SaveAndRestore<ASTDecl *> keepDecl(curDeclScope);
     pushChildScope(scopeGuard, keepDecl);
-
-    // Convert `x and y` to `x & y` so we get better canonicalization.
-    TypedAttr deShortCircuitCond = LIT::deShortCircuitCond(paramIfOp.getCond());
-    curDeclScope->insertKnownAssumptions(
-        {ConstraintAttr::get(deShortCircuitCond, loc)});
+    curDeclScope->insertKnownAssumptions(assumptions);
     return parseSuite(curIndent);
   };
+
+  SmallVector<ConstraintAttr> accumulatedFalseAssumptions;
+  Location currentConditionLoc = ifLoc;
 
   if (parseCondAndTerminateElifCondition(ifLoc) ||
       parseToken(Token::colon, "expected ':' after 'if' expression"))
     return failure();
   builder.createBlock(&paramIfOp.getThenRegion());
-  if (failed(parseParamIfRegion(ifLoc)))
+  ConstraintAttr currentTrueAssumption =
+      buildBranchAssumption(currentConditionLoc, /*invertCondition=*/false);
+  if (failed(parseParamIfRegion({currentTrueAssumption})))
     return failure();
   ParamYieldOp::create(builder, ifLoc);
 
   while (getToken().is(Token::kw_elif) &&
          isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true)) {
     Location elifLoc = translateLocation(consumeToken(Token::kw_elif).getLoc());
+    accumulatedFalseAssumptions.push_back(
+        buildBranchAssumption(currentConditionLoc, /*invertCondition=*/true));
     if (parseExpression(condExp, std::nullopt, Precedence::kAssignExpr))
       return failure();
 
@@ -2768,10 +2781,14 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
     if (parseCondAndTerminateElifCondition(elifLoc) ||
         parseToken(Token::colon, "expected ':' after 'elif' expression"))
       return failure();
+    currentConditionLoc = elifLoc;
 
     ParamYieldOp::create(builder, elifLoc);
     builder.createBlock(&paramIfOp.getThenRegion());
-    if (failed(parseParamIfRegion(elifLoc)))
+    SmallVector<ConstraintAttr> thenAssumptions(accumulatedFalseAssumptions);
+    thenAssumptions.push_back(
+        buildBranchAssumption(currentConditionLoc, /*invertCondition=*/false));
+    if (failed(parseParamIfRegion(thenAssumptions)))
       return failure();
     ParamYieldOp::create(builder, elifLoc);
   }
@@ -2781,7 +2798,9 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
       consumeIf(Token::kw_else)) {
     if (parseToken(Token::colon, "expected ':' after else"))
       return failure();
-    if (failed(parseParamIfRegion(ifLoc)))
+    accumulatedFalseAssumptions.push_back(
+        buildBranchAssumption(currentConditionLoc, /*invertCondition=*/true));
+    if (failed(parseParamIfRegion(accumulatedFalseAssumptions)))
       return failure();
   }
   ParamYieldOp::create(builder, ifLoc);
