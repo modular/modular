@@ -299,10 +299,10 @@ def grouped_matmul_block_scaled[
         1,
     )
 
-    # Thread count from WarpRole1D1D (single source of truth):
-    # MMA_N >= 64: 192 threads (6 warps: 4 epilogue + 1 load + 1 MMA)
-    # MMA_N <  64: 352 threads (+ 1 SFB TMA load + 4 SFB TMEM load)
-    comptime block_threads = WarpRole1D1D.TOTAL_THREADS_WITH_SFB if MMA_N < 64 else WarpRole1D1D.TOTAL_THREADS
+    # Always launch with scheduler warp. SFB warps only on MMA_N < 64 decode
+    # path, so MMA_N >= 64 (prefill / 2SM) shrinks from 384 → 224 threads and
+    # frees ~7.5K registers per CTA.
+    comptime block_threads = WarpRole1D1D[MMA_N < 64].TOTAL_THREADS_WITH_SCHED
 
     # Re-wrap 1D TileTensors with GMEMLayout1D to match the kernel's
     # expected types. The caller's TileTensors may have a different symbolic
