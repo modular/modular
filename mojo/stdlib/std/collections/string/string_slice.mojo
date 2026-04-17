@@ -841,10 +841,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         other_type: type_of(StringSlice[_]),
     ](
         self,
-        out result: StringSlice[
-            mut=Self.mut & other_type.origin.mut,
-            origin_of(Self.origin, other_type.origin),
-        ],
+        out result: StringSlice[origin_of(Self.origin, other_type.origin)],
     ):
         """Returns a string slice with merged origins.
 
@@ -860,25 +857,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             .unsafe_origin_cast[result.origin](),
             length = self.byte_length(),
         }
-
-    @always_inline("nodebug")
-    def __merge_with__[
-        other_type: type_of(String),
-    ](self, out result: String):
-        """Returns a string slice merge with a String.
-
-        Parameters:
-            other_type: The type of the origin to merge with.
-
-        Returns:
-            A String this is merged with.
-        """
-        # Note, this is used to disambiguate some cases because String converts
-        # to StringSlice and StringSlice converts to string.  Ideally this would
-        # return a StringSlice, but the __merge_with__ protocol is type
-        # directed, not value directed.  Types don't carry the origins of a
-        # value.
-        return String(self)
 
     # ===------------------------------------------------------------------===#
     # Methods

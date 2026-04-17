@@ -895,7 +895,6 @@ struct LayoutTensor[
     ](
         self,
         out result: LayoutTensor[
-            mut=Self.mut & other_type.origin.mut,
             Self.dtype,
             Self.layout,
             origin_of(Self.origin, other_type.origin),

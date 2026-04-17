@@ -351,7 +351,6 @@ struct Pointer[
     ](
         self,
         out result: Pointer[
-            mut=Self.mut & other_type.origin.mut,
             type=Self.type,
             origin=origin_of(Self.origin, other_type.origin),
             address_space=Self.address_space,

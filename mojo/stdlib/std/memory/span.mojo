@@ -724,7 +724,6 @@ struct Span[
     ](
         self,
         out result: Span[
-            mut=Self.mut & other_type.origin.mut,
             Self.T,
             origin_of(Self.origin, other_type.origin),
         ],
