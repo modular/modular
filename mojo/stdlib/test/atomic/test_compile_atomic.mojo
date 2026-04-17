@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.atomic import Atomic, fence
+from std.atomic import Atomic, Consistency, fence
 
 from std.compile import compile_info
 from std.testing import TestSuite, assert_false, assert_true
@@ -58,6 +58,48 @@ def test_compile_compare_exchange() raises:
         in asm
     )
     assert_false("cmpxchg weak" in asm)
+
+
+def test_compile_store() raises:
+    def my_store_function(
+        mut atm: Atomic[DType.int32, scope="agent"], v: Int32
+    ):
+        Atomic[DType.int32, scope="agent"].store[ordering=Consistency.RELEASE](
+            UnsafePointer(to=atm.value), v
+        )
+
+    var asm = compile_info[my_store_function, emission_kind="llvm"]()
+
+    assert_true(
+        'atomicrmw xchg ptr %3, i32 %1 syncscope("agent") release' in asm
+    )
+
+
+def test_compile_store_default_scope() raises:
+    def my_store_function(mut atm: Atomic[DType.int64], v: Int64):
+        Atomic[DType.int64].store[ordering=Consistency.RELEASE](
+            UnsafePointer(to=atm.value), v
+        )
+
+    var asm = compile_info[my_store_function, emission_kind="llvm"]()
+
+    assert_true("atomicrmw xchg ptr %3, i64 %1 release" in asm)
+    assert_false("syncscope" in asm)
+
+
+def test_compile_xchg() raises:
+    def my_xchg_function(
+        mut atm: Atomic[DType.int32, scope="agent"], v: Int32
+    ) -> Int32:
+        return Atomic[DType.int32, scope="agent"]._xchg[
+            ordering=Consistency.SEQUENTIAL
+        ](UnsafePointer(to=atm.value), v)
+
+    var asm = compile_info[my_xchg_function, emission_kind="llvm"]()
+
+    assert_true(
+        'atomicrmw xchg ptr %3, i32 %1 syncscope("agent") seq_cst' in asm
+    )
 
 
 def main() raises:

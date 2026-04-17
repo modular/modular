@@ -360,6 +360,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         var res = __mlir_op.`pop.atomic.rmw`[
             bin_op=__mlir_attr.`#pop<bin_op xchg>`,
             ordering=ordering.__mlir_attr(),
+            syncscope=_get_kgen_string[Self.scope](),
             _type=Scalar[Self.dtype]._mlir_type,
         ](
             ptr.bitcast[Scalar[Self.dtype]._mlir_type]().address,
@@ -395,6 +396,7 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         _ = __mlir_op.`pop.atomic.rmw`[
             bin_op=__mlir_attr.`#pop<bin_op xchg>`,
             ordering=ordering.__mlir_attr(),
+            syncscope=_get_kgen_string[Self.scope](),
             _type=Scalar[Self.dtype]._mlir_type,
         ](
             ptr.bitcast[Scalar[Self.dtype]._mlir_type]().address,
