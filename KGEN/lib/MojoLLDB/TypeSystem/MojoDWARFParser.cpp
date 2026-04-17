@@ -369,15 +369,14 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
       mojoType = typeSystem.getBuiltinTypeFromMLIRTypeName("!kgen.none");
 
     if (mojoType.IsValid()) {
-      type =
-          dwarf->MakeType(die.GetID(), attrs.name,
-                          attrs.byteSize.value_or(
-                              llvm::expectedToOptional(
-                                  mojoType.GetByteSize(/*exe_scope=*/nullptr))
-                                  .value_or(0)),
-                          nullptr, attrs.type.Reference().GetID(),
-                          lldb_private::Type::eEncodingIsUID, &attrs.decl,
-                          mojoType, lldb_private::Type::ResolveState::Full);
+      type = dwarf->MakeType(
+          die.GetID(), attrs.name,
+          attrs.byteSize.value_or(
+              expectedToStdOptional(mojoType.GetByteSize(/*exe_scope=*/nullptr))
+                  .value_or(0)),
+          nullptr, attrs.type.Reference().GetID(),
+          lldb_private::Type::eEncodingIsUID, &attrs.decl, mojoType,
+          lldb_private::Type::ResolveState::Full);
       break;
     }
     dwarf->GetObjectFile()->GetModule()->ReportError(
@@ -445,8 +444,7 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
         type = dwarf->MakeType(
             die.GetID(), ConstString(),
             attrs.byteSize.value_or(
-                llvm::expectedToOptional(
-                    mojoType.GetByteSize(/*exe_ctx=*/nullptr))
+                expectedToStdOptional(mojoType.GetByteSize(/*exe_ctx=*/nullptr))
                     .value_or(0)),
             nullptr, die.GetID(), lldb_private::Type::eEncodingIsUID,
             &attrs.decl, mojoType, lldb_private::Type::ResolveState::Full);

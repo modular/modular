@@ -310,13 +310,15 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
           sharedTargetMachine->getTargetTriple(),
           sharedTargetMachine->getMCAsmInfo(),
           sharedTargetMachine->getMCRegisterInfo(),
-          sharedTargetMachine->getMCSubtargetInfo(), nullptr, false);
+          sharedTargetMachine->getMCSubtargetInfo(), nullptr,
+          &sharedTargetMachine->Options.MCOptions, false);
 
     } else {
       mcContext = std::make_unique<llvm::MCContext>(
           llvmTargetMachine.getTargetTriple(), llvmTargetMachine.getMCAsmInfo(),
           llvmTargetMachine.getMCRegisterInfo(),
-          llvmTargetMachine.getMCSubtargetInfo(), nullptr, false);
+          llvmTargetMachine.getMCSubtargetInfo(), nullptr,
+          &llvmTargetMachine.Options.MCOptions, false);
     }
 
     machineModInfoPass =
