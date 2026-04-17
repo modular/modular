@@ -246,17 +246,22 @@ LogicalResult LoadOp::verify() {
 
 void StoreOp::build(OpBuilder &b, OperationState &state, Value arg, Value ptr,
                     std::optional<unsigned> alignment, bool isVolatile,
-                    bool isNonTemporal, AtomicOrdering ordering) {
+                    bool isNonTemporal, AtomicOrdering ordering,
+                    std::optional<StringAttr> syncscope) {
   build(b, state, arg, ptr,
         alignment ? b.getIndexAttr(*alignment) : TypedAttr(),
         isVolatile ? b.getBoolAttr(isVolatile) : TypedAttr(),
-        isNonTemporal ? b.getBoolAttr(isNonTemporal) : TypedAttr(), ordering);
+        isNonTemporal ? b.getBoolAttr(isNonTemporal) : TypedAttr(), ordering,
+        syncscope ? *syncscope : TypedAttr());
 }
 
 LogicalResult StoreOp::verify() {
   AtomicOrdering ordering = getOrdering();
   if ((ordering != AtomicOrdering::NOT_ATOMIC) && getIsVolatile())
     return emitOpError("volatile stores cannot be atomic");
+
+  if (ordering == AtomicOrdering::NOT_ATOMIC && getSyncscope())
+    return emitOpError("cannot specify syncscope without an atomic store");
 
   if (llvm::is_contained(
           {AtomicOrdering::ACQUIRE, AtomicOrdering::ACQUIRE_RELEASE},

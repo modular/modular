@@ -342,8 +342,10 @@ kgen.func @store_with_nontemporal(%p: !kgen.pointer<scalar<si32>>, %v: !pop.scal
 kgen.func @store_with_atomic(%p: !kgen.pointer<scalar<si32>>, %v: !pop.scalar<si32>) {
   // CHECK-DAG: [[PTR:%.*]] = builtin.unrealized_conversion_cast [[ARG0]]
   // CHECK-DAG: [[VAL:%.*]] = builtin.unrealized_conversion_cast [[ARG1]]
-  // CHECK: llvm.store [[VAL]], [[PTR]] atomic release
+  // CHECK: llvm.store [[VAL]], [[PTR]] atomic release {alignment = 128 : i64}
   pop.store atomic release %v, %p align<128> : !kgen.pointer<scalar<si32>>
+  // CHECK: llvm.store [[VAL]], [[PTR]] atomic syncscope("agent") release {alignment = 128 : i64}
+  pop.store atomic syncscope("agent") release %v, %p align<128> : !kgen.pointer<scalar<si32>>
   kgen.return
 }
 
