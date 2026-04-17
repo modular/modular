@@ -394,3 +394,11 @@ This version is still a work in progress.
   default `Writable`, `Equatable`, or `Hashable` implementations on structs
   with MLIR-type fields (e.g. `__mlir_type.index`). The compiler now correctly
   reports that the field does not implement the required trait.
+
+- Fixed `Atomic.store` silently dropping the requested `scope`. The previous
+  implementation lowered to `atomicrmw xchg` without forwarding `syncscope`,
+  so `Atomic[..., scope="device"].store(...)` was emitting a system-scope
+  store on NVPTX (extra L2/NVLink fences) and an over-synchronized store on
+  AMDGPU. `Atomic.store` now lowers via `pop.store atomic syncscope(...)`,
+  emitting `st.release.<scope>` on NVPTX and a properly-scoped LLVM atomic
+  store on AMDGPU. The Mojo API surface is unchanged.

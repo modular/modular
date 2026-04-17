@@ -376,16 +376,13 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
         ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         value: Scalar[Self.dtype],
     ):
-        """Performs atomic store.
-        The operation is a read-modify-write operation. Memory
-        is affected according to the value of order which is sequentially
-        consistent.
+        """Performs an atomic store.
 
         Parameters:
-            ordering: The memory ordering.
+            ordering: The memory ordering of the store.
 
         Args:
-            ptr: The source pointer.
+            ptr: The destination pointer.
             value: The value to store.
         """
         # Comptime interpreter doesn't support these operations.
@@ -393,15 +390,10 @@ struct Atomic[dtype: DType, *, scope: StaticString = ""]:
             ptr[] = value
             return
 
-        _ = __mlir_op.`pop.atomic.rmw`[
-            bin_op=__mlir_attr.`#pop<bin_op xchg>`,
+        __mlir_op.`pop.store`[
             ordering=ordering.__mlir_attr(),
             syncscope=_get_kgen_string[Self.scope](),
-            _type=Scalar[Self.dtype]._mlir_type,
-        ](
-            ptr.bitcast[Scalar[Self.dtype]._mlir_type]().address,
-            value._mlir_value,
-        )
+        ](value._mlir_value, ptr.address)
 
     @always_inline
     def fetch_add[

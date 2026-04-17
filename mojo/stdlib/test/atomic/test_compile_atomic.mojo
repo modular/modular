@@ -70,9 +70,8 @@ def test_compile_store() raises:
 
     var asm = compile_info[my_store_function, emission_kind="llvm"]()
 
-    assert_true(
-        'atomicrmw xchg ptr %3, i32 %1 syncscope("agent") release' in asm
-    )
+    assert_true('store atomic i32 %1, ptr %3 syncscope("agent") release' in asm)
+    assert_false("atomicrmw xchg" in asm)
 
 
 def test_compile_store_default_scope() raises:
@@ -83,8 +82,9 @@ def test_compile_store_default_scope() raises:
 
     var asm = compile_info[my_store_function, emission_kind="llvm"]()
 
-    assert_true("atomicrmw xchg ptr %3, i64 %1 release" in asm)
+    assert_true("store atomic i64 %1, ptr %3 release" in asm)
     assert_false("syncscope" in asm)
+    assert_false("atomicrmw xchg" in asm)
 
 
 def test_compile_xchg() raises:
