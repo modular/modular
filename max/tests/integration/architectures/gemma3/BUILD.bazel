@@ -17,21 +17,46 @@ _PROFILE_DATA = [
     "//max/tests/integration/architectures/gemma3/testdata",
 ]
 
-_PROFILE_DEPS = [
-    "//max/python/max:_core",
+_PROFILE_BASE_DEPS = [
     "//max/python/max/driver",
     "//max/python/max/dtype",
     "//max/python/max/engine",
     "//max/python/max/graph",
-    "//max/python/max/interfaces",
-    "//max/python/max/kv_cache",
-    "//max/python/max/nn",
     "//max/python/max/pipelines/architectures",
-    "//max/python/max/pipelines/core",
-    requirement("numpy"),
     requirement("torch"),
     requirement("transformers"),
 ]
+
+_PROFILE_NUMPY_DEPS = [
+    requirement("numpy"),
+]
+
+_PROFILE_NN_DEPS = [
+    "//max/python/max/nn",
+]
+
+_PROFILE_RUNTIME_CONTEXT_DEPS = [
+    "//max/python/max/interfaces",
+    "//max/python/max/kv_cache",
+    "//max/python/max/pipelines/core",
+]
+
+_PROFILE_POST_MLP_DEPS = _PROFILE_BASE_DEPS
+
+_PROFILE_RMS_ROPE_DEPS = (
+    _PROFILE_BASE_DEPS +
+    _PROFILE_NN_DEPS +
+    _PROFILE_NUMPY_DEPS
+)
+
+_PROFILE_RMS_ROPE_CONTEXT_DEPS = (
+    _PROFILE_RMS_ROPE_DEPS +
+    _PROFILE_RUNTIME_CONTEXT_DEPS
+)
+
+_PROFILE_ATTENTION_DEPS = _PROFILE_RMS_ROPE_CONTEXT_DEPS
+
+_PROFILE_TRANSFORMER_BLOCK_DEPS = _PROFILE_ATTENTION_DEPS
 
 _PROFILE_GPU_CONSTRAINTS = ["//:has_gpu"] + select({
     "//:apple_gpu": ["@platforms//:incompatible"],
@@ -101,7 +126,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_RMS_ROPE_CONTEXT_DEPS,
 )
 
 modular_py_test(
@@ -118,7 +143,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_RMS_ROPE_CONTEXT_DEPS,
 )
 
 modular_py_test(
@@ -135,7 +160,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_RMS_ROPE_DEPS,
 )
 
 modular_py_test(
@@ -152,7 +177,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_RMS_ROPE_DEPS,
 )
 
 modular_py_test(
@@ -169,7 +194,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_RMS_ROPE_CONTEXT_DEPS,
 )
 
 modular_py_test(
@@ -186,7 +211,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_RMS_ROPE_CONTEXT_DEPS,
 )
 
 modular_py_test(
@@ -203,7 +228,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_ATTENTION_DEPS,
 )
 
 modular_py_test(
@@ -220,7 +245,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_ATTENTION_DEPS,
 )
 
 modular_py_test(
@@ -242,7 +267,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_ATTENTION_DEPS,
 )
 
 modular_py_test(
@@ -264,7 +289,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_ATTENTION_DEPS,
 )
 
 modular_py_test(
@@ -281,7 +306,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_ATTENTION_DEPS,
 )
 
 modular_py_test(
@@ -303,7 +328,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_ATTENTION_DEPS,
 )
 
 modular_py_test(
@@ -326,7 +351,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_ATTENTION_DEPS,
 )
 
 modular_py_test(
@@ -343,7 +368,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_ATTENTION_DEPS,
 )
 
 modular_py_test(
@@ -365,7 +390,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_ATTENTION_DEPS,
 )
 
 modular_py_test(
@@ -388,7 +413,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_ATTENTION_DEPS,
 )
 
 modular_py_test(
@@ -411,7 +436,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_ATTENTION_DEPS,
 )
 
 modular_py_test(
@@ -434,7 +459,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_ATTENTION_DEPS,
 )
 
 modular_py_test(
@@ -451,7 +476,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_ATTENTION_DEPS,
 )
 
 modular_py_test(
@@ -472,7 +497,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_TRANSFORMER_BLOCK_DEPS,
 )
 
 modular_py_test(
@@ -493,7 +518,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_TRANSFORMER_BLOCK_DEPS,
 )
 
 modular_py_test(
@@ -515,7 +540,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_TRANSFORMER_BLOCK_DEPS,
 )
 
 modular_py_test(
@@ -532,7 +557,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_TRANSFORMER_BLOCK_DEPS,
 )
 
 modular_py_test(
@@ -553,7 +578,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_TRANSFORMER_BLOCK_DEPS,
 )
 
 modular_py_test(
@@ -577,7 +602,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_TRANSFORMER_BLOCK_DEPS,
 )
 
 modular_py_test(
@@ -601,7 +626,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_TRANSFORMER_BLOCK_DEPS,
 )
 
 modular_py_test(
@@ -625,7 +650,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_TRANSFORMER_BLOCK_DEPS,
 )
 
 modular_py_test(
@@ -648,7 +673,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_TRANSFORMER_BLOCK_DEPS,
 )
 
 modular_py_test(
@@ -672,7 +697,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_TRANSFORMER_BLOCK_DEPS,
 )
 
 modular_py_test(
@@ -696,7 +721,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_TRANSFORMER_BLOCK_DEPS,
 )
 
 modular_py_test(
@@ -720,7 +745,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_TRANSFORMER_BLOCK_DEPS,
 )
 
 modular_py_test(
@@ -744,7 +769,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_TRANSFORMER_BLOCK_DEPS,
 )
 
 modular_py_test(
@@ -768,7 +793,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_TRANSFORMER_BLOCK_DEPS,
 )
 
 modular_py_test(
@@ -792,7 +817,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_TRANSFORMER_BLOCK_DEPS,
 )
 
 modular_py_test(
@@ -816,7 +841,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_TRANSFORMER_BLOCK_DEPS,
 )
 
 modular_py_test(
@@ -840,7 +865,7 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_TRANSFORMER_BLOCK_DEPS,
 )
 
 modular_py_test(
@@ -857,5 +882,5 @@ modular_py_test(
     },
     gpu_constraints = _PROFILE_GPU_CONSTRAINTS,
     tags = _PROFILE_TAGS,
-    deps = _PROFILE_DEPS,
+    deps = _PROFILE_POST_MLP_DEPS,
 )
