@@ -11,7 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max.interfaces import BatchType
+import numpy as np
+from max.interfaces import (
+    BatchType,
+    RequestID,
+    TextGenerationInputs,
+    TokenBuffer,
+)
+from max.pipelines.core import TextContext
+from max.pipelines.lib.speculative_decoding.utils import (
+    SpeculativeDecodingMetrics,
+)
+from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.utils import BatchMetrics
 
 
@@ -47,6 +58,8 @@ def test_metric_to_string() -> None:
         draft_tokens_accepted=0,
         avg_acceptance_length=0.0,
         max_acceptance_length=0,
+        draft_tokens_generated_delta=0,
+        draft_tokens_accepted_delta=0,
         nixl_read_latency_avg_ms=0.0,
         nixl_write_latency_avg_ms=0.0,
         rpc_acquire_latency_avg_ms=0.0,
@@ -73,3 +86,81 @@ def test_metric_to_string() -> None:
         metrics.pretty_format()
         == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | Draft Tokens: 5/10 (50.00%) accepted, Acceptance Len: 2.50 / 3 toks | All Preemptions: 14 reqs"
     )
+
+
+def _make_inputs() -> TextGenerationInputs[TextContext]:
+    """Create minimal TextGenerationInputs for BatchMetrics.create()."""
+    ctx = TextContext(
+        request_id=RequestID(),
+        max_length=100,
+        tokens=TokenBuffer(np.ones(10, dtype=np.int64)),
+    )
+    return TextGenerationInputs(batches=[[ctx]], num_steps=1)
+
+
+_SCHEDULER_CONFIG = TokenGenerationSchedulerConfig(
+    max_batch_size=4,
+    max_forward_steps_tg=1,
+    target_tokens_per_batch_ce=32,
+)
+
+
+def test_create_emits_cumulative_totals_and_per_batch_deltas() -> None:
+    """BatchMetrics.create() must expose cumulative draft token counts for
+    console logging while per-batch deltas feed the additive OTEL counters.
+    Without the delta split, consecutive publish_metrics() calls would
+    double-count because OTEL counters aggregate each emitted value."""
+    spec_metrics = SpeculativeDecodingMetrics.empty(num_speculative_tokens=5)
+
+    # Batch 1: pipeline accumulates 20 generated / 15 accepted.
+    spec_metrics.update(
+        SpeculativeDecodingMetrics(
+            num_speculative_tokens=5,
+            draft_tokens_accepted=15,
+            draft_tokens_generated=20,
+        )
+    )
+
+    batch1 = BatchMetrics.create(
+        sch_config=_SCHEDULER_CONFIG,
+        inputs=_make_inputs(),
+        kv_cache=None,
+        batch_creation_time_s=0.01,
+        batch_execution_time_s=0.05,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+        speculative_decoding_metrics=spec_metrics,
+    )
+
+    assert batch1.draft_tokens_generated == 20
+    assert batch1.draft_tokens_accepted == 15
+    assert batch1.draft_tokens_generated_delta == 20
+    assert batch1.draft_tokens_accepted_delta == 15
+
+    # Batch 2: pipeline accumulates another 10 generated / 8 accepted on top.
+    spec_metrics.update(
+        SpeculativeDecodingMetrics(
+            num_speculative_tokens=5,
+            draft_tokens_accepted=8,
+            draft_tokens_generated=10,
+        )
+    )
+
+    batch2 = BatchMetrics.create(
+        sch_config=_SCHEDULER_CONFIG,
+        inputs=_make_inputs(),
+        kv_cache=None,
+        batch_creation_time_s=0.01,
+        batch_execution_time_s=0.05,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+        speculative_decoding_metrics=spec_metrics,
+    )
+
+    # Cumulative totals grow; deltas reflect only this batch's increment.
+    assert batch2.draft_tokens_generated == 30
+    assert batch2.draft_tokens_accepted == 23
+    assert batch2.draft_tokens_generated_delta == 10
+    assert batch2.draft_tokens_accepted_delta == 8

@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
@@ -76,11 +76,30 @@ class SpeculativeDecodingMetrics:
             draft_tokens_generated=0,
         )
 
+    # Snapshot of the counters at the time of the last publish_delta() call,
+    # used to compute per-batch deltas for additive OTEL counters without
+    # losing the cumulative totals that console logs display.
+    _published_accepted: int = field(init=False, default=0, repr=False)
+    _published_generated: int = field(init=False, default=0, repr=False)
+
     def update(self, metrics: SpeculativeDecodingMetrics) -> None:
         """Update metrics with results from a batch."""
         assert metrics.num_speculative_tokens == self.num_speculative_tokens
         self.draft_tokens_accepted += metrics.draft_tokens_accepted
         self.draft_tokens_generated += metrics.draft_tokens_generated
+
+    def publish_delta(self) -> tuple[int, int]:
+        """Return (draft_tokens_generated, draft_tokens_accepted) delta since
+        the last call and advance the snapshot. Cumulative counters remain
+        intact so ``pretty_format`` can show lifetime totals while OTEL
+        counters receive per-batch increments."""
+        delta_generated = (
+            self.draft_tokens_generated - self._published_generated
+        )
+        delta_accepted = self.draft_tokens_accepted - self._published_accepted
+        self._published_generated = self.draft_tokens_generated
+        self._published_accepted = self.draft_tokens_accepted
+        return delta_generated, delta_accepted
 
     @property
     def acceptance_rate(self) -> float:
