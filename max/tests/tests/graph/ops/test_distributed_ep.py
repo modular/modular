@@ -356,7 +356,7 @@ def test_combine_basic() -> None:
 def test_dispatch_empty_inputs() -> None:
     """Empty input_tokens raises ValueError for all dispatch variants."""
     with pytest.raises(ValueError, match="input_tokens must be non-empty"):
-        with Graph("empty", input_types=[]) as graph:
+        with Graph("empty", input_types=[]):
             ops.distributed_ep.dispatch_bf16(
                 [],
                 [],
@@ -369,7 +369,7 @@ def test_dispatch_empty_inputs() -> None:
             )
 
     with pytest.raises(ValueError, match="input_tokens must be non-empty"):
-        with Graph("empty", input_types=[]) as graph:
+        with Graph("empty", input_types=[]):
             ops.distributed_ep.combine(
                 [],
                 [],
