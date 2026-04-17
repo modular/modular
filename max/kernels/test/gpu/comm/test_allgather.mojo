@@ -46,7 +46,7 @@ def all_gather_test[
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
+        uninitialized=True
     )
 
     # Calculate temp buffer size for signals.

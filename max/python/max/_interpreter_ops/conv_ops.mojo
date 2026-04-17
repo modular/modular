@@ -168,7 +168,7 @@ def conv2d_op[
                     )
         out_ptr[i] = accum
 
-    if not ctx:
+    if not ctx._is_not_null():
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
@@ -308,7 +308,7 @@ def conv_transpose2d_op[
                     accum += in_ptr[in_hw_off + ic] * filt_ptr[filt_hw_off + ic]
         out_ptr[i] = accum
 
-    if not ctx:
+    if not ctx._is_not_null():
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():

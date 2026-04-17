@@ -428,7 +428,7 @@ def bin_elementwise_comparison_op[
         )
         out_ptr.store[width=width](i, res.cast[DType.uint8]())
 
-    if not ctx:
+    if not ctx._is_not_null():
         elementwise[func, simd_width=simd_width_of[dtype]()](IndexList[1](size))
     else:
         # GPU execution - check GPU availability and op/dtype support
@@ -486,7 +486,7 @@ def select_elementwise_op[
         var res = Select.elementwise[DType.bool, dtype, width](cond, tc, fc)
         out_ptr.store[width=width](i, res)
 
-    if not ctx:
+    if not ctx._is_not_null():
         elementwise[func, simd_width=simd_width_of[dtype]()](IndexList[1](size))
     else:
         # GPU execution

@@ -169,7 +169,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     )
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
+        uninitialized=True
     )
     var temp_bytes = ngpus * size_of[in_dtype]() * length
 
@@ -373,7 +373,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     )
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
+        uninitialized=True
     )
     var temp_bytes = ngpus * size_of[in_dtype]() * length
 

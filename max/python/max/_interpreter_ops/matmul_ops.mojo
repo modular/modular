@@ -273,7 +273,7 @@ def matmul_op[
     var a = TileTensor(lhs_ptr, row_major(Coord(Idx(m), Idx(k))))
     var b = TileTensor(rhs_ptr, row_major(Coord(Idx(k), Idx(n))))
 
-    if not ctx:
+    if not ctx._is_not_null():
         matmul[target="cpu"](c, a, b, None)
     else:
         # GPU execution - check GPU availability and dtype support
@@ -647,7 +647,7 @@ def batch_matmul_op[
         io_spec=_FusedComputeOutput, static_spec=out_spec
     ](out_ptr, IndexList[3](batch_size, m, n))
 
-    if not ctx:
+    if not ctx._is_not_null():
         BatchMatmulKernel.execute[
             rank=3,
             lambdas_have_fusion=False,

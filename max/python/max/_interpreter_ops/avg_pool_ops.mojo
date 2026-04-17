@@ -156,7 +156,7 @@ def avg_pool2d_op[
         else:
             out_ptr[i] = Scalar[dtype](0)
 
-    if not ctx:
+    if not ctx._is_not_null():
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():

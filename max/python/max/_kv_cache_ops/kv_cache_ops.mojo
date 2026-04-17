@@ -68,7 +68,7 @@ def mha_decode_num_partitions(
         unsafe_from_address=Int(py=device_context_ptr)
     )
 
-    if not ctx:
+    if not ctx._is_not_null():
         raise Error("Expected a non-null device context pointer.")
     if batch_size < 1:
         raise Error("batch_size must be positive.")
@@ -107,7 +107,7 @@ def mla_dispatch_args_scalar(
         unsafe_from_address=Int(py=device_context_ptr)
     )
 
-    if not ctx:
+    if not ctx._is_not_null():
         raise Error("Expected a non-null device context pointer.")
     if batch_size < 1:
         raise Error("batch_size must be positive.")

@@ -132,7 +132,7 @@ def gather_op[
         )
         out_ptr[i] = in_ptr[in_flat]
 
-    if not ctx:
+    if not ctx._is_not_null():
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
@@ -354,7 +354,7 @@ def gather_nd_op[
         in_offset += suffix_idx
         out_ptr[i] = in_ptr[in_offset]
 
-    if not ctx:
+    if not ctx._is_not_null():
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
@@ -1516,7 +1516,7 @@ def scatter_nd_op[
         out_offset += suffix_idx
         out_ptr[out_offset] = updates_ptr[i]
 
-    if not ctx:
+    if not ctx._is_not_null():
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():

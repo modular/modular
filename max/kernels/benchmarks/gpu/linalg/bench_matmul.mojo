@@ -440,8 +440,8 @@ def bench_matmul[
 
         # create a dummy buffer to force using the mojo the matmul kernel to output values
         # in the correct c_type
-        var c_dummy = TileTensor(
-            UnsafePointer[Scalar[DType.bfloat16], MutExternalOrigin](),
+        var c_dummy = TileTensor[DType.bfloat16, _, MutExternalOrigin](
+            None,
             row_major(shape_c),
         )
 

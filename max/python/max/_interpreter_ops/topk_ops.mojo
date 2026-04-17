@@ -125,7 +125,7 @@ def topk_op[
             out_val_ptr[out_base + ki * dim2] = best_val
             out_idx_ptr[out_base + ki * dim2] = best_idx
 
-    if not ctx:
+    if not ctx._is_not_null():
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():

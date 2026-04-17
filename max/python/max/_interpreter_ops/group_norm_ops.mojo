@@ -242,7 +242,7 @@ def _call[
 
     var epsilon = _get_buffer_ptr[dtype](epsilon_buffer)[0]
 
-    if not ctx:
+    if not ctx._is_not_null():
         _group_norm_cpu[dtype](
             _get_buffer_ptr[dtype](out_buffer),
             _get_buffer_ptr[dtype](in_buffer),

@@ -439,7 +439,7 @@ def reduce_op[
         out_ptr.store[width=width](flat_idx, val)
 
     # Always dispatch rank-3 reduction with axis=1
-    if not ctx:
+    if not ctx._is_not_null():
         reduce_fn[
             dtype,
             input_fn,

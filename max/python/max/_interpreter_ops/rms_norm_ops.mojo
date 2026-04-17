@@ -138,7 +138,7 @@ def rms_norm_op[
     var batch_dim = shape[0]
     var feature_dim = shape[1]
 
-    if not ctx:
+    if not ctx._is_not_null():
         _rms_norm_cpu[dtype](
             out_ptr,
             in_ptr,

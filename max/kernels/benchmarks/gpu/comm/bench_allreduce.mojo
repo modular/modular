@@ -95,7 +95,7 @@ def bench_reduce[
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
+        uninitialized=True
     )
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
@@ -164,7 +164,7 @@ def bench_reduce[
     var in_tensors = InlineArray[InTensorType, num_buffers](uninitialized=True)
     var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
 
-    var multi_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin]()
+    var multi_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin](_unsafe_null=())
 
     comptime if use_multimem:
         multicast_buf = DeviceMulticastBuffer[dtype](

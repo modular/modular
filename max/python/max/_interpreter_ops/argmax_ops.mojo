@@ -111,7 +111,7 @@ def argminmax_reduce_op[
 
         out_ptr[i] = best_idx
 
-    if not ctx:
+    if not ctx._is_not_null():
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():

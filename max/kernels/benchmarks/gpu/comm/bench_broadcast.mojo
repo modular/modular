@@ -114,11 +114,13 @@ def bench_broadcast[
     var signal_buf_size = size_of[Signal]() + chunk_bytes
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
+        uninitialized=True
     )
 
     # Multicast buffer for output (when use_multimem=True)
-    var out_multicast_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin]()
+    var out_multicast_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin](
+        _unsafe_null=()
+    )
 
     # Initialize output and signal buffers for each GPU
     comptime if use_multimem:

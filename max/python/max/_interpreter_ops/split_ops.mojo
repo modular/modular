@@ -98,7 +98,7 @@ def split_copy_op[
         var in_flat = i0 * in_stride0 + (j + axis_offset) * dim2 + i2
         out_ptr[i] = in_ptr[in_flat]
 
-    if not ctx:
+    if not ctx._is_not_null():
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():

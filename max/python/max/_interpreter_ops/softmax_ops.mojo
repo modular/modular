@@ -136,7 +136,7 @@ def softmax_op[
     var batch_dim = shape[0]
     var axis_dim = shape[1]
 
-    if not ctx:
+    if not ctx._is_not_null():
         # CPU path: use direct implementation to avoid runtime dependency
         # (nn.softmax requires AsyncRT parallelism_level which isn't
         # available in the interpreter context)

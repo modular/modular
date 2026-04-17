@@ -193,7 +193,7 @@ def range_op[
         io_spec=FusedOutput, static_spec=out_spec
     ](out_ptr, IndexList[1](size))
 
-    if not ctx:
+    if not ctx._is_not_null():
         Range.execute[
             dtype=dtype,
             target="cpu",
@@ -334,7 +334,7 @@ def random_normal_op[
         var values = generator.step_normal(mean=mean, stddev=variance)
         out_ptr.store[width=width](i, values.cast[dtype]().slice[width]())
 
-    if not ctx:
+    if not ctx._is_not_null():
         elementwise[func, simd_width=8](IndexList[1](size))
     else:
         comptime if has_accelerator():
@@ -458,7 +458,7 @@ def random_uniform_op[
         values = values * delta + lower_bound
         out_ptr.store[width=width](i, values.cast[dtype]().slice[width]())
 
-    if not ctx:
+    if not ctx._is_not_null():
         elementwise[func, simd_width=4](IndexList[1](size))
     else:
         comptime if has_accelerator():

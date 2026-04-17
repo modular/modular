@@ -421,8 +421,8 @@ def test_prefill[
     ctx.synchronize()
     ctx.enqueue_copy(output_ptr, output_device_ptr)
 
-    var null_valid_length = TileTensor(
-        UnsafePointer[UInt32, MutAnyOrigin](),
+    var null_valid_length = TileTensor[DType.uint32, _, MutAnyOrigin](
+        None,
         row_major(Coord(Idx(0))),
     )
 

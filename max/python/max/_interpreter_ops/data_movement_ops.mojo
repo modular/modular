@@ -126,7 +126,7 @@ def static_broadcast_to_op[
         io_spec=Output, static_spec=out_spec
     ](out_ptr, out_shape)
 
-    if not ctx:
+    if not ctx._is_not_null():
         StaticBroadcastTo.execute[
             target="cpu",
             dtype=dtype,
@@ -266,7 +266,7 @@ def transpose_op[
         perm_data_ptr, IndexList[1](MAX_RANK)
     )
 
-    if not ctx:
+    if not ctx._is_not_null():
         Transpose.execute[
             target="cpu",
             _trace_name="interpreter.transpose",
@@ -478,7 +478,7 @@ def memcpy_op[
         var i = rebind[IndexList[1]](idx)[0]
         d.store[width=width](i, s.load[width=width](i))
 
-    if not ctx:
+    if not ctx._is_not_null():
         elementwise[func, simd_width=simd_width_of[dtype]()](
             IndexList[1](count)
         )
@@ -556,7 +556,7 @@ def slice_op[
     comptime unknown_starts = create_unknown_int_tuple(MAX_RANK)
     comptime unknown_steps = create_unknown_int_tuple(MAX_RANK)
 
-    if not ctx:
+    if not ctx._is_not_null():
         Slice.execute[
             target="cpu",
             _trace_name="interpreter.slice",

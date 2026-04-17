@@ -483,11 +483,6 @@ def run_test_sparse[
 
     var out_device = ctx.enqueue_create_buffer[q_type](out_size)
 
-    # Null scales pointer (no blockwise scaling for this test).
-    var null_scales_ptr = UnsafePointer[
-        Scalar[DType.float32], origin=MutAnyOrigin
-    ]()
-
     ctx.synchronize()
 
     # -----------------------------------------------------------------------
@@ -1706,11 +1701,6 @@ def run_test_sparse_variable_topk[
         topk_lengths_host[bi] = Int32(topk_per_batch[bi])
     var topk_lengths_device = ctx.enqueue_create_buffer[DType.int32](batch_size)
     ctx.enqueue_copy(topk_lengths_device, topk_lengths_host)
-
-    # Null scales pointer (no blockwise scaling for this test).
-    var null_scales_ptr = UnsafePointer[
-        Scalar[DType.float32], origin=MutAnyOrigin
-    ]()
 
     ctx.synchronize()
 
@@ -3441,11 +3431,6 @@ def run_test_sparse_topk_clamping[
         topk_lengths_host[bi] = Int32(topk_per_batch[bi])
     var topk_lengths_device = ctx.enqueue_create_buffer[DType.int32](batch_size)
     ctx.enqueue_copy(topk_lengths_device, topk_lengths_host)
-
-    # Null scales pointer (no blockwise scaling for this test).
-    var null_scales_ptr = UnsafePointer[
-        Scalar[DType.float32], origin=MutAnyOrigin
-    ]()
 
     ctx.synchronize()
 
