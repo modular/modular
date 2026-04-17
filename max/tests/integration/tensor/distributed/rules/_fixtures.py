@@ -59,7 +59,6 @@ MESH_2 = DeviceMesh(
     axis_names=("tp",),
 )
 
-
 # ── Mapping builders ────────────────────────────────────────────────
 
 

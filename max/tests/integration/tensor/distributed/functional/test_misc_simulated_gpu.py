@@ -10,18 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Creation ops tests on simulated GPU mesh (single GPU, 4 virtual devices)."""
+"""Misc ops tests on simulated GPU mesh (single GPU, 4 virtual devices)."""
 
 from _test_helpers import make_partial
 from max.driver import Accelerator
 from max.experimental.sharding import DeviceMesh
 
-from functional._creation import CreationTests
+from functional._misc import MiscTests
 
 gpu = Accelerator(0)
 
 
-class TestCreation(CreationTests):
+class TestMisc(MiscTests):
     MESH_1D = DeviceMesh(
         devices=(gpu, gpu, gpu, gpu),
         mesh_shape=(4,),
@@ -31,5 +31,10 @@ class TestCreation(CreationTests):
         devices=(gpu, gpu, gpu, gpu),
         mesh_shape=(2, 2),
         axis_names=("dp", "tp"),
+    )
+    MESH_2 = DeviceMesh(
+        devices=(gpu, gpu),
+        mesh_shape=(2,),
+        axis_names=("tp",),
     )
     partial_fn = staticmethod(make_partial)

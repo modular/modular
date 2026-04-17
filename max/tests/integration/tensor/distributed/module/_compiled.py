@@ -26,20 +26,16 @@ from __future__ import annotations
 from typing import ClassVar
 
 import numpy as np
-from _test_helpers import to_np
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import Model
-from max.experimental.distributed_functional.collectives import (
-    all_reduce_sum,
-    materialize,
+from max.experimental.distributed_functional import (
+    full,
+    matmul,
+    ones,
+    relu,
+    transfer_to,
 )
-from max.experimental.distributed_functional.collectives import (
-    shard as distribute,
-)
-from max.experimental.distributed_functional.creation import full, ones
-from max.experimental.distributed_functional.elementwise import relu
-from max.experimental.distributed_functional.matmul import matmul
 from max.experimental.nn.module import CompiledModel, Module, module_dataclass
 from max.experimental.sharding import (
     DeviceMesh,
@@ -61,9 +57,9 @@ def sym(feature_dim: int) -> TensorType:
 
 def check(result: Tensor, expected_val: float, shape: tuple[int, ...]) -> None:
     """Materialize and check values match expected constant."""
-    gathered = materialize(result) if result.is_distributed else result
+    gathered = result.materialize() if result.is_distributed else result
     expected = np.full(shape, expected_val)
-    np.testing.assert_allclose(to_np(gathered), expected, rtol=1e-4)
+    np.testing.assert_allclose(gathered.to_numpy(), expected, rtol=1e-4)
 
 
 class CompiledTests:
@@ -83,7 +79,7 @@ class CompiledTests:
             W: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(x, PlacementMapping(mesh, (Replicated(),)))
+                x_dist = transfer_to(x, PlacementMapping(mesh, (Replicated(),)))
                 return matmul(x_dist, self.W)
 
         W = ones(
@@ -103,7 +99,7 @@ class CompiledTests:
             W2: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(x, PlacementMapping(mesh, (Replicated(),)))
+                x_dist = transfer_to(x, PlacementMapping(mesh, (Replicated(),)))
                 return matmul(relu(matmul(x_dist, self.W1)), self.W2)
 
         m_s1 = PlacementMapping(mesh, (Sharded(1),))
@@ -128,7 +124,7 @@ class CompiledTests:
             W2: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(x, PlacementMapping(mesh, (Replicated(),)))
+                x_dist = transfer_to(x, PlacementMapping(mesh, (Replicated(),)))
                 return matmul(relu(matmul(x_dist, self.W1)), self.W2)
 
         m_s1 = PlacementMapping(mesh, (Sharded(1),))
@@ -154,7 +150,7 @@ class CompiledTests:
             W2: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(x, PlacementMapping(mesh, (Replicated(),)))
+                x_dist = transfer_to(x, PlacementMapping(mesh, (Replicated(),)))
                 return matmul(relu(matmul(x_dist, self.W1)), self.W2)
 
         m_s1 = PlacementMapping(mesh, (Sharded(1),))
@@ -166,10 +162,10 @@ class CompiledTests:
         x = full([5, D], 1.0, dtype=F32, device=CPU())
         eager_result = model(x)
         assert eager_result.placements == (Partial(),)
-        eager = to_np(materialize(eager_result))
+        eager = eager_result.to_numpy()
         compiled_result = model.compile(sym(D))(x)
         assert compiled_result.placements == (Partial(),)
-        compiled = to_np(materialize(compiled_result))
+        compiled = compiled_result.to_numpy()
         np.testing.assert_allclose(eager, compiled, rtol=1e-4)
 
     def test_compiled_with_allreduce(self) -> None:
@@ -181,10 +177,10 @@ class CompiledTests:
             W2: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(x, PlacementMapping(mesh, (Replicated(),)))
+                x_dist = transfer_to(x, PlacementMapping(mesh, (Replicated(),)))
                 h = relu(matmul(x_dist, self.W1))
                 out = matmul(h, self.W2)
-                return all_reduce_sum(out)
+                return transfer_to(out, PlacementMapping(mesh, (Replicated(),)))
 
         m_s1 = PlacementMapping(mesh, (Sharded(1),))
         m_s0 = PlacementMapping(mesh, (Sharded(0),))
@@ -206,7 +202,7 @@ class CompiledTests:
             W2: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(
+                x_dist = transfer_to(
                     x, PlacementMapping(mesh, (Replicated(), Replicated()))
                 )
                 return matmul(relu(matmul(x_dist, self.W1)), self.W2)
@@ -234,7 +230,7 @@ class CompiledTests:
             W: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(x, PlacementMapping(mesh, (Replicated(),)))
+                x_dist = transfer_to(x, PlacementMapping(mesh, (Replicated(),)))
                 return matmul(x_dist, self.W)
 
         W = ones(
@@ -254,7 +250,7 @@ class CompiledTests:
             W: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(x, PlacementMapping(mesh, (Replicated(),)))
+                x_dist = transfer_to(x, PlacementMapping(mesh, (Replicated(),)))
                 return matmul(x_dist, self.W)
 
         W = ones(
@@ -279,10 +275,10 @@ class CompiledTests:
             W2: Tensor
 
             def forward(self, x: Tensor) -> Tensor:
-                x_dist = distribute(x, PlacementMapping(mesh, (Replicated(),)))
+                x_dist = transfer_to(x, PlacementMapping(mesh, (Replicated(),)))
                 h = relu(matmul(x_dist, self.W1))
                 out = matmul(h, self.W2)
-                return all_reduce_sum(out)
+                return transfer_to(out, PlacementMapping(mesh, (Replicated(),)))
 
         m_s1 = PlacementMapping(mesh, (Sharded(1),))
         m_s0 = PlacementMapping(mesh, (Sharded(0),))
@@ -295,7 +291,7 @@ class CompiledTests:
         x_np = np.ones((3, D), dtype=np.float32)
         # Tensor path
         tensor_result = compiled(full([3, D], 1.0, dtype=F32, device=CPU()))
-        tensor_np = to_np(tensor_result)
+        tensor_np = tensor_result.to_numpy()
         # Buffer path
         raw_outputs = compiled.execute_raw(Buffer.from_numpy(x_np))
         raw_np = np.from_dlpack(raw_outputs[0].to(CPU()))

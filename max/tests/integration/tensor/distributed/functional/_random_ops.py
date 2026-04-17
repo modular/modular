@@ -26,9 +26,8 @@ from __future__ import annotations
 from typing import ClassVar
 
 import numpy as np
-from _test_helpers import to_np
 from max.dtype import DType
-from max.experimental.distributed_functional.random import gaussian, uniform
+from max.experimental.distributed_functional import gaussian, uniform
 from max.experimental.sharding import (
     DeviceMesh,
     PlacementMapping,
@@ -37,7 +36,6 @@ from max.experimental.sharding import (
 )
 
 _F32 = DType.float32
-
 
 # ── TestUniform ──────────────────────────────────────────────────────────
 
@@ -54,7 +52,7 @@ class _Uniform:
         assert t.is_distributed
         assert t.placements == (Replicated(), Replicated())
         assert tuple(t.shape) == (4, 8)
-        result = to_np(t)
+        result = t.to_numpy()
         assert result.shape == (4, 8)
         assert np.all(result >= 0.0) and np.all(result <= 1.0)
 
@@ -63,7 +61,7 @@ class _Uniform:
         t = uniform([4, 8], range=(2.0, 5.0), dtype=_F32, device=mapping)
         assert t.placements == (Replicated(), Sharded(1))
         assert tuple(t.shape) == (4, 8)
-        result = to_np(t)
+        result = t.to_numpy()
         assert result.shape == (4, 8)
         assert np.all(result >= 2.0) and np.all(result <= 5.0)
 
@@ -72,7 +70,7 @@ class _Uniform:
         t = uniform([8, 4], range=(-1.0, 1.0), dtype=_F32, device=mapping)
         assert t.placements == (Sharded(0), Replicated())
         assert tuple(t.shape) == (8, 4)
-        result = to_np(t)
+        result = t.to_numpy()
         assert result.shape == (8, 4)
         assert np.all(result >= -1.0) and np.all(result <= 1.0)
 
@@ -92,7 +90,7 @@ class _Gaussian:
         assert t.is_distributed
         assert t.placements == (Replicated(), Replicated())
         assert tuple(t.shape) == (8, 8)
-        result = to_np(t)
+        result = t.to_numpy()
         assert result.shape == (8, 8)
         # Loose statistical check: mean should be within a reasonable range.
         np.testing.assert_allclose(np.mean(result), 0.0, atol=2.0)
@@ -102,7 +100,7 @@ class _Gaussian:
         t = gaussian([4, 8], mean=5.0, std=0.01, dtype=_F32, device=mapping)
         assert t.placements == (Replicated(), Sharded(1))
         assert tuple(t.shape) == (4, 8)
-        result = to_np(t)
+        result = t.to_numpy()
         assert result.shape == (4, 8)
         # With std=0.01, values should be tightly clustered around mean=5.0.
         np.testing.assert_allclose(result, 5.0, atol=0.5)

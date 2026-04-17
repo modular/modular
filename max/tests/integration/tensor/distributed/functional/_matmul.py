@@ -20,7 +20,7 @@ Subclasses must define:
     MESH_1D: DeviceMesh   — 4 devices, shape (4,), axis_names=("tp",)
     MESH_2D: DeviceMesh   — 4 devices, shape (2,2), axis_names=("dp","tp")
     MESH_2:  DeviceMesh   — 2 devices, shape (2,), axis_names=("tp",)
-    partial_fn: Callable   — make_partial (CPU) or gpu_partial (GPU)
+    partial_fn: Callable   — make_partial (CPU) or make_partial (GPU)
 """
 
 from __future__ import annotations
@@ -30,14 +30,15 @@ from typing import ClassVar
 
 import numpy as np
 import pytest
-from _test_helpers import from_np, full_tensor, to_np
 from max.dtype import DType
-from max.experimental.distributed_functional.collectives import (
-    shard as distribute,
+from max.experimental.distributed_functional import (
+    full,
+    layer_norm,
+    matmul,
+    ones,
+    relu,
+    transfer_to,
 )
-from max.experimental.distributed_functional.creation import full, ones
-from max.experimental.distributed_functional.elementwise import relu
-from max.experimental.distributed_functional.matmul import matmul
 from max.experimental.sharding import (
     DeviceMesh,
     Partial,
@@ -49,7 +50,6 @@ from max.experimental.sharding import (
 from max.experimental.tensor import Tensor
 
 _F32 = DType.float32
-
 
 # ── Row Tensor Parallelism ───────────────────────────────────────────
 
@@ -64,11 +64,11 @@ class _RowTP:
 
     def test_produces_partial(self) -> None:
         """MESH_1D: S(1) x S(0) -> Partial (contracting dim match)."""
-        lhs = distribute(
+        lhs = transfer_to(
             full([2, 8], 1.0, dtype=_F32, device=self.MESH_1D.devices[0]),
             PlacementMapping(self.MESH_1D, (Sharded(1),)),
         )
-        rhs = distribute(
+        rhs = transfer_to(
             full([8, 4], 1.0, dtype=_F32, device=self.MESH_1D.devices[0]),
             PlacementMapping(self.MESH_1D, (Sharded(0),)),
         )
@@ -77,16 +77,16 @@ class _RowTP:
         # Row-TP: S(1) x S(0) -> Partial. Gather produces correct matmul.
         # ones(2,8) @ ones(8,4) = 8 * ones(2,4)
         np.testing.assert_allclose(
-            to_np(full_tensor(out)), np.full((2, 4), 8.0), rtol=1e-4
+            out.to_numpy(), np.full((2, 4), 8.0), rtol=1e-4
         )
 
     def test_2d_mesh(self) -> None:
         """2D mesh with S(1)xS(0) -> Partial on tp axis, values correct."""
-        lhs = distribute(
+        lhs = transfer_to(
             full([2, 8], 1.0, dtype=_F32, device=self.MESH_2D.devices[0]),
             PlacementMapping(self.MESH_2D, (Replicated(), Sharded(1))),
         )
-        rhs = distribute(
+        rhs = transfer_to(
             full([8, 4], 1.0, dtype=_F32, device=self.MESH_2D.devices[0]),
             PlacementMapping(self.MESH_2D, (Replicated(), Sharded(0))),
         )
@@ -94,7 +94,7 @@ class _RowTP:
         assert any(isinstance(p, Partial) for p in out.placements)
         # ones(2,8) @ ones(8,4) = 8 * ones(2,4)
         np.testing.assert_allclose(
-            to_np(full_tensor(out)), np.full((2, 4), 8.0), rtol=1e-4
+            out.to_numpy(), np.full((2, 4), 8.0), rtol=1e-4
         )
 
 
@@ -120,7 +120,7 @@ class _ColTP:
         assert list(result.shape) == [3, 6]
         # ones[3,5] @ ones[5,6] = 5*ones[3,6]
         np.testing.assert_allclose(
-            to_np(result), np.full((3, 6), 5.0), rtol=1e-4
+            result.to_numpy(), np.full((3, 6), 5.0), rtol=1e-4
         )
 
     def test_col_tp_3d(self) -> None:
@@ -140,7 +140,7 @@ class _ColTP:
         assert list(out.shape) == [2, 3, 6]
         # ones[2,3,5] @ ones[2,5,6] = 5*ones[2,3,6]
         np.testing.assert_allclose(
-            to_np(out), np.full((2, 3, 6), 5.0), rtol=1e-4
+            out.to_numpy(), np.full((2, 3, 6), 5.0), rtol=1e-4
         )
 
 
@@ -160,14 +160,14 @@ class _DataParallel:
         x_np = np.ones((8, 4), dtype=np.float32)
         w1_np = np.full((4, 4), 0.5, dtype=np.float32)
         w2_np = np.full((4, 4), 0.25, dtype=np.float32)
-        x = distribute(
-            from_np(x_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
+        x = transfer_to(
+            Tensor(x_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
         )
-        w1 = distribute(
-            from_np(w1_np), PlacementMapping(self.MESH_1D, (Replicated(),))
+        w1 = transfer_to(
+            Tensor(w1_np), PlacementMapping(self.MESH_1D, (Replicated(),))
         )
-        w2 = distribute(
-            from_np(w2_np), PlacementMapping(self.MESH_1D, (Replicated(),))
+        w2 = transfer_to(
+            Tensor(w2_np), PlacementMapping(self.MESH_1D, (Replicated(),))
         )
         h = matmul(x, w1)
         assert isinstance(h, Tensor)
@@ -175,7 +175,7 @@ class _DataParallel:
         out = matmul(h, w2)
         assert isinstance(out, Tensor)
         assert out.placements == (Sharded(0),)
-        arr = to_np(out)
+        arr = out.to_numpy()
         expected = x_np @ w1_np @ w2_np
         np.testing.assert_allclose(arr, expected, rtol=1e-5)
 
@@ -184,16 +184,16 @@ class _DataParallel:
         # 5 rows cannot be evenly split across 4 devices: 2,1,1,1
         x_np = np.ones((5, 4), dtype=np.float32)
         w_np = np.full((4, 4), 2.0, dtype=np.float32)
-        x = distribute(
-            from_np(x_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
+        x = transfer_to(
+            Tensor(x_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
         )
-        w = distribute(
-            from_np(w_np), PlacementMapping(self.MESH_1D, (Replicated(),))
+        w = transfer_to(
+            Tensor(w_np), PlacementMapping(self.MESH_1D, (Replicated(),))
         )
         result = matmul(x, w)
         assert isinstance(result, Tensor)
         assert result.placements == (Sharded(0),)
-        arr = to_np(result)
+        arr = result.to_numpy()
         np.testing.assert_allclose(arr, x_np @ w_np, rtol=1e-5)
 
 
@@ -213,8 +213,8 @@ class _PartialPassthrough:
         a_np = np.ones((2, 4), dtype=np.float32)
         b_np = np.ones((4, 3), dtype=np.float32)
         a = self.partial_fn(a_np, self.MESH_1D, (Partial(),))
-        b = distribute(
-            from_np(b_np), PlacementMapping(self.MESH_1D, (Replicated(),))
+        b = transfer_to(
+            Tensor(b_np), PlacementMapping(self.MESH_1D, (Replicated(),))
         )
         result = matmul(a, b)
         assert any(isinstance(p, Partial) for p in result.placements)
@@ -223,20 +223,20 @@ class _PartialPassthrough:
     def test_partial_correctness(self) -> None:
         """P x R -> P values are correct after resolve.
 
-        Uses distribute(from_np(...)) for rhs to test the CPU->GPU path.
+        Uses transfer_to(Tensor(...)) for rhs to test the CPU->GPU path.
         """
         a_np = np.ones((2, 4), dtype=np.float32)
         b_np = np.ones((4, 4), dtype=np.float32)
         a = self.partial_fn(a_np, self.MESH_1D, (Partial(),))
-        b = distribute(
-            from_np(b_np), PlacementMapping(self.MESH_1D, (Replicated(),))
+        b = transfer_to(
+            Tensor(b_np), PlacementMapping(self.MESH_1D, (Replicated(),))
         )
         result = matmul(a, b)
         assert result.placements == (Partial(),)
         # each shard: ones[2,4] @ ones[4,4] = 4*ones[2,4]
         # allreduce across 4 devices = 16*ones[2,4]
         np.testing.assert_allclose(
-            to_np(full_tensor(result)), np.full((2, 4), 16.0), rtol=1e-4
+            result.to_numpy(), np.full((2, 4), 16.0), rtol=1e-4
         )
 
     @pytest.mark.skip(
@@ -251,15 +251,15 @@ class _PartialPassthrough:
         a_np = np.ones((2, 4), dtype=np.float32)
         b_np = np.ones((4, 3), dtype=np.float32)
         a = self.partial_fn(a_np, self.MESH_1D, (Partial(),))
-        b = distribute(
-            from_np(b_np), PlacementMapping(self.MESH_1D, (Replicated(),))
+        b = transfer_to(
+            Tensor(b_np), PlacementMapping(self.MESH_1D, (Replicated(),))
         )
         result = matmul(a, b)
         assert result.placements == (Partial(),)
         # each shard: ones[2,4] @ ones[4,3] = 4*ones[2,3]
         # allreduce across 4 devices = 16*ones[2,3]
         np.testing.assert_allclose(
-            to_np(full_tensor(result)), np.full((2, 3), 16.0), rtol=1e-4
+            result.to_numpy(), np.full((2, 3), 16.0), rtol=1e-4
         )
 
     def test_partial_partial_raises(self) -> None:
@@ -316,7 +316,7 @@ class _BatchedMatmul:
         assert out.placements == (Sharded(0),)
         assert list(out.shape) == [4, 3, 6]
         np.testing.assert_allclose(
-            to_np(out), np.full((4, 3, 6), 5.0), rtol=1e-4
+            out.to_numpy(), np.full((4, 3, 6), 5.0), rtol=1e-4
         )
 
     def test_row_sharded_3d(self) -> None:
@@ -335,7 +335,7 @@ class _BatchedMatmul:
         assert out.placements == (Sharded(1),)
         assert list(out.shape) == [2, 4, 6]
         np.testing.assert_allclose(
-            to_np(out), np.full((2, 4, 6), 5.0), rtol=1e-4
+            out.to_numpy(), np.full((2, 4, 6), 5.0), rtol=1e-4
         )
 
     def test_row_tp_3d_partial(self) -> None:
@@ -354,7 +354,7 @@ class _BatchedMatmul:
         assert any(isinstance(p, Partial) for p in out.placements)
         # ones(2,3,6) @ ones(2,6,4) = 6*ones(2,3,4), gathered from Partial
         np.testing.assert_allclose(
-            to_np(full_tensor(out)), np.full((2, 3, 4), 6.0), rtol=1e-4
+            out.to_numpy(), np.full((2, 3, 4), 6.0), rtol=1e-4
         )
 
     def test_numerics_batch_parallel(self) -> None:
@@ -364,18 +364,17 @@ class _BatchedMatmul:
         expected = lhs_np @ rhs_np  # [4, 3, 6] filled with 5.0
 
         _M2_S0 = PlacementMapping(self.MESH_2, (Sharded(0),))
-        lhs = distribute(
+        lhs = transfer_to(
             full([4, 3, 5], 1.0, dtype=_F32, device=self.MESH_2.devices[0]),
             _M2_S0,
         )
-        rhs = distribute(
+        rhs = transfer_to(
             full([4, 5, 6], 1.0, dtype=_F32, device=self.MESH_2.devices[0]),
             _M2_S0,
         )
         out = matmul(lhs, rhs)
         assert out.placements == (Sharded(0),)
-        result = full_tensor(out)
-        np.testing.assert_allclose(to_np(result), expected, rtol=1e-4)
+        np.testing.assert_allclose(out.to_numpy(), expected, rtol=1e-4)
 
 
 # ── TP Chain (MLP pattern) ──────────────────────────────────────────
@@ -429,10 +428,10 @@ class _TPChain:
         out = matmul(h, W2)  # Row-TP -> Partial
         assert any(isinstance(p, Partial) for p in out.placements)
 
-        result = full_tensor(out)
+        result = out.materialize()
         # ones @ ones = D, relu(D) = D, D @ ones = D*D = 16
         np.testing.assert_allclose(
-            to_np(result), np.full((4, _D), 16.0), rtol=1e-4
+            result.to_numpy(), np.full((4, _D), 16.0), rtol=1e-4
         )
 
     def test_tp_vs_dp_equivalent(self) -> None:
@@ -443,8 +442,8 @@ class _TPChain:
         dp_raw = self._dp_mlp_static(self.MESH_1D, [4, _D], _D)
         assert dp_raw.placements == (Sharded(0),)
 
-        tp = to_np(full_tensor(tp_raw))
-        dp = to_np(full_tensor(dp_raw))
+        tp = tp_raw.to_numpy()
+        dp = dp_raw.to_numpy()
         np.testing.assert_allclose(tp, dp, rtol=1e-4)
 
 
@@ -461,11 +460,11 @@ class _Errors:
 
     def test_sharded1_replicated_raises(self) -> None:
         """MESH_1D: S(1) x R raises (unsupported)."""
-        lhs = distribute(
+        lhs = transfer_to(
             full([2, 8], 1.0, dtype=_F32, device=self.MESH_1D.devices[0]),
             PlacementMapping(self.MESH_1D, (Sharded(1),)),
         )
-        rhs = distribute(
+        rhs = transfer_to(
             full([8, 4], 1.0, dtype=_F32, device=self.MESH_1D.devices[0]),
             PlacementMapping(self.MESH_1D, (Replicated(),)),
         )
@@ -474,6 +473,85 @@ class _Errors:
 
 
 # ── Combined base class ─────────────────────────────────────────────
+
+# ── LayerNorm ───────────────────────────────────────────────────────
+
+
+class _LayerNorm:
+    """Tests for distributed layer_norm dispatch."""
+
+    MESH_2: ClassVar[DeviceMesh]
+    partial_fn: ClassVar[Callable[..., Tensor]]
+
+    def test_layer_norm_batch_sharded(self) -> None:
+        """layer_norm on batch-sharded tensor — placement preserved."""
+        rng = np.random.default_rng(42)
+        x_np = rng.standard_normal((4, 8)).astype(np.float32)
+        w_np = np.ones(8, dtype=np.float32)
+        b_np = np.zeros(8, dtype=np.float32)
+
+        x = transfer_to(
+            Tensor(x_np), PlacementMapping(self.MESH_2, (Sharded(0),))
+        )
+        w = transfer_to(
+            Tensor(w_np), PlacementMapping(self.MESH_2, (Replicated(),))
+        )
+        b = transfer_to(
+            Tensor(b_np), PlacementMapping(self.MESH_2, (Replicated(),))
+        )
+        result = layer_norm(x, w, b, epsilon=1e-5)
+        assert result.placements == (Sharded(0),)
+        assert list(result.shape) == [4, 8]
+
+    def test_layer_norm_hidden_sharded_raises(self) -> None:
+        """layer_norm with hidden dim sharded raises."""
+        x = transfer_to(
+            Tensor(np.ones((4, 8), dtype=np.float32)),
+            PlacementMapping(self.MESH_2, (Sharded(1),)),
+        )
+        w = transfer_to(
+            Tensor(np.ones(8, dtype=np.float32)),
+            PlacementMapping(self.MESH_2, (Replicated(),)),
+        )
+        b = transfer_to(
+            Tensor(np.zeros(8, dtype=np.float32)),
+            PlacementMapping(self.MESH_2, (Replicated(),)),
+        )
+        with pytest.raises(ValueError, match="sharded axis"):
+            layer_norm(x, w, b, 1e-5)
+
+    def test_layer_norm_partial_auto_reduces(self) -> None:
+        """layer_norm on Partial input auto-reduces before normalizing.
+
+        This is the critical matmul → layer_norm pattern in row-TP:
+        matmul produces Partial, layer_norm must all-reduce first because
+        LN(p0) + LN(p1) ≠ LN(p0 + p1).
+        """
+        rng = np.random.default_rng(99)
+        x_np = rng.standard_normal((4, 8)).astype(np.float32)
+        w_np = np.ones(8, dtype=np.float32)
+        b_np = np.zeros(8, dtype=np.float32)
+
+        x = self.partial_fn(x_np, self.MESH_2, (Partial(),))
+        w = transfer_to(
+            Tensor(w_np), PlacementMapping(self.MESH_2, (Replicated(),))
+        )
+        b = transfer_to(
+            Tensor(b_np), PlacementMapping(self.MESH_2, (Replicated(),))
+        )
+        result = layer_norm(x, w, b, epsilon=1e-5)
+        # After auto-reduce, Partial → Replicated, then layer_norm
+        # preserves Replicated.
+        assert result.placements == (Replicated(),)
+
+        # Verify numerics: the result should match layer_norm on the
+        # FULL tensor (x_np * num_devices, since make_partial replicates).
+        n = self.MESH_2.num_devices
+        full_x = x_np * n  # make_partial replicates → all-reduce sums
+        mean = full_x.mean(axis=-1, keepdims=True)
+        var = full_x.var(axis=-1, keepdims=True)
+        expected = (full_x - mean) / np.sqrt(var + 1e-5) * w_np + b_np
+        np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-4)
 
 
 class MatmulTests(
@@ -484,7 +562,8 @@ class MatmulTests(
     _BatchedMatmul,
     _TPChain,
     _Errors,
+    _LayerNorm,
 ):
-    """Aggregates all matmul test classes for thin subclassing."""
+    """Aggregates all matmul/linalg test classes for thin subclassing."""
 
     pass

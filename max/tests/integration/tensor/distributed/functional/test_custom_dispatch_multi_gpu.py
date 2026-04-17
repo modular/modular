@@ -10,26 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Creation ops tests on simulated GPU mesh (single GPU, 4 virtual devices)."""
+"""Custom dispatch tests on real 2 GPUs."""
 
-from _test_helpers import make_partial
 from max.driver import Accelerator
 from max.experimental.sharding import DeviceMesh
 
-from functional._creation import CreationTests
-
-gpu = Accelerator(0)
+from functional._custom_dispatch import CustomDispatchTests
 
 
-class TestCreation(CreationTests):
-    MESH_1D = DeviceMesh(
-        devices=(gpu, gpu, gpu, gpu),
-        mesh_shape=(4,),
+class TestCustomDispatch(CustomDispatchTests):
+    MESH_2 = DeviceMesh(
+        devices=(Accelerator(0), Accelerator(1)),
+        mesh_shape=(2,),
         axis_names=("tp",),
     )
-    MESH_2D = DeviceMesh(
-        devices=(gpu, gpu, gpu, gpu),
-        mesh_shape=(2, 2),
-        axis_names=("dp", "tp"),
-    )
-    partial_fn = staticmethod(make_partial)

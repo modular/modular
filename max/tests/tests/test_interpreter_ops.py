@@ -26,13 +26,12 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random as max_random
 from max.experimental import realization_context as rc
-from max.experimental.distributed_functional.collectives import (
-    distributed_broadcast as df_broadcast,
+from max.experimental.distributed_functional import (
+    reduce_scatter,
 )
-from max.experimental.distributed_functional.collectives import (
-    distributed_reducescatter_sum as df_reducescatter_sum,
+from max.experimental.distributed_functional import (
+    transfer_to as df_shard,
 )
-from max.experimental.distributed_functional.collectives import to_numpy
 from max.experimental.realization_context import set_seed
 from max.experimental.sharding import (
     DeviceMesh,
@@ -8675,12 +8674,6 @@ class TestDistributedScatterSimulated:
 
     def test_scatter_simulated_fallback(self) -> None:
         """Simulated mesh: distributed_scatter falls back to transfer_to."""
-        from max.experimental.distributed_functional.collectives import (
-            distributed_scatter as df_scatter,
-        )
-        from max.experimental.distributed_functional.collectives import (
-            to_numpy,
-        )
         from max.experimental.sharding import (
             DeviceMesh,
             PlacementMapping,
@@ -8693,23 +8686,18 @@ class TestDistributedScatterSimulated:
         )
 
         data = np.arange(8, dtype=np.float32).reshape(4, 2)
-        chunks = [
-            Tensor.from_dlpack(np.ascontiguousarray(data[:2])),
-            Tensor.from_dlpack(np.ascontiguousarray(data[2:])),
-        ]
-
         mapping = PlacementMapping(mesh, (Sharded(0),))
 
         with (
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
         ):
-            result = df_scatter(chunks, mapping)
+            result = df_shard(Tensor(data), mapping)
 
         assert result.placements == (Sharded(0),)
         assert len(result.local_shards) == 2
-        np.testing.assert_allclose(to_numpy(result.local_shards[0]), data[:2])
-        np.testing.assert_allclose(to_numpy(result.local_shards[1]), data[2:])
+        np.testing.assert_allclose(result.local_shards[0].to_numpy(), data[:2])
+        np.testing.assert_allclose(result.local_shards[1].to_numpy(), data[2:])
 
 
 class TestDistributedBroadcastSimulated:
@@ -8731,12 +8719,12 @@ class TestDistributedBroadcastSimulated:
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
         ):
-            result = df_broadcast(t, mapping)
+            result = df_shard(t, mapping)
 
         assert result.placements == (Replicated(),)
         assert len(result.local_shards) == 2
-        np.testing.assert_allclose(to_numpy(result.local_shards[0]), data)
-        np.testing.assert_allclose(to_numpy(result.local_shards[1]), data)
+        np.testing.assert_allclose(result.local_shards[0].to_numpy(), data)
+        np.testing.assert_allclose(result.local_shards[1].to_numpy(), data)
 
 
 class TestDistributedReducescatterSumSimulated:
@@ -8744,32 +8732,32 @@ class TestDistributedReducescatterSumSimulated:
 
     def test_reducescatter_sum_simulated_fallback(self) -> None:
         """Simulated mesh: reduce-scatter falls back to add + split."""
+        from max.experimental.sharding import Partial
+
         cpu = CPU()
         mesh = DeviceMesh(
             devices=(cpu, cpu), mesh_shape=(2,), axis_names=("tp",)
         )
 
-        # Two [4, 2] inputs — sum then split along axis 0.
+        # Two [4, 2] partial contributions — one per device.
         data_a = np.arange(8, dtype=np.float32).reshape(4, 2)
         data_b = np.arange(8, 16, dtype=np.float32).reshape(4, 2)
-
-        inputs = [
-            Tensor.from_dlpack(np.ascontiguousarray(data_a)),
-            Tensor.from_dlpack(np.ascontiguousarray(data_b)),
-        ]
-
-        mapping = PlacementMapping(mesh, (Sharded(0),))
 
         with (
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
         ):
-            result = df_reducescatter_sum(
-                inputs, scatter_axis=0, mapping=mapping
+            # Build a Partial tensor with different data per shard.
+            shard_a = Tensor(data_a).__tensorvalue__()
+            shard_b = Tensor(data_b).__tensorvalue__()
+            partial_t = Tensor.from_shard_values(
+                [shard_a, shard_b],
+                PlacementMapping(mesh, (Partial(),)),
             )
+            result = reduce_scatter(partial_t, scatter_axis=0, mesh_axis=0)
 
         assert result.placements == (Sharded(0),)
         assert len(result.local_shards) == 2
         total = data_a + data_b
-        np.testing.assert_allclose(to_numpy(result.local_shards[0]), total[:2])
-        np.testing.assert_allclose(to_numpy(result.local_shards[1]), total[2:])
+        np.testing.assert_allclose(result.local_shards[0].to_numpy(), total[:2])
+        np.testing.assert_allclose(result.local_shards[1].to_numpy(), total[2:])

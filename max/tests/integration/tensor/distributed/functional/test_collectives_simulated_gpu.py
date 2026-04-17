@@ -18,7 +18,7 @@ works on GPU — important for testing fused GPU-only ops in a multi-device
 setting without requiring multiple physical GPUs.
 """
 
-from _test_helpers import gpu_partial
+from _test_helpers import make_partial
 from max.driver import Accelerator
 from max.experimental.sharding import DeviceMesh
 
@@ -38,4 +38,4 @@ class TestCollectives(CollectivesTests):
         mesh_shape=(2, 2),
         axis_names=("dp", "tp"),
     )
-    partial_fn = staticmethod(gpu_partial)
+    partial_fn = staticmethod(make_partial)
