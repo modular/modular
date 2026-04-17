@@ -943,24 +943,9 @@ async def openai_create_chat_completion(
                 else 1
             )
 
-        target_endpoint = _get_target_endpoint(
+        target_endpoint = _get_and_verify_target_endpoint(
             request, completion_request.target_endpoint
         )
-        pipeline_config = get_app_pipeline_config(request.app)
-        if (
-            pipeline_config.runtime.pipeline_role == "decode_only"
-            and target_endpoint is None
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "This server is running in disaggregated inference"
-                    " mode (pipeline_role='decode_only') and requires a"
-                    " target_endpoint to route requests to a prefill"
-                    " worker. Provide it via the 'X-Target-Endpoint'"
-                    " header or the 'target_endpoint' request body field."
-                ),
-            )
 
         token_request = TextGenerationRequest(
             request_id=RequestID(request_id),
@@ -1494,11 +1479,9 @@ def get_prompts_from_openai_request(
 
 
 def _get_and_verify_target_endpoint(
-    request: Request, completion_request: CreateCompletionRequest
+    request: Request, body_target_endpoint: str | None
 ) -> str | None:
-    target_endpoint = _get_target_endpoint(
-        request, completion_request.target_endpoint
-    )
+    target_endpoint = _get_target_endpoint(request, body_target_endpoint)
     pipeline_config = get_app_pipeline_config(request.app)
     if (
         pipeline_config.runtime.pipeline_role == "decode_only"
@@ -1538,7 +1521,7 @@ async def openai_create_completion(
         assert isinstance(pipeline, TokenGeneratorPipeline)
 
         target_endpoint = _get_and_verify_target_endpoint(
-            request, completion_request
+            request, completion_request.target_endpoint
         )
 
         logger.debug(
