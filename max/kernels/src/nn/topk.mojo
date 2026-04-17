@@ -1781,8 +1781,8 @@ def _topk_gpu[
             raise Error(
                 t"shared memory of {shared_mem_bytes_2} exceeds static"
                 t" allocation capacity of {_APPLE_STATIC_SHMEM_MAX_BYTES} for"
-                t" the second stage top-k kernel, consider reducing the"
-                t" block_size or num_blocks_per_input"
+                " the second stage top-k kernel, consider reducing the"
+                " block_size or num_blocks_per_input"
             )
 
     # Define grid and block dimensions for stage 2

@@ -2448,6 +2448,7 @@ def _rms_norm_then_residual_add_impl[
             ctx.get_device_context(),
         )
     else:
+
         @parameter
         @always_inline
         def fused_output_fn[
@@ -3561,7 +3562,9 @@ def rms_norm_then_residual_add_gpu[
         output_fn[width, alignment](idx, val + residual_fn[width, rank](idx))
 
     rms_norm_gpu[
-        input_fn, fused_output_fn, multiply_before_cast=multiply_before_cast,
+        input_fn,
+        fused_output_fn,
+        multiply_before_cast=multiply_before_cast,
         pdl_level=pdl_level,
     ](
         shape,
@@ -3610,7 +3613,9 @@ def rms_norm_then_residual_add_scaled_gpu[
         )
 
     rms_norm_gpu[
-        input_fn, fused_output_fn, multiply_before_cast=multiply_before_cast,
+        input_fn,
+        fused_output_fn,
+        multiply_before_cast=multiply_before_cast,
         pdl_level=pdl_level,
     ](
         shape,

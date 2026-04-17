@@ -145,10 +145,7 @@ def _block_reduce_pivot_bounds[
 @always_inline
 def _block_reduce_dual_sum[
     block_size: Int, broadcast: Bool = True
-](
-    sum0: Float32,
-    sum1: Float32,
-) -> Tuple[Float32, Float32]:
+](sum0: Float32, sum1: Float32,) -> Tuple[Float32, Float32]:
     """Reduce two Float32 sums with one block-reduction pass."""
 
     @always_inline
@@ -1648,7 +1645,9 @@ def topk_softmax_sample_kernel[
                                 logits_vec[j] > pivot_1 and idx < d
                             ) else Int32(0)
 
-                        thread_count_1_total += probs_gt_pivot_1_count.reduce_add()
+                        thread_count_1_total += (
+                            probs_gt_pivot_1_count.reduce_add()
+                        )
 
                     var aggregate_gt_pivot_1 = Int32(
                         block.sum[block_size=block_size, broadcast=True](
@@ -1952,9 +1951,7 @@ def topk_softmax_sample[
 ](
     ctx: DeviceContext,
     logits: TileTensor[dtype, ...],
-    sampled_indices: TileTensor[
-        mut=True, out_idx_type, ...
-    ],
+    sampled_indices: TileTensor[mut=True, out_idx_type, ...],
     top_k_val: Int,
     temperature_val: Float32 = 1.0,
     top_p_val: Float32 = 1.0,
@@ -2054,11 +2051,11 @@ def topk_softmax_sample[
             if shared_mem_bytes > _APPLE_STATIC_SHMEM_MAX_BYTES:
                 raise Error(
                     t"shared memory of {shared_mem_bytes} exceeds static"
-                    t" allocation capacity of"
+                    " allocation capacity of"
                     t" {_APPLE_STATIC_SHMEM_MAX_BYTES} when evaluating"
                     t" topk_softmax_sample with top_k_val={top_k_val}"
                     t" and vec_size={vec_size}. Consider reducing"
-                    t" top_k_val or using a smaller block_size."
+                    " top_k_val or using a smaller block_size."
                 )
 
         var top_k_buf: DeviceBuffer[out_idx_type]

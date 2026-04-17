@@ -4742,10 +4742,10 @@ def quantize_dynamic_block_scaled_fp4(
     if input.dtype != DType.bfloat16:
         raise ValueError("input tensor dtype must be bfloat16")
 
-    if out_type not in (DType.uint8,):
+    if out_type != DType.uint8:
         raise ValueError("out_type must be uint8 (fp4-e2m1fnX2)")
 
-    if scales_type not in (DType.float8_e4m3fn,):
+    if scales_type != DType.float8_e4m3fn:
         raise ValueError("scales_type must be float8_e4m3fn for NVFP4")
 
     if sf_vector_size != 16:

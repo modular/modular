@@ -1221,7 +1221,8 @@ def routed_expert_combine_then_rms_norm[
     weight_offset: Scalar[dtype],
     context: DeviceContextPtr,
 ) raises:
-    """Combines routed expert outputs and immediately applies weighted RMSNorm."""
+    """Combines routed expert outputs and immediately applies weighted RMSNorm.
+    """
     comptime assert output.flat_rank == 2
     comptime assert top_k_weights.flat_rank == 2
     comptime assert down_output.flat_rank == 3
