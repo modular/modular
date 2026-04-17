@@ -393,6 +393,14 @@ ConformanceResult
 evaluateConstraint(ParameterEvaluator &evaluator, ConstraintAttr constraint,
                    ArrayRef<ConstraintAttr> callerAssumptions = {});
 
+/// TODO: `ClosureEmitter.cpp` has a nearly identical helper
+/// (`getUnderlyingParamRef`). Unify these implementations to avoid drift.
+///
+/// Extract the underlying ParamDeclRefAttr from a type expression by peeling
+/// UpcastAttr and TypeParamAttr/ParamType wrappers.
+/// Returns a null attr if no ParamDeclRefAttr can be extracted.
+ParamDeclRefAttr extractParamDeclRef(TypedAttr attr);
+
 } // namespace LIT
 
 //===----------------------------------------------------------------------===//
