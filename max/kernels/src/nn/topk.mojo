@@ -2056,6 +2056,10 @@ def topk_gpu[
             internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
             internal_out_vals = reshape(out_vals, internal_out_vals_shape)
 
+        # Do not launch GPU kernels with an empty internal batch.
+        if internal_bs == 0:
+            return
+
         # Calculate the number of blocks per input
         var num_blocks_per_input_ = min(
             ceildiv(N, block_size_), 8
