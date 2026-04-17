@@ -40,7 +40,6 @@ from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 from max.pipelines.core import TextContext
 from torch.utils.dlpack import from_dlpack
 
-
 PAGE_SIZE = 128
 EPS = 1e-6
 K_NORM_STD = 0.793

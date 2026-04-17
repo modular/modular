@@ -18,7 +18,6 @@ from max.pipelines.architectures.gemma3.layers.rms_norm import (
 )
 from torch.utils.dlpack import from_dlpack
 
-
 EPS = 1e-6
 RMS_NORM_STD = 0.05
 WARMUP_ITERS = 20

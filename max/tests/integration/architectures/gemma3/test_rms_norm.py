@@ -19,6 +19,8 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType
 from max.pipelines.architectures.gemma3.layers.rms_norm import (
     Gemma3RMSNorm as MaxRMSNorm,
+)
+from max.pipelines.architectures.gemma3.layers.rms_norm import (
     gemma3_rms_norm_fused_residual_add,
 )
 from torch.utils.dlpack import from_dlpack

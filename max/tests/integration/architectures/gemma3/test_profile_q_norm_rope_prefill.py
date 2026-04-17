@@ -31,7 +31,6 @@ from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 from torch.utils.dlpack import from_dlpack
 
-
 EPS = 1e-6
 Q_NORM_STD = 0.68
 WARMUP_ITERS = 20
@@ -436,9 +435,7 @@ def test_profile_q_norm_rope_prefill() -> None:
     ratios = list(results["average_speedup_ratio_vs_graph_baseline"].values())
     results["average_geomean_speedup_vs_graph_baseline"] = _geomean(ratios)
     large_shape_ratio_names = (
-        large_shape_names
-        if large_shape_names
-        else list(results["average_speedup_ratio_vs_graph_baseline"].keys())
+        large_shape_names or list(results["average_speedup_ratio_vs_graph_baseline"].keys())
     )
     results["average_large_shape_geomean_speedup_vs_graph_baseline"] = _geomean(
         [
@@ -456,9 +453,7 @@ def test_profile_q_norm_rope_prefill() -> None:
         confirm_ratios
     )
     confirm_large_shape_names = (
-        large_shape_names
-        if large_shape_names
-        else list(results["confirm_sweep_us"].keys())
+        large_shape_names or list(results["confirm_sweep_us"].keys())
     )
     results["confirm_large_shape_geomean_speedup_vs_graph_baseline"] = _geomean(
         [

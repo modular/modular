@@ -31,7 +31,6 @@ from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 from torch.utils.dlpack import from_dlpack
 
-
 EPS = 1e-6
 Q_NORM_STD = 0.68
 WARMUP_ITERS = 20

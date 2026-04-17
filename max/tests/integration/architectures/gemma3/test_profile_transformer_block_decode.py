@@ -19,8 +19,8 @@ import math
 import os
 import subprocess
 import time
-from pathlib import Path
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
@@ -28,7 +28,14 @@ import torch
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferValue, DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
+)
 from max.interfaces import RequestID, TokenBuffer
 from max.kv_cache import PagedKVCacheManager
 from max.nn.attention import MHAMaskVariant
@@ -47,8 +54,8 @@ from max.nn.transformer.distributed_transformer import forward_sharded_layers
 from max.pipelines.architectures.gemma3.layers.attention import (
     Gemma3Attention as MaxGemma3Attention,
 )
-from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 from max.pipelines.architectures.gemma3.layers.rms_norm import (
+    Gemma3RMSNorm,
     gemma3_rms_norm_fused_residual_add,
 )
 from max.pipelines.architectures.gemma3.layers.transformer_block import (
@@ -56,7 +63,6 @@ from max.pipelines.architectures.gemma3.layers.transformer_block import (
 )
 from max.pipelines.core import TextContext
 from torch.utils.dlpack import from_dlpack
-
 
 PAGE_SIZE = 128
 EPS = 1e-6

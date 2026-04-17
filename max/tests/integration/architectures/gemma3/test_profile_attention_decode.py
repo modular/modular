@@ -39,8 +39,8 @@ from max.nn.kernels import (
     k_rms_norm_rope_ragged,
     q_rms_norm_rope_ragged,
     rms_norm_key_cache,
-    rope_ragged,
     rope_k_cache_ragged,
+    rope_ragged,
 )
 from max.nn.kv_cache import PagedCacheValues, unflatten_ragged_attention_inputs
 from max.nn.rotary_embedding import Llama3RotaryEmbedding

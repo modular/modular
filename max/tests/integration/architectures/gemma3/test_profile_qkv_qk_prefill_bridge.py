@@ -35,14 +35,16 @@ from max.nn.kernels import (
     q_rms_norm_fused_qk_ragged_rope,
     rms_norm_key_cache,
 )
-from max.nn.kv_cache import KVCacheInputsPerDevice, unflatten_ragged_attention_inputs
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    unflatten_ragged_attention_inputs,
+)
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.attention import (
     Gemma3Attention as MaxGemma3Attention,
 )
 from max.pipelines.core import TextContext
 from torch.utils.dlpack import from_dlpack
-
 
 PAGE_SIZE = 128
 EPS = 1e-6

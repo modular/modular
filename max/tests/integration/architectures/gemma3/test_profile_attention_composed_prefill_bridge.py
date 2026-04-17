@@ -37,7 +37,6 @@ from max.pipelines.architectures.gemma3.layers.attention import (
 from max.pipelines.core import TextContext
 from torch.utils.dlpack import from_dlpack
 
-
 PAGE_SIZE = 128
 EPS = 1e-6
 DEFAULT_LAYER_IDX = 0
