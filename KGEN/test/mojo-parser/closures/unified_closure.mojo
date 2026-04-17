@@ -1424,3 +1424,74 @@ def async_unified_closure():
         value += 1
 
     _ = inc()
+
+# // -----
+
+# COM: Verify promoted closures keep captured params before implicit origins.
+
+# CHECK-LABEL: lit.fn @"trigger_dtype_implicit_origin{{.*}}"<n: !Int>() -> !kgen.none
+# CHECK: lit.alias.decl *"dtype{{.*}}": !DType = <apply(:!lit.generator<[1]("impl": !lit.ref<!String, imm #lit.comptime.origin> read_mem) -> !DType> rebind(:!lit.generator<[1]("impl": !lit.ref<!String, imm *[0,0]> read_mem) -> !DType> @{{.*}}::@"nonsense{{.*}}"<:!Int n, :!AnyType !String>)
+# CHECK-LABEL: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
+def trigger_dtype_implicit_origin[n: Int]():
+    def nonsense[U: AnyType, //](impl: U) unified {} -> DType:
+        if n >= 64:
+            return DType.int32
+        elif n >= 32:
+            return DType.uint32
+        else:
+            return DType.float32
+
+    comptime dtype = nonsense("here")
+    var x = SIMD[dtype, 1]()
+    _ = x
+
+# // -----
+#
+# COM: Verify promoted stateless unified closures can bind captured params
+# COM: before satisfying thin function generic constraints.
+
+# CHECK-LABEL: lit.fn @"trigger_promoted_params{{.*}}"<n: !Int>() -> !kgen.none
+# CHECK: lit.call tail @{{.*}}::@"takesThin{{.*}}"<:!lit.generator<<"U": !AnyType, +>[1]("impl": !lit.ref<:!AnyType *(0,0), imm *[0,0]> read_mem) -> !DType> @{{.*}}::@"nonsense{{.*}}"<:!Int n, :!AnyType ?>
+# CHECK-LABEL: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
+def takesThin[FuncType: def[U: AnyType, //](impl: U) thin -> DType]():
+    _ = FuncType("here")
+
+
+def trigger_promoted_params[n: Int]():
+    def nonsense[U: AnyType, //](impl: U) unified {} -> DType:
+        if n >= 64:
+            return DType.int32
+        elif n >= 32:
+            return DType.uint32
+        else:
+            return DType.float32
+
+    takesThin[nonsense]()
+
+# // -----
+
+# COM: Verify promoted stateless unified closures create a function wrapper
+# COM: when passed as a value to a thin-compatible parameter.
+
+# CHECK-LABEL: lit.fn @"trigger_promoted_param_wrapper{{.*}}"<n: !Int>() -> !kgen.none
+# CHECK: %[[WRAP:.*]] = lit.var.decl "wrappedFnPtr" var : !lit.ref<!lit.struct<#PtrWrapper
+# CHECK: lit.call @{{.*}}::@"def[U: AnyType{{.*}}_PtrWrapper"{{.*}}(%[[WRAP]])
+# CHECK: %[[WRAP_IMM:.*]] = lit.ref.immut %[[WRAP]]
+# CHECK: lit.call @{{.*}}::@"takesFatVale{{.*}}"{{.*}}(%[[WRAP_IMM]])
+# CHECK-LABEL: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
+def takesFatVale[FuncType: def[U: AnyType, //](impl: U) unified -> DType](
+    impl: FuncType
+):
+    _ = impl("here")
+
+
+def trigger_promoted_param_wrapper[n: Int]():
+    def nonsense[U: AnyType, //](impl: U) unified {} -> DType:
+        if n >= 64:
+            return DType.int32
+        elif n >= 32:
+            return DType.uint32
+        else:
+            return DType.float32
+
+    takesFatVale(nonsense)

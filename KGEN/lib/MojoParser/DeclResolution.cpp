@@ -2062,18 +2062,20 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   if (signature.isUnified()) {
     // Check if this is a stateless unified closure. This means it has:
     // - no captured values
-    // - no captured parameter references
+    // - no captured parameters in signature (TODO)
     // - no default capture convention
-    if (paramCaptures.empty() && closureExternalRefs.empty() &&
+    if (closureExternalRefs.empty() &&
         captureSignature.parsedCaptures.empty() &&
         !captureSignature.captureAllByConvention) {
-      // The closure body needs to be completely resolved before promotion to
-      // sidestep an ordering issue.
-      resolveAllWithin(decl);
-      auto promotedDecl = shared.closureEmitter->promoteStatelessClosure(decl);
-      auto promotedFn = cast<FnOp>(promotedDecl->getIfOperation());
-      decl.setIRValue(promotedFn);
-      return success();
+      auto [capturedRefs, _] =
+          createSelfContainedSignature(funcOp.getFuncTypeGenerator());
+      if (capturedRefs.empty()) {
+        // The closure body needs to be completely resolved before promotion to
+        // sidestep an ordering issue.
+        resolveAllWithin(decl);
+        shared.closureEmitter->promoteStatelessClosure(decl, paramCaptures);
+        return success();
+      }
     }
 
     MLValue instance = emitUnifiedClosureInstance(captures, decl, shared);
