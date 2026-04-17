@@ -58,7 +58,8 @@ def test_metric_to_string() -> None:
         draft_tokens_accepted=0,
         avg_acceptance_length=0.0,
         max_acceptance_length=0,
-        bonus_tokens_used=0,
+        draft_tokens_generated_delta=0,
+        draft_tokens_accepted_delta=0,
         nixl_read_latency_avg_ms=0.0,
         nixl_write_latency_avg_ms=0.0,
         rpc_acquire_latency_avg_ms=0.0,
@@ -104,26 +105,19 @@ _SCHEDULER_CONFIG = TokenGenerationSchedulerConfig(
 )
 
 
-def test_create_resets_speculative_metrics_between_batches() -> None:
-    """BatchMetrics.create() must reset SpeculativeDecodingMetrics after
-    reading, so consecutive calls emit per-batch values, not cumulative
-    totals that would double-count when added to OTEL counters."""
-    spec_metrics = SpeculativeDecodingMetrics(
-        bonus_tokens_used=0,
-        draft_tokens_accepted=0,
-        draft_tokens_generated=0,
-        total_acceptance_lengths=0,
-        num_generations=0,
-    )
+def test_create_emits_cumulative_totals_and_per_batch_deltas() -> None:
+    """BatchMetrics.create() must expose cumulative draft token counts for
+    console logging while per-batch deltas feed the additive OTEL counters.
+    Without the delta split, consecutive publish_metrics() calls would
+    double-count because OTEL counters aggregate each emitted value."""
+    spec_metrics = SpeculativeDecodingMetrics.empty(num_speculative_tokens=5)
 
-    # Batch 1: pipeline updates metrics with 20 generated, 15 accepted.
+    # Batch 1: pipeline accumulates 20 generated / 15 accepted.
     spec_metrics.update(
         SpeculativeDecodingMetrics(
-            bonus_tokens_used=3,
+            num_speculative_tokens=5,
             draft_tokens_accepted=15,
             draft_tokens_generated=20,
-            total_acceptance_lengths=10,
-            num_generations=2,
         )
     )
 
@@ -141,16 +135,15 @@ def test_create_resets_speculative_metrics_between_batches() -> None:
 
     assert batch1.draft_tokens_generated == 20
     assert batch1.draft_tokens_accepted == 15
-    assert batch1.bonus_tokens_used == 3
+    assert batch1.draft_tokens_generated_delta == 20
+    assert batch1.draft_tokens_accepted_delta == 15
 
-    # Batch 2: pipeline updates metrics with 10 generated, 8 accepted.
+    # Batch 2: pipeline accumulates another 10 generated / 8 accepted on top.
     spec_metrics.update(
         SpeculativeDecodingMetrics(
-            bonus_tokens_used=1,
+            num_speculative_tokens=5,
             draft_tokens_accepted=8,
             draft_tokens_generated=10,
-            total_acceptance_lengths=5,
-            num_generations=1,
         )
     )
 
@@ -166,7 +159,8 @@ def test_create_resets_speculative_metrics_between_batches() -> None:
         speculative_decoding_metrics=spec_metrics,
     )
 
-    # Must reflect only batch 2's values, not batch 1 + batch 2.
-    assert batch2.draft_tokens_generated == 10
-    assert batch2.draft_tokens_accepted == 8
-    assert batch2.bonus_tokens_used == 1
+    # Cumulative totals grow; deltas reflect only this batch's increment.
+    assert batch2.draft_tokens_generated == 30
+    assert batch2.draft_tokens_accepted == 23
+    assert batch2.draft_tokens_generated_delta == 10
+    assert batch2.draft_tokens_accepted_delta == 8

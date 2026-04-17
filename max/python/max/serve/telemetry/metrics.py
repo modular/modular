@@ -180,11 +180,6 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="tokens",
         description="Count of generated draft tokens",
     ),  # type: ignore
-    "maxserve.speculative.bonus_tokens_used": _meter.create_counter(
-        "maxserve.speculative.bonus_tokens_used",
-        unit="tokens",
-        description="Count of bonus tokens used when all draft tokens accepted",
-    ),  # type: ignore
     "maxserve.input_tokens_per_request": _meter.create_histogram(
         "maxserve.input_tokens_per_request",
         unit="tokens",
@@ -555,16 +550,6 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.speculative.draft_tokens_generated",
-                value,
-                self.extra_attributes,
-            ),
-            MetricLevel.DETAILED,
-        )
-
-    def speculative_bonus_tokens_used(self, value: int) -> None:
-        self.client.send_measurement(
-            MaxMeasurement(
-                "maxserve.speculative.bonus_tokens_used",
                 value,
                 self.extra_attributes,
             ),
