@@ -109,9 +109,9 @@ def testTestParamStruct(a: TestParamStruct[4]):
 def testSIMD(a: SIMD[DType.float32, 1],
             b: SIMD[DType.int32, 1],
             mut reff: SIMD[DType.int32, 1]):
-  # CHECK: %field1 = lit.var.decl {{.*}} : !lit.ref<scalar<sugar_preserved(#lit.struct.extract<{{.*}}, f32)>
+  # CHECK: %field1 = lit.var.decl {{.*}} : !lit.ref<scalar<f32>
   var field1 = a._mlir_value
-  # CHECK: %field2 = lit.var.decl {{.*}} : !lit.ref<scalar<sugar_preserved(#lit.struct.extract<{{.*}}, si32)>
+  # CHECK: %field2 = lit.var.decl {{.*}} : !lit.ref<scalar<si32>
   var field2 = reff._mlir_value
 
   # Test calls to methods and operators on parameterized type.

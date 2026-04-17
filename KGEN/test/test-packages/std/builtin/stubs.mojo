@@ -1662,18 +1662,29 @@ trait Intable(ImplicitlyDestructible):
 
 
 struct DType(TrivialRegisterPassable):
-    comptime type = __mlir_type.`!kgen.dtype`
-    var _mlir_value: Self.type
+    comptime _mlir_type = __mlir_type.`!kgen.dtype`
+    var _mlir_value: Self._mlir_type
 
-    comptime float32 = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
-    comptime float64 = __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`
-    comptime int32 = __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`
-    comptime uint32 = __mlir_attr.`#kgen.dtype.constant<ui32> : !kgen.dtype`
+    comptime int = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<index> : !kgen.dtype`
+    )
+    comptime float32 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
+    )
+    comptime float64 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`
+    )
+    comptime int32 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`
+    )
+    comptime uint32 = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<ui32> : !kgen.dtype`
+    )
 
     @always_inline("builtin")
     @implicit
-    def __init__(out self, value: Self.type):
-        self._mlir_value = value
+    def __init__(out self, mlir_value: Self._mlir_type):
+        self._mlir_value = mlir_value
 
 
 comptime Float32 = SIMD[DType.float32, 1]

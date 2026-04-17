@@ -1544,6 +1544,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared) const {
         if (size && size.getInt() == 1) {
           // This list should be kept in sync with the aliases in simd.mojo.
           static std::pair<KGENDType, const char *> dtypeAliases[] = {
+              {KGENDType::index, "Int"},
               {KGENDType::uindex, "UInt"},
               {KGENDType::si8, "Int8"},
               {KGENDType::ui8, "UInt8"},
