@@ -48,7 +48,6 @@ _PROFILE_ENV = {
     "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
 }
 
-
 modular_py_test(
     name = "gemma3",
     size = "large",

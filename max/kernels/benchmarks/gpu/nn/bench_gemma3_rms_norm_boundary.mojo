@@ -1,3 +1,16 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
 from std.random import random_float64
 from std.sys import get_defined_dtype, simd_width_of
 
@@ -50,9 +63,7 @@ def bench_gemma3_rms_norm_boundary[
 
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
     var residual_buf = TileTensor(residual_d, row_major(Coord(shape)))
-    var baseline_norm_buf = TileTensor(
-        baseline_norm_d, row_major(Coord(shape))
-    )
+    var baseline_norm_buf = TileTensor(baseline_norm_d, row_major(Coord(shape)))
     var baseline_sum_buf = TileTensor(baseline_sum_d, row_major(Coord(shape)))
     var baseline_output_buf = TileTensor(
         baseline_output_d, row_major(Coord(shape))
@@ -143,9 +154,9 @@ def bench_gemma3_rms_norm_boundary[
         width: Int, _rank: Int, alignment: Int = 1
     ](coords: IndexList[_rank]) -> None:
         var coord = Coord(coords)
-        var val = baseline_norm_buf.load[width=width](coord) + residual_buf.load[
-            width=width
-        ](coord)
+        var val = baseline_norm_buf.load[width=width](
+            coord
+        ) + residual_buf.load[width=width](coord)
         baseline_sum_buf.store[width=width](coord, val)
 
     @always_inline
@@ -262,7 +273,9 @@ def bench_gemma3_rms_norm_boundary[
 
 def main() raises:
     comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
-    comptime shape = int_list_to_tuple[get_defined_shape["shape", "1x64x4608"]()]()
+    comptime shape = int_list_to_tuple[
+        get_defined_shape["shape", "1x64x4608"]()
+    ]()
 
     var b = Bench(BenchConfig(num_repetitions=1))
     with DeviceContext() as ctx:
