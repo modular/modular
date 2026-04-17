@@ -1440,6 +1440,22 @@ LIT::evaluateConstraint(ParameterEvaluator &evaluator,
   return ConformanceResult::NeedsEvidence;
 }
 
+ParamDeclRefAttr LIT::extractParamDeclRef(TypedAttr attr) {
+  if (auto upcast = dyn_cast<UpcastAttr>(attr))
+    return extractParamDeclRef(upcast.getInputTypeValue());
+
+  if (auto typeParam = dyn_cast<TypeParamAttr>(attr)) {
+    Type innerType = typeParam.getTypeValue();
+    if (auto innerParamType = dyn_cast<ParamType>(innerType))
+      return extractParamDeclRef(innerParamType.getParam());
+  }
+
+  if (auto paramRef = dyn_cast<ParamDeclRefAttr>(attr))
+    return paramRef;
+
+  return {};
+}
+
 //===----------------------------------------------------------------------===//
 // Conversion Thunk Callee Utilities
 //===----------------------------------------------------------------------===//
