@@ -14,10 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from transformers import AutoConfig, PretrainedConfig
 
 from . import weight_adapters
@@ -100,7 +97,7 @@ kimivl_arch = SupportedArchitecture(
 )
 
 eagle3_kimik25_arch = SupportedArchitecture(
-    name="Eagle3DeepseekV2ForCausalLM",
+    name="UnifiedEagleKimiK25ForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["moonshotai/Kimi-K2.5"],
     default_encoding="bfloat16",
