@@ -485,7 +485,9 @@ def _rope_k_cache_ragged_kernel[
     comptime vec_width = simd_width // 2
     comptime accum_type = get_accum_type[cache_dtype]()
     comptime half_warp_size = WARP_SIZE // 2
-    comptime assert head_dim == 128, "Only 128-column BF16 key rows are supported"
+    comptime assert (
+        head_dim == 128
+    ), "Only 128-column BF16 key rows are supported"
     comptime assert head_dim == half_warp_size * simd_width
     comptime assert freqs_cis.static_shape[1] == head_dim
 
@@ -493,7 +495,9 @@ def _rope_k_cache_ragged_kernel[
     var warp_idx = tid // UInt(WARP_SIZE)
     var sub_warp_idx = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
     var local_tid = tid % UInt(half_warp_size)
-    var row = block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    var row = (
+        block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    )
     if row < UInt(total_rows):
         var flat_row = Int(row)
         var global_token_idx = flat_row // num_heads
@@ -562,7 +566,9 @@ def _rope_k_cache_decode_ragged_kernel[
     comptime vec_width = simd_width // 2
     comptime accum_type = get_accum_type[cache_dtype]()
     comptime half_warp_size = WARP_SIZE // 2
-    comptime assert head_dim == 128, "Only 128-column BF16 key rows are supported"
+    comptime assert (
+        head_dim == 128
+    ), "Only 128-column BF16 key rows are supported"
     comptime assert head_dim == half_warp_size * simd_width
     comptime assert freqs_cis.static_shape[1] == head_dim
 
@@ -570,7 +576,9 @@ def _rope_k_cache_decode_ragged_kernel[
     var warp_idx = tid // UInt(WARP_SIZE)
     var sub_warp_idx = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
     var local_tid = tid % UInt(half_warp_size)
-    var row = block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    var row = (
+        block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    )
     if row < UInt(total_rows):
         var flat_row = Int(row)
         var global_token_idx = flat_row // num_heads
@@ -644,7 +652,9 @@ def _k_rms_norm_rope_ragged_kernel[
     comptime wide_align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
     comptime half_warp_size = WARP_SIZE // 2
-    comptime assert head_dim == 128, "Only 128-column BF16 key rows are supported"
+    comptime assert (
+        head_dim == 128
+    ), "Only 128-column BF16 key rows are supported"
     comptime assert gamma.static_shape[0] == head_dim
     comptime assert freqs_cis.static_shape[1] == head_dim
     comptime assert head_dim == half_warp_size * simd_width
@@ -653,7 +663,9 @@ def _k_rms_norm_rope_ragged_kernel[
     var warp_idx = tid // UInt(WARP_SIZE)
     var sub_warp_idx = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
     var local_tid = tid % UInt(half_warp_size)
-    var row = block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    var row = (
+        block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    )
     var col = local_tid * UInt(simd_width)
 
     if row < UInt(total_rows):
@@ -691,9 +703,9 @@ def _k_rms_norm_rope_ragged_kernel[
             head_dim,
         )
 
-        var sub_warp_mask = (
-            (UInt(1) << UInt(half_warp_size)) - UInt(1)
-        ) << (sub_warp_idx * UInt(half_warp_size))
+        var sub_warp_mask = ((UInt(1) << UInt(half_warp_size)) - UInt(1)) << (
+            sub_warp_idx * UInt(half_warp_size)
+        )
         var partner_lane = (
             sub_warp_idx * UInt(half_warp_size)
             + (local_tid % UInt(half_warp_size // 2))
@@ -789,7 +801,9 @@ def _k_rms_norm_rope_decode_ragged_kernel[
     comptime wide_align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
     comptime half_warp_size = WARP_SIZE // 2
-    comptime assert head_dim == 128, "Only 128-column BF16 key rows are supported"
+    comptime assert (
+        head_dim == 128
+    ), "Only 128-column BF16 key rows are supported"
     comptime assert gamma.static_shape[0] == head_dim
     comptime assert freqs_cis.static_shape[1] == head_dim
     comptime assert head_dim == half_warp_size * simd_width
@@ -798,7 +812,9 @@ def _k_rms_norm_rope_decode_ragged_kernel[
     var warp_idx = tid // UInt(WARP_SIZE)
     var sub_warp_idx = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
     var local_tid = tid % UInt(half_warp_size)
-    var row = block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    var row = (
+        block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    )
     var col = local_tid * UInt(simd_width)
 
     if row < UInt(total_rows):
@@ -831,9 +847,9 @@ def _k_rms_norm_rope_decode_ragged_kernel[
             head_dim,
         )
 
-        var sub_warp_mask = (
-            (UInt(1) << UInt(half_warp_size)) - UInt(1)
-        ) << (sub_warp_idx * UInt(half_warp_size))
+        var sub_warp_mask = ((UInt(1) << UInt(half_warp_size)) - UInt(1)) << (
+            sub_warp_idx * UInt(half_warp_size)
+        )
         var partner_lane = (
             sub_warp_idx * UInt(half_warp_size)
             + (local_tid % UInt(half_warp_size // 2))
@@ -930,7 +946,9 @@ def _k_rms_norm_rope_ragged_wide_kernel[
     comptime simd_width = simd_width_of[dtype]()
     comptime wide_align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
-    comptime assert head_dim == 256, "Only 256-column BF16 key rows are supported"
+    comptime assert (
+        head_dim == 256
+    ), "Only 256-column BF16 key rows are supported"
     comptime assert gamma.static_shape[0] == head_dim
     comptime assert freqs_cis.static_shape[1] == head_dim
     comptime assert head_dim == WARP_SIZE * simd_width
@@ -991,8 +1009,10 @@ def _k_rms_norm_rope_ragged_wide_kernel[
         var norm_factor = rsqrt(
             (row_m2 / Scalar[accum_type](head_dim)) + epsilon_accum
         )
-        var norm_val = vec_data * norm_factor * (
-            gamma_val.cast[accum_type]() + weight_offset_accum
+        var norm_val = (
+            vec_data
+            * norm_factor
+            * (gamma_val.cast[accum_type]() + weight_offset_accum)
         )
         var shared_base = Int(warp_idx) * head_dim
         shared_norm.store[width=simd_width, alignment=wide_align](
@@ -1063,22 +1083,24 @@ def k_rms_norm_rope_ragged[
     comptime assert freqs_cis.flat_rank == 2, "freqs_cis must be rank 2"
     comptime assert gamma.flat_rank == 1, "gamma must be rank 1"
     comptime head_dim = Int(collection_t.CacheType.kv_params.head_size)
-    comptime assert dtype == DType.bfloat16, (
-        "k_rms_norm_rope_ragged currently supports BF16 inputs only"
-    )
-    comptime assert collection_t.CacheType.dtype == DType.bfloat16, (
-        "k_rms_norm_rope_ragged currently supports BF16 key cache only"
-    )
-    comptime assert head_dim == 128 or head_dim == 256, (
-        "k_rms_norm_rope_ragged currently supports 128- and 256-column keys only"
-    )
+    comptime assert (
+        dtype == DType.bfloat16
+    ), "k_rms_norm_rope_ragged currently supports BF16 inputs only"
+    comptime assert (
+        collection_t.CacheType.dtype == DType.bfloat16
+    ), "k_rms_norm_rope_ragged currently supports BF16 key cache only"
+    comptime assert (
+        head_dim == 128 or head_dim == 256
+    ), "k_rms_norm_rope_ragged currently supports 128- and 256-column keys only"
     comptime assert gamma.static_shape[0] == head_dim
     comptime assert freqs_cis.static_shape[1] == head_dim
 
     if total_seq_len == 0:
         return
 
-    var total_rows = total_seq_len * Int(collection_t.CacheType.kv_params.num_heads)
+    var total_rows = total_seq_len * Int(
+        collection_t.CacheType.kv_params.num_heads
+    )
     var batch_size = Int(input_row_offsets.dim(0)) - 1
     var is_decode_uniform = total_seq_len == batch_size
     comptime default_warps_per_block = 2
@@ -1181,8 +1203,8 @@ def k_rms_norm_rope_ragged[
                     total_rows,
                     grid_dim=ceildiv(total_rows, default_warps_per_block * 2),
                     block_dim=default_block_size,
-                attributes=pdl_launch_attributes(PDLLevel(1)),
-            )
+                    attributes=pdl_launch_attributes(PDLLevel(1)),
+                )
     else:
         large_row_grid_dim = ceildiv(total_rows, large_row_warps_per_block)
         if large_row_grid_dim >= min_large_row_blocks:
@@ -1275,7 +1297,9 @@ def _q_rms_norm_rope_ragged_kernel[
     comptime num_q_heads = x.static_shape[1]
     comptime head_dim = x.static_shape[2]
 
-    comptime assert head_dim == 128, "Only 128-column BF16 query rows are supported"
+    comptime assert (
+        head_dim == 128
+    ), "Only 128-column BF16 query rows are supported"
     comptime assert head_dim == half_warp_size * simd_width
     comptime assert freqs_cis.static_shape[1] == head_dim
 
@@ -1283,7 +1307,9 @@ def _q_rms_norm_rope_ragged_kernel[
     var warp_idx = tid // UInt(WARP_SIZE)
     var sub_warp_idx = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
     var local_tid = tid % UInt(half_warp_size)
-    var row = block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    var row = (
+        block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    )
     if row < UInt(num_rows):
         var row_int = Int(row)
         var global_token_idx = row_int // num_q_heads
@@ -1389,7 +1415,9 @@ def _q_rms_norm_rope_decode_ragged_kernel[
     comptime num_q_heads = x.static_shape[1]
     comptime head_dim = x.static_shape[2]
 
-    comptime assert head_dim == 128, "Only 128-column BF16 query rows are supported"
+    comptime assert (
+        head_dim == 128
+    ), "Only 128-column BF16 query rows are supported"
     comptime assert head_dim == half_warp_size * simd_width
     comptime assert freqs_cis.static_shape[1] == head_dim
 
@@ -1397,7 +1425,9 @@ def _q_rms_norm_rope_decode_ragged_kernel[
     var warp_idx = tid // UInt(WARP_SIZE)
     var sub_warp_idx = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
     var local_tid = tid % UInt(half_warp_size)
-    var row = block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    var row = (
+        block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    )
     if row < UInt(num_rows):
         var row_int = Int(row)
         var global_token_idx = row_int // num_q_heads
@@ -1501,7 +1531,9 @@ def _q_rms_norm_rope_ragged_wide_kernel[
     comptime num_q_heads = x.static_shape[1]
     comptime head_dim = x.static_shape[2]
 
-    comptime assert head_dim == 256, "Only 256-column BF16 query rows are supported"
+    comptime assert (
+        head_dim == 256
+    ), "Only 256-column BF16 query rows are supported"
     comptime assert freqs_cis.static_shape[1] == head_dim
     comptime assert gamma.static_shape[0] == head_dim
     comptime assert head_dim == WARP_SIZE * simd_width
@@ -1629,7 +1661,9 @@ def _q_rms_norm_rope_decode_ragged_wide_kernel[
     comptime num_q_heads = x.static_shape[1]
     comptime head_dim = x.static_shape[2]
 
-    comptime assert head_dim == 256, "Only 256-column BF16 query rows are supported"
+    comptime assert (
+        head_dim == 256
+    ), "Only 256-column BF16 query rows are supported"
     comptime assert freqs_cis.static_shape[1] == head_dim
     comptime assert gamma.static_shape[0] == head_dim
     comptime assert head_dim == WARP_SIZE * simd_width
@@ -1753,7 +1787,9 @@ def q_rms_norm_rope_ragged[
         comptime large_row_block_size = large_row_warps_per_block * WARP_SIZE
         comptime min_large_row_blocks_per_sm = 5
 
-        var large_row_grid_dim = ceildiv(num_rows, large_row_warps_per_block * 2)
+        var large_row_grid_dim = ceildiv(
+            num_rows, large_row_warps_per_block * 2
+        )
         if is_decode_uniform:
             if large_row_grid_dim >= sm_count * min_large_row_blocks_per_sm:
                 comptime kernel = _q_rms_norm_rope_decode_ragged_kernel[
@@ -1972,6 +2008,7 @@ def q_rms_norm_rope_ragged[
                     block_dim=default_block_size,
                 )
     else:
+
         @always_inline
         @__copy_capture(x)
         @parameter
@@ -2075,7 +2112,9 @@ def _q_rms_norm_fused_qk_rope_ragged_kernel[
     var warp_idx = tid // UInt(WARP_SIZE)
     var sub_warp_idx = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
     var local_tid = tid % UInt(half_warp_size)
-    var row = block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    var row = (
+        block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    )
     var col = local_tid * UInt(simd_width)
 
     var flat_row = Int(row)
@@ -2090,10 +2129,10 @@ def _q_rms_norm_fused_qk_rope_ragged_kernel[
     if is_active_row:
         global_token_idx = flat_row // total_heads
         head_slot = flat_row % total_heads
-        batch_idx = get_batch_from_row_offsets(input_row_offsets, global_token_idx)
-        token_idx = Int(
-            UInt32(global_token_idx) - input_row_offsets[batch_idx]
+        batch_idx = get_batch_from_row_offsets(
+            input_row_offsets, global_token_idx
         )
+        token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
         q_post_seq_idx = Int(start_pos[batch_idx] + UInt32(token_idx))
         k_post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
 
@@ -2115,7 +2154,9 @@ def _q_rms_norm_fused_qk_rope_ragged_kernel[
             var thread_m2 = (q_re.cast[accum_type]() ** 2).reduce_add() + (
                 q_im.cast[accum_type]() ** 2
             ).reduce_add()
-            var row_m2 = warp.lane_group_sum[num_lanes=half_warp_size](thread_m2)
+            var row_m2 = warp.lane_group_sum[num_lanes=half_warp_size](
+                thread_m2
+            )
             var norm_factor = rsqrt(
                 (row_m2 / Scalar[accum_type](head_dim)) + epsilon_accum
             )
@@ -2159,9 +2200,9 @@ def _q_rms_norm_fused_qk_rope_ragged_kernel[
             var vec_data = k_cache.load[width=simd_width](
                 batch_idx, k_head_idx, k_post_seq_idx, Int(col)
             ).cast[accum_type]()
-            var gamma_val = k_gamma.load[width=simd_width, alignment=wide_align](
-                Coord(Idx(Int(col)))
-            )
+            var gamma_val = k_gamma.load[
+                width=simd_width, alignment=wide_align
+            ](Coord(Idx(Int(col))))
             var norm_val = _rms_norm_warp_tiling_subkernel[
                 warps_per_block,
                 True,
@@ -2299,7 +2340,9 @@ def _q_rms_norm_fused_qk_rope_decode_ragged_kernel[
     var warp_idx = tid // UInt(WARP_SIZE)
     var sub_warp_idx = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
     var local_tid = tid % UInt(half_warp_size)
-    var row = block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    var row = (
+        block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    )
     var col = local_tid * UInt(simd_width)
 
     var flat_row = Int(row)
@@ -2333,7 +2376,9 @@ def _q_rms_norm_fused_qk_rope_decode_ragged_kernel[
             var thread_m2 = (q_re.cast[accum_type]() ** 2).reduce_add() + (
                 q_im.cast[accum_type]() ** 2
             ).reduce_add()
-            var row_m2 = warp.lane_group_sum[num_lanes=half_warp_size](thread_m2)
+            var row_m2 = warp.lane_group_sum[num_lanes=half_warp_size](
+                thread_m2
+            )
             var norm_factor = rsqrt(
                 (row_m2 / Scalar[accum_type](head_dim)) + epsilon_accum
             )
@@ -2377,9 +2422,9 @@ def _q_rms_norm_fused_qk_rope_decode_ragged_kernel[
             var vec_data = k_cache.load[width=simd_width](
                 batch_idx, k_head_idx, post_seq_idx, Int(col)
             ).cast[accum_type]()
-            var gamma_val = k_gamma.load[width=simd_width, alignment=wide_align](
-                Coord(Idx(Int(col)))
-            )
+            var gamma_val = k_gamma.load[
+                width=simd_width, alignment=wide_align
+            ](Coord(Idx(Int(col))))
             var norm_val = _rms_norm_warp_tiling_subkernel[
                 warps_per_block,
                 True,
@@ -2590,11 +2635,15 @@ def _q_rms_norm_fused_qk_rope_decode_ragged_wide_kernel[
                     simd_width * 2,
                 ](rope_re, rope_im, q_freq)
                 output.store[alignment=align](
-                    Coord(Idx(global_token_idx), Idx(head_slot), Idx(re_offset)),
+                    Coord(
+                        Idx(global_token_idx), Idx(head_slot), Idx(re_offset)
+                    ),
                     q_rope[0],
                 )
                 output.store[alignment=align](
-                    Coord(Idx(global_token_idx), Idx(head_slot), Idx(im_offset)),
+                    Coord(
+                        Idx(global_token_idx), Idx(head_slot), Idx(im_offset)
+                    ),
                     q_rope[1],
                 )
         else:
@@ -2610,8 +2659,10 @@ def _q_rms_norm_fused_qk_rope_decode_ragged_wide_kernel[
             var gamma_val = k_gamma.load[width=simd_width, alignment=align](
                 Coord(Idx(Int(col)))
             )
-            var norm_val = k_vec * norm_factor * (
-                gamma_val.cast[accum_type]() + weight_offset_accum
+            var norm_val = (
+                k_vec
+                * norm_factor
+                * (gamma_val.cast[accum_type]() + weight_offset_accum)
             )
             shared_norm.store[width=simd_width, alignment=align](
                 shared_base + Int(col), norm_val.cast[dtype]()
@@ -2713,6 +2764,7 @@ def _q_rms_norm_fused_qk_rope_generic_fallback[
             context,
         )
     else:
+
         @always_inline
         @parameter
         @__copy_capture(x)
@@ -2756,7 +2808,9 @@ def _q_rms_norm_fused_qk_rope_generic_fallback[
                 input_row_offsets.load[width=1](Coord(Idx(batch_idx)))
             )
             var token_idx = Int(UInt32(global_token_idx) - batch_start)
-            var cache_token_idx = token_idx + Int(k_cache.cache_length(batch_idx))
+            var cache_token_idx = token_idx + Int(
+                k_cache.cache_length(batch_idx)
+            )
             return k_cache.load[width=width](
                 bs=batch_idx,
                 tok_idx=cache_token_idx,
@@ -2778,7 +2832,9 @@ def _q_rms_norm_fused_qk_rope_generic_fallback[
                 input_row_offsets.load[width=1](Coord(Idx(batch_idx)))
             )
             var token_idx = Int(UInt32(global_token_idx) - batch_start)
-            var cache_token_idx = token_idx + Int(k_cache.cache_length(batch_idx))
+            var cache_token_idx = token_idx + Int(
+                k_cache.cache_length(batch_idx)
+            )
             k_cache.store(
                 bs=batch_idx,
                 tok_idx=cache_token_idx,
@@ -2847,9 +2903,10 @@ def q_rms_norm_fused_qk_rope_ragged[
     output: TileTensor[mut=True, dtype, ...],
     context: DeviceContext,
 ) raises:
-    comptime assert (
-        not interleaved
-    ), "q_rms_norm_fused_qk_rope_ragged currently supports non-interleaved RoPE only"
+    comptime assert not interleaved, (
+        "q_rms_norm_fused_qk_rope_ragged currently supports non-interleaved"
+        " RoPE only"
+    )
 
     comptime head_dim = Int(x.static_shape[2])
     comptime num_q_heads = x.static_shape[1]

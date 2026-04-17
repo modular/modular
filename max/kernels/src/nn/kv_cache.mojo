@@ -950,9 +950,9 @@ def _rms_norm_kv_cache_ragged_paged_decode_uniform_direct[
     @always_inline
     @parameter
     @__copy_capture(k_cache)
-    def direct_input_fn_2d[width: Int](
-        row: Int, col: Int
-    ) -> SIMD[dtype, width]:
+    def direct_input_fn_2d[
+        width: Int
+    ](row: Int, col: Int) -> SIMD[dtype, width]:
         var batch_idx = row // Int(params.num_heads)
         var head_idx = row % Int(params.num_heads)
         var cache_token_idx = Int(k_cache.cache_length(batch_idx))
@@ -966,9 +966,9 @@ def _rms_norm_kv_cache_ragged_paged_decode_uniform_direct[
     @always_inline
     @parameter
     @__copy_capture(k_cache)
-    def direct_output_fn_2d[width: Int, alignment: Int](
-        row: Int, col: Int, val: SIMD[dtype, width]
-    ) -> None:
+    def direct_output_fn_2d[
+        width: Int, alignment: Int
+    ](row: Int, col: Int, val: SIMD[dtype, width]) -> None:
         var batch_idx = row // Int(params.num_heads)
         var head_idx = row % Int(params.num_heads)
         var cache_token_idx = Int(k_cache.cache_length(batch_idx))
@@ -1261,9 +1261,8 @@ def rms_norm_kv_cache_ragged_paged[
     )
 
     comptime if use_no_trace_decode_uniform_fastpath:
-        if (
-            kv_collection.max_seq_length == 1
-            and total_seq_len == UInt32(batch_size)
+        if kv_collection.max_seq_length == 1 and total_seq_len == UInt32(
+            batch_size
         ):
             _rms_norm_kv_cache_ragged_paged_no_trace[
                 dtype=dtype,

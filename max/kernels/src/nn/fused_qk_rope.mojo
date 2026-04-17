@@ -42,7 +42,6 @@ from std.utils import IndexList
 from std.utils.static_tuple import StaticTuple
 
 
-
 @always_inline
 def _rope_complex_mul_half[
     dtype: DType,
@@ -136,11 +135,19 @@ def rope_q_proj[
         var res = rope_value(val, freq_val).cast[output_dtype]()
         output.store[alignment=alignment](coord, res)
     else:
-        var q_re = q_proj.load[width=width_2, alignment=half_alignment](coord_re)
-        var q_im = q_proj.load[width=width_2, alignment=half_alignment](coord_im)
+        var q_re = q_proj.load[width=width_2, alignment=half_alignment](
+            coord_re
+        )
+        var q_im = q_proj.load[width=width_2, alignment=half_alignment](
+            coord_im
+        )
         var q_result = _rope_complex_mul_half(q_re, q_im, freq_val)
-        output.store[alignment=half_alignment](coord_re, q_result[0].cast[output_dtype]())
-        output.store[alignment=half_alignment](coord_im, q_result[1].cast[output_dtype]())
+        output.store[alignment=half_alignment](
+            coord_re, q_result[0].cast[output_dtype]()
+        )
+        output.store[alignment=half_alignment](
+            coord_im, q_result[1].cast[output_dtype]()
+        )
 
 
 @always_inline
@@ -170,8 +177,12 @@ def rope_k_cache[
         var res = rope_value(val, freq_val).cast[cache_type]()
         k_cache.store(b_idx, h_idx, s_idx, d_idx, res)
     else:
-        var k_re = k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_re).cast[accum_type]()
-        var k_im = k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_im).cast[accum_type]()
+        var k_re = k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_re).cast[
+            accum_type
+        ]()
+        var k_im = k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_im).cast[
+            accum_type
+        ]()
         var k_result = _rope_complex_mul_half(k_re, k_im, freq_val)
         k_cache.store(b_idx, h_idx, s_idx, h_re, k_result[0].cast[cache_type]())
         k_cache.store(b_idx, h_idx, s_idx, h_im, k_result[1].cast[cache_type]())
@@ -343,7 +354,9 @@ def _fused_qk_rope_decode_ragged_kernel[
     var warp_idx = tid // UInt(WARP_SIZE)
     var sub_warp_idx = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
     var local_tid = tid % UInt(half_warp_size)
-    var row = block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    var row = (
+        block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    )
 
     if row < UInt(total_rows):
         var flat_row = Int(row)
