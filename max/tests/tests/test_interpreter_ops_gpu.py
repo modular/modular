@@ -3729,3 +3729,67 @@ class TestDistributedReducescatterSumHandler:
         for i, shard in enumerate(result.local_shards):
             expected = total[i * rows_per_chunk : (i + 1) * rows_per_chunk]
             np.testing.assert_allclose(to_numpy(shard), expected, rtol=1e-5)
+
+
+class TestMutableStoreOpsGPU:
+    """End-to-end GPU tests for the mutable-tensor write interpreter handlers.
+
+    GPU-resident buffers exercise the handler's device round-trip path
+    (as opposed to the host fast path tested on CPU).
+    """
+
+    def test_buffer_store_gpu(self) -> None:
+        """F.buffer_store writes into a GPU-resident buffer."""
+        gpu = Accelerator()
+        buf = Buffer.from_numpy(np.zeros(4, dtype=np.float32)).to(gpu)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b_torch = torch.ones(4, dtype=torch.float32, device="cuda")
+            b = Tensor.from_dlpack(b_torch)
+            F.buffer_store(a, b)
+
+        np.testing.assert_array_equal(
+            buf.to_numpy(), np.ones(4, dtype=np.float32)
+        )
+
+    def test_buffer_store_slice_gpu_unit_steps(self) -> None:
+        """F.buffer_store_slice writes a contiguous region into a GPU buffer."""
+        gpu = Accelerator()
+        buf = Buffer.from_numpy(np.zeros((4, 4), dtype=np.float32)).to(gpu)
+        slice_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b_torch = torch.from_numpy(slice_np).to("cuda")
+            b = Tensor.from_dlpack(b_torch)
+            F.buffer_store_slice(a, b, [slice(1, 3), slice(1, 3)])
+
+        expected = np.zeros((4, 4), dtype=np.float32)
+        expected[1:3, 1:3] = slice_np
+        np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+    def test_buffer_store_slice_gpu_stepped(self) -> None:
+        """F.buffer_store_slice honors steps on a GPU buffer."""
+        gpu = Accelerator()
+        buf = Buffer.from_numpy(np.zeros(8, dtype=np.float32)).to(gpu)
+        slice_np = np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float32)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b_torch = torch.from_numpy(slice_np).to("cuda")
+            b = Tensor.from_dlpack(b_torch)
+            F.buffer_store_slice(a, b, [slice(0, 8, 2)])
+
+        expected = np.zeros(8, dtype=np.float32)
+        expected[0:8:2] = slice_np
+        np.testing.assert_array_equal(buf.to_numpy(), expected)

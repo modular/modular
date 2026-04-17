@@ -176,6 +176,10 @@ This version is still a work in progress.
   the experimental eager interpreter. These internal ops are typically
   lowered by the graph compiler; the handlers prevent crashes if they
   survive into the interpreter.
+- Added `mo.mutable.store` and `mo.mutable.store.slice` handlers to the
+  experimental eager interpreter. These complement the existing
+  `mo.mutable.load` handler and enable eager execution of in-place buffer
+  writes (full-tensor stores and slice-indexed stores).
 - Added defensive `mo.gather_sum` handler to the experimental eager
   interpreter. This fused composite op (gather axis 0 + sum axis 1) is
   used by DLRM-style multi-hot embeddings; the handler prevents crashes

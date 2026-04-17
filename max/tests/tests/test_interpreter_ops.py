@@ -7942,6 +7942,127 @@ class TestBufferOps:
         np.testing.assert_array_equal(dst.to_numpy(), dst_snapshot)
 
 
+class TestMutableStoreOps:
+    """End-to-end CPU tests for the mutable-tensor write interpreter handlers.
+
+    ``F.buffer_store`` emits ``mo.MutableStoreOp``; ``F.buffer_store_slice``
+    emits ``mo.MutableStoreSliceOp``. Both are dispatched by the interpreter
+    to the respective handlers. Buffers are CPU-resident to exercise the
+    handler's host fast path.
+    """
+
+    def test_buffer_store(self) -> None:
+        """F.buffer_store writes a full tensor into the buffer."""
+        from max.driver import Buffer
+
+        buf = Buffer.zeros([4], DType.float32, CPU())
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor.from_dlpack(np.ones(4, dtype=np.float32))
+            F.buffer_store(a, b)
+
+        np.testing.assert_array_equal(
+            buf.to_numpy(), np.ones(4, dtype=np.float32)
+        )
+
+    def test_buffer_store_slice_unit_steps(self) -> None:
+        """F.buffer_store_slice writes a contiguous 2D sub-region."""
+        from max.driver import Buffer
+
+        buf = Buffer.zeros([4, 4], DType.float32, CPU())
+        slice_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor.from_dlpack(slice_np)
+            F.buffer_store_slice(a, b, [slice(1, 3), slice(1, 3)])
+
+        expected = np.zeros((4, 4), dtype=np.float32)
+        expected[1:3, 1:3] = slice_np
+        np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+    def test_buffer_store_slice_stepped(self) -> None:
+        """F.buffer_store_slice honors non-unit steps."""
+        from max.driver import Buffer
+
+        buf = Buffer.zeros([8], DType.float32, CPU())
+        slice_np = np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float32)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor.from_dlpack(slice_np)
+            F.buffer_store_slice(a, b, [slice(0, 8, 2)])
+
+        expected = np.zeros(8, dtype=np.float32)
+        expected[0:8:2] = slice_np
+        np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+    def test_buffer_store_slice_heterogeneous_steps(self) -> None:
+        """F.buffer_store_slice handles different steps per axis."""
+        from max.driver import Buffer
+
+        buf = Buffer.zeros([6, 6], DType.float32, CPU())
+        slice_np = np.arange(6, dtype=np.float32).reshape(3, 2) + 1.0
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor.from_dlpack(slice_np)
+            F.buffer_store_slice(a, b, [slice(0, 6, 2), slice(1, 6, 3)])
+
+        expected = np.zeros((6, 6), dtype=np.float32)
+        expected[0:6:2, 1:6:3] = slice_np
+        np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+    def test_buffer_store_slice_negative_indices(self) -> None:
+        """F.buffer_store_slice supports negative start/stop."""
+        from max.driver import Buffer
+
+        buf = Buffer.from_numpy(np.arange(10, dtype=np.float32))
+        slice_np = np.array([100.0, 200.0, 300.0], dtype=np.float32)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor.from_dlpack(slice_np)
+            F.buffer_store_slice(a, b, [slice(-4, -1)])
+
+        expected = np.arange(10, dtype=np.float32)
+        expected[-4:-1] = slice_np
+        np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+    def test_buffer_store_slice_bfloat16_raises(self) -> None:
+        """Slice writes on bfloat16 raise NotImplementedError."""
+        from max.driver import Buffer
+
+        buf = Buffer.zeros([4, 4], DType.bfloat16, CPU())
+        src = Buffer.zeros([2, 2], DType.bfloat16, CPU())
+
+        # Realization happens on EagerRealizationContext exit, so the raise
+        # must wrap the whole context.
+        with pytest.raises(NotImplementedError, match="bfloat16"):
+            with (
+                rc.EagerRealizationContext(use_interpreter=True) as ctx,
+                realization_context(ctx),
+            ):
+                a = Tensor(storage=buf)
+                b = Tensor(storage=src)
+                F.buffer_store_slice(a, b, [slice(1, 3), slice(1, 3)])
+
+
 class TestResizeLinearOp:
     """Tests for linear (bilinear) resize interpreter op (mo.resize.linear).
 

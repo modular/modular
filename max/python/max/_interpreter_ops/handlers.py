@@ -293,6 +293,100 @@ def _handle_mutable_load(
     return [inputs[0], None]
 
 
+# Mutable store operations
+
+
+@register_op_handler(mo.MutableStoreOp)
+def _handle_mutable_store(
+    op: mo.MutableStoreOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer | None]:
+    """Handle mo.mutable.store by copying the tensor into the buffer.
+
+    ``mo.mutable.store`` writes a full tensor value into a mutable tensor
+    slot. Operand order is ``(in_buffer, in_tensor, in_chain)`` and the sole
+    result is ``out_chain``. The interpreter represents chains as ``None``.
+
+    Args:
+        op: The mutable store operation (unused).
+        inputs: Input buffers - ``(in_buffer, in_tensor, in_chain)``.
+            ``in_chain`` is ``None`` since chain values are skipped.
+
+    Returns:
+        List containing ``None`` for the out_chain.
+    """
+    in_buffer = inputs[0]
+    in_tensor = inputs[1]
+    assert isinstance(in_buffer, Buffer)
+    assert isinstance(in_tensor, Buffer)
+    in_buffer.inplace_copy_from(in_tensor)
+    return [None]
+
+
+@register_op_handler(mo.MutableStoreSliceOp)
+def _handle_mutable_store_slice(
+    op: mo.MutableStoreSliceOp, inputs: Sequence[Buffer | None]
+) -> Sequence[Buffer | None]:
+    """Handle mo.mutable.store.slice by writing a slice into the buffer.
+
+    Operand order: ``(in_buffer, slice, start, stop, step, in_chain)``;
+    result is ``out_chain``. Uses numpy index semantics for start/stop/step.
+
+    Host buffers mutate in-place via the zero-copy ``to_numpy`` view.
+    Device buffers round-trip through host to preserve non-slice regions
+    since ``inplace_copy_from`` overwrites the whole destination.
+
+    Args:
+        op: The mutable store slice operation (unused).
+        inputs: ``(in_buffer, slice, start, stop, step, in_chain)``.
+
+    Returns:
+        List containing ``None`` for the out_chain.
+    """
+    in_buffer = inputs[0]
+    slice_tensor = inputs[1]
+    start_buf = inputs[2]
+    stop_buf = inputs[3]
+    step_buf = inputs[4]
+    assert isinstance(in_buffer, Buffer)
+    assert isinstance(slice_tensor, Buffer)
+    assert isinstance(start_buf, Buffer)
+    assert isinstance(stop_buf, Buffer)
+    assert isinstance(step_buf, Buffer)
+
+    # Buffer.to_numpy goes through DLPack, which rejects sub-byte and
+    # non-IEEE float formats.
+    dtype = in_buffer.dtype
+    if (
+        dtype.is_float8()
+        or dtype is DType.bfloat16
+        or dtype is DType.float4_e2m1fn
+    ):
+        raise NotImplementedError(
+            f"mo.mutable.store.slice interpreter handler does not yet "
+            f"support dtype {dtype}"
+        )
+
+    start_np = start_buf.to_numpy().astype(np.int64)
+    stop_np = stop_buf.to_numpy().astype(np.int64)
+    step_np = step_buf.to_numpy().astype(np.int64)
+
+    slicer = tuple(
+        slice(int(start_np[i]), int(stop_np[i]), int(step_np[i]))
+        for i in range(len(start_np))
+    )
+
+    if in_buffer.device.is_host:
+        # Zero-copy view: writing the slice mutates the buffer in place.
+        in_buffer.to_numpy()[slicer] = slice_tensor.to_numpy()
+    else:
+        # Device path: to_numpy already allocates a fresh host copy.
+        buffer_np = in_buffer.to_numpy()
+        buffer_np[slicer] = slice_tensor.to_numpy()
+        in_buffer.inplace_copy_from(Buffer.from_numpy(buffer_np))
+
+    return [None]
+
+
 # Transfer operations
 
 
