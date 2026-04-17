@@ -76,7 +76,9 @@ def execute_kv_cache_ragged_k_rope[
     comptime kv_params = KVCacheStaticParams(
         num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
     )
-    comptime CollectionType = PagedKVCacheCollection[dtype, kv_params, page_size]
+    comptime CollectionType = PagedKVCacheCollection[
+        dtype, kv_params, page_size
+    ]
 
     var total_seq_len = UInt32(batch_size * seq_len)
     var max_context_length = seq_len + cache_len
@@ -116,7 +118,9 @@ def execute_kv_cache_ragged_k_rope[
     # Assign each request a deterministic, non-overlapping page range.
     for bs in range(batch_size):
         for page_idx in range(paged_lut_cols):
-            paged_lut_host[bs, page_idx] = UInt32(bs * paged_lut_cols + page_idx)
+            paged_lut_host[bs, page_idx] = UInt32(
+                bs * paged_lut_cols + page_idx
+            )
 
     var paged_lut_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
         paged_lut_size

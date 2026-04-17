@@ -63,9 +63,9 @@ def _rms_norm_kv_cache_decode_direct_trial[
     input_row_offsets: TileTensor[DType.uint32, ...],
     ctx: DeviceContext,
 ) raises:
-    comptime assert per_head_norm, (
-        "The direct KV RMSNorm trial expects per-head norm"
-    )
+    comptime assert (
+        per_head_norm
+    ), "The direct KV RMSNorm trial expects per-head norm"
     comptime rms_norm_cols = gamma.static_shape[0]
     comptime head_size = Int(params.head_size)
     comptime assert rms_norm_cols != -1, "Need static gamma shape"
@@ -132,9 +132,9 @@ def _rms_norm_kv_cache_decode_direct_trial[
         @always_inline
         @parameter
         @__copy_capture(k_cache)
-        def direct_input_fn_2d[width: Int](
-            row: Int, col: Int
-        ) -> SIMD[dtype, width]:
+        def direct_input_fn_2d[
+            width: Int
+        ](row: Int, col: Int) -> SIMD[dtype, width]:
             var batch_idx = row // Int(params.num_heads)
             var head_idx = row % Int(params.num_heads)
             var cache_token_idx = Int(k_cache.cache_length(batch_idx))
@@ -148,9 +148,9 @@ def _rms_norm_kv_cache_decode_direct_trial[
         @always_inline
         @parameter
         @__copy_capture(k_cache)
-        def direct_output_fn_2d[width: Int, alignment: Int](
-            row: Int, col: Int, val: SIMD[dtype, width]
-        ) -> None:
+        def direct_output_fn_2d[
+            width: Int, alignment: Int
+        ](row: Int, col: Int, val: SIMD[dtype, width]) -> None:
             var batch_idx = row // Int(params.num_heads)
             var head_idx = row % Int(params.num_heads)
             var cache_token_idx = Int(k_cache.cache_length(batch_idx))
@@ -221,7 +221,9 @@ def execute_kv_cache_ragged_rms_norm_direct_pair[
     comptime kv_params = KVCacheStaticParams(
         num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
     )
-    comptime CollectionType = PagedKVCacheCollection[dtype, kv_params, page_size]
+    comptime CollectionType = PagedKVCacheCollection[
+        dtype, kv_params, page_size
+    ]
 
     var total_seq_len = UInt32(batch_size * seq_len)
     var max_cache_len = cache_len + (batch_size - 1) * cache_len_step
@@ -239,9 +241,9 @@ def execute_kv_cache_ragged_rms_norm_direct_pair[
     input_row_offsets_host_ptr[batch_size] = total_seq_len
 
     for i in range(head_dim):
-        gamma_host_ptr[i] = (
-            Float64(i + head_dim) / Float64(head_dim)
-        ).cast[dtype]()
+        gamma_host_ptr[i] = (Float64(i + head_dim) / Float64(head_dim)).cast[
+            dtype
+        ]()
 
     var input_row_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
@@ -270,7 +272,9 @@ def execute_kv_cache_ragged_rms_norm_direct_pair[
 
     for bs in range(batch_size):
         for page_idx in range(paged_lut_cols):
-            paged_lut_host[bs, page_idx] = UInt32(bs * paged_lut_cols + page_idx)
+            paged_lut_host[bs, page_idx] = UInt32(
+                bs * paged_lut_cols + page_idx
+            )
 
     var paged_lut_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
         paged_lut_size
@@ -495,7 +499,9 @@ def execute_kv_cache_ragged_rms_norm_direct_pair[
         UInt32(max_context_length),
     )
 
-    var baseline_k_cache_host = baseline_kv_collection_host.get_key_cache(layer_idx)
+    var baseline_k_cache_host = baseline_kv_collection_host.get_key_cache(
+        layer_idx
+    )
     var direct_k_cache_host = direct_kv_collection_host.get_key_cache(layer_idx)
 
     for bs_idx in range(batch_size):

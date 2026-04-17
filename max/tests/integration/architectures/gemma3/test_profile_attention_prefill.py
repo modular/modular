@@ -116,9 +116,9 @@ def _resolve_layer_metadata(config: dict[str, Any]) -> tuple[int, str]:
         os.environ.get("PROFILE_ATTENTION_LAYER_IDX", str(DEFAULT_LAYER_IDX))
     )
     num_hidden_layers = int(config["num_hidden_layers"])
-    assert (
-        0 <= layer_idx < num_hidden_layers
-    ), f"layer_idx={layer_idx} must be in [0, {num_hidden_layers})"
+    assert 0 <= layer_idx < num_hidden_layers, (
+        f"layer_idx={layer_idx} must be in [0, {num_hidden_layers})"
+    )
     layer_type = (
         "local"
         if bool((layer_idx + 1) % config["sliding_window_pattern"])
@@ -127,9 +127,9 @@ def _resolve_layer_metadata(config: dict[str, Any]) -> tuple[int, str]:
     expected_layer_type = os.environ.get(
         "PROFILE_ATTENTION_LAYER_TYPE", DEFAULT_LAYER_TYPE
     )
-    assert (
-        layer_type == expected_layer_type
-    ), f"expected {expected_layer_type} layer, got {layer_type} for layer_idx={layer_idx}"
+    assert layer_type == expected_layer_type, (
+        f"expected {expected_layer_type} layer, got {layer_type} for layer_idx={layer_idx}"
+    )
     return layer_idx, layer_type
 
 
@@ -138,9 +138,9 @@ def _resolve_kv_num_layers(config: dict[str, Any], layer_idx: int) -> int:
     kv_num_layers = int(
         os.environ.get("PROFILE_ATTENTION_KV_NUM_LAYERS", str(min_num_layers))
     )
-    assert (
-        kv_num_layers >= min_num_layers
-    ), f"kv_num_layers={kv_num_layers} must cover layer_idx={layer_idx}"
+    assert kv_num_layers >= min_num_layers, (
+        f"kv_num_layers={kv_num_layers} must cover layer_idx={layer_idx}"
+    )
     assert kv_num_layers <= int(config["num_hidden_layers"]), (
         "kv_num_layers cannot exceed the model layer count "
         f"({config['num_hidden_layers']})"
@@ -818,7 +818,11 @@ def _make_runtime_inputs(
         n_kv_heads_per_device=kv_params.n_kv_heads_per_device,
         num_q_heads_per_device=kv_params.num_q_heads_per_device,
         is_fp8_kv=kv_params.is_fp8_kv_dtype,
-    ).resolve_for_replica(batch_size, seq_len, seq_len,)[0]
+    ).resolve_for_replica(
+        batch_size,
+        seq_len,
+        seq_len,
+    )[0]
 
     return KVCacheInputsPerDevice(
         blocks=runtime_inputs.blocks,

@@ -71,7 +71,9 @@ def _rope_qonly_decode_ragged_trial_kernel[
     comptime num_q_heads = x.static_shape[1]
     comptime head_dim = x.static_shape[2]
 
-    comptime assert head_dim == 128, "Only 128-column BF16 query rows are supported"
+    comptime assert (
+        head_dim == 128
+    ), "Only 128-column BF16 query rows are supported"
     comptime assert head_dim == half_warp_size * simd_width
     comptime assert freqs_cis.static_shape[1] == head_dim
 
@@ -79,7 +81,9 @@ def _rope_qonly_decode_ragged_trial_kernel[
     var warp_idx = tid // UInt(WARP_SIZE)
     var sub_warp_idx = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
     var local_tid = tid % UInt(half_warp_size)
-    var row = block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    var row = (
+        block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    )
     if row < UInt(num_rows):
         var row_int = Int(row)
         var global_token_idx = row_int // num_q_heads
@@ -121,7 +125,13 @@ def _get_run_name[
     num_q_heads: Int,
     num_kv_heads: Int,
     head_dim: Int,
-](batch_size: Int, seq_len: Int, cache_len: Int, use_random_seq_lengths: Bool, use_decode_fastpath: Bool,) -> String:
+](
+    batch_size: Int,
+    seq_len: Int,
+    cache_len: Int,
+    use_random_seq_lengths: Bool,
+    use_decode_fastpath: Bool,
+) -> String:
     # fmt: off
     return String(
         "q_ragged_rope(", dtype, ") : ",
@@ -214,7 +224,9 @@ def execute_kv_cache_ragged_rope[
     num_elems = Int(total_seq_len) * num_q_heads * head_dim // 2
     flop_count = num_flops_per_elem * num_elems
     var is_decode_uniform = (
-        not use_random_seq_lengths and seq_len == 1 and Int(total_seq_len) == batch_size
+        not use_random_seq_lengths
+        and seq_len == 1
+        and Int(total_seq_len) == batch_size
     )
 
     @always_inline

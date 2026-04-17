@@ -114,8 +114,12 @@ def qnorm_rope_ragged_non_interleaved_128_kernel[
 
         var coord_re = IndexList[3](global_token_idx, head_idx, re_col)
         var coord_im = IndexList[3](global_token_idx, head_idx, im_col)
-        var q_re = q_proj.load[width=vec_width, alignment=align](Coord(coord_re))
-        var q_im = q_proj.load[width=vec_width, alignment=align](Coord(coord_im))
+        var q_re = q_proj.load[width=vec_width, alignment=align](
+            Coord(coord_re)
+        )
+        var q_im = q_proj.load[width=vec_width, alignment=align](
+            Coord(coord_im)
+        )
 
         var thread_m2 = (q_re.cast[accum_type]() ** 2).reduce_add() + (
             q_im.cast[accum_type]() ** 2
@@ -285,7 +289,9 @@ def bench_qnorm_rope_boundary[
 
     with gamma_device.map_to_host() as gamma_h:
         for i in range(head_dim):
-            gamma_h[i] = Scalar[dtype]((Float64(i + head_dim) / Float64(head_dim)).cast[dtype]())
+            gamma_h[i] = Scalar[dtype](
+                (Float64(i + head_dim) / Float64(head_dim)).cast[dtype]()
+            )
 
     var q_tensor = TileTensor(q_device, q_layout)
     var baseline_norm_tensor = TileTensor(baseline_norm_device, q_layout)
@@ -294,7 +300,9 @@ def bench_qnorm_rope_boundary[
     var input_row_offsets_tensor = TileTensor(
         input_row_offsets_device, row_major(Idx(batch_size + 1))
     )
-    var start_pos_tensor = TileTensor(start_pos_device, row_major(Idx(batch_size)))
+    var start_pos_tensor = TileTensor(
+        start_pos_device, row_major(Idx(batch_size))
+    )
     var freqs_cis_tensor = TileTensor(freqs_cis_device, freqs_cis_layout)
     var gamma_tensor = TileTensor(gamma_device, row_major(Idx[head_dim]()))
     var epsilon = Scalar[dtype](0.001)

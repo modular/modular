@@ -190,9 +190,9 @@ def _rms_norm_kv_cache_production_clone_trial[
     def key_cache_uniform_decode_input_fn[
         width: Int, rank_: Int
     ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
-        comptime assert rank_ == 3, (
-            "decode-uniform KV RMSNorm specialization expects rank 3"
-        )
+        comptime assert (
+            rank_ == 3
+        ), "decode-uniform KV RMSNorm specialization expects rank 3"
 
         var batch_idx = idx[0]
         var cache_token_idx = Int(k_cache.cache_length(batch_idx))
@@ -281,7 +281,8 @@ def _rms_norm_kv_cache_production_clone_no_trace_trial[
     input_row_offsets: TileTensor[DType.uint32, ...],
     ctx: DeviceContextPtr,
 ) raises:
-    """Benchmark-local production-shape clone without the outer Trace wrapper."""
+    """Benchmark-local production-shape clone without the outer Trace wrapper.
+    """
     comptime assert gamma.flat_rank == 1, "gamma must be rank 1"
     comptime assert (
         input_row_offsets.flat_rank == 1
@@ -403,9 +404,9 @@ def _rms_norm_kv_cache_production_clone_no_trace_trial[
     def key_cache_uniform_decode_input_fn[
         width: Int, rank_: Int
     ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
-        comptime assert rank_ == 3, (
-            "decode-uniform KV RMSNorm specialization expects rank 3"
-        )
+        comptime assert (
+            rank_ == 3
+        ), "decode-uniform KV RMSNorm specialization expects rank 3"
 
         var batch_idx = idx[0]
         var cache_token_idx = Int(k_cache.cache_length(batch_idx))
@@ -484,7 +485,9 @@ def execute_kv_cache_ragged_rms_norm_pair[
     comptime kv_params = KVCacheStaticParams(
         num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
     )
-    comptime CollectionType = PagedKVCacheCollection[dtype, kv_params, page_size]
+    comptime CollectionType = PagedKVCacheCollection[
+        dtype, kv_params, page_size
+    ]
 
     var total_seq_len = UInt32(batch_size * seq_len)
     var max_cache_len = cache_len + (batch_size - 1) * cache_len_step
@@ -502,9 +505,9 @@ def execute_kv_cache_ragged_rms_norm_pair[
     input_row_offsets_host_ptr[batch_size] = total_seq_len
 
     for i in range(head_dim):
-        gamma_host_ptr[i] = (
-            Float64(i + head_dim) / Float64(head_dim)
-        ).cast[dtype]()
+        gamma_host_ptr[i] = (Float64(i + head_dim) / Float64(head_dim)).cast[
+            dtype
+        ]()
 
     var input_row_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
@@ -533,7 +536,9 @@ def execute_kv_cache_ragged_rms_norm_pair[
 
     for bs in range(batch_size):
         for page_idx in range(paged_lut_cols):
-            paged_lut_host[bs, page_idx] = UInt32(bs * paged_lut_cols + page_idx)
+            paged_lut_host[bs, page_idx] = UInt32(
+                bs * paged_lut_cols + page_idx
+            )
 
     var paged_lut_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
         paged_lut_size
@@ -848,7 +853,9 @@ def execute_kv_cache_ragged_rms_norm_pair[
         UInt32(max_context_length),
     )
 
-    var baseline_k_cache_host = baseline_kv_collection_host.get_key_cache(layer_idx)
+    var baseline_k_cache_host = baseline_kv_collection_host.get_key_cache(
+        layer_idx
+    )
     var production_clone_k_cache_host = (
         production_clone_kv_collection_host.get_key_cache(layer_idx)
     )

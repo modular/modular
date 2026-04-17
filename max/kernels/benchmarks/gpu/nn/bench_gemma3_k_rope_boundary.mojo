@@ -22,7 +22,11 @@ from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.testing import assert_almost_equal
 
 from internal_utils import arg_parse
-from kv_cache.types import KVCacheStaticParams, KVCollectionT, PagedKVCacheCollection
+from kv_cache.types import (
+    KVCacheStaticParams,
+    KVCollectionT,
+    PagedKVCacheCollection,
+)
 from layout import (
     Idx,
     Layout,
@@ -57,16 +61,18 @@ def _rope_k_cache_direct_row_trial[
         input_row_offsets.flat_rank == 1
     ), "input_row_offsets must be rank 1"
     comptime assert freqs_cis.flat_rank == 2, "freqs_cis must be rank 2"
-    comptime assert collection_t.CacheType.dtype == DType.bfloat16, (
-        "The direct-row K-rope trial only supports BF16 cache storage"
-    )
+    comptime assert (
+        collection_t.CacheType.dtype == DType.bfloat16
+    ), "The direct-row K-rope trial only supports BF16 cache storage"
     comptime head_size = Int(collection_t.CacheType.kv_params.head_size)
-    comptime assert head_size == 128, (
-        "The direct-row K-rope trial only supports 128-column keys"
-    )
+    comptime assert (
+        head_size == 128
+    ), "The direct-row K-rope trial only supports 128-column keys"
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
-    var total_rows = total_seq_len * Int(collection_t.CacheType.kv_params.num_heads)
+    var total_rows = total_seq_len * Int(
+        collection_t.CacheType.kv_params.num_heads
+    )
     var batch_size = Int(input_row_offsets.dim(0)) - 1
     var is_decode_uniform = total_seq_len == batch_size
     comptime default_warps_per_block = 2
@@ -148,10 +154,12 @@ def _rope_k_cache_direct_row_trial[
                 grid_dim=ceildiv(total_rows, default_warps_per_block * 2),
                 block_dim=default_block_size,
                 attributes=pdl_launch_attributes(PDLLevel(1)),
-                )
+            )
 
 
-def _fill_paged_lut[origin: MutOrigin, //](
+def _fill_paged_lut[
+    origin: MutOrigin, //
+](
     paged_lut_h: UnsafePointer[Scalar[DType.uint32], origin],
     row_page_counts_h: UnsafePointer[Scalar[DType.uint32], _],
     batch_size: Int,
@@ -208,7 +216,9 @@ def _fill_paged_lut[origin: MutOrigin, //](
                 )
 
 
-def _assert_k_cache_match[collection_t: KVCollectionT](
+def _assert_k_cache_match[
+    collection_t: KVCollectionT
+](
     baseline_kv_collection_host: collection_t,
     trial_kv_collection_host: collection_t,
     cache_lengths_h: UnsafePointer[Scalar[DType.uint32], _],
@@ -218,7 +228,9 @@ def _assert_k_cache_match[collection_t: KVCollectionT](
     num_kv_heads: Int,
     head_dim: Int,
 ) raises:
-    var baseline_k_cache_host = baseline_kv_collection_host.get_key_cache(layer_idx)
+    var baseline_k_cache_host = baseline_kv_collection_host.get_key_cache(
+        layer_idx
+    )
     var trial_k_cache_host = trial_kv_collection_host.get_key_cache(layer_idx)
 
     for bs_idx in range(batch_size):
@@ -265,7 +277,9 @@ def bench_gemma3_k_rope_boundary[
     comptime kv_params = KVCacheStaticParams(
         num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
     )
-    comptime CollectionType = PagedKVCacheCollection[dtype, kv_params, page_size]
+    comptime CollectionType = PagedKVCacheCollection[
+        dtype, kv_params, page_size
+    ]
     comptime kv_block_layout = Layout.row_major[6]()
     comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
 
@@ -294,9 +308,7 @@ def bench_gemma3_k_rope_boundary[
     if not packed_pages:
         num_pages = batch_size * paged_lut_cols
 
-    assert not (
-        paired_fragment_pages and (packed_pages or fragment_pages)
-    ), (
+    assert not (paired_fragment_pages and (packed_pages or fragment_pages)), (
         "paired_fragment_pages cannot be combined with pack_pages or "
         "fragment_pages"
     )
@@ -325,7 +337,9 @@ def bench_gemma3_k_rope_boundary[
         batch_size + 1
     )
     var cache_lengths_d = ctx.enqueue_create_buffer[DType.uint32](batch_size)
-    var freqs_d = ctx.enqueue_create_buffer[dtype](max_context_length * head_dim)
+    var freqs_d = ctx.enqueue_create_buffer[dtype](
+        max_context_length * head_dim
+    )
     var paged_lut_d = ctx.enqueue_create_buffer[DType.uint32](
         batch_size * paged_lut_cols
     )
@@ -653,7 +667,9 @@ def bench_gemma3_k_rope_boundary[
         run_fragment_trial(ctx)
         ctx.enqueue_copy(baseline_kv_block_h, baseline_kv_block_d)
         ctx.enqueue_copy(trial_kv_block_h, trial_kv_block_d)
-        ctx.enqueue_copy(fragment_baseline_kv_block_h, fragment_baseline_kv_block_d)
+        ctx.enqueue_copy(
+            fragment_baseline_kv_block_h, fragment_baseline_kv_block_d
+        )
         ctx.enqueue_copy(fragment_trial_kv_block_h, fragment_trial_kv_block_d)
         ctx.synchronize()
 
