@@ -29,7 +29,7 @@ For field lookup by name (concrete types only):
 Example iterating over all fields (works with generics):
 
 ```mojo
-from std.reflection.struct_fields import struct_field_names, struct_field_count
+from std.reflection import struct_field_names, struct_field_count
 
 struct Point:
     var x: Int
@@ -47,7 +47,7 @@ def main():
 Example looking up a field by name:
 
 ```mojo
-from std.reflection.struct_fields import (
+from std.reflection import (
     struct_field_index_by_name,
     struct_field_type_by_name,
 )
@@ -72,7 +72,7 @@ both literal indices and parametric indices (such as loop variables in
 `comptime for` loops):
 
 ```mojo
-from std.reflection.struct_fields import struct_field_names, struct_field_count
+from std.reflection import struct_field_names, struct_field_count
 
 @fieldwise_init
 struct Container:
@@ -100,7 +100,7 @@ For struct field byte offsets (useful for low-level memory operations):
 Example:
 
 ```mojo
-from std.reflection.struct_fields import offset_of
+from std.reflection import offset_of
 
 struct Point:
     var x: Int      # offset 0
@@ -158,7 +158,7 @@ struct ReflectedType[T: AnyType](TrivialRegisterPassable):
 
     Example:
         ```mojo
-        from std.reflection.struct_fields import struct_field_type_by_name
+        from std.reflection import struct_field_type_by_name
 
         struct MyStruct:
             var x: Int
@@ -211,7 +211,7 @@ def struct_field_type_by_name[
 
     Example:
         ```mojo
-        from std.reflection.struct_fields import struct_field_type_by_name
+        from std.reflection import struct_field_type_by_name
 
         struct Point:
             var x: Int
@@ -274,7 +274,7 @@ def struct_field_count[T: AnyType]() -> Int:
 
     Example:
         ```mojo
-        from std.reflection.struct_fields import struct_field_count
+        from std.reflection import struct_field_count
 
         struct MyStruct:
             var x: Int
@@ -287,8 +287,6 @@ def struct_field_count[T: AnyType]() -> Int:
             print(count_fields[MyStruct]())  # Prints field count
         ```
     """
-    # Use variadic.size on struct_field_types to get the count.
-    # This avoids needing a dedicated struct_field_count attribute.
     return struct_field_types[T]().size
 
 
@@ -314,8 +312,7 @@ Returns:
 
 Example:
     ```mojo
-    from std.reflection import get_type_name
-    from std.reflection.struct_fields import struct_field_types, struct_field_count
+    from std.reflection import get_type_name, struct_field_types, struct_field_count
 
     struct MyStruct:
         var x: Int
@@ -363,7 +360,7 @@ def struct_field_names[
 
     Example:
         ```mojo
-        from std.reflection.struct_fields import struct_field_names, struct_field_count
+        from std.reflection import struct_field_names, struct_field_count
 
         struct MyStruct:
             var x: Int
@@ -429,8 +426,7 @@ def is_struct_type[T: AnyType]() -> Bool:
 
     Example:
         ```mojo
-        from std.reflection import get_type_name
-        from std.reflection.struct_fields import is_struct_type, struct_field_count
+        from std.reflection import get_type_name, is_struct_type, struct_field_count
 
         def process_type[T: AnyType]():
             comptime if is_struct_type[T]():
@@ -518,7 +514,7 @@ def offset_of[
 
     Example:
         ```mojo
-        from std.reflection.struct_fields import offset_of
+        from std.reflection import offset_of
 
         struct Point:
             var x: Int      # offset 0
@@ -559,7 +555,7 @@ def offset_of[
 
     Example:
         ```mojo
-        from std.reflection.struct_fields import offset_of
+        from std.reflection import offset_of
 
         struct Point:
             var x: Int      # offset 0
