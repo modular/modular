@@ -23,6 +23,11 @@ class SafeTensor:
     def keys(self) -> list[str]:
         """Returns the list of tensor keys present."""
 
+    def metadata(self) -> dict[str, str]:
+        """
+        Returns the file-level ``__metadata__`` map from the SafeTensors header. Only string-valued entries are included; non-string values (which the HuggingFace spec forbids) are skipped. Returns an empty dict when the header has no ``__metadata__`` section.
+        """
+
     def get_buffer(self, name: str) -> max._core.driver.Buffer:
         """Returns a buffer with a given key."""
 
