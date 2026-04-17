@@ -927,6 +927,7 @@ def _softmax_temperature_kernel[
     input_origin: ImmutOrigin,
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
+    row_max_prob_origin: MutOrigin = MutAnyOrigin,
     accum_type: DType = get_accum_type[dtype](),
 ](
     input: TileTensor[dtype, InputLayoutType, input_origin],
@@ -936,6 +937,7 @@ def _softmax_temperature_kernel[
     temperature: Scalar[temp_dtype],
     # using UnsafePointer here because cant pass optional TileTensor
     temperature_arr: UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin],
+    row_max_prob_arr: UnsafePointer[Scalar[DType.float32], row_max_prob_origin],
 ):
     """GPU kernel for softmax with per-row temperature scaling.
 
@@ -1020,6 +1022,8 @@ def _softmax_temperature_kernel[
 
             # Step 2: normalize — recompute exp to avoid a global-memory.
             var recip = Scalar[accum_type](1) / global_sum
+            if tid == 0 and row_max_prob_arr._is_not_null():
+                row_max_prob_arr[row_idx] = recip.cast[DType.float32]()
 
             if use_vectorized:
                 for tile_base in range(0, row_size, BLOCK_SPAN):
@@ -1056,6 +1060,9 @@ def softmax_with_temperature[
     dtype: DType,
     temp_dtype: DType = DType.float32,
     TempLayoutType: TensorLayout = RowMajorLayout[RuntimeInt[DType.int64]],
+    RowMaxProbLayoutType: TensorLayout = RowMajorLayout[
+        RuntimeInt[DType.int64]
+    ],
 ](
     ctx: DeviceContext,
     input: TileTensor[dtype, ...],
@@ -1063,6 +1070,9 @@ def softmax_with_temperature[
     temperature: Scalar[temp_dtype] = Float32(1.0),
     temperature_arr: Optional[
         TileTensor[temp_dtype, TempLayoutType, ImmutAnyOrigin]
+    ] = None,
+    row_max_prob_arr: Optional[
+        TileTensor[DType.float32, RowMaxProbLayoutType, MutAnyOrigin]
     ] = None,
 ) raises:
     """GPU softmax with per-row temperature scaling.
@@ -1082,6 +1092,7 @@ def softmax_with_temperature[
         output: Output probability tensor (same shape as input).
         temperature: Scalar temperature fallback (default 1.0).
         temperature_arr: Optional per-row temperature values [batch_size].
+        row_max_prob_arr: Optional per-row max probability bounds [batch_size].
     """
     comptime assert input.rank == 2, "input must be rank 2"
     comptime assert output.rank == 2, "output must be rank 2"
@@ -1096,6 +1107,12 @@ def softmax_with_temperature[
     )
     if temperature_arr:
         temp_ptr = temperature_arr.value().ptr
+
+    var row_max_prob_ptr = UnsafePointer[Scalar[DType.float32], MutAnyOrigin](
+        _unsafe_null=()
+    )
+    if row_max_prob_arr:
+        row_max_prob_ptr = row_max_prob_arr.value().ptr
 
     comptime BLOCK_SIZE = 256
     var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
@@ -1118,6 +1135,7 @@ def softmax_with_temperature[
         d,
         temperature,
         temp_ptr,
+        row_max_prob_ptr,
         grid_dim=num_blocks,
         block_dim=BLOCK_SIZE,
         attributes=pdl_launch_attributes(PDLLevel(1)),
