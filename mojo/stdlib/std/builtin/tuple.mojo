@@ -91,7 +91,7 @@ struct Tuple[*element_types: Movable](
         )
 
     @always_inline("nodebug")
-    def __init__(out self, var *args: * Self.element_types):
+    def __init__(out self, var *args: *Self.element_types):
         """Construct the tuple.
 
         Args:

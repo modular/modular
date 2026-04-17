@@ -1432,7 +1432,7 @@ struct _FusionPack[*Ts: TrivialRegisterPassable](TrivialRegisterPassable):
     var _mlir_value: Self._mlir_type
 
     @always_inline("nodebug")
-    def __init__(out self, *args: * Self.Ts):
+    def __init__(out self, *args: *Self.Ts):
         self._mlir_value = __mlir_op.`kgen.rebind`[_type=Self._mlir_type](
             args.get_loaded_kgen_pack()
         )

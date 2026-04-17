@@ -533,7 +533,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return Self.__len__()
 
     @always_inline("nodebug")
-    def __init__(out self, var *args: * Self.element_types):
+    def __init__(out self, var *args: *Self.element_types):
         """Construct tuple from variadic arguments.
 
         Args:
@@ -1949,7 +1949,7 @@ struct _RegTuple[*element_types: CoordLike](
         )
 
     @always_inline("nodebug")
-    def __init__(out self, var *args: * Self.element_types):
+    def __init__(out self, var *args: *Self.element_types):
         """Construct the tuple.
 
         Args:
