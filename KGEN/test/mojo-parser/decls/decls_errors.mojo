@@ -83,10 +83,10 @@ def bad_out3[out x: Int](): pass
 # expected-error @+1 {{function may not have multiple 'out' arguments}}
 def bad_out4(out a: Int, out b: Int): pass
 
-# expected-error @+1 {{function cannot have both an 'out' argument and an explicit result type}}
+# expected-error @+1 {{functions must not declare both an 'out' argument and a return type}}
 def bad_out5(out a: Int) -> Int: pass
 
-# expected-error @+1 {{function cannot have both an 'out' argument and an explicit result type; remove the '-> None' to fix it}}
+# expected-error @+1 {{functions must not declare both an 'out' argument and a return type; remove the '-> None' to fix it}}
 def bad_out6(out self) -> None: pass
 
 struct BadInitResult:
@@ -111,12 +111,12 @@ def defaultArgumentUntyped(a=1) raises:
 # COM: Issue https://github.com/modular/mojo/issues/1091
 def missing_arg_type_or_default(
     a: Int = 9,
-    # expected-error @+2 {{required positional argument follows optional positional argument}}
+    # expected-error @+2 {{required positional argument follows optional positional argument; change the ordering}}
     # expected-error @+1 {{argument type must be specified}}
     b,
-    c: Int,  # expected-error {{required positional argument follows optional positional argument}}
+    c: Int,  # expected-error {{required positional argument follows optional positional argument; change the ordering}}
     d: Int = 0,
-    # expected-error @+2 {{required positional argument follows optional positional argument}}
+    # expected-error @+2 {{required positional argument follows optional positional argument; change the ordering}}
     # expected-error @+1 {{argument type must be specified}}
     e,
     # expected-error @+1 {{argument type must be specified}}
@@ -126,9 +126,9 @@ def missing_arg_type_or_default(
 
 def missing_default(
     a: Int=9,
-    b: Int,  # expected-error {{required positional argument follows optional positional argument}}
+    b: Int,  # expected-error {{required positional argument follows optional positional argument; change the ordering}}
     c: Int=0,
-    d: Int,  # expected-error {{required positional argument follows optional positional argument}}
+    d: Int,  # expected-error {{required positional argument follows optional positional argument; change the ordering}}
 ) raises:
     pass
 
@@ -269,7 +269,7 @@ def invalidParameterPack[*Ts: AnyType]():
   # expected-error @+1 {{parameters may not be variadic packs}}
   def invalid[*Us: *Ts](): pass
 
-# expected-error @+2 {{only variadic arguments' types can be unpacked}}
+# expected-error @+2 {{variadic unpacking with '*' requires a variadic argument}}
 # expected-note @+1 {{'x' is not a variadic argument}}
 def invalidArgumentUnpack[*Ts: AnyType](x: *Ts): pass
 
@@ -334,7 +334,7 @@ def always_inline_builtin_4(a: Bool):
   if a:
      pass
 
-# expected-error @+1 {{where clauses can only be used for compile time parameters}}
+# expected-error @+1 {{'where' clauses must be used with parameters and cannot be used with arguments}}
 def illegal_runtime_where[x: Int](a: Int where a > 1):
   pass
 
@@ -694,7 +694,7 @@ struct SpecialFunctions:
     self+self # Supports this, even though it isn't valid.  Shouldn't crash.
     self*self # expected-error {{'SpecialFunctions' does not implement the '__mul__' method}}
 
-  # expected-error @+1 {{destructor cannot be declared as raising an exception}}
+  # expected-error @+1 {{destructor must not declare 'raises'; remove the 'raises' keyword}}
   def __del__(deinit self) raises:
      pass
 
@@ -722,7 +722,7 @@ struct WrongType(RegisterPassable):
   def __init__(out self, *, copy: Int): pass
 
   # expected-error @+2 {{redefinition of function '__init__' cannot overload on return type only}}
-  # expected-error @+1 {{'RegisterPassable' types may not have an explicit move constructor, they are always movable by copying a register}}
+  # expected-error @+1 {{'RegisterPassable' types must not declare explicit move constructors; values of these types have no identity, and the compiler can freely move them between registers}}
   def __init__(out self, *, deinit take: Self): pass
 
 
@@ -777,12 +777,13 @@ struct OtherInMemStruct:
 # expected-note @+1 {{previous definition here}}
 struct InvalidMember(TrivialRegisterPassable):
   var x: __mlir_type.index
-  # expected-error @+1 {{'RegisterPassable' types may not have an explicit move constructor, they are always movable by copying a register}}
+  # expected-error @+1 {{'RegisterPassable' types must not declare explicit move constructors; values of these types have no identity, and the compiler can freely move them between registers}}
   def __init__(out self, *, deinit take: Self): pass
   # expected-error @+2 {{redefinition of function '__init__' cannot overload on return type only}}
-  # expected-error @+1 {{trivial types may not have an explicit copy constructor, they are always trivially copyable}}
+  # expected-error @+1 {{trivial types must not declare explicit copy constructors; they are trivially copyable}}
   def __init__(out self, *, copy: Self): pass
-  # expected-error @+1 {{trivial types may not have a '__del__' method, they are always trivially destroyable}}
+  # expected-error @+2 {{trivial types may not have '__del__' methods; they are trivially destroyable}}
+  # expected-note @+1 {{trivial types have no identity; the compiler destroys them automatically with no observable effect}}
   def __del__(deinit self): pass
 
 def noop():  # expected-error {{body must not be empty; use 'pass' or check that the lines below are indented}}
@@ -791,14 +792,14 @@ struct BadDtor1:
   def __del__(self): # expected-error {{'self' argument must be passed as 'deinit'}}
     pass
 
-  # expected-error @+1 {{only arguments of Self type may be marked 'deinit'}}
+  # expected-error @+1 {{'deinit' must only be applied to arguments of Self type}}
   def bad1(self, deinit x: Int): pass
-  # expected-error @+1 {{self argument may not be variadic}}
+  # expected-error @+1 {{'self' argument must not be variadic; remove '*' before 'self'}}
   def bad2(deinit *self): pass
-  # expected-error @+1 {{self argument may not be variadic}}
+  # expected-error @+1 {{'self' argument must not be variadic; remove '*' before 'self'}}
   def bad3(*self): pass
 
-# expected-error @+1 {{only struct methods may be 'deinit'}}
+# expected-error @+1 {{'deinit' convention is only valid on struct method arguments}}
 def invalid_deinit(deinit self: Int) raises:
     pass
 
@@ -817,7 +818,7 @@ def test_deinit_fn_types():
   fp1 = GoodDtor.explicit_dtor
   fp1 = GoodDtor.normal_var
 
-  # expected-error @+1 {{'deinit' is not supported in function types, use 'var' instead}}
+  # expected-error @+1 {{function types do not support 'deinit'; replace with 'var'}}
   var fp2 : def(deinit self: GoodDtor) thin -> None
 
 @fieldwise_init
@@ -855,7 +856,7 @@ def function_with_struct2():
 # https://github.com/modularml/modular/issues/33557
 struct HasBadCtor:
     var v: Int
-    # expected-error @below {{function cannot have both an 'out' argument and an explicit result type}}
+    # expected-error @below {{functions must not declare both an 'out' argument and a return type}}
     def __init__(out self, v: Int) -> Self:
         self.v = v
 def useBadCtor() raises:
@@ -1043,12 +1044,12 @@ struct DTypePointer: # expected-error {{cannot define a struct here with name 'D
 struct copy_init_def:
   var field: Int
 
-  # expected-error @+1 {{copy constructor cannot be declared as raising an exception}}
+  # expected-error @+1 {{copy constructor must not declare 'raises'; remove the 'raises' keyword}}
   def __init__(out self, *, copy: Self) raises:
     self.field = copy.field
 
 struct copy_init_raises:
-  # expected-error @+1 {{copy constructor cannot be declared as raising an exception}}
+  # expected-error @+1 {{copy constructor must not declare 'raises'; remove the 'raises' keyword}}
   def __init__(out self, *, copy: Self) raises:
      pass
 

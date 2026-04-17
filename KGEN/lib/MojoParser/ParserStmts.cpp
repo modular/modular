@@ -966,11 +966,9 @@ bool StmtParser::hasParameterDecorator(LexerCursor startCursor,
     }
 
     if (emitErrors) {
-      emitError(decorator->getLoc(),
-                "'" + stmtName +
-                    "' "
-                    "statement does not support decorators; "
-                    "remove, replace, or correct the decorator")
+      emitError(decorator->getLoc())
+          << "'" << stmtName
+          << "' statement does not support decorators; remove the decorator"
           << decorator->getRange();
     }
   }

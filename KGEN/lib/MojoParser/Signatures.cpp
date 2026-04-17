@@ -146,7 +146,8 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
             if (auto as = digOutAddressSpace(pv.get(), expr->getLoc())) {
               if (addrSpace) {
                 emitter.emitError(expr->getLoc())
-                    << "multiple specification of address space isn't valid"
+                    << "address space must be specified once; remove duplicate "
+                       "address space specifications"
                     << expr->getRange();
               }
               addrSpace = as;
@@ -251,8 +252,8 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   } else if (p.consumeIfSoftIdentifier("deinit")) {
     handleContextualArgConvention("deinit", kConventionDeinit);
     if (convention == kConventionDeinit && kind != ArgListKind::kArgList) {
-      p.emitError(
-          loc, "'deinit' is not supported in function types, use 'var' instead")
+      p.emitError(loc,
+                  "function types do not support 'deinit'; replace with 'var'")
           << FixIt::replaceToken(loc, "var");
       convention = kConventionVar;
     }
@@ -275,8 +276,8 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   if (p.getToken().isAny(Token::slash_slash)) {
     if (kind != ArgListKind::kParamList &&
         kind != ArgListKind::kFnTypeParamList) {
-      p.emitTokenError("'//' can only be used in parameter lists to denote "
-                       "inferred parameters");
+      p.emitTokenError("'//' is reserved for parameter lists; it marks the end "
+                       "of 'infer-only' parameter listings");
     }
     p.consumeToken();
     markerInfo = KWArgMarkerInfo::kSlashSlash;
@@ -328,7 +329,8 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
       if (p.consumeIf(Token::star)) {
         if (variadicKind != VariadicKind::PosVarArg) {
           MojoInflightDiag diag = p.emitError(
-              starLoc, "only variadic arguments' types can be unpacked");
+              starLoc,
+              "variadic unpacking with '*' requires a variadic argument");
           if (name) {
             diag.attachNote(loc)
                 << "'" << name.getValue() << "' is not a variadic argument";
@@ -359,7 +361,8 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   while (p.consumeIfSoftIdentifier("where")) {
     if (kind == ArgListKind::kArgList) {
       p.emitError(loc,
-                  "where clauses can only be used for compile time parameters");
+                  "'where' clauses must be used with parameters and cannot "
+                  "be used with arguments");
       return failure();
     }
     ParsedConstraint constraint;
@@ -654,7 +657,7 @@ static MojoInflightDiag emitOptionalAfterRequired(IREmitter &emitter,
                             : "positional";
   return emitter.emitError(arg.loc, "required ")
          << kindStr << " " << argOrParam << " follows optional " << kindStr
-         << " " << argOrParam;
+         << " " << argOrParam << "; change the ordering";
 }
 
 /// Helper to emit a default argument/parameter value. Variadic and pack
@@ -1241,7 +1244,8 @@ ParseResult ParsedParamList::parseParametersIfPresent(ParserBase &p,
 // capture_item ::= capture_convention [identifier^] | identifier | identifier^
 ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
   if (!p.consumeIf(Token::l_brace)) {
-    p.emitError(p.getToken().getLoc(), "expected a capture convention list");
+    p.emitError(p.getToken().getLoc(), "expected '{' to begin capture "
+                                       "list");
     return failure();
   }
   auto parseConvention = [&]() -> CaptureConvention {
@@ -1283,7 +1287,8 @@ ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
         if (parsedConvention != CaptureConvention::kConventionCopy &&
             parsedConvention != CaptureConvention::kConventionUnspecified) {
           p.emitError(captureLocation,
-                      "expected 'var' capture convention for moved objects");
+                      "'^' requires 'var' convention; write 'var x^' to move "
+                      "a capture");
           return failure();
         }
         // Refines the convention to move.
@@ -1300,8 +1305,12 @@ ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
     // be a default capture.
     if (parsedConvention != CaptureConvention::kConventionUnspecified) {
       if (captureAllByConvention.has_value()) {
-        p.emitError(captureLocation,
-                    "multiple default capture conventions specified");
+        auto diag = p.emitError(captureLocation,
+                                "default capture convention was already "
+                                "specified; remove the duplicate");
+        diag.attachNote(captureLocation)
+            << "a capture convention (like 'mut' or 'var') before the "
+               "capture list sets the default for all captured variables";
         return failure();
       }
 
@@ -1309,7 +1318,8 @@ ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
       return success();
     }
 
-    return p.emitError(captureLocation, "expected a capture convention");
+    return p.emitError(captureLocation, "expected a capture convention "
+                                        "(like 'mut' or 'var')");
   };
 
   if (!p.consumeIf(Token::r_brace)) {
@@ -1365,7 +1375,7 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
     auto handleEffect = [&](auto hasFn, auto setFn) {
       if ((effects.*hasFn)())
         p.emitError(loc, "function effect '")
-            << spelling << "' was already specified";
+            << spelling << "' was already specified; remove the duplicate";
       (effects.*setFn)(true);
     };
 
@@ -1410,10 +1420,11 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
       return failure();
     } else if (spelling == "thin") {
       if (kind != ArgListKind::kFnTypeArgList) {
-        p.emitError(loc, "function effect 'thin' is only allowed on function "
+        p.emitError(loc, "function effect 'thin' must only be used on function "
                          "types");
       } else if (isThin) {
-        p.emitError(loc, "function effect 'thin' was already specified");
+        p.emitError(loc, "function effect 'thin' was already specified; remove "
+                         "the duplicate");
       }
       isThin = true;
     } else if (spelling == "unified") {
@@ -1447,7 +1458,8 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
                               : "expected ')' after 'abi(\"Mojo\"'"))
         return failure();
       if (hasExplicitABI)
-        p.emitError(loc, "an abi() effect was already specified");
+        p.emitError(
+            loc, "'abi()' effect was already specified; remove the duplicate");
       hasExplicitABI = true;
       if (isCABI)
         effects.setCABI(true);
@@ -1465,8 +1477,7 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
   // Temporary error while new closures are hidden behind unified effect
   if (effects.isRegisterPassable() && !effects.isUnified()) {
     SMLoc loc = p.getToken().getLoc();
-    p.emitError(loc,
-                "a function cannot be register passable unless it is unified");
+    p.emitError(loc, "'register_passable' functions must be 'unified'");
     return failure();
   }
 
@@ -1505,8 +1516,8 @@ void ParsedArgumentList::parseResultIfPresent(
   // If we already had a result, emit an error but keep parsing.
   if (resultArg.convention == ParsedArgument::kConventionOut) {
     auto diag = p.emitError(resultArg.loc)
-                << "function cannot have both an 'out' argument "
-                   "and an explicit result type";
+                << "functions must not declare both an 'out' argument "
+                   "and a return type";
     // It is common to include -> None on initializers, provide a helpful
     // message.
     if (resultArg.typeExpr &&
@@ -1772,7 +1783,8 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
 
     // This can't be variadic.
     if (arg.variadicKind != VariadicKind::None) {
-      shared.emitError(arg.loc) << "self argument may not be variadic";
+      shared.emitError(arg.loc)
+          << "'self' argument must not be variadic; remove '*' before 'self'";
       arg.variadicKind = VariadicKind::None;
       arg.isErroneous = true;
     }
@@ -1792,9 +1804,12 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
   if (auto fType = dyn_cast<FnTypeGeneratorType>(type)) {
     if (!fType.getInputParamTypes().empty()) {
       arg.isErroneous = true;
-      shared.emitError(arg.typeExpr->getLoc(),
-                       "parametric functions may not be used as arguments; "
-                       "consider passing as a parameter instead");
+      auto diag = shared.emitError(arg.typeExpr->getLoc(),
+                                   "parametric functions must not be used as "
+                                   "arguments; pass as a parameter instead");
+      diag.attachNote(arg.typeExpr->getLoc())
+          << "alternatively, bind its type parameters to create a concrete "
+             "function";
     }
   }
 
@@ -1803,15 +1818,17 @@ static void typeCheckOneArgument(size_t idx, ASTDecl *fnDecl,
     if (arg.isErroneous) {
       arg.convention = ParsedArgument::kConventionVar;
     } else if (!tcSignature.selfType) {
-      shared.emitError(arg.loc, "only struct methods may be 'deinit'");
+      shared.emitError(
+          arg.loc,
+          "'deinit' convention is only valid on struct method arguments");
       arg.convention = ParsedArgument::kConventionVar;
     } else if (!type.getWithoutParameters(shared).isEqualCanon(
                    tcSignature.selfType.getWithoutParameters(shared))) {
-      shared.emitError(arg.loc,
-                       "only arguments of Self type may be marked 'deinit'");
+      shared.emitError(
+          arg.loc, "'deinit' must only be applied to arguments of Self type");
       arg.convention = ParsedArgument::kConventionVar;
     } else if (arg.variadicKind != VariadicKind::None) {
-      shared.emitError(arg.loc, "deinit arguments may not be variadic");
+      shared.emitError(arg.loc, "'deinit' arguments must not be variadic");
       arg.convention = ParsedArgument::kConventionVar;
     }
   }
@@ -2302,8 +2319,9 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     if (fnInfo.kind == SpecialFunctionKind::kMoveCtor &&
         selfType.isRegisterPassable(fnDecl->getLoc(), shared)) {
       shared.emitError(fnDecl->getLoc())
-          << "'RegisterPassable' types may not have an explicit move "
-             "constructor, they are always movable by copying a register";
+          << "'RegisterPassable' types must not declare explicit move "
+             "constructors; values of these types have no identity, and "
+             "the compiler can freely move them between registers";
       return failure();
     }
 
@@ -2311,8 +2329,8 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     if (fnInfo.kind == SpecialFunctionKind::kCopyCtor &&
         selfType.isTrivial(fnDecl->getLoc(), shared)) {
       shared.emitError(fnDecl->getLoc())
-          << "trivial types may not have an explicit copy constructor, they "
-             "are always trivially copyable";
+          << "trivial types must not declare explicit copy constructors; "
+             "they are trivially copyable";
       return failure();
     }
 
@@ -2342,8 +2360,12 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
   if (fnInfo.kind == SpecialFunctionKind::kDel &&
       selfType.isTrivial(fnDecl->getLoc(), shared)) {
     fnDecl->setErroneous();
-    shared.emitError(fnDecl->getLoc(), "trivial types may not have a '")
-        << fnInfo.name << "' method, they are always trivially destroyable";
+    auto diag =
+        shared.emitError(fnDecl->getLoc(), "trivial types may not have '");
+    diag << fnInfo.name << "' methods; they are trivially destroyable";
+    diag.attachNote(fnDecl->getLoc())
+        << "trivial types have no identity; the compiler destroys them "
+           "automatically with no observable effect";
     fnInfo = SpecialFunctionInfo();
   }
 
@@ -2488,7 +2510,8 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(ASTDecl &decl,
       emitError() << name << " must be a method";
     } else if (funcOp.getIsStatic()) {
       if (!(fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod))
-        emitError("special method may not be a static method");
+        emitError("special method must not be a static method; remove the "
+                  "static method decorator");
     }
   }
 
@@ -2512,7 +2535,8 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(ASTDecl &decl,
       fnName = "destructor";
     }
 
-    emitError() << fnName << " cannot be declared as raising an exception";
+    emitError() << fnName
+                << " must not declare 'raises'; remove the 'raises' keyword";
   }
 
   // Shared logic to diagnose the 'self' argument of __del__ and __moveinit__.

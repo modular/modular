@@ -155,7 +155,7 @@ def param_redef(x: __mlir_type.index, x: __mlir_type.index) raises:
     pass
 
 
-# expected-error @+1 {{required positional parameter follows optional positional parameter}}
+# expected-error @+1 {{required positional parameter follows optional positional parameter; change the ordering}}
 def default_after_non_default[a: Int = 7, b: Int]():
     pass
 
@@ -259,7 +259,7 @@ def testStructWithParams():
 
 
 
-# expected-error @below {{required positional parameter follows optional positional parameter}}
+# expected-error @below {{required positional parameter follows optional positional parameter; change the ordering}}
 struct DefaultParams[a: Int, b: Int = 7, msg: Int]:
     pass
 

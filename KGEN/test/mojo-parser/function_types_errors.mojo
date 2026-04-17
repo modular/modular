@@ -397,5 +397,5 @@ def test_abi_c_capturing():
 
 
 def test_duplicate_thin_with_abi_c():
-    # expected-error @below {{function effect 'thin' was already specified}}
+    # expected-error @below {{function effect 'thin' was already specified; remove the duplicate}}
     var _: def(Int) thin thin abi("C") -> Int
