@@ -776,33 +776,78 @@ struct SIMD[dtype: DType, size: Int](
         )
 
     @always_inline("nodebug")
-    def __init__(
-        out self, *elems: Scalar[Self.dtype], __list_literal__: () = ()
-    ):
+    def __init__[
+        *Ts: type_of(Scalar[Self.dtype])
+    ](out self, *elems: *Ts, __list_literal__: () = ()):
         """Constructs a SIMD vector via a variadic list of elements.
 
         The input values are assigned to the corresponding elements of the SIMD
         vector.
 
-        Constraints:
-            The number of input values is equal to size of the SIMD vector.
+        Parameters:
+            Ts: The scalar types.
 
         Args:
             elems: The variadic list of elements from which the SIMD vector is
-                   constructed.
+                constructed.
             __list_literal__: Tell Mojo to use this method for list literals.
+
+        Constraints:
+            The number of input values is equal to size of the SIMD vector.
         """
         _simd_construction_checks[Self.dtype, Self.size]()
-
-        # TODO: Make this a compile-time check when possible.
-        assert Self.size == len(
-            elems
-        ), "mismatch in the number of elements in the SIMD variadic constructor"
+        comptime assert (
+            Variadic.size_types[Ts] == Self.size or Variadic.size_types[Ts] == 1
+        ), (
+            "The variadic constructor should receive either one or Self.size"
+            " amount of elements"
+        )
 
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
         comptime for i in range(Self.size):
-            self[i] = elems[i]
+            comptime if Variadic.size_types[Ts] == 1:
+                self[i] = elems[0]
+            else:
+                self[i] = elems[i]
+
+    # TODO(#6357): remove this overload once implicit conversion is enabled for
+    # the above VariadicPack constructor such that we can use IntLiteral
+    @always_inline("nodebug")
+    def __init__[
+        *Ts: type_of(Int)
+    ](out self, *elems: *Ts, __list_literal__: () = ()):
+        """Constructs a SIMD vector via a variadic list of elements.
+
+        The input values are assigned to the corresponding elements of the SIMD
+        vector.
+
+        Parameters:
+            Ts: The scalar types.
+
+        Args:
+            elems: The variadic list of elements from which the SIMD vector is
+                constructed.
+            __list_literal__: Tell Mojo to use this method for list literals.
+
+        Constraints:
+            The number of input values is equal to size of the SIMD vector.
+        """
+        _simd_construction_checks[Self.dtype, Self.size]()
+        comptime assert (
+            Variadic.size_types[Ts] == Self.size or Variadic.size_types[Ts] == 1
+        ), (
+            "The variadic constructor should receive either one or Self.size"
+            " amount of elements"
+        )
+
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+
+        comptime for i in range(Self.size):
+            comptime if Variadic.size_types[Ts] == 1:
+                self[i] = Scalar[Self.dtype](elems[0])
+            else:
+                self[i] = Scalar[Self.dtype](elems[i])
 
     # TODO: should be "builtin" when constrained is replaced with 'requires'.
     @always_inline("nodebug")
