@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from smoke_tests.smoke_test import MODEL_ALIASES, _load_hf_repo_lock
+from hf_repo_lock import load_db
+from smoke_tests.smoke_test import MODEL_ALIASES
 
 
 def test_hf_repo_lock_tsv_reachable() -> None:
-    db = _load_hf_repo_lock()
-    assert len(db) > 0, "hf-repo-lock.tsv not found or empty"
+    assert len(load_db()) > 0, "hf-repo-lock.tsv not found or empty"
 
 
 def test_model_aliases_contain_exactly_one_double_underscore() -> None:
@@ -28,11 +28,14 @@ def test_model_aliases_contain_exactly_one_double_underscore() -> None:
         )
 
 
-def test_model_aliases_hf_model_path_is_lowercase() -> None:
-    """hf_model_path must be lowercase (following hf-repo-lock.tsv convention)."""
-    for alias, config in MODEL_ALIASES.items():
-        path = config["hf_model_path"]
-        assert path == path.casefold(), (
-            f"MODEL_ALIASES[{alias!r}]['hf_model_path'] = {path!r} "
-            f"must be lowercase, use {path.casefold()!r} instead"
-        )
+def test_all_alias_hf_model_paths_in_hf_repo_lock() -> None:
+    """Every MODEL_ALIASES hf_model_path must be pinned in hf-repo-lock.tsv."""
+    lock = load_db()
+    missing = [
+        f"{alias} -> {cfg['hf_model_path']}"
+        for alias, cfg in MODEL_ALIASES.items()
+        if cfg["hf_model_path"] not in lock
+    ]
+    assert not missing, (
+        f"MODEL_ALIASES hf_model_paths missing from hf-repo-lock.tsv: {missing}"
+    )
