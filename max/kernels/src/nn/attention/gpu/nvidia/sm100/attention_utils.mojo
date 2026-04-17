@@ -2416,7 +2416,6 @@ struct FA4MiscMBars[
         else:
             return self.mbar_base + Self.O_producer_offset + wg_idx
 
-
     @staticmethod
     @always_inline
     def num_mbars() -> UInt32:

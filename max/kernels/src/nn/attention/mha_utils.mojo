@@ -349,10 +349,8 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
             # FP8 uses 16x8x32 MMA on NVIDIA, so the generic multistage path
             # needs at least two K-MMAs per stage to satisfy its pipeline shape.
-            var bk_type_factor = (
-                1 if Self.dtype == DType.float32 else (
-                    4 if Self.dtype.is_float8() else 2
-                )
+            var bk_type_factor = 1 if Self.dtype == DType.float32 else (
+                4 if Self.dtype.is_float8() else 2
             )
             self.BK = BK.or_else(
                 UInt(16 * bk_arch_factor * bk_type_factor)

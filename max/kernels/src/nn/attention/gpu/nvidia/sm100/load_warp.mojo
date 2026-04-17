@@ -200,8 +200,7 @@ def fa4_load[
             k_tma_op.async_copy(
                 KType(
                     kv_smem
-                    + kv_pipeline.state.index()
-                        * UInt32(kv_stage_elems),
+                    + kv_pipeline.state.index() * UInt32(kv_stage_elems),
                     tt_row_major[k_elems](),
                 ),
                 k0_mbar[],
@@ -270,7 +269,7 @@ def fa4_load[
                         KType(
                             kv_smem
                             + kv_pipeline.state.index()
-                                * UInt32(kv_stage_elems),
+                            * UInt32(kv_stage_elems),
                             tt_row_major[k_elems](),
                         ),
                         kn_mbar[],
@@ -283,7 +282,7 @@ def fa4_load[
                         KType(
                             kv_smem
                             + kv_pipeline.state.index()
-                                * UInt32(kv_stage_elems),
+                            * UInt32(kv_stage_elems),
                             tt_row_major[k_elems](),
                         ),
                         kn_mbar[],
@@ -600,9 +599,7 @@ def fa4_load[
                         v_half_tma_op.async_copy(
                             v_smem_lo,
                             mbarvn_lo[],
-                            StaticTuple[UInt32, 3](
-                                0, kv_head_idx, kv_gmem_row
-                            ),
+                            StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
                         )
                 pipeline_v.commit_step()
                 pipeline_v.commit_step()
