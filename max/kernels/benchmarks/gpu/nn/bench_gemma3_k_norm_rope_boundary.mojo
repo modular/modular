@@ -89,7 +89,9 @@ def _gemma3_k_norm_rope_ragged_kernel[
     comptime wide_align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
     comptime half_warp_size = WARP_SIZE // 2
-    comptime assert head_dim == 128, "Only 128-column BF16 key rows are supported"
+    comptime assert (
+        head_dim == 128
+    ), "Only 128-column BF16 key rows are supported"
     comptime assert gamma.static_shape[0] == head_dim
     comptime assert freqs_cis.static_shape[1] == head_dim
     comptime assert head_dim == half_warp_size * simd_width
@@ -98,7 +100,9 @@ def _gemma3_k_norm_rope_ragged_kernel[
     var warp_idx = tid // UInt(WARP_SIZE)
     var sub_warp_idx = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
     var local_tid = tid % UInt(half_warp_size)
-    var row = block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    var row = (
+        block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    )
     var col = local_tid * UInt(simd_width)
 
     if row < UInt(total_rows):
@@ -136,9 +140,9 @@ def _gemma3_k_norm_rope_ragged_kernel[
             head_dim,
         )
 
-        var sub_warp_mask = (
-            (UInt(1) << UInt(half_warp_size)) - UInt(1)
-        ) << (sub_warp_idx * UInt(half_warp_size))
+        var sub_warp_mask = ((UInt(1) << UInt(half_warp_size)) - UInt(1)) << (
+            sub_warp_idx * UInt(half_warp_size)
+        )
         var partner_lane = (
             sub_warp_idx * UInt(half_warp_size)
             + (local_tid % UInt(half_warp_size // 2))
@@ -234,7 +238,9 @@ def _gemma3_k_norm_rope_decode_kernel[
     comptime wide_align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
     comptime half_warp_size = WARP_SIZE // 2
-    comptime assert head_dim == 128, "Only 128-column BF16 key rows are supported"
+    comptime assert (
+        head_dim == 128
+    ), "Only 128-column BF16 key rows are supported"
     comptime assert gamma.static_shape[0] == head_dim
     comptime assert freqs_cis.static_shape[1] == head_dim
     comptime assert head_dim == half_warp_size * simd_width
@@ -243,7 +249,9 @@ def _gemma3_k_norm_rope_decode_kernel[
     var warp_idx = tid // UInt(WARP_SIZE)
     var sub_warp_idx = (tid % UInt(WARP_SIZE)) // UInt(half_warp_size)
     var local_tid = tid % UInt(half_warp_size)
-    var row = block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    var row = (
+        block_idx.x * UInt(warps_per_block * 2) + warp_idx * 2 + sub_warp_idx
+    )
     var col = local_tid * UInt(simd_width)
 
     if row < UInt(total_rows):
@@ -276,9 +284,9 @@ def _gemma3_k_norm_rope_decode_kernel[
             head_dim,
         )
 
-        var sub_warp_mask = (
-            (UInt(1) << UInt(half_warp_size)) - UInt(1)
-        ) << (sub_warp_idx * UInt(half_warp_size))
+        var sub_warp_mask = ((UInt(1) << UInt(half_warp_size)) - UInt(1)) << (
+            sub_warp_idx * UInt(half_warp_size)
+        )
         var partner_lane = (
             sub_warp_idx * UInt(half_warp_size)
             + (local_tid % UInt(half_warp_size // 2))
@@ -378,7 +386,9 @@ def _gemma3_k_norm_rope_ragged_wide_kernel[
     comptime simd_width = simd_width_of[dtype]()
     comptime wide_align = align_of[SIMD[dtype, simd_width]]()
     comptime accum_type = get_accum_type[dtype]()
-    comptime assert head_dim == 256, "Only 256-column BF16 key rows are supported"
+    comptime assert (
+        head_dim == 256
+    ), "Only 256-column BF16 key rows are supported"
     comptime assert gamma.static_shape[0] == head_dim
     comptime assert freqs_cis.static_shape[1] == head_dim
     comptime assert head_dim == WARP_SIZE * simd_width
@@ -439,8 +449,10 @@ def _gemma3_k_norm_rope_ragged_wide_kernel[
         var norm_factor = rsqrt(
             (row_m2 / Scalar[accum_type](head_dim)) + epsilon_accum
         )
-        var norm_val = vec_data * norm_factor * (
-            gamma_val.cast[accum_type]() + weight_offset_accum
+        var norm_val = (
+            vec_data
+            * norm_factor
+            * (gamma_val.cast[accum_type]() + weight_offset_accum)
         )
         var shared_base = Int(warp_idx) * head_dim
         shared_norm.store[width=simd_width, alignment=wide_align](
@@ -692,7 +704,9 @@ def bench_gemma3_k_norm_rope_boundary[
     comptime kv_params = KVCacheStaticParams(
         num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
     )
-    comptime CollectionType = PagedKVCacheCollection[dtype, kv_params, page_size]
+    comptime CollectionType = PagedKVCacheCollection[
+        dtype, kv_params, page_size
+    ]
     comptime kv_block_layout = Layout.row_major[6]()
     comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
 
@@ -735,14 +749,18 @@ def bench_gemma3_k_norm_rope_boundary[
     )
     for bs in range(batch_size):
         for page_idx in range(paged_lut_cols):
-            paged_lut_host[bs, page_idx] = UInt32(bs * paged_lut_cols + page_idx)
+            paged_lut_host[bs, page_idx] = UInt32(
+                bs * paged_lut_cols + page_idx
+            )
 
     var input_row_offsets_d = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
     )
     var cache_lengths_d = ctx.enqueue_create_buffer[DType.uint32](batch_size)
     var gamma_d = ctx.enqueue_create_buffer[dtype](head_dim)
-    var freqs_d = ctx.enqueue_create_buffer[dtype](max_context_length * head_dim)
+    var freqs_d = ctx.enqueue_create_buffer[dtype](
+        max_context_length * head_dim
+    )
     var paged_lut_d = ctx.enqueue_create_buffer[DType.uint32](
         batch_size * paged_lut_cols
     )
@@ -986,7 +1004,9 @@ def bench_gemma3_k_norm_rope_boundary[
         UInt32(seq_len),
         UInt32(max_context_length),
     )
-    var baseline_k_cache_host = baseline_kv_collection_host.get_key_cache(layer_idx)
+    var baseline_k_cache_host = baseline_kv_collection_host.get_key_cache(
+        layer_idx
+    )
     var trial_k_cache_host = trial_kv_collection_host.get_key_cache(layer_idx)
 
     for bs_idx in range(batch_size):

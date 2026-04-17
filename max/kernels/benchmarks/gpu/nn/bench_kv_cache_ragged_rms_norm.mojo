@@ -43,7 +43,11 @@ from layout import (
 from layout._fillers import random
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.kv_cache import rms_norm_kv_cache_ragged_paged
-from nn.normalization import _rms_norm_impl, rms_norm_gpu, rms_norm_gpu_warp_tiling_128
+from nn.normalization import (
+    _rms_norm_impl,
+    rms_norm_gpu,
+    rms_norm_gpu_warp_tiling_128,
+)
 
 from std.utils import IndexList
 
@@ -87,9 +91,9 @@ def _rms_norm_kv_cache_decode_direct_trial[
     input_row_offsets: TileTensor[DType.uint32, ...],
     ctx: DeviceContext,
 ) raises:
-    comptime assert per_head_norm, (
-        "The benchmark-local direct KV RMSNorm trial expects per-head norm"
-    )
+    comptime assert (
+        per_head_norm
+    ), "The benchmark-local direct KV RMSNorm trial expects per-head norm"
     comptime rms_norm_cols = gamma.static_shape[0]
     comptime head_size = Int(params.head_size)
     comptime assert rms_norm_cols != -1, "Need static gamma shape"
@@ -156,9 +160,9 @@ def _rms_norm_kv_cache_decode_direct_trial[
         @always_inline
         @parameter
         @__copy_capture(k_cache)
-        def direct_input_fn_2d[width: Int](
-            row: Int, col: Int
-        ) -> SIMD[dtype, width]:
+        def direct_input_fn_2d[
+            width: Int
+        ](row: Int, col: Int) -> SIMD[dtype, width]:
             var batch_idx = row // Int(params.num_heads)
             var head_idx = row % Int(params.num_heads)
             var cache_token_idx = Int(k_cache.cache_length(batch_idx))
@@ -172,9 +176,9 @@ def _rms_norm_kv_cache_decode_direct_trial[
         @always_inline
         @parameter
         @__copy_capture(k_cache)
-        def direct_output_fn_2d[width: Int, alignment: Int](
-            row: Int, col: Int, val: SIMD[dtype, width]
-        ) -> None:
+        def direct_output_fn_2d[
+            width: Int, alignment: Int
+        ](row: Int, col: Int, val: SIMD[dtype, width]) -> None:
             var batch_idx = row // Int(params.num_heads)
             var head_idx = row % Int(params.num_heads)
             var cache_token_idx = Int(k_cache.cache_length(batch_idx))
@@ -248,9 +252,9 @@ def _rms_norm_kv_cache_decode_uniform_rank3_trial[
     input_row_offsets: TileTensor[DType.uint32, ...],
     ctx: DeviceContext,
 ) raises:
-    comptime assert per_head_norm, (
-        "The benchmark-local rank-3 KV RMSNorm trial expects per-head norm"
-    )
+    comptime assert (
+        per_head_norm
+    ), "The benchmark-local rank-3 KV RMSNorm trial expects per-head norm"
     comptime rms_norm_cols = gamma.static_shape[0]
     comptime head_size = Int(params.head_size)
     comptime assert rms_norm_cols != -1, "Need static gamma shape"
@@ -307,9 +311,9 @@ def _rms_norm_kv_cache_decode_uniform_rank3_trial[
         @always_inline
         @parameter
         @__copy_capture(k_cache)
-        def uniform_rank3_input_fn[width: Int, rank: Int](
-            idx: IndexList[rank]
-        ) -> SIMD[dtype, width]:
+        def uniform_rank3_input_fn[
+            width: Int, rank: Int
+        ](idx: IndexList[rank]) -> SIMD[dtype, width]:
             comptime assert rank == 3
 
             var batch_idx = idx[0]
@@ -325,9 +329,9 @@ def _rms_norm_kv_cache_decode_uniform_rank3_trial[
         @always_inline
         @parameter
         @__copy_capture(k_cache)
-        def uniform_rank3_output_fn[width: Int, alignment: Int](
-            idx: IndexList[3], val: SIMD[dtype, width]
-        ) -> None:
+        def uniform_rank3_output_fn[
+            width: Int, alignment: Int
+        ](idx: IndexList[3], val: SIMD[dtype, width]) -> None:
             var batch_idx = idx[0]
             var head_idx = idx[1]
             var cache_token_idx = Int(k_cache.cache_length(batch_idx))
@@ -364,9 +368,9 @@ def _rms_norm_kv_cache_decode_uniform_impl_trial[
     input_row_offsets: TileTensor[DType.uint32, ...],
     ctx: DeviceContext,
 ) raises:
-    comptime assert per_head_norm, (
-        "The benchmark-local impl KV RMSNorm trial expects per-head norm"
-    )
+    comptime assert (
+        per_head_norm
+    ), "The benchmark-local impl KV RMSNorm trial expects per-head norm"
     comptime rms_norm_cols = gamma.static_shape[0]
     comptime head_size = Int(params.head_size)
     comptime assert rms_norm_cols != -1, "Need static gamma shape"
@@ -423,9 +427,9 @@ def _rms_norm_kv_cache_decode_uniform_impl_trial[
         @always_inline
         @parameter
         @__copy_capture(k_cache)
-        def uniform_decode_input_fn[width: Int, rank: Int](
-            idx: IndexList[rank]
-        ) -> SIMD[dtype, width]:
+        def uniform_decode_input_fn[
+            width: Int, rank: Int
+        ](idx: IndexList[rank]) -> SIMD[dtype, width]:
             comptime assert rank == 3
 
             var batch_idx = idx[0]
@@ -440,9 +444,9 @@ def _rms_norm_kv_cache_decode_uniform_impl_trial[
         @always_inline
         @parameter
         @__copy_capture(k_cache)
-        def uniform_decode_output_fn[width: Int, alignment: Int](
-            idx: IndexList[3], val: SIMD[dtype, width]
-        ) -> None:
+        def uniform_decode_output_fn[
+            width: Int, alignment: Int
+        ](idx: IndexList[3], val: SIMD[dtype, width]) -> None:
             var batch_idx = idx[0]
             var cache_token_idx = Int(k_cache.cache_length(batch_idx))
             k_cache.store(
@@ -481,9 +485,9 @@ def _rms_norm_kv_cache_decode_uniform_trace_trial[
     input_row_offsets: TileTensor[DType.uint32, ...],
     ctx: DeviceContextPtr,
 ) raises:
-    comptime assert per_head_norm, (
-        "The benchmark-local traced impl KV RMSNorm trial expects per-head norm"
-    )
+    comptime assert (
+        per_head_norm
+    ), "The benchmark-local traced impl KV RMSNorm trial expects per-head norm"
     comptime rms_norm_cols = gamma.static_shape[0]
     comptime head_size = Int(params.head_size)
     comptime assert rms_norm_cols != -1, "Need static gamma shape"
@@ -540,9 +544,9 @@ def _rms_norm_kv_cache_decode_uniform_trace_trial[
         @always_inline
         @parameter
         @__copy_capture(k_cache)
-        def uniform_decode_input_fn[width: Int, rank: Int](
-            idx: IndexList[rank]
-        ) -> SIMD[dtype, width]:
+        def uniform_decode_input_fn[
+            width: Int, rank: Int
+        ](idx: IndexList[rank]) -> SIMD[dtype, width]:
             comptime assert rank == 3
 
             var batch_idx = idx[0]
@@ -557,9 +561,9 @@ def _rms_norm_kv_cache_decode_uniform_trace_trial[
         @always_inline
         @parameter
         @__copy_capture(k_cache)
-        def uniform_decode_output_fn[width: Int, alignment: Int](
-            idx: IndexList[3], val: SIMD[dtype, width]
-        ) -> None:
+        def uniform_decode_output_fn[
+            width: Int, alignment: Int
+        ](idx: IndexList[3], val: SIMD[dtype, width]) -> None:
             var batch_idx = idx[0]
             var cache_token_idx = Int(k_cache.cache_length(batch_idx))
             k_cache.store(
@@ -606,7 +610,8 @@ def _rms_norm_kv_cache_decode_uniform_trace_no_task_trial[
     ctx: DeviceContextPtr,
 ) raises:
     comptime assert per_head_norm, (
-        "The benchmark-local traced no-task impl KV RMSNorm trial expects per-head norm"
+        "The benchmark-local traced no-task impl KV RMSNorm trial expects"
+        " per-head norm"
     )
     comptime rms_norm_cols = gamma.static_shape[0]
     comptime head_size = Int(params.head_size)
@@ -664,9 +669,9 @@ def _rms_norm_kv_cache_decode_uniform_trace_no_task_trial[
         @always_inline
         @parameter
         @__copy_capture(k_cache)
-        def uniform_decode_input_fn[width: Int, rank: Int](
-            idx: IndexList[rank]
-        ) -> SIMD[dtype, width]:
+        def uniform_decode_input_fn[
+            width: Int, rank: Int
+        ](idx: IndexList[rank]) -> SIMD[dtype, width]:
             comptime assert rank == 3
 
             var batch_idx = idx[0]
@@ -681,9 +686,9 @@ def _rms_norm_kv_cache_decode_uniform_trace_no_task_trial[
         @always_inline
         @parameter
         @__copy_capture(k_cache)
-        def uniform_decode_output_fn[width: Int, alignment: Int](
-            idx: IndexList[3], val: SIMD[dtype, width]
-        ) -> None:
+        def uniform_decode_output_fn[
+            width: Int, alignment: Int
+        ](idx: IndexList[3], val: SIMD[dtype, width]) -> None:
             var batch_idx = idx[0]
             var cache_token_idx = Int(k_cache.cache_length(batch_idx))
             k_cache.store(
@@ -851,9 +856,9 @@ def _rms_norm_kv_cache_production_clone_trial[
     def key_cache_uniform_decode_input_fn[
         width: Int, rank_: Int
     ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
-        comptime assert rank_ == 3, (
-            "decode-uniform KV RMSNorm specialization expects rank 3"
-        )
+        comptime assert (
+            rank_ == 3
+        ), "decode-uniform KV RMSNorm specialization expects rank 3"
 
         var batch_idx = idx[0]
         var cache_token_idx = Int(k_cache.cache_length(batch_idx))
@@ -942,7 +947,8 @@ def _rms_norm_kv_cache_production_clone_no_trace_trial[
     input_row_offsets: TileTensor[DType.uint32, ...],
     ctx: DeviceContextPtr,
 ) raises:
-    """Benchmark-local production-shape clone without the outer Trace wrapper."""
+    """Benchmark-local production-shape clone without the outer Trace wrapper.
+    """
     comptime assert gamma.flat_rank == 1, "gamma must be rank 1"
     comptime assert (
         input_row_offsets.flat_rank == 1
@@ -1064,9 +1070,9 @@ def _rms_norm_kv_cache_production_clone_no_trace_trial[
     def key_cache_uniform_decode_input_fn[
         width: Int, rank_: Int
     ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
-        comptime assert rank_ == 3, (
-            "decode-uniform KV RMSNorm specialization expects rank 3"
-        )
+        comptime assert (
+            rank_ == 3
+        ), "decode-uniform KV RMSNorm specialization expects rank 3"
 
         var batch_idx = idx[0]
         var cache_token_idx = Int(k_cache.cache_length(batch_idx))
@@ -1145,7 +1151,9 @@ def execute_kv_cache_ragged_rms_norm[
     comptime kv_params = KVCacheStaticParams(
         num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
     )
-    comptime CollectionType = PagedKVCacheCollection[dtype, kv_params, page_size]
+    comptime CollectionType = PagedKVCacheCollection[
+        dtype, kv_params, page_size
+    ]
 
     var total_seq_len = UInt32(batch_size * seq_len)
     var max_cache_len = cache_len + (batch_size - 1) * cache_len_step
@@ -1163,9 +1171,9 @@ def execute_kv_cache_ragged_rms_norm[
     input_row_offsets_host_ptr[batch_size] = total_seq_len
 
     for i in range(head_dim):
-        gamma_host_ptr[i] = (
-            Float64(i + head_dim) / Float64(head_dim)
-        ).cast[dtype]()
+        gamma_host_ptr[i] = (Float64(i + head_dim) / Float64(head_dim)).cast[
+            dtype
+        ]()
 
     var input_row_offsets_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
@@ -1195,7 +1203,9 @@ def execute_kv_cache_ragged_rms_norm[
     # Assign each request a deterministic, non-overlapping page range.
     for bs in range(batch_size):
         for page_idx in range(paged_lut_cols):
-            paged_lut_host[bs, page_idx] = UInt32(bs * paged_lut_cols + page_idx)
+            paged_lut_host[bs, page_idx] = UInt32(
+                bs * paged_lut_cols + page_idx
+            )
 
     var paged_lut_dev_buffer = ctx.enqueue_create_buffer[DType.uint32](
         paged_lut_size
@@ -1236,8 +1246,12 @@ def execute_kv_cache_ragged_rms_norm[
     var direct_early_kv_block_dev_buffer = ctx.enqueue_create_buffer[dtype](
         kv_block_size
     )
-    var impl_kv_block_dev_buffer = ctx.enqueue_create_buffer[dtype](kv_block_size)
-    var trace_kv_block_dev_buffer = ctx.enqueue_create_buffer[dtype](kv_block_size)
+    var impl_kv_block_dev_buffer = ctx.enqueue_create_buffer[dtype](
+        kv_block_size
+    )
+    var trace_kv_block_dev_buffer = ctx.enqueue_create_buffer[dtype](
+        kv_block_size
+    )
     var trace_no_task_kv_block_dev_buffer = ctx.enqueue_create_buffer[dtype](
         kv_block_size
     )
@@ -1247,16 +1261,24 @@ def execute_kv_cache_ragged_rms_norm[
     var production_clone_kv_block_dev_buffer = ctx.enqueue_create_buffer[dtype](
         kv_block_size
     )
-    var rank3_kv_block_dev_buffer = ctx.enqueue_create_buffer[dtype](kv_block_size)
+    var rank3_kv_block_dev_buffer = ctx.enqueue_create_buffer[dtype](
+        kv_block_size
+    )
     var rank3_late_kv_block_dev_buffer = ctx.enqueue_create_buffer[dtype](
         kv_block_size
     )
-    var trial_kv_block_dev_buffer = ctx.enqueue_create_buffer[dtype](kv_block_size)
+    var trial_kv_block_dev_buffer = ctx.enqueue_create_buffer[dtype](
+        kv_block_size
+    )
     ctx.enqueue_copy(baseline_kv_block_dev_buffer, initial_kv_block_host_ptr)
-    ctx.enqueue_copy(direct_early_kv_block_dev_buffer, initial_kv_block_host_ptr)
+    ctx.enqueue_copy(
+        direct_early_kv_block_dev_buffer, initial_kv_block_host_ptr
+    )
     ctx.enqueue_copy(impl_kv_block_dev_buffer, initial_kv_block_host_ptr)
     ctx.enqueue_copy(trace_kv_block_dev_buffer, initial_kv_block_host_ptr)
-    ctx.enqueue_copy(trace_no_task_kv_block_dev_buffer, initial_kv_block_host_ptr)
+    ctx.enqueue_copy(
+        trace_no_task_kv_block_dev_buffer, initial_kv_block_host_ptr
+    )
     ctx.enqueue_copy(
         production_clone_no_trace_kv_block_dev_buffer,
         initial_kv_block_host_ptr,
@@ -1847,7 +1869,9 @@ def execute_kv_cache_ragged_rms_norm[
         production_clone_kv_block_host_ptr, production_clone_kv_block_dev_buffer
     )
     ctx.enqueue_copy(rank3_kv_block_host_ptr, rank3_kv_block_dev_buffer)
-    ctx.enqueue_copy(rank3_late_kv_block_host_ptr, rank3_late_kv_block_dev_buffer)
+    ctx.enqueue_copy(
+        rank3_late_kv_block_host_ptr, rank3_late_kv_block_dev_buffer
+    )
     ctx.enqueue_copy(trial_kv_block_host_ptr, trial_kv_block_dev_buffer)
     ctx.synchronize()
 
@@ -2052,7 +2076,9 @@ def execute_kv_cache_ragged_rms_norm[
         UInt32(max_context_length),
     )
 
-    var baseline_k_cache_host = baseline_kv_collection_host.get_key_cache(layer_idx)
+    var baseline_k_cache_host = baseline_kv_collection_host.get_key_cache(
+        layer_idx
+    )
     var direct_early_k_cache_host = (
         direct_early_kv_collection_host.get_key_cache(layer_idx)
     )
@@ -2068,8 +2094,8 @@ def execute_kv_cache_ragged_rms_norm[
         production_clone_kv_collection_host.get_key_cache(layer_idx)
     )
     var rank3_k_cache_host = rank3_kv_collection_host.get_key_cache(layer_idx)
-    var rank3_late_k_cache_host = (
-        rank3_late_kv_collection_host.get_key_cache(layer_idx)
+    var rank3_late_k_cache_host = rank3_late_kv_collection_host.get_key_cache(
+        layer_idx
     )
     var trial_k_cache_host = trial_kv_collection_host.get_key_cache(layer_idx)
 
