@@ -1346,7 +1346,7 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable):
         pass
 
     @implicit
-    def __init__(out self, *args: * Self.element_types):
+    def __init__(out self, *args: *Self.element_types):
         pass
 
     def __init__(out self, *, copy: Self):
