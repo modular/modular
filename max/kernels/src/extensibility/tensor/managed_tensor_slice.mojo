@@ -595,39 +595,54 @@ struct ManagedTensorSlice[
         return self._ptr[offset]
 
     @always_inline
-    def __getitem__(self, *indices: Int) -> Scalar[Self.dtype]:
+    def __getitem__[
+        *Ts: type_of(Int)
+    ](self, *indices: *Ts) -> Scalar[Self.dtype]:
         """Gets the value at the specified indices.
 
+        Parameters:
+            Ts: The types.
+
         Args:
-          indices: The indices of the value to retrieve.
+            indices: The indices of the value to retrieve.
 
         Returns:
-          The value at the specified indices.
+            The value at the specified indices.
         """
         comptime assert (
             not Self._has_input_fusion
         ), "Direct load on fused tensor is forbidden"
-        assert (
-            len(indices) == Self.rank
+        comptime assert (
+            indices.__len__() == Self.rank
         ), "mismatch between requested index and rank"
-        return self[IndexList[Self.rank](*indices)]
+        var idxes = IndexList[Self.rank]()
+        comptime for i in range(Self.rank):
+            idxes[i] = indices[i]
+        return self[idxes]
 
     @always_inline
-    def __setitem__(self, *indices: Int, val: Scalar[Self.dtype]):
+    def __setitem__[
+        *Ts: type_of(Int)
+    ](self, *indices: *Ts, val: Scalar[Self.dtype]):
         """Stores the value at the specified indices.
 
-        Args:
-          indices: The indices of the value to store.
-          val: The value to store.
+        Parameters:
+            Ts: The types.
 
+        Args:
+            indices: The indices of the value to store.
+            val: The value to store.
         """
         comptime assert (
             not Self._has_output_store_fusion
         ), "Direct store on fused tensor is forbidden"
-        assert (
-            len(indices) == Self.rank
+        comptime assert (
+            indices.__len__() == Self.rank
         ), "mismatch between requested index and rank"
-        self[IndexList[Self.rank](*indices)] = val
+        var idxes = IndexList[Self.rank]()
+        comptime for i in range(Self.rank):
+            idxes[i] = indices[i]
+        self[idxes] = val
 
     @always_inline
     def __setitem__(

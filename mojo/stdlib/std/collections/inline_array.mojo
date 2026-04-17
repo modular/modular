@@ -41,6 +41,7 @@ from std.compile import get_type_name
 import std.format._utils as fmt
 from std.hashlib.hasher import Hasher
 from std.memory import UnsafeMaybeUninit, uninit_move_n
+from std.sys.intrinsics import _type_is_eq_parse_time
 
 # ===-----------------------------------------------------------------------===#
 # Array
@@ -433,8 +434,19 @@ struct InlineArray[ElementType: Copyable, size: Int](
         )
 
     @always_inline
-    def __init__(out self, var *elems: Self.ElementType, __list_literal__: ()):
+    def __init__[
+        *Ts: type_of(Self.ElementType)
+    ](out self, var *elems: *Ts, __list_literal__: ()) where (
+        elems.__len__() == Self.size
+        # FIXME(#6357): somehow I'm getting: error: rebind input type
+        # '!kgen.pointer<index>' does not match result type '!kgen.pointer<scalar<ui8>>'
+        # even though this constructor should only accept the same type
+        and _type_is_eq_parse_time[Ts[0], Self.ElementType]()
+    ):
         """Constructs an array from a variadic list of elements.
+
+        Parameters:
+            Ts: The types.
 
         Args:
             elems: The elements to initialize the array with. Must match the
@@ -448,29 +460,101 @@ struct InlineArray[ElementType: Copyable, size: Int](
         var arr: InlineArray[Int, 3] = [1, 2, 3]
         ```
         """
-        debug_assert[assert_mode="safe"](
-            len(elems) == Self.size,
-            "InlineArray: expected ",
-            Self.size,
-            " elements, received ",
-            len(elems),
-        )
         _inline_array_construction_checks[Self.size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-        var ptr = self.unsafe_ptr()
+        comptime assert (
+            elems.__len__() == Self.size
+        ), "mismatch in the number of elements"
 
-        # Move each element into the array storage.
-        comptime for i in range(Self.size):
-            # Safety: We own the elements in the variadic list.
-            ptr.init_pointee_move_from(
-                UnsafePointer(to=elems[i]).unsafe_mut_cast[True]()
+        @parameter
+        def init_elt[idx: Int](var elt: elems.element_types[idx]):
+            (self.unsafe_ptr() + idx).init_pointee_move(
+                rebind_var[self.ElementType](elt^)
             )
-            ptr += 1
 
-        # Do not destroy the elements when their backing storage goes away.
-        # FIXME: Why doesn't consume_elements work here?
-        elems^._annihilate()
+        elems^.consume_elements[init_elt]()
+
+    # TODO(#6357): remove once implicit conversion in VariadicPack is solved
+    @always_inline
+    def __init__[
+        dtype: DType, *Ts: type_of(Int)
+    ](
+        out self: InlineArray[Scalar[dtype], Self.size],
+        var *elems: *Ts,
+        __list_literal__: (),
+    ):
+        """Constructs an array from a variadic list of elements.
+
+        Parameters:
+            dtype: The dtype.
+            Ts: The types.
+
+        Args:
+            elems: The elements to initialize the array with. Must match the
+                array size.
+            __list_literal__: Specifies that this constructor can be used for
+                list literals.
+
+        Examples:
+
+        ```mojo
+        var arr: InlineArray[Int32, 3] = [1, 2, 3]
+        ```
+        """
+        _inline_array_construction_checks[Self.size]()
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+
+        comptime assert (
+            elems.__len__() == Self.size
+        ), "mismatch in the number of elements"
+
+        @parameter
+        def init_elt[idx: Int](var elt: elems.element_types[idx]):
+            (self.unsafe_ptr() + idx).init_pointee_move(self.ElementType(elt))
+
+        elems^.consume_elements[init_elt]()
+
+    # TODO(#6357): remove once implicit conversion in VariadicPack is solved
+    @always_inline
+    def __init__[
+        *Ts: type_of(String)
+    ](
+        out self: InlineArray[StaticString, Self.size],
+        var *elems: *Ts,
+        __list_literal__: (),
+    ) where (elems.__len__() == Self.size):
+        """Constructs an array from a variadic list of elements.
+
+        Parameters:
+            Ts: The types.
+
+        Args:
+            elems: The elements to initialize the array with. Must match the
+                array size.
+            __list_literal__: Specifies that this constructor can be used for
+                list literals.
+
+        Examples:
+
+        ```mojo
+        var arr: InlineArray[StaticString, 3] = ["1", "2", "3"]
+        ```
+        """
+        _inline_array_construction_checks[Self.size]()
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+
+        comptime assert (
+            elems.__len__() == Self.size
+        ), "mismatch in the number of elements"
+
+        @parameter
+        def init_elt[idx: Int](var elt: elems.element_types[idx]):
+            (self.unsafe_ptr() + idx).init_pointee_move(
+                rebind[self.ElementType](StringSlice(elt))
+            )
+
+        elems^.consume_elements[init_elt]()
 
     def __init__(out self, *, copy: Self):
         """Copy constructs the array from another array.
