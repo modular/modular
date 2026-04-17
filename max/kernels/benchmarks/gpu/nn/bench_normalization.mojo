@@ -73,9 +73,9 @@ def bench_layer_norm_gpu[
     @parameter
     def input_pair_fn_rank2_direct[
         width: Int
-    ](
-        row: Int, col0: Int, col1: Int
-    ) -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]:
+    ](row: Int, col0: Int, col1: Int) -> Tuple[
+        SIMD[dtype, width], SIMD[dtype, width]
+    ]:
         comptime a = align_of[SIMD[dtype, width]]()
         var row_offset = row * cols
         return (
@@ -86,9 +86,7 @@ def bench_layer_norm_gpu[
     @always_inline
     @__copy_capture(data_buf)
     @parameter
-    def input_fn_flat_direct[
-        width: Int
-    ](flat: Int) -> SIMD[dtype, width]:
+    def input_fn_flat_direct[width: Int](flat: Int) -> SIMD[dtype, width]:
         comptime a = align_of[SIMD[dtype, width]]()
         return data_buf.ptr.load[width=width, alignment=a](flat)
 
@@ -97,9 +95,7 @@ def bench_layer_norm_gpu[
     @parameter
     def input_pair_fn_flat_direct[
         width: Int
-    ](
-        flat0: Int, flat1: Int
-    ) -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]:
+    ](flat0: Int, flat1: Int) -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]:
         comptime a = align_of[SIMD[dtype, width]]()
         return (
             data_buf.ptr.load[width=width, alignment=a](flat0),
@@ -200,9 +196,9 @@ def bench_rms_norm_gpu[
     @parameter
     def input_pair_fn_rank2_direct[
         width: Int
-    ](
-        row: Int, col0: Int, col1: Int
-    ) -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]:
+    ](row: Int, col0: Int, col1: Int) -> Tuple[
+        SIMD[dtype, width], SIMD[dtype, width]
+    ]:
         comptime a = align_of[SIMD[dtype, width]]()
         var row_offset = row * cols
         return (
@@ -213,9 +209,7 @@ def bench_rms_norm_gpu[
     @always_inline
     @__copy_capture(data_buf)
     @parameter
-    def input_fn_flat_direct[
-        width: Int
-    ](flat: Int) -> SIMD[dtype, width]:
+    def input_fn_flat_direct[width: Int](flat: Int) -> SIMD[dtype, width]:
         comptime a = align_of[SIMD[dtype, width]]()
         return data_buf.ptr.load[width=width, alignment=a](flat)
 
@@ -224,9 +218,7 @@ def bench_rms_norm_gpu[
     @parameter
     def input_pair_fn_flat_direct[
         width: Int
-    ](
-        flat0: Int, flat1: Int
-    ) -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]:
+    ](flat0: Int, flat1: Int) -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]:
         comptime a = align_of[SIMD[dtype, width]]()
         return (
             data_buf.ptr.load[width=width, alignment=a](flat0),
@@ -268,9 +260,7 @@ def bench_rms_norm_gpu[
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
-            comptime if get_defined_bool[
-                "disable_public_direct_io", False
-            ]():
+            comptime if get_defined_bool["disable_public_direct_io", False]():
                 rms_norm[
                     dtype,
                     rank,
@@ -353,17 +343,17 @@ def main() raises:
             bench_layer_norm_gpu[dtype, shape](ctx, m, "layer_norm_gpu")
         elif len(shape) == 3:
             comptime if disable_public_direct_io:
-                bench_rms_norm_gpu[
-                    dtype, shape
-                ](ctx, m, "rms_norm_gpu_no_public_direct_io")
+                bench_rms_norm_gpu[dtype, shape](
+                    ctx, m, "rms_norm_gpu_no_public_direct_io"
+                )
             elif pair_flat_only_public_direct_io:
-                bench_rms_norm_gpu[
-                    dtype, shape
-                ](ctx, m, "rms_norm_gpu_pair_flat_only_public_direct_io")
+                bench_rms_norm_gpu[dtype, shape](
+                    ctx, m, "rms_norm_gpu_pair_flat_only_public_direct_io"
+                )
             elif rank2_only_public_direct_io:
-                bench_rms_norm_gpu[
-                    dtype, shape
-                ](ctx, m, "rms_norm_gpu_rank2_only_public_direct_io")
+                bench_rms_norm_gpu[dtype, shape](
+                    ctx, m, "rms_norm_gpu_rank2_only_public_direct_io"
+                )
             else:
                 bench_rms_norm_gpu[dtype, shape](ctx, m, "rms_norm_gpu")
 

@@ -114,8 +114,6 @@ def block_reduce[
     return m2_broadcast[0]
 
 
-
-
 @always_inline
 def block_reduce_one_barrier[
     dtype: DType, max_warps_per_block: Int
@@ -1094,16 +1092,16 @@ def _rms_norm_load_gamma[
     simd_width: Int,
     alignment: Int,
     linear_gamma_indexing: Bool = False,
-](
-    gamma: TileTensor[dtype, LayoutType, origin], idx: UInt
-) -> SIMD[dtype, simd_width]:
+](gamma: TileTensor[dtype, LayoutType, origin], idx: UInt) -> SIMD[
+    dtype, simd_width
+]:
     comptime if linear_gamma_indexing:
-        return gpu_load[
-            width=simd_width, read_only=True, alignment=alignment
-        ](gamma.ptr + Int(idx))
-    return gpu_load[
-        width=simd_width, read_only=True, alignment=alignment
-    ](gamma.ptr + Int(gamma.layout(Idx(idx))))
+        return gpu_load[width=simd_width, read_only=True, alignment=alignment](
+            gamma.ptr + Int(idx)
+        )
+    return gpu_load[width=simd_width, read_only=True, alignment=alignment](
+        gamma.ptr + Int(gamma.layout(Idx(idx)))
+    )
 
 
 def rms_norm_gpu_warp_tiling_aligned[
@@ -1146,10 +1144,12 @@ def rms_norm_gpu_warp_tiling_aligned[
     with PDL():
         var raw_data = input_fn[simd_width](Int(row), Int(idx))
 
-        var thread_m2: Scalar[accum_type] = (raw_data * raw_data).reduce_add().cast[accum_type]()
-        var row_m2 = block_reduce_one_barrier[max_warps_per_block=max_warps_per_block](
-            thread_m2
+        var thread_m2: Scalar[accum_type] = (
+            (raw_data * raw_data).reduce_add().cast[accum_type]()
         )
+        var row_m2 = block_reduce_one_barrier[
+            max_warps_per_block=max_warps_per_block
+        ](thread_m2)
         var norm_factor = sqrt_n * rsqrt(row_m2 + n_eps)
 
         var gamma_val = gpu_load[
@@ -1162,19 +1162,23 @@ def rms_norm_gpu_warp_tiling_aligned[
                 var norm_val = raw_data * (gamma_val * norm_bf16)
                 output_fn[simd_width, align](Int(row), Int(idx), norm_val)
             else:
-                var norm_val = (raw_data.cast[accum_type]() * norm_factor).cast[dtype]() * gamma_val
+                var norm_val = (raw_data.cast[accum_type]() * norm_factor).cast[
+                    dtype
+                ]() * gamma_val
                 output_fn[simd_width, align](Int(row), Int(idx), norm_val)
         else:
             comptime if multiply_before_cast:
                 var gamma_accum = (
                     gamma_val.cast[accum_type]() + weight_offset_accum
                 )
-                var norm_val = (raw_data.cast[accum_type]() * norm_factor * gamma_accum).cast[dtype]()
+                var norm_val = (
+                    raw_data.cast[accum_type]() * norm_factor * gamma_accum
+                ).cast[dtype]()
                 output_fn[simd_width, align](Int(row), Int(idx), norm_val)
             else:
-                var norm_val = (raw_data.cast[accum_type]() * norm_factor).cast[dtype]() * (
-                    gamma_val + weight_offset_accum.cast[dtype]()
-                )
+                var norm_val = (raw_data.cast[accum_type]() * norm_factor).cast[
+                    dtype
+                ]() * (gamma_val + weight_offset_accum.cast[dtype]())
                 output_fn[simd_width, align](Int(row), Int(idx), norm_val)
 
 
@@ -1222,9 +1226,12 @@ def rms_norm_gpu_warp_tiling_aligned_two_tiles[
         var raw_data1 = input_fn[simd_width](Int(row), Int(idx1))
 
         var thread_m2: Scalar[accum_type] = (
-            (raw_data0 * raw_data0).reduce_add().cast[accum_type]()
-            + (raw_data1 * raw_data1).reduce_add().cast[accum_type]()
-        )
+            raw_data0 * raw_data0
+        ).reduce_add().cast[accum_type]() + (
+            raw_data1 * raw_data1
+        ).reduce_add().cast[
+            accum_type
+        ]()
         var row_m2 = block_reduce_one_barrier_lane_group[
             max_warps_per_block=max_warps_per_block
         ](thread_m2)
@@ -1349,9 +1356,12 @@ def rms_norm_gpu_warp_tiling_aligned_two_tiles_paired_input[
         var raw_data1 = raw_data_pair[1]
 
         var thread_m2: Scalar[accum_type] = (
-            (raw_data0 * raw_data0).reduce_add().cast[accum_type]()
-            + (raw_data1 * raw_data1).reduce_add().cast[accum_type]()
-        )
+            raw_data0 * raw_data0
+        ).reduce_add().cast[accum_type]() + (
+            raw_data1 * raw_data1
+        ).reduce_add().cast[
+            accum_type
+        ]()
         var row_m2 = block_reduce_one_barrier_warp_sum[
             max_warps_per_block=max_warps_per_block
         ](thread_m2)
@@ -1449,10 +1459,9 @@ def _rms_norm_exact_4096_load_packed_rank2_pair[
     raw_bits0 = bitcast[DType.uint32, packed_width](raw_data0)
     raw_bits1 = bitcast[DType.uint32, packed_width](raw_data1)
 
-    return (
-        (raw_data0 * raw_data0).reduce_add().cast[get_accum_type[dtype]()]()
-        + (raw_data1 * raw_data1).reduce_add().cast[get_accum_type[dtype]()]()
-    )
+    return (raw_data0 * raw_data0).reduce_add().cast[
+        get_accum_type[dtype]()
+    ]() + (raw_data1 * raw_data1).reduce_add().cast[get_accum_type[dtype]()]()
 
 
 def rms_norm_gpu_warp_tiling_aligned_two_tiles_paired_input_exact_4096[
@@ -1470,9 +1479,7 @@ def rms_norm_gpu_warp_tiling_aligned_two_tiles_paired_input_exact_4096[
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
-](
-    gamma: TileTensor[dtype, LayoutType, origin], epsilon: Scalar[dtype]
-):
+](gamma: TileTensor[dtype, LayoutType, origin], epsilon: Scalar[dtype]):
     comptime assert dtype == DType.bfloat16, "exact 4096 path is BF16-only"
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert gamma.flat_rank >= 1
@@ -1494,10 +1501,12 @@ def rms_norm_gpu_warp_tiling_aligned_two_tiles_paired_input_exact_4096[
         var load_row_i = Int(block_idx.x)
         var raw_bits0 = SIMD[DType.uint32, packed_width](0)
         var raw_bits1 = SIMD[DType.uint32, packed_width](0)
-        var thread_m2: Scalar[accum_type] = (
-            _rms_norm_exact_4096_load_packed_rank2_pair[
-                simd_width, packed_width, input_pair_fn
-            ](load_row_i, Int(input_idx0), raw_bits0, raw_bits1)
+        var thread_m2: Scalar[
+            accum_type
+        ] = _rms_norm_exact_4096_load_packed_rank2_pair[
+            simd_width, packed_width, input_pair_fn
+        ](
+            load_row_i, Int(input_idx0), raw_bits0, raw_bits1
         )
         var row_m2 = block_reduce_one_barrier[
             max_warps_per_block=max_warps_per_block
@@ -1518,7 +1527,9 @@ def rms_norm_gpu_warp_tiling_aligned_two_tiles_paired_input_exact_4096[
             var row_i1 = Int(block_idx.x)
             var idx1 = input_idx0 + UInt(2048)
             var col1 = Int(idx1)
-            var gamma_val1 = _rms_norm_load_gamma[simd_width, align](gamma, idx1)
+            var gamma_val1 = _rms_norm_load_gamma[simd_width, align](
+                gamma, idx1
+            )
             var norm_val1 = bitcast[dtype, simd_width](raw_bits1) * (
                 gamma_val1 * norm_bf16
             )
@@ -1532,12 +1543,14 @@ def rms_norm_gpu_warp_tiling_aligned_two_tiles_paired_input_exact_4096[
                     bitcast[dtype, simd_width](raw_bits0).cast[accum_type]()
                     * norm_factor
                 ).cast[dtype]()
-                    * _rms_norm_load_gamma[simd_width, align](gamma, input_idx0),
+                * _rms_norm_load_gamma[simd_width, align](gamma, input_idx0),
             )
             var row_i1 = Int(block_idx.x)
             var idx1 = input_idx0 + UInt(2048)
             var col1 = Int(idx1)
-            var gamma_val1 = _rms_norm_load_gamma[simd_width, align](gamma, idx1)
+            var gamma_val1 = _rms_norm_load_gamma[simd_width, align](
+                gamma, idx1
+            )
             var norm_val1 = (
                 bitcast[dtype, simd_width](raw_bits1).cast[accum_type]()
                 * norm_factor
@@ -1553,9 +1566,7 @@ def _rms_norm_exact_4096_load_flat_pair[
     input_pair_fn_flat: def[width: Int](
         flat0: Int, flat1: Int
     ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]],
-](
-    flat0: Int
-) -> Tuple[SIMD[dtype, simd_width], SIMD[dtype, simd_width]]:
+](flat0: Int) -> Tuple[SIMD[dtype, simd_width], SIMD[dtype, simd_width]]:
     return input_pair_fn_flat[simd_width](flat0, flat0 + 2048)
 
 
@@ -1619,9 +1630,7 @@ def rms_norm_gpu_warp_tiling_aligned_two_tiles_flat_direct_exact_4096[
         flat: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
-](
-    gamma: TileTensor[dtype, LayoutType, origin], epsilon: Scalar[dtype]
-):
+](gamma: TileTensor[dtype, LayoutType, origin], epsilon: Scalar[dtype]):
     comptime assert dtype == DType.bfloat16, "exact 4096 path is BF16-only"
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert gamma.flat_rank >= 1
@@ -1649,9 +1658,12 @@ def rms_norm_gpu_warp_tiling_aligned_two_tiles_flat_direct_exact_4096[
         var raw_data1 = raw_data_pair[1]
 
         var thread_m2: Scalar[accum_type] = (
-            (raw_data0 * raw_data0).reduce_add().cast[accum_type]()
-            + (raw_data1 * raw_data1).reduce_add().cast[accum_type]()
-        )
+            raw_data0 * raw_data0
+        ).reduce_add().cast[accum_type]() + (
+            raw_data1 * raw_data1
+        ).reduce_add().cast[
+            accum_type
+        ]()
         var row_m2 = block_reduce_one_barrier_warp_sum[
             max_warps_per_block=max_warps_per_block
         ](thread_m2)
@@ -1713,9 +1725,7 @@ def rms_norm_gpu_warp_tiling_aligned_two_tiles_single_flat_input_exact_4096[
         flat: Int, val: SIMD[dtype, width]
     ) capturing -> None,
     multiply_before_cast: Bool,
-](
-    gamma: TileTensor[dtype, LayoutType, origin], epsilon: Scalar[dtype]
-):
+](gamma: TileTensor[dtype, LayoutType, origin], epsilon: Scalar[dtype]):
     comptime assert dtype == DType.bfloat16, "exact 4096 path is BF16-only"
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
     comptime assert gamma.flat_rank >= 1
@@ -1740,9 +1750,12 @@ def rms_norm_gpu_warp_tiling_aligned_two_tiles_single_flat_input_exact_4096[
         var raw_data0 = input_fn_flat[simd_width](flat0)
         var raw_data1 = input_fn_flat[simd_width](flat1)
         var thread_m2: Scalar[accum_type] = (
-            (raw_data0 * raw_data0).reduce_add().cast[accum_type]()
-            + (raw_data1 * raw_data1).reduce_add().cast[accum_type]()
-        )
+            raw_data0 * raw_data0
+        ).reduce_add().cast[accum_type]() + (
+            raw_data1 * raw_data1
+        ).reduce_add().cast[
+            accum_type
+        ]()
         var row_m2 = block_reduce_one_barrier[
             max_warps_per_block=max_warps_per_block
         ](thread_m2)
@@ -1764,16 +1777,16 @@ def rms_norm_gpu_warp_tiling_aligned_two_tiles_single_flat_input_exact_4096[
             var gamma_val0 = _rms_norm_load_gamma[simd_width, align, True](
                 gamma, idx0
             )
-            var norm_val0 = (
-                raw_data0.cast[accum_type]() * norm_factor
-            ).cast[dtype]() * gamma_val0
+            var norm_val0 = (raw_data0.cast[accum_type]() * norm_factor).cast[
+                dtype
+            ]() * gamma_val0
             output_fn_flat[simd_width, align](flat0, norm_val0)
             var gamma_val1 = _rms_norm_load_gamma[simd_width, align, True](
                 gamma, idx1
             )
-            var norm_val1 = (
-                raw_data1.cast[accum_type]() * norm_factor
-            ).cast[dtype]() * gamma_val1
+            var norm_val1 = (raw_data1.cast[accum_type]() * norm_factor).cast[
+                dtype
+            ]() * gamma_val1
             output_fn_flat[simd_width, align](flat1, norm_val1)
 
 
@@ -1825,9 +1838,12 @@ def rms_norm_gpu_warp_tiling_aligned_two_tiles_paired_input_lane_group[
         var raw_data1 = raw_data_pair[1]
 
         var thread_m2: Scalar[accum_type] = (
-            (raw_data0 * raw_data0).reduce_add().cast[accum_type]()
-            + (raw_data1 * raw_data1).reduce_add().cast[accum_type]()
-        )
+            raw_data0 * raw_data0
+        ).reduce_add().cast[accum_type]() + (
+            raw_data1 * raw_data1
+        ).reduce_add().cast[
+            accum_type
+        ]()
         var row_m2 = block_reduce_one_barrier_lane_group[
             max_warps_per_block=max_warps_per_block
         ](thread_m2)
@@ -1945,7 +1961,7 @@ def rms_norm_gpu_warp_tiling[
                 accum_type
             ]()
 
-        var thread_m2: Scalar[accum_type] = (vec_data ** 2).reduce_add()
+        var thread_m2: Scalar[accum_type] = (vec_data**2).reduce_add()
         var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
             thread_m2
         )
@@ -2093,14 +2109,16 @@ def rms_norm_gpu[
     multiply_before_cast: Bool,
     pdl_level: PDLLevel = PDLLevel(1),
     input_pair_fn_rank2_direct: OptionalReg[
-        def[width: Int](
-            row: Int, col0: Int, col1: Int
-        ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]
+        def[
+            width: Int
+        ](row: Int, col0: Int, col1: Int) capturing -> Tuple[
+            SIMD[dtype, width], SIMD[dtype, width]
+        ]
     ] = None,
     output_fn_rank2_direct: OptionalReg[
-        def[width: Int, alignment: Int](
-            row: Int, col: Int, val: SIMD[dtype, width]
-        ) capturing -> None
+        def[
+            width: Int, alignment: Int
+        ](row: Int, col: Int, val: SIMD[dtype, width]) capturing -> None
     ] = None,
 ](
     shape: IndexList[rank, ...],
@@ -2133,9 +2151,7 @@ def rms_norm_gpu[
                 indices[0] = 0
                 indices[1] = row
                 indices[2] = col
-                output_fn[simd_width, alignment](
-                    indices.canonicalize(), val
-                )
+                output_fn[simd_width, alignment](indices.canonicalize(), val)
                 return
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
@@ -2189,9 +2205,9 @@ def rms_norm_gpu[
     @always_inline
     def input_pair_fn_2d[
         simd_width: Int
-    ](
-        row: Int, col0: Int, col1: Int
-    ) -> Tuple[SIMD[dtype, simd_width], SIMD[dtype, simd_width]]:
+    ](row: Int, col0: Int, col1: Int) -> Tuple[
+        SIMD[dtype, simd_width], SIMD[dtype, simd_width]
+    ]:
         comptime if rank == 3:
             if shape[0] == 1:
                 var indices = IndexList[rank]()
@@ -2249,11 +2265,19 @@ def rms_norm_gpu[
                 block_dim=block_dim,
                 attributes=pdl_launch_attributes(pdl_level),
             )
-        elif use_doubled and cols % (simd_width * 2) == 0 and cols <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block):
+        elif (
+            use_doubled
+            and cols % (simd_width * 2) == 0
+            and cols <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block)
+        ):
             comptime if rank == 3:
                 if shape[0] == 1:
                     if cols == Int(block_dim) * (simd_width * 2):
-                        if rows >= 4096 and cols == 4096 and dtype == DType.bfloat16:
+                        if (
+                            rows >= 4096
+                            and cols == 4096
+                            and dtype == DType.bfloat16
+                        ):
                             var two_tiles_block_dim = block_dim // 2
                             if weight_offset == Scalar[dtype](0):
                                 comptime if input_pair_fn_rank2_direct:
@@ -2697,6 +2721,7 @@ def rms_norm_gpu[
             attributes=pdl_launch_attributes(pdl_level),
         )
 
+
 def rms_norm_cpu[
     dtype: DType,
     //,
@@ -2995,9 +3020,7 @@ def _rms_norm_gpu_exact_public_rank2_only_via_flat_direct_io[
     @parameter
     def input_pair_fn_flat_from_rank2[
         width: Int
-    ](
-        flat0: Int, flat1: Int
-    ) -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]:
+    ](flat0: Int, flat1: Int) -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]:
         var row = flat0 >> exact_cols_shift
         return input_pair_fn_rank2_direct[width](
             row,
@@ -3026,9 +3049,9 @@ def _rms_norm_gpu_exact_public_rank2_only_via_flat_direct_io[
 def _rms_norm_gpu_exact_public_single_flat_direct_io[
     dtype: DType,
     //,
-    input_fn_flat_direct: def[width: Int](
-        flat: Int
-    ) capturing -> SIMD[dtype, width],
+    input_fn_flat_direct: def[width: Int](flat: Int) capturing -> SIMD[
+        dtype, width
+    ],
     output_fn_flat_direct: def[width: Int, alignment: Int](
         flat: Int, val: SIMD[dtype, width]
     ) capturing -> None,
@@ -3102,27 +3125,31 @@ def _rms_norm_impl[
     target: StaticString = "cpu",
     multiply_before_cast: Bool = True,
     input_pair_fn_rank2_direct: OptionalReg[
-        def[width: Int](
-            row: Int, col0: Int, col1: Int
-        ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]
+        def[
+            width: Int
+        ](row: Int, col0: Int, col1: Int) capturing -> Tuple[
+            SIMD[dtype, width], SIMD[dtype, width]
+        ]
     ] = None,
     output_fn_rank2_direct: OptionalReg[
-        def[width: Int, alignment: Int](
-            row: Int, col: Int, val: SIMD[dtype, width]
-        ) capturing -> None
+        def[
+            width: Int, alignment: Int
+        ](row: Int, col: Int, val: SIMD[dtype, width]) capturing -> None
     ] = None,
     input_fn_flat_direct: OptionalReg[
         def[width: Int](flat: Int) capturing -> SIMD[dtype, width]
     ] = None,
     input_pair_fn_flat_direct: OptionalReg[
-        def[width: Int](
-            flat0: Int, flat1: Int
-        ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]
+        def[
+            width: Int
+        ](flat0: Int, flat1: Int) capturing -> Tuple[
+            SIMD[dtype, width], SIMD[dtype, width]
+        ]
     ] = None,
     output_fn_flat_direct: OptionalReg[
-        def[width: Int, alignment: Int](
-            flat: Int, val: SIMD[dtype, width]
-        ) capturing -> None
+        def[
+            width: Int, alignment: Int
+        ](flat: Int, val: SIMD[dtype, width]) capturing -> None
     ] = None,
 ](
     shape: IndexList[rank],
@@ -3806,8 +3833,7 @@ def rms_norm_fused_residual_add_gpu[
         if (
             use_doubled
             and cols % (simd_width * 2) == 0
-            and cols
-            <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block)
+            and cols <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block)
         ):
             var doubled_block_dim = min(
                 ceildiv(ceildiv(cols, simd_width * 2), WARP_SIZE) * WARP_SIZE,
@@ -4103,27 +4129,31 @@ def rms_norm[
     target: StaticString = "cpu",
     multiply_before_cast: Bool = True,
     input_pair_fn_rank2_direct: OptionalReg[
-        def[width: Int](
-            row: Int, col0: Int, col1: Int
-        ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]
+        def[
+            width: Int
+        ](row: Int, col0: Int, col1: Int) capturing -> Tuple[
+            SIMD[dtype, width], SIMD[dtype, width]
+        ]
     ] = None,
     output_fn_rank2_direct: OptionalReg[
-        def[width: Int, alignment: Int](
-            row: Int, col: Int, val: SIMD[dtype, width]
-        ) capturing -> None
+        def[
+            width: Int, alignment: Int
+        ](row: Int, col: Int, val: SIMD[dtype, width]) capturing -> None
     ] = None,
     input_fn_flat_direct: OptionalReg[
         def[width: Int](flat: Int) capturing -> SIMD[dtype, width]
     ] = None,
     input_pair_fn_flat_direct: OptionalReg[
-        def[width: Int](
-            flat0: Int, flat1: Int
-        ) capturing -> Tuple[SIMD[dtype, width], SIMD[dtype, width]]
+        def[
+            width: Int
+        ](flat0: Int, flat1: Int) capturing -> Tuple[
+            SIMD[dtype, width], SIMD[dtype, width]
+        ]
     ] = None,
     output_fn_flat_direct: OptionalReg[
-        def[width: Int, alignment: Int](
-            flat: Int, val: SIMD[dtype, width]
-        ) capturing -> None
+        def[
+            width: Int, alignment: Int
+        ](flat: Int, val: SIMD[dtype, width]) capturing -> None
     ] = None,
 ](
     shape: IndexList[rank],
