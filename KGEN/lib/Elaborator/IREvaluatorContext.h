@@ -227,16 +227,12 @@ protected:
   /// a struct type.
   StringAttr getBaseTypeName(TypedAttr typeRef);
 
-  /// Shared implementation for concretizeLinkageName once the concrete FuncOp
-  /// (if any) is known.  Pass a null FuncOp when the generator has not been
-  /// elaborated yet or its elaboration failed — the implementation falls back
-  /// to evaluating the generator's linkageName expression directly.
-  /// `evalCtx` must be the calling subclass instance (which inherits from both
-  /// IREvaluatorContext and ParameterEvaluationContext).
+  /// Shared implementation for evaluating the generator's linkageName
+  /// expression. `evalCtx` must be the calling subclass instance (which
+  /// inherits from both IREvaluatorContext and ParameterEvaluationContext).
   FailureOr<TypedAttr>
-  concretizeLinkageNameImpl(FuncOp func, GeneratorOp gen,
-                            SymbolConstantAttr symbol,
-                            ParameterEvaluationContext &evalCtx);
+  evaluateLinkageNameImpl(GeneratorOp gen, SymbolConstantAttr symbol,
+                          ParameterEvaluationContext &evalCtx);
 
 private:
   MLIRContext *mlirCtx = nullptr;
@@ -265,7 +261,7 @@ private:
   ///                          and the caller should retry
   ///   - success(TypedAttr) — the resolved linkage name expression
   virtual FailureOr<TypedAttr>
-  concretizeLinkageName(GeneratorOp gen, SymbolConstantAttr symbol) = 0;
+  evaluateLinkageName(GeneratorOp gen, SymbolConstantAttr symbol) = 0;
 };
 
 //===----------------------------------------------------------------------===//

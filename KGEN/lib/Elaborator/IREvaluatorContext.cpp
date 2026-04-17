@@ -120,20 +120,11 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetSourceNameAttr(
   return {StringAttr::get(*sourceName, getSourceNameAttr.getType())};
 }
 
-FailureOr<TypedAttr> IREvaluatorContext::concretizeLinkageNameImpl(
-    FuncOp func, GeneratorOp gen, SymbolConstantAttr symbol,
+FailureOr<TypedAttr> IREvaluatorContext::evaluateLinkageNameImpl(
+    GeneratorOp gen, SymbolConstantAttr symbol,
     ParameterEvaluationContext &evalCtx) {
-  // If the FuncOp is already elaborated, prefer its resolved linkageName.
-  if (func) {
-    if (auto lna =
-            dyn_cast_if_present<LinkageNameAttr>(func.getLinkageNameAttr())) {
-      if (auto prefix = dyn_cast<StringAttr>(lna.getName())) {
-        return TypedAttr(StringAttr::get(prefix.getValue(),
-                                         StringType::get(gen.getContext())));
-      }
-    }
-  }
-
+  assert(gen.getLinkageNameAttr() &&
+         "evaluateLinkageName requires gen to have a linkageName attribute");
   // Fall back to evaluating the generator's linkageName expression directly.
   LinkageNameAttr genLinkageName =
       dyn_cast_if_present<LinkageNameAttr>(gen.getLinkageNameAttr());
@@ -406,11 +397,12 @@ IREvaluatorContext::evaluateMangledName(TypedAttr symCst, bool sanitize,
                                         Location errorLoc,
                                         StringRef errorContext) {
   auto symbol = extractSymbolConstantAttr(symCst);
-  if (!symbol)
+  if (!symbol) {
     return ErrorTree(errorLoc,
                      "'" + errorContext +
                          "' function argument did not resolve to a concrete "
                          "function");
+  }
 
   if (!symbol.getType().isFullyBound()) {
     std::string errMsg;
@@ -434,23 +426,23 @@ IREvaluatorContext::evaluateMangledName(TypedAttr symCst, bool sanitize,
 
   if (generator.getLinkageNameAttr()) {
     // @__name is present: evaluate the (possibly parametric) name expression.
-    // concretizeLinkageName may return "not ready yet" if the concrete FuncOp
-    // hasn't been elaborated — signal retry with an empty StringAttr.
-    FailureOr<TypedAttr> result = concretizeLinkageName(generator, symbol);
-    if (failed(result))
+    FailureOr<TypedAttr> result = evaluateLinkageName(generator, symbol);
+    if (failed(result)) {
       return ErrorTree(
           {errorLoc,
            "'" + errorContext + "' failed to resolve linkage name for '" +
                symbol.getSymbol().getLeafReference().getValue() + "'"});
+    }
     if (!*result)
       return StringAttr(); // retry
     auto resolved = dyn_cast<StringAttr>(*result);
-    if (!resolved)
+    if (!resolved) {
       return ErrorTree(
           {errorLoc, "'" + errorContext +
                          "' linkage name did not resolve to a string for '" +
                          symbol.getSymbol().getLeafReference().getValue() +
                          "'"});
+    }
     auto lna = cast<LinkageNameAttr>(generator.getLinkageNameAttr());
     return applyLinkageName(resolved, lna, symbol, generator, sanitize);
   }
