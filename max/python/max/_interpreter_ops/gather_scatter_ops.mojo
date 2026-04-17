@@ -106,7 +106,7 @@ def gather_op[
     axis_size: Int,
     inner_size: Int,
     num_indices: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     var total = outer_size * num_indices * inner_size
     var in_axis_stride = axis_size * inner_size
@@ -132,11 +132,11 @@ def gather_op[
         )
         out_ptr[i] = in_ptr[in_flat]
 
-    if not ctx._is_not_null():
+    if not ctx:
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx)
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )
@@ -210,7 +210,7 @@ struct _GatherBody[idx_dtype: DType](Dispatchable):
     var axis_size: Int
     var inner_size: Int
     var num_indices: Int
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def __init__(
         out self,
@@ -221,7 +221,7 @@ struct _GatherBody[idx_dtype: DType](Dispatchable):
         axis_size: Int,
         inner_size: Int,
         num_indices: Int,
-        ctx: OpaquePointer[MutExternalOrigin],
+        ctx: Optional[OpaquePointer[MutExternalOrigin]],
     ):
         self.out_addr = out_addr
         self.in_addr = in_addr
@@ -256,7 +256,7 @@ def _gather_dispatch_integer[
     axis_size: Int,
     inner_size: Int,
     num_indices: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     dispatch_dtype(
         _GatherBody[d](
@@ -298,7 +298,7 @@ def gather_nd_op[
     suffix_size: Int,
     input_data_stride: Int,
     indexed_strides: InlineArray[Int, MAX_RANK],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     var total = batch_size * indices_outer_size * suffix_size
     var out_batch_stride = indices_outer_size * suffix_size
@@ -354,11 +354,11 @@ def gather_nd_op[
         in_offset += suffix_idx
         out_ptr[i] = in_ptr[in_offset]
 
-    if not ctx._is_not_null():
+    if not ctx:
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx)
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )
@@ -449,7 +449,7 @@ struct _GatherNdBody[idx_dtype: DType](Dispatchable):
     var suffix_size: Int
     var input_data_stride: Int
     var indexed_strides: InlineArray[Int, MAX_RANK]
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def __init__(
         out self,
@@ -462,7 +462,7 @@ struct _GatherNdBody[idx_dtype: DType](Dispatchable):
         suffix_size: Int,
         input_data_stride: Int,
         indexed_strides: InlineArray[Int, MAX_RANK],
-        ctx: OpaquePointer[MutExternalOrigin],
+        ctx: Optional[OpaquePointer[MutExternalOrigin]],
     ):
         self.out_addr = out_addr
         self.in_addr = in_addr
@@ -503,7 +503,7 @@ def _gather_nd_dispatch_integer[
     suffix_size: Int,
     input_data_stride: Int,
     indexed_strides: InlineArray[Int, MAX_RANK],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     dispatch_dtype(
         _GatherNdBody[d](
@@ -1443,7 +1443,7 @@ def scatter_nd_op[
     suffix_size: Int,
     input_data_stride: Int,
     indexed_strides: InlineArray[Int, MAX_RANK],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Scatter updates into output at N-dimensional index positions (overwrite).
 
@@ -1516,11 +1516,11 @@ def scatter_nd_op[
         out_offset += suffix_idx
         out_ptr[out_offset] = updates_ptr[i]
 
-    if not ctx._is_not_null():
+    if not ctx:
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx)
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )
@@ -1612,7 +1612,7 @@ struct _ScatterNdBody[idx_dtype: DType](Dispatchable):
     var suffix_size: Int
     var input_data_stride: Int
     var indexed_strides: InlineArray[Int, MAX_RANK]
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def __init__(
         out self,
@@ -1625,7 +1625,7 @@ struct _ScatterNdBody[idx_dtype: DType](Dispatchable):
         suffix_size: Int,
         input_data_stride: Int,
         indexed_strides: InlineArray[Int, MAX_RANK],
-        ctx: OpaquePointer[MutExternalOrigin],
+        ctx: Optional[OpaquePointer[MutExternalOrigin]],
     ):
         self.out_addr = out_addr
         self.upd_addr = upd_addr
@@ -1666,7 +1666,7 @@ def _scatter_nd_dispatch_integer[
     suffix_size: Int,
     input_data_stride: Int,
     indexed_strides: InlineArray[Int, MAX_RANK],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     dispatch_dtype(
         _ScatterNdBody[d](

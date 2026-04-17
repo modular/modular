@@ -74,7 +74,7 @@ def roi_align_op[
     sampling_ratio_val: Float32,
     aligned_flag: Int,
     mode_flag: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Compute ROI Align pooling over NHWC input.
 
@@ -260,11 +260,11 @@ def roi_align_op[
         else:
             out_ptr[i] = pool_val
 
-    if not ctx._is_not_null():
+    if not ctx:
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx)
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )
@@ -294,7 +294,7 @@ struct _RoiAlignBody(Dispatchable):
     var sampling_ratio_val: Float32
     var aligned_flag: Int
     var mode_flag: Int
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def call[t: DType](self) raises -> None:
         comptime if t.is_floating_point():

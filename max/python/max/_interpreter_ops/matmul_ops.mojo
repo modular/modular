@@ -253,7 +253,7 @@ def matmul_op[
     m: Int,
     k: Int,
     n: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Matrix multiplication: out = lhs @ rhs.
 
@@ -273,13 +273,13 @@ def matmul_op[
     var a = TileTensor(lhs_ptr, row_major(Coord(Idx(m), Idx(k))))
     var b = TileTensor(rhs_ptr, row_major(Coord(Idx(k), Idx(n))))
 
-    if not ctx._is_not_null():
+    if not ctx:
         matmul[target="cpu"](c, a, b, None)
     else:
         # GPU execution - check GPU availability and dtype support
         comptime if has_accelerator():
             comptime if _is_gpu_allowed_matmul_dtype[dtype]():
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 matmul[target="gpu"](
                     c,
                     a,
@@ -612,7 +612,7 @@ def batch_matmul_op[
     m: Int,
     k: Int,
     n: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Batched matrix multiplication: out = lhs @ rhs with batch dims collapsed.
 
@@ -647,7 +647,7 @@ def batch_matmul_op[
         io_spec=_FusedComputeOutput, static_spec=out_spec
     ](out_ptr, IndexList[3](batch_size, m, n))
 
-    if not ctx._is_not_null():
+    if not ctx:
         BatchMatmulKernel.execute[
             rank=3,
             lambdas_have_fusion=False,
@@ -657,7 +657,7 @@ def batch_matmul_op[
     else:
         comptime if has_accelerator():
             comptime if _is_gpu_allowed_matmul_dtype[dtype]():
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 BatchMatmulKernel.execute[
                     rank=3,
                     lambdas_have_fusion=False,

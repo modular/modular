@@ -400,7 +400,7 @@ def bin_elementwise_comparison_op[
     lhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     rhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     size: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Elementwise comparison: out = lhs op rhs.
 
@@ -428,7 +428,7 @@ def bin_elementwise_comparison_op[
         )
         out_ptr.store[width=width](i, res.cast[DType.uint8]())
 
-    if not ctx._is_not_null():
+    if not ctx:
         elementwise[func, simd_width=simd_width_of[dtype]()](IndexList[1](size))
     else:
         # GPU execution - check GPU availability and op/dtype support
@@ -436,7 +436,7 @@ def bin_elementwise_comparison_op[
             comptime if _is_gpu_allowed_comparison_op[
                 op
             ]() and dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
                 )
@@ -458,7 +458,7 @@ def select_elementwise_op[
     true_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     false_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     size: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Select elementwise operation: out = cond ? true_val : false_val.
 
@@ -486,13 +486,13 @@ def select_elementwise_op[
         var res = Select.elementwise[DType.bool, dtype, width](cond, tc, fc)
         out_ptr.store[width=width](i, res)
 
-    if not ctx._is_not_null():
+    if not ctx:
         elementwise[func, simd_width=simd_width_of[dtype]()](IndexList[1](size))
     else:
         # GPU execution
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
                 )

@@ -117,7 +117,7 @@ def rms_norm_op[
     gamma_shape: IndexList[1],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises where dtype.is_floating_point():
     """RMS normalization on a rank-2 normalized tensor.
 
@@ -138,7 +138,7 @@ def rms_norm_op[
     var batch_dim = shape[0]
     var feature_dim = shape[1]
 
-    if not ctx._is_not_null():
+    if not ctx:
         _rms_norm_cpu[dtype](
             out_ptr,
             in_ptr,
@@ -180,7 +180,7 @@ def rms_norm_op[
                     io_spec=Input, static_spec=gamma_spec
                 ](gamma_ptr, gamma_shape)
 
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
 
                 nn_rms_norm[
                     dtype,
@@ -222,7 +222,7 @@ def _dispatch_rms_norm[
     weight_offset_buffer: PythonObject,
     in_shape_py: PythonObject,
     rank: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises where dtype.is_floating_point():
     """Type-specialized RMS norm dispatch helper.
 

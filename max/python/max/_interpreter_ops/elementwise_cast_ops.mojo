@@ -152,7 +152,7 @@ def _cast_dispatch_out[
     in_buffer: PythonObject,
     out_dtype: DType,
     size: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Second level dispatch for cast: dispatches on output dtype.
 
@@ -237,7 +237,7 @@ def unary_mixed_op[
     out_ptr: UnsafePointer[Scalar[out_dtype], MutExternalOrigin],
     in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     size: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Elementwise unary mixed-type operation: out = op(input).
 
@@ -264,7 +264,7 @@ def unary_mixed_op[
         )
         out_ptr.store[width=width](i, res)
 
-    if not ctx._is_not_null():
+    if not ctx:
         elementwise[func, simd_width=simd_width_of[dtype]()](IndexList[1](size))
     else:
         # GPU execution - check GPU availability and op/dtype support
@@ -272,7 +272,7 @@ def unary_mixed_op[
             comptime if _is_gpu_allowed_mixed_unary_op[
                 op
             ]() and dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
                 )

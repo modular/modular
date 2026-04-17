@@ -119,7 +119,7 @@ def layer_norm_op[
     shape: IndexList[2],
     gamma_shape: IndexList[1],
     epsilon: Scalar[dtype],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises where dtype.is_floating_point():
     """Layer normalization on a rank-2 normalized tensor.
 
@@ -142,7 +142,7 @@ def layer_norm_op[
     var batch_dim = shape[0]
     var feature_dim = shape[1]
 
-    if not ctx._is_not_null():
+    if not ctx:
         # CPU path: use direct implementation to avoid runtime dependency
         # (nn.normalization requires AsyncRT parallelism which isn't
         # available in the interpreter context)
@@ -198,7 +198,7 @@ def layer_norm_op[
                     io_spec=Input, static_spec=beta_spec
                 ](beta_ptr, gamma_shape)
 
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
 
                 nn_layer_norm[
                     dtype,

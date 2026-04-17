@@ -76,7 +76,7 @@ def conv2d_op[
     groups: Int,
     out_h: Int,
     out_w: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Naive 2D convolution over NHWC input with RSCF filter.
 
@@ -168,11 +168,11 @@ def conv2d_op[
                     )
         out_ptr[i] = accum
 
-    if not ctx._is_not_null():
+    if not ctx:
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx)
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )
@@ -207,7 +207,7 @@ def conv_transpose2d_op[
     pad_w: Int,
     out_h: Int,
     out_w: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Naive 2D transposed convolution over NHWC input with RSCF filter.
 
@@ -308,11 +308,11 @@ def conv_transpose2d_op[
                     accum += in_ptr[in_hw_off + ic] * filt_ptr[filt_hw_off + ic]
         out_ptr[i] = accum
 
-    if not ctx._is_not_null():
+    if not ctx:
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx)
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )
@@ -411,7 +411,7 @@ def _conv2d_dtype_dispatch(
     groups: Int,
     oh: Int,
     ow: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     if dtype == DType.float32:
         conv2d_op(
@@ -638,7 +638,7 @@ def _conv_transpose2d_dtype_dispatch(
     pw: Int,
     oh: Int,
     ow: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     if dtype == DType.float32:
         conv_transpose2d_op(

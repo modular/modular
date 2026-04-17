@@ -116,7 +116,7 @@ def softmax_op[
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     shape: IndexList[2],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises where dtype.is_floating_point():
     """Softmax/LogSoftmax operation on a rank-2 normalized tensor.
 
@@ -136,7 +136,7 @@ def softmax_op[
     var batch_dim = shape[0]
     var axis_dim = shape[1]
 
-    if not ctx._is_not_null():
+    if not ctx:
         # CPU path: use direct implementation to avoid runtime dependency
         # (nn.softmax requires AsyncRT parallelism_level which isn't
         # available in the interpreter context)
@@ -160,7 +160,7 @@ def softmax_op[
                     row_major(Idx(batch_dim), Idx(axis_dim)),
                 )
 
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
 
                 comptime if is_logsoftmax:
                     nn_logsoftmax[

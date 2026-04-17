@@ -111,7 +111,7 @@ struct _RangeBody(Dispatchable):
     var stop_addr: Int
     var step_addr: Int
     var size: Int
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def call[t: DType](self) raises -> None:
         comptime if t == DType.bool:
@@ -169,7 +169,7 @@ def range_op[
     stop_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     step_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     size: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Range operation using Range.execute from MOGGKernelAPI.
 
@@ -193,7 +193,7 @@ def range_op[
         io_spec=FusedOutput, static_spec=out_spec
     ](out_ptr, IndexList[1](size))
 
-    if not ctx._is_not_null():
+    if not ctx:
         Range.execute[
             dtype=dtype,
             target="cpu",
@@ -218,7 +218,7 @@ def range_op[
                     )
                     out_ptr.store[width=width](i, result)
 
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[range_func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
                 )
@@ -307,7 +307,7 @@ def random_normal_op[
     mean: Float32,
     variance: Float32,
     seed_value: UInt64,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Random normal operation: fill output with normally distributed values.
 
@@ -334,12 +334,12 @@ def random_normal_op[
         var values = generator.step_normal(mean=mean, stddev=variance)
         out_ptr.store[width=width](i, values.cast[dtype]().slice[width]())
 
-    if not ctx._is_not_null():
+    if not ctx:
         elementwise[func, simd_width=8](IndexList[1](size))
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=8, target="gpu"](
                     IndexList[1](size), device_ctx
                 )
@@ -428,7 +428,7 @@ def random_uniform_op[
     lower_bound: Float32,
     upper_bound: Float32,
     seed_value: UInt64,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Random uniform operation: fill output with uniformly distributed values.
 
@@ -458,12 +458,12 @@ def random_uniform_op[
         values = values * delta + lower_bound
         out_ptr.store[width=width](i, values.cast[dtype]().slice[width]())
 
-    if not ctx._is_not_null():
+    if not ctx:
         elementwise[func, simd_width=4](IndexList[1](size))
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=4, target="gpu"](
                     IndexList[1](size), device_ctx
                 )
