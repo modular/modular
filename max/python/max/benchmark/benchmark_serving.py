@@ -144,7 +144,7 @@ BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
     " before running this command."
 )
 
-logger = logging.getLogger("benchmark_serving")
+logger = logging.getLogger(__name__)
 
 
 def compute_output_len(
