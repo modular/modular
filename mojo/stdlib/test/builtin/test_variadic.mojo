@@ -124,9 +124,7 @@ def test_variadic_value_reducer() raises:
 
 
 def test_variadic_value_reducer_empty() raises:
-    comptime mapped_values = IntToWithValue[
-        *ParameterList[Variadic.empty_of_type[Int]]()
-    ]
+    comptime mapped_values = IntToWithValue[*ParameterList.empty_of[Int]()]
     assert_equal(TypeList[mapped_values].size, 0)
 
 
@@ -188,18 +186,18 @@ def test_variadic_contains_empty() raises:
 
 
 def test_variadic_contains_value() raises:
-    comptime variadic = Variadic.values[1, 2, 3]
-    assert_equal(ParameterList[variadic].size, 3)
-    assert_true(Variadic.contains_value[1, variadic])
-    assert_true(Variadic.contains_value[2, variadic])
-    assert_true(Variadic.contains_value[3, variadic])
-    assert_false(Variadic.contains_value[4, variadic])
+    comptime list = ParameterList.of[1, 2, 3]()
+    assert_equal(list.size, 3)
+    assert_true(list.contains[1]())
+    assert_true(list.contains[2]())
+    assert_true(list.contains[3]())
+    assert_false(list.contains[4]())
 
 
 def test_variadic_contains_value_empty() raises:
-    comptime variadic = Variadic.empty_of_type[Int]
-    assert_equal(ParameterList[variadic].size, 0)
-    assert_false(Variadic.contains_value[1, variadic])
+    comptime list = ParameterList.empty_of[Int]()
+    assert_equal(list.size, 0)
+    assert_false(list.contains[1]())
 
 
 def test_zip_types_empty() raises:
@@ -253,10 +251,10 @@ def test_zip_types_triple() raises:
 
 
 def test_zip_values_empty() raises:
-    comptime v1 = Variadic.empty_of_type[Int]
-    comptime v2 = Variadic.empty_of_type[Int]
-    comptime v_zip = Variadic.zip_values[v1, v2]
-    assert_equal(ParameterList[v_zip].size, 1)
+    comptime v1 = ParameterList.empty_of[Int]()
+    comptime v2 = ParameterList.empty_of[Int]()
+    comptime v_zip = ParameterList[Variadic.zip_values[v1.values, v2.values]]()
+    assert_equal(v_zip.size, 1)
     assert_equal(ParameterList[v_zip[0]].size, 0)
     assert_equal(ParameterList[v_zip[1]].size, 0)
 

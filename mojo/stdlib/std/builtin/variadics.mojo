@@ -65,15 +65,6 @@ struct Variadic:
         T: The trait that types in the variadic sequence must conform to.
     """
 
-    comptime empty_of_type[T: AnyType] = __mlir_attr[
-        `#kgen.param_list<>: `, _MLIR.KGENParamListType[T], `>`
-    ]
-    """Empty comptime variadic of values.
-
-    Parameters:
-        T: The type of values in the variadic sequence.
-    """
-
     comptime types[T: type_of(AnyType), //, *Ts: T] = Ts.values
     """Turn discrete type values (bound by `T`) into a single variadic.
 
@@ -158,26 +149,6 @@ struct Variadic:
         Trait: The trait that the types conform to.
         type: The type to check for.
         element_types: The variadic sequence of types to search.
-    """
-
-    comptime contains_value[
-        T: Equatable,
-        //,
-        value: T,
-        element_values: Variadic.ValuesOfType[T],
-    ] = _ReduceValueAndIdxToValue[
-        BaseVal=False,
-        ParamListType=element_values,
-        #  Curry `_ContainsValueReducer` to fit the reducer signature
-        Reducer=_ContainsValueReducer[T=T, value=value, ...],
-    ]
-    """
-    Check if a value is contained in a variadic sequence of values.
-
-    Parameters:
-        T: The type of the values. Must be `Equatable`.
-        value: The value to search for.
-        element_values: The variadic sequence of values to search.
     """
 
     comptime map_types_to_types[
@@ -802,6 +773,18 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     ]
     """Gets a single element on the variadic list."""
 
+    comptime empty_of[type: AnyType] = Self.of[type=type]
+    """Form an empty compile-time list of values some element type.
+
+    Parameters:
+        type: The type of the elements in the list.
+
+    Examples:
+        ```mojo
+        comptime Ints = ParameterList.empty_of[Int]()
+        ```
+    """
+
     comptime of[type: AnyType, //, *values: type] = ParameterList[
         type=type, values.values
     ]
@@ -861,6 +844,129 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         count: The number of copies of `value` in the result.
         value: The value to repeat at every index.
     """
+
+    comptime _ElementToBoolGeneratorType = __mlir_type[
+        `!lit.generator<<"Elt": `, +Self.type, `>`, +Bool, `>`
+    ]
+
+    comptime _ReducerGeneratorType[
+        FromAndTo: AnyType,
+    ] = __mlir_type[
+        `!lit.generator<<"Prev": `,
+        +FromAndTo,
+        `, "From": `,
+        +Self.type,
+        `>`,
+        +FromAndTo,
+        `>`,
+    ]
+
+    comptime _DiscardIndexWrapper[
+        FromAndTo: AnyType,
+        ToWrap: Self._ReducerGeneratorType[FromAndTo],
+        PrevV: FromAndTo,
+        VA: type_of(Self.values),
+        idx: __mlir_type.index,
+    ] = ToWrap[PrevV, Self.__getitem_param__[Int(mlir_value=idx)]]
+    """Takes an index because kgen.variadic.reduce passes it but we don't want it"""
+
+    # TODO: This isn't returning a ParamList, so it should really be a 'def' so
+    # we get parens on the caller side. However, that requires the type to be
+    # materializable from parameter space to runtime.  We could split this into
+    # reduce_param and reduce() where the later does materialization, or we
+    # could just always use materialize?
+    comptime reduce[
+        FromAndTo: AnyType,
+        //,
+        BaseVal: FromAndTo,
+        Reducer: Self._ReducerGeneratorType[FromAndTo],
+    ] = __mlir_attr[
+        `#kgen.param_list.reduce<`,
+        BaseVal,
+        `,`,
+        Self.values,
+        `,`,
+        Self._DiscardIndexWrapper[FromAndTo, Reducer, ...],
+        `> : `,
+        +FromAndTo,
+    ]
+    """Form a value by applying a function that merges each element into a
+    starting value, then return the result.
+
+    Parameters:
+        FromAndTo: The type of the input and output result.
+        BaseVal: The initial value to reduce on.
+        Reducer: A `[BaseVal: FromAndTo, T: Self.type] -> FromAndTo` that does the reduction.
+    """
+
+    comptime _AnySatisfiesReducer[
+        predicate: Self._ElementToBoolGeneratorType,
+        last_value: Bool,
+        this_element: Self.type,
+    ] = last_value or predicate[this_element]
+
+    @always_inline("builtin")
+    @staticmethod
+    def any_satisfies[predicate: Self._ElementToBoolGeneratorType]() -> Bool:
+        """'any_satisfies' applies a function to each element and returns true if
+        the function returns True for any element.
+
+        Parameters:
+            predicate: A `[elt: Self.Type] -> Bool` comptime expression to apply.
+
+        Returns:
+            True if the predicate returns True for any element, False otherwise.
+        """
+        return Self.reduce[
+            False,
+            Self._AnySatisfiesReducer[predicate, ...],
+        ]
+
+    comptime _AllSatisfiesReducer[
+        predicate: Self._ElementToBoolGeneratorType,
+        last_value: Bool,
+        this_element: Self.type,
+    ] = last_value and predicate[this_element]
+
+    @always_inline("builtin")
+    @staticmethod
+    def all_satisfies[predicate: Self._ElementToBoolGeneratorType]() -> Bool:
+        """'all_satisfies' applies a function to each element and returns true if
+        the function returns True for all elements.
+
+        Parameters:
+            predicate: A `[elt: Self.Type] -> Bool` comptime expression to apply.
+
+        Returns:
+            True if the predicate returns True for all elements, False otherwise.
+        """
+        return Self.reduce[
+            True,
+            Self._AllSatisfiesReducer[predicate, ...],
+        ]
+
+    # NOTE: The def that utilizes this checks for conformance to equatable.
+    comptime _ContainsValuePredicate[
+        search_value: Self.type, element_value: Self.type
+    ] = trait_downcast[Equatable](search_value) == trait_downcast[Equatable](
+        element_value
+    )
+
+    @always_inline("builtin")
+    @staticmethod
+    def contains[
+        value: Self.type,
+    ]() -> Bool where conforms_to(Self.type, Equatable):
+        """
+        Check if a value is contained in a variadic sequence of values.
+
+        Parameters:
+            value: The value to search for.
+
+        Returns:
+            True if the value is contained in the list, False otherwise.
+        """
+        return Self.any_satisfies[Self._ContainsValuePredicate[value, ...]]()
 
     def _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
         _constrained_conforms_to[
@@ -1669,7 +1775,7 @@ comptime _ReduceValueIdxGeneratorTypeGenerator[
     `, "From": `,
     _MLIR.KGENParamListType[From],
     `, "Idx":`,
-    SIMDSize,
+    Int,
     `>`,
     +Prev,
     `>`,
@@ -1686,7 +1792,7 @@ comptime _IndexToIntValueWrap[
     PrevV: ReduceT,
     VA: Variadic.ValuesOfType[From],
     idx: __mlir_type.index,
-] = ToWrap[PrevV, VA, SIMDSize(mlir_value=idx)]
+] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
 
 
 comptime _ReduceValueAndIdxToVariadic[
@@ -1718,36 +1824,6 @@ Parameters:
     BaseVal: The initial value to reduce on.
     ParamListType: The variadic to be reduced.
     Reducer: A `[BaseVal: Variadic.ValuesOfType[To], Ts: *From, idx: index] -> To` that does the reduction.
-"""
-
-
-comptime _ReduceValueAndIdxToValue[
-    FromAndTo: AnyType,
-    ListEltType: AnyType,
-    //,
-    *,
-    BaseVal: FromAndTo,
-    ParamListType: Variadic.ValuesOfType[ListEltType],
-    Reducer: _ReduceValueIdxGeneratorTypeGenerator[FromAndTo, ListEltType],
-] = __mlir_attr[
-    `#kgen.param_list.reduce<`,
-    BaseVal,
-    `,`,
-    ParamListType,
-    `,`,
-    _IndexToIntValueWrap[ListEltType, FromAndTo, Reducer, ...],
-    `> : `,
-    +FromAndTo,
-]
-"""Construct a new variadic of values using a reducer over an input variadic of
-values.
-
-Parameters:
-    FromAndTo: The type of the input and output result.
-    ListEltType: The common trait bound for the input list.
-    BaseVal: The initial value to reduce on.
-    ParamListType: The variadic of values to be reduced.
-    Reducer: A `[BaseVal: FromAndTo, Ts: *ListEltType, idx: Int] -> FromAndTo` that does the reduction.
 """
 
 
