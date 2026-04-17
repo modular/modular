@@ -115,7 +115,7 @@ _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "Gemma4ForConditionalGeneration",
     "UnifiedEagleLlama3ForCausalLM",
     "UnifiedMTPDeepseekV3ForCausalLM",
-    "UnifiedEagleKimiK25ForConditionalGeneration",
+    "Eagle3DeepseekV2ForCausalLM",
 )
 
 _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
@@ -128,7 +128,7 @@ _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
     "Gemma4ForConditionalGeneration",
     "UnifiedEagleLlama3ForCausalLM",
     "UnifiedMTPDeepseekV3ForCausalLM",
-    "UnifiedEagleKimiK25ForConditionalGeneration",
+    "Eagle3DeepseekV2ForCausalLM",
 )
 
 
@@ -817,7 +817,7 @@ class PipelineConfig(ConfigFileModel):
             if target_archs[0] == "DeepseekV3ForCausalLM":
                 target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
             if target_archs[0] == "KimiK25ForConditionalGeneration":
-                target_archs[0] = "UnifiedEagleKimiK25ForConditionalGeneration"
+                target_archs[0] = "Eagle3DeepseekV2ForCausalLM"
 
         # Validate KV connector configuration
         self._validate_kv_connector_config()

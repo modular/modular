@@ -97,7 +97,7 @@ kimivl_arch = SupportedArchitecture(
 )
 
 eagle3_kimik25_arch = SupportedArchitecture(
-    name="UnifiedEagleKimiK25ForConditionalGeneration",
+    name="Eagle3DeepseekV2ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["moonshotai/Kimi-K2.5"],
     default_encoding="bfloat16",
