@@ -258,6 +258,32 @@ class FakeTokenGeneratorPipeline(
         pass
 
 
+class FakeSpecDecodePipeline(FakeTokenGeneratorPipeline):
+    """Mimics OverlapTextGenerationPipeline with speculative decoding.
+
+    Like the real Eagle unified pipeline, overlap is disabled so execute()
+    returns results synchronously.  Draft tokens are populated on each
+    context's spec_decoding_state after execution.
+    """
+
+    def __init__(
+        self,
+        kv_manager: PagedKVCacheManager,
+        max_seq_len: int,
+        start_token_id: int = 99,
+        num_speculative_tokens: int = 2,
+    ) -> None:
+        super().__init__(
+            kv_manager,
+            max_seq_len,
+            start_token_id,
+            num_speculative_tokens=num_speculative_tokens,
+        )
+
+    def has_pending_outputs(self) -> bool:
+        return False
+
+
 class FakeOverlapPipeline(FakeTokenGeneratorPipeline):
     """Mimics OverlapTextGenerationPipeline's one-batch output lag.
 
