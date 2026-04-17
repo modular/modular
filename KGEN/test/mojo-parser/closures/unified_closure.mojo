@@ -1495,3 +1495,26 @@ def trigger_promoted_param_wrapper[n: Int]():
             return DType.float32
 
     takesFatVale(nonsense)
+
+# // -----
+
+# COM: Verify comptime conversion of a promoted wrapper value constructs the
+# COM: concrete PtrWrapper via apply_result_slot before calling the closure
+# COM: parameter.
+
+def take_closure_param[
+    C: def[n: Int](arg: Int) unified -> Int
+](impl: C) -> Int:
+    return impl[3](4)
+
+
+def trigger() -> Int:
+    def wrapped_ok[n: Int](arg: Int) unified {} -> Int:
+        return n
+
+    # CHECK-LABEL: lit.fn @"trigger()"
+    # CHECK: lit.alias.decl *"X`": !Int1 = <apply(
+    # CHECK-SAME: @"take_closure_param[def[n: Int](arg: Int) -> Int]($0)"
+    # CHECK-SAME: store_to_mem(apply_result_slot(
+    # CHECK-SAME: @"def[n: Int](arg: Int) -> Int_PtrWrapper"::@"__init__()"
+    comptime X = take_closure_param[type_of(wrapped_ok)](wrapped_ok)
