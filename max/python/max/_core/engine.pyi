@@ -107,6 +107,16 @@ class Model:
         """
 
     @property
+    def kernel_summaries(self) -> list[str]:
+        """
+        Kernel fusion summaries from the compiled model.
+
+        Returns a list of strings, one per ``mgp.generic.execute`` kernel in
+        the compiled graph.  Each string describes the fused kernel composition,
+        e.g. ``"Epilogue(custom__kv_rope, custom__kv_cache_store)"``.
+        """
+
+    @property
     def signature(self) -> inspect.Signature:
         """Get input signature for model."""
 
