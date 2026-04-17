@@ -41,7 +41,6 @@ from std.gpu import (
     warp_id,
 )
 from std.gpu.host import get_gpu_target, DeviceBuffer
-from std.gpu.intrinsics import Scope, load_acquire, store_release
 from std.gpu.sync import syncwarp
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tile_tensor import _get_index_type
@@ -101,6 +100,9 @@ def _DEVICE_SCOPE() -> StaticString:
 
 comptime DEVICE_SCOPE = _DEVICE_SCOPE()
 comptime BLOCK_SCOPE = _BLOCK_SCOPE()
+
+comptime _counter_atomic = Atomic[DType.int32, scope=DEVICE_SCOPE]
+comptime _signal_atomic = Atomic[DType.uint64]
 
 
 @always_inline
@@ -196,9 +198,9 @@ def ep_signal_completion[
     buffer. Will use direct memory access if the target device is on the same
     node, and use the SHMEM API if the target device is on a different node.
 
-    For same-node signaling, uses normal stores and only issues a store_release
+    For same-node signaling, uses normal stores and only issues a release store
     when the last expert for a destination rank is completed. This reduces the
-    number of store_release operations from n_experts to p2p_world_size.
+    number of release stores from n_experts to p2p_world_size.
     """
 
     var my_p2p_world, my_p2p_rank = divmod(my_rank, Int32(p2p_world_size))
@@ -208,21 +210,23 @@ def ep_signal_completion[
     # receive count buffer.
     if my_p2p_world == dst_p2p_world:
         var dst_p2p_ptr = recv_count_ptrs[dst_p2p_rank] + signal_offset
-        var old_count = Atomic[DType.int32, scope=DEVICE_SCOPE].fetch_add[
+        var old_count = _counter_atomic.fetch_add[
             ordering=Consistency.MONOTONIC
         ](rank_completion_counter + Int(dst_p2p_rank), 1)
 
         # If this is the last expert for this destination rank,
-        # use store_release to flush all pending stores.
+        # use a release store to flush all pending stores.
         if old_count < Int32(n_experts_per_device - 1):
             dst_p2p_ptr[] = signal
         else:
-            # Technically, this store_release only guarantees the arrival of
+            # Technically, this release store only guarantees the arrival of
             # all experts' messages to the target device. It doesn't guarantee
             # the arrival of the previous experts' signals to the target
             # device. However, this does not matter as we will check the
             # arrival signal individually in the dispatch_wait/combine_wait kernel.
-            store_release[scope=Scope.SYSTEM](dst_p2p_ptr, signal)
+            _signal_atomic.store[ordering=Consistency.RELEASE](
+                dst_p2p_ptr, signal
+            )
             # Reset counter for next kernel invocation.
             rank_completion_counter[dst_p2p_rank] = 0
     else:
@@ -1666,7 +1670,7 @@ struct EPDispatchKernel[
             if lane_id() == 0:
                 # Wait until all the tokens for the expert have been sent.
                 while (
-                    load_acquire[scope=Scope.GPU](
+                    _counter_atomic.load[ordering=Consistency.ACQUIRE](
                         expert_finished_counter + expert_idx
                     )
                     != expert_count
@@ -1802,7 +1806,7 @@ struct EPDispatchKernel[
                 if my_p2p_world == dst_p2p_world:
                     var slot_idx: Int32 = 0
                     if lane_id() == 0:
-                        slot_idx = Atomic[scope=DEVICE_SCOPE].fetch_add[
+                        slot_idx = _counter_atomic.fetch_add[
                             ordering=Consistency.MONOTONIC
                         ](expert_reserved_counter + target_expert, 1)
                     slot_idx = warp.broadcast(slot_idx)
@@ -1827,7 +1831,7 @@ struct EPDispatchKernel[
                     syncwarp()
 
                     if lane_id() == 0:
-                        _ = Atomic[scope=DEVICE_SCOPE].fetch_add[
+                        _ = _counter_atomic.fetch_add[
                             ordering=Consistency.RELEASE
                         ](expert_finished_counter + target_expert, 1)
 
@@ -1857,7 +1861,7 @@ struct EPDispatchKernel[
                         rc_map_offset == target_expert % Int32(n_rcs)
                         and my_p2p_world != dst_p2p_world
                     ):
-                        var slot_idx = Atomic[scope=DEVICE_SCOPE].fetch_add[
+                        var slot_idx = _counter_atomic.fetch_add[
                             ordering=Consistency.MONOTONIC
                         ](expert_reserved_counter + target_expert, 1)
                         var dst_recv_buf_ptr = recv_buf_ptrs[
@@ -1877,7 +1881,7 @@ struct EPDispatchKernel[
                             dst_rank,
                         )
 
-                        _ = Atomic[scope=DEVICE_SCOPE].fetch_add[
+                        _ = _counter_atomic.fetch_add[
                             ordering=Consistency.RELEASE
                         ](expert_finished_counter + target_expert, 1)
 
@@ -1939,13 +1943,13 @@ struct EPDispatchKernel[
         var token_count: UInt32 = 0
         if tid < Self.n_experts:
             var target_count_ptr = recv_count_p + tid
-            var _token_count = load_acquire[scope=Scope.SYSTEM](
-                target_count_ptr
-            )
+            var _token_count = _signal_atomic.load[
+                ordering=Consistency.ACQUIRE
+            ](target_count_ptr)
             while _token_count == UInt64.MAX_FINITE:
-                _token_count = load_acquire[scope=Scope.SYSTEM](
-                    target_count_ptr
-                )
+                _token_count = _signal_atomic.load[
+                    ordering=Consistency.ACQUIRE
+                ](target_count_ptr)
             token_count = UInt32(_token_count)
         barrier()
 
@@ -1992,7 +1996,7 @@ struct EPDispatchKernel[
                 expert_rank_linear_idx * 2 + 1,
                 Int32(aligned_expert_start_offset),
             )
-            store_release[scope=Scope.GPU](
+            _counter_atomic.store[ordering=Consistency.RELEASE](
                 atomic_counter + expert_rank_linear_idx * 2,
                 Int32(
                     EP_DATA_READY_FLAG
@@ -2055,9 +2059,13 @@ struct EPDispatchKernel[
         # Wait until the auxiliary SM has signaled that the data is ready, and
         # provided the offset where the tokens end in the output tensor.
         var offset_ptr = atomic_counter + expert_rank_offset * 2
-        var output_offset = load_acquire[scope=Scope.GPU](offset_ptr)
+        var output_offset = _counter_atomic.load[ordering=Consistency.ACQUIRE](
+            offset_ptr
+        )
         while output_offset < EP_DATA_READY_FLAG:
-            output_offset = load_acquire[scope=Scope.GPU](offset_ptr)
+            output_offset = _counter_atomic.load[ordering=Consistency.ACQUIRE](
+                offset_ptr
+            )
         output_offset -= EP_DATA_READY_FLAG
 
         var token_count = Int32(recv_count_p.load(expert_rank_offset))
@@ -2775,7 +2783,9 @@ struct EPCombineKernel[
         if thread_idx.x < Self.n_experts:
             var target_count_ptr = recv_count_p + thread_idx.x
             while (
-                load_acquire[scope=Scope.SYSTEM](target_count_ptr)
+                _signal_atomic.load[ordering=Consistency.ACQUIRE](
+                    target_count_ptr
+                )
                 == UInt64.MAX_FINITE
             ):
                 pass
@@ -2833,7 +2843,9 @@ struct EPCombineKernel[
 
         if thread_idx.x == 0:
             while (
-                load_acquire[scope=Scope.GPU](atomic_counter + sm_id)
+                _counter_atomic.load[ordering=Consistency.ACQUIRE](
+                    atomic_counter + sm_id
+                )
                 != DATA_READY_FLAG
             ):
                 pass
