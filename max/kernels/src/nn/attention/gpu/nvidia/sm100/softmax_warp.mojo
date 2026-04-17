@@ -421,12 +421,11 @@ def fa4_softmax[
     pipeline_c = mbars.producer_c(warp_group_idx)
     var order_phase: UInt32 = 1 - warp_group_idx
 
+    var order_s_wait: Optional[MBarType] = None
+    var order_s_arrive: Optional[MBarType] = None
     comptime if EnableForcedOrdering:
         order_s_wait = mbars.pipeline_order_wait(warp_group_idx)
         order_s_arrive = mbars.pipeline_order_arrive(warp_group_idx)
-    else:
-        order_s_wait = {_unsafe_null = ()}
-        order_s_arrive = {_unsafe_null = ()}
 
     # When fuse_gqa, head_idx is a kv_head_idx
     # the output will match, so `head_idx` is what we use for writing
@@ -532,7 +531,7 @@ def fa4_softmax[
         *, mask_strategy: MaskStrategy
     ](kv_row: UInt32) -> StaticTuple[Float32, max_unroll]:
         comptime if EnableForcedOrdering:
-            order_s_wait[].wait(order_phase)
+            order_s_wait.unsafe_value()[].wait(order_phase)
         # break up into sets of 32
         # minimize wait time by using smallest first
         comptime BM = config.BM // 2
@@ -781,7 +780,7 @@ def fa4_softmax[
                     and b == max(1, num_batch_iters - 1)
                     and idx == offset + order_arrive_offset
                 ):
-                    _ = order_s_arrive[].arrive()
+                    _ = order_s_arrive.unsafe_value()[].arrive()
                     order_phase ^= 1
 
             comptime el_offset = offset * exp_simd

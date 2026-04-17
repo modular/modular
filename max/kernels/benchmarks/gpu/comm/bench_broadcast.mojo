@@ -118,9 +118,9 @@ def bench_broadcast[
     )
 
     # Multicast buffer for output (when use_multimem=True)
-    var out_multicast_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin](
-        _unsafe_null=()
-    )
+    var out_multicast_ptr = Optional[
+        UnsafePointer[Scalar[dtype], MutAnyOrigin]
+    ]()
 
     # Initialize output and signal buffers for each GPU
     comptime if use_multimem:
@@ -187,8 +187,9 @@ def bench_broadcast[
     comptime if use_multimem:
         # All GPUs use the same multicast pointer for output
         for i in range(ngpus):
+            # out_multicast_ptr is set when use_multimem == True
             out_tiles[i] = OutputTileType(
-                out_multicast_ptr, row_major(Idx(length))
+                out_multicast_ptr.unsafe_value(), row_major(Idx(length))
             )
             list_of_ctx[i].synchronize()
     else:
