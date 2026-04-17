@@ -313,7 +313,7 @@ class ServeGraphCaptureRunner:
         # carriage return doesn't work and each update prints a new line.
         for batch_size in tqdm(
             batch_sizes,
-            desc="Capturing CUDA graph shapes",
+            desc="Capturing device graph shapes",
             disable=not sys.stderr.isatty(),
         ):
             dispatch_entries = sorted(
