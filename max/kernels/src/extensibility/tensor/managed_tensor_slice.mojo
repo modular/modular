@@ -1312,11 +1312,11 @@ struct StaticTensorSpecList[
     dtype: DType,
     rank: Int,
     //,
-    internals_list: Variadic.ValuesOfType[
-        StaticTensorSpecInternal[dtype, rank]
+    internals_list: ParameterList[
+        type=StaticTensorSpecInternal[dtype, rank], ...
     ],
-    shapes_list: Variadic.ValuesOfType[IndexList[rank]],
-    strides_list: Variadic.ValuesOfType[IndexList[rank]],
+    shapes_list: ParameterList[type=IndexList[rank], ...],
+    strides_list: ParameterList[type=IndexList[rank], ...],
 ]:
     """A statically indexable list of data that can be assembled into a
     StaticTensorSpecList on demand. This handles the complexities that arise
