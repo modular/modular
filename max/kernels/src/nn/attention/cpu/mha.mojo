@@ -754,14 +754,15 @@ struct _FlashAttention[
                 Span(sum_vals_storage), row_major[Self._config.block_m]()
             )
 
-            var packed_ptr = UnsafePointer[
-                Scalar[Self.dtype], MutExternalOrigin
-            ](_unsafe_null=())
-            if max_seq_len != 1:
+            var packed_ptr_allocated = max_seq_len != 1
+            var packed_ptr: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
+            if packed_ptr_allocated:
                 packed_ptr = alloc[Scalar[Self.dtype]](
                     packed_size,
                     alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
                 )
+            else:
+                packed_ptr = type_of(packed_ptr).unsafe_dangling()
 
             var q_seq_stride = num_heads * depth_dim
 
@@ -933,7 +934,7 @@ struct _FlashAttention[
                     o_ptr += q_seq_stride
                     oz_ptr += Self._config.o_block_n
 
-            if packed_ptr._is_not_null():
+            if packed_ptr_allocated:
                 packed_ptr.free()
 
         sync_parallelize[task_func](num_threads)

@@ -948,8 +948,9 @@ def _softmax_temperature_kernel[
     batch_size: Int,
     d: Int,
     temperature: Scalar[temp_dtype],
-    # using UnsafePointer here because cant pass optional TileTensor
-    temperature_arr: UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin],
+    temperature_arr: Optional[
+        UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin]
+    ],
 ):
     """GPU kernel for softmax with per-row temperature scaling.
 
@@ -981,8 +982,10 @@ def _softmax_temperature_kernel[
         for row_idx in range(bid, num_rows, gid):
             # Resolve per-row temperature, clamping to prevent division by zero.
             var temp = temperature.cast[accum_type]()
-            if temperature_arr._is_not_null():
-                temp = temperature_arr[row_idx].cast[accum_type]()
+            if temperature_arr:
+                temp = temperature_arr.unsafe_value()[row_idx].cast[
+                    accum_type
+                ]()
             temp = max(temp, Scalar[accum_type](1e-6))
             var inv_temp = Scalar[accum_type](1) / temp
 
@@ -1107,9 +1110,7 @@ def softmax_with_temperature[
     var d = shape[1]
 
     # Extract raw pointer for the kernel (null if not provided).
-    var temp_ptr = UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin](
-        _unsafe_null=()
-    )
+    var temp_ptr = Optional[UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin]]()
     if temperature_arr:
         temp_ptr = temperature_arr.value().ptr
 

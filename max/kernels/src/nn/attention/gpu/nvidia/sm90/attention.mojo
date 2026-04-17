@@ -156,7 +156,7 @@ struct NonNullPointer[
 
     @always_inline
     def value(self) -> Self.PtrType:
-        assert self.ptr._is_not_null(), (
+        assert Int(self.ptr) != 0, (
             "NonNullPointer is supposed to provide a compile-time guarantee"
             " of being non-null"
         )
@@ -179,7 +179,9 @@ struct NullPointer[
 
     @always_inline
     def value(self) -> Self.PtrType:
-        return Self.PtrType(_unsafe_null=())
+        # NullPointer.value() should never be called at runtime — it exists
+        # only for trait conformance. Return dangling as a safe sentinel.
+        return Self.PtrType.unsafe_dangling()
 
 
 struct Pack[
