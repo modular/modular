@@ -49,8 +49,6 @@ mojo_filecheck_test(
     mojo_test(
         name = src + ".test",
         srcs = [src],
-        tags = (["manual"] if src == "test_tiled_matmul_backtoback.mojo" else []),  # TODO(KERN-2761)
-        target_compatible_with = ["@platforms//:incompatible"] if src == "test_tiled_matmul_backtoback.mojo" else [],  # TODO(KERN-2761)
         deps = [
             "//max:layout",
             "@mojo//:std",
