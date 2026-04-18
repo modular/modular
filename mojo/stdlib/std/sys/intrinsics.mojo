@@ -243,6 +243,7 @@ def scatter[
             )
             ptr.store(value[0])
         return
+
     llvm_intrinsic["llvm.masked.scatter", NoneType](
         value,
         UnsafePointer(to=base).bitcast[
