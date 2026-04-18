@@ -88,10 +88,6 @@ struct CStringSlice[origin: ImmutOrigin](
                 raise Error("getenv returned an error!")
         ```
         """
-        assert unsafe_from_ptr._is_not_null(), (
-            "Cannot construct a CStringSlice from a null pointer. Use"
-            " Optional[CStringSlice] instead to represent nullability."
-        )
         self._data = unsafe_from_ptr
 
     @always_inline

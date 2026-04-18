@@ -47,14 +47,14 @@ def free(ptr: UnsafePointer[mut=True, NoneType, ...]):
 
 
 @always_inline
-def free(ptr: _CPointer[NoneType, ExternalOrigin[mut=True]]):
+def free(ptr: OptionalUnsafePointer[mut=True, NoneType, ...]):
     """Frees memory previously allocated by `malloc`, `calloc`, or `realloc`.
 
-    This overload accepts an `_CPointer` because it is valid in C to call
-    `free` on a null pointer (it is a no-op).
+    This overload accepts an `Optional[UnsafePointer]` because it is valid in
+    C to call `free` on a null pointer (it is a no-op).
 
     Args:
-        ptr: A c-pointer to the memory to free.
+        ptr: A pointer to the memory to free.
     """
     free(
         UnsafePointer(to=ptr).bitcast[

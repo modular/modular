@@ -21,6 +21,7 @@ from std.memory import memcmp
 
 
 from std.math import iota
+from std.memory.unsafe_pointer import unsafe_cast
 from std.sys import _libc as libc
 from std.ffi import external_call
 from std.sys import (
@@ -396,12 +397,17 @@ def _malloc[
     /,
     *,
     alignment: Int = align_of[type](),
-    out res: UnsafePointer[
-        type,
-        MutExternalOrigin,
-        address_space=AddressSpace.GENERIC,
+    out result: Optional[
+        UnsafePointer[
+            type,
+            MutExternalOrigin,
+            address_space=AddressSpace.GENERIC,
+        ]
     ],
 ):
+    comptime MlirPointerType = type_of(result).T._mlir_type
+    var mlir_pointer: MlirPointerType
+
     comptime if is_gpu():
         comptime enable_gpu_malloc = get_defined_string[
             "ENABLE_GPU_MALLOC", "true"
@@ -412,17 +418,15 @@ def _malloc[
             "runtime allocation on GPU not allowed",
         ]()
 
-        comptime U = UnsafePointer[
-            NoneType,
-            MutExternalOrigin,
-            address_space=AddressSpace.GENERIC,
-        ]
-        var ptr = external_call["malloc", U](size)
-        return ptr.bitcast[type]()
+        mlir_pointer = external_call["malloc", MlirPointerType](size)
     else:
-        return __mlir_op.`pop.aligned_alloc`[_type=type_of(res)._mlir_type](
+        mlir_pointer = __mlir_op.`pop.aligned_alloc`[_type=MlirPointerType](
             alignment._int_mlir_index(), size._int_mlir_index()
         )
+
+    # SAFETY: Due to the niche optimization, `Optional[UnsafePointer]` is
+    # represented exactly as the `MlirPointerType` so we can do a bit-cast.
+    result = UnsafePointer(to=mlir_pointer).bitcast[type_of(result)]()[]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -436,6 +440,18 @@ def _free(ptr: UnsafePointer[mut=True, ...]):
         libc.free(ptr.bitcast[NoneType]())
     else:
         __mlir_op.`pop.aligned_free`(ptr.address)
+
+
+@always_inline
+def _free(ptr: OptionalUnsafePointer[mut=True, ...]):
+    comptime if is_gpu():
+        libc.free(unsafe_cast[Type=NoneType, origin=MutExternalOrigin](ptr))
+    else:
+        comptime KgenPointerType = type_of(ptr).T._mlir_type
+        # SAFETY: Due to the niche optimization, `Optional[UnsafePointer]` is
+        # represented exactly as the `KgenPointerType` so we can do a bit-cast.
+        var kgen_pointer = UnsafePointer(to=ptr).bitcast[KgenPointerType]()[]
+        __mlir_op.`pop.aligned_free`(kgen_pointer)
 
 
 # ===-----------------------------------------------------------------------===#

@@ -241,9 +241,9 @@ def alloc[
         count,
     )
     var pointer = _malloc[type](size_of_t * count, alignment=alignment)
-    if unlikely(not pointer._is_not_null()):
+    if unlikely(not pointer):
         abort("alloc failed: returned a null pointer")
-    return pointer
+    return pointer.unsafe_value()
 
 
 # ===----------------------------------------------------------------------=== #

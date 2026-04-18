@@ -1741,17 +1741,9 @@ struct CPython(Defaultable, Movable):
 
         if not maybe_ptr:
             abort(t"error: symbol `{global_name}` not found in CPython library")
-
-        var ptr = maybe_ptr.value()
-
-        if not ptr._is_not_null():
-            abort(
-                "error: pointer to CPython `"
-                + String(global_name)
-                + "` global is null"
-            )
-
-        return ptr[]
+        else:
+            # SAFETY: maybe_ptr is checked above
+            return maybe_ptr.unsafe_value()[]
 
     # ===-------------------------------------------------------------------===#
     # Python/C API

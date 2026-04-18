@@ -546,10 +546,6 @@ def masked_load[
     Returns:
       The loaded memory stored in a vector of type SIMD[dtype, size].
     """
-    assert (
-        addr._is_not_null()
-    ), "masked_load requires a valid (non-null) pointer"
-
     comptime if size == 1:
         return addr.load() if mask else passthrough[0]
 
@@ -591,10 +587,6 @@ def masked_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    assert (
-        addr._is_not_null()
-    ), "masked_store requires a valid (non-null) pointer"
-
     comptime if size == 1:
         if mask:
             addr.store(value[0])
@@ -634,10 +626,6 @@ def compressed_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    assert (
-        addr._is_not_null()
-    ), "compressed_store requires a valid (non-null) pointer"
-
     comptime if size == 1:
         if mask:
             addr.store(value[0])
@@ -681,10 +669,6 @@ def strided_load[
     Returns:
       A vector containing the loaded data.
     """
-    assert (
-        addr._is_not_null()
-    ), "strided_load requires a valid (non-null) pointer"
-
     comptime if simd_width == 1:
         return addr.load[invariant=invariant]() if mask else Scalar[dtype]()
 
@@ -726,10 +710,6 @@ def strided_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    assert (
-        addr._is_not_null()
-    ), "strided_store requires a valid (non-null) pointer"
-
     comptime if simd_width == 1:
         if mask:
             addr.store(value[0])
