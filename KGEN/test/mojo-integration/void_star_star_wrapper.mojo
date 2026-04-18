@@ -22,12 +22,10 @@ from std.reflection import get_base_type_name
 
 @fieldwise_init
 struct KernelFunction[
-    declared_arg_types: Variadic.TypesOfTrait[AnyType],
+    declared_arg_types: TypeList[Trait=AnyType, ...],
     declared_ret_type: RegisterPassable,
     //,
-    func: def(
-        * args: * TypeList[declared_arg_types]()
-    ) thin -> declared_ret_type,
+    func: def(* args: * declared_arg_types) thin -> declared_ret_type,
 ]:
     pass
 
@@ -36,7 +34,7 @@ struct KernelFunction[
 struct KernelArgPack[kernel: KernelFunction[_]]:
     var pointers: InlineArray[
         MutOpaquePointer[MutExternalOrigin],
-        TypeList[Self.kernel.declared_arg_types].size,
+        Self.kernel.declared_arg_types.size,
     ]
 
     def __init__(out self):
@@ -65,13 +63,13 @@ def wrapped_entry_point[
         T, MutExternalOrigin
     ]
     comptime UnsafePointerTupleType = Tuple[
-        *Variadic.map_types_to_types[
-            kernel.declared_arg_types, to_unsafe_pointer_mapper
-        ]().upcast[Movable]()
+        *kernel.declared_arg_types.map[to_unsafe_pointer_mapper]().upcast[
+            Movable
+        ]()
     ]
     var ptr_tuple: UnsafePointerTupleType = {}
 
-    comptime for i in range(TypeList[kernel.declared_arg_types].size):
+    comptime for i in range(kernel.declared_arg_types.size):
         comptime ArgType = kernel.declared_arg_types[i]
         comptime if looks_like_pointer[ArgType]():
             ptr_tuple[i] = rebind[type_of(ptr_tuple[i])](
@@ -84,7 +82,7 @@ def wrapped_entry_point[
         origin=MutExternalOrigin,
         element_trait=AnyType,
         False,
-        *TypeList[kernel.declared_arg_types](),
+        *kernel.declared_arg_types,
     ]
     var raw_pack = __mlir_op.`lit.ref.pack.from_pointer_pack`[
         _type=PackType._mlir_type
@@ -100,10 +98,10 @@ def invoke_kernel[
     wrapped_kernel: def(
         UnsafePointer[KernelArgPack[kernel], MutAnyOrigin],
     ) thin -> kernel.declared_ret_type,
-    *args: *TypeList[kernel.declared_arg_types](),
+    *args: *kernel.declared_arg_types,
 ) -> kernel.declared_ret_type:
     var pa = KernelArgPack[kernel]()
-    comptime for i in range(TypeList[kernel.declared_arg_types].size):
+    comptime for i in range(kernel.declared_arg_types.size):
         comptime ArgType = kernel.declared_arg_types[i]
         comptime if looks_like_pointer[ArgType]():
             pa.pointers[i] = rebind[MutOpaquePointer[MutExternalOrigin]](

@@ -96,20 +96,6 @@ ParamInf::ParamInf(const ParamBindings &paramBinding,
       explicitlyUnboundParams(declaredParamTypes.size(), false),
       allowImplicitConversions(allowImplicitConversions) {}
 
-void ParamInf::dump() const {
-  auto &os = llvm::errs() << "ParamInf:\n";
-  for (auto [idx, value] : llvm::enumerate(evaluator.getIndexBindings())) {
-    os << "  *(0," << idx << ") = ";
-    if (value)
-      os << value;
-    else
-      os << "<not yet set> : "
-         << const_cast<ParamInf *>(this)->evaluator.getReboundType(
-                declaredParamTypes[idx]);
-    os << "\n";
-  }
-}
-
 /// Try to infer parameters of Self from an initializer if specialized.
 ///
 /// Consider:
