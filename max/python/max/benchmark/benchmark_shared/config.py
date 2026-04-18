@@ -580,7 +580,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         },
     )
     collect_gpu_stats: bool = Field(
-        default=False,
+        default=True,
         description="Enable GPU stats collection for serving benchmarks.",
         json_schema_extra={"group": "Control Flags"},
     )
