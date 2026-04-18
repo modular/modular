@@ -27,6 +27,7 @@ from ...driver import CPU, Buffer, Device, DLPackArray
 from ..graph import Graph
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue
+from .validation import _check_device_placement
 
 Number: TypeAlias = float | np.number[Any]
 NestedArray: TypeAlias = Sequence["Number | NestedArray"]
@@ -107,6 +108,9 @@ def constant(
 
     value = Buffer.from_dlpack(value)
     device = DeviceRef.from_device(device or value.device)
+    if not value.device.is_host:
+        _check_device_placement("ops.constant", "TODO(MXF-249).")
+        value = value.to(CPU())  # lint: allow-host-sync
     dtype = dtype or value.dtype
     if dtype != value.dtype:
         raise ValueError(
