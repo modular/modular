@@ -306,6 +306,7 @@ def create_pipeline_with_lora(
             self._sampler_without_bitmask = MagicMock()
             self._sampler_with_bitmask = None
             self._kv_manager = MagicMock()
+            self._pinned_new_tokens = None
 
         with patch.object(TextGenerationPipeline, "__init__", mock_text_init):
             return TextGenerationPipeline(
@@ -335,6 +336,7 @@ def create_pipeline_with_lora(
             self._sampler_with_bitmask = None
             self.d2h_stream = MagicMock()
             self._kv_manager = MagicMock()
+            self._pinned_new_tokens = None
 
         with patch.object(
             SpeechTokenGenerationPipeline, "__init__", mock_speech_init

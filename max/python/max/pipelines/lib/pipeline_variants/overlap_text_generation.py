@@ -1172,6 +1172,10 @@ class OverlapTextGenerationPipeline(
             else None
         )
 
+        # Overlap pipeline doesn't use structured output, so no pinned buffer
+        # needed for async token transfers.
+        self._pinned_new_tokens: Buffer | None = None
+
         # Overlap scheduling specific initialization.
 
         # Load the realize future tokens graph — not needed on prefill-only
@@ -1536,6 +1540,7 @@ class OverlapTextGenerationPipeline(
                 context_batch=flat_batch,
                 num_steps=1,
                 device=device0,
+                pinned_new_tokens=self._pinned_new_tokens,
             )
 
         model_outputs = self._run_forward(inputs)
