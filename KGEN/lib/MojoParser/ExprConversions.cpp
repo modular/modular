@@ -1740,18 +1740,8 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
       if (auto fnLiteral = sugarDynCast<FnLiteralTypeGeneratorType>(rvType))
         target = PValue(fnLiteral.getSymbolConstantAttr());
       if (isClosureWrapperStruct(shared, target, structTy)) {
-        auto module = getDeclScope().getNearestDeclOfType<FileModuleOp>();
-        if (!builder) {
-          return emitCResult(
-              shared.getClosureEmitter().emitFnPtrConversion(
-                  valueExpr.expr->getLocation(*this), PValue(target), structTy),
-              expr, dest);
-        }
-        assert(builder);
-        auto convertedResult = shared.getClosureEmitter().emitFnPtrConversion(
-            *builder, valueExpr.expr->getLocation(*this), *module, target,
-            structTy);
-        return emitCResult(convertedResult, expr, dest);
+        return emitConstructorCall(
+            structTy, CallOperands(CallSyntax::kTypeCall, expr, {}), dest);
       }
     }
   }
