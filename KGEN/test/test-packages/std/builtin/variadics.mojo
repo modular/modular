@@ -201,49 +201,7 @@ comptime _ReduceVariadicAndIdxToVariadic[
     `> : `,
     type_of(BaseVal),
 ]
-comptime _ReduceValueIdxGeneratorTypeGenerator[
-    Prev: AnyType, From: AnyType
-] = __mlir_type[
-    `!lit.generator<<"Prev": `,
-    +Prev,
-    `, "From": `,
-    _MLIR.KGENParamListType[From],
-    `, "Idx":`,
-    Int,
-    `>`,
-    +Prev,
-    `>`,
-]
-comptime _IndexToIntValueWrap[
-    From: AnyType,
-    ReduceT: AnyType,
-    ToWrap: _ReduceValueIdxGeneratorTypeGenerator[ReduceT, From],
-    PrevV: ReduceT,
-    VA: Variadic.ValuesOfType[From],
-    idx: __mlir_type.index,
-] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
 
-
-comptime _ReduceValueAndIdxToVariadic[
-    From: AnyType,
-    To: type_of(AnyType),
-    //,
-    *,
-    BaseVal: Variadic.TypesOfTrait[To],
-    ParamListType: Variadic.ValuesOfType[From],
-    Reducer: _ReduceValueIdxGeneratorTypeGenerator[
-        Variadic.TypesOfTrait[To], From
-    ],
-] = __mlir_attr[
-    `#kgen.param_list.reduce<`,
-    BaseVal,
-    `,`,
-    ParamListType,
-    `,`,
-    _IndexToIntValueWrap[From, Variadic.TypesOfTrait[To], Reducer, ...],
-    `> : `,
-    type_of(BaseVal),
-]
 comptime _ReduceVariadicAndIdxToValue[
     FromAndTo: AnyType,
     ListEltType: type_of(AnyType),
