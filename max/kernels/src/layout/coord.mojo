@@ -20,7 +20,6 @@ from std.math.uutils import umod, ufloordiv
 from std.builtin.variadics import (
     Variadic,
     _ReduceVariadicAndIdxToVariadic,
-    _ReduceValueAndIdxToVariadic,
     _ReduceVariadicAndIdxToValue,
 )
 from std.sys.intrinsics import _type_is_eq_parse_time
@@ -1598,18 +1597,12 @@ comptime _StaticProduct[
 ]
 
 comptime _IntToComptimeIntMapper[
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.ValuesOfType[Int],
     idx: Int,
-] = Variadic.concat_types[Prev, Variadic.types[ComptimeInt[From[idx]]]]
+]: CoordLike = ComptimeInt[idx]
 
 
-comptime _IntToComptimeInt[*values: Int] = TypeList[
-    _ReduceValueAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=values.values,
-        Reducer=_IntToComptimeIntMapper,
-    ]
+comptime _IntToComptimeInt[*values: Int] = values.map_to_type[
+    _IntToComptimeIntMapper
 ]()
 
 comptime _IntTupleToCoordLikeMapper[

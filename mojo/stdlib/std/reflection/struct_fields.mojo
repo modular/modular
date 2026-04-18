@@ -380,9 +380,7 @@ def struct_field_names[
 
     # Safety: uninitialized=True is safe here because the comptime for loop
     # guarantees complete initialization of all elements at compile time.
-    var result = InlineArray[StaticString, struct_field_count[T]()](
-        uninitialized=True
-    )
+    var result = InlineArray[StaticString, count](uninitialized=True)
 
     comptime for i in range(raw.size):
         result[i] = comptime (StaticString(raw[i]))

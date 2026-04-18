@@ -15,7 +15,6 @@ from std.builtin.variadics import (
     ParameterList,
     TypeList,
     Variadic,
-    _ReduceValueAndIdxToVariadic,
 )
 from std.sys.intrinsics import _type_is_eq
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
@@ -103,16 +102,12 @@ struct WithValue[value: Int](HasStaticValue, ImplicitlyCopyable):
 
 
 comptime _IntToWithValueMapper[
-    Prev: Variadic.TypesOfTrait[HasStaticValue],
-    From: Variadic.ValuesOfType[Int],
-    idx: Int,
-] = Variadic.concat_types[Prev, Variadic.types[WithValue[From[idx]]]]
+    value: Int,
+]: HasStaticValue = WithValue[value]
 
-comptime IntToWithValue[*values: Int] = _ReduceValueAndIdxToVariadic[
-    BaseVal=Variadic.empty_of_trait[HasStaticValue],
-    ParamListType=values.values,
-    Reducer=_IntToWithValueMapper,
-]
+comptime IntToWithValue[*values: Int] = values.map_to_type[
+    _IntToWithValueMapper
+]()
 
 
 def test_variadic_value_reducer() raises:
@@ -120,12 +115,12 @@ def test_variadic_value_reducer() raises:
     assert_true(_type_is_eq[mapped_values[0], WithValue[1]]())
     assert_true(_type_is_eq[mapped_values[1], WithValue[2]]())
     assert_true(_type_is_eq[mapped_values[2], WithValue[3]]())
-    assert_equal(TypeList[mapped_values].size, 3)
+    assert_equal(mapped_values.size, 3)
 
 
 def test_variadic_value_reducer_empty() raises:
     comptime mapped_values = IntToWithValue[*ParameterList.empty_of[Int]()]
-    assert_equal(TypeList[mapped_values].size, 0)
+    assert_equal(mapped_values.size, 0)
 
 
 def test_variadic_splatted() raises:
