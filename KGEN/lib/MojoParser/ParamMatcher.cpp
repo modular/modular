@@ -442,8 +442,18 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     // Now assemble the kgen.variadic parameter value and match it against the
     // expected one.
     auto varType = ParamListType::get(variadicElType);
-    auto variadicAttr = ParamListAttr::get(elements, varType);
-    PROP(matchParams(variadicAttr, variadic));
+    PROP(matchParams(ParamListAttr::get(elements, varType), variadic));
+
+    // Now that the Variadic has a value, infer the TypeList for the
+    // VariadicPack as well.
+    auto typeListParam =
+        expectedArgVariadicPackType.getVariadicPackInfo().typeListStruct;
+    auto typeListType = typeListParam.getType();
+    // We need to adjust the depth because we took it out of the function type
+    // for the expected function type.
+    typeListType = IndexDepthAdjuster(/*adjustDepth=*/-1).replace(typeListType);
+    typeListType = state.evaluator.getReboundType(typeListType);
+    PROP(matchParams(UnknownAttr::get(typeListType), typeListParam));
   }
 
   // The function types are convertible.

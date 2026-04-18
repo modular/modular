@@ -94,3 +94,17 @@ LogicalResult InferenceState::setInferredValue(size_t paramIdx,
   // TODO: how about we just emitting unprovable error here right away?
   return success(result == ConstraintResult::Satisfied);
 }
+
+void InferenceState::dump() const {
+  auto &os = llvm::errs() << "ParamInf:\n";
+  for (auto [idx, value] : llvm::enumerate(evaluator.getIndexBindings())) {
+    os << "  *(0," << idx << ") = ";
+    if (value)
+      os << value;
+    else
+      os << "<not yet set> : "
+         << const_cast<InferenceState *>(this)->evaluator.getReboundType(
+                declaredParamTypes[idx]);
+    os << "\n";
+  }
+}

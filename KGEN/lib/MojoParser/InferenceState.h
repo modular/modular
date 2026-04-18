@@ -86,6 +86,9 @@ public:
 
   SmallVector<ConstraintAttr> unprovableConstraints;
 
+  // Debug util.
+  void dump() const;
+
 protected:
   friend class ParamMatcher;
 

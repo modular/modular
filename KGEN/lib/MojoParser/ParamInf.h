@@ -66,9 +66,6 @@ public:
     return setInferredValue(paramIdx, paramVal);
   }
 
-  // Debug util.
-  void dump() const;
-
 private:
   /// Infer all of the parameters we can from 'givenBindings'.
   ///
