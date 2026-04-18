@@ -66,19 +66,6 @@ struct Variadic:
     # Contains
     # ===-----------------------------------------------------------------------===#
 
-    comptime map_types_to_types[
-        From: type_of(AnyType),
-        To: type_of(AnyType),
-        //,
-        element_types: TypeList[Trait=From, ...],
-        Mapper: _TypeToTypeGenerator[From, To],
-    ] = TypeList[
-        _ReduceVariadicAndIdxToVariadic[
-            BaseVal=Variadic.empty_of_trait[To],
-            ParamListType=element_types.values,
-            Reducer=_MapTypeToTypeReducer[From, To, Mapper, ...],
-        ]
-    ]
     comptime slice_types[
         T: type_of(AnyType),
         //,
@@ -89,22 +76,6 @@ struct Variadic:
         BaseVal=Variadic.empty_of_trait[T],
         ParamListType=element_types.values,
         Reducer=_SliceReducer[T, start, end, ...],
-    ]
-    comptime zip_types[
-        Trait: type_of(AnyType), //, *types: Variadic.TypesOfTrait[Trait]
-    ] = __mlir_attr[
-        `#kgen.param_list.zip<`,
-        types.values,
-        `> : `,
-        _MLIR.KGENParamListType[Variadic.TypesOfTrait[Trait]],
-    ]
-    comptime zip_values[
-        type: AnyType, //, *values: Variadic.ValuesOfType[type]
-    ] = __mlir_attr[
-        `#kgen.param_list.zip<`,
-        values.values,
-        `> : `,
-        _MLIR.KGENParamListType[Variadic.ValuesOfType[type]],
     ]
     comptime filter_types[
         T: type_of(AnyType),
@@ -189,42 +160,10 @@ comptime _ReduceVariadicAndIdxToVariadic[
     type_of(BaseVal),
 ]
 
-comptime _ReduceVariadicAndIdxToValue[
-    FromAndTo: AnyType,
-    ListEltType: type_of(AnyType),
-    //,
-    *,
-    BaseVal: FromAndTo,
-    ParamListType: Variadic.TypesOfTrait[ListEltType],
-    Reducer: _ReduceVariadicIdxGeneratorTypeGenerator[FromAndTo, ListEltType],
-] = __mlir_attr[
-    `#kgen.param_list.reduce<`,
-    BaseVal,
-    `,`,
-    ParamListType,
-    `,`,
-    _IndexToIntWrap[ListEltType, FromAndTo, Reducer, ...],
-    `> : `,
-    type_of(BaseVal),
-]
 # ===-----------------------------------------------------------------------===#
 # VariadicMap
 # ===-----------------------------------------------------------------------===#
 
-comptime _TypeToTypeGenerator[
-    From: type_of(AnyType), To: type_of(AnyType)
-] = __mlir_type[`!lit.generator<<"From":`, From, `>`, To, `>`]
-comptime _VariadicIdxToTypeGeneratorTypeGenerator[
-    From: type_of(AnyType), To: type_of(AnyType)
-] = __mlir_type[
-    `!lit.generator<<"From": `,
-    _MLIR.KGENTypeListType[From],
-    `, "Idx":`,
-    Int,
-    `>`,
-    To,
-    `>`,
-]
 comptime _WrapVariadicIdxToTypeMapperToReducer[
     F: type_of(AnyType),
     T: type_of(AnyType),
@@ -281,16 +220,6 @@ comptime _ContainsReducer[
     idx: Int,
 ] = Variadic.values[_type_is_eq_parse_time[From[idx], Type]() or Prev[0]]
 
-comptime _MapTypeToTypeReducer[
-    FromTrait: type_of(AnyType),
-    ToTrait: type_of(AnyType),
-    Mapper: _TypeToTypeGenerator[FromTrait, ToTrait],
-    Prev: Variadic.TypesOfTrait[ToTrait],
-    From: Variadic.TypesOfTrait[FromTrait],
-    idx: Int,
-] = Variadic.concat_types[
-    Prev, Variadic.types[T=ToTrait, Mapper[TypeList[From]()[idx]]]
-]
 
 comptime _SliceReducer[
     Trait: type_of(AnyType),
