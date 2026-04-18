@@ -66,19 +66,6 @@ struct Variadic:
     # Contains
     # ===-----------------------------------------------------------------------===#
 
-    comptime contains[
-        Trait: type_of(AnyType),
-        //,
-        type: Trait,
-        element_types: Variadic.TypesOfTrait[Trait],
-    ] = _ReduceVariadicAndIdxToValue[
-        BaseVal=Variadic.values[False],
-        ParamListType=element_types,
-        #  Curry `_ContainsMapper` to fit the reducer signature
-        Reducer=_ContainsReducer[Trait=Trait, Type=type, ...],
-    ][
-        0
-    ]
     comptime map_types_to_types[
         From: type_of(AnyType),
         To: type_of(AnyType),
