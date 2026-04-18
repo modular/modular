@@ -936,21 +936,6 @@ def implicitarg_ptr(
 
 
 @always_inline
-def readfirstlane(value: Int32) -> Int32:
-    """
-    Get the value in the lowest active lane of the input operand.
-
-    Args:
-        value: The input value.
-
-    Returns:
-        The value in the lowest active lane of the input operand.
-    """
-    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
-    return llvm_intrinsic["llvm.amdgcn.readfirstlane.i32", Int32, Int32](value)
-
-
-@always_inline
 def readfirstlane(value: UnsafePointer) -> type_of(value):
     """
     Get the value in the lowest active lane of the input operand.
@@ -981,6 +966,31 @@ def readfirstlane(value: Int) -> type_of(value):
     comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
     return llvm_intrinsic[
         "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
+    ](value)
+
+
+@always_inline
+def readfirstlane[dtype: DType](value: Scalar[dtype]) -> Scalar[dtype]:
+    """Gets the value in the lowest active lane of the input operand.
+
+    Constraints:
+        The scalar type must be 2, 4, or 8 bytes wide.
+
+    Parameters:
+        dtype: The element type.
+
+    Args:
+        value: The input scalar value.
+
+    Returns:
+        The value in the lowest active lane of the input operand.
+    """
+    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
+    comptime assert (
+        size_of[Scalar[dtype]]() >= 2
+    ), "readfirstlane requires a scalar type of at least 16 bits"
+    return llvm_intrinsic[
+        "llvm.amdgcn.readfirstlane", Scalar[dtype], Scalar[dtype]
     ](value)
 
 

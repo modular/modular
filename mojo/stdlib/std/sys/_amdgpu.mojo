@@ -590,9 +590,7 @@ struct Header(TrivialRegisterPassable):
                 var control = Atomic.load[ordering=Ordering.ACQUIRE](ptr)
                 ready_flag = get_ready_flag(control)
 
-            ready_flag = readfirstlane(ready_flag.cast[DType.int32]()).cast[
-                DType.uint32
-            ]()
+            ready_flag = readfirstlane(ready_flag)
 
             if ready_flag == 0:
                 break
@@ -683,15 +681,7 @@ struct Buffer(TrivialRegisterPassable):
                 UnsafePointer(to=self._handle[].free_stack),
             )
 
-        var ptr_lo = packet_ptr
-        var ptr_hi = packet_ptr >> 32
-        var ptr_lo_32 = readfirstlane(ptr_lo.cast[DType.int32]())
-        var ptr_hi_32 = readfirstlane(ptr_hi.cast[DType.int32]())
-
-        return (
-            ptr_hi_32.cast[DType.uint64]() << 32
-            | ptr_lo_32.cast[DType.uint64]()
-        )
+        return readfirstlane(packet_ptr)
 
     def push(mut self, top: UnsafePointer[mut=True, UInt64, ...], ptr: UInt64):
         var f = Atomic.load[ordering=Ordering.RELAXED](top)
@@ -882,7 +872,7 @@ def hostcall(
     )
 
     var me = UInt32(lane_id())
-    var low = readfirstlane(Int32(me)).cast[DType.uint32]()
+    var low = readfirstlane(me)
 
     var packet_ptr = buffer.pop_free_stack(me, low)
 

@@ -189,7 +189,7 @@ def _warp_id[
     var res = ufloordiv(thread_idx.x, WARP_SIZE)
     comptime if broadcast:
         comptime if is_amd_gpu():
-            res = Int(readfirstlane(Int32(res)))
+            res = readfirstlane(res)
         else:
             res = warp.broadcast(res)
     return ResultType(from_int=res)

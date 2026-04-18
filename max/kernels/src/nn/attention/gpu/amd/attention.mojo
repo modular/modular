@@ -832,9 +832,9 @@ struct Attention[
         comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()
 
         comptime if is_causal_mask and Self.attention_config_t.double_buffer:
-            self.scale = bitcast[DType.float32](
-                readfirstlane(bitcast[DType.int32](scale_log2e))
-            ).cast[Self.accum_type]()
+            self.scale = readfirstlane(scale_log2e.cast[DType.float32]()).cast[
+                Self.accum_type
+            ]()
         else:
             self.scale = scale_log2e
         self.seq_len = seq_len

@@ -18,7 +18,6 @@ and SMEM tile management, with TiledMmaOp for MMA dispatch.
 
 from std.math import ceildiv
 from std.sys import simd_width_of, llvm_intrinsic, get_defined_bool
-from std.sys.intrinsics import readfirstlane
 from std.gpu import WARP_SIZE
 from std.gpu import warp_id as get_warp_id
 from std.gpu.sync import (
@@ -96,9 +95,7 @@ __extension Attention:
 
         # --- Buffer init ---
 
-        var warp_id = UInt32(
-            readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
-        )
+        var warp_id = UInt32(get_warp_id[broadcast=True]())
         var k_buffer = StructuredKVBuffer[
             mma_shape=Self.mma_shape,
             k_group_size=Self.k_group_size,
