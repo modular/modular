@@ -891,7 +891,7 @@ struct Variant[*Ts: Movable](
         ]()[]
 
     @staticmethod
-    def is_type_supported[T: AnyType]() -> Bool:
+    def is_type_supported[T: Movable]() -> Bool:
         """Check if a type can be used by the `Variant`.
 
         Parameters:
@@ -918,7 +918,7 @@ struct Variant[*Ts: Movable](
 
         For example, the `Variant[Int, Bool]` permits `Int` and `Bool`.
         """
-        return Variadic.contains[Trait=AnyType, T, Self.Ts.values]
+        return Self.Ts.contains[T]()
 
     # TODO(MOCO-2367): Use a `unified` closure parameter here instead.
     def destroy_with[T: Movable](deinit self, destroy_func: def(var T) thin):

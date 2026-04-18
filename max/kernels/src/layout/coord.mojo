@@ -17,11 +17,7 @@ from std.sys.intrinsics import _type_is_eq
 from std.utils import IndexList
 from std.math.uutils import umod, ufloordiv
 
-from std.builtin.variadics import (
-    Variadic,
-    _ReduceVariadicAndIdxToVariadic,
-    _ReduceVariadicAndIdxToValue,
-)
+from std.builtin.variadics import _ReduceVariadicAndIdxToVariadic
 from std.sys.intrinsics import _type_is_eq_parse_time
 
 
@@ -447,9 +443,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     comptime is_flat = Self.rank == Self.flat_rank
     """If the `Coord` contains nested items."""
 
-    comptime contains_slices = Variadic.contains[
-        Trait=CoordLike, type_of(All), Self.element_types.values
-    ]
+    comptime contains_slices = Self.element_types.contains[type_of(All)]()
     """If the `Coord` contains the `All` symbol."""
 
     var _storage: _RegTuple[*Self.element_types]
@@ -1553,47 +1547,30 @@ def _get_flattened[
     return _get_flattened_helper[flat_idx, 0, 0](tuple)
 
 
-comptime _AllStaticReducer[
-    Prev: Bool,
-    From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
-] = From[idx].is_static_value and Prev
+comptime _IsStaticPredicate[T: CoordLike] = T.is_static_value
 
+comptime _AllStatic[*element_types: CoordLike] = element_types.all_satisfies[
+    _IsStaticPredicate,
+]()
 
-comptime _AllStatic[*element_types: CoordLike] = _ReduceVariadicAndIdxToValue[
-    BaseVal=True,
-    ParamListType=element_types.values,
-    Reducer=_AllStaticReducer,
-]
-
-comptime _AllEqualReducer[
-    T: AnyType,
-    Prev: Bool,
-    From: Variadic.TypesOfTrait[AnyType],
-    idx: Int,
-] = _type_is_eq_parse_time[From[idx], T]() and (Prev or idx == 0)
+comptime _AllEqualPredicate[
+    T1: AnyType, T2: type_of(T1)
+] = _type_is_eq_parse_time[T1, T2]()
 
 comptime _AllEqual[
     T: AnyType, *element_types: AnyType
-] = _ReduceVariadicAndIdxToValue[
-    BaseVal=False,
-    ParamListType=element_types.values,
-    Reducer=_AllEqualReducer[T, ...],
-]
+] = element_types.all_satisfies[
+    _AllEqualPredicate[T, _],
+]()
 
 comptime _StaticProductReducer[
     Prev: Int,
-    From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
-] = From[idx].static_value * Prev
+    T: CoordLike,
+] = Prev * T.static_value
 
-
-comptime _StaticProduct[
-    *element_types: CoordLike
-] = _ReduceVariadicAndIdxToValue[
-    BaseVal=1,
-    ParamListType=element_types.values,
-    Reducer=_StaticProductReducer,
+comptime _StaticProduct[*element_types: CoordLike] = element_types.reduce[
+    1,
+    _StaticProductReducer,
 ]
 
 comptime _IntToComptimeIntMapper[

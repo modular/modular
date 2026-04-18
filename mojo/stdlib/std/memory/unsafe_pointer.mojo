@@ -1019,39 +1019,29 @@ struct UnsafePointer[
     @staticmethod
     def _is_convertible_to_device_type[T: AnyType]() -> Bool:
         comptime if Self.mut:
-            return Variadic.contains[
-                T,
-                Variadic.types[
-                    T=AnyType,
-                    Self,
-                    Self._OriginCastType[MutAnyOrigin],
-                    Self._OriginCastType[MutExternalOrigin],
-                    Self._OriginCastType[ImmutAnyOrigin],
-                    Self._OriginCastType[ImmutExternalOrigin],
-                    Self._UnsafePointerType,
-                    Self._UnsafePointerType._OriginCastType[MutAnyOrigin],
-                    Self._UnsafePointerType._OriginCastType[MutExternalOrigin],
-                    Self._UnsafePointerType._OriginCastType[ImmutAnyOrigin],
-                    Self._UnsafePointerType._OriginCastType[
-                        ImmutExternalOrigin
-                    ],
-                ],
-            ]
+            return TypeList.of[
+                Trait=AnyType,
+                Self,
+                Self._OriginCastType[MutAnyOrigin],
+                Self._OriginCastType[MutExternalOrigin],
+                Self._OriginCastType[ImmutAnyOrigin],
+                Self._OriginCastType[ImmutExternalOrigin],
+                Self._UnsafePointerType,
+                Self._UnsafePointerType._OriginCastType[MutAnyOrigin],
+                Self._UnsafePointerType._OriginCastType[MutExternalOrigin],
+                Self._UnsafePointerType._OriginCastType[ImmutAnyOrigin],
+                Self._UnsafePointerType._OriginCastType[ImmutExternalOrigin],
+            ]().contains[T]()
         else:
-            return Variadic.contains[
-                T,
-                Variadic.types[
-                    T=AnyType,
-                    Self,
-                    Self._OriginCastType[ImmutAnyOrigin],
-                    Self._OriginCastType[ImmutExternalOrigin],
-                    Self._UnsafePointerType,
-                    Self._UnsafePointerType._OriginCastType[ImmutAnyOrigin],
-                    Self._UnsafePointerType._OriginCastType[
-                        ImmutExternalOrigin
-                    ],
-                ],
-            ]
+            return TypeList.of[
+                Trait=AnyType,
+                Self,
+                Self._OriginCastType[ImmutAnyOrigin],
+                Self._OriginCastType[ImmutExternalOrigin],
+                Self._UnsafePointerType,
+                Self._UnsafePointerType._OriginCastType[ImmutAnyOrigin],
+                Self._UnsafePointerType._OriginCastType[ImmutExternalOrigin],
+            ]().contains[T]()
 
     def _to_device_type(self, target: MutOpaquePointer[_]):
         """Device dtype mapping from DeviceBuffer to the device's UnsafePointer.

@@ -441,4 +441,4 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
 
         Returns True if found, False otherwise.
         """
-        return Variadic.contains[type=T, element_types=Self.Ts.values]
+        return Self.Ts.contains[T]()

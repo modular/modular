@@ -110,6 +110,26 @@ comptime IntToWithValue[*values: Int] = values.map_to_type[
 ]()
 
 
+comptime _HasStaticToIntMapper[T: HasStaticValue]: Int = T.STATIC_VALUE
+
+
+def test_type_list_map_to_values() raises:
+    comptime pl = TypeList.of[
+        Trait=HasStaticValue, WithValue[10], WithValue[20], WithValue[30]
+    ]().map_to_values[_HasStaticToIntMapper]()
+    assert_equal(pl.size, 3)
+    assert_equal(pl[0], 10)
+    assert_equal(pl[1], 20)
+    assert_equal(pl[2], 30)
+
+
+def test_type_list_map_to_values_empty() raises:
+    comptime pl = TypeList.of[Trait=HasStaticValue]().map_to_values[
+        _HasStaticToIntMapper
+    ]()
+    assert_equal(pl.size, 0)
+
+
 def test_variadic_value_reducer() raises:
     comptime mapped_values = IntToWithValue[1, 2, 3]
     assert_true(_type_is_eq[mapped_values[0], WithValue[1]]())
@@ -162,22 +182,18 @@ def test_parameter_list_splat_zero() raises:
 
 
 def test_variadic_contains() raises:
-    comptime variadic = Variadic.types[T=Writable, Int, String, Float32]
-    assert_equal(TypeList[variadic].size, 3)
-    comptime ContainsWritable = Variadic.contains[Trait=Writable, ...]
-    assert_true(ContainsWritable[Int, variadic])
-    assert_true(ContainsWritable[String, variadic])
-    assert_true(ContainsWritable[Float32, variadic])
-    assert_false(ContainsWritable[Bool, variadic])
+    comptime variadic = TypeList.of[Trait=Writable, Int, String, Float32]()
+    assert_equal(variadic.size, 3)
+    assert_true(variadic.contains[Int]())
+    assert_true(variadic.contains[String]())
+    assert_true(variadic.contains[Float32]())
+    assert_false(variadic.contains[Bool]())
 
 
 def test_variadic_contains_empty() raises:
-    comptime variadic = TypeList[
-        Trait=Writable, Variadic.empty_of_trait[Writable]
-    ]
+    comptime variadic = TypeList.of[Trait=Writable]()
     assert_equal(variadic.size, 0)
-    comptime ContainsWritable = Variadic.contains[Trait=Writable, ...]
-    assert_false(ContainsWritable[Bool, variadic.values])
+    assert_false(variadic.contains[Bool]())
 
 
 def test_variadic_contains_value() raises:
@@ -586,10 +602,47 @@ def test_typelist_reversed() raises:
 
 def test_typelist_contains() raises:
     comptime TL = TypeList.of[Trait=AnyType, Int, String, Float64]()
-    comptime assert TL.contains[Int]
-    comptime assert TL.contains[String]
-    comptime assert TL.contains[Float64]
-    comptime assert not TL.contains[Bool]
+    comptime assert TL.contains[Int]()
+    comptime assert TL.contains[String]()
+    comptime assert TL.contains[Float64]()
+    comptime assert not TL.contains[Bool]()
+
+
+def test_typelist_reduce() raises:
+    comptime TL = TypeList.of[Trait=AnyType, Int, String, Float64]()
+
+    comptime CountTypes[accum: Int, element: AnyType] = accum + 1
+    comptime count = TL.reduce[0, CountTypes]
+    assert_equal(count, 3)
+
+
+def test_typelist_any_all_satisfies() raises:
+    comptime TL = TypeList.of[Trait=AnyType, Int, String, Float64]()
+
+    comptime IsInt[T: AnyType] = _type_is_eq[T, Int]()
+    comptime IsNumber[T: AnyType] = _type_is_eq[T, Int]() or _type_is_eq[
+        T, Float64
+    ]()
+
+    comptime assert TL.any_satisfies[IsInt]()
+    comptime assert TL.any_satisfies[IsNumber]()
+
+    comptime IsBool[T: AnyType] = _type_is_eq[T, Bool]()
+    comptime assert not TL.any_satisfies[IsBool]()
+
+    comptime AlwaysTrue[T: AnyType] = True
+    comptime assert TL.all_satisfies[AlwaysTrue]()
+
+    comptime IsIntOrString[T: AnyType] = _type_is_eq[T, Int]() or _type_is_eq[
+        T, String
+    ]()
+    comptime assert not TL.all_satisfies[IsIntOrString]()
+
+
+def test_typelist_all_satisfies_empty() raises:
+    comptime TL = TypeList.of[Trait=AnyType]()
+    comptime AlwaysFalse[T: AnyType] = False
+    comptime assert TL.all_satisfies[AlwaysFalse]()
 
 
 def test_typelist_slice() raises:

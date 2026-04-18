@@ -13,161 +13,107 @@
 """Compile-time meta functions for checking trait conformance across variadic type lists.
 """
 
-from std.builtin.variadics import _ReduceVariadicAndIdxToValue
-
-comptime AllWritable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=True,
-    ParamListType=Ts.values,
-    Reducer=_AllWritableReducer,
-]
+comptime AllWritable[*Ts: AnyType]: Bool = Ts.all_satisfies[
+    _IsWritablePredicate,
+]()
 """Evaluates to `True` if all types in `Ts` conform to `Writable`, `False` otherwise.
 
 Parameters:
     Ts: The types to check for conformance to `Writable`.
 """
 
-comptime _AllWritableReducer[
-    Prev: Bool,
-    From: Variadic.TypesOfTrait[AnyType],
-    idx: SIMDSize,
-] = conforms_to(From[idx], Writable) and Prev
+comptime _IsWritablePredicate[T: AnyType]: Bool = conforms_to(T, Writable)
 
-comptime AllMovable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=True,
-    ParamListType=Ts.values,
-    Reducer=_AllMovableReducer,
-]
+comptime AllMovable[*Ts: AnyType]: Bool = Ts.all_satisfies[
+    _IsMovablePredicate,
+]()
 """Evaluates to `True` if all types in `Ts` conform to `Movable`, `False` otherwise.
 
 Parameters:
     Ts: The types to check for conformance to `Movable`.
 """
 
-comptime _AllMovableReducer[
-    Prev: Bool,
-    From: Variadic.TypesOfTrait[AnyType],
-    idx: SIMDSize,
-] = conforms_to(From[idx], Movable) and Prev
+comptime _IsMovablePredicate[T: AnyType]: Bool = conforms_to(T, Movable)
 
-comptime AllCopyable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=True,
-    ParamListType=Ts.values,
-    Reducer=_AllCopyableReducer,
-]
+comptime AllCopyable[*Ts: AnyType]: Bool = Ts.all_satisfies[
+    _IsCopyablePredicate,
+]()
 """Evaluates to `True` if all types in `Ts` conform to `Copyable`, `False` otherwise.
 
 Parameters:
     Ts: The types to check for conformance to `Copyable`.
 """
 
-comptime _AllCopyableReducer[
-    Prev: Bool,
-    From: Variadic.TypesOfTrait[AnyType],
-    idx: SIMDSize,
-] = conforms_to(From[idx], Copyable) and Prev
+comptime _IsCopyablePredicate[T: AnyType]: Bool = conforms_to(T, Copyable)
 
-comptime AllImplicitlyCopyable[
-    *Ts: AnyType
-]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=True,
-    ParamListType=Ts.values,
-    Reducer=_AllImplicitlyCopyableReducer,
-]
+comptime AllImplicitlyCopyable[*Ts: AnyType]: Bool = Ts.all_satisfies[
+    _IsImplicitlyCopyablePredicate,
+]()
 """Evaluates to `True` if all types in `Ts` conform to `ImplicitlyCopyable`, `False` otherwise.
 
 Parameters:
     Ts: The types to check for conformance to `ImplicitlyCopyable`.
 """
 
-comptime _AllImplicitlyCopyableReducer[
-    Prev: Bool,
-    From: Variadic.TypesOfTrait[AnyType],
-    idx: SIMDSize,
-] = conforms_to(From[idx], ImplicitlyCopyable) and Prev
+comptime _IsImplicitlyCopyablePredicate[T: AnyType]: Bool = conforms_to(
+    T, ImplicitlyCopyable
+)
 
-comptime AllDefaultable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=True,
-    ParamListType=Ts.values,
-    Reducer=_AllDefaultableReducer,
-]
+comptime AllDefaultable[*Ts: AnyType]: Bool = Ts.all_satisfies[
+    _IsDefaultablePredicate,
+]()
 """Evaluates to `True` if all types in `Ts` conform to `Defaultable`, `False` otherwise.
 
 Parameters:
     Ts: The types to check for conformance to `Defaultable`.
 """
 
-comptime _AllDefaultableReducer[
-    Prev: Bool,
-    From: Variadic.TypesOfTrait[AnyType],
-    idx: SIMDSize,
-] = conforms_to(From[idx], Defaultable) and Prev
+comptime _IsDefaultablePredicate[T: AnyType]: Bool = conforms_to(T, Defaultable)
 
-comptime AllEquatable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=True,
-    ParamListType=Ts.values,
-    Reducer=_AllEquatableReducer,
-]
+comptime AllEquatable[*Ts: AnyType]: Bool = Ts.all_satisfies[
+    _IsEquatablePredicate,
+]()
 """Evaluates to `True` if all types in `Ts` conform to `Equatable`, `False` otherwise.
 
 Parameters:
     Ts: The types to check for conformance to `Equatable`.
 """
 
-comptime _AllEquatableReducer[
-    Prev: Bool,
-    From: Variadic.TypesOfTrait[AnyType],
-    idx: SIMDSize,
-] = conforms_to(From[idx], Equatable) and Prev
+comptime _IsEquatablePredicate[T: AnyType]: Bool = conforms_to(T, Equatable)
 
-comptime AllHashable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=True,
-    ParamListType=Ts.values,
-    Reducer=_AllHashableReducer,
-]
+comptime AllHashable[*Ts: AnyType]: Bool = Ts.all_satisfies[
+    _IsHashablePredicate,
+]()
 """Evaluates to `True` if all types in `Ts` conform to `Hashable`, `False` otherwise.
 
 Parameters:
     Ts: The types to check for conformance to `Hashable`.
 """
 
-comptime _AllHashableReducer[
-    Prev: Bool,
-    From: Variadic.TypesOfTrait[AnyType],
-    idx: SIMDSize,
-] = conforms_to(From[idx], Hashable) and Prev
+comptime _IsHashablePredicate[T: AnyType]: Bool = conforms_to(T, Hashable)
 
-comptime AllImplicitlyDestructible[
-    *Ts: AnyType
-]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=True,
-    ParamListType=Ts.values,
-    Reducer=_AllImplicitlyDestructibleReducer,
-]
+comptime AllImplicitlyDestructible[*Ts: AnyType]: Bool = Ts.all_satisfies[
+    _IsImplicitlyDestructiblePredicate,
+]()
 """Evaluates to `True` if all types in `Ts` conform to `ImplicitlyDestructible`, `False` otherwise.
 
 Parameters:
     Ts: The types to check for conformance to `ImplicitlyDestructible`.
 """
 
-comptime _AllImplicitlyDestructibleReducer[
-    Prev: Bool,
-    From: Variadic.TypesOfTrait[AnyType],
-    idx: SIMDSize,
-] = conforms_to(From[idx], ImplicitlyDestructible) and Prev
+comptime _IsImplicitlyDestructiblePredicate[T: AnyType]: Bool = conforms_to(
+    T, ImplicitlyDestructible
+)
 
-comptime AllRegisterPassable[*Ts: AnyType]: Bool = _ReduceVariadicAndIdxToValue[
-    BaseVal=True,
-    ParamListType=Ts.values,
-    Reducer=_AllRegisterPassableReducer,
-]
+comptime AllRegisterPassable[*Ts: AnyType]: Bool = Ts.all_satisfies[
+    _IsRegisterPassablePredicate,
+]()
 """Evaluates to `True` if all types in `Ts` conform to `RegisterPassable`, `False` otherwise.
 
 Parameters:
     Ts: The types to check for conformance to `RegisterPassable`.
 """
 
-comptime _AllRegisterPassableReducer[
-    Prev: Bool,
-    From: Variadic.TypesOfTrait[AnyType],
-    idx: SIMDSize,
-] = conforms_to(From[idx], RegisterPassable) and Prev
+comptime _IsRegisterPassablePredicate[T: AnyType]: Bool = conforms_to(
+    T, RegisterPassable
+)

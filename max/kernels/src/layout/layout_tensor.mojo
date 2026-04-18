@@ -312,27 +312,21 @@ struct LayoutTensor[
     @staticmethod
     def _is_convertible_to_device_type[T: AnyType]() -> Bool:
         comptime if Self.mut:
-            return Variadic.contains[
-                T,
-                Variadic.types[
-                    T=AnyType,
-                    Self,
-                    Self.OriginCastType[MutAnyOrigin],
-                    Self.OriginCastType[MutExternalOrigin],
-                    Self.OriginCastType[ImmutAnyOrigin],
-                    Self.OriginCastType[ImmutExternalOrigin],
-                ],
-            ]
+            return TypeList.of[
+                Trait=AnyType,
+                Self,
+                Self.OriginCastType[MutAnyOrigin],
+                Self.OriginCastType[MutExternalOrigin],
+                Self.OriginCastType[ImmutAnyOrigin],
+                Self.OriginCastType[ImmutExternalOrigin],
+            ]().contains[T]()
         else:
-            return Variadic.contains[
-                T,
-                Variadic.types[
-                    T=AnyType,
-                    Self,
-                    Self.OriginCastType[ImmutAnyOrigin],
-                    Self.OriginCastType[ImmutExternalOrigin],
-                ],
-            ]
+            return TypeList.of[
+                Trait=AnyType,
+                Self,
+                Self.OriginCastType[ImmutAnyOrigin],
+                Self.OriginCastType[ImmutExternalOrigin],
+            ]().contains[T]()
 
     def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self

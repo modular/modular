@@ -350,7 +350,7 @@ struct Layout[
     """The compile-time product of all shape dimensions (handles nested Coords)."""
 
     comptime static_cosize = _StaticCosize[
-        Self._flat_shape_types.values, Self._flat_stride_types.values
+        Self._flat_shape_types, Self._flat_stride_types
     ]
     """The compile-time size of the memory region spanned by the layout."""
 
@@ -762,12 +762,12 @@ comptime _StaticCosizeReducer[
 
 
 comptime _StaticCosize[
-    Shapes: Variadic.TypesOfTrait[CoordLike],
-    Strides: Variadic.TypesOfTrait[CoordLike],
+    Shapes: TypeList[Trait=CoordLike, ...],
+    Strides: TypeList[Trait=CoordLike, ...],
 ] = _ReduceVariadicAndIdxToValue[
     BaseVal=1,
-    ParamListType=Shapes,
-    Reducer=_StaticCosizeReducer[Strides=Strides, ...],
+    ParamListType=Shapes.values,
+    Reducer=_StaticCosizeReducer[Strides.values, ...],
 ]
 
 
