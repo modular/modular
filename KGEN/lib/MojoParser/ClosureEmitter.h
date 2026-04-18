@@ -165,11 +165,6 @@ public:
   /// with the desired trait.
   LogicalResult isCompatibleWith(ASTType structType, ASTDecl *traitDecl);
 
-  CValue emitFnPtrConversion(OpBuilder &builder, Location location,
-                             ASTDecl &module, PValue fn, StructType &structTy);
-  PValue emitFnPtrConversion(Location location, PValue fn,
-                             StructType &structTy);
-
   struct ClosureParent {
     ClosureParent(StringRef name, StringRef fnName, ClosureMethod closureMethod)
         : traitName(name), traitFnName(fnName), closureMethod(closureMethod) {}

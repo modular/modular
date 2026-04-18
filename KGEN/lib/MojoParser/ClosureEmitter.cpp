@@ -75,36 +75,6 @@ static FnOp getInit(StructDeclOp structDeclOp) {
   return init;
 }
 
-struct FnPtrWrapperInitInfo {
-  FnTypeGeneratorType boundSig;
-  TypedAttr symbol;
-};
-
-static FnPtrWrapperInitInfo
-buildFnPtrWrapperInitInfo(SharedState &shared, Location location, PValue fn,
-                          LIT::StructType structTy) {
-  auto &structDecl =
-      shared.declResolver->getDeclForTypeSymbol(structTy.getSymbolRef());
-  auto structDeclOp = dyn_cast<StructDeclOp>(structDecl.getIfOperation());
-  TypedAttr fnVal = fn.get();
-  Type wrapperImplType = structDeclOp.getInputParams().front().getType();
-  assert(isEqualCanon(fnVal.getType(), wrapperImplType) &&
-         "wrapper impl type should match the wrapped function canonically");
-  if (fnVal.getType() != wrapperImplType)
-    fnVal = ParamOperatorAttr::getRebind(fnVal, wrapperImplType);
-  FnOp init = getInit(structDeclOp);
-  SymbolRefAttr symbolRef = getFullyResolvedSymbolRef(
-      cast<mlir::SymbolOpInterface>(init.getOperation()));
-  FnTypeGeneratorType fullSig =
-      LIT::getFullSignature(structDeclOp, init.getFuncTypeGenerator());
-  SmallVector<TypedAttr> paramArgs{fnVal};
-  FnTypeGeneratorType boundSig =
-      cast<FnTypeGeneratorType>(fullSig.getSpecializedGenerator(
-          paramArgs, /*evaluationContext=*/nullptr, location));
-  TypedAttr symbol = SymbolConstantAttr::get(symbolRef, boundSig, paramArgs);
-  return {.boundSig = boundSig, .symbol = symbol};
-}
-
 static LogicalResult emitForwardingCall(ImplicitLocOpBuilder &builder,
                                         ASTDecl &declScope, TypedAttr callee,
                                         FnTypeGeneratorType calleeSig,
@@ -3140,64 +3110,6 @@ ClosureEmitter::augmentWitnessTablesToConformTo(ASTType structType,
 LogicalResult ClosureEmitter::isCompatibleWith(ASTType structType,
                                                ASTDecl *traitDecl) {
   return checkStructCompatibility(structType, traitDecl, false);
-}
-
-CValue ClosureEmitter::emitFnPtrConversion(OpBuilder &builder,
-                                           Location location, ASTDecl &module,
-                                           PValue fn, StructType &structTy) {
-  auto initInfo = buildFnPtrWrapperInitInfo(shared, location, fn, structTy);
-  StringAttr fnName = StringAttr::get(shared.getContext(), "wrappedFnPtr");
-  VarDeclOp var = VarDeclOp::create(builder, location, structTy, fnName,
-                                    module.mangleParamName(fnName.getValue()),
-                                    VarDeclKind::Var);
-  SmallVector<Value> operands({var});
-  SmallVector<TypedAttr> implicitOrigins({var.getType().getOrigin()});
-  LIT::CallOp::create(builder, location,
-                      initInfo.boundSig.getBody().getResults(), initInfo.symbol,
-                      implicitOrigins, operands);
-  return MLValue(var);
-}
-
-PValue ClosureEmitter::emitFnPtrConversion(Location location, PValue fn,
-                                           StructType &structTy) {
-  auto initInfo = buildFnPtrWrapperInitInfo(shared, location, fn, structTy);
-  FnTypeGeneratorType boundSig = initInfo.boundSig;
-  TypedAttr symbol = initInfo.symbol;
-  assert(boundSig.getNumImplicitOriginDecls() == 1 &&
-         "wrapper init should only carry the result-slot origin");
-  assert(boundSig.hasMemoryOnlyResult() &&
-         "wrapper init should initialize through a byref result slot");
-
-  // The synthesized wrapper __init__ threads its result origin through an
-  // implicit parameter, which must become comptime-safe for apply.
-  FuncType fnType = boundSig.getBody();
-  SmallVector<Type> rewrittenArgTypes(fnType.getArguments());
-  auto resultSlotType = sugarCast<RefType>(rewrittenArgTypes.back());
-  auto comptimeOrigin = ComptimeOriginAttr::get(
-      boundSig.getContext(),
-      sugarCast<OriginType>(resultSlotType.getOrigin().getType()));
-  rewrittenArgTypes.back() =
-      RefType::get(resultSlotType.getElementType(), comptimeOrigin,
-                   resultSlotType.getAddressSpace());
-  FunctionType newFnType = FunctionType::get(
-      boundSig.getContext(), rewrittenArgTypes, fnType.getResults());
-  boundSig = boundSig.getWithBody(
-      FuncType::get(newFnType, boundSig.getArgConventions(),
-                    boundSig.getFnEffects(), boundSig.getFnMetadata()));
-  symbol = ParamOperatorAttr::getRebind(symbol, boundSig);
-
-  ArrayRef<Type> argTypes = boundSig.getArguments();
-  auto argConventions = boundSig.getArgConventions();
-  argTypes = argTypes.drop_back();
-  argConventions = argConventions.drop_back();
-  assert(argTypes.empty() && "wrapper init should have no explicit arguments");
-  assert(argConventions.empty() &&
-         "wrapper init should only use the result slot");
-
-  TypedAttr result = ParamOperatorAttr::get(POC::ApplyResultSlot, {symbol},
-                                            boundSig.getUserResultType());
-
-  return PValue(result);
 }
 
 void ClosureEmitter::addConformanceToDevicePassable(

@@ -22,9 +22,9 @@
 # CHECK-NEXT: }
 
 # CHECK: lit.fn @"wrap_fn()"
-# CHECK: %wrappedFnPtr = lit.var.decl "wrappedFnPtr" var
+# CHECK: %__call_result_tmp__ = lit.var.decl "__call_result_tmp__" synth
 # CHECK: %0 = lit.call {{.*}}:@"def(x: Int) -> Int_PtrWrapper"::@"__init__()"
-# CHECK: %1 = lit.ref.immut %wrappedFnPtr
+# CHECK: %1 = lit.ref.immut %__call_result_tmp__
 
 
 def top_level(x: Int) -> Int:

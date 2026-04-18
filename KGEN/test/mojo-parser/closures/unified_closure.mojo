@@ -1425,6 +1425,7 @@ def async_unified_closure():
 
     _ = inc()
 
+
 # // -----
 
 # COM: Verify promoted closures keep captured params before implicit origins.
@@ -1474,7 +1475,7 @@ def trigger_promoted_params[n: Int]():
 # COM: when passed as a value to a thin-compatible parameter.
 
 # CHECK-LABEL: lit.fn @"trigger_promoted_param_wrapper{{.*}}"<n: !Int>() -> !kgen.none
-# CHECK: %[[WRAP:.*]] = lit.var.decl "wrappedFnPtr" var : !lit.ref<!lit.struct<#PtrWrapper
+# CHECK: %[[WRAP:.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!lit.struct<#PtrWrapper
 # CHECK: lit.call @{{.*}}::@"def[U: AnyType{{.*}}_PtrWrapper"{{.*}}(%[[WRAP]])
 # CHECK: %[[WRAP_IMM:.*]] = lit.ref.immut %[[WRAP]]
 # CHECK: lit.call @{{.*}}::@"takesFatVale{{.*}}"{{.*}}(%[[WRAP_IMM]])
