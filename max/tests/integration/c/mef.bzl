@@ -12,7 +12,6 @@ MOJO_DEPS = [
     "//max:_cufft",
     "//max:_miopen",
     "//max:_rocblas",
-    "//max:buffer",
     "//max:comm",
     "//max:compiler_internal",
     "//max:internal_utils",

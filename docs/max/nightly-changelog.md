@@ -258,6 +258,11 @@ This version is still a work in progress.
   caches the top-8 elements during a single scan pass, eliminating redundant
   global memory re-reads for the first 8 extraction iterations.
 
+- Moved `partial_simd_load` and `partial_simd_store` from
+  `buffer.buffer` to `linalg.utils` and removed the `buffer` package. Update
+  imports from `from buffer.buffer import ...` to
+  `from linalg.utils import ...`.
+
 ## Mojo language {#26-3-mojo}
 
 For all the updates to the Mojo language, standard library, and tools,

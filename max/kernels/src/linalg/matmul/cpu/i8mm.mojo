@@ -16,7 +16,7 @@ from std.sys import prefetch
 from std.sys.info import align_of
 from std.sys.intrinsics import PrefetchOptions
 
-from buffer.buffer import partial_simd_load, partial_simd_store
+from linalg.utils import partial_simd_load, partial_simd_store
 from layout import Coord, Idx, TileTensor
 
 from std.utils.index import Index, IndexList

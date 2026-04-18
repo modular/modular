@@ -87,7 +87,7 @@ from std.algorithm import (
     unswitch,
     vectorize,
 )
-from buffer.buffer import (
+from linalg.utils import (
     partial_simd_load,
     partial_simd_store,
 )

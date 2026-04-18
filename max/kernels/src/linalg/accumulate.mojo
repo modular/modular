@@ -19,7 +19,7 @@ from std.sys.info import CompilationTarget
 from std.sys.intrinsics import PrefetchOptions
 
 from std.algorithm.functional import tile
-from buffer.buffer import (
+from linalg.utils import (
     partial_simd_load,
     partial_simd_store,
 )
