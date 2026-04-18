@@ -111,62 +111,6 @@ struct Variadic:
         Ts: The variadic sequences to concatenate.
     """
 
-    comptime map_types_to_types[
-        From: type_of(AnyType),
-        To: type_of(AnyType),
-        //,
-        element_types: Variadic.TypesOfTrait[From],
-        Mapper: _TypeToTypeGenerator[From, To],
-    ] = TypeList[
-        _ReduceVariadicAndIdxToVariadic[
-            BaseVal=Variadic.empty_of_trait[To],
-            ParamListType=element_types,
-            Reducer=_MapTypeToTypeReducer[From, To, Mapper, ...],
-        ]
-    ]
-    """Map a variadic of types to a new variadic of types using a mapper.
-
-    Returns a new variadic of types resulting from applying `Mapper[T]` to each
-    type in the input variadic.
-
-    Parameters:
-        From: The trait that the input types conform to.
-        To: The trait that the output types conform to.
-        element_types: The input variadic of types to map.
-        Mapper: A generator that maps a type to another type. The generator type is `[T: From] -> To`.
-
-    Examples:
-
-    ```text
-    from std.builtin.variadics import Variadic
-    from std.sys.intrinsics import _type_is_eq
-    from std.testing import *
-
-    trait MyError:
-        comptime ErrorType: AnyType
-
-    struct Foo(MyError):
-        comptime ErrorType = Int
-
-    struct Baz(MyError):
-        comptime ErrorType = String
-
-    # Given a variadic of types [Foo, Baz]
-    comptime input_types = Variadic.types[T=MyError, Foo, Baz]
-
-    # And a mapper that maps the type to it's MyError `ErrorType` type
-    comptime mapper[T: MyError] = T.ErrorType
-
-    # The resulting variadic of types is [Int, String]
-    comptime output = Variadic.map_types_to_types[input_types, mapper]
-
-    def main():
-        assert_equal(output.size, 2)
-        assert_true(_type_is_eq[output[0], Int]())
-        assert_true(_type_is_eq[output[1], String]())
-    ```
-    """
-
     comptime slice_types[
         T: type_of(AnyType),
         //,
@@ -213,11 +157,13 @@ struct Variadic:
 
     comptime zip_types[
         Trait: type_of(AnyType), //, *types: Variadic.TypesOfTrait[Trait]
-    ] = __mlir_attr[
-        `#kgen.param_list.zip<`,
-        types.values,
-        `> : `,
-        _MLIR.KGENParamListType[Variadic.TypesOfTrait[Trait]],
+    ] = ParameterList[
+        __mlir_attr[
+            `#kgen.param_list.zip<`,
+            types.values,
+            `> : `,
+            _MLIR.KGENParamListType[Variadic.TypesOfTrait[Trait]],
+        ]
     ]
     """
     Zips a group of variadics of types together.
@@ -229,11 +175,13 @@ struct Variadic:
 
     comptime zip_values[
         type: AnyType, //, *values: Variadic.ValuesOfType[type]
-    ] = __mlir_attr[
-        `#kgen.param_list.zip<`,
-        values.values,
-        `> : `,
-        _MLIR.KGENParamListType[Variadic.ValuesOfType[type]],
+    ] = ParameterList[
+        __mlir_attr[
+            `#kgen.param_list.zip<`,
+            values.values,
+            `> : `,
+            _MLIR.KGENParamListType[Variadic.ValuesOfType[type]],
+        ]
     ]
     """
     Zips a group of variadics of values together.
@@ -662,24 +610,35 @@ struct TypeList[
         """
         return Self.any_satisfies[Self._ContainsTypePredicate[type, ...],]()
 
+    # ===-------------------------------------------------------------------===#
+    # Mappings
+    # ===-------------------------------------------------------------------===#
+
+    comptime _TypeToTypeGenerator[ToTrait: type_of(AnyType)] = __mlir_type[
+        `!lit.generator<<"From":`, Self.Trait, `>`, ToTrait, `>`
+    ]
+    comptime _MapTabulator[
+        ToTrait: type_of(AnyType),
+        Mapper: Self._TypeToTypeGenerator[ToTrait],
+        idx: Int,
+    ]: ToTrait = Mapper[Self.__getitem_param__[idx]]
+
     comptime map[
-        To: type_of(AnyType),
+        ToTrait: type_of(AnyType),
         //,
-        Mapper: _TypeToTypeGenerator[Self.Trait, To],
-    ] = TypeList[
-        _ReduceVariadicAndIdxToVariadic[
-            BaseVal=Variadic.empty_of_trait[To],
-            ParamListType=Self.values,
-            Reducer=_MapTypeToTypeReducer[Self.Trait, To, Mapper, ...],
-        ],
+        Mapper: Self._TypeToTypeGenerator[ToTrait],
+    ] = TypeList.tabulate[
+        Trait=ToTrait,
+        Self.size,
+        Self._MapTabulator[ToTrait, Mapper, idx=_],
     ]
     """Maps types to new types using a mapper.
 
-    Returns a new variadic of types resulting from applying `Mapper[T]` to each
-    type in this type list.
+    Returns a new TypeList resulting from applying `Mapper[T]` to each element
+    in this list.
 
     Parameters:
-        To: The trait that the output types conform to.
+        ToTrait: The trait that the output types conform to.
         Mapper: A generator that maps a type to another type.
             The generator type is `[T: Trait] -> To`.
     """
@@ -717,6 +676,10 @@ struct TypeList[
         Mapper: A compile-time generator that maps an element type to a value.
             The generator type is `[T: Self.Trait] -> ValueType`.
     """
+
+    # ===-------------------------------------------------------------------===#
+    # Other
+    # ===-------------------------------------------------------------------===#
 
     comptime slice[
         start: Int where start >= 0 = 0,
@@ -1917,37 +1880,6 @@ Parameters:
     ParamListType: The variadic to be reduced.
     Reducer: A `[BaseVal: Variadic.TypesOfTrait[To], Ts: *From, idx: index] -> To` that does the reduction.
 """
-
-
-comptime _ReduceVariadicAndIdxToValue[
-    FromAndTo: AnyType,
-    ListEltType: type_of(AnyType),
-    //,
-    *,
-    BaseVal: FromAndTo,
-    ParamListType: Variadic.TypesOfTrait[ListEltType],
-    Reducer: _ReduceVariadicIdxGeneratorTypeGenerator[FromAndTo, ListEltType],
-] = __mlir_attr[
-    `#kgen.param_list.reduce<`,
-    BaseVal,
-    `,`,
-    ParamListType,
-    `,`,
-    _IndexToIntWrap[ListEltType, FromAndTo, Reducer, ...],
-    `> : `,
-    +FromAndTo,
-]
-"""Construct a new variadic of types using a reducer. To reduce to a single
-type, one could reduce the input to a single element variadic instead.
-
-Parameters:
-    FromAndTo: The type of the input and output result.
-    ListEltType: The common trait bound for the input list.
-    BaseVal: The initial value to reduce on.
-    ParamListType: The variadic to be reduced.
-    Reducer: A `[BaseVal: FromAndTo, Ts: *ListEltType, idx: index] -> To` that does the reduction.
-"""
-
 
 # ===-----------------------------------------------------------------------===#
 # VariadicMap

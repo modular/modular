@@ -214,8 +214,8 @@ def test_variadic_contains_value_empty() raises:
 def test_zip_types_empty() raises:
     comptime v1 = Variadic.empty_of_trait[Writable]
     comptime v2 = Variadic.empty_of_trait[Writable]
-    comptime v_zip = Variadic.zip_types[v1, v2]
-    assert_equal(ParameterList[v_zip].size, 1)
+    comptime v_zip = Variadic.zip_types[v1, v2]()
+    assert_equal(v_zip.size, 1)
     assert_equal(TypeList[v_zip[0]].size, 0)
     assert_equal(TypeList[v_zip[1]].size, 0)
 
@@ -223,8 +223,8 @@ def test_zip_types_empty() raises:
 def test_zip_types_uneven() raises:
     comptime v1 = Variadic.types[T=Writable, String, Float32, Bool]
     comptime v2 = Variadic.types[T=Writable, StaticString, Int]
-    comptime v_zip = Variadic.zip_types[v1, v2]
-    assert_equal(ParameterList[v_zip].size, 2)
+    comptime v_zip = Variadic.zip_types[v1, v2]()
+    assert_equal(v_zip.size, 2)
     assert_true(_type_is_eq[v_zip[0][0], String]())
     assert_true(_type_is_eq[v_zip[0][1], StaticString]())
     assert_true(_type_is_eq[v_zip[1][0], Float32]())
@@ -234,8 +234,8 @@ def test_zip_types_uneven() raises:
 def test_zip_types() raises:
     comptime v1 = Variadic.types[T=Writable, String, Float32, Bool]
     comptime v2 = Variadic.types[T=Writable, StaticString, Int, Float64]
-    comptime v_zip = Variadic.zip_types[v1, v2]
-    assert_equal(ParameterList[v_zip].size, 3)
+    comptime v_zip = Variadic.zip_types[v1, v2]()
+    assert_equal(v_zip.size, 3)
     assert_true(_type_is_eq[v_zip[0][0], String]())
     assert_true(_type_is_eq[v_zip[0][1], StaticString]())
     assert_true(_type_is_eq[v_zip[1][0], Float32]())
@@ -248,8 +248,8 @@ def test_zip_types_triple() raises:
     comptime v1 = Variadic.types[T=Writable, String, Float32, Bool]
     comptime v2 = Variadic.types[T=Writable, StaticString, Int, Float64]
     comptime v3 = Variadic.types[T=Writable, UInt8, UInt32, UInt64]
-    comptime v_zip = Variadic.zip_types[v1, v2, v3]
-    assert_equal(ParameterList[v_zip].size, 3)
+    comptime v_zip = Variadic.zip_types[v1, v2, v3]()
+    assert_equal(v_zip.size, 3)
     assert_true(_type_is_eq[v_zip[0][0], String]())
     assert_true(_type_is_eq[v_zip[0][1], StaticString]())
     assert_true(_type_is_eq[v_zip[0][2], UInt8]())
@@ -264,7 +264,7 @@ def test_zip_types_triple() raises:
 def test_zip_values_empty() raises:
     comptime v1 = ParameterList.empty_of[Int]()
     comptime v2 = ParameterList.empty_of[Int]()
-    comptime v_zip = ParameterList[Variadic.zip_values[v1.values, v2.values]]()
+    comptime v_zip = Variadic.zip_values[v1.values, v2.values]()
     assert_equal(v_zip.size, 1)
     assert_equal(ParameterList[v_zip[0]].size, 0)
     assert_equal(ParameterList[v_zip[1]].size, 0)
@@ -273,8 +273,8 @@ def test_zip_values_empty() raises:
 def test_zip_values_uneven() raises:
     comptime v1 = Variadic.values[1, 2, 3]
     comptime v2 = Variadic.values[4, 5]
-    comptime v_zip = Variadic.zip_values[v1, v2]
-    assert_equal(ParameterList[v_zip].size, 2)
+    comptime v_zip = Variadic.zip_values[v1, v2]()
+    assert_equal(v_zip.size, 2)
     assert_equal(v_zip[0][0], 1)
     assert_equal(v_zip[0][1], 4)
     assert_equal(v_zip[1][0], 2)
@@ -284,8 +284,8 @@ def test_zip_values_uneven() raises:
 def test_zip_values() raises:
     comptime v1 = Variadic.values[1, 2, 3]
     comptime v2 = Variadic.values[4, 5, 6]
-    comptime v_zip = Variadic.zip_values[v1, v2]
-    assert_equal(ParameterList[v_zip].size, 3)
+    comptime v_zip = Variadic.zip_values[v1, v2]()
+    assert_equal(v_zip.size, 3)
     assert_equal(v_zip[0][0], 1)
     assert_equal(v_zip[0][1], 4)
     assert_equal(v_zip[1][0], 2)
@@ -298,8 +298,8 @@ def test_zip_values_triple() raises:
     comptime v1 = Variadic.values[1, 2, 3]
     comptime v2 = Variadic.values[4, 5, 6]
     comptime v3 = Variadic.values[7, 8, 9]
-    comptime v_zip = Variadic.zip_values[v1, v2, v3]
-    assert_equal(ParameterList[v_zip].size, 3)
+    comptime v_zip = Variadic.zip_values[v1, v2, v3]()
+    assert_equal(v_zip.size, 3)
     assert_equal(v_zip[0][0], 1)
     assert_equal(v_zip[0][1], 4)
     assert_equal(v_zip[0][2], 7)
@@ -329,9 +329,7 @@ def test_slice_types() raises:
 
 def test_map_types_to_types_empty() raises:
     comptime mapper[T: AnyType] = Int
-    comptime types = Variadic.map_types_to_types[
-        Variadic.empty_of_trait[AnyType], mapper
-    ]()
+    comptime types = TypeList.of[Trait=AnyType]().map[mapper]()
     assert_equal(types.size, 0)
 
 
@@ -349,9 +347,7 @@ struct Baz(TestErrable):
 
 def test_map_types_to_types() raises:
     comptime Mapper[T: TestErrable] = T.ErrorType
-    comptime types = Variadic.map_types_to_types[
-        Variadic.types[T=TestErrable, Foo, Baz], Mapper
-    ]()
+    comptime types = TypeList.of[Trait=TestErrable, Foo, Baz]().map[Mapper]()
     assert_equal(types.size, 2)
     assert_true(_type_is_eq[types[0], Int]())
     assert_true(_type_is_eq[types[1], String]())
@@ -693,8 +689,8 @@ def test_typelist_filter_empty_result() raises:
 def test_typelist_map() raises:
     comptime TL = TypeList.of[Trait=Copyable, Int, String, Float64]()
 
-    comptime ToList[T: Copyable] = List[T]
-    comptime mapped = TL.map[To=Copyable, Mapper=ToList]()
+    comptime ToList[T: Copyable]: Copyable = List[T]
+    comptime mapped = TL.map[ToList]()
     assert_equal(mapped.size, 3)
     comptime assert _type_is_eq[mapped[0], List[Int]]()
     comptime assert _type_is_eq[mapped[1], List[String]]()
@@ -705,7 +701,7 @@ def test_typelist_map_identity() raises:
     comptime TL = TypeList.of[Trait=AnyType, Int, Bool]()
 
     comptime Identity[T: AnyType] = T
-    comptime mapped = TL.map[To=AnyType, Mapper=Identity]()
+    comptime mapped = TL.map[Identity]()
     assert_equal(mapped.size, 2)
     comptime assert _type_is_eq[mapped[0], Int]()
     comptime assert _type_is_eq[mapped[1], Bool]()
@@ -714,8 +710,8 @@ def test_typelist_map_identity() raises:
 def test_typelist_map_empty() raises:
     comptime TL = TypeList.of[Trait=Copyable]()
 
-    comptime ToList[T: Copyable] = List[T]
-    comptime mapped = TL.map[To=Copyable, Mapper=ToList]()
+    comptime ToList[T: Copyable]: Copyable = List[T]
+    comptime mapped = TL.map[ToList]()
     assert_equal(mapped.size, 0)
 
 
