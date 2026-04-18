@@ -263,6 +263,13 @@ This version is still a work in progress.
   imports from `from buffer.buffer import ...` to
   `from linalg.utils import ...`.
 
+## 🛠️ Fixed {#26-3-fixed}
+
+- Fixed `enqueue_fill()` taking O(N) HIP API calls for `float64` buffers on
+  AMD GPUs when the high and low 32-bit halves of the fill value differ (e.g.,
+  `2.0`), reducing the call count to O(log N).
+  ([Issue #6417](https://github.com/modular/modular/issues/6417))
+
 ## Mojo language {#26-3-mojo}
 
 For all the updates to the Mojo language, standard library, and tools,
