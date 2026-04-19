@@ -61,7 +61,7 @@ class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
         """Create a SchedulerResult representing a cancelled pipeline operation.
 
         Returns:
-            SchedulerResult: A SchedulerResult that is done.
+            A :class:`SchedulerResult` that is done.
         """
         return SchedulerResult(is_done=True, result=None)
 
@@ -75,6 +75,6 @@ class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
             result: The pipeline output data.
 
         Returns:
-            SchedulerResult: A SchedulerResult with a result.
+            A :class:`SchedulerResult` with a result.
         """
         return SchedulerResult(is_done=result.is_done, result=result)

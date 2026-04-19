@@ -702,6 +702,187 @@ def call_ep_dispatch(
     return tuple([v.tensor for v in results])
 
 
+def call_distributed_ep_dispatch(
+    input_tokens: list[TensorValue],
+    topk_ids: list[TensorValue],
+    atomic_counters: list[BufferValue],
+    send_buf_ptrs: TensorValue,
+    recv_buf_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    config: EPConfig,
+    input_scales: list[TensorValue] | None = None,
+) -> list[tuple[TensorValue, ...]]:
+    """Multi-device fused EP dispatch (BF16, FP8, or NVFP4).
+
+    Selects the appropriate dispatch variant based on ``config`` and launches
+    a single multi-device graph op.
+
+    Returns:
+        Per-device output tuples. The number of tensors per tuple depends on
+        the quantization format (4 for BF16, 5 for FP8, 6 for NVFP4/MXFP4).
+    """
+    num_devices = len(input_tokens)
+    max_recv_tokens = config.max_tokens_per_rank * min(
+        config.n_experts,
+        config.n_gpus_per_node * config.n_nodes * config.top_k,
+    )
+    n_ranks = config.n_gpus_per_node * config.n_nodes
+    n_local_experts = config.n_experts // n_ranks
+
+    if config.fused_shared_expert:
+        max_recv_tokens += config.max_tokens_per_rank
+        n_local_experts += 1
+
+    quant_config = config.dispatch_quant_config
+    is_nvfp4 = quant_config is not None and quant_config.is_nvfp4
+    is_mxfp4 = quant_config is not None and quant_config.is_mxfp4
+    is_fp4 = quant_config is not None and quant_config.is_fp4
+    is_fp8 = quant_config is not None and config.dispatch_dtype.is_float8()
+
+    token_last_dim = config.hidden_size
+    if is_fp4:
+        token_last_dim //= 2
+
+    output_types_per_device: list[list[TensorType]] = []
+    for i in range(num_devices):
+        device_ref = atomic_counters[i].device
+        types = _ep_dispatch_output_types(
+            max_recv_tokens,
+            token_last_dim,
+            n_local_experts,
+            config,
+            device_ref,
+        )
+        output_types_per_device.append(types)
+
+    if is_nvfp4:
+        if input_scales is None:
+            raise ValueError("input_scales must be provided for NVFP4 dispatch")
+        inv_scales = [
+            1.0 / input_scales[i].to(atomic_counters[i].device)
+            for i in range(num_devices)
+        ]
+        return ops.distributed_ep.dispatch_nvfp4(
+            input_tokens,
+            topk_ids,
+            send_buf_ptrs,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            inv_scales,
+            atomic_counters,
+            output_types_per_device,
+            hidden_size=config.hidden_size,
+            top_k=config.top_k,
+            n_experts=config.n_experts,
+            max_token_per_rank=config.max_tokens_per_rank,
+            n_gpus_per_node=config.n_gpus_per_node,
+            n_nodes=config.n_nodes,
+            fused_shared_expert=config.fused_shared_expert,
+        )
+    elif is_mxfp4:
+        return ops.distributed_ep.dispatch_mxfp4(
+            input_tokens,
+            topk_ids,
+            send_buf_ptrs,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            atomic_counters,
+            output_types_per_device,
+            hidden_size=config.hidden_size,
+            top_k=config.top_k,
+            n_experts=config.n_experts,
+            max_token_per_rank=config.max_tokens_per_rank,
+            n_gpus_per_node=config.n_gpus_per_node,
+            n_nodes=config.n_nodes,
+            fused_shared_expert=config.fused_shared_expert,
+        )
+    elif is_fp8:
+        assert quant_config is not None
+        return ops.distributed_ep.dispatch_fp8(
+            input_tokens,
+            topk_ids,
+            send_buf_ptrs,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            atomic_counters,
+            output_types_per_device,
+            hidden_size=config.hidden_size,
+            top_k=config.top_k,
+            n_experts=config.n_experts,
+            max_token_per_rank=config.max_tokens_per_rank,
+            n_gpus_per_node=config.n_gpus_per_node,
+            n_nodes=config.n_nodes,
+            fused_shared_expert=config.fused_shared_expert,
+            dispatch_scale_granularity=str(
+                quant_config.input_scale.granularity
+            ),
+        )
+    else:
+        return ops.distributed_ep.dispatch_bf16(
+            input_tokens,
+            topk_ids,
+            send_buf_ptrs,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            atomic_counters,
+            output_types_per_device,
+            hidden_size=config.hidden_size,
+            top_k=config.top_k,
+            n_experts=config.n_experts,
+            max_token_per_rank=config.max_tokens_per_rank,
+            n_gpus_per_node=config.n_gpus_per_node,
+            n_nodes=config.n_nodes,
+            fused_shared_expert=config.fused_shared_expert,
+        )
+
+
+def call_distributed_ep_combine(
+    input_tokens: list[TensorValue],
+    src_info: list[TensorValue],
+    atomic_counters: list[BufferValue],
+    send_buf_ptrs: TensorValue,
+    recv_buf_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    config: EPConfig,
+    num_tokens_per_device: list[Dim],
+    router_weights: list[TensorValue],
+) -> list[TensorValue]:
+    """Multi-device fused EP combine.
+
+    Launches a single ``mo.distributed.ep.combine`` graph op that combines
+    expert outputs back to their original devices on all GPUs simultaneously.
+    """
+    num_devices = len(input_tokens)
+    output_types: list[TensorType] = []
+    for i in range(num_devices):
+        device_ref = atomic_counters[i].device
+        output_types.append(
+            TensorType(
+                dtype=config.combine_dtype,
+                shape=[num_tokens_per_device[i], config.hidden_size],
+                device=device_ref,
+            )
+        )
+
+    return ops.distributed_ep.combine(
+        input_tokens,
+        src_info,
+        send_buf_ptrs,
+        recv_buf_ptrs,
+        recv_count_ptrs,
+        router_weights,
+        atomic_counters,
+        output_types,
+        hidden_size=config.hidden_size,
+        top_k=config.top_k,
+        n_experts=config.n_experts,
+        max_token_per_rank=config.max_tokens_per_rank,
+        n_gpus_per_node=config.n_gpus_per_node,
+        n_nodes=config.n_nodes,
+        fused_shared_expert=config.fused_shared_expert,
+    )
+
+
 def call_ep_combine(
     input_tokens: TensorValue,
     src_info: TensorValue,

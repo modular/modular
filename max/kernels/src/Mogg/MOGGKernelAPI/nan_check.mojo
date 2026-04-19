@@ -28,7 +28,7 @@ from std.algorithm import elementwise
 from std.gpu import barrier, block_dim, block_idx, thread_idx
 from std.gpu.host.info import is_cpu
 from std.memory import alloc, stack_allocation
-from std.os import Atomic
+from std.atomic import Atomic
 from std.sys import simd_width_of
 from std.utils.numerics import isinf, isnan
 
@@ -38,6 +38,7 @@ from std.utils.index import IndexList
 from tensor import InputTensor, OutputTensor
 
 
+@__name(t"nan_check_gpu_{dtype}", mangle=True)
 def _nan_check_gpu_kernel[
     dtype: DType,
 ](
@@ -141,6 +142,7 @@ def nan_check_count[
         ](inf_count_out.unsafe_ptr())
 
         @parameter
+        @__name(t"nan_check_zero_counts", mangle=True)
         def zero_counts(
             nan_ptr: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
             inf_ptr: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],

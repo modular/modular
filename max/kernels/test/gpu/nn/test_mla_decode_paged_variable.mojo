@@ -125,16 +125,16 @@ def run_test_paged_variable[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[kv_type]](block_elems)
@@ -157,10 +157,10 @@ def run_test_paged_variable[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
-    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+    var _tok_stride = kv_params.num_heads * kv_params.head_size
 
     var cache_lengths_host = alloc[UInt32](batch_size)
     for i in range(batch_size):
@@ -390,11 +390,9 @@ def run_test_paged_variable[
                 * kv_dim2
                 * NUM_LAYERS
                 * PAGE_SIZE
-                * Int(kv_params.num_heads)
-                * Int(kv_params.head_size)
-                + tok_in_page
-                * Int(kv_params.num_heads)
-                * Int(kv_params.head_size)
+                * kv_params.num_heads
+                * kv_params.head_size
+                + tok_in_page * kv_params.num_heads * kv_params.head_size
             )
             var dst_offset = tok * KV_NUM_HEADS * DEPTH
             for d in range(KV_NUM_HEADS * DEPTH):
@@ -586,16 +584,16 @@ def run_test_paged_variable_multiq[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[kv_type]](block_elems)
@@ -610,10 +608,10 @@ def run_test_paged_variable_multiq[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
-    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+    var _tok_stride = kv_params.num_heads * kv_params.head_size
 
     var cache_lengths_host = alloc[UInt32](batch_size)
     for i in range(batch_size):
@@ -835,11 +833,9 @@ def run_test_paged_variable_multiq[
                 * kv_dim2
                 * NUM_LAYERS
                 * PAGE_SIZE
-                * Int(kv_params.num_heads)
-                * Int(kv_params.head_size)
-                + tok_in_page
-                * Int(kv_params.num_heads)
-                * Int(kv_params.head_size)
+                * kv_params.num_heads
+                * kv_params.head_size
+                + tok_in_page * kv_params.num_heads * kv_params.head_size
             )
             var dst_offset = tok * KV_NUM_HEADS * DEPTH
             for d in range(KV_NUM_HEADS * DEPTH):
@@ -1070,16 +1066,16 @@ def run_test_paged_variable_ragged_q[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[kv_type]](block_elems)
@@ -1094,10 +1090,10 @@ def run_test_paged_variable_ragged_q[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
-    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+    var _tok_stride = kv_params.num_heads * kv_params.head_size
 
     var cache_lengths_host = alloc[UInt32](batch_size)
     for i in range(batch_size):
@@ -1331,11 +1327,9 @@ def run_test_paged_variable_ragged_q[
                 * kv_dim2
                 * NUM_LAYERS
                 * PAGE_SIZE
-                * Int(kv_params.num_heads)
-                * Int(kv_params.head_size)
-                + tok_in_page
-                * Int(kv_params.num_heads)
-                * Int(kv_params.head_size)
+                * kv_params.num_heads
+                * kv_params.head_size
+                + tok_in_page * kv_params.num_heads * kv_params.head_size
             )
             var dst_offset = tok * KV_NUM_HEADS * DEPTH
             for d in range(KV_NUM_HEADS * DEPTH):
@@ -1525,16 +1519,16 @@ def run_bench_paged_variable[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[kv_type]](block_elems)
@@ -1548,10 +1542,10 @@ def run_bench_paged_variable[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
-    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+    var _tok_stride = kv_params.num_heads * kv_params.head_size
 
     var cache_lengths_host = alloc[UInt32](batch_size)
     for i in range(batch_size):
@@ -1826,16 +1820,16 @@ def run_test_paged_variable_native_fp8[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[kv_type]](block_elems)
@@ -1852,10 +1846,10 @@ def run_test_paged_variable_native_fp8[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
-    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+    var _tok_stride = kv_params.num_heads * kv_params.head_size
 
     var cache_lengths_host = alloc[UInt32](batch_size)
     for i in range(batch_size):
@@ -2085,11 +2079,9 @@ def run_test_paged_variable_native_fp8[
                 * kv_dim2
                 * NUM_LAYERS
                 * PAGE_SIZE
-                * Int(kv_params.num_heads)
-                * Int(kv_params.head_size)
-                + tok_in_page
-                * Int(kv_params.num_heads)
-                * Int(kv_params.head_size)
+                * kv_params.num_heads
+                * kv_params.head_size
+                + tok_in_page * kv_params.num_heads * kv_params.head_size
             )
             var dst_offset = tok * KV_NUM_HEADS * DEPTH
             for d in range(KV_NUM_HEADS * DEPTH):
@@ -2266,16 +2258,16 @@ def run_bench_paged_variable_native_fp8[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[kv_type]](block_elems)
@@ -2289,10 +2281,10 @@ def run_bench_paged_variable_native_fp8[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
-    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+    var _tok_stride = kv_params.num_heads * kv_params.head_size
 
     var cache_lengths_host = alloc[UInt32](batch_size)
     for i in range(batch_size):

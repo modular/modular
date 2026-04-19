@@ -33,6 +33,7 @@ from max.benchmark.benchmark_shared.datasets import (
     PixelGenerationSampledRequest,
     RandomBenchmarkDataset,
     SampledRequest,
+    SharedContext,
     ShareGPTBenchmarkDataset,
     SonnetBenchmarkDataset,
     SyntheticPixelBenchmarkDataset,
@@ -341,6 +342,85 @@ def test_random_sample_requests() -> None:
     assert len(samples.requests) == 2
     for request in samples.requests:
         assert isinstance(request, SampledRequest)
+
+
+def _make_mock_tokenizer(
+    vocab_size: int = 1000,
+    model_max_length: int = 4096,
+    input_ids: list[int] | None = None,
+) -> Mock:
+    """Return a minimal mock tokenizer for random-dataset unit tests."""
+    tok = Mock(spec=PreTrainedTokenizerBase)
+    tok.vocab_size = vocab_size
+    tok.model_max_length = model_max_length
+    tok.all_special_ids = {0, 1, 2}
+    tok.encode.return_value = [100]
+    tok.decode.return_value = "random text"
+    tok.convert_tokens_to_ids = Mock(return_value=223)
+    tok.unk_token_id = None
+    result = Mock()
+    result.input_ids = input_ids if input_ids is not None else [100, 101, 102]
+    tok.return_value = result
+    return tok
+
+
+def test_shared_contexts_empty_when_no_sys_prompt() -> None:
+    """shared_contexts is empty when sys_prompt_ratio is 0."""
+    tok = _make_mock_tokenizer()
+    dataset = BenchmarkDataset.from_flags(dataset_name="random")
+    assert isinstance(dataset, RandomBenchmarkDataset)
+
+    samples = dataset.sample_requests(
+        num_requests=5,
+        tokenizer=tok,
+        input_len="50",
+        output_len="10",
+        sys_prompt_ratio=0.0,
+        max_num_unique_sys_prompt=1,
+    )
+
+    assert samples.shared_contexts == []
+
+
+def test_shared_contexts_one_entry_per_unique_idx() -> None:
+    """shared_contexts has exactly one SharedContext per unique sys_prompt_idx."""
+    tok = _make_mock_tokenizer()
+    dataset = BenchmarkDataset.from_flags(dataset_name="random")
+    assert isinstance(dataset, RandomBenchmarkDataset)
+
+    samples = dataset.sample_requests(
+        num_requests=10,
+        tokenizer=tok,
+        input_len="50",
+        output_len="10",
+        sys_prompt_ratio=0.3,
+        max_num_unique_sys_prompt=1,
+    )
+
+    assert len(samples.shared_contexts) == 1
+    assert isinstance(samples.shared_contexts[0], SharedContext)
+
+
+def test_shared_contexts_at_most_max_unique() -> None:
+    """shared_contexts has at most max_num_unique_sys_prompt entries."""
+    tok = _make_mock_tokenizer()
+    dataset = BenchmarkDataset.from_flags(dataset_name="random")
+    assert isinstance(dataset, RandomBenchmarkDataset)
+
+    max_unique = 3
+    samples = dataset.sample_requests(
+        num_requests=30,
+        tokenizer=tok,
+        input_len="50",
+        output_len="10",
+        sys_prompt_ratio=0.3,
+        max_num_unique_sys_prompt=max_unique,
+    )
+
+    assert len(samples.shared_contexts) <= max_unique
+    for entry in samples.shared_contexts:
+        assert isinstance(entry, SharedContext)
+        assert entry.num_tokens > 0
 
 
 @patch("os.path.exists")

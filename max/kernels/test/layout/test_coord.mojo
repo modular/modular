@@ -101,10 +101,7 @@ def test_default_init() raises:
 def test_default_init_nested() raises:
     var c = Coord[
         ComptimeInt[5],
-        Coord[
-            RuntimeInt[DType.int32],
-            ComptimeInt[3],
-        ],
+        Coord[RuntimeInt[DType.int32], ComptimeInt[3]],
         RuntimeInt[DType.int64],
     ]()
     assert_equal(c[0].value(), 5)

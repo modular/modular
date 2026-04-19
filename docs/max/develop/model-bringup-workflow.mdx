@@ -213,6 +213,17 @@ Write a separate adapter function for each format you need to support, following
 the same rename-map pattern. For the full API, see
 [`max.graph.weights`](/max/api/python/graph.weights/).
 
+### FP8 and FP4 checkpoints
+
+For architectures that load FP8 or FP4 checkpoints, use
+[`QuantFormat`](/max/api/python/generated/max.nn.QuantFormat) and
+[`QuantConfig`](/max/api/python/generated/max.nn.QuantConfig) from `max.nn`.
+`QuantFormat` identifies the checkpoint's quantization scheme (such as
+`COMPRESSED_TENSORS_FP8` or `NVFP4`) and `QuantConfig` carries the per-layer
+scaling settings: which layers are quantized, the granularity and dtype of
+weight and activation scales, and the block sizes that the hardware-accelerated
+kernels require.
+
 ## Connect to the KV cache
 
 MAX pre-allocates the KV cache at startup from values your config provides,

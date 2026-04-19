@@ -82,7 +82,7 @@ class PipelineTask(str, Enum):
         """Get the output type for the pipeline task.
 
         Returns:
-            type: The output type for the pipeline task.
+            The output type for the pipeline task.
         """
         from .generation import GenerationOutput
         from .pipeline_variants import (
