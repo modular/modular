@@ -169,7 +169,7 @@ def load_AB[
     work_tile_coord: Tuple[Int, Int],
     a_multicast_mask: UInt16,
     b_multicast_mask: UInt16,
-    iter_idx: UInt,
+    iter_idx: Int,
     elect_one_cta: Bool,
 ):
     comptime BM = block_tile_shape[0]
@@ -219,14 +219,14 @@ def load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[stage],
-            (Int(iter_idx) * BK, a_gmem_slice_coord),
+            (iter_idx * BK, a_gmem_slice_coord),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[stage],
-            (Int(iter_idx) * BK, b_gmem_slice_coord),
+            (iter_idx * BK, b_gmem_slice_coord),
             b_multicast_mask,
         )
 
@@ -286,7 +286,7 @@ def consumer_main_loop[
         transpose_b=transpose_b,
     ],
     elect_one_warp: Bool,
-    iter_idx: UInt,
+    iter_idx: Int,
 ):
     var stage = consumer_phase.index()
     var phase = consumer_phase.phase()
@@ -520,8 +520,8 @@ def kernel_8[
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
     num_pipeline_stages: Int,
-    num_clc_pipeline_stages: UInt,
-    num_accum_pipeline_stages: UInt,
+    num_clc_pipeline_stages: Int,
+    num_accum_pipeline_stages: Int,
     num_output_stages: Int = 2,
     output_tile_shape: IndexList[2] = Index(128, 32),
     transpose_b: Bool = True,
@@ -552,7 +552,7 @@ def kernel_8[
 
     # For ld from TMEM, use same per-stage stride in column field.
     comptime TMEM_N = 512
-    comptime stage_stride_cols = TMEM_N // Int(num_accum_pipeline_stages)
+    comptime stage_stride_cols = TMEM_N // num_accum_pipeline_stages
 
     comptime clc_throttle_producer_arv_count = TMA_LOAD_THREADS
     comptime clc_throttle_consumer_arv_count = SCHEDULER_THREADS
@@ -717,23 +717,21 @@ def kernel_8[
     var consumer_phase = PipelineState[num_pipeline_stages]()
     var producer_phase = PipelineState[num_pipeline_stages](0, 1, 0)
 
-    var clc_pipe_producer_state = PipelineState[Int(num_clc_pipeline_stages)](
+    var clc_pipe_producer_state = PipelineState[num_clc_pipeline_stages](
         0, 1, 0
     )
-    var clc_pipe_consumer_state = PipelineState[Int(num_clc_pipeline_stages)]()
+    var clc_pipe_consumer_state = PipelineState[num_clc_pipeline_stages]()
 
-    var clc_throttle_producer_state = PipelineState[
-        Int(num_clc_pipeline_stages)
-    ](0, 1, 0)
-    var clc_throttle_consumer_state = PipelineState[
-        Int(num_clc_pipeline_stages)
-    ]()
+    var clc_throttle_producer_state = PipelineState[num_clc_pipeline_stages](
+        0, 1, 0
+    )
+    var clc_throttle_consumer_state = PipelineState[num_clc_pipeline_stages]()
 
     var accum_pipeline_producer_state = PipelineState[
-        Int(num_accum_pipeline_stages)
+        num_accum_pipeline_stages
     ](0, 1, 0)
     var accum_pipeline_consumer_state = PipelineState[
-        Int(num_accum_pipeline_stages)
+        num_accum_pipeline_stages
     ]()
 
     var mma_op = MmaOpSM100_SS[
@@ -753,7 +751,7 @@ def kernel_8[
     ]()
 
     var scheduler = TileScheduler[
-        num_stages=Int(num_clc_pipeline_stages),
+        num_stages=num_clc_pipeline_stages,
         cluster_shape=Index[dtype=DType.uint32](
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
@@ -824,7 +822,7 @@ def kernel_8[
                     (Int(work_info.m), Int(work_info.n)),
                     a_multicast_mask,
                     b_multicast_mask,
-                    UInt(i),
+                    i,
                     elect_one_cta,
                 )
                 producer_phase.step()
@@ -912,7 +910,7 @@ def kernel_8[
                         consumer_phase,
                         mma_op,
                         elect_one_warp,
-                        UInt(i),
+                        i,
                     )
                     consumer_phase.step()
 
@@ -985,7 +983,7 @@ def blackwell_kernel_8[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
-    num_clc_pipeline_stages: UInt = 2,
+    num_clc_pipeline_stages: Int = 2,
 ](
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
@@ -1051,17 +1049,11 @@ def blackwell_kernel_8[
     comptime accum_full_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
     comptime accum_empty_mbar_bytes = MBAR_BYTES * max_accum_pipeline_stages
 
-    comptime clc_response_bytes = CLC_RESPONSE_BYTES * Int(
-        num_clc_pipeline_stages
-    )
-    comptime clc_full_mbar_bytes = MBAR_BYTES * Int(num_clc_pipeline_stages)
-    comptime clc_empty_mbar_bytes = MBAR_BYTES * Int(num_clc_pipeline_stages)
-    comptime clc_throttle_full_mbar_bytes = MBAR_BYTES * Int(
-        num_clc_pipeline_stages
-    )
-    comptime clc_throttle_empty_mbar_bytes = MBAR_BYTES * Int(
-        num_clc_pipeline_stages
-    )
+    comptime clc_response_bytes = CLC_RESPONSE_BYTES * num_clc_pipeline_stages
+    comptime clc_full_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
+    comptime clc_empty_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
+    comptime clc_throttle_full_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
+    comptime clc_throttle_empty_mbar_bytes = MBAR_BYTES * num_clc_pipeline_stages
 
     comptime tmem_addr_bytes = TMEM_ADDR_BYTES
     comptime tmem_dealloc_mbar_bytes = MBAR_BYTES
@@ -1117,7 +1109,7 @@ def blackwell_kernel_8[
         cta_group=cta_group,
         num_pipeline_stages=max_pipeline_stages,
         num_clc_pipeline_stages=num_clc_pipeline_stages,
-        num_accum_pipeline_stages=UInt(max_accum_pipeline_stages),
+        num_accum_pipeline_stages=max_accum_pipeline_stages,
         num_output_stages=num_output_stages,
         output_tile_shape=output_tile_shape,
     ]

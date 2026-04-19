@@ -310,10 +310,10 @@ def test_no_implicit_load(
         buffer = graph.inputs[1]
 
         with pytest.raises(TypeError):  # binary ops
-            y = tensor + buffer  # type: ignore
+            tensor + buffer  # type: ignore
 
         with pytest.raises(TypeError):  # unary ops
-            y = abs(buffer)  # type: ignore
+            abs(buffer)  # type: ignore
 
         assert "rmo.mo.mutable.load" not in str(graph)
         assert "rmo.mo.slice" not in str(graph)

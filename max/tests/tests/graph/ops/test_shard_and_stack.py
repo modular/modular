@@ -117,7 +117,7 @@ def test_shard_and_stack__shape_mismatch(
 
 def test_shard_and_stack_empty_inputs(graph_builder: GraphBuilder) -> None:
     devices = [DeviceRef.CPU(), DeviceRef.CPU()]
-    with graph_builder(input_types=[]) as graph:
+    with graph_builder(input_types=[]):
         expected_message = "Must provide at least one input tensor."
         with pytest.raises(ValueError, match=re.escape(expected_message)):
             ops.shard_and_stack([], devices)

@@ -33,6 +33,10 @@ from max.graph.weights import WeightData, Weights
 # become ``language_model.layers.0.self_attn.q_proj.weight``.
 IDEFICS3_LANGUAGE_MODEL_MAPPING: dict[str, str] = {
     "model.text_model.": "language_model.",
+    # Remap unfused Q/K/V projections into StackedLinear namespace.
+    "self_attn.q_proj.": "self_attn.qkv_proj.q.",
+    "self_attn.k_proj.": "self_attn.qkv_proj.k.",
+    "self_attn.v_proj.": "self_attn.qkv_proj.v.",
 }
 
 # V3 vision model weight mapping.

@@ -17,6 +17,7 @@ from layout import (
     All,
     ComptimeInt,
     Coord,
+    CoordLike,
     Idx,
     RowMajorLayout,
     RuntimeInt,

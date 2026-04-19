@@ -29,19 +29,17 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random as max_random
 from max.experimental import realization_context as rc
-from max.experimental.distributed_functional.collectives import (
-    all_gather,
-    all_reduce_sum,
-    to_numpy,
+from max.experimental.distributed_functional import (
+    allgather as all_gather,
 )
-from max.experimental.distributed_functional.collectives import (
-    distributed_broadcast as df_broadcast,
+from max.experimental.distributed_functional import (
+    allreduce_sum as all_reduce_sum,
 )
-from max.experimental.distributed_functional.collectives import (
-    distributed_scatter as df_scatter,
+from max.experimental.distributed_functional import (
+    reduce_scatter,
 )
-from max.experimental.distributed_functional.collectives import (
-    shard as df_shard,
+from max.experimental.distributed_functional import (
+    transfer_to as df_shard,
 )
 from max.experimental.realization_context import set_seed
 from max.experimental.sharding import (
@@ -323,7 +321,7 @@ class TestElementwiseGPU:
                 rc.EagerRealizationContext(use_interpreter=True) as ctx,
                 realization_context(ctx),
             ):
-                b = F.atanh(a)
+                _ = F.atanh(a)  # atanh is lazy, needs a live reference
 
     @pytest.mark.parametrize(
         "op,torch_func",
@@ -3448,7 +3446,7 @@ class TestDistributedAllreduceSumHandler:
         assert result.placements == (Replicated(),)
         expected = data * num_gpus
         for shard in result.local_shards:
-            np.testing.assert_allclose(to_numpy(shard), expected, rtol=1e-5)
+            np.testing.assert_allclose(shard.to_numpy(), expected, rtol=1e-5)
 
 
 class TestDistributedAllgatherHandler:
@@ -3480,7 +3478,7 @@ class TestDistributedAllgatherHandler:
 
         assert result.placements == (Replicated(),)
         for shard in result.local_shards:
-            np.testing.assert_allclose(to_numpy(shard), data, rtol=1e-5)
+            np.testing.assert_allclose(shard.to_numpy(), data, rtol=1e-5)
 
 
 class TestDistributedScatterHandler:
@@ -3539,14 +3537,6 @@ class TestDistributedScatterHandler:
 
         data = np.arange(16, dtype=np.float32).reshape(4, 4)
         rows_per_chunk = 4 // num_gpus
-        chunks = [
-            Tensor.from_dlpack(
-                np.ascontiguousarray(
-                    data[i * rows_per_chunk : (i + 1) * rows_per_chunk]
-                )
-            )
-            for i in range(num_gpus)
-        ]
 
         mapping = PlacementMapping(mesh, (Sharded(0),))
 
@@ -3554,12 +3544,12 @@ class TestDistributedScatterHandler:
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
         ):
-            result = df_scatter(chunks, mapping)
+            result = df_shard(Tensor(data), mapping)
 
         assert result.placements == (Sharded(0),)
         for i, shard in enumerate(result.local_shards):
             expected = data[i * rows_per_chunk : (i + 1) * rows_per_chunk]
-            np.testing.assert_allclose(to_numpy(shard), expected, rtol=1e-5)
+            np.testing.assert_allclose(shard.to_numpy(), expected, rtol=1e-5)
 
 
 class TestDistributedBroadcastHandler:
@@ -3622,8 +3612,173 @@ class TestDistributedBroadcastHandler:
             rc.EagerRealizationContext(use_interpreter=True) as ctx,
             realization_context(ctx),
         ):
-            result = df_broadcast(t, mapping)
+            result = df_shard(t, mapping)
 
         assert result.placements == (Replicated(),)
         for shard in result.local_shards:
-            np.testing.assert_allclose(to_numpy(shard), data, rtol=1e-5)
+            np.testing.assert_allclose(shard.to_numpy(), data, rtol=1e-5)
+
+
+class TestDistributedReducescatterSumHandler:
+    """Tests for the DistributedReducescatterSumOp interpreter handler."""
+
+    @_NEED_2_GPUS
+    def test_reducescatter_sum_via_graph_ops(self) -> None:
+        """Build a graph with ops.reducescatter.sum and run via MOInterpreter."""
+        shape = [4, 4]
+        gpu0, gpu1 = DeviceRef.GPU(0), DeviceRef.GPU(1)
+
+        input_types: list[GType[Any]] = [
+            TensorType(DType.float32, shape, gpu0),
+            TensorType(DType.float32, shape, gpu1),
+            GBufferType(DType.uint8, [1024], gpu0),
+            GBufferType(DType.uint8, [1024], gpu1),
+        ]
+
+        with Graph("reducescatter_test", input_types=input_types) as graph:
+            t0, t1, b0, b1 = graph.inputs
+            results = graph_ops.reducescatter.sum(
+                [t0.tensor, t1.tensor], [b0.buffer, b1.buffer], axis=0
+            )
+            graph.output(*results)
+
+        a_np = np.array(
+            [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]],
+            dtype=np.float32,
+        )
+        b_np = np.array(
+            [
+                [10, 20, 30, 40],
+                [50, 60, 70, 80],
+                [90, 100, 110, 120],
+                [130, 140, 150, 160],
+            ],
+            dtype=np.float32,
+        )
+        total = a_np + b_np
+        # axis=0, 2 devices: each gets 2 rows of the 4-row sum.
+        expected_0 = total[:2]  # rows 0-1
+        expected_1 = total[2:]  # rows 2-3
+
+        dev0, dev1 = Accelerator(0), Accelerator(1)
+        input_bufs = [
+            Buffer.from_numpy(a_np).to(dev0),
+            Buffer.from_numpy(b_np).to(dev1),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev0),
+            Buffer(shape=[1024], dtype=DType.uint8, device=dev1),
+        ]
+
+        interp = MOInterpreter()
+        assert interp.can_execute(graph)
+        outputs = interp.execute(graph, input_bufs)
+
+        assert len(outputs) == 2
+        out0, out1 = outputs[0], outputs[1]
+        assert isinstance(out0, Buffer)
+        assert isinstance(out1, Buffer)
+        np.testing.assert_allclose(
+            out0.to(CPU()).to_numpy(), expected_0, rtol=1e-5
+        )
+        np.testing.assert_allclose(
+            out1.to(CPU()).to_numpy(), expected_1, rtol=1e-5
+        )
+
+    @_NEED_2_GPUS
+    def test_reducescatter_sum_distributed_tensor_e2e(self) -> None:
+        """E2E: reduce-scatter per-device tensors to Sharded via interpreter."""
+        num_gpus = min(accelerator_count(), 2)
+        devices = tuple(Accelerator(i) for i in range(num_gpus))
+        mesh = DeviceMesh(
+            devices=devices, mesh_shape=(num_gpus,), axis_names=("tp",)
+        )
+
+        # Each device contributes a [4, 4] tensor of ones (Partial).
+        data = np.ones((4, 4), dtype=np.float32)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            # Build a Partial tensor with one shard per device.
+            shard_tvs = [
+                Tensor(
+                    storage=Buffer.from_numpy(data).to(devices[i])
+                ).__tensorvalue__()
+                for i in range(num_gpus)
+            ]
+            partial_t = Tensor.from_shard_values(
+                shard_tvs, PlacementMapping(mesh, (Partial(),))
+            )
+            result = reduce_scatter(partial_t, scatter_axis=0, mesh_axis=0)
+
+        assert result.placements == (Sharded(0),)
+        # Sum of num_gpus copies of ones, split along axis 0.
+        total = data * num_gpus
+        rows_per_chunk = total.shape[0] // num_gpus
+        for i, shard in enumerate(result.local_shards):
+            expected = total[i * rows_per_chunk : (i + 1) * rows_per_chunk]
+            np.testing.assert_allclose(shard.to_numpy(), expected, rtol=1e-5)
+
+
+class TestMutableStoreOpsGPU:
+    """End-to-end GPU tests for the mutable-tensor write interpreter handlers.
+
+    GPU-resident buffers exercise the handler's device round-trip path
+    (as opposed to the host fast path tested on CPU).
+    """
+
+    def test_buffer_store_gpu(self) -> None:
+        """F.buffer_store writes into a GPU-resident buffer."""
+        gpu = Accelerator()
+        buf = Buffer.from_numpy(np.zeros(4, dtype=np.float32)).to(gpu)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b_torch = torch.ones(4, dtype=torch.float32, device="cuda")
+            b = Tensor.from_dlpack(b_torch)
+            F.buffer_store(a, b)
+
+        np.testing.assert_array_equal(
+            buf.to_numpy(), np.ones(4, dtype=np.float32)
+        )
+
+    def test_buffer_store_slice_gpu_unit_steps(self) -> None:
+        """F.buffer_store_slice writes a contiguous region into a GPU buffer."""
+        gpu = Accelerator()
+        buf = Buffer.from_numpy(np.zeros((4, 4), dtype=np.float32)).to(gpu)
+        slice_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b_torch = torch.from_numpy(slice_np).to("cuda")
+            b = Tensor.from_dlpack(b_torch)
+            F.buffer_store_slice(a, b, [slice(1, 3), slice(1, 3)])
+
+        expected = np.zeros((4, 4), dtype=np.float32)
+        expected[1:3, 1:3] = slice_np
+        np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+    def test_buffer_store_slice_gpu_stepped(self) -> None:
+        """F.buffer_store_slice honors steps on a GPU buffer."""
+        gpu = Accelerator()
+        buf = Buffer.from_numpy(np.zeros(8, dtype=np.float32)).to(gpu)
+        slice_np = np.array([5.0, 6.0, 7.0, 8.0], dtype=np.float32)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b_torch = torch.from_numpy(slice_np).to("cuda")
+            b = Tensor.from_dlpack(b_torch)
+            F.buffer_store_slice(a, b, [slice(0, 8, 2)])
+
+        expected = np.zeros(8, dtype=np.float32)
+        expected[0:8:2] = slice_np
+        np.testing.assert_array_equal(buf.to_numpy(), expected)

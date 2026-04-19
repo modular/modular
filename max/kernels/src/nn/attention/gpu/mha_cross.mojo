@@ -30,6 +30,7 @@ from std.utils.numerics import get_accum_type
 
 
 @always_inline
+@__name(t"mha_cross_bmm0_{q_type}_{p_type}", mangle=True)
 def _bmm0_bs[
     QLayoutType: TensorLayout,
     KVLayoutType: TensorLayout,
@@ -106,7 +107,9 @@ def _bmm0_bs[
         var accum_vec = SIMD[p_type, simd_width_of[p_type]()](0)
         var k_ptr = k_cache.block_paged_ptr[tile_size=1](batch, x, kv_head, 0)
 
-        def accum_fn[width: Int](offset: Int) unified {mut}:
+        def accum_fn[
+            width: Int
+        ](offset: Int) unified {q, y, num_heads, depth, k_ptr, mut}:
             comptime alignment = align_of[SIMD[p_type, width]]()
             var q_val = q.load[width=width, alignment=alignment](
                 y * num_heads * depth + offset
@@ -136,6 +139,7 @@ def _bmm0_bs[
 
 
 @always_inline
+@__name(t"mha_cross_bmm1_{output_type}_{p_type}", mangle=True)
 def _bmm1_bs[
     QLayoutType: TensorLayout,
     KVLayoutType: TensorLayout,
@@ -272,7 +276,7 @@ def mha_cross_gpu_naive[
     comptime num_heads = config.num_heads
     comptime depth = config.depth
     comptime kv_num_heads = cache_t.kv_params.num_heads
-    comptime group = config.num_heads // Int(kv_num_heads)
+    comptime group = config.num_heads // kv_num_heads
     var kv_max_seq_len = Int(k.max_prompt_length())
     var batch_size = Int(q_input_row_offsets.dim[0]()) - 1
     var max_cache_size = Int(k.max_context_length())

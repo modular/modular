@@ -270,16 +270,14 @@ def fused_qk_rope[
     var launch_shape = IndexList[4](
         batch_size,
         new_seq_len,
-        num_q_heads + Int(num_k_heads),  # concat q and k along head dim
+        num_q_heads + num_k_heads,  # concat q and k along head dim
         head_size,
     )
     comptime compile_target = _current_target() if is_cpu[
         target
     ]() else get_gpu_target()
     comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
-    comptime kernel_simd_width = gcd(
-        target_simd_width, Int(kv_params.head_size)
-    )
+    comptime kernel_simd_width = gcd(target_simd_width, kv_params.head_size)
     comptime assert kernel_simd_width >= 2, "invalid simd_width and head size"
 
     comptime if is_cpu[target]():
@@ -305,9 +303,9 @@ def fused_qk_rope_ragged[
     mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
         CoordLike
     ],
-    mrope_section: Optional[Coord[*mrope_types]] = None,
+    mrope_section: Optional[Coord[*TypeList[mrope_types]()]] = None,
     PositionIdsLayoutType: TensorLayout = RowMajorLayout[
-        RuntimeInt[DType.int64], RuntimeInt[DType.int64]
+        *Coord[RuntimeInt[DType.int64], RuntimeInt[DType.int64]].element_types
     ],
 ](
     q_proj: TileTensor[dtype, ...],
@@ -353,14 +351,14 @@ def fused_qk_rope_ragged[
     comptime assert freqs_cis.LayoutType._shape_types[
         1
     ].is_static_value, "Need static shape for freqs_cis"
-    comptime assert rope_dim <= q_head_size and rope_dim <= Int(k_head_size), (
+    comptime assert rope_dim <= q_head_size and rope_dim <= k_head_size, (
         "rope_dim must be smaller or equal to head size, but got rope_dim = "
         + String(rope_dim)
         + " and head_size = "
         + String(k_head_size)
     )
     comptime assert (
-        rope_dim == q_head_size and rope_dim == Int(k_head_size)
+        rope_dim == q_head_size and rope_dim == k_head_size
     ) or interleaved, (
         "Partial RoPE operation only supported for interleaved pattern"
     )
@@ -449,7 +447,7 @@ def fused_qk_rope_ragged[
 
                 head_idx -= num_q_heads
                 # in case k_head_size != q_head_size
-                head_dim_idx += Int(k_head_size - UInt(q_head_size))
+                head_dim_idx += k_head_size - q_head_size
                 rope_k_cache[interleaved=interleaved](
                     k_cache,
                     batch_idx,
@@ -457,12 +455,12 @@ def fused_qk_rope_ragged[
                     post_seq_idx,
                     head_dim_idx,
                     f_c_temp,
-                    Int(k_head_size),
+                    k_head_size,
                 )
 
     var launch_shape = IndexList[3](
         Int(q_proj.dim[0]()),
-        num_q_heads + Int(num_k_heads),  # concat q and k along head dim
+        num_q_heads + num_k_heads,  # concat q and k along head dim
         q_head_size,
     )
     comptime compile_target = _current_target() if is_cpu[

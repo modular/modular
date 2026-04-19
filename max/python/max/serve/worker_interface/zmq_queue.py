@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import queue
 import tempfile
+import urllib.parse
 import uuid
 import weakref
 from collections.abc import Callable
@@ -64,18 +65,27 @@ def _validate_zmq_address(address: str) -> None:
 
     # Protocol-specific validation
     if address.startswith("tcp://"):
-        # TCP requires host:port format
-        parts = address[6:].split(":")
-        if len(parts) != 2:
+        # TCP requires host:port format, including bracketed IPv6
+        # e.g. tcp://host:port or tcp://[2001:db8::1]:port
+        parsed = urllib.parse.urlparse(address)
+        if not parsed.hostname:
             raise ValueError(
-                f"ZMQ tcp address must be in the format tcp://host:port. Found: {address}"
+                f"ZMQ tcp address must be in the format"
+                f" tcp://host:port or tcp://[ipv6]:port."
+                f" Found: {address}"
             )
         try:
-            port = int(parts[1])
+            port = parsed.port
         except ValueError:
             raise ValueError(
-                f"ZMQ tcp port must be a number. Found: {parts[1]}"
+                f"ZMQ tcp port must be a number. Found: {address}"
             ) from None
+        if port is None:
+            raise ValueError(
+                f"ZMQ tcp address must be in the format"
+                f" tcp://host:port or tcp://[ipv6]:port."
+                f" Found: {address}"
+            )
         if not (1 <= port <= 65535):
             raise ValueError(
                 f"ZMQ tcp port must be between 1 and 65535. Found: {port}"

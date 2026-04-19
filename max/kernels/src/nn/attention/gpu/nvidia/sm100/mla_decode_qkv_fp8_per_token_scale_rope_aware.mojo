@@ -63,6 +63,7 @@ SMEM Layout:
   barriers:       (6N+11) fixed + output barriers
 """
 
+from std.collections import OptionalReg
 from std.math import ceildiv
 from std.math.constants import log2e
 from std.sys import size_of
@@ -81,7 +82,14 @@ from std.gpu.compute.arch.tcgen05 import (
 from layout.tma_async import (
     SharedMemBarrier,
 )
-from layout import ComptimeInt, Layout, RowMajorLayout, TileTensor, row_major
+from layout import (
+    ComptimeInt,
+    CoordLike,
+    Layout,
+    RowMajorLayout,
+    TileTensor,
+    row_major,
+)
 from layout.tile_layout import row_major as tt_row_major
 from nn.attention.gpu.nvidia.sm90.attention import (
     OptionalPointer,
@@ -252,6 +260,10 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             Int32(Self.config.num_threads)
         )
     )
+    @__name(
+        t"sm100_mla_decode_qkv_fp8_per_token_scale_rope_aware_{Self.fp8_type}_{Self.bf16_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
+        mangle=True,
+    )
     def kernel(
         # Q_nope TMA: FP8, 64×512, SWIZZLE_64B
         q_nope_tma: QOTMATile[
@@ -299,9 +311,13 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # Per-token Q scale pointer: float32 array with one scale per Q token.
         # sigma_Q[q_token_idx] is folded into scale_log2e inside Softmax.
         # Null pointer means no Q scale (sigma_Q = 1.0).
-        q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+        q_scale_ptr: OptionalReg[
+            UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+        ],
         scalar_args: TileTensor[
-            DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
+            DType.int64,
+            RowMajorLayout[ComptimeInt[3]],
+            MutAnyOrigin,
         ],
     ):
         # Extract scalar launch args from the stable device buffer.
@@ -770,7 +786,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             k_content_tma.async_copy_3d(
                 content_tensor,
                 k0_bar[],
-                (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
+                (0, 0, Int(kv_gmem_row)),
             )
             # K_rope TMA: load BF16 rope into kv_rope_smem
             var rope_stage_ptr = kv_rope_smem + stage0_idx * UInt32(
@@ -782,7 +798,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             k_rope_tma.async_copy_3d(
                 rope_tensor,
                 k0_bar[],
-                (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
+                (0, 0, Int(kv_gmem_row)),
             )
             # Scale TMA: load BN float32 per-token scales into scale SMEM.
             # The scale TMA treats scales as a flat [1, total_elements] 2D
@@ -798,7 +814,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 scale_tma.async_copy(
                     scale_tensor,
                     k0_bar[],
-                    (Int(UInt(kv_gmem_row)), Int(0)),
+                    (Int(kv_gmem_row), 0),
                 )
 
         kv_prod.commit_step()
@@ -834,7 +850,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 k_content_tma.async_copy_3d(
                     content_tensor,
                     k_mbar[],
-                    (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
+                    (0, 0, Int(kv_gmem_row)),
                 )
                 # K_rope TMA
                 var rope_stage_ptr = kv_rope_smem + stage_idx * UInt32(
@@ -846,7 +862,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 k_rope_tma.async_copy_3d(
                     rope_tensor,
                     k_mbar[],
-                    (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
+                    (0, 0, Int(kv_gmem_row)),
                 )
                 # Scale TMA
                 comptime if Self.has_per_token_scales:
@@ -859,7 +875,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     scale_tma.async_copy(
                         scale_tensor,
                         k_mbar[],
-                        (Int(UInt(kv_gmem_row)), Int(0)),
+                        (Int(kv_gmem_row), 0),
                     )
 
             kv_row += UInt32(Self.config.BN)
