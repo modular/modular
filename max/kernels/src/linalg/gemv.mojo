@@ -103,6 +103,7 @@ def reverse_idx[transpose: Bool](x: Int, y: Int) -> IndexList[2]:
 
 
 # Matrix-Column Vector Multiplication using scalar arithmetic
+@__name(t"gemv_kernel_{c_type}_{a_type}_{b_type}_{transpose_b}", mangle=True)
 def gemv_kernel[
     c_type: DType,
     a_type: DType,
@@ -158,6 +159,10 @@ def gemv_kernel[
 
 
 # Matrix-Column Vector Multiplication using vectorized instructions
+@__name(
+    t"gemv_kernel_vector_{c_type}_{a_type}_{b_type}_{transpose_b}_{simd_width}",
+    mangle=True,
+)
 def gemv_kernel_vector[
     c_type: DType,
     a_type: DType,
@@ -314,6 +319,7 @@ def _dot_accum[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
+@__name(t"gemv_split_k_{c_type}_{a_type}_{b_type}_{num_threads}", mangle=True)
 def gemv_split_k[
     c_type: DType,
     a_type: DType,
@@ -497,6 +503,7 @@ def gemv_split_k[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(tile_size))
 )
+@__name(t"gevm_kernel_{c_type}_{a_type}_{b_type}_{tile_size}", mangle=True)
 def gevm_kernel[
     c_type: DType,
     a_type: DType,

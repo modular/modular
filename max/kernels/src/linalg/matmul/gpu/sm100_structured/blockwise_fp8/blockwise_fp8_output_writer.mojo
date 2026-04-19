@@ -31,6 +31,7 @@ from std.gpu.sync import named_barrier
 from layout import (
     ComptimeInt,
     Coord,
+    CoordLike,
     Idx,
     TensorLayout,
     TileTensor,
@@ -473,10 +474,12 @@ struct BlockwiseFP8TileWriter[
         # inherited from the row_major parent tile).
         comptime split_layout = Layout[
             shape_types=Coord[
-                ComptimeInt[TMA_BM], ComptimeInt[Self.stageN]
+                ComptimeInt[TMA_BM],
+                ComptimeInt[Self.stageN],
             ].element_types,
             stride_types=Coord[
-                ComptimeInt[Self.c_smem_dim1], ComptimeInt[1]
+                ComptimeInt[Self.c_smem_dim1],
+                ComptimeInt[1],
             ].element_types,
         ]
 

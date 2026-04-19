@@ -18,7 +18,7 @@ automatic lock management. These primitives enable safe concurrent access to
 shared resources in multi-threaded code.
 """
 
-from std.os import Atomic
+from std.atomic import Atomic
 from std.ffi import external_call
 
 # ===-----------------------------------------------------------------------===#

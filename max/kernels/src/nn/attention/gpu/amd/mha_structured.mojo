@@ -10,32 +10,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""TileTensor-based MHA prefill kernel for gfx950.
+"""MHA prefill kernel for gfx950 with structured scheduling.
 
-Uses TileTensor instead of LayoutTensor for the KV buffer layer,
-eliminating RuntimeLayout overhead and reducing VGPR usage by 2
-(254 -> 252), which gives the LLVM scheduler more freedom to produce
-better instruction ordering. Supports depth=64, 128, 256.
+Supports depth=64, 128, 256. Uses TileTensor throughout for register
+and SMEM tile management, with TiledMmaOp for MMA dispatch.
 """
 
 from std.math import ceildiv
 from std.sys import simd_width_of, llvm_intrinsic, get_defined_bool
-from std.sys.intrinsics import readfirstlane
 from std.gpu import WARP_SIZE
 from std.gpu import warp_id as get_warp_id
 from std.gpu.sync import (
     schedule_barrier,
     s_waitcnt,
 )
-from layout import Layout, LayoutTensor
 from layout.swizzle import Swizzle
-from layout.tensor_core import TiledTensorCore
+from .mma import TiledMmaOp
 from std.memory import bitcast
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 
 from .mha_gfx950 import Attention
-from nn.attention.gpu.amd_structured.kv_buffer import (
+from .kv_buffer import (
     KVBuffer as StructuredKVBuffer,
     KVCacheIterator,
 )
@@ -99,9 +95,7 @@ __extension Attention:
 
         # --- Buffer init ---
 
-        var warp_id = UInt32(
-            readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
-        )
+        var warp_id = UInt32(get_warp_id[broadcast=True]())
         var k_buffer = StructuredKVBuffer[
             mma_shape=Self.mma_shape,
             k_group_size=Self.k_group_size,
@@ -114,12 +108,13 @@ __extension Attention:
             depth=Self.depth,
             kv_num_heads=Self.num_heads // Self.group,
             transpose=True,
+            full_kv=Self.attention_config_t.full_kv,
         ](
             self.k,
-            UInt(self.batch_idx),
-            UInt(self.kv_head_idx()),
+            self.batch_idx,
+            self.kv_head_idx(),
             self.smem_manager.get_k_ptr[type_of(self.k).dtype](),
-            UInt(self.num_keys),
+            self.num_keys,
             warp_id,
         )
 
@@ -134,23 +129,36 @@ __extension Attention:
             depth=Self.depth,
             kv_num_heads=Self.num_heads // Self.group,
             transpose=False,
+            full_kv=Self.attention_config_t.full_kv,
         ](
             self.v,
-            UInt(self.batch_idx),
-            UInt(self.kv_head_idx()),
+            self.batch_idx,
+            self.kv_head_idx(),
             self.smem_manager.get_v_ptr[type_of(self.v).dtype](),
-            UInt(self.num_keys),
+            self.num_keys,
             warp_id,
         )
 
         comptime accum_type = get_accum_type[type_of(self.k).dtype]()
-        comptime tensor_core_mma = TiledTensorCore[
+
+        # QK uses pure TileTensor MMA op.
+        comptime QKMmaOp = TiledMmaOp[
             accum_type,
             Self.q_type,
             Self.mma_shape,
             group_size=Self.k_group_size,
             transpose_b=True,
-        ]()
+        ]
+
+        # PV MMA op — same TiledMmaOp, PRegisterBuffer.mma_tile handles
+        # the f32→bf16 cast+interleave via whole-vector SIMD ops.
+        comptime PVMmaOp = TiledMmaOp[
+            accum_type,
+            Self.q_type,
+            Self.mma_shape,
+            group_size=Self.k_group_size,
+            transpose_b=True,
+        ]
 
         # =============================================================
         # MMA helpers
@@ -160,18 +168,18 @@ __extension Attention:
         @parameter
         def mma_qk_strip[stage: Int, strip: Int]():
             comptime for k_mma in range(Self.num_k_mmas2):
-                tensor_core_mma.mma[swap_a_b=Self.swap_a_b](
-                    self.q_buffer.get_mma_tile[strip, Int(k_mma)](),
+                QKMmaOp.mma[swap_a_b=Self.swap_a_b](
+                    self.q_buffer.mma_tile[strip, Int(k_mma)](),
                     k_buffer.get_mma_tile[Int(k_mma), strip](),
-                    self.p_reg_buffer.get_reg_tile[stage](),
+                    self.p_reg_buffer.stage_tile[stage](),
                 )
 
         @always_inline
         @parameter
         def mma_pv_strip[stage: Int, strip: Int]():
             comptime for k_mma in range(v_buffer.num_k_mmas2):
-                tensor_core_mma.mma[swap_a_b=Self.swap_a_b](
-                    self.p_reg_buffer.get_mma_tile[strip, k_mma, stage](),
+                PVMmaOp.mma[swap_a_b=Self.swap_a_b](
+                    self.p_reg_buffer.mma_tile[strip, k_mma, stage](),
                     v_buffer.get_mma_tile[k_mma, strip](),
                     self.out_reg_buffer.reg_tile,
                 )
@@ -185,7 +193,7 @@ __extension Attention:
 
         @always_inline
         @parameter
-        def mma_pv_incremental[stage: Int](slot: UInt):
+        def mma_pv_incremental[stage: Int](slot: Int):
             comptime for i in range(Self.BN // Self.BK):
                 v_buffer.load_from_shared[i](slot)
                 mma_pv_strip[stage, i]()
@@ -197,23 +205,23 @@ __extension Attention:
         @always_inline
         @parameter
         def softmax_exp_even[stage: Int]():
-            var score = self.p_reg_buffer.vectorize[stage]()
-            self.softmax.exp[start=0, stride=2](score)
+            var score_tile = self.p_reg_buffer.stage_tile[stage]()
+            self.softmax.exp[start=0, stride=2](score_tile)
 
         @always_inline
         @parameter
         def softmax_exp_odd[stage: Int]():
-            var score = self.p_reg_buffer.vectorize[stage]()
-            self.softmax.exp[start=1, stride=2](score)
+            var score_tile = self.p_reg_buffer.stage_tile[stage]()
+            self.softmax.exp[start=1, stride=2](score_tile)
 
         @always_inline
         @parameter
         def softmax_qk_sum[stage: Int]():
-            var score = self.p_reg_buffer.vectorize[stage]()
+            var score_tile = self.p_reg_buffer.stage_tile[stage]()
             var warp_scratch = self.warp_scratch_tensor.tile[
                 2 * Self.num_warps_n, Self.WM
             ](0, 0)
-            self.softmax.calculate_qk_sum(score, warp_scratch)
+            self.softmax.calculate_qk_sum(score_tile, warp_scratch)
 
         @always_inline
         @parameter
@@ -236,11 +244,11 @@ __extension Attention:
         @always_inline
         @parameter
         def softmax_qk_max[stage: Int]():
-            var score = self.p_reg_buffer.vectorize[stage]()
+            var score_tile = self.p_reg_buffer.stage_tile[stage]()
             var warp_scratch = self.warp_scratch_tensor.tile[
                 2 * Self.num_warps_n, Self.WM
             ](0, 0)
-            self.softmax.calculate_qk_max(score, warp_scratch)
+            self.softmax.calculate_qk_max(score_tile, warp_scratch)
 
         @always_inline
         @parameter
@@ -263,8 +271,7 @@ __extension Attention:
         @always_inline
         @parameter
         def softmax_update_output():
-            var output_reg_tile = self.out_reg_buffer.vectorize()
-            self.softmax.update_output(output_reg_tile)
+            self.softmax.update_output(self.out_reg_buffer.reg_tile)
 
         @always_inline
         @parameter
@@ -290,12 +297,12 @@ __extension Attention:
             ]()
 
             # C0 [COMPUTE]: K LDS + QK MFMAs + finish_softmax(prev)
-            k_buffer.load_from_shared(UInt(stage))
+            k_buffer.load_from_shared(stage)
 
             var warp_scratch = self.warp_scratch_tensor.tile[
                 2 * Self.num_warps_n, Self.WM
             ](0, 0)
-            var prev_score = self.p_reg_buffer.vectorize[prev]()
+            var prev_tile = self.p_reg_buffer.stage_tile[prev]()
 
             self.zero_p_buffer[stage]()
             mma_qk_strip[stage, 0]()
@@ -304,12 +311,12 @@ __extension Attention:
             # For depth>=128 (>=4 strips), spread across strips 0-3.
             # For depth=64 (2 strips), do all softmax after strip 1.
             comptime if num_qk_strips > 2:
-                self.softmax.exp[start=1, stride=2](prev_score)
+                self.softmax.exp[start=1, stride=2](prev_tile)
 
             mma_qk_strip[stage, 1]()
 
             comptime if num_qk_strips > 2:
-                self.softmax.calculate_qk_sum(prev_score, warp_scratch)
+                self.softmax.calculate_qk_sum(prev_tile, warp_scratch)
 
             comptime if num_qk_strips > 2:
                 mma_qk_strip[stage, 2]()
@@ -326,8 +333,8 @@ __extension Attention:
 
             # For depth=64, finish_softmax(prev) after all QK strips.
             comptime if num_qk_strips <= 2:
-                self.softmax.exp[start=1, stride=2](prev_score)
-                self.softmax.calculate_qk_sum(prev_score, warp_scratch)
+                self.softmax.exp[start=1, stride=2](prev_tile)
+                self.softmax.calculate_qk_sum(prev_tile, warp_scratch)
                 if pending_scale:
                     softmax_sum_correction()
                 softmax_update_sum()
@@ -335,18 +342,18 @@ __extension Attention:
             # C2 [COMPUTE]: V LDS (incr) + PV MFMAs + start_softmax + exp_even
             set_priority[1]()
 
-            var cur_score = self.p_reg_buffer.vectorize[stage]()
+            var cur_tile = self.p_reg_buffer.stage_tile[stage]()
 
-            v_buffer.load_from_shared[0](UInt(prev))
+            v_buffer.load_from_shared[0](prev)
             mma_pv_strip[prev, 0]()
 
-            v_buffer.load_from_shared[1](UInt(prev))
+            v_buffer.load_from_shared[1](prev)
 
             comptime if prescale_q:
                 self.apply_mask[stage, scale=False]()
             else:
                 self.apply_mask[stage]()
-            self.softmax.calculate_qk_max(cur_score, warp_scratch)
+            self.softmax.calculate_qk_max(cur_tile, warp_scratch)
 
             mma_pv_strip[prev, 1]()
 
@@ -363,12 +370,11 @@ __extension Attention:
 
             if needs_rescale:
                 self.softmax.calculate_correction()
-                var output_reg_tile = self.out_reg_buffer.vectorize()
-                self.softmax.update_output(output_reg_tile)
+                self.softmax.update_output(self.out_reg_buffer.reg_tile)
 
             self.softmax.update_max()
 
-            self.softmax.exp[start=0, stride=2](cur_score)
+            self.softmax.exp[start=0, stride=2](cur_tile)
 
             set_priority[0]()
 
@@ -477,6 +483,8 @@ __extension Attention:
             # Single-tile path.
             softmax_exp_odd[0]()
             softmax_qk_sum[0]()
+            if pending_scale:
+                softmax_sum_correction()
             softmax_update_sum()
             mma_pv_incremental[0](0)
 

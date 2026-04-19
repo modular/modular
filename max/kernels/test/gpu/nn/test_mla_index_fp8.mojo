@@ -98,7 +98,7 @@ def test_mla_index_fp8_paged_variable_lengths[
 
     comptime kv_params = KVCacheStaticParams(
         num_heads=1,  # MLA uses single head for K
-        head_size=UInt(depth),
+        head_size=depth,
         is_mla=True,
     )
     comptime num_layers = 1
@@ -149,8 +149,8 @@ def test_mla_index_fp8_paged_variable_lengths[
         1,  # MLA uses single kv
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     comptime k_block_layout = Layout.row_major[6]()
     var k_block_runtime_layout = RuntimeLayout[k_block_layout].row_major(
@@ -160,7 +160,7 @@ def test_mla_index_fp8_paged_variable_lengths[
         k_shape.flattened_length()
     )
     with k_block_device.map_to_host() as k_block_host:
-        rand(k_block_host.unsafe_ptr(), k_shape.flattened_length())
+        rand(k_block_host.as_span())
 
     # K scale blocks
     comptime head_dim_granularity = 1
@@ -169,14 +169,14 @@ def test_mla_index_fp8_paged_variable_lengths[
         1,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
+        kv_params.num_heads,
         head_dim_granularity,
     )
     var ks_block_device = ctx.enqueue_create_buffer[DType.float32](
         ks_shape.flattened_length()
     )
     with ks_block_device.map_to_host() as ks_block_host:
-        rand(ks_block_host.unsafe_ptr(), ks_shape.flattened_length())
+        rand(ks_block_host.as_span())
 
     # Page lookup tables
     comptime paged_lut_layout = Layout.row_major[2]()

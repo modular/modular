@@ -24,9 +24,9 @@ OLMO2_GGUF_MAPPING = {
     "ffn_gate": "mlp.gate_proj",
     "ffn_norm": "post_attention_layernorm",
     "attn_norm": "input_layernorm",
-    "attn_q": "self_attn.q_proj",
-    "attn_v": "self_attn.v_proj",
-    "attn_k": "self_attn.k_proj",
+    "attn_q": "self_attn.qkv_proj.q",
+    "attn_v": "self_attn.qkv_proj.v",
+    "attn_k": "self_attn.qkv_proj.k",
     "attn_output": "self_attn.o_proj",
     # OLMo2-specific mappings for key and query norms
     "attn_q_norm": "self_attn.q_norm",

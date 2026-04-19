@@ -85,7 +85,7 @@ class DummyPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextGenerationContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DummyModelInputs:
         """Prepares the initial inputs to be passed to `.execute()`.

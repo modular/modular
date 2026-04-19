@@ -100,7 +100,7 @@ def supported_encoding_dtype(encoding: SupportedEncoding) -> DType:
 def supported_encoding_quantization(
     encoding: SupportedEncoding,
 ) -> QuantizationEncoding | None:
-    """Returns the QuantizationEncoding for the given encoding."""
+    """Returns the :class:`QuantizationEncoding` for the given encoding."""
     if encoding not in _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING:
         raise ValueError(
             f"SupportedEncoding '{encoding}' does not have corresponding"
