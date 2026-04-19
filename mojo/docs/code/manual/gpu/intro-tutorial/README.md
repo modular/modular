@@ -15,20 +15,12 @@ Contents:
     extension).
   - A `modular_run_binary_test` target for each binary (with a `_test` suffix).
 
-**Note:** These examples require a [supported
-GPU](https://docs.modular.com/mojo/requirements/#gpu-compatibility) to compile
-and run the kernels. If your system doesn't have a supported GPU, you can
+**Note:** These examples require a [compatible
+GPU](https://docs.modular.com/mojo/requirements#gpu-compatibility) to compile
+and run the kernels. If your system doesn't have a compatible GPU, you can
 compile the programs but the only output you'll see when you run them is the
 message:
 
 ```output
 No compatible GPU found
-```
-
-Additionally, printing from a kernel is not currently supported for Apple
-silicon GPUs. If you compile and run `print_threads.mojo` on an Apple system,
-you'll see this message:
-
-```output
-Printing from a kernel is not currently supported on Apple silicon GPUs
 ```

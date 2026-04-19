@@ -256,6 +256,7 @@ def _reduce_scatter_impl[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
+@__name(t"reducescatter_{dtype}_{use_multimem}", mangle=True)
 def _reducescatter_kernel[
     dtype: DType,
     in_layout: TensorLayout,
@@ -330,11 +331,11 @@ def _reducescatter_kernel[
             # 2D axis-aware: slice + reverse for coalesced access.
             comptime InputTile = TileTensor[dtype, in_layout, ImmutAnyOrigin]
             comptime DynShapeTypes = _CoordToDynamic[
-                InputTile.linear_idx_type, *in_layout._shape_types
+                InputTile.linear_idx_type, in_layout._shape_types
             ]
             comptime RevLayout = Layout[
-                Variadic.reverse[*DynShapeTypes],
-                Variadic.reverse[*in_layout._stride_types],
+                DynShapeTypes.reverse(),
+                in_layout._stride_types.reverse(),
             ]
             comptime SlicedRevTile = TileTensor[
                 dtype, RevLayout, ImmutAnyOrigin

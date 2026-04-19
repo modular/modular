@@ -32,25 +32,38 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 import msgspec
+from dkv import BlockDescriptor, DKVClient
 from max._core import nixl
 from max.driver import Device
 from max.interfaces import RequestID, TextGenerationContext
 from max.kv_cache.paged_kv_cache.transfer_engine import (
     KVTransferEngine,
     KVTransferEngineMetadata,
+    NixlBackendType,
     TensorAgentMetadata,
     TransferReqData,
+    _get_nixl_backend_type,
 )
 from max.nn.kv_cache import KVCacheBuffer, KVCacheParams
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
 
-from .client import DKVClient
-from .protocol import BlockDescriptor
-
 logger = logging.getLogger("max.pipelines")
 
 _UINT64_MASK = (1 << 64) - 1
+
+
+def _backends_compatible(local: NixlBackendType, remote: str) -> bool:
+    """Check if local and remote NIXL backends are compatible.
+
+    NIXL plugin names may differ between MAX (``"ucx"``) and dKV
+    (``"ucx_cuda"``). The UCX family shares a common wire protocol, so
+    any ``ucx*`` variant is compatible with ``"ucx"``.
+    """
+    if local == remote:
+        return True
+    # UCX family: ucx, ucx_cuda, ucx_host all interoperate.
+    return bool(local == "ucx" and remote.startswith("ucx"))
 
 
 class _ConnectorState(enum.Enum):
@@ -260,13 +273,29 @@ class DKVConnector:
                 bytes_per_page=engine.bytes_per_page,
             )
 
-            # Build KVTransferEngineMetadata from the response.
-            # Use our own hostname: the transfer engine compares
-            # hostnames to decide UCX vs shared-memory. Since the
-            # ExchangeMetadata RPC already succeeded (both sides loaded
-            # each other's NIXL metadata), NIXL handles transport
-            # selection internally. Matching hostnames skips the UCX
-            # env-var requirement check.
+            # Validate transport backend compatibility when dKV
+            # reports its active backend. Empty means old server or no
+            # RDMA backend; skip validation (backwards compat).
+            if resp.backend:
+                local_backend = _get_nixl_backend_type()
+                if not _backends_compatible(local_backend, resp.backend):
+                    raise ValueError(
+                        f"Transport backend mismatch: MAX is using "
+                        f"'{local_backend}' (MODULAR_NIXL_TRANSFER_BACKEND) "
+                        f"but dKV is using '{resp.backend}'. Both "
+                        f"sides must use the same NIXL transport. Set "
+                        f"MODULAR_NIXL_TRANSFER_BACKEND="
+                        f"{resp.backend} on the MAX side, or set "
+                        f"DKV_MEMXFER_BACKEND={local_backend} on dKV."
+                    )
+
+            # Use dKV's real hostname when available so connect() can
+            # detect inter-node transfers and validate transport env
+            # vars (e.g. FI_EFA_USE_DEVICE_RDMA for libfabric). Fall
+            # back to local hostname for old servers that don't return
+            # it, preserving existing intra-node behavior.
+            dkv_hostname = resp.hostname or socket.gethostname()
+
             dkv_agent = TensorAgentMetadata(
                 agent_name=resp.agent_name,
                 metadata=resp.agent_metadata,
@@ -278,7 +307,7 @@ class DKVConnector:
                 total_num_pages=resp.total_num_pages,
                 bytes_per_page=resp.bytes_per_page,
                 memory_type=nixl.MemoryType.DRAM,
-                hostname=socket.gethostname(),
+                hostname=dkv_hostname,
                 agents_meta=[[dkv_agent] * self._tp_degree],
             )
 
@@ -287,10 +316,12 @@ class DKVConnector:
 
             logger.info(
                 "dKV connected via ExchangeMetadata:"
-                " bpp=%d, pages=%d, agent=%s",
+                " bpp=%d, pages=%d, agent=%s, hostname=%s, backend=%s",
                 resp.bytes_per_page,
                 resp.total_num_pages,
                 resp.agent_name,
+                dkv_hostname,
+                resp.backend or "(not reported)",
             )
         except Exception:
             logger.warning(

@@ -77,7 +77,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             for replica_input, draft_blocks in zip(
                 kv_cache_inputs.inputs, self._draft_kv_buffers, strict=True
             ):
-                replica_input.blocks = draft_blocks
+                replica_input.kv_blocks = draft_blocks
             return (
                 model.prepare_initial_token_inputs(
                     replica_batches=replica_batches,
@@ -237,7 +237,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         self,
         inputs: TextGenerationInputs[TextContext],
     ) -> dict[RequestID, TextGenerationOutput]:
-        """Execute standalone speculative decoding.
+        """Executes standalone speculative decoding.
 
         In standalone mode:
         1. Draft model generates tokens independently
@@ -302,7 +302,7 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
             )
         )
 
-        draft_tokens_accepted, draft_tokens_generated = (
+        _, _, accepted_per_position = (
             update_contexts_and_compute_metrics_standalone(
                 context_batch=context_batch,
                 first_rejected_tokens=first_rejected_tokens.to_numpy(),
@@ -318,8 +318,12 @@ class StandaloneSpeculativeDecodingPipeline(SpeculativeDecodingPipelineBase):
         )
         metrics = SpeculativeDecodingMetrics(
             num_speculative_tokens=self._num_draft_steps,
-            draft_tokens_accepted=draft_tokens_accepted,
-            draft_tokens_generated=draft_tokens_generated,
+            accepted_per_position=accepted_per_position,
+            # Only count verifications when there are draft tokens to verify.
+            # Otherwise we'd dilute the per-position acceptance rate.
+            num_verifications=len(context_batch)
+            if num_draft_tokens_generated > 0
+            else 0,
         )
         self._metrics.update(metrics=metrics)
 

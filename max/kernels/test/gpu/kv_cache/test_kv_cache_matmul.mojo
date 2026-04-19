@@ -13,6 +13,7 @@
 
 from std.collections import Set
 from std.random import random_ui64, seed
+from std.math.uutils import udivmod
 
 from std.gpu.host import DeviceContext
 from kv_cache.types import (
@@ -54,9 +55,9 @@ def execute_fused_qkv_matmul[
     layer_idx: Int,
     ctx: DeviceContext,
 ) raises:
-    comptime hidden_size = num_q_heads * Int(kv_params.head_size)
+    comptime hidden_size = num_q_heads * kv_params.head_size
     comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
-    comptime fused_hidden_size = (2 * Int(kv_hidden_size)) + hidden_size
+    comptime fused_hidden_size = (2 * kv_hidden_size) + hidden_size
     comptime num_blocks = 32
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype, kv_params
@@ -93,8 +94,8 @@ def execute_fused_qkv_matmul[
         2,
         num_layers,
         max_seq_len,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
 
     # Initialize hidden state
@@ -243,31 +244,29 @@ def execute_fused_qkv_matmul[
                 )
 
             for k_dim in range(kv_hidden_size):
-                head_idx, head_dim_idx = divmod(k_dim, kv_params.head_size)
+                head_idx, head_dim_idx = udivmod(k_dim, kv_params.head_size)
                 assert_almost_equal(
-                    ref_output_host[
-                        bs * prompt_len + s, hidden_size + Int(k_dim)
-                    ],
+                    ref_output_host[bs * prompt_len + s, hidden_size + k_dim],
                     k_cache_host.load[width=1](
                         bs,
-                        Int(head_idx),
+                        head_idx,
                         cache_sizes[bs] + s,
-                        Int(head_dim_idx),
+                        head_dim_idx,
                     ),
                 )
 
             for v_dim in range(kv_hidden_size):
-                head_idx, head_dim_idx = divmod(v_dim, kv_params.head_size)
+                head_idx, head_dim_idx = udivmod(v_dim, kv_params.head_size)
                 assert_almost_equal(
                     ref_output_host[
                         bs * prompt_len + s,
-                        hidden_size + Int(kv_hidden_size + v_dim),
+                        hidden_size + kv_hidden_size + v_dim,
                     ],
                     v_cache_host.load[width=1](
                         bs,
-                        Int(head_idx),
+                        head_idx,
                         cache_sizes[bs] + s,
-                        Int(head_dim_idx),
+                        head_dim_idx,
                     ),
                 )
 

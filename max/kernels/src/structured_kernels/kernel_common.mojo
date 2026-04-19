@@ -32,6 +32,7 @@ from layout.tma_async import SharedMemBarrier
 from layout import (
     ComptimeInt,
     Coord,
+    CoordLike,
     Idx,
     RowMajorLayout,
     TensorLayout,
@@ -122,25 +123,28 @@ struct WarpRole(TrivialRegisterPassable):
 # =============================================================================
 
 
-struct WarpRole1D1D(TrivialRegisterPassable):
+struct WarpRole1D1D[has_sfb: Bool = False](TrivialRegisterPassable):
     """Warp role for 1D-1D kernels with warp specialization.
 
-    Base thread layout (192 threads, MMA_N >= 64):
+    Parameterized on `has_sfb` so the SFB TMA-load / TMEM-load warps (and the
+    scheduler's warp index) compile out cleanly on the MMA_N >= 64 path.
+
+    Base layout, `has_sfb = False` (224 threads with scheduler, MMA_N >= 64):
     - Warps 0-3 (threads 0-127): Epilogue (4 warps)
     - Warp 4 (threads 128-159): TMA Load
     - Warp 5 (threads 160-191): MMA
+    - Warp 6 (threads 192-223): Scheduler
 
-    Extended layout (352 threads, MMA_N < 64):
-    - Warps 0-3 (threads 0-127):  Epilogue (4 warps)
-    - Warp 4 (threads 128-159):   TMA Load (A, B, SFA)
-    - Warp 5 (threads 160-191):   MMA
-    - Warp 6 (threads 192-223):   SFB TMA Load (1 warp, 32 threads)
-    - Warps 7-10 (threads 224-351): SFB TMEM Load (4 warps, 128 threads)
+    Extended layout, `has_sfb = True` (384 threads with scheduler, MMA_N < 64):
+    - Warps 0-3 (threads 0-127):    Epilogue (4 warps)
+    - Warp 4 (threads 128-159):     TMA Load (A, B, SFA)
+    - Warp 5 (threads 160-191):     MMA
+    - Warp 6 (threads 192-223):     SFB TMA Load (1 warp)
+    - Warps 7-10 (threads 224-351): SFB TMEM Load (4 warps)
+    - Warp 11 (threads 352-383):    Scheduler
 
     The epilogue warps being at 0-3 is important because TMAStoreCoords
     uses `warp_id == 0` for election.
-
-    No scheduler warp — work distribution uses linear grid traversal.
     """
 
     comptime EPILOGUE_WARP_START = 0
@@ -155,8 +159,21 @@ struct WarpRole1D1D(TrivialRegisterPassable):
     comptime NUM_SFB_TMA_LOAD_THREADS = 32  # 1 warp
     comptime NUM_SFB_LOAD_THREADS = 128  # 4 warps
 
+    # Scheduler warp sits right after the SFB warps when they exist, otherwise
+    # directly after the MMA warp. Launching the SFB warps on MMA_N >= 64 would
+    # burn ~7.5K registers on idle threads, so we compile them out there.
+    comptime SCHEDULER_WARP_START = (
+        Self.SFB_LOAD_WARP_START
+        + Self.NUM_SFB_LOAD_THREADS if Self.has_sfb else Self.SFB_TMA_LOAD_WARP_START
+    )
+    comptime NUM_SCHEDULER_THREADS = 32
+
     comptime TOTAL_THREADS = 192
     comptime TOTAL_THREADS_WITH_SFB = 352
+    # 384 when has_sfb else 224.
+    comptime TOTAL_THREADS_WITH_SCHED = (
+        Self.SCHEDULER_WARP_START + Self.NUM_SCHEDULER_THREADS
+    )
 
     @staticmethod
     @always_inline
@@ -187,7 +204,9 @@ struct WarpRole1D1D(TrivialRegisterPassable):
     def is_sfb_tma_load() -> Bool:
         """Returns True if current thread is in the SFB TMA load warp (warp 6).
 
-        Only active when MMA_N < 64 (kernel launched with 352 threads).
+        Only meaningful when `has_sfb` (i.e. MMA_N < 64). Callers gate this
+        behind `@parameter if Self.MMA_N < 64` so the check is unreachable on
+        the no-SFB path, where the same threads host the scheduler warp.
         """
         return (
             thread_idx.x >= Self.SFB_TMA_LOAD_WARP_START
@@ -199,9 +218,23 @@ struct WarpRole1D1D(TrivialRegisterPassable):
     def is_sfb_load() -> Bool:
         """Returns True if current thread is in an SFB TMEM load warp (warps 7-10).
 
-        Only active when MMA_N < 64 (kernel launched with 352 threads).
+        Only meaningful when `has_sfb` (i.e. MMA_N < 64); callers gate the
+        check with `@parameter if Self.MMA_N < 64`.
         """
-        return thread_idx.x >= Self.SFB_LOAD_WARP_START
+        return (
+            thread_idx.x >= Self.SFB_LOAD_WARP_START
+            and thread_idx.x < Self.SCHEDULER_WARP_START
+        )
+
+    @staticmethod
+    @always_inline
+    def is_scheduler() -> Bool:
+        """Returns True if current thread is in the scheduler warp.
+
+        Scheduler = warp 6 when `has_sfb = False`, else warp 11. The scheduler
+        warp precomputes tile info into SMEM for consumer warps.
+        """
+        return thread_idx.x >= Self.SCHEDULER_WARP_START
 
 
 # =============================================================================
@@ -449,7 +482,7 @@ def init_clc_barriers[
 
 
 comptime _Batched3DLayout[L: TensorLayout] = RowMajorLayout[
-    ComptimeInt[1], L._shape_types[0], L._shape_types[1]
+    *Coord[ComptimeInt[1], L._shape_types[0], L._shape_types[1]].element_types,
 ]
 """3D batched layout from a 2D layout: prepend batch=1, preserve shape types."""
 
