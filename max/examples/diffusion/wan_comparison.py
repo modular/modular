@@ -17,7 +17,8 @@
 Runs Wan text-to-video generation with both backends, performs warmup runs,
 benchmarks with split preprocessing/execution timings, and prints a
 side-by-side summary.  Supports Wan 2.1/2.2 T2V models (including MoE
-variants) via the `--model` argument.  Each iteration uses a different
+variants) via the `--model` argument.  Also includes 1-frame (text-to-image)
+configs in the iteration set.  Each iteration uses a different
 `(height, width, num_frames, num_inference_steps)` tuple and cycles through
 a fixed set of prompts with different sequence lengths to stress test
 eager-mode recompilation and text-encoder performance.
@@ -95,11 +96,17 @@ from PIL import Image
 #   720p/49f   → ~77 GB   (seq_len ~47k)
 #   720p/81f   → ~80 GB   (seq_len ~76k)
 #
+# 1-frame image generation configs (height, width, num_frames, steps).
+# Run these first to establish a text-to-image baseline.
+IMAGE_CONFIGS: list[tuple[int, int, int, int]] = [
+    (1152, 2048, 1, 20),
+    (1536, 2048, 1, 20),
+    (2048, 2048, 1, 20),
+]
+
 VARIED_CONFIGS: list[tuple[int, int, int, int]] = [
-    # Ordered from largest to smallest estimated memory footprint
-    # (descending) so the biggest allocation happens first while the
-    # memory manager has maximum headroom — matching the descending
-    # strategy in wan_mem_repro.py.
+    # --- Image configs (1 frame) — run first ---
+    *IMAGE_CONFIGS,
     # --- Tier 2: Medium 720p (80-90 GB) ---
     (720, 1280, 81, 50),  # ~80 GB — standard 720p, 81 frames
     (720, 1280, 49, 30),  # ~77 GB — 720p short clip
@@ -576,10 +583,15 @@ def _save_frames(
     if frames.ndim == 5:
         # (B, C, T, H, W) -> take first batch element -> (C, T, H, W)
         frames = frames[0]
-    if frames.ndim == 4 and frames.shape[0] in (1, 3):
+    # Check last dim first: if it's 1/3, the data is already (T, H, W, C).
+    # Only then fall back to interpreting shape[0] as the channel dim (which
+    # would otherwise mis-trigger on (N=1, H, W, C) 1-frame outputs).
+    if frames.ndim == 4 and frames.shape[-1] in (1, 3):
+        pass  # already (T, H, W, C)
+    elif frames.ndim == 4 and frames.shape[0] in (1, 3):
         # (C, T, H, W) -> (T, H, W, C)
         frames = np.transpose(frames, (1, 2, 3, 0))
-    elif frames.ndim == 4 and frames.shape[-1] not in (1, 3):
+    elif frames.ndim == 4:
         # (T, C, H, W) -> (T, H, W, C)
         frames = np.transpose(frames, (0, 2, 3, 1))
 
@@ -630,9 +642,11 @@ def _save_video(
     os.makedirs(output_dir, exist_ok=True)
     if frames.ndim == 5:
         frames = frames[0]
-    if frames.ndim == 4 and frames.shape[0] in (1, 3):
+    if frames.ndim == 4 and frames.shape[-1] in (1, 3):
+        pass  # already (T, H, W, C)
+    elif frames.ndim == 4 and frames.shape[0] in (1, 3):
         frames = np.transpose(frames, (1, 2, 3, 0))
-    elif frames.ndim == 4 and frames.shape[-1] not in (1, 3):
+    elif frames.ndim == 4:
         frames = np.transpose(frames, (0, 2, 3, 1))
 
     # Normalize to uint8 if needed.
@@ -845,7 +859,7 @@ def run_diffusers(
                         f"iter{i}_torch_{req.width}x{req.height}"
                         f"_{req.num_frames}f_{req.num_inference_steps}s"
                     )
-                    if args.save_mp4:
+                    if args.save_mp4 and req.num_frames > 1:
                         fname = _save_video(frames, output_dir, prefix)
                         print(f"    saved video: {fname}")
                     else:

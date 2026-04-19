@@ -241,12 +241,12 @@ class TestImageDimensionValidation:
         with pytest.raises(
             ValidationError, match="exceeds the maximum pixel area"
         ):
-            ImageProviderOptions(width=2048, height=1024)
+            ImageProviderOptions(width=2048, height=2064)
 
     def test_pixel_area_at_max(self) -> None:
-        opts = ImageProviderOptions(width=1024, height=1024)
-        assert opts.width == 1024
-        assert opts.height == 1024
+        opts = ImageProviderOptions(width=2048, height=2048)
+        assert opts.width == 2048
+        assert opts.height == 2048
 
     def test_only_width_set_skips_area_check(self) -> None:
         opts = ImageProviderOptions(width=2048)

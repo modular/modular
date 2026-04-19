@@ -71,9 +71,9 @@ class ImageProviderOptions(BaseModel):
         ge=128,
     )
 
-    # Maximum total pixel area (e.g. 1024x1024). Requests exceeding this
+    # Maximum total pixel area (e.g. 2048x2048). Requests exceeding this
     # would allocate huge latent tensors and risk OOM on the GPU.
-    _MAX_PIXEL_AREA: int = 1024 * 1024
+    _MAX_PIXEL_AREA: int = 2048 * 2048
 
     @model_validator(mode="after")
     def _validate_dimensions(self) -> "ImageProviderOptions":
