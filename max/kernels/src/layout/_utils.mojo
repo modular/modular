@@ -157,17 +157,17 @@ struct ManagedLayoutTensor[
                 self.runtime_layout,
             )
 
-    def tensor[update: Bool = True](self) raises -> Self.layout_tensor_type:
+    def tensor[update: Bool = True](mut self) raises -> Self.layout_tensor_type:
         comptime if update:
             self._update_host()
 
         comptime if Self.layout.all_dims_known():
             return Self.layout_tensor_type(
-                self.host_data.unsafe_ptr(),
+                self.host_data,
             )
         else:
             return Self.layout_tensor_type(
-                self.host_data.unsafe_ptr(),
+                self.host_data,
                 self.runtime_layout,
             )
 

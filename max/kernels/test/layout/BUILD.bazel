@@ -35,11 +35,20 @@ _EXTRA_CONSTRAINTS = {
     for src in _FILECHECK_TESTS
 ]
 
+mojo_filecheck_test(
+    name = "test_negative_index_int_tuple.mojo.test",
+    srcs = ["test_negative_index_int_tuple.mojo"],
+    expect_crash = True,
+    deps = [
+        "//max:layout",
+        "@mojo//:std",
+    ],
+)
+
 [
     mojo_test(
         name = src + ".test",
         srcs = [src],
-        tags = (["manual"] if src == "test_tiled_matmul_backtoback.mojo" else []),  # TODO(MOCO-1523)
         deps = [
             "//max:layout",
             "@mojo//:std",
@@ -48,6 +57,6 @@ _EXTRA_CONSTRAINTS = {
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS,
+        exclude = _FILECHECK_TESTS + ["test_negative_index_int_tuple.mojo"],
     )
 ]

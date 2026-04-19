@@ -71,10 +71,10 @@ def execute_ragged_flash_attention[
     comptime valid_lengths_layout = Layout(UNKNOWN_VALUE)
     comptime lookup_table_layout = Layout(UNKNOWN_VALUE)
     comptime q_ragged_static_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+        UNKNOWN_VALUE, num_q_heads, kv_params.head_size
     )
     comptime q_padded_static_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, kv_params.head_size
     )
     comptime kv_block_static_layout = Layout.row_major[6]()
 
@@ -126,14 +126,14 @@ def execute_ragged_flash_attention[
 
     # Create q tensors
     var q_ragged_shape = IndexList[3](
-        total_length, num_q_heads, Int(kv_params.head_size)
+        total_length, num_q_heads, kv_params.head_size
     )
     var q_ragged_runtime_layout = RuntimeLayout[
         q_ragged_static_layout
     ].row_major(q_ragged_shape)
 
     var q_padded_shape = IndexList[4](
-        batch_size, max_prompt_length, num_q_heads, Int(kv_params.head_size)
+        batch_size, max_prompt_length, num_q_heads, kv_params.head_size
     )
     var q_padded_runtime_layout = RuntimeLayout[
         q_padded_static_layout
@@ -158,20 +158,20 @@ def execute_ragged_flash_attention[
         unpadded_seq_len = valid_lengths[bs]
         ragged_start_idx = Int(input_row_offsets_host[bs])
         padded_ptr = q_padded_host.ptr + (
-            bs * max_prompt_length * num_q_heads * Int(kv_params.head_size)
+            bs * max_prompt_length * num_q_heads * kv_params.head_size
         )
         ragged_ptr = q_ragged_host.ptr + (
-            ragged_start_idx * num_q_heads * Int(kv_params.head_size)
+            ragged_start_idx * num_q_heads * kv_params.head_size
         )
         memcpy(
             dest=padded_ptr,
             src=ragged_ptr,
-            count=unpadded_seq_len * num_q_heads * Int(kv_params.head_size),
+            count=unpadded_seq_len * num_q_heads * kv_params.head_size,
         )
 
     # Create output tensors
     var ref_output_shape = IndexList[4](
-        batch_size, max_prompt_length, num_q_heads, Int(kv_params.head_size)
+        batch_size, max_prompt_length, num_q_heads, kv_params.head_size
     )
     var ref_output_runtime_layout = RuntimeLayout[
         q_padded_static_layout
@@ -181,7 +181,7 @@ def execute_ragged_flash_attention[
     )
 
     var test_output_shape = IndexList[3](
-        total_length, num_q_heads, Int(kv_params.head_size)
+        total_length, num_q_heads, kv_params.head_size
     )
     var test_output_runtime_layout = RuntimeLayout[
         q_ragged_static_layout
@@ -198,8 +198,8 @@ def execute_ragged_flash_attention[
         2,
         num_layers,
         max_seq_len_cache,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var kv_block_runtime_layout = RuntimeLayout[
         kv_block_static_layout
@@ -319,10 +319,8 @@ def execute_ragged_flash_attention[
         for s in range(prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
-                    var ref_val = ref_out_tensor[bs, s, h, Int(hd)]
-                    var test_val = test_out_tensor[
-                        ragged_offset + s, h, Int(hd)
-                    ]
+                    var ref_val = ref_out_tensor[bs, s, h, hd]
+                    var test_val = test_out_tensor[ragged_offset + s, h, hd]
                     try:
                         var rtol_bf16 = 1e-2
                         assert_almost_equal(

@@ -48,7 +48,7 @@ from max.nn.comm.ep.ep_config import EPConfig
 from max.nn.comm.ep.ep_manager import EPBatchManager, EPCommInitializer
 from max.nn.kernels import (
     grouped_dynamic_scaled_fp8_matmul,
-    grouped_dynamic_scaled_nvfp4_matmul,
+    grouped_matmul_block_scaled,
     grouped_matmul_ragged,
 )
 from max.nn.quant_config import (
@@ -130,7 +130,7 @@ def _call_grouped_matmul(
             usage_stats,
         ) = dispatched
         assert weight_scales is not None and expert_scales is not None
-        return grouped_dynamic_scaled_nvfp4_matmul(
+        return grouped_matmul_block_scaled(
             tokens,
             weight,
             a_scales,

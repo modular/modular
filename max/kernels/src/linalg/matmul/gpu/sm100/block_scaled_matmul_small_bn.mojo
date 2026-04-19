@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_up, ceildiv
-from std.math.uutils import umod, ufloordiv
+from std.math.uutils import umod, ufloordiv, udivmod_unchecked
 from std.sys import align_of, size_of
 
 from std.gpu import WARP_SIZE, barrier
@@ -51,6 +51,7 @@ from std.gpu.sync import (
 from std.gpu.compute.arch.tcgen05 import *
 from layout import (
     Coord,
+    CoordLike,
     Idx,
     Layout,
     LayoutTensor,
@@ -307,7 +308,7 @@ def load_AB_SFA[
     mma_shape: IndexList[3],
     num_sf_k_tiles: Int,
     cta_group: Int = 1,
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](
     a_tma_op: TMATensorTile[a_type, a_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_rank, b_tile_shape, b_desc_shape],
@@ -353,7 +354,7 @@ def load_AB_SFA[
     # Leader CTAs expect SMEM from itself and their peers
     comptime expected_bytes = (
         cta_group * (a_expected_bytes + b_expected_bytes + sfa_expected_bytes)
-    ) * Int(k_group_size)
+    ) * k_group_size
 
     comptime a_tma_load_size = _idx_product[a_rank, a_desc_shape]()
     comptime b_tma_load_size = _idx_product[b_rank, b_desc_shape]()
@@ -472,7 +473,7 @@ def consumer_main_loop[
     SFB_NUM_COLS: Int,
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](
     tmem_addr: UInt32,
     sfa_tmem: UInt32,
@@ -625,6 +626,8 @@ def _sfb_cpasync_produce_tile[
     sfb_batch_stride: Int,
     sfb_n_stride: Int,
     sfb_k_tiles: Int,
+    load_mma_pipeline: ProducerConsumerPipeline[num_sfb_pipeline_stages],
+    mut smem_release_state: PipelineState[num_sfb_pipeline_stages],
 ):
     """Produce SFB data from global to shared memory using cp.async.
 
@@ -635,6 +638,10 @@ def _sfb_cpasync_produce_tile[
     cp.async does not auto-fill zeros like TMA, and garbage bytes
     that decode as NaN in float8_e4m3fn would corrupt the accumulator
     (NaN * 0 = NaN).
+
+    Waits on load_mma_pipeline's empty barriers (fired by
+    tcgen05.commit) instead of sfb_pipeline.wait_consumer() to
+    ensure MMA has finished reading SFB SMEM before overwriting.
     """
     comptime ROW_STRIDE = SF_ATOM_M[1] * SF_ATOM_K
     comptime K_TILE_ELEMS = SF_ATOM_M[0] * ROW_STRIDE
@@ -665,7 +672,12 @@ def _sfb_cpasync_produce_tile[
     comptime num_passes = ceildiv(MMA_N, WARP_SIZE)
 
     for i in range(num_iters // UInt32(k_group_size)):
-        sfb_pipeline.wait_consumer()
+        # Wait for MMA to release SMEM (via tcgen05.commit on
+        # load_mma_pipeline's empty barrier).
+        load_mma_pipeline.consumer_mbar(smem_release_state.index())[0].wait(
+            smem_release_state.phase()
+        )
+        smem_release_state.step()
 
         var stage = sfb_pipeline.producer_stage()
         var sfb_mbar = sfb_pipeline.producer_mbar(stage)
@@ -674,9 +686,7 @@ def _sfb_cpasync_produce_tile[
             var j = UInt32(jj)
             var offset = stage * UInt32(k_group_size) + j
             var sfb_smem_tile_ptr = sfb_smem_base_ptr + Int(
-                sfb_smem_stage_layout(
-                    Coord(RuntimeInt(Scalar[DType.int64](offset)))
-                )
+                sfb_smem_stage_layout(Coord(RuntimeInt(Int64(offset))))
             )
             var k_tile_base = Int(i * UInt32(k_group_size) + j) * num_sf_k_tiles
 
@@ -686,11 +696,12 @@ def _sfb_cpasync_produce_tile[
                     if pos < MMA_N:
                         # Global address: compute per-position to handle
                         # tiles that straddle SF_MN_GROUP boundaries.
-                        var abs_pos = UInt(Int(work_info.n) * MMA_N + Int(pos))
-                        var n_group = Int(abs_pos) // SF_MN_GROUP_SIZE
-                        var outer = abs_pos % UInt(SF_MN_GROUP_SIZE)
-                        var row_in_atom = outer % UInt(SF_ATOM_M[0])
-                        var sub_column = outer / UInt(SF_ATOM_M[0])
+                        var abs_pos = Int(work_info.n) * MMA_N + Int(pos)
+                        var n_group = abs_pos // SF_MN_GROUP_SIZE
+                        var outer = umod(abs_pos, SF_MN_GROUP_SIZE)
+                        var sub_column, row_in_atom = udivmod_unchecked(
+                            outer, SF_ATOM_M[0]
+                        )
                         # SMEM atom layout: row within 32-row atom + sub_col.
                         var smem_row = Int(pos) % SF_ATOM_M[0]
                         var smem_sub_col = Int(pos) // SF_ATOM_M[0]
@@ -708,16 +719,10 @@ def _sfb_cpasync_produce_tile[
                                     sfb_global_atom_layout(
                                         Coord(
                                             RuntimeInt(
-                                                Scalar[DType.int64](
-                                                    k_tile_base + k_atom
-                                                )
+                                                Int64(k_tile_base + k_atom)
                                             ),
-                                            RuntimeInt(
-                                                Scalar[DType.int64](row_in_atom)
-                                            ),
-                                            RuntimeInt(
-                                                Scalar[DType.int64](sub_column)
-                                            ),
+                                            RuntimeInt(Int64(row_in_atom)),
+                                            RuntimeInt(Int64(sub_column)),
                                         )
                                     )
                                 )
@@ -765,6 +770,8 @@ def _sfb_cpasync_produce_tile_warpwide[
     sfb_batch_stride: Int,
     sfb_n_stride: Int,
     sfb_k_tiles: Int,
+    load_mma_pipeline: ProducerConsumerPipeline[num_sfb_pipeline_stages],
+    mut smem_release_state: PipelineState[num_sfb_pipeline_stages],
 ):
     """Produce SFB data from global to shared memory using cp.async,
     utilizing the full warp (32 threads) when MMA_N * num_sf_k_tiles <= 32.
@@ -777,6 +784,10 @@ def _sfb_cpasync_produce_tile_warpwide[
 
     The pipeline's producer arrive_count must be MMA_N * num_sf_k_tiles
     (= 32 in the expected configuration).
+
+    Waits on load_mma_pipeline's empty barriers (fired by
+    tcgen05.commit) instead of sfb_pipeline.wait_consumer() to
+    ensure MMA has finished reading SFB SMEM before overwriting.
     """
     comptime assert (
         MMA_N * num_sf_k_tiles <= 32
@@ -812,16 +823,18 @@ def _sfb_cpasync_produce_tile_warpwide[
     var active = lane_id() < MMA_N * num_sf_k_tiles
 
     # Per-tile address components for this lane's position.
-    var outer = (UInt(work_info.n) * UInt(MMA_N)) % UInt(
-        SF_MN_GROUP_SIZE
-    ) + UInt(my_pos)
-    var row_in_atom = outer % UInt(SF_ATOM_M[0])
-    var sub_column = outer / UInt(SF_ATOM_M[0])
+    var outer = umod(Int(work_info.n) * MMA_N, SF_MN_GROUP_SIZE) + my_pos
+    var sub_column, row_in_atom = udivmod_unchecked(outer, SF_ATOM_M[0])
     var n_group = (Int(work_info.n) * MMA_N) // SF_MN_GROUP_SIZE
     var batch = Int(work_info.k_start)
 
     for i in range(num_iters // UInt32(k_group_size)):
-        sfb_pipeline.wait_consumer()
+        # Wait for MMA to release SMEM (via tcgen05.commit on
+        # load_mma_pipeline's empty barrier).
+        load_mma_pipeline.consumer_mbar(smem_release_state.index())[0].wait(
+            smem_release_state.phase()
+        )
+        smem_release_state.step()
 
         var stage = sfb_pipeline.producer_stage()
         var sfb_mbar = sfb_pipeline.producer_mbar(stage)
@@ -830,9 +843,7 @@ def _sfb_cpasync_produce_tile_warpwide[
             var j = UInt32(jj)
             var offset = stage * UInt32(k_group_size) + j
             var sfb_smem_tile_ptr = sfb_smem_base_ptr + Int(
-                sfb_smem_stage_layout(
-                    Coord(RuntimeInt(Scalar[DType.int64](offset)))
-                )
+                sfb_smem_stage_layout(Coord(RuntimeInt(Int64(offset))))
             )
             var k_tile_base = Int(i * UInt32(k_group_size) + j) * num_sf_k_tiles
 
@@ -856,15 +867,9 @@ def _sfb_cpasync_produce_tile_warpwide[
                         + Int(
                             sfb_global_atom_layout(
                                 Coord(
-                                    RuntimeInt(
-                                        Scalar[DType.int64](
-                                            k_tile_base + my_k_atom
-                                        )
-                                    ),
-                                    RuntimeInt(
-                                        Scalar[DType.int64](row_in_atom)
-                                    ),
-                                    RuntimeInt(Scalar[DType.int64](sub_column)),
+                                    RuntimeInt(Int64(k_tile_base + my_k_atom)),
+                                    RuntimeInt(Int64(row_in_atom)),
+                                    RuntimeInt(Int64(sub_column)),
                                 )
                             )
                         )
@@ -895,6 +900,15 @@ def _sfb_cpasync_produce_tile_warpwide[
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
+@__name(
+    StaticString(config.get_kernal_name())
+    + StaticString(
+        "_fused_compute_epi" if elementwise_compute_lambda_fn
+        is not None else ""
+    )
+    + StaticString("_fused_epi" if elementwise_lambda_fn is not None else ""),
+    mangle=True,
+)
 def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     a_type: DType,
     b_type: DType,
@@ -995,8 +1009,8 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ), "Only support MXF8F6F4 (k=1) or MXF4NVF4 (k=4)"
 
     comptime assert (
-        UInt(config.num_accum_pipeline_stages) * UInt(MMA_N)
-        + UInt(SFA_NUM_COLS + SFB_NUM_COLS) * UInt(config.num_pipeline_stages)
+        config.num_accum_pipeline_stages * MMA_N
+        + (SFA_NUM_COLS + SFB_NUM_COLS) * config.num_pipeline_stages
         <= NUM_TMEM_COLS
     ), "sfa_tmem and sfb_tmem exceed tmem_cols"
 
@@ -1395,7 +1409,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         mma_shape=config.mma_shape,
                         num_sf_k_tiles=config.num_sf_k_tiles,
                         cta_group=config.cta_group,
-                        k_group_size=UInt(config.k_group_size),
+                        k_group_size=config.k_group_size,
                     ](
                         a_tma_op,
                         b_tma_op,
@@ -1433,6 +1447,13 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
     if WarpRole.is_sfb_load():
         with MatmulProfilerType[0](workspace, 0):
+            # Track load_mma_pipeline consumer (empty) barrier phase.
+            # Phase=1 matches load_mma_pipeline's producer_phase so
+            # first wait passes trivially (pipeline initially empty).
+            var smem_release_state = PipelineState[
+                config.num_pipeline_stages // config.k_group_size
+            ](0, 1, 0)
+
             while work_info.is_valid():
                 next_work_info = scheduler.fetch_next_work(
                     work_info, clc_pipe_consumer_state
@@ -1456,6 +1477,8 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         sfb_batch_stride,
                         sfb_n_stride,
                         sfb_k_tiles,
+                        load_mma_pipeline,
+                        smem_release_state,
                     )
                 else:
                     _sfb_cpasync_produce_tile[
@@ -1474,15 +1497,19 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         sfb_batch_stride,
                         sfb_n_stride,
                         sfb_k_tiles,
+                        load_mma_pipeline,
+                        smem_release_state,
                     )
-
                 work_info = next_work_info
 
             # Drain: prevent exit while MMA is still consuming SFB SMEM.
             comptime for i in range(
                 config.num_pipeline_stages // config.k_group_size
             ):
-                sfb_pipeline.wait_consumer()
+                load_mma_pipeline.consumer_mbar(smem_release_state.index())[
+                    0
+                ].wait(smem_release_state.phase())
+                smem_release_state.step()
                 sfb_pipeline.producer_step()
 
     # 2CTA only: SfbReady warp observes sfb_pipeline producer barrier
@@ -1569,7 +1596,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
             tmem_addr = ptr_tmem_addr[0]
             var sfa_tmem = tmem_addr + UInt32(
-                UInt(config.num_accum_pipeline_stages) * UInt(MMA_N)
+                config.num_accum_pipeline_stages * MMA_N
             )
             var sfb_tmem = sfa_tmem + UInt32(SFA_NUM_COLS) * UInt32(
                 config.num_pipeline_stages
@@ -1602,7 +1629,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                             SFB_NUM_COLS=SFB_NUM_COLS,
                             cta_group=config.cta_group,
                             cluster_shape=config.cluster_shape,
-                            k_group_size=UInt(config.k_group_size),
+                            k_group_size=config.k_group_size,
                         ](
                             tmem_offset,
                             sfa_tmem,
@@ -1628,20 +1655,9 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         comptime if config.cta_group == 2:
                             sfb_ready_state.step()
 
-                        # Signal SfbLoad that this SMEM slot is consumed.
-                        # 2CTA: leader signals both CTAs' private pipelines.
-                        if elect_one_sync():
-                            # Arrive on own (leader) CTA's barrier.
-                            _ = sfb_pipeline.consumer_mbar(
-                                sfb_pipeline.consumer_stage()
-                            )[0].arrive()
-                            # Arrive on peer CTA's barrier.
-                            comptime if config.cta_group == 2:
-                                umma_arrive_peer_cta(
-                                    sfb_pipeline.consumer_mbar(
-                                        sfb_pipeline.consumer_stage()
-                                    )[0].unsafe_ptr()
-                                )
+                        # SFB SMEM release is handled by load_mma_pipeline's
+                        # commit (tcgen05.commit fires on empty barriers).
+                        # SfbLoad waits on those barriers directly.
                         sfb_pipeline.consumer_step()
 
                     # mma arrive multicast will track completion of all mma prior to this barrier.
