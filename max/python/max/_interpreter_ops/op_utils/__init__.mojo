@@ -54,10 +54,11 @@ def _make_ptr[
 
 def _get_ctx(
     device_context_ptr: PythonObject,
-) raises -> OpaquePointer[MutExternalOrigin]:
-    return OpaquePointer[MutExternalOrigin](
-        unsafe_from_address=Int(py=device_context_ptr)
-    )
+) raises -> Optional[OpaquePointer[MutExternalOrigin]]:
+    var addr = Int(py=device_context_ptr)
+    if addr == 0:
+        return None
+    return OpaquePointer[MutExternalOrigin](unsafe_from_address=addr)
 
 
 trait Dispatchable:

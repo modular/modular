@@ -39,7 +39,7 @@ def scatter_nd_gpu[
     last_index_dimension: Int,
     num_updates_elements: Int,
 ):
-    var id: UInt = global_idx.x
+    var id: Int = global_idx.x
     if id >= num_indices:
         return
 
