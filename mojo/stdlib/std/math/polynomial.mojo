@@ -28,7 +28,7 @@ from std.math.polynomial import polynomial_evaluate
 @always_inline
 def polynomial_evaluate[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     coefficients: Span[Scalar[dtype], ...],
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -57,7 +57,7 @@ def polynomial_evaluate[
 @always_inline
 def _horner_evaluate[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     coefficients: Span[Scalar[dtype], ...],
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -94,13 +94,13 @@ def _horner_evaluate[
         # The degenerate case is when the number of coefficients is 1. In those
         # cases we need to return c0.
         return c_last
+    else:
+        comptime c_second_from_last = coefficients[num_coefficients - 2]
 
-    comptime c_second_from_last = coefficients[num_coefficients - 2]
+        var result = x.fma(c_last, c_second_from_last)
 
-    var result = x.fma(c_last, c_second_from_last)
+        comptime for i in reversed(range(num_coefficients - 2)):
+            comptime c = coefficients[i]
+            result = result.fma(x, c)
 
-    comptime for i in reversed(range(num_coefficients - 2)):
-        comptime c = coefficients[i]
-        result = result.fma(x, c)
-
-    return result
+        return result

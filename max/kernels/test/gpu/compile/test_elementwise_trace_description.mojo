@@ -39,9 +39,9 @@ def test_trace_description_elementwise(ctx: DeviceContext) raises:
         pass
 
     # Verify the PTX entry point has the expected sanitized+hashed name.
-    # CHECK-PTX: my_function_with_some_name_gs_even_{{[0-9a-f]+}}
+    # CHECK-PTX: my_function_with_some_name_r1_w{{[0-9]+}}_b{{[0-9]+}}_gs_False_{{[0-9a-f]+}}
     # Verify the host (x86 ASM) kernel lookup name matches the PTX entry point
-    # CHECK-BOTH: [[NAME:my_function_with_some_name_gs_even_[0-9a-f]+]]
+    # CHECK-BOTH: [[NAME:my_function_with_some_name_r1_w[0-9]+_b[0-9]+_gs_False_[0-9a-f]+]]
     # CHECK-BOTH: [[NAME]]
     elementwise[
         func=func,

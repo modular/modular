@@ -391,7 +391,7 @@ def reduce_op[
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     normalized_shape: IndexList[3],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Reduce operation on a rank-3 normalized tensor.
 
@@ -445,7 +445,7 @@ def reduce_op[
             input_fn,
             output_fn,
             target="cpu",
-        ](normalized_shape, 1, DeviceContextPtr(ctx))
+        ](normalized_shape, 1, DeviceContextPtr())
     else:
         comptime if has_accelerator():
             comptime if dtype in (
@@ -457,7 +457,7 @@ def reduce_op[
                 DType.int64,
                 DType.uint64,
             ):
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 reduce_fn[
                     dtype,
                     input_fn,

@@ -53,7 +53,7 @@ def _block_reduce_with_padding[
     *,
     n_warps: Int,
     padding: Int,
-    warp_reduce_fn: def[dtype: DType, width: Int, reduction_idx: Int](
+    warp_reduce_fn: def[dtype: DType, width: SIMDSize, reduction_idx: Int](
         SIMD[dtype, width]
     ) capturing[_] -> Scalar[dtype],
     broadcast: Bool = False,
@@ -133,7 +133,7 @@ def _block_reduce[
     block_dim_y: Int = 1,
     block_dim_z: Int = 1,
     *,
-    warp_reduce_fn: def[dtype: DType, width: Int, reduction_idx: Int](
+    warp_reduce_fn: def[dtype: DType, width: SIMDSize, reduction_idx: Int](
         SIMD[dtype, width]
     ) capturing[_] -> Scalar[dtype],
     broadcast: Bool = False,
@@ -237,7 +237,7 @@ def _block_reduce[
     block_dim_y: Int = 1,
     block_dim_z: Int = 1,
     *,
-    warp_reduce_fn: def[dtype: DType, width: Int](
+    warp_reduce_fn: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width]
     ) thin -> Scalar[dtype],
     broadcast: Bool = False,
@@ -271,7 +271,7 @@ def _block_reduce[
     @always_inline
     @parameter
     def _indexed_fn[
-        dtype: DType, width: Int, reduction_idx: Int
+        dtype: DType, width: SIMDSize, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
         return warp_reduce_fn(v)
 
@@ -296,7 +296,12 @@ def _block_reduce[
 
 @always_inline
 def sum[
-    dtype: DType, width: Int, //, *, block_size: Int, broadcast: Bool = True
+    dtype: DType,
+    width: SIMDSize,
+    //,
+    *,
+    block_size: Int,
+    broadcast: Bool = True,
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the sum of values across all threads in a block.
 
@@ -327,7 +332,7 @@ def sum[
 @always_inline
 def sum[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     *,
     block_dim_x: Int,
@@ -374,7 +379,12 @@ def sum[
 
 @always_inline
 def max[
-    dtype: DType, width: Int, //, *, block_size: Int, broadcast: Bool = True
+    dtype: DType,
+    width: SIMDSize,
+    //,
+    *,
+    block_size: Int,
+    broadcast: Bool = True,
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the maximum value across all threads in a block.
 
@@ -407,7 +417,7 @@ def max[
 @always_inline
 def max[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     *,
     block_dim_x: Int,
@@ -456,7 +466,12 @@ def max[
 
 @always_inline
 def min[
-    dtype: DType, width: Int, //, *, block_size: Int, broadcast: Bool = True
+    dtype: DType,
+    width: SIMDSize,
+    //,
+    *,
+    block_size: Int,
+    broadcast: Bool = True,
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the minimum value across all threads in a block.
 
@@ -488,7 +503,7 @@ def min[
 @always_inline
 def min[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     *,
     block_dim_x: Int,
@@ -536,7 +551,7 @@ def min[
 
 @always_inline
 def broadcast[
-    dtype: DType, width: Int, //, *, block_size: Int
+    dtype: DType, width: SIMDSize, //, *, block_size: Int
 ](val: SIMD[dtype, width], src_thread: UInt = 0) -> SIMD[dtype, width]:
     """Broadcasts a value from a source thread to all threads in a block.
 
@@ -586,7 +601,7 @@ def broadcast[
 @always_inline
 def broadcast[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     *,
     block_dim_x: Int,

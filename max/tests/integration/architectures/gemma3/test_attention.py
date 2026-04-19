@@ -23,7 +23,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import KVCacheParams
-from max.nn.kv_cache import unflatten_ragged_attention_inputs
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.attention import (
     Gemma3Attention as MaxGemma3Attention,
@@ -155,9 +155,20 @@ def generate_max_outputs(
     device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
     input_seq_len = input_tensor.shape[1]
 
+    # Remap HuggingFace weight names to MAX StackedLinear names.
+    _HF_TO_MAX = {
+        "q_proj.": "qkv_proj.q.",
+        "k_proj.": "qkv_proj.k.",
+        "v_proj.": "qkv_proj.v.",
+    }
     state_dict = {}
     for weight_name, value in attention_weights.items():
-        state_dict[weight_name] = value.cpu()
+        max_name = weight_name
+        for hf, mx in _HF_TO_MAX.items():
+            if max_name.startswith(hf):
+                max_name = mx + max_name[len(hf) :]
+                break
+        state_dict[max_name] = value.cpu()
 
     kv_params = KVCacheParams(
         dtype=dtype,
@@ -235,9 +246,9 @@ def generate_max_outputs(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = unflatten_ragged_attention_inputs(
-            kv_cache, n_devices=1
-        )[0]
+        kv_collection: PagedCacheValues = (
+            kv_params.get_symbolic_inputs().unflatten(iter(kv_cache)).inputs[0]
+        )
 
         graph.output(
             attention(
@@ -261,7 +272,7 @@ def generate_max_outputs(
         Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
             device
         ),
-        kv_runtime_inputs.blocks.to(device),
+        kv_runtime_inputs.kv_blocks.to(device),
         kv_runtime_inputs.cache_lengths.to(device),
         kv_runtime_inputs.lookup_table.to(device),
         kv_runtime_inputs.max_lengths,
