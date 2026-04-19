@@ -52,6 +52,7 @@ from linalg.fp4_utils import (
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
+    GEMMKind,
 )
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
@@ -330,6 +331,7 @@ def bench_grouped_block_scaled_gemm[
         cta_group=cta_group,
         k_group_size=k_group_size,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     # Total FLOPs for all groups

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
@@ -33,16 +34,16 @@ import numpy as np
 from max._core.driver import _release_buffers_to_borrowed
 from max.driver import Buffer
 from max.engine import InferenceSession, Model
-from max.nn.kv_cache import (
-    AttentionDispatchResolver,
-    KVCacheInputs,
-    KVCacheInputsPerDevice,
-    KVCacheParams,
-)
+from max.nn.kv_cache import AttentionDispatchResolver, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs as _KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsPerDevice as _KVCacheInputsPerDevice
 from max.profiler import traced
+from tqdm import tqdm
 
 from .interfaces import ModelInputs, ModelOutputs, UnifiedEagleOutputs
 
+KVCacheInputsPerDevice = _KVCacheInputsPerDevice[Buffer, Buffer]
+KVCacheInputs = _KVCacheInputs[Buffer, Buffer]
 logger = logging.getLogger("max.pipelines")
 
 
@@ -189,7 +190,7 @@ def _create_model_inputs_with_dispatch_metadata(
         ml = kv.max_lengths.to_numpy().copy()
         ml[:, 1] = max_cache_u32
         metadata = (
-            dispatch_metadata.to(kv.blocks.device)
+            dispatch_metadata.to(kv.kv_blocks.device)
             if is_mla
             else dispatch_metadata
         )
@@ -307,7 +308,14 @@ class ServeGraphCaptureRunner:
         # Conservative/defensive warmup: capture largest-first so peak
         # allocations happen up front and oversized configs fail fast.
         q_max_seq_len = self._num_speculative_tokens + 1
-        for batch_size in range(self._max_batch_size, 0, -1):
+        batch_sizes = range(self._max_batch_size, 0, -1)
+        # Disable progress bar in non-interactive environments (CI) where
+        # carriage return doesn't work and each update prints a new line.
+        for batch_size in tqdm(
+            batch_sizes,
+            desc="Capturing device graph shapes",
+            disable=not sys.stderr.isatty(),
+        ):
             dispatch_entries = sorted(
                 self.dispatch_metadata(batch_size, q_max_seq_len),
                 key=lambda entry: _unpack_dispatch_metadata(entry[1])[0],

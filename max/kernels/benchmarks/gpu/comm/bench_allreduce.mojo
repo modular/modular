@@ -95,7 +95,7 @@ def bench_reduce[
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
+        uninitialized=True
     )
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
@@ -164,7 +164,7 @@ def bench_reduce[
     var in_tensors = InlineArray[InTensorType, num_buffers](uninitialized=True)
     var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
 
-    var multi_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin]()
+    var multi_ptr = Optional[UnsafePointer[Scalar[dtype], MutAnyOrigin]]()
 
     comptime if use_multimem:
         multicast_buf = DeviceMulticastBuffer[dtype](
@@ -180,7 +180,9 @@ def bench_reduce[
             list_of_ctx[0]
         ).unsafe_ptr()
         in_tensors[0] = TileTensor(
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](multi_ptr),
+            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                multi_ptr.unsafe_value()
+            ),
             row_major(Idx(length)),
         )
     else:
@@ -231,9 +233,11 @@ def bench_reduce[
                         row_major(Idx(length)),
                     )
             else:
+                # multi_ptr is set when use_multimem == True
                 in_tensors[0] = TileTensor(
                     rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                        multi_ptr + cb_template.offset(cache_iter)
+                        multi_ptr.unsafe_value()
+                        + cb_template.offset(cache_iter)
                     ),
                     row_major(Idx(length)),
                 )

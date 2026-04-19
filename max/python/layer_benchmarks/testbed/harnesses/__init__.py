@@ -14,4 +14,11 @@
 """Built-in harness implementations. Importing this module registers all
 harnesses with the global registry."""
 
+import testbed.harnesses.attention_with_rope
+import testbed.harnesses.gemma3_attention
+import testbed.harnesses.gemma4_attention
+import testbed.harnesses.gpt_oss_attention
+import testbed.harnesses.olmo2_attention
+import testbed.harnesses.qwen2_5vl_attention
+import testbed.harnesses.qwen3_attention
 import testbed.harnesses.rms_norm

@@ -19,22 +19,20 @@ import math
 from collections.abc import Callable, Iterable
 
 from max.dtype import DType
-from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
+from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.attention.attention_with_rope import _compute_shard_range
 from max.nn.kernels import (
     flash_attention_ragged,
-    fused_qk_ragged_rope,
-    fused_qkv_ragged_matmul,
-    rms_norm_key_cache,
+    rope_split_store_ragged,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.quant_config import QuantConfig
-from max.nn.quant_ops import quantized_fused_qkv_matmul
 from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.stacked_linear import StackedLinear
 
 
 class Qwen3Attention(Module, Shardable):
@@ -124,27 +122,16 @@ class Qwen3Attention(Module, Shardable):
         q_weight_dim = self.kv_params.head_dim * num_attention_heads
         kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
 
-        # Use Linear layers instead of raw Weights for easier sharding
-        self.q_proj = linear_cls(
+        self.qkv_proj = StackedLinear(
             in_dim=hidden_size,
-            out_dim=q_weight_dim,
+            out_dims=[q_weight_dim, kv_weight_dim, kv_weight_dim],
+            names=["q", "k", "v"],
             dtype=dtype,
             device=devices[0],
+            stacked=False,
             has_bias=has_bias,
-        )
-        self.k_proj = linear_cls(
-            in_dim=hidden_size,
-            out_dim=kv_weight_dim,
-            dtype=dtype,
-            device=devices[0],
-            has_bias=has_bias,
-        )
-        self.v_proj = linear_cls(
-            in_dim=hidden_size,
-            out_dim=kv_weight_dim,
-            dtype=dtype,
-            device=devices[0],
-            has_bias=has_bias,
+            linear_cls=linear_cls,
+            quant_config=quant_config,
         )
         self.o_proj = linear_cls(
             in_dim=q_weight_dim,
@@ -153,46 +140,6 @@ class Qwen3Attention(Module, Shardable):
             device=devices[0],
             has_bias=has_bias,
         )
-
-    @property
-    def wqkv(self) -> TensorValue:
-        """The concatenation of q, k, and v weight vectors."""
-        wq: TensorValue = self.q_proj.weight
-        wk: TensorValue = self.k_proj.weight
-        wv: TensorValue = self.v_proj.weight
-        return ops.concat((wq, wk, wv)).to(self.devices[0])
-
-    @property
-    def wqkv_bias(self) -> TensorValue | None:
-        """The concatenation of q, k, and v bias weight vectors."""
-        if not self.has_bias:
-            return None
-        assert self.q_proj.bias is not None
-        assert self.k_proj.bias is not None
-        assert self.v_proj.bias is not None
-        return ops.concat(
-            (self.q_proj.bias, self.k_proj.bias, self.v_proj.bias)
-        ).to(self.devices[0])
-
-    def _qkv_weight_scale(self) -> TensorValue:
-        """Concatenated QKV weight scales for FP8 (q_scale, k_scale, v_scale)."""
-        assert self.quant_config is not None
-        assert self.q_proj.weight_scale is not None
-        assert self.k_proj.weight_scale is not None
-        assert self.v_proj.weight_scale is not None
-        q_scale_w = self.q_proj.weight_scale
-        k_scale_w = self.k_proj.weight_scale
-        v_scale_w = self.v_proj.weight_scale
-        q_scale: TensorValue | Weight = (
-            q_scale_w.reshape((1,)) if len(q_scale_w.shape) == 0 else q_scale_w
-        )
-        k_scale: TensorValue | Weight = (
-            k_scale_w.reshape((1,)) if len(k_scale_w.shape) == 0 else k_scale_w
-        )
-        v_scale: TensorValue | Weight = (
-            v_scale_w.reshape((1,)) if len(v_scale_w.shape) == 0 else v_scale_w
-        )
-        return ops.concat((q_scale, k_scale, v_scale))
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -215,22 +162,14 @@ class Qwen3Attention(Module, Shardable):
 
         if strategy.is_replicate:
             # Replicate all weights
-            self.q_proj.sharding_strategy = strategy
-            self.k_proj.sharding_strategy = strategy
-            self.v_proj.sharding_strategy = strategy
+            self.qkv_proj.sharding_strategy = strategy
             self.o_proj.sharding_strategy = strategy
             self.q_norm.sharding_strategy = strategy
             self.k_norm.sharding_strategy = strategy
 
         elif strategy.is_tensor_parallel:
             # Q, K, V: rowwise sharding (split heads across devices)
-            self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-            self.k_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-            self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
+            self.qkv_proj.sharding_strategy = ShardingStrategy.rowwise(
                 num_devices
             )
 
@@ -283,9 +222,7 @@ class Qwen3Attention(Module, Shardable):
         is_replicate = self._sharding_strategy.is_replicate
 
         # Shard all projection layers
-        q_proj_shards = self.q_proj.shard(devices_list)
-        k_proj_shards = self.k_proj.shard(devices_list)
-        v_proj_shards = self.v_proj.shard(devices_list)
+        qkv_proj_shards = self.qkv_proj.shard(devices_list)
         o_proj_shards = self.o_proj.shard(devices_list)
 
         # Shard norm layers (replicated)
@@ -326,9 +263,8 @@ class Qwen3Attention(Module, Shardable):
                 quant_config=self.quant_config,
             )
 
-            sharded.q_proj = q_proj_shards[shard_idx]
-            sharded.k_proj = k_proj_shards[shard_idx]
-            sharded.v_proj = v_proj_shards[shard_idx]
+            # Replace the projection layers with sharded versions
+            sharded.qkv_proj = qkv_proj_shards[shard_idx]
             sharded.o_proj = o_proj_shards[shard_idx]
 
             sharded.q_norm = q_norm_shards[shard_idx]
@@ -359,69 +295,38 @@ class Qwen3Attention(Module, Shardable):
             Output hidden states of shape [total_seq_len, hidden_size].
         """
         total_seq_len = x.shape[0]
-        wqkv = self.wqkv
+        head_dim = self.kv_params.head_dim
+        q_dim = head_dim * self.n_heads
+        kv_dim = head_dim * self.num_key_value_heads
 
-        # FP8 path: dynamic quantize input then fused scaled matmul (BF16 input + FP8 weights).
-        # Scale tensors are cast to float32 in the weight adapter; FP8 kernels require float32.
-        if (
-            self.quant_config is not None
-            and self.q_proj.weight.dtype.is_float8()
-        ):
-            xq = quantized_fused_qkv_matmul(
-                kv_params=self.kv_params,
-                x=x,
-                wqkv=wqkv,
-                kv_collection=kv_collection,
-                layer_idx=layer_idx,
-                input_row_offsets=input_row_offsets,
-                n_heads=self.n_heads,
-                quant_config=self.quant_config,
-                weight_scale=self._qkv_weight_scale(),
-                bias=self.wqkv_bias,
-            )
-        else:
-            xq = fused_qkv_ragged_matmul(
-                self.kv_params,
-                input=x,
-                wqkv=wqkv,
-                bias=self.wqkv_bias,
-                input_row_offsets=input_row_offsets,
-                kv_collection=kv_collection,
-                layer_idx=layer_idx,
-                n_heads=self.n_heads,
-            )
+        # QKV projection
+        qkv = self.qkv_proj(x)
 
-        # Apply QK norm to query and key states before RoPE (Qwen3-specific)
-        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
-        xq = self.q_norm(xq)
+        # Split into Q, K, V
+        x_q, x_k, x_v = ops.split(qkv, [q_dim, kv_dim, kv_dim], axis=-1)
 
-        # Apply K norm in-place on the KV cache
-        rms_norm_key_cache(
-            self.kv_params,
-            kv_collection=kv_collection,
-            gamma=self.k_norm.weight.cast(self.kv_params.dtype).to(
-                self.devices[0]
-            ),
-            epsilon=self.qk_norm_eps,
-            layer_idx=layer_idx,
-            total_seq_len=total_seq_len,
-            input_row_offsets=input_row_offsets,
-            weight_offset=0.0,
-            multiply_before_cast=False,
-            per_head_norm=True,
+        # Per-head QK norm (Qwen3-specific)
+        x_q = self.q_norm(x_q.reshape((-1, self.n_heads, head_dim))).reshape(
+            (-1, q_dim)
         )
+        x_k = self.k_norm(
+            x_k.reshape((-1, self.num_key_value_heads, head_dim))
+        ).reshape((-1, kv_dim))
 
-        # Apply rotary embedding
-        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-        xq = fused_qk_ragged_rope(
+        # Re-concat and apply RoPE + KV cache store
+        qkv = ops.concat((x_q, x_k, x_v), axis=-1)
+        freqs_cis = ops.cast(freqs_cis, qkv.dtype).to(qkv.device)
+        xq = rope_split_store_ragged(
             self.kv_params,
-            xq,
+            qkv,
             input_row_offsets,
-            kv_collection,
             freqs_cis,
+            kv_collection,
             layer_idx,
+            n_heads=self.n_heads,
             interleaved=self.rope.interleaved,
         )
+        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Calculate Flash Attention
         # NOTE: Qwen3 never uses sliding window pattern

@@ -119,8 +119,8 @@ def test_combine[
     # Shared atomic counter buffer for dispatch and combine
     var atomic_counters_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
 
-    var host_topk_ids_list = InlineArray[UnsafePointer[Int32, MutAnyOrigin], n_ranks](fill={})
-    var host_input_tokens_list = InlineArray[UnsafePointer[Scalar[input_type], MutAnyOrigin], n_ranks](fill={})
+    var host_topk_ids_list = InlineArray[UnsafePointer[Int32, MutAnyOrigin], n_ranks](uninitialized=True)
+    var host_input_tokens_list = InlineArray[UnsafePointer[Scalar[input_type], MutAnyOrigin], n_ranks](uninitialized=True)
 
     var device_topk_bufs_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
     var device_input_bufs_list = List[DeviceBuffer[input_type]](capacity=n_ranks)

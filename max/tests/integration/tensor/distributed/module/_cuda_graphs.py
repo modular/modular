@@ -31,12 +31,10 @@ from __future__ import annotations
 from typing import ClassVar
 
 import numpy as np
-from _test_helpers import to_np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import Model
-from max.experimental.distributed_functional.creation import full
-from max.experimental.distributed_functional.matmul import matmul
+from max.experimental.distributed_functional import full, matmul
 from max.experimental.nn.module import CompiledModel, Module, module_dataclass
 from max.experimental.tensor import Tensor, TensorType
 from max.graph import DeviceRef
@@ -81,7 +79,7 @@ class CUDAGraphTests:
         raw = compiled.execute_raw(x)
         assert len(raw) == 1
         assert isinstance(raw[0], Buffer)
-        result = to_np(Tensor(storage=raw[0]))
+        result = Tensor(storage=raw[0]).to_numpy()
         np.testing.assert_allclose(result, np.full((3, D), D), rtol=1e-4)
 
     def test_execute_raw_matches_tensor_path(self) -> None:
@@ -95,8 +93,8 @@ class CUDAGraphTests:
         tensor_result = compiled(x_tensor)
 
         np.testing.assert_allclose(
-            to_np(Tensor(storage=raw[0])),
-            to_np(tensor_result),
+            Tensor(storage=raw[0]).to_numpy(),
+            tensor_result.to_numpy(),
             rtol=1e-4,
         )
 
@@ -118,7 +116,7 @@ class CUDAGraphTests:
         )
         engine.replay(graph_key, x)
         # Outputs are updated in-place in the captured output buffers.
-        result = to_np(Tensor(storage=capture_outputs[0]))
+        result = Tensor(storage=capture_outputs[0]).to_numpy()
         # 2s @ ones_weight = 2*D per element
         np.testing.assert_allclose(result, np.full((3, D), 2 * D), rtol=1e-4)
 
@@ -139,7 +137,7 @@ class CUDAGraphTests:
                 self._gpu_buf(np.full((batch_size, D), 3.0, dtype=np.float32))
             )
             engine.replay(batch_size, captured_input)
-            result = to_np(Tensor(storage=captured_outputs[0]))
+            result = Tensor(storage=captured_outputs[0]).to_numpy()
             np.testing.assert_allclose(
                 result, np.full((batch_size, D), 3 * D), rtol=1e-4
             )
@@ -175,7 +173,7 @@ class CUDAGraphTests:
         x = self._gpu_buf(np.ones((3, D), dtype=np.float32))
         raw_outputs = compiled.execute_raw(x)
         assert len(raw_outputs) == 1
-        eager_result = to_np(Tensor(storage=raw_outputs[0]))
+        eager_result = Tensor(storage=raw_outputs[0]).to_numpy()
 
         # Warmup: capture graphs for batch sizes 1..3 (like ServeGraphCaptureRunner).
         captured: dict[int, tuple[Buffer, list[Buffer]]] = {}
@@ -189,7 +187,7 @@ class CUDAGraphTests:
         new_x = self._gpu_buf(np.full((3, D), 5.0, dtype=np.float32))
         cap_input.inplace_copy_from(new_x)
         model.replay(3, cap_input)
-        replay_result = to_np(Tensor(storage=cap_outputs[0]))
+        replay_result = Tensor(storage=cap_outputs[0]).to_numpy()
         # 5s @ ones_weight = 5*D per element
         np.testing.assert_allclose(
             replay_result, np.full((3, D), 5 * D), rtol=1e-4
@@ -198,7 +196,7 @@ class CUDAGraphTests:
         # Fallback to eager when batch_size exceeds captured range.
         x_large = self._gpu_buf(np.full((8, D), 2.0, dtype=np.float32))
         fallback = compiled.execute_raw(x_large)
-        fallback_result = to_np(Tensor(storage=fallback[0]))
+        fallback_result = Tensor(storage=fallback[0]).to_numpy()
         np.testing.assert_allclose(
             fallback_result, np.full((8, D), 2 * D), rtol=1e-4
         )

@@ -90,7 +90,7 @@ def pad_constant_op[
     in_strides: InlineArray[Int, MAX_RANK],
     rank: Int,
     total: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Fill output with input values inside the content region, constant outside.
 
@@ -152,7 +152,7 @@ def pad_constant_op[
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx)
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )
@@ -341,7 +341,7 @@ struct _PadConstantBody(Dispatchable):
     var in_strides: InlineArray[Int, MAX_RANK]
     var rank: Int
     var total: Int
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def call[t: DType](self) raises -> None:
         var constant = _make_ptr[t](self.const_addr)[0]

@@ -65,7 +65,7 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
             self.tokens,
             self.input_row_offsets,
             self.return_n_logits,
-            *(self.kv_cache_inputs or ()),
+            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
         )
         if self.draft_tokens is not None:
             buffers += (self.draft_tokens,)
@@ -179,6 +179,13 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             draft_config = Llama3Config.initialize_from_config(
                 self.pipeline_config, draft_hf_config, draft_model_config
             )
+            # The draft model config may default to gpu:0. Override its
+            # devices to match the target so weights land on the correct GPU
+            # (e.g. when pipeline_role=prefill_only assigns a non-zero GPU).
+            draft_config.devices = target_config.devices
+            draft_config.kv_params = replace(
+                draft_config.kv_params, devices=target_config.devices
+            )
             draft_config.finalize(
                 huggingface_config=draft_hf_config,
                 state_dict=draft_state_dict,
@@ -257,7 +264,7 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> UnifiedEagleLlama3Inputs:
         context_batch = [ctx for batch in replica_batches for ctx in batch]

@@ -98,7 +98,7 @@ def run_layer_norm_block[
         comptime kernel = layer_norm_gpu_block[
             LayoutType=beta.LayoutType,
             origin=beta.origin,
-            UInt(simd_width),
+            simd_width,
             input_fn,
             gamma_fn,
             output_fn,
@@ -311,7 +311,7 @@ def run_layer_norm_warp_tiling[
         comptime kernel = layer_norm_gpu_warp_tiling[
             LayoutType=beta.LayoutType,
             origin=beta.origin,
-            UInt(simd_width),
+            simd_width,
             max_warps_per_block,
             input_fn,
             gamma_fn,

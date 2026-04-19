@@ -48,7 +48,7 @@ from max.serve.scheduler.base import (
     PrefillRequest,
     PrefillResponse,
 )
-from max.serve.scheduler.di_dispatchers import DecodeDispatcherClientV2
+from max.serve.scheduler.di_dispatchers import DecodeDispatcherClient
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
@@ -74,7 +74,7 @@ class DecodeScheduler(Scheduler):
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
-        dispatcher: DecodeDispatcherClientV2,
+        dispatcher: DecodeDispatcherClient,
         dp_padder: DPBatchPadder | None = None,
     ) -> None:
         # Initialize Pipeline and Config
@@ -139,6 +139,21 @@ class DecodeScheduler(Scheduler):
         # Update the context with the generated token
         context, _ = self.prefill_reqs[request_id]
         context.update(message.generated_token_id)
+
+        # Restore draft tokens from Eagle/MTP prefill so the first
+        # decode iteration can verify them without re-running draft prefill.
+        # When speculative decoding is active, the prefill worker always
+        # sends draft tokens.
+        if self.scheduler_config.num_speculative_tokens > 0:
+            if message.draft_tokens is None:
+                raise ValueError(
+                    f"Expected draft tokens in PrefillResponse for request "
+                    f"{request_id} with speculative decoding enabled, but "
+                    f"none were received."
+                )
+            context.spec_decoding_state.draft_tokens_to_verify = (
+                message.draft_tokens
+            )
 
         # Send singular token to the API process
         output = context.to_generation_output()
@@ -246,10 +261,15 @@ class DecodeScheduler(Scheduler):
 
             # Allocate enough memory needed to run the request for one step.
             # The blocks allocated here will be written via a KVCache transfer
-            # from prefill -> decode.
+            # from prefill -> decode.  When speculative decoding is active,
+            # the prefill node generates extra KV entries for draft tokens,
+            # so we must allocate matching blocks on the decode side.
             try:
                 self.kv_cache.alloc(
-                    context, replica_idx=replica_idx, num_steps=1
+                    context,
+                    replica_idx=replica_idx,
+                    num_steps=1,
+                    num_speculative_steps=self.scheduler_config.num_speculative_tokens,
                 )
             except InsufficientBlocksError:
                 # If we don't have enough space, we will return this to the request queue.
@@ -446,6 +466,9 @@ class DecodeScheduler(Scheduler):
             num_pending_reqs=len(self.pending_reqs) + len(self.prefill_reqs),
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
+            speculative_decoding_metrics=self.pipeline.spec_decode_metrics()
+            if hasattr(self.pipeline, "spec_decode_metrics")
+            else None,
         )
 
         return SchedulerProgress.MADE_PROGRESS
@@ -487,6 +510,6 @@ def load_decode_scheduler(
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
-        dispatcher=DecodeDispatcherClientV2(bind_addr=settings.di_bind_address),
+        dispatcher=DecodeDispatcherClient(bind_addr=settings.di_bind_address),
         dp_padder=dp_padder,
     )

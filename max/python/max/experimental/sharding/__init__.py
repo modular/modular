@@ -50,7 +50,12 @@ from .shapes import (
     local_shard_shape_from_global,
     shard_shape,
 )
-from .types import DistributedBufferType, DistributedTensorType, DistributedType
+from .types import (
+    DistributedBufferType,
+    DistributedTensorType,
+    DistributedType,
+    TensorLayout,
+)
 
 __all__ = [
     "ConversionError",
@@ -67,6 +72,7 @@ __all__ = [
     "Replicated",
     "Sharded",
     "SpecEntry",
+    "TensorLayout",
     "_shard_sizes_along_axis",
     "global_shape_from_local",
     "local_shard_shape_from_global",

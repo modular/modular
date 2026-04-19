@@ -14,10 +14,13 @@
 
 from std.math import align_up
 from std.sys import size_of
+from std.gpu.compute.arch.mma_nvidia_sm100 import mma_arrive_multicast
+from std.gpu.primitives.warp import broadcast
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
     elect,
+    elect_mma_arrive,
     SM100TensorAccumulatorSS,
     SM100TensorAccumulatorTS,
     KConsumerPipeline,
@@ -46,9 +49,10 @@ def fa4_mma[
     comptime BM = config.BM
     comptime BN = config.BN
     comptime HalfBM = BM // 2
-    comptime BM_mask: Int = config.BM_eff()
+    comptime BM_mask: Int = config.PairBM_eff()
     comptime num_qk_stages = config.num_qk_stages
     comptime num_pv_stages = config.num_pv_stages
+    comptime cta_group: Int = config.cta_group()
 
     var mbars = smem.misc_mbars()
 
@@ -56,26 +60,28 @@ def fa4_mma[
     comptime UMMA0Type = SM100TensorAccumulatorSS[
         config.qkv_dtype,
         accum_type,
-        MMA_M=HalfBM,
+        MMA_M=config.MMA_M,
         MMA_N=BN,
         BK=align_up(config.qk_depth, config.MMA_K),
         swizzle_a=config.swizzle_mode,
         swizzle_b=config.swizzle_mode,
         transpose_b=True,
+        cta_group=cta_group,
         num_stages=num_qk_stages,
     ]
     comptime UMMA1Type = SM100TensorAccumulatorTS[
         config.qkv_dtype,
         accum_type,
-        MMA_M=HalfBM,
+        MMA_M=config.MMA_M,
         MMA_N=config.padded_ov_depth,
         BK=BN,
         swizzle_b=config.swizzle_mode,
         transpose_b=False,
+        cta_group=cta_group,
         num_stages=num_pv_stages,
     ]
 
-    var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
+    var tmem_addr: UInt32 = broadcast(smem.tmem_addr_ptr()[])
     var q_smem = smem.q_smem()
 
     s0_tmem = tmem_addr + UInt32(config.TMEM_S0)
@@ -106,26 +112,40 @@ def fa4_mma[
 
     comptime q_sub_bytes = HalfBM * config.BK0 * size_of[config.qkv_dtype]()
 
+    e = elect()
+
+    @parameter
+    @always_inline
+    def _commit(
+        mbar: UnsafePointer[address_space=AddressSpace.SHARED, ...],
+    ):
+        """Arrive at mbar: multicast for pair-CTA, local elect for single."""
+        comptime if config.pair_cta:
+            if e != 0:
+                mma_arrive_multicast[cta_group](mbar, UInt16(0x3))
+        else:
+            elect_mma_arrive(mbar, e)
+
     comptime if config.use_fused_kv:
         # ---- Fused KV mode ----
         # In fused mode, K_nope and V alternate in a single StagedPipeline.
         # Stages: K0, V0, K1, V1, ...
 
         var kv_smem = smem.k_smem_base()  # same as v_smem_base in fused mode
-        comptime kv_stage_bytes = config.padded_ov_depth * BN * size_of[
+        comptime kv_stage_bytes = config.v_cols_per_cta() * BN * size_of[
             config.qkv_dtype
         ]()
 
         # K descriptor: k_major for Q@K'
         kv_desc_k = smem_descriptor[
-            BMN=config.BN,
+            BMN=config.k_rows_per_cta(),
             BK=config.BK0,
             swizzle_mode=config.swizzle_mode,
             is_k_major=True,
         ](kv_smem)
         # V descriptor: mn_major for P@V
         kv_desc_v = smem_descriptor[
-            BMN=config.padded_ov_depth,
+            BMN=config.v_cols_per_cta(),
             BK=config.BN,
             swizzle_mode=config.swizzle_mode,
             is_k_major=False,
@@ -139,21 +159,20 @@ def fa4_mma[
             mask.total_iters[BM_mask, BN, page_size](score_row, num_keys) - 1
         )
 
-        e = elect()
-
         # ---- Peeled iteration ----
         # Stage 0 = K0
         kv_pipeline.consumer_wait()
         k0 = kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
         UMMA0Type.mma[stage_idx=0](q0, k0, s0_tmem, elect=e, c_scale=0)
-        pipeline_s0.commit_mma(e)
+        _commit(pipeline_s0.producer_mbar())
 
         # Q1 @ K0
         var q1_mbar = mbars.q1_wait_mbar()
         q1_mbar[0].wait()
         UMMA0Type.mma[stage_idx=0](q1, k0, s1_tmem, elect=e, c_scale=0)
-        kv_pipeline.consumer_release(e)  # release K0, step -> stage 1
-        pipeline_s1.commit_mma(e)
+        _commit(kv_pipeline.consumer_mbar())  # release K0
+        kv_pipeline.state.step()
+        _commit(pipeline_s1.producer_mbar())
 
         # Stage 1 = V0
         kv_pipeline.consumer_wait()
@@ -164,7 +183,7 @@ def fa4_mma[
             UMMA1Type.mma[stage_idx=pv_stage](
                 s0_tmem, v0, o0_tmem, elect=e, c_scale=0
             )
-        pipeline_o0.commit_mma(e)
+        _commit(pipeline_o0.producer_mbar())
         var phase: UInt32 = 0
 
         var c_scale: UInt32 = 0
@@ -180,7 +199,7 @@ def fa4_mma[
             kv_pipeline.consumer_wait()
             kn = kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
             UMMA0Type.mma[stage_idx=0](q0, kn, s0_tmem, elect=e, c_scale=0)
-            pipeline_s0.commit_mma(e)
+            _commit(pipeline_s0.producer_mbar())
 
             # P1 @ V_{n-1}
             v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
@@ -189,14 +208,15 @@ def fa4_mma[
                 UMMA1Type.mma[stage_idx=pv_stage](
                     s1_tmem, v_prev, o1_tmem, elect=e, c_scale=c_scale
                 )
-            pipeline_o1.commit_mma(e)
+            _commit(pipeline_o1.producer_mbar())
             c_scale = 1
-            kv_pipeline.consumer_release_at(v_prev_idx, e)  # release V_{n-1}
+            _commit(kv_pipeline.consumer_mbar(v_prev_idx))  # release V_{n-1}
 
             # Q1 @ Kn
             UMMA0Type.mma[stage_idx=0](q1, kn, s1_tmem, elect=e, c_scale=0)
-            kv_pipeline.consumer_release(e)  # release Kn, step
-            pipeline_s1.commit_mma(e)
+            _commit(kv_pipeline.consumer_mbar())  # release Kn
+            kv_pipeline.state.step()
+            _commit(pipeline_s1.producer_mbar())
             phase ^= 1
 
             # Vn
@@ -208,7 +228,7 @@ def fa4_mma[
                 UMMA1Type.mma[stage_idx=pv_stage](
                     s0_tmem, vn, o0_tmem, elect=e, c_scale=1
                 )
-            pipeline_o0.commit_mma(e)
+            _commit(pipeline_o0.producer_mbar())
 
         # ---- Epilogue ----
         v_prev = kv_desc_v + UInt32(kv_stage_bytes) * v_prev_idx
@@ -217,8 +237,8 @@ def fa4_mma[
             UMMA1Type.mma[stage_idx=pv_stage](
                 s1_tmem, v_prev, o1_tmem, elect=e, c_scale=c_scale
             )
-        pipeline_o1.commit_mma(e)
-        kv_pipeline.consumer_release_at(v_prev_idx, e)  # release V_last
+        _commit(pipeline_o1.producer_mbar())
+        _commit(kv_pipeline.consumer_mbar(v_prev_idx))  # release V_last
 
     else:
         # ---- Split KV mode (original) ----
@@ -241,14 +261,13 @@ def fa4_mma[
 
         # Q_0 @ K_0' (staged over num_qk_stages)
         k0 = pipeline_k.get_k()
-        e = elect()
 
         comptime for qk_stage in range(num_qk_stages):
             pipeline_k.wait_k[qk_stage=qk_stage]()  # [kv0]
             UMMA0Type.mma[stage_idx=qk_stage](
                 q0, k0, s0_tmem, elect=e, c_scale=0
             )
-        pipeline_s0.commit_mma(e)
+        _commit(pipeline_s0.producer_mbar())
 
         # Q_1 @ K_0' (staged over num_qk_stages)
         var q1_mbar = mbars.q1_wait_mbar()
@@ -258,8 +277,10 @@ def fa4_mma[
             UMMA0Type.mma[stage_idx=qk_stage](
                 q1, k0, s1_tmem, elect=e, c_scale=0
             )
-            pipeline_k.release_k[qk_stage=qk_stage](e)  # [kv0]->kv1
-        pipeline_s1.commit_mma(e)
+            _commit(pipeline_k.pipeline.consumer_mbar[qk_stage]())
+            comptime if qk_stage == num_qk_stages - 1:
+                pipeline_k.pipeline.state.step()  # [kv0]->kv1
+        _commit(pipeline_s1.producer_mbar())
 
         vlatest = pipeline_v.get_v()  # [kv1]
         pipeline_v.wait_v()  # [kv1]
@@ -272,7 +293,7 @@ def fa4_mma[
             UMMA1Type.mma[stage_idx=pv_stage](
                 s0_tmem, vlatest, o0_tmem, elect=e, c_scale=0
             )
-        pipeline_o0.commit_mma(e)
+        _commit(pipeline_o0.producer_mbar())
         var phase: UInt32 = 0
 
         var c_scale: UInt32 = 0
@@ -292,7 +313,7 @@ def fa4_mma[
                 UMMA0Type.mma[stage_idx=qk_stage](
                     q0, kn, s0_tmem, elect=e, c_scale=0
                 )
-            pipeline_s0.commit_mma(e)
+            _commit(pipeline_s0.producer_mbar())
 
             # O_1 + P_1 @ V_{n-1}
             comptime for pv_stage in range(num_pv_stages):
@@ -300,19 +321,20 @@ def fa4_mma[
                 UMMA1Type.mma[stage_idx=pv_stage](
                     s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale
                 )
-            pipeline_o1.commit_mma(e)
+            _commit(pipeline_o1.producer_mbar())
             c_scale = 1
-            pipeline_v.release_v(e)  # [kv_{2n-1}]
+            _commit(pipeline_v.pipeline.consumer_mbar[0]())
+            pipeline_v.pipeline.state.step()  # [kv_{2n-1}]
 
             # Q_1 @ K_n' (staged over num_qk_stages)
             comptime for qk_stage in range(num_qk_stages):
                 UMMA0Type.mma[stage_idx=qk_stage](
                     q1, kn, s1_tmem, elect=e, c_scale=0
                 )
-                pipeline_k.release_k[qk_stage=qk_stage](
-                    e
-                )  # [kv_{2n}]->kv_{2n+1}
-            pipeline_s1.commit_mma(e)
+                _commit(pipeline_k.pipeline.consumer_mbar[qk_stage]())
+                comptime if qk_stage == num_qk_stages - 1:
+                    pipeline_k.pipeline.state.step()  # [kv_{2n}]->kv_{2n+1}
+            _commit(pipeline_s1.producer_mbar())
             phase ^= 1
 
             # O_0 + P_0 @ V_n
@@ -324,11 +346,11 @@ def fa4_mma[
                 UMMA1Type.mma[stage_idx=pv_stage](
                     s0_tmem, vlatest, o0_tmem, elect=e, c_scale=1
                 )
-            pipeline_o0.commit_mma(e)
+            _commit(pipeline_o0.producer_mbar())
 
         comptime for pv_stage in range(num_pv_stages):
             _ = consumer_s1[pv_stage].wait(phase)
             UMMA1Type.mma[stage_idx=pv_stage](
                 s1_tmem, vlatest, o1_tmem, elect=e, c_scale=c_scale
             )
-        pipeline_o1.commit_mma(e)
+        _commit(pipeline_o1.producer_mbar())

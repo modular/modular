@@ -95,7 +95,11 @@ trait Hashable:
                 FieldIndex=i,
                 ParentConformsTo="Hashable",
             ]()
-            hasher.update(trait_downcast[Hashable](__struct_field_ref(i, self)))
+            hasher.update(
+                trait_downcast[Hashable](
+                    __struct_field_ref(i._int_mlir_index(), self)
+                )
+            )
 
 
 def hash[
