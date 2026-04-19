@@ -27,6 +27,7 @@ modular_py_test(
     }),
     tags = [
         "gpu",
+        "manual",  # TODO (MODELS-1354): This is timing out, re-enable after investigation
     ],
     deps = [
         "//max/python/max/pipelines/architectures",

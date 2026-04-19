@@ -27,7 +27,7 @@ from std.gpu.compute.arch.tcgen05 import (
 from layout.tma_async import (
     SharedMemBarrier,
 )
-from layout import ComptimeInt, RowMajorLayout, TileTensor
+from layout import ComptimeInt, CoordLike, RowMajorLayout, TileTensor
 from nn.attention.gpu.nvidia.sm90.attention import (
     OptionalPointer,
 )
@@ -168,6 +168,10 @@ struct MLA_SM100_Decode_KV_BF16[
         )
     )
     @__llvm_metadata(`nvvm.minctasm`=Int(1))
+    @__name(
+        t"sm100_mla_decode_kv_bf16_{Self.q_type}_{Self.kv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
+        mangle=True,
+    )
     def kernel(
         q_tma: QOTMATile[
             dtype=Self.q_type,
@@ -196,7 +200,9 @@ struct MLA_SM100_Decode_KV_BF16[
         ],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         scalar_args: TileTensor[
-            DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
+            DType.int64,
+            RowMajorLayout[ComptimeInt[3]],
+            MutAnyOrigin,
         ],
     ):
         comptime num_reg_softmax = 192

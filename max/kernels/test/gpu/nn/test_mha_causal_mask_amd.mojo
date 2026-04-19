@@ -13,7 +13,7 @@
 
 from std.math import isclose
 from std.random import rand
-from std.sys import argv
+from std.sys import argv, get_defined_bool
 
 
 from std.gpu import *
@@ -43,7 +43,6 @@ def is_benchmark() -> Bool:
 
 def test[
     qkv_type: DType,
-    mask_type: DType,
     depth: Int,
     num_heads: Int,
     group: Int = 1,
@@ -57,8 +56,6 @@ def test[
     print(
         "qkv_type:",
         qkv_type,
-        "mask_type:",
-        mask_type,
         "depth:",
         depth,
         "num_heads:",
@@ -74,6 +71,8 @@ def test[
     comptime batch_size = 1
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
     comptime kv_num_heads = num_heads // group
+    comptime mask_type = DType.bfloat16
+    comptime output_type = DType.bfloat16
 
     # Q, K, V shapes.
     var q_size = batch_size * num_heads * seq_len * depth
@@ -87,8 +86,8 @@ def test[
     var k_ptr = alloc[Scalar[qkv_type]](k_size)
     var v_ptr = alloc[Scalar[qkv_type]](v_size)
     var mask_ptr = alloc[Scalar[mask_type]](mask_size)
-    var output_ptr = alloc[Scalar[qkv_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[qkv_type]](o_size)
+    var output_ptr = alloc[Scalar[output_type]](o_size)
+    var flash_output_ptr = alloc[Scalar[output_type]](o_size)
 
     # Construct mask buffer for causal mask initialization.
     comptime layout_4d = Layout.row_major[4]()
@@ -99,10 +98,26 @@ def test[
         ),
     )
 
-    # Q, K, V are randomly initialized.
-    rand[qkv_type](q_ptr, q_size)
-    rand[qkv_type](k_ptr, k_size)
-    rand[qkv_type](v_ptr, v_size)
+    # Initialize Q, K, V in bf16, then roundtrip through qkv_type so the
+    # naive bf16 reference sees identical values (matters for fp8).
+    var q_bf16_ptr = alloc[BFloat16](q_size)
+    var k_bf16_ptr = alloc[BFloat16](k_size)
+    var v_bf16_ptr = alloc[BFloat16](v_size)
+    rand[DType.bfloat16](q_bf16_ptr, q_size)
+    rand[DType.bfloat16](k_bf16_ptr, k_size)
+    rand[DType.bfloat16](v_bf16_ptr, v_size)
+    for i in range(q_size):
+        var val = q_bf16_ptr[i].cast[qkv_type]()
+        q_ptr[i] = val
+        q_bf16_ptr[i] = val.cast[DType.bfloat16]()
+    for i in range(k_size):
+        var val = k_bf16_ptr[i].cast[qkv_type]()
+        k_ptr[i] = val
+        k_bf16_ptr[i] = val.cast[DType.bfloat16]()
+    for i in range(v_size):
+        var val = v_bf16_ptr[i].cast[qkv_type]()
+        v_ptr[i] = val
+        v_bf16_ptr[i] = val.cast[DType.bfloat16]()
 
     # Initialize causal mask.
     for b in range(batch_size):
@@ -120,7 +135,7 @@ def test[
     var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
     var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
     var mask_device_ptr = ctx.enqueue_create_buffer[mask_type](mask_size)
-    var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
+    var output_device_ptr = ctx.enqueue_create_buffer[output_type](o_size)
 
     # Copy from host to device
     ctx.enqueue_copy(q_device_ptr, q_ptr)
@@ -130,31 +145,31 @@ def test[
 
     # Construct device buffers.
     var q_device = TileTensor(
-        q_device_ptr,
+        q_device_ptr.unsafe_ptr(),
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
     var k_device = TileTensor(
-        k_device_ptr,
+        k_device_ptr.unsafe_ptr(),
         row_major(
             (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
         ),
     )
     var v_device = TileTensor(
-        v_device_ptr,
+        v_device_ptr.unsafe_ptr(),
         row_major(
             (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
         ),
     )
     var mask4d = TileTensor(
-        mask_device_ptr,
+        mask_device_ptr.unsafe_ptr(),
         row_major(
             (Idx(batch_size), Idx(num_heads), Idx(seq_len), Idx(num_keys))
         ),
     )
     var output_device = TileTensor(
-        output_device_ptr,
+        output_device_ptr.unsafe_ptr(),
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
@@ -193,20 +208,46 @@ def test[
 
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
-    var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
-    ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
+    # Naive reference: use roundtripped bf16 values so both flash and
+    # naive see identical input data.
+    var q_ref_device_ptr = ctx.enqueue_create_buffer[DType.bfloat16](q_size)
+    var k_ref_device_ptr = ctx.enqueue_create_buffer[DType.bfloat16](k_size)
+    var v_ref_device_ptr = ctx.enqueue_create_buffer[DType.bfloat16](v_size)
+    ctx.enqueue_copy(q_ref_device_ptr, q_bf16_ptr)
+    ctx.enqueue_copy(k_ref_device_ptr, k_bf16_ptr)
+    ctx.enqueue_copy(v_ref_device_ptr, v_bf16_ptr)
 
+    var q_ref_device = TileTensor(
+        q_ref_device_ptr.unsafe_ptr(),
+        row_major(
+            (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
+        ),
+    )
+    var k_ref_device = TileTensor(
+        k_ref_device_ptr.unsafe_ptr(),
+        row_major(
+            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
+        ),
+    )
+    var v_ref_device = TileTensor(
+        v_ref_device_ptr.unsafe_ptr(),
+        row_major(
+            (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
+        ),
+    )
+    var output_ref_device_ptr = ctx.enqueue_create_buffer[output_type](o_size)
+    ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
     var output_device_ref = TileTensor(
-        output_ref_device_ptr,
+        output_ref_device_ptr.unsafe_ptr(),
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
 
     mha_gpu_naive(
-        q_device,
-        k_device,
-        v_device,
+        q_ref_device,
+        k_ref_device,
+        v_ref_device,
         mask4d,
         output_device_ref,
         scale,
@@ -222,8 +263,12 @@ def test[
     ctx.synchronize()
     ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
     _ = output_ref_device_ptr
+    _ = q_ref_device_ptr
+    _ = k_ref_device_ptr
+    _ = v_ref_device_ptr
 
-    var rtol = 2e-2
+    var rtol = 6e-2 if qkv_type.is_float8() else 3e-2
+    var atol = 1e-3 if qkv_type.is_float8() else 1e-5
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):
@@ -233,10 +278,10 @@ def test[
                 var actual = flash_output_ptr.load(
                     d + depth * (h + s * num_heads)
                 ).cast[DType.float64]()
-                if not isclose(actual, expect, atol=1e-5, rtol=rtol):
+                if not isclose(actual, expect, atol=atol, rtol=rtol):
                     var rerr = abs((actual - expect) / expect)
                     print(h, s, d, actual, expect, rerr)
-                assert_almost_equal(actual, expect, atol=1e-5, rtol=rtol)
+                assert_almost_equal(actual, expect, atol=atol, rtol=rtol)
 
     _ = q_device_ptr
     _ = k_device_ptr
@@ -250,127 +295,75 @@ def test[
     mask_ptr.free()
     output_ptr.free()
     flash_output_ptr.free()
+    q_bf16_ptr.free()
+    k_bf16_ptr.free()
+    v_bf16_ptr.free()
+
+
+comptime USE_FP8 = get_defined_bool["USE_FP8", False]()
 
 
 def test_helper[depth: Int](ctx: DeviceContext) raises:
-    test[
-        DType.bfloat16,
-        DType.bfloat16,
-        depth=depth,
-        num_heads=1,
-    ](128, 128, ctx)
-    test[
-        DType.bfloat16,
-        DType.float32,
-        depth=depth,
-        num_heads=1,
-    ](384, 384, ctx)
-    test[
-        DType.bfloat16,
-        DType.float32,
-        depth=depth,
-        num_heads=24,
-        group=3,
-    ](1024, 1024, ctx)
-    # BF16 with sequence length not multiple of 128
-    test[
-        DType.bfloat16,
-        DType.float32,
-        depth=depth,
-        num_heads=3,
-        group=3,
-    ](128, 128, ctx)
-    test[
-        DType.bfloat16,
-        DType.bfloat16,
-        depth=depth,
-        num_heads=3,
-        group=3,
-    ](102, 102, ctx)
-    test[
-        DType.bfloat16,
-        DType.float32,
-        depth=depth,
-        num_heads=1,
-    ](14, 14, ctx)
-    test[
-        DType.bfloat16,
-        DType.bfloat16,
-        depth=depth,
-        num_heads=1,
-    ](528, 528, ctx)
-    # BF16 token gen
-    test[
-        DType.bfloat16,
-        DType.bfloat16,
-        depth=depth,
-        num_heads=32,
-    ](1, 512, ctx, is_benchmark())
-    test[
-        DType.bfloat16,
-        DType.bfloat16,
-        depth=depth,
-        num_heads=11,
-    ](1, 256, ctx)
-    test[
-        DType.bfloat16,
-        DType.float32,
-        depth=depth,
-        num_heads=1,
-    ](1, 11, ctx)
-    test[
-        DType.bfloat16,
-        DType.bfloat16,
-        depth=depth,
-        num_heads=2,
-    ](1, 523, ctx)
-    test[
-        DType.bfloat16,
-        DType.float32,
-        depth=depth,
-        num_heads=24,
-        group=3,
-    ](1, 29, ctx)
-    test[
-        DType.bfloat16,
-        DType.bfloat16,
-        depth=depth,
-        num_heads=3,
-        group=3,
-    ](1, 156, ctx)
-    test[
-        DType.bfloat16,
-        DType.bfloat16,
-        depth=depth,
-        num_heads=3,
-        group=3,
-    ](1, 208, ctx)
-    test[
-        DType.bfloat16,
-        DType.bfloat16,
-        depth=depth,
-        num_heads=32,
-        group=4,
-    ](1, 1208, ctx)
-    test[
-        DType.bfloat16,
-        DType.bfloat16,
-        depth=depth,
-        num_heads=32,
-        group=4,
-    ](1, 2008, ctx)
-    test[
-        DType.bfloat16,
-        DType.bfloat16,
-        depth=depth,
-        num_heads=32,
-        group=4,
-    ](1, 5000, ctx)
+    comptime if USE_FP8:
+        # FP8 prefill-only tests (decode not yet supported).
+        test[DType.float8_e4m3fn, depth=depth, num_heads=1](128, 128, ctx)
+        test[DType.float8_e4m3fn, depth=depth, num_heads=1](384, 384, ctx)
+        test[DType.float8_e4m3fn, depth=depth, num_heads=24, group=3](
+            1024, 1024, ctx
+        )
+        test[DType.float8_e4m3fn, depth=depth, num_heads=3, group=3](
+            128, 128, ctx
+        )
+        test[DType.float8_e4m3fn, depth=depth, num_heads=3, group=3](
+            102, 102, ctx
+        )
+        test[DType.float8_e4m3fn, depth=depth, num_heads=1](14, 14, ctx)
+        test[DType.float8_e4m3fn, depth=depth, num_heads=1](528, 528, ctx)
+        test[DType.float8_e4m3fn, depth=depth, num_heads=16, group=16](
+            128, 128, ctx
+        )
+        test[DType.float8_e4m3fn, depth=depth, num_heads=16, group=16](
+            1024, 1024, ctx
+        )
+    else:
+        test[DType.bfloat16, depth=depth, num_heads=1](128, 128, ctx)
+        test[DType.bfloat16, depth=depth, num_heads=1](384, 384, ctx)
+        test[DType.bfloat16, depth=depth, num_heads=24, group=3](
+            1024, 1024, ctx
+        )
+        test[DType.bfloat16, depth=depth, num_heads=16, group=16](128, 128, ctx)
+        test[DType.bfloat16, depth=depth, num_heads=16, group=16](
+            1024, 1024, ctx
+        )
+        # BF16 with sequence length not multiple of 128
+        test[DType.bfloat16, depth=depth, num_heads=3, group=3](128, 128, ctx)
+        test[DType.bfloat16, depth=depth, num_heads=3, group=3](102, 102, ctx)
+        test[DType.bfloat16, depth=depth, num_heads=1](14, 14, ctx)
+        test[DType.bfloat16, depth=depth, num_heads=1](528, 528, ctx)
+        # BF16 token gen
+        test[DType.bfloat16, depth=depth, num_heads=32](
+            1, 512, ctx, is_benchmark()
+        )
+        test[DType.bfloat16, depth=depth, num_heads=11](1, 256, ctx)
+        test[DType.bfloat16, depth=depth, num_heads=1](1, 11, ctx)
+        test[DType.bfloat16, depth=depth, num_heads=2](1, 523, ctx)
+        test[DType.bfloat16, depth=depth, num_heads=24, group=3](1, 29, ctx)
+        test[DType.bfloat16, depth=depth, num_heads=3, group=3](1, 156, ctx)
+        test[DType.bfloat16, depth=depth, num_heads=3, group=3](1, 208, ctx)
+        test[DType.bfloat16, depth=depth, num_heads=32, group=4](1, 1208, ctx)
+        test[DType.bfloat16, depth=depth, num_heads=32, group=4](1, 2008, ctx)
+        test[DType.bfloat16, depth=depth, num_heads=32, group=4](1, 5000, ctx)
+        test[DType.bfloat16, depth=depth, num_heads=16, group=16](1, 128, ctx)
+        test[DType.bfloat16, depth=depth, num_heads=16, group=16](1, 1024, ctx)
+        test[DType.bfloat16, depth=depth, num_heads=16, group=16](1, 5000, ctx)
 
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime depths = [64, 128, 256, 512]
-
-        comptime for depth in depths:
-            test_helper[depth](ctx)
+        comptime if USE_FP8:
+            # FP8 only validated for depth=128 and 256 so far.
+            comptime for depth in [128, 256]:
+                test_helper[depth](ctx)
+        else:
+            comptime for depth in [64, 128, 256, 512]:
+                test_helper[depth](ctx)

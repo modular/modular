@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.math.uutils import udivmod
 
 from std.gpu import AddressSpace, barrier, block_idx, global_idx, thread_idx
 from std.gpu.host import DeviceContext
@@ -34,9 +35,9 @@ def matmul(
     n: Int,
     k: Int,
 ):
-    var a = TileTensor(a_ptr, row_major(Coord(Idx(Int(m)), Idx(Int(k)))))
-    var b = TileTensor(b_ptr, row_major(Coord(Idx(Int(k)), Idx(Int(n)))))
-    var c = TileTensor(c_ptr, row_major(Coord(Idx(Int(m)), Idx(Int(n)))))
+    var a = TileTensor(a_ptr, row_major(Coord(Idx(m), Idx(k))))
+    var b = TileTensor(b_ptr, row_major(Coord(Idx(k), Idx(n))))
+    var c = TileTensor(c_ptr, row_major(Coord(Idx(m), Idx(n))))
 
     # Compute C = A x B
     #   where A is a (m x k) matrix
@@ -65,10 +66,10 @@ def matmul(
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):
-        var i, j = divmod(UInt(thread_idx.x), TILE_SZ_B)
+        var i, j = udivmod(thread_idx.x, TILE_SZ_B)
 
         # Load the B matrix into shared memory.
-        var b_val = Int(b[tile_idx * TILE_SZ_RATIO + Int(i), col + Int(j)])
+        var b_val = Int(b[tile_idx * TILE_SZ_RATIO + i, col + j])
         b_shared[i * TILE_SZ_B + j] = Scalar[DType.int](b_val)
 
         barrier()

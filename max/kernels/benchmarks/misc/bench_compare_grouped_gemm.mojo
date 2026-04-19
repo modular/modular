@@ -51,6 +51,7 @@ from linalg.fp4_utils import (
 # Structured kernel
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
+    GEMMKind,
 )
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
@@ -390,6 +391,7 @@ def bench_structured_kernel[
         cta_group=1,
         k_group_size=k_grp_size,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     # FLOPs use logical K (not packed)
