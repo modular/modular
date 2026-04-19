@@ -1635,14 +1635,8 @@ Example:
 
 
 comptime _CoordToDynamicMapper[
-    dtype: DType,
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[T=CoordLike, RuntimeInt[dtype]],
-]
+    dtype: DType, type: CoordLike
+]: CoordLike = RuntimeInt[dtype]
 """Maps a single CoordLike element to RuntimeInt[dtype].
 All elements (ComptimeInt, RuntimeInt of any dtype) are converted to RuntimeInt[dtype].
 """
@@ -1650,13 +1644,7 @@ All elements (ComptimeInt, RuntimeInt of any dtype) are converted to RuntimeInt[
 
 comptime _CoordToDynamic[
     dtype: DType, element_types: TypeList[Trait=CoordLike, ...]
-] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=element_types.values,
-        Reducer=_CoordToDynamicMapper[dtype, ...],
-    ]
-]()
+] = element_types.map[_CoordToDynamicMapper[dtype, _]]()
 """Converts a variadic of CoordLike types to all RuntimeInt[dtype].
 All elements are converted to RuntimeInt[dtype], regardless of their original type.
 
@@ -1678,15 +1666,11 @@ Example:
 
 comptime _NestedDynamicCoordMapper[
     dtype: DType,
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[
-        T=CoordLike,
-        Coord[*_CoordToDynamic[dtype, TypeList[From[idx].ParamListType]()]],
-    ] if From[idx].is_tuple else Variadic.types[T=CoordLike, RuntimeInt[dtype]],
+    coord: CoordLike,
+]: CoordLike = Coord[
+    *_CoordToDynamic[dtype, TypeList[coord.ParamListType]()]
+] if coord.is_tuple else RuntimeInt[
+    dtype
 ]
 """Maps a CoordLike type to a nested dynamic type.
 
@@ -1694,16 +1678,9 @@ Scalar types become RuntimeInt[dtype]. Nested Coord types become
 Coord[RuntimeInt[dtype], ...] preserving one level of nesting.
 """
 
-
 comptime _NestedDynamicCoord[
     dtype: DType, *element_types: CoordLike
-] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=element_types.values,
-        Reducer=_NestedDynamicCoordMapper[dtype, ...],
-    ]
-]()
+] = element_types.map[_NestedDynamicCoordMapper[dtype, _]]()
 """Converts a variadic of CoordLike types to dynamic types preserving nesting.
 
 Scalar types become RuntimeInt[dtype]. Nested Coord types become
@@ -1734,75 +1711,47 @@ Example:
 
 comptime _DeepDynamicCoordMapper2[
     dtype: DType,
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[
-        T=CoordLike,
-        Coord[
-            *_NestedDynamicCoord[dtype, *TypeList[From[idx].ParamListType]()]
-        ],
-    ] if From[idx].is_tuple else Variadic.types[T=CoordLike, RuntimeInt[dtype]],
+    coord: CoordLike,
+]: CoordLike = Coord[
+    *_NestedDynamicCoord[dtype, *TypeList[coord.ParamListType]()]
+] if coord.is_tuple else RuntimeInt[
+    dtype
 ]
 
-
-comptime _DeepDynamicCoord2[dtype: DType, *element_types: CoordLike] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=element_types.values,
-        Reducer=_DeepDynamicCoordMapper2[dtype, ...],
-    ]
-]()
+comptime _DeepDynamicCoord2[
+    dtype: DType, *element_types: CoordLike
+] = element_types.map[_DeepDynamicCoordMapper2[dtype, _]]()
 """Converts CoordLike types to dynamic types preserving up to 2 levels of nesting."""
 
 
 comptime _DeepDynamicCoordMapper3[
     dtype: DType,
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[
-        T=CoordLike,
-        Coord[*_DeepDynamicCoord2[dtype, *TypeList[From[idx].ParamListType]()]],
-    ] if From[idx].is_tuple else Variadic.types[T=CoordLike, RuntimeInt[dtype]],
+    coord: CoordLike,
+]: CoordLike = Coord[
+    *_DeepDynamicCoord2[dtype, *TypeList[coord.ParamListType]()]
+] if coord.is_tuple else RuntimeInt[
+    dtype
 ]
 
-
-comptime _DeepDynamicCoord3[dtype: DType, *element_types: CoordLike] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=element_types.values,
-        Reducer=_DeepDynamicCoordMapper3[dtype, ...],
-    ]
-]()
+comptime _DeepDynamicCoord3[
+    dtype: DType, *element_types: CoordLike
+] = element_types.map[_DeepDynamicCoordMapper3[dtype, _]]()
 """Converts CoordLike types to dynamic types preserving up to 3 levels of nesting."""
 
 
 comptime _DeepDynamicCoordMapper4[
     dtype: DType,
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[
-        T=CoordLike,
-        Coord[*_DeepDynamicCoord3[dtype, *TypeList[From[idx].ParamListType]()]],
-    ] if From[idx].is_tuple else Variadic.types[T=CoordLike, RuntimeInt[dtype]],
+    coord: CoordLike,
+]: CoordLike = Coord[
+    *_DeepDynamicCoord3[dtype, *TypeList[coord.ParamListType]()]
+] if coord.is_tuple else RuntimeInt[
+    dtype
 ]
 
 
-comptime _DeepDynamicCoord4[dtype: DType, *element_types: CoordLike] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=element_types.values,
-        Reducer=_DeepDynamicCoordMapper4[dtype, ...],
-    ]
-]()
+comptime _DeepDynamicCoord4[
+    dtype: DType, *element_types: CoordLike
+] = element_types.map[_DeepDynamicCoordMapper4[dtype, _]]()
 """Converts CoordLike types to dynamic types preserving up to 4 levels of nesting."""
 
 
@@ -2167,63 +2116,39 @@ Returns:
 
 
 comptime _DivideReducer[
-    Rhs: Variadic.TypesOfTrait[CoordLike],
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
+    Rhs: TypeList[Trait=CoordLike, ...],
+    coord: CoordLike,
     idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[
-        T=CoordLike,
-        ComptimeInt[From[idx].static_value // Rhs[idx].static_value],
-    ] if From[idx].is_static_value
-    and Rhs[idx].is_static_value else Variadic.types[
-        T=CoordLike, RuntimeInt[From[idx].DTYPE]
-    ],
+]: CoordLike = ComptimeInt[
+    coord.static_value // Rhs[idx].static_value
+] if coord.is_static_value and Rhs[
+    idx
+].is_static_value else RuntimeInt[
+    coord.DTYPE
 ]
 
 
 comptime _Divide[
     Lhs: TypeList[Trait=CoordLike, ...],
     Rhs: TypeList[Trait=CoordLike, ...],
-] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=Lhs.values,
-        Reducer=_DivideReducer[Rhs=Rhs.values, ...],
-    ]
-]()
+] = Lhs.map_idx[_DivideReducer[Rhs, ...]]()
 
 comptime _CeilDivReducer[
-    Rhs: Variadic.TypesOfTrait[CoordLike],
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
+    Rhs: TypeList[Trait=CoordLike, ...],
+    coord: CoordLike,
     idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[
-        T=CoordLike,
-        ComptimeInt[
-            (From[idx].static_value + Rhs[idx].static_value - 1)
-            // Rhs[idx].static_value
-        ],
-    ] if From[idx].is_static_value
-    and Rhs[idx].is_static_value else Variadic.types[
-        T=CoordLike, RuntimeInt[From[idx].DTYPE]
-    ],
+]: CoordLike = ComptimeInt[
+    (coord.static_value + Rhs[idx].static_value - 1) // Rhs[idx].static_value
+] if coord.is_static_value and Rhs[
+    idx
+].is_static_value else RuntimeInt[
+    coord.DTYPE
 ]
-
 
 comptime _CeilDiv[
     Lhs: TypeList[Trait=CoordLike, ...],
     Rhs: TypeList[Trait=CoordLike, ...],
-] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=Lhs.values,
-        Reducer=_CeilDivReducer[Rhs=Rhs.values, ...],
-    ]
-]()
+] = Lhs.map_idx[_CeilDivReducer[Rhs, ...]]()
 
 
 @always_inline

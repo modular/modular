@@ -113,6 +113,11 @@ comptime IntToWithValue[*values: Int] = values.map_to_type[
 comptime _HasStaticToIntMapper[T: HasStaticValue]: Int = T.STATIC_VALUE
 
 
+comptime _WithValuePlusIdx[
+    T: HasStaticValue, idx: Int
+]: HasStaticValue = WithValue[T.STATIC_VALUE + idx]
+
+
 def test_type_list_map_to_values() raises:
     comptime pl = TypeList.of[
         Trait=HasStaticValue, WithValue[10], WithValue[20], WithValue[30]
@@ -675,6 +680,19 @@ def test_typelist_map() raises:
     comptime assert _type_is_eq[mapped[0], List[Int]]()
     comptime assert _type_is_eq[mapped[1], List[String]]()
     comptime assert _type_is_eq[mapped[2], List[Float64]]()
+
+
+def test_typelist_map_idx() raises:
+    """Verifies `map_idx` supplies each element type and its list index to the mapper.
+    """
+    comptime TL = TypeList.of[
+        Trait=HasStaticValue, WithValue[10], WithValue[20], WithValue[30]
+    ]()
+    comptime mapped = TL.map_idx[_WithValuePlusIdx]()
+    assert_equal(mapped.size, 3)
+    assert_true(_type_is_eq[mapped[0], WithValue[10]]())
+    assert_true(_type_is_eq[mapped[1], WithValue[21]]())
+    assert_true(_type_is_eq[mapped[2], WithValue[32]]())
 
 
 def test_typelist_map_identity() raises:

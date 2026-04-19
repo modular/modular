@@ -1849,39 +1849,24 @@ def upcast[
 # ===----------------------------------------------------------------------=== #
 
 
-comptime _DropLast2Reducer[
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[T=CoordLike, From[idx]],
-] if idx < TypeList[
-    From
-].size - 2 else Prev
-"""Keeps all elements except the last two."""
-
-
 comptime _DropLast2[
     types: Variadic.TypesOfTrait[CoordLike],
-] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal=Variadic.empty_of_trait[CoordLike],
-    ParamListType=types,
-    Reducer=_DropLast2Reducer,
-]
+] = TypeList[
+    types
+]().slice[0, TypeList[types].size - 2]()
 """Remove the last two elements from a variadic."""
 
 
 comptime _CoalesceReducer[
-    flat_shape_types: Variadic.TypesOfTrait[CoordLike],
-    flat_stride_types: Variadic.TypesOfTrait[CoordLike],
+    flat_shape_types: TypeList[Trait=CoordLike, ...],
+    flat_stride_types: TypeList[Trait=CoordLike, ...],
     Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
 ] = Prev if flat_shape_types[idx].static_value == 1 else (
     # prev_shape == 1: replace last pair with current (shape, stride)
     Variadic.concat_types[
-        _DropLast2[Prev],
+        _DropLast2[Prev].values,
         Variadic.types[
             T=CoordLike,
             ComptimeInt[flat_shape_types[idx].static_value],
@@ -1891,7 +1876,7 @@ comptime _CoalesceReducer[
     == 1 else (
         # Contiguous: merge into previous (prev_shape * cur_shape, prev_stride)
         Variadic.concat_types[
-            _DropLast2[Prev],
+            _DropLast2[Prev].values,
             Variadic.types[
                 T=CoordLike,
                 ComptimeInt[
@@ -1930,15 +1915,15 @@ Parameters:
 
 
 comptime _CoalescedInterleaved[
-    shape_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
+    shape_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
 ] = TypeList[
     _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.types[T=CoordLike, ComptimeInt[1], ComptimeInt[0]],
-        ParamListType=_Flattened[*TypeList[shape_types]()].values,
+        ParamListType=_Flattened[*shape_types].values,
         Reducer=_CoalesceReducer[
-            _Flattened[*TypeList[shape_types]()].values,
-            _Flattened[*TypeList[stride_types]()].values,
+            _Flattened[*shape_types],
+            _Flattened[*stride_types],
             ...,
         ],
     ]
@@ -1953,7 +1938,7 @@ comptime _HalfSizeDriver[
 
 
 comptime _ExtractEvenReducer[
-    interleaved: Variadic.TypesOfTrait[CoordLike],
+    interleaved: TypeList[Trait=CoordLike, ...],
     Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
@@ -1965,7 +1950,7 @@ comptime _ExtractEvenReducer[
 
 
 comptime _ExtractOddReducer[
-    interleaved: Variadic.TypesOfTrait[CoordLike],
+    interleaved: TypeList[Trait=CoordLike, ...],
     Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
@@ -1977,8 +1962,8 @@ comptime _ExtractOddReducer[
 
 
 comptime _CoalescedShapeTypes[
-    shape_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
+    shape_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
 ] = TypeList[
     _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[CoordLike],
@@ -1986,7 +1971,7 @@ comptime _CoalescedShapeTypes[
             _CoalescedInterleaved[shape_types, stride_types].size
         ].values,
         Reducer=_ExtractEvenReducer[
-            _CoalescedInterleaved[shape_types, stride_types].values, ...
+            _CoalescedInterleaved[shape_types, stride_types], ...
         ],
     ]
 ]()
@@ -1994,8 +1979,8 @@ comptime _CoalescedShapeTypes[
 
 
 comptime _CoalescedStrideTypes[
-    shape_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
+    shape_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
 ] = TypeList[
     _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[CoordLike],
@@ -2003,7 +1988,7 @@ comptime _CoalescedStrideTypes[
             _CoalescedInterleaved[shape_types, stride_types].size
         ].values,
         Reducer=_ExtractOddReducer[
-            _CoalescedInterleaved[shape_types, stride_types].values, ...
+            _CoalescedInterleaved[shape_types, stride_types], ...
         ],
     ]
 ]()
@@ -2013,12 +1998,8 @@ comptime _CoalescedStrideTypes[
 comptime CoalesceLayout[
     LayoutType: TensorLayout,
 ] = Layout[
-    _CoalescedShapeTypes[
-        LayoutType._shape_types.values, LayoutType._stride_types.values
-    ],
-    _CoalescedStrideTypes[
-        LayoutType._shape_types.values, LayoutType._stride_types.values
-    ],
+    _CoalescedShapeTypes[LayoutType._shape_types, LayoutType._stride_types],
+    _CoalescedStrideTypes[LayoutType._shape_types, LayoutType._stride_types],
 ]
 """Type alias for the result of `coalesce`.
 

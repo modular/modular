@@ -214,6 +214,7 @@ Parameters:
     T: The trait that the types conform to.
 """
 
+
 # ===-----------------------------------------------------------------------===#
 # TypeList
 # ===-----------------------------------------------------------------------===#
@@ -548,6 +549,54 @@ struct TypeList[
             The generator type is `[T: Trait] -> To`.
     """
 
+    comptime _TypeIndexToTypeGenerator[
+        ToTrait: type_of(AnyType),
+    ] = __mlir_type[
+        `!lit.generator<<"Elt": `,
+        Self.Trait,
+        `, "Idx":`,
+        Int,
+        `>`,
+        ToTrait,
+        `>`,
+    ]
+    """Generator type for index-aware type-to-type maps.
+
+    Maps an element type and its list index to an output type.
+
+    Parameters:
+        ToTrait: The trait of the mapped output types.
+    """
+
+    comptime _MapIdxTabulator[
+        ToTrait: type_of(AnyType),
+        Mapper: Self._TypeIndexToTypeGenerator[ToTrait],
+        idx: Int,
+    ]: ToTrait = Mapper[Self.__getitem_param__[idx], idx]
+
+    comptime map_idx[
+        ToTrait: type_of(AnyType),
+        //,
+        Mapper: Self._TypeIndexToTypeGenerator[ToTrait],
+    ] = TypeList.tabulate[
+        Trait=ToTrait,
+        Self.size,
+        Self._MapIdxTabulator[ToTrait, Mapper, idx=_],
+    ]
+    """Maps types to new types using an index-aware mapper.
+
+    Like `map`, but each step receives the element type and its index in this
+    list (from `0` through `size - 1`).
+
+    Parameters:
+        ToTrait: The trait that the output types conform to.
+        Mapper: A compile-time generator
+            `[element: Self.Trait, idx: Int] -> ToTrait`.
+
+    Returns:
+        A new `TypeList` with one output type per input element, in order.
+    """
+
     comptime _FilterIdxTabulator[
         Predicate: _TypeIndexPredicateGenerator[Self.Trait],
         idx: Int,
@@ -631,10 +680,10 @@ struct TypeList[
     ]: Self.Trait = Self.__getitem_param__[start + idx]
 
     comptime slice[
-        start: Int where start >= 0 = 0,
-        end: Int where start <= end <= Self.size = Self.size,
+        start: Int = 0,
+        end: Int = Self.size,
     ] = TypeList.tabulate[
-        end - start,
+        max(end - start, 0),
         Self._SliceTabulator[start, _],
     ]
     """Extracts a contiguous subsequence from the type list.
