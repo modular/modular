@@ -1994,7 +1994,7 @@ struct _RegTuple[*element_types: CoordLike](
         )
 
         comptime for i in range(type_of(self).__len__()):
-            UnsafePointer(to=self[i]).init_pointee_move(elt_types[i]())
+            UnsafePointer(to=self[i]).init_pointee(take=elt_types[i]())
 
     @always_inline("nodebug")
     def reverse(
