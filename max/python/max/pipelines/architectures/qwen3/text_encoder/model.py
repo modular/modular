@@ -27,9 +27,6 @@ from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import Weights
-from max.pipelines.architectures.llama3.weight_adapters import (
-    LLAMA_SAFETENSOR_MAPPING as QWEN_SAFETENSOR_MAP,
-)
 from max.pipelines.dataprocessing.causal_attention_mask import (
     causal_attention_mask_with_token_mask,
 )
@@ -38,6 +35,7 @@ from max.pipelines.lib.interfaces.component_model import ComponentModel
 
 from .model_config import Qwen3TextEncoderConfig
 from .qwen3 import Qwen3TextEncoderTransformer
+from .weight_adapters import QWEN3_TEXT_ENCODER_SAFETENSOR_MAP
 
 
 class Qwen3TextEncoderModel(ComponentModel):
@@ -126,12 +124,11 @@ class Qwen3TextEncoderModel(ComponentModel):
         state_dict = {}
         for key, value in self.weights.items():
             adapted_key = key
-            for before, after in QWEN_SAFETENSOR_MAP.items():
+            for before, after in QWEN3_TEXT_ENCODER_SAFETENSOR_MAP.items():
                 adapted_key = adapted_key.replace(before, after)
             adapted_key = adapted_key.removeprefix("language_model.")
-            # The Klein text encoder fuses selected hidden states before the
-            # final RMSNorm, so the checkpoint's terminal norm is unused.
-            if adapted_key == "norm.weight":
+            # Skip checkpoint keys the encoder-only module doesn't use.
+            if adapted_key in ("norm.weight", "lm_head.weight"):
                 continue
             state_dict[adapted_key] = value.data()
         return state_dict
@@ -216,7 +213,6 @@ class Qwen3TextEncoderModel(ComponentModel):
         attention_bias = Buffer.from_numpy(attention_bias_np).to(
             self.devices[0]
         )
-        outputs = self.model.execute(tokens, attention_bias)
 
         if hidden_state_index is not None and hidden_state_index not in (0, -1):
             raise ValueError(
@@ -224,6 +220,28 @@ class Qwen3TextEncoderModel(ComponentModel):
                 f"{hidden_state_index}. Valid range is [-1, 0]."
             )
 
+        return self.encode_with_bias(tokens, attention_bias)
+
+    def encode_with_bias(
+        self, tokens: Buffer, attention_bias: Buffer
+    ) -> Buffer:
+        """Execute the compiled encoder with an already-built attention bias.
+
+        Use this when the caller has pre-computed the additive bias (e.g.,
+        to share bias construction across positive and negative CFG
+        streams). ``tokens`` may be 1D ``(S,)`` or 2D ``(1, S)``; 2D
+        tokens are squeezed. ``attention_bias`` must be shape
+        ``(1, 1, S, S)`` float32 and already resident on the encoder's
+        device.
+        """
+        if len(tokens.shape) == 2:
+            if int(tokens.shape[0]) != 1:
+                raise ValueError(
+                    "Qwen3TextEncoderModel expects batch_size=1 for 2D "
+                    "token input."
+                )
+            tokens = tokens[0]
+        outputs = self.model.execute(tokens, attention_bias)
         if isinstance(outputs, (list, tuple)):
             return cast(Buffer, outputs[0])
         return cast(Buffer, outputs)

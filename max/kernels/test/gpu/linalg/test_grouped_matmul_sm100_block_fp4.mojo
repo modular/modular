@@ -21,7 +21,7 @@ from internal_utils import assert_almost_equal
 from linalg.grouped_matmul_sm100_1d1d import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
-from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig, GEMMKind
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_block_scaled,
 )
@@ -375,6 +375,7 @@ def _test_kernel_impl_base[
             AB_swapped=swapAB,
             k_group_size=k_group_size,
             num_accum_pipeline_stages=1 if mma_shape[1] == 256 else 2,
+            gemm_kind=GEMMKind.GMM,
         )
 
         blackwell_block_scaled_matmul_tma_umma_warp_specialized[

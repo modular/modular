@@ -27,6 +27,7 @@ from std.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
     ComptimeInt,
     Coord,
+    CoordLike,
     Idx,
     RowMajorLayout,
     TensorLayout,
@@ -61,11 +62,13 @@ from .block_scaled_smem import BlockScaledSmem
 
 
 comptime _Scales5DLayoutBatched[L: TensorLayout] = RowMajorLayout[
-    L._shape_types[0],
-    L._shape_types[1],
-    L._shape_types[2],
-    ComptimeInt[SF_ATOM_M[0]],
-    ComptimeInt[SF_ATOM_M[1] * SF_ATOM_K],
+    *Coord[
+        L._shape_types[0],
+        L._shape_types[1],
+        L._shape_types[2],
+        ComptimeInt[SF_ATOM_M[0]],
+        ComptimeInt[SF_ATOM_M[1] * SF_ATOM_K],
+    ].element_types
 ]
 """5D scale factor layout for batched TMA. (B, sf_m, sf_k, atom0, atom1*atom_k).
 
@@ -73,11 +76,13 @@ Preserves the static/dynamic nature of B, sf_m, sf_k from the input layout.
 """
 
 comptime _Scales5DLayoutNonBatched[L: TensorLayout] = RowMajorLayout[
-    ComptimeInt[1],
-    L._shape_types[0],
-    L._shape_types[1],
-    ComptimeInt[SF_ATOM_M[0]],
-    ComptimeInt[SF_ATOM_M[1] * SF_ATOM_K],
+    *Coord[
+        ComptimeInt[1],
+        L._shape_types[0],
+        L._shape_types[1],
+        ComptimeInt[SF_ATOM_M[0]],
+        ComptimeInt[SF_ATOM_M[1] * SF_ATOM_K],
+    ].element_types
 ]
 """5D scale factor layout for non-batched TMA. (1, sf_m, sf_k, atom0, atom1*atom_k).
 
@@ -315,7 +320,7 @@ def _create_tma_and_launch[
         workspace = {}
 
     # Launch
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel, dump_asm=False](
         a_tma_op,
         b_tma_op,
         c_tma_op,

@@ -544,7 +544,7 @@ struct ConvTransposedPacked[
         for _ in range(num_rows):
 
             @always_inline
-            def zero[width: Int](offset: Int) unified {mut}:
+            def zero[width: Int](offset: Int) unified {output_ptr, mut}:
                 output_ptr.store(offset, SIMD[Self.output_type, width](0))
 
             vectorize[simd_size](self.partition.f_size, zero)
@@ -1464,7 +1464,7 @@ def conv_transposed_cpu[
             comptime input_rank = input.rank
 
             @always_inline
-            def body[width: Int](idx: Int) unified {mut}:
+            def body[width: Int](idx: Int) unified {coords, output, mut}:
                 # Coordinates of the current index.
                 var curr_coords = rebind[IndexList[input_rank]](coords)
                 curr_coords[input_rank - 1] += idx
@@ -1642,9 +1642,6 @@ def _conv_transposed_cudnn[
     # ---------------- Algorithm & workspace -------------------------------
     var algo = cudnnConvolutionBwdDataAlgo_t.CUDNN_CONVOLUTION_BWD_DATA_ALGO_0
 
-    # For now, use no workspace since UnsafePointer.alloc() only allocates host memory,
-    var workspace_ptr = UnsafePointer[Int8, MutExternalOrigin](_unsafe_null=())
-
     var alpha = Float32(1.0)
     var beta = Float32(0.0)
 
@@ -1671,17 +1668,13 @@ def _conv_transposed_cudnn[
             input.ptr.bitcast[NoneType](),
             cudnn_handle[].ptr_conv_desc,
             algo,
-            OpaquePointer[ExternalOrigin[mut=True]](_unsafe_null=()),
+            None,
             0,
             UnsafePointer(to=beta).bitcast[NoneType](),
             cudnn_handle[].ptr_output_desc,
             output.ptr.bitcast[NoneType](),
         )
     )
-
-    # ---------------- Cleanup ---------------------------------------------
-    if workspace_ptr._is_not_null():
-        workspace_ptr.free()
 
 
 def conv_transposed_cudnn[

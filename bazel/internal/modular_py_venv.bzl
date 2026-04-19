@@ -77,7 +77,7 @@ def modular_py_venv(name, data = [], deps = [], target_compatible_with = []):
     py_binary(
         name = name,
         srcs = ["//bazel/internal:create_venv"],
-        main = "create_venv.py",
+        main = "//bazel/internal:create_venv.py",
         data = data + [name + ".collect_venv_files"],
         target_compatible_with = target_compatible_with,
         env = {

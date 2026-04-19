@@ -45,7 +45,7 @@ def count_leading_zeros(val: Int) -> Int:
 
 @always_inline("nodebug")
 def count_leading_zeros[
-    dtype: DType, width: Int, //
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Counts the per-element number of leading zeros in a SIMD vector.
 
@@ -89,7 +89,7 @@ def count_trailing_zeros(val: Int) -> Int:
 
 @always_inline("nodebug")
 def count_trailing_zeros[
-    dtype: DType, width: Int, //
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Counts the per-element number of trailing zeros in a SIMD vector.
 
@@ -133,7 +133,7 @@ def bit_reverse(val: Int) -> Int:
 
 @always_inline("nodebug")
 def bit_reverse[
-    dtype: DType, width: Int, //
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Element-wise reverses the bitpattern of a SIMD vector of integer values.
 
@@ -182,7 +182,7 @@ def byte_swap(val: Int) -> Int:
 
 @always_inline("nodebug")
 def byte_swap[
-    dtype: DType, width: Int, //
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Byte-swaps a SIMD vector of integer values with an even number of bytes.
 
@@ -237,7 +237,7 @@ def pop_count(val: Int) -> Int:
 
 @always_inline("nodebug")
 def pop_count[
-    dtype: DType, width: Int, //
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Counts the number of bits set in a SIMD vector of integer values.
 
@@ -268,7 +268,7 @@ def pop_count[
 
 @always_inline("nodebug")
 def bit_not[
-    dtype: DType, width: Int, //
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Performs a bitwise NOT operation on an SIMD vector of integer values.
 
@@ -311,7 +311,7 @@ def bit_width(val: Int) -> Int:
 
 @always_inline("nodebug")
 def bit_width[
-    dtype: DType, width: Int, //
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the minimum number of bits required to represent each element of a SIMD vector of integer values.
 
@@ -360,7 +360,7 @@ def log2_floor(val: Int) -> Int:
 
 @always_inline
 def log2_floor[
-    dtype: DType, width: Int, //
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Returns the floor of the base-2 logarithm of an integer value.
 
@@ -450,7 +450,7 @@ def next_power_of_two(val: Int) -> Int:
 
 @always_inline
 def next_power_of_two[
-    dtype: DType, width: Int, //
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the smallest power of 2 that is greater than or equal to the
     input value for each element of a SIMD vector. Any integral value less than
@@ -501,7 +501,7 @@ def prev_power_of_two(val: Int) -> Int:
 
 @always_inline
 def prev_power_of_two[
-    dtype: DType, width: Int, //
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the largest power of 2 that is less than or equal to the input
     value for each element of a SIMD vector. Any integral value less than or
@@ -568,7 +568,7 @@ def rotate_bits_left[shift: Int](x: Int) -> Int:
 @always_inline("nodebug")
 def rotate_bits_left[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     shift: Int,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_unsigned():
@@ -639,7 +639,7 @@ def rotate_bits_right[shift: Int](x: Int) -> Int:
 @always_inline("nodebug")
 def rotate_bits_right[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     shift: Int,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_unsigned():

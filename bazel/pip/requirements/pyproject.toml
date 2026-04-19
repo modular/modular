@@ -142,8 +142,6 @@ dependencies = [
   "openai==2.11.0",
   "librosa==0.10.2",
   "soundfile==0.12.1",
-  "grpcio",
-  "pytest-grpc",
 
   # mypy types
   "types-protobuf",
@@ -158,6 +156,16 @@ dependencies = [
   # Video processing
   "av",
   "opencv-python",
+
+  # Have torch dependencies, but are otherwise not platform specific
+  "accelerate",
+  "lm-eval[api,ifeval,math]>=0.4.11",
+  "mteb",
+  "optimum",
+  "peft", # For LoRA adapter support
+  "qwen-vl-utils",
+  "timm==1.0.15",
+  "torchmetrics",
 ]
 
 [dependency-groups]
@@ -169,14 +177,6 @@ amd = [
 
   "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
 
-  "accelerate",
-  "lm-eval[api,ifeval,math]>=0.4.11",
-  "mteb",
-  "optimum",
-  "peft", # For LoRA adapter support
-  "timm",
-  "torchmetrics",
-  "qwen-vl-utils",
   "lmcache>=0.4.2; sys_platform == 'linux' and platform_machine == 'x86_64'",  # External KV cache integration (v1 API required)
 ]
 
@@ -186,15 +186,6 @@ cpu = [
   "torchvision==0.25.0+cpu; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "torchvision==0.25.0; platform_machine != 'x86_64'",
   "triton==3.6.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
-
-  "accelerate",
-  "lm-eval[api,ifeval,math]>=0.4.11",
-  "mteb",
-  "optimum",
-  "peft", # For LoRA adapter support
-  "timm",
-  "torchmetrics",
-  "qwen-vl-utils",
 ]
 
 nvidia = [
@@ -207,16 +198,8 @@ nvidia = [
   "compressed-tensors==0.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "vllm==0.17.0; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
 
-  "accelerate",
   "flashinfer-cubin",
   "flashinfer-python>=0.6.4; sys_platform == 'linux'",
-  "lm-eval[api,ifeval,math]>=0.4.11",
-  "mteb",
-  "optimum",
-  "peft>=0.17.0", # For LoRA adapter support
-  "timm",
-  "torchmetrics",
-  "qwen-vl-utils",
 
   "nvidia-cudnn-frontend>=1.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
   "nvidia-cutlass-dsl>=4.4.1; sys_platform == 'linux' and platform_machine == 'x86_64'",

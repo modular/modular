@@ -23,24 +23,11 @@ from .cache_params import (
     compute_num_host_blocks,
     estimated_memory_size,
 )
-from .input_types import (
-    AttentionDispatchMetadata,
-    KVCacheInputs,
-    KVCacheInputsPerDevice,
-    NestedIterableDataclass,
-    PagedCacheValues,
-    attention_dispatch_metadata,
-    attention_dispatch_metadata_list,
-    unflatten_ragged_attention_inputs,
-)
+from .input_types import KVCacheInputs, KVCacheInputsPerDevice, PagedCacheValues
 from .metrics import KVCacheMetrics
-from .utils import (
-    AttentionDispatchResolver,
-    build_max_lengths_tensor,
-)
+from .utils import AttentionDispatchResolver, build_max_lengths_tensor
 
 __all__ = [
-    "AttentionDispatchMetadata",
     "AttentionDispatchResolver",
     "KVCacheBuffer",
     "KVCacheInputs",
@@ -51,14 +38,10 @@ __all__ = [
     "KVCacheQuantizationConfig",
     "KVConnectorType",
     "MultiKVCacheParams",
-    "NestedIterableDataclass",
     "PagedCacheValues",
-    "attention_dispatch_metadata",
-    "attention_dispatch_metadata_list",
     "build_max_lengths_tensor",
     "compute_max_seq_len_fitting_in_cache",
     "compute_num_device_blocks",
     "compute_num_host_blocks",
     "estimated_memory_size",
-    "unflatten_ragged_attention_inputs",
 ]

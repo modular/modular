@@ -895,7 +895,7 @@ def _softmax_like(op):  # noqa: ANN001, ANN202
     return softmax_like_op
 
 
-logsoftmax = _softmax_like(rmo.mo_logsoftmax)
+logsoftmax = _softmax_like(rmo.mo_reduce_logsoftmax)
 """
 Computes the elementwise logsoftmax of a symbolic tensor.
 
@@ -1015,7 +1015,7 @@ def silu(x: TensorValue):  # noqa: ANN201
     return mul(x_cast, sigmoid(x_cast)).cast(x.dtype)
 
 
-softmax = _softmax_like(rmo.mo_softmax)
+softmax = _softmax_like(rmo.mo_reduce_softmax)
 """
 Computes the elementwise softmax of a symbolic tensor.
 
