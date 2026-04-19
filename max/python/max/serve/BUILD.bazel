@@ -8,7 +8,6 @@ modular_py_library(
     deps = [
         requirement("pydantic"),
         requirement("pydantic-settings"),
-        "//max/python/max/serve/worker_interface",
         "//max/python/max/support",
     ],
 )

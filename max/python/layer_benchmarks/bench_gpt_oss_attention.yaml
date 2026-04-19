@@ -1,0 +1,58 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+name: gpt_oss_attention
+file: $BUILD_WORKSPACE_DIRECTORY/max/python/benchmarks/testbed/kbench_entrypoint.py
+single_invoke: true
+
+params:
+# openai/gpt-oss-120b full attention config
+- $harness: gpt_oss_attention
+  $model_name: gpt-oss-120b-full
+  $hidden_size: 2880
+  $n_heads: 64
+  $n_kv_heads: 8
+  $head_dim: 64
+  $max_seq_len: 131072
+  $rope_theta: 150000.0
+  $has_bias: true
+  $layer_type: full_attention
+  $local_window_size: 128
+  $rope_factor: 32.0
+  $rope_beta_fast: 32.0
+  $rope_beta_slow: 1.0
+  $rope_original_max_pos: 4096
+  $rope_truncate: false
+  $batch_size: [1, 8]
+  $seq_len: [1, 8192]
+  $ctx_len: [8192, 16384, 32768, 49152]
+
+# openai/gpt-oss-120b sliding window attention config
+- $harness: gpt_oss_attention
+  $model_name: gpt-oss-120b-sliding
+  $hidden_size: 2880
+  $n_heads: 64
+  $n_kv_heads: 8
+  $head_dim: 64
+  $max_seq_len: 131072
+  $rope_theta: 150000.0
+  $has_bias: true
+  $layer_type: sliding_attention
+  $local_window_size: 128
+  $rope_factor: 32.0
+  $rope_beta_fast: 32.0
+  $rope_beta_slow: 1.0
+  $rope_original_max_pos: 4096
+  $rope_truncate: false
+  $batch_size: [1, 8]
+  $seq_len: [1, 8192]
+  $ctx_len: [8192, 16384, 32768, 49152]

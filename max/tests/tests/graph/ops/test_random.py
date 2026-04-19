@@ -36,7 +36,7 @@ supported_tensor_types = tensor_types(dtypes=supported_dtypes)
 
 @given(like=...)
 def test_random__no_seed(like: TensorType) -> None:
-    with Graph("no_seed") as graph:
+    with Graph("no_seed"):
         with pytest.raises(RuntimeError):
             ops.random.uniform(like)
 
@@ -44,7 +44,7 @@ def test_random__no_seed(like: TensorType) -> None:
 @given(like=supported_tensor_types, seed=...)
 def test_random__static_seed(like: TensorType, seed: int) -> None:
     assume(-(2**63) <= seed < 2**63)
-    with Graph("static_seed") as graph:
+    with Graph("static_seed"):
         ops.random.set_seed(seed)
         result = ops.random.uniform(like)
     assert result.type == like
@@ -52,7 +52,7 @@ def test_random__static_seed(like: TensorType, seed: int) -> None:
 
 @given(like=..., seed=big_ints)
 def test_random__static_seed_out_of_bounds(like: TensorType, seed: int) -> None:
-    with Graph("static_seed") as graph:
+    with Graph("static_seed"):
         with pytest.raises(ValueError):
             ops.random.set_seed(seed)
 
@@ -104,7 +104,7 @@ def test_gaussian__zero_std(like: TensorType, mean: float) -> None:
     with Graph("gaussian", input_types=[ops.random.SeedType]) as graph:
         ops.random.set_seed(graph.inputs[0].tensor)
         with pytest.raises(Exception):
-            result = ops.random.gaussian(like, mean=mean, std=0)
+            ops.random.gaussian(like, mean=mean, std=0)
 
 
 @given(like=supported_tensor_types)
@@ -138,7 +138,7 @@ def test_uniform__zero_range(like: TensorType, lower: float) -> None:
     with Graph("gaussian", input_types=[ops.random.SeedType]) as graph:
         ops.random.set_seed(graph.inputs[0].tensor)
         with pytest.raises(Exception):
-            result = ops.random.uniform(like, range=(lower, lower))
+            ops.random.uniform(like, range=(lower, lower))
 
 
 @pytest.mark.skip("GEX-2100")
@@ -150,7 +150,7 @@ def test_uniform__inverted_range(
     with Graph("gaussian", input_types=[ops.random.SeedType]) as graph:
         ops.random.set_seed(graph.inputs[0].tensor)
         with pytest.raises(Exception):
-            result = ops.random.uniform(like, range=range)
+            ops.random.uniform(like, range=range)
 
 
 @given(like=tensor_types(dtypes=supported_dtypes, device=DeviceRef.GPU()))

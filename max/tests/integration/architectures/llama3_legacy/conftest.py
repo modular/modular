@@ -95,7 +95,9 @@ def make_pipeline_config(
 
 
 @pytest.fixture
-def make_kv_inputs(hf_config: LlamaConfig) -> Callable[..., KVCacheInputs]:
+def make_kv_inputs(
+    hf_config: LlamaConfig,
+) -> Callable[..., KVCacheInputs[Buffer, Buffer]]:
     """Factory that creates KVCacheInputs."""
 
     def _make(
@@ -107,7 +109,7 @@ def make_kv_inputs(hf_config: LlamaConfig) -> Callable[..., KVCacheInputs]:
         num_replicas: int = 1,
         total_num_pages: int = 1,
         input_seq_len: int = 3,
-    ) -> KVCacheInputs:
+    ) -> KVCacheInputs[Buffer, Buffer]:
         kv_params_kwargs = dict(
             dtype=pipeline_config.model.kv_cache._cache_dtype,
             num_layers=hf_config.num_hidden_layers,
@@ -136,8 +138,7 @@ def make_kv_inputs(hf_config: LlamaConfig) -> Callable[..., KVCacheInputs]:
             batches.append([ctx])
 
         runtime_inputs = kv_manager.runtime_inputs(batches)
-        kv_inputs: KVCacheInputs
-        kv_inputs = runtime_inputs
+        kv_inputs: KVCacheInputs[Buffer, Buffer] = runtime_inputs
 
         return kv_inputs
 
@@ -150,7 +151,7 @@ def make_inputs() -> Callable[..., Llama3Inputs]:
 
     def _make(
         devices: list[Device],
-        kv_inputs: KVCacheInputs,
+        kv_inputs: KVCacheInputs[Buffer, Buffer],
         *,
         input_seq_len: int = 3,
         num_batches: int = 1,

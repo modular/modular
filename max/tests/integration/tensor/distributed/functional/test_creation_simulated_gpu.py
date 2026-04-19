@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Creation ops tests on simulated GPU mesh (single GPU, 4 virtual devices)."""
 
-from _test_helpers import gpu_partial
+from _test_helpers import make_partial
 from max.driver import Accelerator
 from max.experimental.sharding import DeviceMesh
 
@@ -32,4 +32,4 @@ class TestCreation(CreationTests):
         mesh_shape=(2, 2),
         axis_names=("dp", "tp"),
     )
-    partial_fn = staticmethod(gpu_partial)
+    partial_fn = staticmethod(make_partial)

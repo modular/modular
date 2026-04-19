@@ -122,7 +122,7 @@ class AudioGenerationMetadata(
         """Convert the metadata to a dictionary format.
 
         Returns:
-            dict[str, any]: Dictionary representation of the metadata.
+            Dictionary representation of the metadata.
         """
         result = {}
         for attr in self.__annotations__:
@@ -189,7 +189,7 @@ class AudioGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
         """Indicates whether the audio generation process is complete.
 
         Returns:
-            :class:`bool`: ``True`` if generation is done, ``False`` otherwise.
+            ``True`` if generation is done, ``False`` otherwise.
         """
         return self.final_status.is_done
 

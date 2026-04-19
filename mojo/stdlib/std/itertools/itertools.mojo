@@ -203,6 +203,8 @@ def product[
     Examples:
 
     ```mojo
+    from std.itertools import product
+
     var l = ["hey", "hi", "hello"]
     var l2 = [10, 20, 30]
     for a, b in product(l, l2):
@@ -324,6 +326,8 @@ def product[
     Examples:
 
     ```mojo
+    from std.itertools import product
+
     var l1 = [1, 2]
     var l2 = [3, 4]
     var l3 = [5, 6]
@@ -464,6 +468,8 @@ def product[
     Examples:
 
     ```mojo
+    from std.itertools import product
+
     var l1 = [1, 2]
     var l2 = [3, 4]
     var l3 = [5, 6]
@@ -681,6 +687,8 @@ def cycle[
     Examples:
 
     ```mojo
+    from std.itertools import cycle
+
     # Cycle through a list
     var colors = ["red", "green", "blue"]
     var color_cycle = cycle(colors)
@@ -1115,6 +1123,8 @@ def repeat[
     Examples:
 
     ```mojo
+    from std.itertools import repeat
+
     # Repeat a value 3 times
     var it = repeat(42, times=3)
     for val in it:

@@ -163,7 +163,7 @@ def run_kv_cache_2m_iadd(
         Buffer.zeros(cache_tensor.shape, dtype=DTYPE, device=device)
     )
 
-    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs().flatten()
 
     with Graph(
         "kv_cache_2m_iadd_test",
@@ -209,14 +209,14 @@ def run_kv_cache_2m_iadd(
 
     batch_seq_len_arr = np.array([total_seq_len], dtype=np.int64)
 
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch])
 
     compiled.execute(
         to_max_tensor(kv_lora_output, device),
         Buffer.from_numpy(input_row_offsets).to(device),
         Buffer.from_numpy(lora_end_idx_arr),
         Buffer.from_numpy(batch_seq_len_arr),
-        *kv_runtime_inputs,
+        *kv_runtime_inputs.flatten(),
     )
 
     for ctx in batch:

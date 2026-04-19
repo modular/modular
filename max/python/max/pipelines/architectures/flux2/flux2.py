@@ -25,7 +25,7 @@ from .layers.flux2_attention import (
     Flux2PosEmbed,
 )
 from .layers.normalizations import AdaLayerNormContinuous, LayerNorm
-from .model_config import Flux2Config
+from .model_config import Flux2BlockQuant, Flux2Config
 
 
 class Flux2TimestepGuidanceEmbeddings(Module):
@@ -166,7 +166,7 @@ class Flux2TransformerBlock(Module):
         mlp_ratio: float = 3.0,
         eps: float = 1e-6,
         bias: bool = False,
-        quant_config: QuantConfig | None = None,
+        quant: Flux2BlockQuant = Flux2BlockQuant(),
     ) -> None:
         """Initialize Flux2TransformerBlock.
 
@@ -179,6 +179,7 @@ class Flux2TransformerBlock(Module):
             mlp_ratio: Multiplier for feedforward hidden dimension.
             eps: Epsilon for layer normalization.
             bias: Whether to use bias in linear layers.
+            quant: Per-Linear quant plan; default leaves every Linear BF16.
         """
         super().__init__()
         self.norm1 = LayerNorm(
@@ -209,7 +210,7 @@ class Flux2TransformerBlock(Module):
             eps=eps,
             dtype=dtype,
             device=device,
-            quant_config=quant_config,
+            quant=quant,
         )
         self.norm2 = LayerNorm(
             dim,
@@ -226,7 +227,7 @@ class Flux2TransformerBlock(Module):
             bias=bias,
             dtype=dtype,
             device=device,
-            quant_config=quant_config,
+            quant_config=quant.ff,
         )
         self.norm2_context = LayerNorm(
             dim,
@@ -243,7 +244,7 @@ class Flux2TransformerBlock(Module):
             bias=bias,
             dtype=dtype,
             device=device,
-            quant_config=quant_config,
+            quant_config=quant.ff_context,
         )
 
     def __call__(
@@ -456,6 +457,9 @@ class Flux2Transformer2DModel(Module):
         dtype = config.dtype
         eps = config.eps
         quant_config = config.quant_config
+        nvfp4_layers_bfl: frozenset[str] = getattr(
+            config, "nvfp4_layers_bfl", frozenset()
+        )
 
         self.device = device
         self.patch_size = patch_size
@@ -522,9 +526,11 @@ class Flux2Transformer2DModel(Module):
                     mlp_ratio=mlp_ratio,
                     eps=eps,
                     bias=False,
-                    quant_config=quant_config,
+                    quant=Flux2BlockQuant.resolve(
+                        i, quant_config, nvfp4_layers_bfl
+                    ),
                 )
-                for _ in range(num_layers)
+                for i in range(num_layers)
             ]
         )
         self.single_transformer_blocks = LayerList(

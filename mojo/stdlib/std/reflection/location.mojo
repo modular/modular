@@ -208,7 +208,7 @@ def source_location() -> SourceLocation:
     ```
     """
     var line, col, file_name = __mlir_op.`kgen.source_loc`[
-        inlineCount=Int(0)._mlir_value,
+        inlineCount=Int(0)._int_mlir_index(),
         _type=Tuple[
             __mlir_type.index,
             __mlir_type.index,
@@ -272,7 +272,7 @@ def call_location[*, inline_count: Int = 1]() -> SourceLocation:
     ```
     """
     var line, col, file_name = __mlir_op.`kgen.source_loc`[
-        inlineCount=inline_count._mlir_value,
+        inlineCount=inline_count._int_mlir_index(),
         _type=Tuple[
             __mlir_type.index,
             __mlir_type.index,

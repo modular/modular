@@ -1437,10 +1437,14 @@ struct OutputProducer[
         self.pipeline_ptr = pipeline_ptr
         # Placeholder stage - set properly in __enter__
         var placeholder_tmem = Self.Stage.Tmem(0, 0)
+        # SAFETY: Placeholder pipeline; replaced by acquire_for_mma() in
+        # __enter__ before any method accesses the mbar pointer.
         self.stage = Self.Stage(
             0,
             placeholder_tmem,
-            ProducerConsumerPipeline[Self.num_stages](MbarPtr(_unsafe_null=())),
+            ProducerConsumerPipeline[Self.num_stages](
+                MbarPtr.unsafe_dangling()
+            ),
         )
 
     @always_inline
@@ -1708,10 +1712,14 @@ struct MmaKStage[
         self.pipeline_ptr = pipeline_ptr
         # Placeholder stage - set properly in __enter__
         var placeholder_tmem = Self.Stage.Tmem(0, 0)
+        # SAFETY: Placeholder pipeline; replaced by acquire_for_mma() in
+        # __enter__ before any method accesses the mbar pointer.
         self.stage = Self.Stage(
             0,
             placeholder_tmem,
-            ProducerConsumerPipeline[Self.num_stages](MbarPtr(_unsafe_null=())),
+            ProducerConsumerPipeline[Self.num_stages](
+                MbarPtr.unsafe_dangling()
+            ),
         )
 
     @always_inline
@@ -1754,10 +1762,14 @@ struct PerKConsumerStage[
         self.pipeline_ptr = pipeline_ptr
         # Placeholder stage - set properly in __enter__
         var placeholder_tmem = Self.Stage.Tmem(0, 0)
+        # SAFETY: Placeholder pipeline; replaced by acquire_for_epilogue() in
+        # __enter__ before any method accesses the mbar pointer.
         self.stage = Self.Stage(
             0,
             placeholder_tmem,
-            ProducerConsumerPipeline[Self.num_stages](MbarPtr(_unsafe_null=())),
+            ProducerConsumerPipeline[Self.num_stages](
+                MbarPtr.unsafe_dangling()
+            ),
         )
 
     @always_inline
@@ -1884,11 +1896,13 @@ struct EpilogueKContext[
         self.input_stage_index = 0
         # Placeholder stage - set properly in __enter__
         var placeholder_tmem = Self.OutputStageType.Tmem(0, 0)
+        # SAFETY: Placeholder pipeline; replaced by acquire_for_epilogue() in
+        # __enter__ before any method accesses the mbar pointer.
         self.output_stage = Self.OutputStageType(
             0,
             placeholder_tmem,
             ProducerConsumerPipeline[Self.num_output_stages](
-                MbarPtr(_unsafe_null=())
+                MbarPtr.unsafe_dangling()
             ),
         )
 

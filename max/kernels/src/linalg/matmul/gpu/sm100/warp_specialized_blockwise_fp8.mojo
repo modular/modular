@@ -162,7 +162,7 @@ def load_AB[
     work_tile_coord: Tuple[Int, Int],
     a_multicast_mask: UInt16,
     b_multicast_mask: UInt16,
-    iter_idx: UInt,
+    iter_idx: Int,
     elect_one_cta: Bool,
 ):
     comptime BM = block_tile_shape[0]
@@ -225,21 +225,21 @@ def load_AB[
         a_tma_op.async_multicast_load[cta_group](
             a_smem_slice,
             tma_mbar[0],
-            (Int(iter_idx) * BK, a_gmem_slice_coord),
+            (iter_idx * BK, a_gmem_slice_coord),
             a_multicast_mask,
         )
 
         b_tma_op.async_multicast_load[cta_group](
             b_smem_slice,
             tma_mbar[0],
-            (Int(iter_idx) * BK, b_gmem_slice_coord),
+            (iter_idx * BK, b_gmem_slice_coord),
             b_multicast_mask,
         )
 
         a_scales_tma_op.async_copy[cta_group](
             a_scales_smem_tile,
             tma_mbar[0],
-            (work_tile_coord[0] * BM, Int(iter_idx)),
+            (work_tile_coord[0] * BM, iter_idx),
         )
 
 
@@ -283,7 +283,7 @@ def multi_stage_reg_epilogue[
         alignment=128,
     ],
     c_tma_op: TMATensorTile[c_type, c_rank, c_tile_shape, c_desc_shape],
-    c_coord: Tuple[UInt, UInt],
+    c_coord: Tuple[Int, Int],
     elect_one_warp: Bool,
 ):
     comptime BM = block_tile_shape[0]
@@ -380,17 +380,15 @@ def multi_stage_reg_epilogue[
             cg2_elect_one_warp if cta_group == 2 else cg1_elect_one_warp
         )
 
-        var coord_n_mma_m256 = c_coord[1] * UInt(MMA_N) + UInt(stage * stageN)
+        var coord_n_mma_m256 = c_coord[1] * MMA_N + stage * stageN
         var coord_n_mma_m128 = (
-            c_coord[1] * UInt(MMA_N)
-            + UInt(stage * stageN)
-            + UInt(BN * ufloordiv(warp_id, 2))
+            c_coord[1] * MMA_N + (stage * stageN) + (BN * ufloordiv(warp_id, 2))
         )
 
         var cg2_coord_n = coord_n_mma_m256 if MMA_M == 256 else coord_n_mma_m128
         var cg1_coord_n = coord_n_mma_m256
-        var coord_n = Int(cg2_coord_n if cta_group == 2 else cg1_coord_n)
-        var coord_m = Int(c_coord[0] * UInt(BM))
+        var coord_n = cg2_coord_n if cta_group == 2 else cg1_coord_n
+        var coord_m = c_coord[0] * BM
 
         var cg2_c_smem_coord_m = 0 if MMA_M == 256 else ufloordiv(warp_id, 2)
         var cg1_c_smem_coord_m = 0
@@ -468,8 +466,8 @@ def promote_accumulators[
     load_mma_pipeline: ProducerConsumerPipeline[pipeline_stages],
     work_tile_coord: Tuple[Int, Int],
     elect_one_warp: Bool,
-    stage_stride_cols: UInt,
-    k_iter: UInt,
+    stage_stride_cols: Int,
+    k_iter: Int,
     problem_shape: StaticTuple[Int32, 3],
 ):
     comptime BM = block_tile_shape[0]
@@ -747,6 +745,10 @@ def promote_accumulators[
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
+@__name(
+    t"blackwell_warp_specialized_blockwise_fp8_{a_type}_{b_type}_{c_type}_{transpose_b}_s{num_pipeline_stages}",
+    mangle=True,
+)
 def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_type: DType,
     b_type: DType,
@@ -778,7 +780,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_scales_type, a_scales_rank, a_scales_tile_shape, a_scales_desc_shape
     ],
     cluster_dim: StaticTuple[Int32, 3],
-    num_iters: UInt,
+    num_iters: Int,
     b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     problem_shape: StaticTuple[Int32, 3],
 ):
@@ -1157,7 +1159,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
             clc_pipe_consumer_state.step()
             # DO MMA
             if elect_one_cta:
-                for i in range(num_iters):
+                for _ in range(num_iters):
                     var mma_output_mma_stage = (
                         mma_output_pipeline.producer_stage()
                     )
@@ -1263,7 +1265,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     load_mma_pipeline,
                     work_tile_coord=(Int(work_info.m), Int(work_info.n)),
                     elect_one_warp=elect_one_warp,
-                    stage_stride_cols=UInt(stage_stride_cols),
+                    stage_stride_cols=stage_stride_cols,
                     k_iter=k_iter,
                     problem_shape=problem_shape,
                 )
@@ -1287,7 +1289,7 @@ def blackwell_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 c_lower_main_tile,
                 c_smem_iter,
                 c_tma_op,
-                c_coord=(UInt(work_info.m), UInt(work_info.n)),
+                c_coord=(Int(work_info.m), Int(work_info.n)),
                 elect_one_warp=elect_one_warp,
             )
 
@@ -1434,7 +1436,7 @@ def sm100_warp_specialized_blockwise_fp8[
         + mma_mbar_bytes_per_stage
     )
 
-    comptime max_pipeline_stages = UInt(
+    comptime max_pipeline_stages: Int = (
         smem_leftover // producer_consumer_smem_per_stage
     )
 
@@ -1442,9 +1444,7 @@ def sm100_warp_specialized_blockwise_fp8[
         max_pipeline_stages >= 1
     ), "not enough smem even for one pipeline stage!"
 
-    comptime producer_consumer_smem = producer_consumer_smem_per_stage * Int(
-        max_pipeline_stages
-    )
+    comptime producer_consumer_smem = producer_consumer_smem_per_stage * max_pipeline_stages
 
     comptime smem_size = (
         clc_smem + accum_smem + producer_consumer_smem + tmem_writeout_smem
@@ -1471,7 +1471,7 @@ def sm100_warp_specialized_blockwise_fp8[
         type_of(b_scales).LayoutType,
         transpose_b=transpose_b,
         config=config,
-        num_pipeline_stages=Int(max_pipeline_stages),
+        num_pipeline_stages=max_pipeline_stages,
         cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
@@ -1499,7 +1499,7 @@ def sm100_warp_specialized_blockwise_fp8[
         c_tma_op,
         a_scales_tma_op,
         cluster_dim,
-        UInt(ceildiv(K, BK)),
+        ceildiv(K, BK),
         b_scales,
         problem_shape,
         grid_dim=grid_dim,

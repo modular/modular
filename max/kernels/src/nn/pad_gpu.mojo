@@ -78,7 +78,9 @@ def _vectorized_copy_row[
 
     if src_aligned and dst_aligned:
 
-        def _copy_aligned[n: Int](blk: Int) unified {mut}:
+        def _copy_aligned[
+            n: Int
+        ](blk: Int) unified {input_ptr, output_ptr, mut}:
             for j in range(n):
                 var off = my_start + (blk + j) * stride
                 output_ptr.store[width=simd_width, alignment=alignment](
@@ -89,7 +91,7 @@ def _vectorized_copy_row[
         vectorize[simd_width](num_blocks, _copy_aligned)
     else:
 
-        def _copy[n: Int](blk: Int) unified {mut}:
+        def _copy[n: Int](blk: Int) unified {input_ptr, output_ptr, mut}:
             for j in range(n):
                 var off = my_start + (blk + j) * stride
                 output_ptr.store[width=simd_width](
@@ -103,6 +105,7 @@ def _vectorized_copy_row[
         output_ptr[i] = input_ptr[i]
 
 
+@__name(t"padded_copy_{dtype}_w{simd_width}", mangle=True)
 def padded_copy_kernel[
     InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
