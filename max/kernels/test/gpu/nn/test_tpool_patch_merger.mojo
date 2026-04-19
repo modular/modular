@@ -97,7 +97,7 @@ def test_tpool_patch_merger(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     seed(42)
-    rand[dtype](x_host.unsafe_ptr(), total_in * D, min=0.0, max=1.0)
+    rand[dtype](x_host.as_span(), min=0.0, max=1.0)
 
     bounds_host[0] = Int64(t0)
     bounds_host[1] = Int64(h0)
@@ -119,9 +119,9 @@ def test_tpool_patch_merger(ctx: DeviceContext) raises:
     var ref_host = ctx.enqueue_create_host_buffer[dtype](total_out * D)
 
     cpu_reference_one_video[dtype](
-        x_host.unsafe_ptr(),
+        x_host.as_span().unsafe_ptr(),
         0,
-        ref_host.unsafe_ptr(),
+        ref_host.as_span().unsafe_ptr(),
         t0,
         h0,
         w0,
@@ -130,9 +130,9 @@ def test_tpool_patch_merger(ctx: DeviceContext) raises:
         D,
     )
     cpu_reference_one_video[dtype](
-        x_host.unsafe_ptr(),
+        x_host.as_span().unsafe_ptr(),
         len0,
-        ref_host.unsafe_ptr() + out0_rows * D,
+        ref_host.as_span().unsafe_ptr() + out0_rows * D,
         t1,
         h1,
         w1,

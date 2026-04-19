@@ -15,53 +15,16 @@
 
 from __future__ import annotations
 
-from max.driver import CPU
-from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn.module import Module
 from max.experimental.tensor import Tensor
+from max.graph import ops
 
+group_norm = F.functional(ops.group_norm)
+"""Applies Group Normalization to an input tensor.
 
-def group_norm(
-    x: Tensor,
-    weight: Tensor,
-    bias: Tensor,
-    num_groups: int,
-    eps: float,
-) -> Tensor:
-    """Applies Group Normalization to an input tensor.
-
-    Group Normalization divides the channels into groups and computes
-    normalization statistics within each group. This is useful for small
-    batch sizes where batch normalization is unstable.
-
-    Args:
-        x: Input tensor of shape [N, C, ...] where C is number of channels
-        weight: Weight tensor of shape [C]
-        bias: Bias tensor of shape [C]
-        num_groups: Number of groups to separate the channels into
-        eps: Small constant added to denominator for numerical stability
-
-    Returns:
-        Normalized tensor of same shape as input
-    """
-    if len(x.shape) < 2:
-        raise ValueError(
-            f"Expected input tensor with >=2 dimensions, got shape {x.shape}"
-        )
-
-    return F.custom(
-        "group_norm",
-        x.device,
-        [
-            x,
-            weight.to(x.device),
-            bias.to(x.device),
-            F.constant(eps, dtype=x.dtype, device=CPU()),
-            F.constant(num_groups, dtype=DType.int32, device=CPU()),
-        ],
-        [x.type],
-    )[0]
+See :func:`max.graph.ops.group_norm` for details.
+"""
 
 
 class GroupNorm(Module[[Tensor], Tensor]):

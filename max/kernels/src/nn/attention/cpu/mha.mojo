@@ -678,7 +678,9 @@ struct _FlashAttention[
             sum_vals[m] = sum_vals[m] * fixup_val + accum_val
 
             @always_inline
-            def do_correction[_simd_width: Int](idx: Int) unified {mut}:
+            def do_correction[
+                _simd_width: Int
+            ](idx: Int) unified {o_row_ptr, fixup_val, mut}:
                 var val = o_row_ptr.load[width=_simd_width](idx)
                 o_row_ptr.store(idx, val * fixup_val)
 
@@ -752,14 +754,15 @@ struct _FlashAttention[
                 Span(sum_vals_storage), row_major[Self._config.block_m]()
             )
 
-            var packed_ptr = UnsafePointer[
-                Scalar[Self.dtype], MutExternalOrigin
-            ](_unsafe_null=())
-            if max_seq_len != 1:
+            var packed_ptr_allocated = max_seq_len != 1
+            var packed_ptr: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
+            if packed_ptr_allocated:
                 packed_ptr = alloc[Scalar[Self.dtype]](
                     packed_size,
                     alignment=align_of[SIMD[Self.dtype, Self.simd_width]](),
                 )
+            else:
+                packed_ptr = type_of(packed_ptr).unsafe_dangling()
 
             var q_seq_stride = num_heads * depth_dim
 
@@ -918,7 +921,9 @@ struct _FlashAttention[
                     var reciprocal = 1 / sum_vals[m][0]
 
                     @always_inline
-                    def do_final[_simd_width: Int](idx: Int) unified {mut}:
+                    def do_final[
+                        _simd_width: Int
+                    ](idx: Int) unified {oz_ptr, o_ptr, reciprocal, mut}:
                         var v = oz_ptr.load[width=_simd_width](idx)
                         o_ptr.store(idx, v * reciprocal)
 
@@ -929,7 +934,7 @@ struct _FlashAttention[
                     o_ptr += q_seq_stride
                     oz_ptr += Self._config.o_block_n
 
-            if packed_ptr._is_not_null():
+            if packed_ptr_allocated:
                 packed_ptr.free()
 
         sync_parallelize[task_func](num_threads)
@@ -1264,7 +1269,7 @@ def _flash_attention_kv_cache[
     comptime num_heads = Int(q.layout.shape[2])
     comptime head_size = cache_t.kv_params.head_size
     comptime output_shape = IndexList[4](
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, Int(head_size)
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, head_size
     )
 
     @always_inline
@@ -1383,8 +1388,8 @@ def _flash_attention_kv_cache[
     ].run(
         num_batches,
         num_heads,
-        Int(depth_dim),
-        Int(num_kv_heads),
+        depth_dim,
+        num_kv_heads,
         max_seq_len,
         scale,
         sink_weights,
@@ -1559,7 +1564,7 @@ def flash_attention_kv_cache[
     comptime num_heads = Int(q.layout.shape[q.rank - 2])
     comptime head_size = cache_t.kv_params.head_size
     comptime output_shape = IndexList[4](
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, Int(head_size)
+        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, head_size
     )
 
     _flash_attention_kv_cache[

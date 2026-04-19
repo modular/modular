@@ -22,7 +22,6 @@ import os
 from enum import Enum, IntEnum
 from pathlib import Path
 
-from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from max.support.human_readable_formatter import to_human_readable_bytes
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -237,12 +236,6 @@ class Settings(BaseSettings):
         default=False,
         description="When recording HTTP transactions, whether to include responses",
         alias="MAX_SERVE_TRANSACTION_RECORDING_INCLUDE_RESPONSES",
-    )
-
-    kv_cache_events_zmq_endpoint: str = Field(
-        default_factory=generate_zmq_ipc_path,
-        description="Expose KV Cache Events ZMQ Socket for communication between the KV Cache Agent and MAX Serve",
-        alias="MAX_SERVE_KV_CACHE_EVENTS_ZMQ_ENDPOINT",
     )
 
     di_bind_address: str = Field(

@@ -23,7 +23,6 @@ from max.graph import (
     DeviceRef,
     ShardingStrategy,
     TensorValue,
-    Weight,
     ops,
 )
 from max.nn.kernels import flash_attention_gpu
@@ -31,6 +30,7 @@ from max.nn.kernels import flash_attention_gpu
 from ..comm import Allreduce
 from ..layer import Module
 from ..linear import Linear
+from ..stacked_linear import StackedLinear
 from .mask_config import MHAMaskVariant
 
 
@@ -115,43 +115,15 @@ class MultiheadAttention(Module):
 
     def _init_weights(self, dtype: DType) -> None:
         """Initializes the attention weights."""
-        if self.stacked_qkv:
-            self.qkv_proj = Weight(
-                name="qkv_proj.weight",
-                dtype=dtype,
-                shape=(3 * self.embed_dim, self.embed_dim),
-                device=self.devices[0],
-            )
-
-            if self.qkv_has_bias:
-                self.qkv_proj_bias = Weight(
-                    name="qkv_proj.bias",
-                    dtype=dtype,
-                    shape=(3 * self.embed_dim,),
-                    device=self.devices[0],
-                )
-        else:
-            self.q_proj = Linear(
-                in_dim=self.embed_dim,
-                out_dim=self.embed_dim,
-                has_bias=self.qkv_has_bias,
-                dtype=dtype,
-                device=self.devices[0],
-            )
-            self.k_proj = Linear(
-                in_dim=self.embed_dim,
-                out_dim=self.embed_dim,
-                has_bias=self.qkv_has_bias,
-                dtype=dtype,
-                device=self.devices[0],
-            )
-            self.v_proj = Linear(
-                in_dim=self.embed_dim,
-                out_dim=self.embed_dim,
-                has_bias=self.qkv_has_bias,
-                dtype=dtype,
-                device=self.devices[0],
-            )
+        self.qkv_proj = StackedLinear(
+            in_dim=self.embed_dim,
+            out_dims=[self.embed_dim, self.embed_dim, self.embed_dim],
+            names=["q", "k", "v"],
+            dtype=dtype,
+            device=self.devices[0],
+            stacked=self.stacked_qkv,
+            has_bias=self.qkv_has_bias,
+        )
 
         self.o_proj = Linear(
             in_dim=self.embed_dim,
@@ -172,24 +144,7 @@ class MultiheadAttention(Module):
         self.allreduce = Allreduce(num_devices)
 
         # Set up sharding strategies
-        if self.stacked_qkv:
-            self.qkv_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-            if self.qkv_has_bias:
-                self.qkv_proj_bias.sharding_strategy = ShardingStrategy.rowwise(
-                    num_devices
-                )
-        else:
-            self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-            self.k_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-            self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
+        self.qkv_proj.sharding_strategy = ShardingStrategy.rowwise(num_devices)
 
         self.o_proj.sharding_strategy = ShardingStrategy.columnwise(num_devices)
 
@@ -202,15 +157,7 @@ class MultiheadAttention(Module):
         sharded_num_heads = self.num_heads // len(self.devices)
 
         # Shard weights once for all devices
-        if self.stacked_qkv:
-            qkv_proj_shards = self.qkv_proj.shard(self.devices)
-            qkv_proj_bias_shards = []
-            if self.qkv_has_bias:
-                qkv_proj_bias_shards = self.qkv_proj_bias.shard(self.devices)
-        else:
-            q_proj_shards = self.q_proj.shard(self.devices)
-            k_proj_shards = self.k_proj.shard(self.devices)
-            v_proj_shards = self.v_proj.shard(self.devices)
+        qkv_proj_shards = self.qkv_proj.shard(self.devices)
         o_proj_shards = self.o_proj.shard(self.devices)
 
         for n, device in enumerate(self.devices):
@@ -219,24 +166,16 @@ class MultiheadAttention(Module):
                 num_attention_heads=sharded_num_heads,
                 hidden_size=self.embed_dim,
                 device=device,
-                dtype=self.q_proj.weight.dtype
-                if hasattr(self, "q_proj")
-                else self.qkv_proj.dtype,
+                dtype=self.qkv_proj.stacked_weight.dtype
+                if self.stacked_qkv
+                else self.qkv_proj._child(self.qkv_proj._names[0]).weight.dtype,
                 scale=self.scale,
                 has_bias=self.qkv_has_bias,
                 stacked_qkv=self.stacked_qkv,
             )
 
             # Assign sharded weights to this device
-            if self.stacked_qkv:
-                module.qkv_proj = qkv_proj_shards[n]
-                if qkv_proj_bias_shards:
-                    module.qkv_proj_bias = qkv_proj_bias_shards[n]
-            else:
-                module.q_proj = q_proj_shards[n]
-                module.k_proj = k_proj_shards[n]
-                module.v_proj = v_proj_shards[n]
-
+            module.qkv_proj = qkv_proj_shards[n]
             module.o_proj = o_proj_shards[n]
             self.device_modules.append(module)
 
@@ -249,39 +188,6 @@ class MultiheadAttention(Module):
         # Create instance of the same class for consistency
         return type(self)(devices=[kwargs.pop("device")], **kwargs)
 
-    @property
-    def wqkv(self) -> TensorValue:
-        """The concatenation of q, k, and v weight vectors."""
-        if self.stacked_qkv:
-            return self.qkv_proj
-        else:
-            wq: TensorValue = self.q_proj.weight
-            wk: TensorValue = self.k_proj.weight
-            wv: TensorValue = self.v_proj.weight
-            return ops.concat([wq, wk, wv], axis=0)
-
-    @property
-    def wqkv_bias(self) -> TensorValue | None:
-        """The concatenation of q, k, and v bias weight vectors."""
-        if not self.qkv_has_bias:
-            return None
-
-        if self.stacked_qkv:
-            return self.qkv_proj_bias
-
-        if (
-            self.q_proj.bias is None
-            or self.k_proj.bias is None
-            or self.v_proj.bias is None
-        ):
-            raise ValueError(
-                "Projection bias is None, but has_bias=True was specified."
-            )
-
-        return ops.concat(
-            [self.q_proj.bias, self.k_proj.bias, self.v_proj.bias], axis=0
-        )
-
     def _compute_qkv(
         self, x: TensorValue
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
@@ -289,12 +195,8 @@ class MultiheadAttention(Module):
 
         Override this method to customize QKV computation (for example, for quantization).
         """
-        # Fused in-projection for Q, K, V
-        wqkv = self.wqkv
-        qkv = x @ wqkv.T
-
-        if self.wqkv_bias is not None:
-            qkv += self.wqkv_bias
+        # Fused in-projection for Q, K, V via StackedLinear.
+        qkv = self.qkv_proj(x)
 
         q, k, v = ops.split(
             qkv, [self.embed_dim, self.embed_dim, self.embed_dim], axis=-1

@@ -22,7 +22,7 @@ atomic operations which can be a performance bottleneck.
 """
 
 from std.math import sqrt
-from std.os import Atomic
+from std.atomic import Atomic
 from std.gpu import block_idx, thread_idx, block_dim
 from std.gpu.host import DeviceContext
 

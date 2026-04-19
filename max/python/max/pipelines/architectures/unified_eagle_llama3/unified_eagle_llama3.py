@@ -28,14 +28,14 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn import PagedCacheValues, ReturnHiddenStates, ReturnLogits
+from max.nn import ReturnHiddenStates, ReturnLogits
 
 # TODO: rename the kernel at the source
 from max.nn.kernels import (
     compute_mha_decode_num_partitions,
     eagle_prefill_shift_tokens,
 )
-from max.nn.kv_cache import AttentionDispatchMetadata
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
     _reshape_target_logits,
@@ -103,9 +103,7 @@ class UnifiedEagleLlama3(Module):
             cache_lengths=cache_lengths.tensor,
             lookup_table=lookup_table.tensor,
             max_lengths=max_lengths.tensor,
-            dispatch_metadata=AttentionDispatchMetadata(
-                dispatch_metadata.tensor
-            ),
+            attention_dispatch_metadata=dispatch_metadata.tensor,
         )
 
         return UnifiedEagleLlama3Values(
@@ -134,12 +132,12 @@ class UnifiedEagleLlama3(Module):
         )
 
         target_kv_inputs = self.config.target.kv_params.get_symbolic_inputs()
-        assert len(target_kv_inputs) == 1
-        target_kv_flat = list(target_kv_inputs[0])
+        assert len(target_kv_inputs.inputs) == 1
+        target_kv_flat = list(target_kv_inputs.inputs[0].flatten())
 
         draft_kv_inputs = self.config.draft.kv_params.get_symbolic_inputs()
-        assert len(draft_kv_inputs) == 1
-        draft_kv_blocks = draft_kv_inputs[0].kv_blocks
+        assert len(draft_kv_inputs.inputs) == 1
+        draft_kv_blocks = draft_kv_inputs.inputs[0].kv_blocks
 
         return (
             tokens_type,
@@ -238,7 +236,7 @@ class UnifiedEagleLlama3(Module):
             cache_lengths=kv_collection.cache_lengths,
             lookup_table=kv_collection.lookup_table,
             max_lengths=kv_collection.max_lengths,
-            dispatch_metadata=kv_collection.dispatch_metadata,
+            attention_dispatch_metadata=kv_collection.attention_dispatch_metadata,
         )
 
         # --- Draft step 0 ---
@@ -314,7 +312,7 @@ class UnifiedEagleLlama3(Module):
         max_cache_length = max_cache_length + 1
 
         # Extract values from the original dispatch_metadata for reuse.
-        orig_metadata = draft_kv_collection.dispatch_metadata
+        orig_metadata = draft_kv_collection.attention_dispatch_metadata
         assert orig_metadata is not None
         orig_batch_size = orig_metadata.tensor[0]
 
@@ -349,14 +347,13 @@ class UnifiedEagleLlama3(Module):
                 ],
                 axis=0,
             )
-            dispatch_metadata = AttentionDispatchMetadata(metadata_tensor)
 
             kv_collection = PagedCacheValues(
                 kv_blocks=draft_kv_blocks,
                 cache_lengths=cache_lengths,
                 lookup_table=draft_kv_collection.lookup_table,
                 max_lengths=max_lengths.broadcast_to([1, 2]),
-                dispatch_metadata=dispatch_metadata,
+                attention_dispatch_metadata=metadata_tensor,
             )
 
             draft_outputs = self.draft(

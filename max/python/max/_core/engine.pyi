@@ -107,6 +107,16 @@ class Model:
         """
 
     @property
+    def kernel_summaries(self) -> list[str]:
+        """
+        Kernel fusion summaries from the compiled model.
+
+        Returns a list of strings, one per ``mgp.generic.execute`` kernel in
+        the compiled graph.  Each string describes the fused kernel composition,
+        e.g. ``"Epilogue(custom__kv_rope, custom__kv_cache_store)"``.
+        """
+
+    @property
     def signature(self) -> inspect.Signature:
         """Get input signature for model."""
 
@@ -275,7 +285,7 @@ class Model:
           path: The filename where the mef is exported to.
         """
 
-    def _load(self, weights_registry: Mapping[str, Any]) -> None: ...
+    def reload(self, weights_registry: Mapping[str, Any]) -> None: ...
 
 class InferenceSession:
     """
@@ -311,6 +321,9 @@ class InferenceSession:
                 which lets the runtime choose automatically.
         """
 
+    def _load_all(
+        self, compiled: Model, weights_registry: Mapping[str, Any]
+    ) -> list[Model]: ...
     def compile_from_path(
         self,
         model_path: str | os.PathLike,
