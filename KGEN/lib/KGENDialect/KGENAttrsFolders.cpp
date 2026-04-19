@@ -64,7 +64,6 @@ FailureOr<TypedAttr> ParamListTabulateAttr::evaluateWithContext(
   if (n < 0)
     return failure();
 
-  ParamListType resultType = getType();
   SmallVector<TypedAttr> values;
   values.reserve(n);
   for (int64_t i = 0; i < n; ++i) {
@@ -76,7 +75,7 @@ FailureOr<TypedAttr> ParamListTabulateAttr::evaluateWithContext(
       return failure();
     values.push_back(sugarCast<TypedAttr>(spGen.getInstantiatedValue()));
   }
-  return {ParamListAttr::get(values, resultType)};
+  return {ParamListAttr::get(values, getType())};
 }
 
 //===----------------------------------------------------------------------===//
