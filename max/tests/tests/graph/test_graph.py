@@ -116,7 +116,7 @@ def test_transpose_graph_with_device_prop() -> None:
 
 
 def test_location_no_stack() -> None:
-    with Graph("location") as graph:
+    with Graph("location"):
         with mock.patch("traceback.extract_stack") as mock_stack:
             mock_stack.return_value = []
 

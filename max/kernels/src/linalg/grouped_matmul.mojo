@@ -57,14 +57,14 @@ from .matmul.gpu.sm90.dispatch import _find_largest_bn_for_sm90_matmul
 from .matmul.gpu.sm90.grouped_matmul import grouped_matmul_sm90
 from .matmul.vendor.blas import matmul as vendor_matmul
 from .utils import elementwise_epilogue_type
-from .utils_gpu import MatmulConfig
+from .utils_gpu import MatmulConfig, _bk_base
 from .grouped_matmul_sm100 import grouped_matmul_sm100_persistent
 
 from .matmul.gpu import (
     _amdgpu_matmul_build_block_shape_list,
     _amdgpu_matmul_config_from_block_shape,
 )
-from .matmul.gpu.amd import gemm_kernel_amd
+from .matmul.gpu.amd import AMDMatmul
 from std.algorithm import vectorize
 
 
@@ -78,6 +78,7 @@ from std.algorithm import vectorize
 #     C[a_offsets[i]:a_offsets[i+1], :] = A[a_offsets[i]:a_offsets[i+1], :] @ B[expert_ids[i], :, :].T
 
 
+@__name(t"naive_grouped_matmul_kernel_{c_type}_{a_type}_{b_type}", mangle=True)
 def naive_grouped_matmul_kernel[
     c_type: DType,
     a_type: DType,
@@ -171,6 +172,7 @@ def naive_epilogue[
     )
 
 
+@__name(t"naive_epilogue_kernel_{c_type}", mangle=True)
 def naive_epilogue_kernel[
     c_type: DType,
     CLayout: TensorLayout,
@@ -206,6 +208,10 @@ def naive_epilogue_kernel[
 )
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
+@__name(
+    t"grouped_matmul_kernel_sm100_{a_type}_{b_type}_{c_type}_t{num_threads}",
+    mangle=True,
+)
 def grouped_matmul_kernel_sm100[
     a_type: DType,
     b_type: DType,
@@ -693,12 +699,16 @@ def grouped_matmul_amd_kernel_launcher[
         var c_tile = TileTensor(c_ptr, row_major(Coord(Idx(Int(M)), Idx[N]())))
         var a_tile = TileTensor(a_ptr, row_major(Coord(Idx(Int(M)), Idx[K]())))
         var b_tile = TileTensor(b_ptr, row_major[N, K]())
-        gemm_kernel_amd[
-            config=config,
-            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
+        AMDMatmul[
+            a_type,
+            b_type,
+            c_type,
+            transpose_b,
+            config,
+            Optional[elementwise_epilogue_type](
                 elementwise_epilogue_fn_wrapper
             ) if elementwise_lambda_fn else None,
-        ](c_tile, a_tile, b_tile)
+        ].run(c_tile, a_tile, b_tile)
 
     # Perform the epilogue function separately if expert_id is -1
     else:
@@ -1005,7 +1015,19 @@ def grouped_matmul[
     comptime is_sm100_kernel_applicable = _is_sm10x_gpu(
         ctx.default_device_info
     ) and is_expert_shape_static
-    comptime is_amd_kernel_applicable = has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator() and is_expert_shape_static
+
+    # `grouped_matmul_amd` is only valid when `K` is aligned to `BK` and
+    # at least `2 * BK`. If there's only a single K tile,
+    # the 2-stage software pipeline will reprocess it causing incorrect outputs.
+    comptime amd_bk = _bk_base[a_type, amd_kernel=True]()
+    comptime static_K = b.static_shape[2]
+    comptime is_amd_kernel_applicable = (
+        has_amd_gpu_accelerator()
+        and not has_amd_rdna_gpu_accelerator()
+        and is_expert_shape_static
+        and static_K >= 2 * amd_bk
+        and static_K % amd_bk == 0
+    )
 
     @always_inline
     @parameter

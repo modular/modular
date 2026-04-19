@@ -116,12 +116,12 @@ def assert_fill_factor[
     """
     # A perfect hash function is when the number of buckets is equal to number of words
     # and the fill factor results in 1.0
-    var buckets = [0] * num_buckets
+    var buckets = List([0]) * num_buckets
     var hash_samples = List[UInt64]()
 
     for idx, w in enumerate(words):
         var h = hash[HasherType](w)
-        buckets[h % UInt64(num_buckets)] += 1
+        buckets[Int(h % UInt64(num_buckets))] += 1
 
         # Collect first 5 hash samples for debugging
         if idx < 5:

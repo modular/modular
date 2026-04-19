@@ -79,6 +79,7 @@ def configure_cli_logging(
         "max.entrypoints",
         "max.pipelines",
         "max.serve",
+        "max.benchmark",
     ]
 
     def log_filter(record: logging.LogRecord) -> bool:

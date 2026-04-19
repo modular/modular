@@ -52,6 +52,8 @@ from .ep_config import (
     EPConfig,
 )
 from .ep_kernels import (
+    call_distributed_ep_combine,
+    call_distributed_ep_dispatch,
     call_ep_combine,
     call_ep_combine_async,
     call_ep_combine_wait,
@@ -506,6 +508,114 @@ class EPBatchManager:
         self._src_info[device_id] = results[-1]
 
         return (*results[:-1], self._common_grouped_matmul_metadata())
+
+    def ep_dispatch_all(
+        self,
+        input_tokens: list[TensorValue],
+        topk_ids: list[TensorValue],
+        device_ids: list[int],
+        input_scales: list[TensorValue] | None = None,
+    ) -> list[tuple[TensorValue, ...]]:
+        """Multi-device fused EP dispatch across all devices.
+
+        Launches a single multi-device dispatch graph op (BF16, FP8, or
+        NVFP4 depending on config) that dispatches tokens on all devices
+        simultaneously.
+
+        Args:
+            input_tokens: Per-device input token tensors.
+            topk_ids: Per-device top-k expert ID tensors.
+            device_ids: Device IDs corresponding to each input.
+            input_scales: Per-device input scales (required for NVFP4).
+
+        Returns:
+            Per-device output tuples. The last element of each tuple is
+            always ``src_info``; the remaining elements are the dispatch
+            outputs followed by the grouped matmul metadata.
+        """
+        DISPATCH_GROUP = 0
+
+        for i, device_id in enumerate(device_ids):
+            self._dispatch_dim[device_id] = input_tokens[i].shape[0]
+
+        atomic_counters = [
+            self.atomic_counters[DISPATCH_GROUP][d] for d in device_ids
+        ]
+
+        all_results = call_distributed_ep_dispatch(
+            input_tokens,
+            topk_ids,
+            atomic_counters,
+            self.send_buf_ptrs[DISPATCH_GROUP],
+            self.recv_buf_ptrs[DISPATCH_GROUP],
+            self.recv_count_ptrs[DISPATCH_GROUP],
+            self.config,
+            input_scales=input_scales,
+        )
+
+        per_device_outputs: list[tuple[TensorValue, ...]] = []
+        gmm_meta = self._common_grouped_matmul_metadata()
+        for i, device_id in enumerate(device_ids):
+            results = all_results[i]
+            self._src_info[device_id] = results[-1]
+            per_device_outputs.append((*results[:-1], gmm_meta))
+
+        return per_device_outputs
+
+    def ep_combine_all(
+        self,
+        input_tokens: list[TensorValue],
+        router_weights: list[TensorValue],
+        device_ids: list[int],
+    ) -> list[TensorValue]:
+        """Multi-device fused EP combine across all devices.
+
+        Launches a single ``mo.distributed.ep.combine`` graph op that
+        combines expert outputs back to their original devices on all
+        GPUs simultaneously.
+
+        Args:
+            input_tokens: Per-device expert output tokens.
+            router_weights: Per-device router weight tensors.
+            device_ids: Device IDs corresponding to each input.
+
+        Returns:
+            Per-device combined output tensors.
+        """
+        COMBINE_GROUP = 1
+
+        src_info_list: list[TensorValue] = []
+        dispatch_dims: list[Dim] = []
+        for device_id in device_ids:
+            si = self._src_info[device_id]
+            assert si is not None, (
+                "Source info is not set, call ep_dispatch_all() first."
+            )
+            src_info_list.append(si)
+            dd = self._dispatch_dim[device_id]
+            assert dd is not None, (
+                "Dispatch dim is not set, call ep_dispatch_all() first."
+            )
+            dispatch_dims.append(dd)
+
+        atomic_counters = [self.atomic_counters[0][d] for d in device_ids]
+
+        results = call_distributed_ep_combine(
+            input_tokens,
+            src_info_list,
+            atomic_counters,
+            self.send_buf_ptrs[COMBINE_GROUP],
+            self.recv_buf_ptrs[COMBINE_GROUP],
+            self.recv_count_ptrs[COMBINE_GROUP],
+            self.config,
+            dispatch_dims,
+            router_weights,
+        )
+
+        for device_id in device_ids:
+            self._src_info[device_id] = None
+
+        return results
 
     def ep_combine(
         self,

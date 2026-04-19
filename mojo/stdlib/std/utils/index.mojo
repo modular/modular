@@ -207,7 +207,9 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
     @always_inline
     @implicit
-    def __init__[*Ts: Movable & Intable](out self, elems: Tuple[*Ts]):
+    def __init__[
+        *Ts: Movable & Intable
+    ](out self, elems: Tuple[*Ts.upcast[Movable]()]):
         """Constructs a static int tuple given a tuple of integers.
 
         Parameters:

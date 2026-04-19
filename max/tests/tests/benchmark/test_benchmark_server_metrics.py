@@ -99,6 +99,15 @@ def test_get_metrics_url_supported_backends() -> None:
     assert url == "http://localhost:8000/metrics"
 
 
+def test_get_metrics_url_ipv6() -> None:
+    """Bracketed IPv6 base_url must produce bracketed metrics URL."""
+    url = get_metrics_url("modular", "http://[fdc3:5d58:ceb7::8:91fa]:8000")
+    assert url == "http://[fdc3:5d58:ceb7::8:91fa]:8001/metrics"
+
+    url = get_metrics_url("vllm", "http://[::1]:8000")
+    assert url == "http://[::1]:8000/metrics"
+
+
 def test_parse_metrics_success(sample_metrics: str) -> None:
     """Test parse_metrics extracts all metric types."""
     result = parse_metrics(sample_metrics)

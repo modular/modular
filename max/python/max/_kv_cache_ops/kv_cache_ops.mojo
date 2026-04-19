@@ -54,6 +54,15 @@ def _make_int_list(values: InlineArray[Int, 3]) -> PythonObject:
     return PythonObject(from_owned=result_py_list)
 
 
+def _get_ctx(
+    device_context_ptr: PythonObject,
+) raises -> Optional[OpaquePointer[MutExternalOrigin]]:
+    var addr = Int(py=device_context_ptr)
+    if addr == 0:
+        return None
+    return OpaquePointer[MutExternalOrigin](unsafe_from_address=addr)
+
+
 @export
 def mha_decode_num_partitions(
     batch_size_obj: PythonObject,
@@ -64,9 +73,7 @@ def mha_decode_num_partitions(
     var batch_size = Int(py=batch_size_obj)
     var max_cache_valid_length = Int(py=max_cache_valid_length_obj)
     var n_kv_heads = Int(py=n_kv_heads_obj)
-    var ctx = OpaquePointer[MutExternalOrigin](
-        unsafe_from_address=Int(py=device_context_ptr)
-    )
+    var ctx = _get_ctx(device_context_ptr)
 
     if not ctx:
         raise Error("Expected a non-null device context pointer.")
@@ -77,7 +84,7 @@ def mha_decode_num_partitions(
     if n_kv_heads < 1:
         raise Error("n_kv_heads must be positive.")
 
-    var device_ctx = DeviceContextPtr(ctx)
+    var device_ctx = DeviceContextPtr(ctx.unsafe_value())
     var num_partitions = mha_decoding_num_partitions(
         batch_size,
         max_cache_valid_length,
@@ -103,9 +110,7 @@ def mla_dispatch_args_scalar(
     var q_max_seq_len = Int(py=q_max_seq_len_obj)
     var num_heads = Int(py=num_heads_obj)
     var is_fp8_kv = Int(py=is_fp8_kv_obj) != 0
-    var ctx = OpaquePointer[MutExternalOrigin](
-        unsafe_from_address=Int(py=device_context_ptr)
-    )
+    var ctx = _get_ctx(device_context_ptr)
 
     if not ctx:
         raise Error("Expected a non-null device context pointer.")
@@ -118,7 +123,7 @@ def mla_dispatch_args_scalar(
     if num_heads < 1:
         raise Error("num_heads must be positive.")
 
-    var device_ctx = DeviceContextPtr(ctx)
+    var device_ctx = DeviceContextPtr(ctx.unsafe_value())
     var scalars = compute_mla_dispatch_scalars_runtime(
         batch_size,
         max_cache_valid_length,

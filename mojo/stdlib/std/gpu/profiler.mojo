@@ -25,9 +25,10 @@ Example:
 
 ```mojo
 from std.gpu import profiler
-    with profiler.ProfileBlock("my_kernel"):
-        # Code to profile
-        run_gpu_kernel()
+
+with profiler.ProfileBlock("my_kernel"):
+    # Code to profile
+    pass
 ```
 """
 

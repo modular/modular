@@ -279,11 +279,15 @@ modular_py_binary(
     name = "longbench-v2-eval",
     testonly = True,
     srcs = ["run_longbench_v2.py"],
+    ignore_extra_deps = [
+        requirement("tiktoken"),
+    ],
     main = "run_longbench_v2.py",
     deps = [
         requirement("click"),
         requirement("datasets"),
         requirement("openai"),
+        requirement("tiktoken"),
         requirement("tqdm"),
         requirement("transformers"),
     ],

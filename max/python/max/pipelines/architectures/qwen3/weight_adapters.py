@@ -28,6 +28,9 @@ QWEN3_MOE_SAFETENSOR_MAPPING = {
     "model.": "",  # Removes the "model" prefix.
     "mlp.gate.weight": "mlp.gate.gate_score.weight",  # Router gate
     "weight_scale_inv": "weight_scale",  # FP8 scale naming (e.g. compressed-tensors)
+    "self_attn.q_proj.": "self_attn.qkv_proj.q.",
+    "self_attn.k_proj.": "self_attn.qkv_proj.k.",
+    "self_attn.v_proj.": "self_attn.qkv_proj.v.",
 }
 
 
@@ -45,6 +48,7 @@ def convert_qwen3_moe_state_dict(
     one-to-one to MAX's per-expert parameter names.
 
     HuggingFace Qwen3-MoE format (unchanged layout in MAX):
+
         - model.layers.{i}.mlp.experts.{j}.gate_proj.weight
         - model.layers.{i}.mlp.experts.{j}.up_proj.weight
         - model.layers.{i}.mlp.experts.{j}.down_proj.weight
@@ -52,6 +56,7 @@ def convert_qwen3_moe_state_dict(
 
     MAX Qwen3-MoE (base MoE with individual experts; legacy Linear uses
     ".weight" directly; router is gate.gate_score):
+
         - layers.{i}.mlp.experts.{j}.gate_proj.weight
         - layers.{i}.mlp.experts.{j}.up_proj.weight
         - layers.{i}.mlp.experts.{j}.down_proj.weight

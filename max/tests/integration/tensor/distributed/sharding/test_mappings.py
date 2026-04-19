@@ -21,6 +21,7 @@ import pytest
 from max.driver import CPU, Device
 from max.experimental.sharding import (
     ConversionError,
+    DeviceMapping,
     DeviceMesh,
     NamedMapping,
     Partial,
@@ -151,15 +152,15 @@ class TestNamedMapping:
         assert ns.mesh is mesh
         assert ns.spec == ("tp", None)
 
-    def test_bad_axis_name_raises(self) -> None:
+    def test_unknown_axis_resolves_to_replicated(self) -> None:
         mesh = mesh_1d(4)
-        with pytest.raises(ValueError, match="Unknown mesh axis 'bad'"):
-            NamedMapping(mesh, ("bad", None))
+        ns = NamedMapping(mesh, ("bad", None))
+        assert ns.spec == (None, None)  # "bad" not in mesh → resolved to None
 
-    def test_bad_unreduced_axis_raises(self) -> None:
+    def test_unknown_unreduced_axis_filtered(self) -> None:
         mesh = mesh_1d(4)
-        with pytest.raises(ValueError, match="Unknown mesh axis 'bad'"):
-            NamedMapping(mesh, (None, None), _unreduced=frozenset({"bad"}))
+        ns = NamedMapping(mesh, (None, None), _unreduced=frozenset({"bad"}))
+        assert ns.unreduced == frozenset()  # "bad" not in mesh → filtered out
 
     def test_priorities_length_mismatch_raises(self) -> None:
         mesh = mesh_1d(4)
@@ -309,8 +310,6 @@ class TestPlacementMappingEdgeCases:
         assert not pm.is_fully_replicated
 
     def test_single_device_mesh(self) -> None:
-        from max.driver import CPU
-
         mesh = DeviceMesh.single(CPU())
         pm = PlacementMapping(mesh, (Replicated(),))
         assert pm.is_fully_replicated
@@ -333,29 +332,21 @@ class TestDeviceMapping:
     """PlacementMapping and NamedMapping both implement DeviceMapping."""
 
     def test_placement_mapping_is_device_mapping(self) -> None:
-        from max.experimental.sharding import DeviceMapping
-
         mesh = mesh_1d(4)
         pm = PlacementMapping(mesh, (Sharded(0),))
         assert isinstance(pm, DeviceMapping)
 
     def test_named_mapping_is_device_mapping(self) -> None:
-        from max.experimental.sharding import DeviceMapping
-
         mesh = mesh_1d(4)
         ns = NamedMapping(mesh, ("tp", None))
         assert isinstance(ns, DeviceMapping)
 
     def test_device_mapping_protocol_mesh(self) -> None:
-        from max.experimental.sharding import DeviceMapping
-
         mesh = mesh_1d(4)
         pm: DeviceMapping = PlacementMapping(mesh, (Sharded(0),))
         assert pm.mesh is mesh
 
     def test_device_mapping_protocol_is_fully_resolved(self) -> None:
-        from max.experimental.sharding import DeviceMapping
-
         mesh = mesh_1d(4)
         pm: DeviceMapping = PlacementMapping(mesh, (Sharded(0),))
         assert pm.is_fully_resolved

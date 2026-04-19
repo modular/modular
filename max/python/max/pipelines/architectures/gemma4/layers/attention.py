@@ -27,18 +27,14 @@ from max.graph import (
 from max.nn.attention import MHAMaskVariant, num_heads_for_device
 from max.nn.kernels import (
     flash_attention_ragged,
-    fused_qk_ragged_rope,
-    fused_qkv_ragged_matmul,
-    quantize_static_scaled_float8,
-    rms_norm_key_cache,
-    rms_norm_value_cache,
+    rope_split_store_ragged,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.quant_config import QuantConfig
-from max.nn.quant_ops import quantized_fused_qkv_matmul
 from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.stacked_linear import StackedLinear
 from max.pipelines.architectures.gemma4.layers.rms_norm import Gemma4RMSNorm
 
 
@@ -141,34 +137,37 @@ class Gemma4Attention(Module, Shardable):
         self.q_weight_dim = self.head_dim * num_attention_heads
         self.kv_weight_dim = self.head_dim * num_key_value_heads
 
-        self.q_proj = linear_cls(
-            in_dim=hidden_size,
-            out_dim=self.q_weight_dim,
-            dtype=dtype,
-            device=devices[0],
-            has_bias=has_bias,
-            quant_config=quant_config,
-        )
-        self.k_proj = linear_cls(
-            in_dim=hidden_size,
-            out_dim=self.kv_weight_dim,
-            dtype=dtype,
-            device=devices[0],
-            has_bias=has_bias,
-            quant_config=quant_config,
-        )
-        self.v_proj = (
-            None
-            if attention_k_eq_v and not self.use_local
-            else linear_cls(
+        # When attention_k_eq_v and not sliding, V reuses K weights so we
+        # only need q and k projections.  Otherwise we need all three.
+        self._has_v_proj = not (attention_k_eq_v and not self.use_local)
+        if self._has_v_proj:
+            self.qkv_proj = StackedLinear(
                 in_dim=hidden_size,
-                out_dim=self.kv_weight_dim,
+                out_dims=[
+                    self.q_weight_dim,
+                    self.kv_weight_dim,
+                    self.kv_weight_dim,
+                ],
+                names=["q", "k", "v"],
                 dtype=dtype,
                 device=devices[0],
+                stacked=False,
                 has_bias=has_bias,
+                linear_cls=linear_cls,
                 quant_config=quant_config,
             )
-        )
+        else:
+            self.qk_proj = StackedLinear(
+                in_dim=hidden_size,
+                out_dims=[self.q_weight_dim, self.kv_weight_dim],
+                names=["q", "k"],
+                dtype=dtype,
+                device=devices[0],
+                stacked=False,
+                has_bias=has_bias,
+                linear_cls=linear_cls,
+                quant_config=quant_config,
+            )
 
         self.o_proj = linear_cls(
             in_dim=self.q_weight_dim,
@@ -177,87 +176,6 @@ class Gemma4Attention(Module, Shardable):
             device=devices[0],
             quant_config=quant_config,
         )
-
-    @property
-    def wqkv(self) -> TensorValue:
-        """The concatenation of q, k, and v weight vectors."""
-        wq: TensorValue = self.q_proj.weight
-        wk: TensorValue = self.k_proj.weight
-        wv: TensorValue = self.v_proj.weight if self.v_proj is not None else wk
-        wqkv = ops.concat((wq, wk, wv))
-        if self.quant_config and self.quant_config.is_static:
-            # Float8 always has a weight scale.
-            assert self.qkv_weight_scale is not None
-            wqkv = quantize_static_scaled_float8(
-                wqkv, self.qkv_weight_scale.to(DeviceRef.CPU())
-            )
-        return wqkv.to(self.devices[0])
-
-    @property
-    def wqkv_bias(self) -> TensorValue | None:
-        """The concatenation of q, k, and v bias weight vectors."""
-        if not self.has_bias:
-            return None
-
-        # Access bias from Linear layers
-        assert self.q_proj.bias is not None
-        assert self.k_proj.bias is not None
-        assert self.v_proj is not None
-        assert self.v_proj.bias is not None
-        return ops.concat(
-            (self.q_proj.bias, self.k_proj.bias, self.v_proj.bias)
-        )
-
-    @property
-    def qkv_input_scale(self) -> TensorValue | None:
-        """The max of q, k, and v scale input vectors."""
-        if not self.quant_config or self.quant_config.is_dynamic:
-            return None
-
-        assert self.q_proj.input_scale is not None
-        assert self.k_proj.input_scale is not None
-        assert self.v_proj is not None
-        assert self.v_proj.input_scale is not None
-
-        return ops.max(
-            ops.concat(
-                (
-                    self.q_proj.input_scale.reshape((1,)),
-                    self.k_proj.input_scale.reshape((1,)),
-                    self.v_proj.input_scale.reshape((1,)),
-                )
-            )
-        ).reshape(())
-
-    @property
-    def qkv_weight_scale(self) -> TensorValue:
-        """The max of q, k, and v scale weight vectors."""
-        assert self.quant_config
-
-        assert self.q_proj.weight_scale is not None
-        assert self.k_proj.weight_scale is not None
-        assert self.v_proj is not None
-        assert self.v_proj.weight_scale is not None
-
-        q_scale: TensorValue = self.q_proj.weight_scale
-        k_scale: TensorValue = self.k_proj.weight_scale
-        v_scale: TensorValue = self.v_proj.weight_scale
-        if len(q_scale.shape) == 0:
-            q_scale = q_scale.reshape((1,))
-        if len(k_scale.shape) == 0:
-            k_scale = k_scale.reshape((1,))
-        if len(v_scale.shape) == 0:
-            v_scale = v_scale.reshape((1,))
-
-        weight_scale = ops.concat((q_scale, k_scale, v_scale))
-
-        if self.quant_config.is_dynamic:
-            # In the dynamic scaling case, return the weight scales directly.
-            return weight_scale
-
-        assert self.quant_config.is_static
-        # Otherwise, return a scalar max QKV weight scale in the static case.
-        return ops.max(weight_scale).reshape([])
 
     def __call__(
         self,
@@ -272,83 +190,48 @@ class Gemma4Attention(Module, Shardable):
             self.layer_idx_in_cache, DType.uint32, device=DeviceRef.CPU()
         )
 
-        if self.quant_config:
-            xq = quantized_fused_qkv_matmul(
-                kv_params=self.kv_params,
-                x=x,
-                wqkv=self.wqkv,
-                kv_collection=kv_collection,
-                layer_idx=layer_idx,
-                input_row_offsets=kwargs["input_row_offsets"],
-                n_heads=self.n_heads,
-                quant_config=self.quant_config,
-                weight_scale=self.qkv_weight_scale,
-                input_scale=self.qkv_input_scale,
-                bias=self.wqkv_bias,
-            )
+        head_dim = self.head_dim
+        q_dim = self.q_weight_dim
+        kv_dim = self.kv_weight_dim
+        num_kv_heads = kv_dim // head_dim
+
+        # QKV projection
+        if self._has_v_proj:
+            qkv = self.qkv_proj(x)
+            x_q, x_k, x_v = ops.split(qkv, [q_dim, kv_dim, kv_dim], axis=-1)
         else:
-            # Call into fused qkv ragged matmul.
-            xq = fused_qkv_ragged_matmul(
-                self.kv_params,
-                input=x,
-                wqkv=self.wqkv,
-                bias=self.wqkv_bias,
-                input_row_offsets=kwargs["input_row_offsets"],
-                kv_collection=kv_collection,
-                layer_idx=layer_idx,
-                n_heads=self.n_heads,
-            )
-        # Apply rope.
-        xq = xq.reshape((-1, self.n_heads, self.head_dim))
+            qk = self.qk_proj(x)
+            x_q, x_k = ops.split(qk, [q_dim, kv_dim], axis=-1)
+            x_v = x_k
 
-        # Apply QK norm to query and key states.
-        xq = self.q_norm(xq)
-        rms_norm_key_cache(
-            self.kv_params,
-            kv_collection=kv_collection,
-            gamma=self.k_norm.weight.cast(self.kv_params.dtype).to(
-                self.devices[0]
-            ),
-            epsilon=self.qk_norm_eps,
-            layer_idx=layer_idx,
-            total_seq_len=total_seq_len,
-            input_row_offsets=kwargs["input_row_offsets"],
-            weight_offset=0.0,
+        # Per-head QKV norm
+        x_q = self.q_norm(x_q.reshape((-1, self.n_heads, head_dim))).reshape(
+            (-1, q_dim)
+        )
+        x_k = self.k_norm(x_k.reshape((-1, num_kv_heads, head_dim))).reshape(
+            (-1, kv_dim)
+        )
+        x_v = self.v_norm(x_v.reshape((-1, num_kv_heads, head_dim))).reshape(
+            (-1, kv_dim)
         )
 
-        # RMSNorm on new value-cache rows
-        gamma_v = ops.broadcast_to(
-            ops.constant(
-                0.0,
-                dtype=self.kv_params.dtype,
-                device=DeviceRef.CPU(),
-            ),
-            (self.head_dim,),
-        ).to(self.devices[0])
-        rms_norm_value_cache(
-            self.kv_params,
-            kv_collection=kv_collection,
-            gamma=gamma_v,
-            epsilon=self.qk_norm_eps,
-            layer_idx=layer_idx,
-            total_seq_len=total_seq_len,
-            input_row_offsets=kwargs["input_row_offsets"],
-            weight_offset=1.0,
-        )
+        # Re-concat and apply RoPE + KV cache store
+        qkv = ops.concat((x_q, x_k, x_v), axis=-1)
 
-        # Apply rotary embedding.
         rope = self.rope_local if self.use_local else self.rope_global
 
-        freqs_cis = ops.cast(rope.freqs_cis, xq.dtype).to(xq.device)
-        xq = fused_qk_ragged_rope(
+        freqs_cis = ops.cast(rope.freqs_cis, qkv.dtype).to(qkv.device)
+        xq = rope_split_store_ragged(
             self.kv_params,
-            xq,
+            qkv,
             kwargs["input_row_offsets"],
-            kv_collection,
             freqs_cis,
+            kv_collection,
             layer_idx,
+            n_heads=self.n_heads,
             interleaved=rope.interleaved,
         )
+        xq = xq.reshape((-1, self.n_heads, self.head_dim))
 
         # Calculate Flash Attention.
         mask_variant = (
@@ -381,10 +264,10 @@ class Gemma4Attention(Module, Shardable):
         if sharding_strategy.is_replicate:
             self.q_norm.sharding_strategy = sharding_strategy
             self.k_norm.sharding_strategy = sharding_strategy
-            self.q_proj.sharding_strategy = sharding_strategy
-            self.k_proj.sharding_strategy = sharding_strategy
-            if self.v_proj is not None:
-                self.v_proj.sharding_strategy = sharding_strategy
+            if self._has_v_proj:
+                self.qkv_proj.sharding_strategy = sharding_strategy
+            else:
+                self.qk_proj.sharding_strategy = sharding_strategy
             self.o_proj.sharding_strategy = sharding_strategy
 
         elif sharding_strategy.is_tensor_parallel:
@@ -395,14 +278,12 @@ class Gemma4Attention(Module, Shardable):
                 num_devices
             )
 
-            self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-            self.k_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-            if self.v_proj is not None:
-                self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
+            if self._has_v_proj:
+                self.qkv_proj.sharding_strategy = ShardingStrategy.rowwise(
+                    num_devices
+                )
+            else:
+                self.qk_proj.sharding_strategy = ShardingStrategy.rowwise(
                     num_devices
                 )
             self.o_proj.sharding_strategy = (
@@ -435,13 +316,10 @@ class Gemma4Attention(Module, Shardable):
             )
 
         # Get sharded weights
-        q_proj_shards = self.q_proj.shard(devices)
-        k_proj_shards = self.k_proj.shard(devices)
-        v_proj_shards = (
-            self.v_proj.shard(devices)
-            if self.v_proj is not None
-            else k_proj_shards
-        )
+        if self._has_v_proj:
+            qkv_proj_shards = self.qkv_proj.shard(devices)
+        else:
+            qk_proj_shards = self.qk_proj.shard(devices)
         o_proj_shards = self.o_proj.shard(devices)
 
         # Shard QK normalization weights
@@ -481,7 +359,7 @@ class Gemma4Attention(Module, Shardable):
                 layer_idx=self.layer_idx,
                 layer_idx_in_cache=self.layer_idx_in_cache,
                 is_sliding=self.use_local,
-                dtype=self.q_proj.weight.dtype,
+                dtype=self.o_proj.weight.dtype,
                 devices=[device],
                 linear_cls=self.o_proj.__class__,
                 has_bias=self.has_bias,
@@ -491,9 +369,10 @@ class Gemma4Attention(Module, Shardable):
             )
 
             # Assign sharded weights
-            sharded.q_proj = q_proj_shards[shard_idx]
-            sharded.k_proj = k_proj_shards[shard_idx]
-            sharded.v_proj = v_proj_shards[shard_idx]
+            if self._has_v_proj:
+                sharded.qkv_proj = qkv_proj_shards[shard_idx]
+            else:
+                sharded.qk_proj = qk_proj_shards[shard_idx]
             sharded.o_proj = o_proj_shards[shard_idx]
 
             # Assign QK normalization weights

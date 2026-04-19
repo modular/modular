@@ -92,7 +92,7 @@ def PyInit_elementwise_binary_ops() -> PythonObject:
         var b = PythonModuleBuilder("elementwise_binary_ops")
 
         # Binary arithmetic operations
-        comptime for i in range(TypeList[*BINARY_ARITHMETIC_OPS].size):
+        comptime for i in range(TypeList[BINARY_ARITHMETIC_OPS].size):
             comptime op = BINARY_ARITHMETIC_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(
@@ -103,7 +103,7 @@ def PyInit_elementwise_binary_ops() -> PythonObject:
             )
 
         # Binary boolean operations
-        comptime for i in range(TypeList[*BINARY_BOOLEAN_OPS].size):
+        comptime for i in range(TypeList[BINARY_BOOLEAN_OPS].size):
             comptime op = BINARY_BOOLEAN_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(
@@ -432,7 +432,7 @@ def bin_elementwise_op[
     lhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     rhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     size: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Binary elementwise operation: out = op(lhs, rhs).
 
@@ -468,7 +468,7 @@ def bin_elementwise_op[
             comptime if _is_gpu_allowed_binary_op[
                 op
             ]() and dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
                 )
@@ -489,7 +489,7 @@ def pow_elementwise_op[
     lhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     rhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     size: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Pow elementwise operation: out = lhs ** rhs.
 
@@ -524,7 +524,7 @@ def pow_elementwise_op[
         # GPU execution - check GPU availability and dtype support
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
                 )

@@ -14,6 +14,7 @@
 
 from std.sys import size_of
 from std.gpu.memory import CacheEviction
+from std.gpu.primitives.cluster import block_rank_in_cluster
 from layout.tma_async import SharedMemBarrier
 from layout import TileTensor
 from layout.tile_layout import row_major as tt_row_major
@@ -68,14 +69,14 @@ def fa4_load[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         config.swizzle_mode,
-        BN=config.BN,
+        BN=config.k_rows_per_cta(),
         BK=config.BK0,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         config.swizzle_mode,
         BN=config.BN,
-        BK=config.padded_ov_depth,
+        BK=config.v_cols_per_cta(),
     ],
     kv_lut: KVLUTType,
 ):
@@ -86,9 +87,12 @@ def fa4_load[
     comptime HalfBM = BM // 2
     comptime group = config.group
     comptime fuse_gqa = config.fuse_gqa
-    comptime BM_mask: Int = config.BM_eff()
+    # For pair-CTA, use PairBM so both CTAs make identical mask decisions.
+    comptime BM_mask: Int = config.PairBM_eff()
     comptime page_size = KVLUTType.page_size
     comptime ragged = not ValidLengthType.is_null
+    comptime cta_group: Int = config.cta_group()
+    comptime pair_cta: Bool = config.pair_cta
 
     var mbars = smem.misc_mbars()
 
@@ -132,6 +136,20 @@ def fa4_load[
     var q_gmem_row: UInt32 = PositionType.get_q_gmem_row[ragged=ragged](
         seq_info, max_seq_len
     )
+
+    # Pair-CTA: each CTA loads different Q positions and half of K/V.
+    var k_row_offset = UInt32(0)
+    var v_col_offset = 0
+    var is_leader = True
+    var local_mask = UInt16(1)
+    comptime if pair_cta:
+        var cta_rank = block_rank_in_cluster() % 2
+        is_leader = cta_rank == 0
+        local_mask = UInt16(1) << UInt16(cta_rank)
+        q_gmem_row += UInt32(cta_rank) * UInt32(config.BM_eff())
+        k_row_offset = UInt32(cta_rank) * UInt32(BN // 2)
+        v_col_offset = Int(cta_rank) * config.v_cols_per_cta()
+
     e = elect()
 
     @parameter
@@ -143,20 +161,42 @@ def fa4_load[
         ref[AddressSpace.SHARED] mbar: SharedMemBarrier,
         depth_idx: UInt32 = 0,
     ):
-        comptime if fuse_gqa:
-            q_tma_op.async_copy[eviction_policy=eviction_policy](
-                smem_dst,
-                mbar,
-                StaticTuple[UInt32, 4](depth_idx, 0, kv_head_idx, q_gmem_row),
-            )
+        comptime if pair_cta:
+            comptime if fuse_gqa:
+                q_tma_op.async_multicast_load_4d[cta_group](
+                    smem_dst,
+                    mbar,
+                    (Int(depth_idx), 0, Int(kv_head_idx), Int(q_gmem_row)),
+                    local_mask,
+                )
+            else:
+                q_tma_op.async_multicast_load_3d[cta_group](
+                    smem_dst,
+                    mbar,
+                    (
+                        Int(depth_idx),
+                        Int(seq_info.head_idx),
+                        Int(q_gmem_row),
+                    ),
+                    local_mask,
+                )
         else:
-            q_tma_op.async_copy[eviction_policy=eviction_policy](
-                smem_dst,
-                mbar,
-                StaticTuple[UInt32, 3](
-                    depth_idx, seq_info.head_idx, q_gmem_row
-                ),
-            )
+            comptime if fuse_gqa:
+                q_tma_op.async_copy[eviction_policy=eviction_policy](
+                    smem_dst,
+                    mbar,
+                    StaticTuple[UInt32, 4](
+                        depth_idx, 0, kv_head_idx, q_gmem_row
+                    ),
+                )
+            else:
+                q_tma_op.async_copy[eviction_policy=eviction_policy](
+                    smem_dst,
+                    mbar,
+                    StaticTuple[UInt32, 3](
+                        depth_idx, seq_info.head_idx, q_gmem_row
+                    ),
+                )
 
     var kv_row: UInt32 = mask.start_column[BM_mask, BN, page_size](score_row)
     var kv_gmem_row: UInt32 = kv_lut.row_idx(seq_info.prompt_idx, kv_row)
@@ -175,7 +215,8 @@ def fa4_load[
         var kv_smem = rebind[SharedMemPointer[Scalar[KVLUTType.dtype]]](
             smem.k_smem_base()
         )
-        comptime kv_stage_elems = config.padded_ov_depth * BN
+        # Per-CTA SMEM: halved for pair-CTA.
+        comptime kv_stage_elems = (config.padded_ov_depth * BN // cta_group)
         comptime k_elems = type_of(k_tma_op).tile_shape[0] * type_of(
             k_tma_op
         ).tile_shape[1] * type_of(k_tma_op).tile_shape[2]
@@ -194,18 +235,25 @@ def fa4_load[
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ]
-        comptime k_bytes = config.BK0 * BN * size_of[qkv_type]()
-        comptime v_bytes = config.padded_ov_depth * BN * size_of[qkv_type]()
-        comptime qk_fused_bytes = k_bytes + q_bytes
-
+        # expect_bytes accounts for both CTAs in pair mode.
+        comptime k_per_cta_bytes = (
+            config.BK0 * config.k_rows_per_cta() * size_of[qkv_type]()
+        )
+        comptime v_per_cta_bytes = (
+            config.v_cols_per_cta() * BN * size_of[qkv_type]()
+        )
+        comptime k_expect_bytes = cta_group * k_per_cta_bytes
+        comptime v_expect_bytes = cta_group * v_per_cta_bytes
+        comptime qk_expect_bytes = cta_group * (q_bytes + k_per_cta_bytes)
         comptime KVPipeType = StagedPipeline[config.num_kv_stages, 1]
         var kv_pipeline: KVPipeType = {mbars.get_k_mbars()}
         kv_pipeline.state._phase = 1  # producer starts at phase 1
 
         # ---- Peeled: K0 + Q0 on same barrier ----
         var k0_mbar = kv_pipeline.producer_mbar()
-        if e != 0:
-            k0_mbar[].expect_bytes(Int32(qk_fused_bytes))
+        if is_leader:
+            if e != 0:
+                k0_mbar[].expect_bytes(Int32(qk_expect_bytes))
         # Copy Q0
         if e != 0:
             q_async_copy(
@@ -214,15 +262,27 @@ def fa4_load[
             )
         # Copy K0
         if e != 0:
-            k_tma_op.async_copy(
-                KType(
-                    kv_smem
-                    + kv_pipeline.state.index() * UInt32(kv_stage_elems),
-                    tt_row_major[k_elems](),
-                ),
-                k0_mbar[],
-                StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
-            )
+            comptime if pair_cta:
+                k_tma_op.async_multicast_load_3d[cta_group](
+                    KType(
+                        kv_smem
+                        + kv_pipeline.state.index() * UInt32(kv_stage_elems),
+                        tt_row_major[k_elems](),
+                    ),
+                    k0_mbar[],
+                    (0, Int(kv_head_idx), Int(kv_gmem_row + k_row_offset)),
+                    local_mask,
+                )
+            else:
+                k_tma_op.async_copy(
+                    KType(
+                        kv_smem
+                        + kv_pipeline.state.index() * UInt32(kv_stage_elems),
+                        tt_row_major[k_elems](),
+                    ),
+                    k0_mbar[],
+                    StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
+                )
         kv_pipeline.state.step()  # step -> stage 1
 
         # ---- Q1 (separate barrier) ----
@@ -231,8 +291,9 @@ def fa4_load[
         else:
             q_gmem_row += UInt32(HalfBM)
         var q1_mbar = mbars.q1_wait_mbar()
-        if e != 0:
-            q1_mbar[0].expect_bytes(Int32(q_bytes))
+        if is_leader:
+            if e != 0:
+                q1_mbar[0].expect_bytes(Int32(cta_group * q_bytes))
         if e != 0:
             comptime q1_smem_offset = q_elements * 1  # num_qk_stages=1
             q_async_copy(
@@ -243,18 +304,31 @@ def fa4_load[
         # ---- V0 ----
         kv_pipeline.producer_acquire()
         var v0_mbar = kv_pipeline.producer_mbar()
+        if is_leader:
+            if e != 0:
+                v0_mbar[].expect_bytes(Int32(v_expect_bytes))
         if e != 0:
-            v0_mbar[].expect_bytes(Int32(v_bytes))
-        if e != 0:
-            v_tma_op.async_copy(
-                VType(
-                    kv_smem
-                    + kv_pipeline.state.index() * UInt32(kv_stage_elems),
-                    tt_row_major[v_elems](),
-                ),
-                v0_mbar[],
-                StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
-            )
+            comptime if pair_cta:
+                v_tma_op.async_multicast_load_3d[cta_group](
+                    VType(
+                        kv_smem
+                        + kv_pipeline.state.index() * UInt32(kv_stage_elems),
+                        tt_row_major[v_elems](),
+                    ),
+                    v0_mbar[],
+                    (v_col_offset, Int(kv_head_idx), Int(kv_gmem_row)),
+                    local_mask,
+                )
+            else:
+                v_tma_op.async_copy(
+                    VType(
+                        kv_smem
+                        + kv_pipeline.state.index() * UInt32(kv_stage_elems),
+                        tt_row_major[v_elems](),
+                    ),
+                    v0_mbar[],
+                    StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
+                )
         kv_pipeline.state.step()
 
         comptime check_mask = mask.nonfull_sets[BM_mask, BN]()[
@@ -280,41 +354,83 @@ def fa4_load[
             # Produce Kn
             kv_pipeline.producer_acquire()
             var kn_mbar = kv_pipeline.producer_mbar()
+            if is_leader:
+                if e != 0:
+                    kn_mbar[].expect_bytes(Int32(k_expect_bytes))
             if e != 0:
-                kn_mbar[].expect_bytes(Int32(k_bytes))
-            if e != 0:
-                k_tma_op.async_copy(
-                    KType(
-                        kv_smem
-                        + kv_pipeline.state.index() * UInt32(kv_stage_elems),
-                        tt_row_major[k_elems](),
-                    ),
-                    kn_mbar[],
-                    StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
-                )
+                comptime if pair_cta:
+                    k_tma_op.async_multicast_load_3d[cta_group](
+                        KType(
+                            kv_smem
+                            + kv_pipeline.state.index()
+                            * UInt32(kv_stage_elems),
+                            tt_row_major[k_elems](),
+                        ),
+                        kn_mbar[],
+                        (
+                            0,
+                            Int(kv_head_idx),
+                            Int(kv_gmem_row + k_row_offset),
+                        ),
+                        local_mask,
+                    )
+                else:
+                    k_tma_op.async_copy(
+                        KType(
+                            kv_smem
+                            + kv_pipeline.state.index()
+                            * UInt32(kv_stage_elems),
+                            tt_row_major[k_elems](),
+                        ),
+                        kn_mbar[],
+                        StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
+                    )
             kv_pipeline.state.step()
 
             # Produce Vn
             kv_pipeline.producer_acquire()
             var vn_mbar = kv_pipeline.producer_mbar()
+            if is_leader:
+                if e != 0:
+                    vn_mbar[].expect_bytes(Int32(v_expect_bytes))
             if e != 0:
-                vn_mbar[].expect_bytes(Int32(v_bytes))
-            if e != 0:
-                v_tma_op.async_copy(
-                    VType(
-                        kv_smem
-                        + kv_pipeline.state.index() * UInt32(kv_stage_elems),
-                        tt_row_major[v_elems](),
-                    ),
-                    vn_mbar[],
-                    StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
-                )
+                comptime if pair_cta:
+                    v_tma_op.async_multicast_load_3d[cta_group](
+                        VType(
+                            kv_smem
+                            + kv_pipeline.state.index()
+                            * UInt32(kv_stage_elems),
+                            tt_row_major[v_elems](),
+                        ),
+                        vn_mbar[],
+                        (
+                            v_col_offset,
+                            Int(kv_head_idx),
+                            Int(kv_gmem_row),
+                        ),
+                        local_mask,
+                    )
+                else:
+                    v_tma_op.async_copy(
+                        VType(
+                            kv_smem
+                            + kv_pipeline.state.index()
+                            * UInt32(kv_stage_elems),
+                            tt_row_major[v_elems](),
+                        ),
+                        vn_mbar[],
+                        StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
+                    )
             kv_pipeline.state.step()
 
     else:
         # ---- Split KV mode (original) ----
 
-        comptime qk_bytes = KPipeType.bytes + q_bytes
+        # Per-CTA byte sizes for expect_bytes.
+        comptime k_per_cta_bytes = KPipeType.bytes
+        comptime qk_expect = cta_group * (k_per_cta_bytes + q_bytes)
+        comptime k_expect = cta_group * k_per_cta_bytes
+        comptime v_expect = cta_group * VPipeType.bytes
         var k_smem = rebind[SharedMemPointer[Scalar[KVLUTType.dtype]]](
             smem.k_smem_base()
         )
@@ -327,29 +443,37 @@ def fa4_load[
         var mbark0: KPipeType.KPairType
 
         mbark0 = pipeline_k.get_k[qk_stage=0]()  # no wait
-        # copy q0
-        if e != 0:
-            # Q0
-            mbark0.mbar[].expect_bytes(Int32(qk_bytes))
-        # copy q0
+        # Q0 + K0 on same barrier
+        if is_leader:
+            if e != 0:
+                mbark0.mbar[].expect_bytes(Int32(qk_expect))
         if e != 0:
             q_async_copy(
                 QType(q_smem, tt_row_major[q_elements]()),
                 mbark0.mbar[],
             )
         # copy k0
-        if e != 0:  # K0
-            k_tma_op.async_copy(
-                mbark0.smem,
-                mbark0.mbar[],
-                StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
-            )
+        if e != 0:
+            comptime if pair_cta:
+                k_tma_op.async_multicast_load_3d[cta_group](
+                    mbark0.smem,
+                    mbark0.mbar[],
+                    (0, Int(kv_head_idx), Int(kv_gmem_row + k_row_offset)),
+                    local_mask,
+                )
+            else:
+                k_tma_op.async_copy(
+                    mbark0.smem,
+                    mbark0.mbar[],
+                    StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
+                )
 
         comptime for qk_stage in range(1, config.num_qk_stages):
             comptime d_idx = qk_stage * config.BK0
             mbark = pipeline_k.get_k[qk_stage=qk_stage]()  # no wait
-            if e != 0:
-                mbark.mbar[].expect_bytes(Int32(qk_bytes))
+            if is_leader:
+                if e != 0:
+                    mbark.mbar[].expect_bytes(Int32(qk_expect))
             if e != 0:
                 q_async_copy(
                     QType(
@@ -360,13 +484,25 @@ def fa4_load[
                     depth_idx=UInt32(d_idx),
                 )
             if e != 0:
-                k_tma_op.async_copy(
-                    mbark.smem,
-                    mbark.mbar[],
-                    StaticTuple[UInt32, 3](
-                        UInt32(d_idx), kv_head_idx, kv_gmem_row
-                    ),
-                )
+                comptime if pair_cta:
+                    k_tma_op.async_multicast_load_3d[cta_group](
+                        mbark.smem,
+                        mbark.mbar[],
+                        (
+                            d_idx,
+                            Int(kv_head_idx),
+                            Int(kv_gmem_row + k_row_offset),
+                        ),
+                        local_mask,
+                    )
+                else:
+                    k_tma_op.async_copy(
+                        mbark.smem,
+                        mbark.mbar[],
+                        StaticTuple[UInt32, 3](
+                            UInt32(d_idx), kv_head_idx, kv_gmem_row
+                        ),
+                    )
 
         pipeline_k.commit_step()
         # Q1
@@ -381,8 +517,9 @@ def fa4_load[
                 config.num_qk_stages + qk_stage
             )
             comptime d_idx = qk_stage * config.BK0
-            if e != 0:
-                q1_mbar[qk_stage].expect_bytes(Int32(q_bytes))
+            if is_leader:
+                if e != 0:
+                    q1_mbar[qk_stage].expect_bytes(Int32(cta_group * q_bytes))
             if e != 0:
                 q_async_copy(
                     QType(q_smem + q_smem_offset, tt_row_major[q_elements]()),
@@ -390,13 +527,24 @@ def fa4_load[
                     depth_idx=UInt32(d_idx),
                 )
         # copy v0
-        mbarv0 = pipeline_v.get_v(e)
+        mbarv0 = pipeline_v.get_tile[qk_stage=0]()
+        if is_leader:
+            if e != 0:
+                mbarv0.mbar[].expect_bytes(Int32(v_expect))
         if e != 0:
-            v_tma_op.async_copy(
-                mbarv0.smem,
-                mbarv0.mbar[],
-                StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
-            )
+            comptime if pair_cta:
+                v_tma_op.async_multicast_load_3d[cta_group](
+                    mbarv0.smem,
+                    mbarv0.mbar[],
+                    (v_col_offset, Int(kv_head_idx), Int(kv_gmem_row)),
+                    local_mask,
+                )
+            else:
+                v_tma_op.async_copy(
+                    mbarv0.smem,
+                    mbarv0.mbar[],
+                    StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
+                )
         pipeline_v.commit_step()
         comptime check_mask = mask.nonfull_sets[BM_mask, BN]()[
             0
@@ -420,24 +568,54 @@ def fa4_load[
             # produce k
             comptime for k_stage in range(config.num_qk_stages):
                 pipeline_k.acquire_k[qk_stage=k_stage]()
-                mbarkn = pipeline_k.get_k[qk_stage=k_stage](e)
+                mbarkn = pipeline_k.get_k[qk_stage=k_stage]()
+                if is_leader:
+                    if e != 0:
+                        mbarkn.mbar[].expect_bytes(Int32(k_expect))
                 comptime d_idx = k_stage * config.BK0
                 if e != 0:
-                    k_tma_op.async_copy(
-                        mbarkn.smem,
-                        mbarkn.mbar[],
-                        StaticTuple[UInt32, 3](
-                            UInt32(d_idx), kv_head_idx, kv_gmem_row
-                        ),
-                    )
+                    comptime if pair_cta:
+                        k_tma_op.async_multicast_load_3d[cta_group](
+                            mbarkn.smem,
+                            mbarkn.mbar[],
+                            (
+                                d_idx,
+                                Int(kv_head_idx),
+                                Int(kv_gmem_row + k_row_offset),
+                            ),
+                            local_mask,
+                        )
+                    else:
+                        k_tma_op.async_copy(
+                            mbarkn.smem,
+                            mbarkn.mbar[],
+                            StaticTuple[UInt32, 3](
+                                UInt32(d_idx), kv_head_idx, kv_gmem_row
+                            ),
+                        )
             pipeline_k.commit_step()
 
             pipeline_v.acquire_v()
-            mbarvn = pipeline_v.get_v(e)
+            mbarvn = pipeline_v.get_tile[qk_stage=0]()
+            if is_leader:
+                if e != 0:
+                    mbarvn.mbar[].expect_bytes(Int32(v_expect))
             if e != 0:
-                v_tma_op.async_copy(
-                    mbarvn.smem,
-                    mbarvn.mbar[],
-                    StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
-                )
+                comptime if pair_cta:
+                    v_tma_op.async_multicast_load_3d[cta_group](
+                        mbarvn.smem,
+                        mbarvn.mbar[],
+                        (
+                            v_col_offset,
+                            Int(kv_head_idx),
+                            Int(kv_gmem_row),
+                        ),
+                        local_mask,
+                    )
+                else:
+                    v_tma_op.async_copy(
+                        mbarvn.smem,
+                        mbarvn.mbar[],
+                        StaticTuple[UInt32, 3](0, kv_head_idx, kv_gmem_row),
+                    )
             pipeline_v.commit_step()
