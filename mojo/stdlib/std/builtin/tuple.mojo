@@ -112,7 +112,7 @@ struct Tuple[*element_types: Movable](
             )
             UnsafePointer(
                 to=trait_downcast[Defaultable & Movable](self[i])
-            ).init_pointee_move({})
+            ).init_pointee(take={})
 
     @always_inline("nodebug")
     def __init__(out self, var *args: *Self.element_types):

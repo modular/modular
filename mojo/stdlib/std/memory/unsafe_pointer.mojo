@@ -642,9 +642,9 @@ struct UnsafePointer[
     def write_niche(
         memory: UnsafePointer[mut=True, UnsafeMaybeUninit[Self], _]
     ):
-        memory.bitcast[
-            _Null[Self.type, Self.address_space]
-        ]().init_pointee_move({})
+        memory.bitcast[_Null[Self.type, Self.address_space]]().init_pointee(
+            take={}
+        )
 
     @staticmethod
     @always_inline
