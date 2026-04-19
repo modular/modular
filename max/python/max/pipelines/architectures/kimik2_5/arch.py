@@ -14,10 +14,7 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from transformers import AutoConfig, PretrainedConfig
 
 from . import weight_adapters

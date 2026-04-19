@@ -653,6 +653,7 @@ struct SM100MLA[
         num_kv_stages=Self.config.fa4_config.num_kv_stages,
         use_order_barriers=EnableForcedOrdering,
         use_fused_kv=Self.config.fa4_config.use_fused_kv,
+        pair_cta=Self.config.fa4_config.pair_cta,
     ]
 
     @staticmethod

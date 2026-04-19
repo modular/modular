@@ -15,57 +15,17 @@
 
 from __future__ import annotations
 
-from max.driver import CPU
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
-from max.graph import Dim
+from max.graph import Dim, ops
 
 from ..module import Module
 
+rms_norm = F.functional(ops.rms_norm)
+"""Applies Root Mean Square layer normalization to an input tensor.
 
-def rms_norm(
-    x: Tensor,
-    weight: Tensor,
-    eps: float,
-    weight_offset: float = 0.0,
-    multiply_before_cast: bool = False,
-) -> Tensor:
-    """Applies Root Mean Square layer normalization to an input tensor.
-
-    See https://arxiv.org/abs/1910.07467
-
-    Args:
-        x: The input tensor
-        weight: The weights for the normalization
-        eps: A value added to the denominator of the normalization for
-            numerical stability
-        weight_offset: A value added to the weights before normalization.
-            Typically 1 for Gemma-like normalization and 0 otherwise.
-        multiply_before_cast: Whether to multiply before or after
-            casting to the output dtype. Typically True for Gemma-like
-            normalization and False otherwise.
-
-    Returns:
-        A layer-normalized tensor with the same shape and type as `x`.
-    """
-    if x.shape[-1:] != weight.shape:
-        raise ValueError(
-            f"RMSNorm: Could not apply {weight.type=} to input "
-            f"{x.type=}, weight shape must match the final input dimension."
-        )
-
-    return F.custom(
-        "rms_norm",
-        x.device,
-        [
-            x,
-            weight,
-            F.constant(eps, dtype=x.dtype, device=CPU()),
-            F.constant(weight_offset, dtype=x.dtype, device=CPU()),
-        ],
-        [x.type],
-        parameters={"multiply_before_cast": multiply_before_cast},
-    )[0]
+See :func:`max.graph.ops.rms_norm` for details.
+"""
 
 
 class RMSNorm(Module[[Tensor], Tensor]):
