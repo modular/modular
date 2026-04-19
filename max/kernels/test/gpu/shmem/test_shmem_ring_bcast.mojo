@@ -13,7 +13,7 @@
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo %s
 
-from std.ffi import c_int
+from std.ffi import c_int, c_size_t
 
 from std.gpu.host import DeviceBuffer
 from shmem import *
@@ -38,7 +38,7 @@ def ring_bcast(
     if mype == npes - 1:
         return
 
-    shmem_put(data, data, UInt(nelem), peer)
+    shmem_put(data, data, c_size_t(nelem), peer)
     shmem_fence()
     shmem_signal_op(psync, 1, SHMEM_SIGNAL_SET, peer)
 

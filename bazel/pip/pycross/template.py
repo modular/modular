@@ -24,7 +24,6 @@ load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@@rules_pycross+//pycross:defs.bzl", "pycross_wheel_build", "pycross_wheel_library")
 
 _TESTONLY_DEPS = [
-    "accelerate",
     "einx",
     "frozendict",
     "hypothesis",

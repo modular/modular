@@ -337,29 +337,30 @@ def _resize[
     var interpolator = Interpolator[interpolation_mode]()
 
     var in_ptr = input.ptr.unsafe_origin_cast[MutExternalOrigin]()
-    var out_ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin](
-        _unsafe_null=()
-    )
+    # SAFETY: Placeholder; always overwritten below.
+    var out_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin].unsafe_dangling()
+
     var using_tmp1 = False
-    var tmp_buffer1 = UnsafePointer[Scalar[dtype], MutExternalOrigin](
-        _unsafe_null=()
-    )
-    var tmp_buffer2 = UnsafePointer[Scalar[dtype], MutExternalOrigin](
-        _unsafe_null=()
-    )
+    var tmp_buffer1 = List[Scalar[dtype]]()
+    var tmp_buffer2 = List[Scalar[dtype]]()
+
     # ping pong between using tmp_buffer1 and tmp_buffer2 to store outputs
     # of 1d interpolation pass across one of the dimensions
     if len(resize_dims) == 1:  # avoid allocating tmp_buffer
         out_ptr = output.ptr.unsafe_origin_cast[MutExternalOrigin]()
     if len(resize_dims) > 1:  # avoid allocating second tmp_buffer
-        tmp_buffer1 = alloc[Scalar[dtype]](tmp_dims.flattened_length())
-        out_ptr = tmp_buffer1
+        tmp_buffer1 = List[Scalar[dtype]](
+            unsafe_uninit_length=tmp_dims.flattened_length()
+        )
+        out_ptr = tmp_buffer1.unsafe_ptr()
         using_tmp1 = True
     if len(resize_dims) > 2:  # need a second tmp_buffer
         # TODO: if you are upsampling all dims, you can use the output in place of tmp_buffer2
         # as long as you make sure that the last iteration uses tmp1_buffer as the input
         # and tmp_buffer2 (output) as the output
-        tmp_buffer2 = alloc[Scalar[dtype]](tmp_dims.flattened_length())
+        tmp_buffer2 = List[Scalar[dtype]](
+            unsafe_uninit_length=tmp_dims.flattened_length()
+        )
     var in_shape = coord_to_index_list(input.layout.shape_coord())
     var out_shape = coord_to_index_list(input.layout.shape_coord())
     # interpolation is separable, so perform 1d interpolation across each
@@ -396,10 +397,10 @@ def _resize[
         in_shape = out_shape
         in_ptr = out_ptr.unsafe_origin_cast[MutExternalOrigin]()
 
-        out_ptr = tmp_buffer2 if using_tmp1 else tmp_buffer1
+        out_ptr = (
+            tmp_buffer2.unsafe_ptr() if using_tmp1 else tmp_buffer1.unsafe_ptr()
+        )
         using_tmp1 = not using_tmp1
 
-    if tmp_buffer1._is_not_null():
-        tmp_buffer1.free()
-    if tmp_buffer2._is_not_null():
-        tmp_buffer2.free()
+    _ = tmp_buffer1^
+    _ = tmp_buffer2^

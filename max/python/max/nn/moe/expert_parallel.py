@@ -1,0 +1,133 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Expert-parallel forward pass for MoE layers.
+
+Provides :func:`forward_moe_sharded_layers`, the single entry point for
+running EP-sharded layers (EP MoE *or* DP replicated MLP) in the
+forward pass.  Internally it checks whether the shards are EP-enabled
+MoE and dispatches to the EP-specific logic; otherwise it falls back to
+:func:`forward_sharded_layers`.
+
+The caller is responsible for calling
+:meth:`EPBatchManager.fetch_buffers` before invoking this function.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+from typing import cast
+
+from max.dtype import DType
+from max.graph import (
+    TensorValue,
+    ops,
+)
+
+from ..transformer.distributed_transformer import forward_sharded_layers
+from .moe import MoE
+
+
+def _ep_forward(
+    moe_shards: list[MoE],
+    xs: list[TensorValue],
+) -> list[TensorValue]:
+    """Runs the EP MoE forward pass using multi-device dispatch and combine.
+
+    Uses single multi-device graph ops for both dispatch and combine,
+    with per-shard gate and local expert compute in between:
+    gate -> multi-device dispatch -> local compute -> multi-device combine.
+    """
+
+    all_topk_ids: list[TensorValue] = []
+    all_router_weights: list[TensorValue] = []
+    all_input_scales: list[TensorValue | None] = []
+    device_ids: list[int] = []
+
+    for shard, x in zip(moe_shards, xs, strict=True):
+        router_idx, router_weight = shard.gate(x)
+        all_topk_ids.append(ops.cast(router_idx, DType.int32))
+        all_router_weights.append(router_weight)
+        all_input_scales.append(shard._ep_dispatch_input_scales())
+        device_ids.append(shard.devices[0].id)
+
+    # Collect non-None scales into a list (all-or-nothing for NVFP4).
+    scales: list[TensorValue] | None = None
+    if all_input_scales[0] is not None:
+        scales = [s for s in all_input_scales if s is not None]
+
+    batch_mgr = moe_shards[0].ep_batch_manager
+
+    # Multi-device dispatch (single op).
+    all_dispatch_results = batch_mgr.ep_dispatch_all(
+        xs, all_topk_ids, device_ids, input_scales=scales
+    )
+
+    # Estimated total token-expert pairs across all devices.
+    total_tokens = ops.shape_to_tensor(xs[0].shape)[0]
+    for x in xs[1:]:
+        total_tokens = total_tokens + ops.shape_to_tensor(x.shape)[0]
+    estimated_total_m = (
+        total_tokens
+        * moe_shards[0].num_experts_per_token
+        // batch_mgr.config.n_gpus_per_node
+    ).cast(DType.uint32)
+
+    # Per-shard local expert compute.
+    all_down_projs: list[TensorValue] = []
+    for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
+        expert_inputs = all_dispatch_results[i]
+        down = shard._local_ep_compute(expert_inputs, x, estimated_total_m)
+        all_down_projs.append(down)
+
+    # Multi-device combine (single op).
+    combine_results = batch_mgr.ep_combine_all(
+        all_down_projs, all_router_weights, device_ids
+    )
+
+    outputs: list[TensorValue] = []
+    for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
+        out = combine_results[i]
+        if (
+            shard.has_shared_experts
+            and not shard.ep_batch_manager.config.fused_shared_expert
+        ):
+            out += shard.shared_experts(x)
+        outputs.append(out.cast(x.dtype))
+    return outputs
+
+
+def forward_moe_sharded_layers(
+    shards: Sequence[Callable[[TensorValue], TensorValue]],
+    xs: list[TensorValue],
+) -> list[TensorValue]:
+    """Forward pass through DP-sharded layers (EP MoE or replicated MLP/MoE).
+
+    For EP-enabled MoE shards this runs the full expert-parallel
+    communication path (dispatch -> local compute -> combine).
+    For everything else (replicated MLP, non-EP MoE) it falls back to
+    :func:`forward_sharded_layers`.
+
+    Args:
+        shards: Per-device shard callables (MoE, MLP, etc.).
+        xs: Input tensors, one per shard.
+
+    Returns:
+        Output tensors, one per shard.
+    """
+    first = shards[0]
+    if (
+        hasattr(first, "_ep_batch_manager")
+        and first._ep_batch_manager is not None
+    ):
+        return _ep_forward(cast(list[MoE], list(shards)), xs)
+    return forward_sharded_layers(shards, xs)

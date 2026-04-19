@@ -12,15 +12,12 @@
 ##===----------------------------------------------------------------------===##
 
 # shellcheck disable=SC2034  # Variables are used when sourced
-batch_size=128
-max_length=8192
+batch_size=32
+max_length=32768
+
+evaluator=mistral-evals
+tasks=mathvista,chartqa,docvqa,mmmu
+
 extra_pipelines_args=(
-    --enable-echo
-    --max-num-steps 1
+  --trust-remote-code
 )
-extra_lm_eval_args=(
-    --fewshot_as_multiturn 
-    --apply_chat_template
-    "--gen_kwargs=seed=42,temperature=0,max_gen_toks=1024"
-)
-tasks=mmlu_pro

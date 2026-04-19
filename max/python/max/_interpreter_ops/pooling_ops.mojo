@@ -78,7 +78,7 @@ def max_pool_op[
     dilation_w: Int,
     pad_h: Int,
     pad_w: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     var total = batch * out_h * out_w * channels
     var in_row_stride = in_w * channels
@@ -135,7 +135,7 @@ def max_pool_op[
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx)
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )
@@ -168,7 +168,7 @@ struct _MaxPoolBody(Dispatchable):
     var dilation_w: Int
     var pad_h: Int
     var pad_w: Int
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def call[t: DType](self) raises -> None:
         max_pool_op(

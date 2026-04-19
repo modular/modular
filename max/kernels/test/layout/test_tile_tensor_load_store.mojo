@@ -23,6 +23,7 @@ from std.testing import assert_true, TestSuite
 
 from layout import (
     ComptimeInt,
+    CoordLike,
     Idx,
     RowMajorLayout,
     TileTensor,

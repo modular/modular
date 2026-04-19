@@ -14,7 +14,7 @@
 """Generic types for tool call parsing.
 
 These types provide a server-agnostic representation of parsed tool calls
-that can be translated to specific API schemas (e.g., OpenAI) by the
+that can be translated to specific API schemas (for example, OpenAI) by the
 serving layer.
 """
 
@@ -26,17 +26,16 @@ from typing import Protocol
 
 @dataclass
 class ParsedToolCall:
-    """A parsed tool/function call extracted from model output.
-
-    Attributes:
-        id: Unique identifier for this tool call.
-        name: The name of the function to call.
-        arguments: The function arguments as a JSON string.
-    """
+    """A parsed tool/function call extracted from model output."""
 
     id: str
+    """The unique identifier for this tool call."""
+
     name: str
+    """The name of the function to call."""
+
     arguments: str
+    """The function arguments as a JSON string."""
 
 
 @dataclass
@@ -45,31 +44,30 @@ class ParsedToolCallDelta:
 
     Used during streaming to send partial tool call information
     as it becomes available.
-
-    Attributes:
-        index: The index of this tool call in the list of tool calls.
-        id: The tool call ID (typically sent with the first chunk).
-        name: The function name (typically sent with the first chunk).
-        arguments: Partial arguments string (streamed incrementally).
     """
 
     index: int
+    """The index of this tool call in the list of tool calls."""
+
     id: str | None = None
+    """The tool call ID, typically sent with the first chunk."""
+
     name: str | None = None
+    """The function name, typically sent with the first chunk."""
+
     arguments: str | None = None
+    """The partial arguments string, streamed incrementally."""
 
 
 @dataclass
 class ParsedToolResponse:
-    """Result of parsing a complete model response for tool calls.
-
-    Attributes:
-        content: Text content from the response (before/after tool calls).
-        tool_calls: List of parsed tool calls extracted from the response.
-    """
+    """Result of parsing a complete model response for tool calls."""
 
     content: str | None = None
+    """The text content from the response (before/after tool calls)."""
+
     tool_calls: list[ParsedToolCall] = field(default_factory=list)
+    """The list of :class:`ParsedToolCall` objects extracted from the response."""
 
 
 class ToolParser(Protocol):
@@ -80,11 +78,12 @@ class ToolParser(Protocol):
     incremental (streaming) parsing modes.
 
     Different model architectures use different tool calling formats:
-    - Llama models use JSON-based tool calls
-    - Kimi K2.5 uses structural tags like <|tool_call_begin|>
+
+    - Llama models use JSON-based tool calls.
+    - Kimi K2.5 uses structural tags like ``<|tool_call_begin|>``.
 
     The serving layer is responsible for translating these generic types
-    to API-specific schemas (e.g., OpenAI).
+    to API-specific schemas (for example, OpenAI).
     """
 
     def parse_complete(self, response: str) -> ParsedToolResponse:

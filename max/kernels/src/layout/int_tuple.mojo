@@ -60,9 +60,8 @@ from std.os import abort
 
 from std.builtin.range import _StridedRange
 from std.memory import memcpy
-from std.memory._nonnull import NonNullUnsafePointer
 from std.sys.intrinsics import _type_is_eq_parse_time
-
+from std.collections import check_bounds
 from std.utils.numerics import max_finite
 from std.utils import IndexList
 
@@ -132,7 +131,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
     data structures, optimized for high-performance tensor operations.
     """
 
-    var _data: Optional[NonNullUnsafePointer[Int, MutExternalOrigin]]
+    var _data: Optional[UnsafePointer[Int, MutExternalOrigin]]
     var _size: Int
 
     @always_inline("nodebug")
@@ -143,9 +142,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             size: Number of integers to allocate space for. Defaults to 0.
         """
         if size > 0:
-            self._data = NonNullUnsafePointer(
-                unsafe_from_nullable=alloc[Int](size)
-            )
+            self._data = alloc[Int](size)
         else:
             self._data = {}
         self._size = size
@@ -162,9 +159,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         self._size = copy._size
         if copy.owning():
             var size = copy.size()
-            self._data = NonNullUnsafePointer(
-                unsafe_from_nullable=alloc[Int](size)
-            )
+            self._data = alloc[Int](size)
             self.copy_from(0, copy, size)
         else:
             self._data = copy._data
@@ -1123,25 +1118,42 @@ struct IntTuple(
         return _IntTupleIter(Pointer(to=self), 0)
 
     @always_inline
-    def __getitem__(self, _idx: Int) -> IntTuple:
-        """
-        Retrieves an element at the specified index from the `IntTuple`.
-
-        Supports negative indexing (e.g., `-1` for the last element).
+    def __getitem__(self, idx: IntLiteral) -> IntTuple:
+        """Gets the element at the given index.
 
         Args:
-            _idx: The index of the element to retrieve.
+            idx: The index of the element.
 
         Returns:
             An `IntTuple` containing either a single value or a sub-tuple.
         """
-        var idx = len(self) + _idx if _idx < 0 else _idx
-        # TODO(MOCO-3154) - put a bounds check here when the le comparison is fixed.
-        # and add below back to the docstring.
-        # Notes:
-        #     If index is out of bounds, assertion fails with an error message.
+        comptime assert (
+            IntLiteral[idx.value]() >= 0
+        ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
+        # This avoids an interpreter memcpy error
+        if not __is_run_in_comptime_interpreter:
+            check_bounds(idx, len(self))
+        return self._unchecked_get(Int(idx))
 
-        # The int value or the (negated) offset to the tuple
+    @always_inline
+    def __getitem__(self, idx: Int) -> IntTuple:
+        """
+        Retrieves an element at the specified index from the `IntTuple`.
+
+        Args:
+            idx: The index of the element to retrieve.
+
+        Returns:
+            An `IntTuple` containing either a single value or a sub-tuple.
+        """
+        # This avoids an interpreter memcpy error
+        if not __is_run_in_comptime_interpreter:
+            check_bounds(idx, len(self))
+        return self._unchecked_get(idx)
+
+    @always_inline
+    def _unchecked_get(self, idx: Int) -> IntTuple:
+        # The int value offset to the tuple
         var val = self._store[idx + 1]
         if val >= Self.MinimumValue:
             # Return the Int value
@@ -2649,7 +2661,9 @@ def crd2idx(
                 var remainder: Int
                 int_crd, remainder = divmod(int_crd, product(shape[i]))
                 result += crd2idx(remainder, shape[i], stride[i])
-            return result + crd2idx(int_crd, shape[-1], stride[-1])
+            return result + crd2idx(
+                int_crd, shape[len(shape) - 1], stride[len(stride) - 1]
+            )
         else:  # "int" "int" "int"
             return int_crd * Int(stride)
 
