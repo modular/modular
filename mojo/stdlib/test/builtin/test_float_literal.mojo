@@ -40,11 +40,11 @@ def test_mod() raises:
 
 
 def test_int_conversion() raises:
-    assert_equal(Int(-4.0), -4)
-    assert_equal(Int(-4.5), -4)
-    assert_equal(Int(-4.3), -4)
-    assert_equal(Int(4.5), 4)
-    assert_equal(Int(4.0), 4)
+    assert_equal(Int(Float64(-4.0)), -4)
+    assert_equal(Int(Float64(-4.5)), -4)
+    assert_equal(Int(Float64(-4.3)), -4)
+    assert_equal(Int(Float64(4.5)), 4)
+    assert_equal(Int(Float64(4.0)), 4)
 
 
 def test_bool() raises:

@@ -21,7 +21,7 @@ Target: < 1 minute compile + run for debugging purposes.
 
 from std.math import ceildiv
 from std.sys import size_of
-from linalg.matmul.gpu.sm100.config import MatmulConfig
+from linalg.matmul.gpu.sm100.config import MatmulConfig, GEMMKind
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
@@ -180,6 +180,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         mma_shape=mma_shape,
         block_swizzle_size=0,
         cta_group=cta_group,
+        gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
     )
 
     blockwise_fp8_matmul[

@@ -722,13 +722,13 @@ class LoRAManager:
         """Initializes the LoRAManager with a given base weight structure and maximum number of LoRA models.
 
         Args:
-            config (LoRAConfig): The LoRA config.
-            base_model_path (str): The name/path of the base model.
-            base_dtype (DType): The base model dtype.
-            n_heads (int): Number of attention heads in the base model.
-            n_kv_heads (int): Number of key-value heads in the base model.
-            head_dim (int): Dimension of each attention head.
-            zmq_endpoint_base (str): The ZMQ endpoint base used to construct ZMQ lora request and response endpoints.
+            config: The LoRA config.
+            base_model_path: The name/path of the base model.
+            base_dtype: The base model dtype.
+            n_heads: The number of attention heads in the base model.
+            n_kv_heads: The number of key-value heads in the base model.
+            head_dim: The dimension of each attention head.
+            zmq_endpoint_base: The ZMQ endpoint base used to construct ZMQ lora request and response endpoints.
         """
         self.base_model_path = base_model_path
         self.base_dtype = base_dtype
@@ -751,7 +751,7 @@ class LoRAManager:
         self._alias_buffers: dict[str, DLPackArray] = {}
 
     def process_lora_requests(self) -> None:
-        """Check for new LoRA requests and processes them."""
+        """Checks for new LoRA requests and processes them."""
         self._request_processor.process_lora_requests()
 
     @property

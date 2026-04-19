@@ -69,7 +69,7 @@ def tma_ragged_store_kernel[
         alignment=128,
     ].stack_allocation()
 
-    var seq_idx = UInt(block_idx.x)
+    var seq_idx = block_idx.x
     var sequence_length = sequence_lengths[seq_idx]
 
     if thread_idx.x == 0:
@@ -298,21 +298,19 @@ def test_tma_ragged_store[
         comptime for i in range(rank):
             comptime sequence_length = sequence_lengths[i]
 
-            var adjusted_ptr = host_buffer.unsafe_ptr() + (
-                running_sequence * depth
-            )
+            var adjusted = host_buffer.as_span()[running_sequence * depth :]
             var global_host_tensor = GlobalTensorType[sequence_length](
-                adjusted_ptr
+                adjusted.unsafe_ptr()
             )
 
             comptime if swizzle_mode == TensorMapSwizzle.SWIZZLE_NONE:
                 for i in range(global_host_tensor.size()):
-                    assert_equal(adjusted_ptr[i], Scalar[dtype](i))
+                    assert_equal(adjusted[i], Scalar[dtype](i))
             else:
                 comptime swizzle = make_swizzle[dtype, swizzle_mode]()
                 for i in range(global_host_tensor.size()):
                     var swz_offset = swizzle(i)
-                    assert_equal(adjusted_ptr[swz_offset], Scalar[dtype](i))
+                    assert_equal(adjusted[swz_offset], Scalar[dtype](i))
 
 
 def test_tma_load_row_major[

@@ -22,11 +22,11 @@ _ = Process.run("echo", ["== TEST_ECHO"])
 """
 from std.collections import List, Optional
 from std.collections.string import StringSlice
-from std.memory._nonnull import NonNullUnsafePointer
 from std.sys import CompilationTarget
 from std.sys._libc import (
     waitpid,
     posix_spawnp,
+    _get_environ,
     kill,
     SignalCodes,
     pipe,
@@ -414,11 +414,11 @@ struct Process:
         var pid: c_pid_t = 0
 
         var has_error_code = posix_spawnp(
-            NonNullUnsafePointer(to=pid),
+            UnsafePointer(to=pid),
             path.as_c_string_slice(),
             # Safety: `argv_array_ptr_cstr_ptr` has at least 2 elements so is non-null
-            {unsafe_from_nullable = argv_array_ptr_cstr_ptr.unsafe_ptr()},
-            {},
+            argv_array_ptr_cstr_ptr.unsafe_ptr(),
+            _get_environ(),  # inherit parent's environment
         )
 
         if has_error_code > 0:

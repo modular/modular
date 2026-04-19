@@ -107,18 +107,20 @@ struct SM100AttentionSMem[
     comptime kv_byte_offset: Int = Self.q_bytes
 
     # Per-stage sizes in bytes.
-    # In fused mode K and V share the same padded_ov_depth-wide buffer.
+    # In pair-CTA mode each CTA stores half of K/V, so per-stage sizes
+    # use k_rows_per_cta (BN/2) and v_cols_per_cta (padded_ov_depth/2).
+    # In fused mode K and V share the same buffer (same per-stage size).
     # In split mode K_nope and K_rope may have different dtypes.
     comptime k_stage_bytes: Int = (
-        Self.config.padded_ov_depth
+        Self.config.v_cols_per_cta()
         * Self.config.BN
         * Self._qkv_dt_size if Self.config.use_fused_kv else (
-            Self.config.padded_ov_depth * Self.config.BN * Self._qkv_dt_size
-            + Self.rope_depth * Self.config.BN * Self.rope_dt_size
+            Self.config.v_cols_per_cta() * Self.config.BN * Self._qkv_dt_size
+            + Self.rope_depth * Self.config.k_rows_per_cta() * Self.rope_dt_size
         )
     )
     comptime v_stage_bytes: Int = (
-        Self.config.padded_ov_depth * Self.config.BN * Self._qkv_dt_size
+        Self.config.v_cols_per_cta() * Self.config.BN * Self._qkv_dt_size
     )
 
     # Total K bytes across all stages.
@@ -187,6 +189,7 @@ struct SM100AttentionSMem[
         num_kv_stages=Self.config.num_kv_stages,
         use_order_barriers=Self.use_order_barriers,
         use_fused_kv=Self.config.use_fused_kv,
+        pair_cta=Self.config.pair_cta,
     ]
 
     comptime mbar_bytes: Int = Int(Self.MiscMBarsType.num_mbars()) * size_of[

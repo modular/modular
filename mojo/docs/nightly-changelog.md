@@ -8,6 +8,29 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- The ternary `if/else` expression now coerces each element to its contextual
+  type when it is obvious. For example, this works instead of producing an
+  error about incompatible metatypes:
+
+  ```mojo
+    comptime some_type: Movable = Int if cond else String
+  ```
+
+- Unified closures now accept default capturing conventions when there are
+  explicit captures already.
+
+  ```mojo
+  def captures_with_default_convention():
+    var a, b, c, d = ("a", "b", "c", "d")
+    def my_fn() unified {mut a, b, c^, read}:
+      # capture:
+      # `a` by mut reference
+      # `b` by immut reference
+      # `c` by moving
+      # `d` by immut reference (the default 'read' convention)
+      use(a, b, c, d)
+  ```
+
 - Added `abi("C")` as a function effect for declaring C calling convention on
   function definitions and function pointer types. Functions marked with
   `abi("C")` use the platform C ABI (System V x86-64 / ARM64 AAPCS) for
@@ -45,11 +68,19 @@ This version is still a work in progress.
   forwarder(1, "hello", 3.14)  # prints each value on a separate line
   ```
 
+- Heterogenous variadic packs can now be specified with a `SomeType` helper
+  function. These two are equivalent:
+
+  ```mojo
+  def foo[*arg_types: Copyable](*args: *arg_types) -> Int: ...
+  def foo(*args: *SomeTypeList[Copyable]) -> Int: ...
+  ```
+
 ## Language changes
 
-- Variadic parameters value lists are now passed instead of `ParameterList`
-  instead of `!kgen.param_list`. This makes it much more ergonomic to work with
-  these types, e.g. simple logic just works:
+- Variadic parameters lists are now passed instead of `ParameterList` and
+  `TypeList` instead of `!kgen.param_list`. This makes it much more ergonomic to
+  work with these types, e.g. simple logic just works:
 
   ```mojo
   def callee[*values: Int]():
@@ -60,9 +91,9 @@ This version is still a work in progress.
           v += elt
   ```
 
-  Similarly, the `ParameterList` struct has other methods for transforming the
-  value list, which are directly accessible on `values`. One caveat so far is
-  that parameter variadics of types are still using the old representation.
+  Similarly, the `ParameterList`/`TypeList` structs have other methods for
+  transforming the value list. As such, a variety of values from the `Variadic`
+  struct have started moving over to being members of these types.
 
 - All Mojo functions now has a unique "function literal type". In practice, it
   means that:
@@ -81,6 +112,26 @@ This version is still a work in progress.
   available to the module.
 
 ## Library changes
+
+- Atomic operations have moved to a dedicated `std.atomic` module. The
+  `Consistency` type has been renamed to `Ordering` and its `MONOTONIC`
+  member has been renamed to `RELAXED` to align with conventions used by
+  other languages. Update existing code as follows:
+
+  ```mojo
+  # Before
+  from std.os import Atomic
+  from std.os.atomic import Atomic, Consistency, fence
+
+  _ = atom.load[ordering=Consistency.MONOTONIC]()
+
+  # After
+  from std.atomic import Atomic, Ordering, fence
+
+  _ = atom.load[ordering=Ordering.RELAXED]()
+  ```
+
+- `assert_raises` now catches custom `Writable` error types, not just `Error`.
 
 - Variadics of types have been moved to the `TypeList` struct.
   One can write operations such as:
@@ -119,6 +170,10 @@ This version is still a work in progress.
   - `Span`: `Writable`, `Hashable`
   - `Tuple`, `Optional`, `Variant`, and `UnsafeMaybeUninit`: `RegisterPassable`
   - `Variant`: `Copyable`, `ImplicitlyCopyable`
+
+- `Tuple` now conditionally conforms to `Defaultable`, so generic
+  `T: Defaultable` code can default-construct tuples when all element types are
+  `Defaultable`.
 
 - `OwnedDLHandle.get_symbol()` now returns `Optional[UnsafePointer[...]]`
   instead of aborting when a symbol is not found. This allows callers to handle
@@ -194,6 +249,58 @@ This version is still a work in progress.
 - `external_call`'s `return_type`'s requirements has been relaxed from
   `TrivialRegisterPassable` to `RegisterPassable`.
 
+- Negative indexing on all stdlib collections has been removed to enable cheap
+  CPU bounds checks by default:
+  - `List`
+  - `Span`
+  - `InlineArray`
+  - `String`
+  - `StringSlice`
+  - `LinkedList`
+  - `Deque`
+  - `IntTuple`
+
+  Using a negative `IntLiteral` for indexing will now trigger a compile-time
+  error, for example:
+
+  ```text
+  /tmp/main.mojo:3:12: note: call expansion failed with parameter value(s): (..., ...)
+          print(x[-1])
+              ^
+  constraint failed: negative indexing is not supported, use e.g. `x[len(x) - 1]` instead
+  ```
+
+  Update any `x[-1]` to `x[len(x) - 1]`, following the compiler errors to
+  your call sites as above.
+
+  This does not affect any MAX ops that support negative indexing.
+
+- Bounds checking is now on by default for all collections on CPU, and will show
+  you the call site in your code where you triggered the out of bounds access:
+
+  ```mojo
+  def main():
+      var x = [1, 2, 3]
+      print(x[3])
+  ```
+
+  ```text
+  At: /tmp/main.mojo:3:12: Assert Error: index 3 is out of bounds, valid range is 0 to 2
+  ```
+
+  Bounds checking is still off by default for GPU to avoid performance
+  penalties. To enable it for tests:
+
+  ```bash
+  mojo build -D ASSERT=all main.mojo
+  ```
+
+  To turn off all asserts, including CPU bounds checking:
+
+  ```bash
+  mojo build -D ASSERT=none main.mojo
+  ```
+
 - `alloc[T](count, alignment)` will now `abort` if the underlying allocation
   failed.
 
@@ -234,6 +341,21 @@ This version is still a work in progress.
 - Added `List.remove(value)` method that removes the first occurrence of a
   value from the list, raising an error if the value is not found.
 
+- Added `map()` and `and_then()` methods to `Optional`. `map()` transforms
+  the contained value by applying a function, returning `Optional[To]`.
+  `and_then()` chains operations that themselves return an `Optional`, enabling
+  flat-mapping over fallible computations.
+
+  ```mojo
+  var o = Optional[Int](42)
+
+  def closure(n: Int) unified {} -> String:
+    return String(n + 1)
+
+  var mapped: Optional[String] = o.map[To=String](closure)
+  print(mapped) # Optional("43")
+  ```
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as
@@ -261,6 +383,15 @@ This version is still a work in progress.
 
 ## 🛠️ Fixed
 
+- Fixed `libpython` auto-discovery failing for Python 3.14 free-threaded builds.
+  The discovery script constructed the library filename without the ABI flags
+  suffix (e.g. looked for `libpython3.14.dylib` instead of
+  `libpython3.14t.dylib`).
+  ([Issue #6366](https://github.com/modular/modular/issues/6366))
+- Fixed `RTLD.LOCAL` having the wrong value on Linux. It was set to `4`
+  (`RTLD_NOLOAD`) instead of `0`, causing `dlopen` with `RTLD.NOW | RTLD.LOCAL`
+  to fail. ([Issue #6410](https://github.com/modular/modular/issues/6410))
+
 - Fixed `mojo format` crashing after upgrading Mojo versions due to a stale
   grammar cache. ([Issue #6144](https://github.com/modular/modular/issues/6144))
 
@@ -274,3 +405,15 @@ This version is still a work in progress.
   default `Writable`, `Equatable`, or `Hashable` implementations on structs
   with MLIR-type fields (e.g. `__mlir_type.index`). The compiler now correctly
   reports that the field does not implement the required trait.
+
+- Fixed `Atomic.store` silently dropping the requested `scope`. The previous
+  implementation lowered to `atomicrmw xchg` without forwarding `syncscope`,
+  so `Atomic[..., scope="device"].store(...)` was emitting a system-scope
+  store on NVPTX (extra L2/NVLink fences) and an over-synchronized store on
+  AMDGPU. `Atomic.store` now lowers via `pop.store atomic syncscope(...)`,
+  emitting `st.release.<scope>` on NVPTX and a properly-scoped LLVM atomic
+  store on AMDGPU. The Mojo API surface is unchanged.
+
+- Fixed `Process.run()` not inheriting the parent's environment variables.
+  Child processes spawned via `Process.run()` now correctly receive the
+  parent's environment.

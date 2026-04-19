@@ -43,6 +43,7 @@ from std.gpu.host._tensormap import (
     create_tensormap_im2col as _create_tensormap_im2col,
 )
 from std.gpu.host.nvidia.tma import (
+    TensorMapL2Promotion,
     TensorMapSwizzle,
     TMADescriptor,
     create_tma_descriptor,
@@ -1638,13 +1639,14 @@ struct TMATensorTile[
         tile_width: Int,
         cta_group: Int = 1,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+        d_indices_addr_space: AddressSpace = AddressSpace.GENERIC,
     ](
         self,
         smem_base: UnsafePointer[
             Scalar[Self.dtype], _, address_space=AddressSpace.SHARED
         ],
         ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
-        d_indices: UnsafePointer[Int32, _],
+        d_indices: UnsafePointer[Int32, _, address_space=d_indices_addr_space],
         start_idx: Int = 0,
     ):
         """Loads a full tile of ``tile_height`` rows via gather4 in 4-row chunks.
@@ -1665,6 +1667,9 @@ struct TMATensorTile[
             cta_group: CTA group configuration. Defaults to 1.
             eviction_policy: Cache eviction policy. Defaults to
                 EVICT_NORMAL.
+            d_indices_addr_space: Address space of the ``d_indices``
+                pointer. Defaults to ``GENERIC``, but callers may
+                pass ``SHARED`` pointers directly.
 
         Args:
             smem_base: Base pointer to the shared memory destination region.
@@ -1853,7 +1858,7 @@ struct TMATensorTile[
                 cp_async_bulk_tensor_shared_cluster_global_multicast[
                     cta_group=cta_group
                 ](
-                    dst.ptr.mut_cast[True]() + copy_offset,
+                    dst.ptr.unsafe_mut_cast[True]() + copy_offset,
                     UnsafePointer(to=self.descriptor).bitcast[NoneType](),
                     mem_barrier.unsafe_ptr(),
                     Index(
@@ -3151,7 +3156,9 @@ def create_tma_tile_gather4[
     *,
     tile_height: Int = 4,
     tile_width: Int,
+    tile_stride: Int = tile_width,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
 ](
     ctx: DeviceContext,
     device_buf: DeviceBuffer[dtype],
@@ -3188,8 +3195,13 @@ def create_tma_tile_gather4[
         dtype: The element data type.
         tile_height: Number of rows in the tile. Must be a multiple of 4.
             Defaults to 4 for backward compatibility.
-        tile_width: Number of elements per row in global memory.
+        tile_width: Number of elements per row to load (box width).
+        tile_stride: Row stride in elements in global memory. Defaults to
+            ``tile_width``. Use a larger value when the row in global memory
+            is wider than the portion to load (e.g. loading only nope from a
+            nope+rope row).
         swizzle_mode: TMA swizzle mode.
+        l2_promotion: L2 cache promotion hint for TMA loads. Defaults to NONE.
 
     Args:
         ctx: CUDA device context for TMA descriptor creation.
@@ -3203,14 +3215,17 @@ def create_tma_tile_gather4[
         If TMA descriptor creation fails.
     """
     comptime assert tile_width > 0, "tile_width must be positive"
+    comptime assert (
+        tile_stride >= tile_width
+    ), "tile_stride must be >= tile_width"
     comptime assert tile_height > 0, "tile_height must be positive"
     comptime assert tile_height % 4 == 0, "tile_height must be a multiple of 4"
 
     comptime box_w = _gather4_box_width[dtype, tile_width, swizzle_mode]()
-    return create_tma_descriptor[dtype, 2, swizzle_mode](
+    return create_tma_descriptor[dtype, 2, swizzle_mode, l2_promotion](
         device_buf,
-        IndexList[2](num_rows, tile_width),
-        IndexList[2](tile_width, 1),
+        IndexList[2](num_rows, tile_stride),
+        IndexList[2](tile_stride, 1),
         IndexList[2](1, box_w),
     )
 
@@ -3221,7 +3236,9 @@ def create_tma_tile_gather4[
     *,
     tile_height: Int = 4,
     tile_width: Int,
+    tile_stride: Int = tile_width,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
 ](
     ctx: DeviceContext,
     ptr: UnsafePointer[Scalar[dtype], _],
@@ -3248,8 +3265,12 @@ def create_tma_tile_gather4[
         dtype: The element data type.
         tile_height: Number of rows in the tile. Must be a multiple of 4.
             Defaults to 4 for backward compatibility.
-        tile_width: Number of elements per row in global memory.
+        tile_width: Number of elements per row to load (box width).
+        tile_stride: Row stride in elements in global memory. Defaults to
+            ``tile_width``. Use a larger value when the row in global memory
+            is wider than the portion to load.
         swizzle_mode: TMA swizzle mode.
+        l2_promotion: L2 cache promotion hint for TMA loads. Defaults to NONE.
 
     Args:
         ctx: CUDA device context for TMA descriptor creation.
@@ -3263,19 +3284,22 @@ def create_tma_tile_gather4[
         If TMA descriptor creation fails.
     """
     comptime assert tile_width > 0, "tile_width must be positive"
+    comptime assert (
+        tile_stride >= tile_width
+    ), "tile_stride must be >= tile_width"
     comptime assert tile_height > 0, "tile_height must be positive"
     comptime assert tile_height % 4 == 0, "tile_height must be a multiple of 4"
 
     comptime box_w = _gather4_box_width[dtype, tile_width, swizzle_mode]()
-    return create_tma_descriptor[dtype, 2, swizzle_mode](
+    return create_tma_descriptor[dtype, 2, swizzle_mode, l2_promotion](
         DeviceBuffer(
             ctx,
             ptr.address_space_cast[AddressSpace.GENERIC](),
             1,
             owning=False,
         ),
-        IndexList[2](num_rows, tile_width),
-        IndexList[2](tile_width, 1),
+        IndexList[2](num_rows, tile_stride),
+        IndexList[2](tile_stride, 1),
         IndexList[2](1, box_w),
     )
 

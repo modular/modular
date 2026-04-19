@@ -34,8 +34,24 @@ This version is still a work in progress.
 
 ### `max` CLI {#26-3-max-cli}
 
+- Added sweep benchmarking capabilities to `max benchmark`: iterate over
+  multiple concurrency and request-rate combinations, flush the prefix cache
+  between runs, and collect per-run structured JSON results.
+
 ### Python API {#26-3-max-python}
 
+- Added `ops.roi_align` graph op and `F.roi_align` functional wrapper for
+  ROI Align pooling over NHWC inputs with configurable spatial scale, sampling
+  ratio, alignment mode, and AVG/MAX pooling.
+- Added `roi_align` op handler to the MO eager interpreter, enabling
+  eager-mode execution of ROI Align pooling without graph compilation.
+- Added `ConstantExternalOp` and `ConstantScalarOp` handlers to the MO eager
+  interpreter, allowing graphs with external weights and scalar constants to
+  run without falling back to full compilation.
+- Added `ReduceRmsNormOp` handler to the MO eager interpreter, enabling
+  eager-mode execution of RMS normalization without graph compilation.
+- Added `ReduceGroupNormOp` handler to the MO eager interpreter, enabling
+  eager-mode execution of group normalization without graph compilation.
 - Fixed tensor slicing with negative integer indices (e.g. `hidden[:, -1]`)
   which previously raised a `RuntimeError` at compile time.
 - Setting `MODULAR_MAX_UNINITIALIZED_READ_CHECK=true` enables detection of
@@ -114,6 +130,11 @@ This version is still a work in progress.
   `max.graph.ops.scatter_mul` graph operations (and corresponding
   `max.experimental.functional` wrappers) for element-wise scatter with
   max, min, and multiply reductions at duplicate indices along an axis.
+- Added `scatter_max`, `scatter_min`, and `scatter_mul` op handlers to
+  the experimental eager interpreter (CPU), applying max, min, and
+  multiply reductions at duplicate scatter indices via
+  `max.experimental.functional.scatter_max`, `.scatter_min`, and
+  `.scatter_mul`.
 - Added `max.graph.ops.scatter_nd_max`, `max.graph.ops.scatter_nd_min`, and
   `max.graph.ops.scatter_nd_mul` graph operations (and corresponding
   `max.experimental.functional` wrappers) for N-dimensional scatter with
@@ -136,6 +157,33 @@ This version is still a work in progress.
   `InterpolationMode.BILINEAR` by delegating to `resize_linear`.
 - Added `resize_linear` op handler to the experimental eager interpreter
   (CPU) via `max.experimental.functional.resize_linear`.
+- Added `max.graph.ops.resize_nearest` for nearest-neighbor interpolation
+  resizing with configurable `coordinate_transform_mode` and `round_mode`;
+  `max.graph.ops.resize` now supports `InterpolationMode.NEAREST`.
+- Added `resize_nearest` op handler to the experimental eager interpreter
+  (CPU) via `max.experimental.functional.resize_nearest`.
+- Added `max.graph.ops.resize_bicubic` for bicubic interpolation resizing
+  (rank-4 NCHW, half_pixel coord mapping, a=-0.75 Catmull-Rom kernel);
+  `max.graph.ops.resize` now delegates its `InterpolationMode.BICUBIC` path
+  to `resize_bicubic`.
+- Added `resize_bicubic` op handler to the experimental eager interpreter
+  (CPU) via `max.experimental.functional.resize_bicubic`.
+- Added defensive `mo.shape.from_tensor` and `mo.index.to_tensor` handlers
+  to the experimental eager interpreter. These internal ops are typically
+  folded away by canonicalization; the handlers prevent crashes if they
+  survive into the interpreter.
+- Added defensive `mo.buffer.create` and `mo.buffer.transfer` handlers to
+  the experimental eager interpreter. These internal ops are typically
+  lowered by the graph compiler; the handlers prevent crashes if they
+  survive into the interpreter.
+- Added `mo.mutable.store` and `mo.mutable.store.slice` handlers to the
+  experimental eager interpreter. These complement the existing
+  `mo.mutable.load` handler and enable eager execution of in-place buffer
+  writes (full-tensor stores and slice-indexed stores).
+- Added defensive `mo.gather_sum` handler to the experimental eager
+  interpreter. This fused composite op (gather axis 0 + sum axis 1) is
+  used by DLRM-style multi-hot embeddings; the handler prevents crashes
+  if the op survives into the interpreter.
 - Added `distributed.allreduce.sum` op handler to the experimental eager
   interpreter, enabling multi-GPU eager execution of allreduce collectives
 - Added `distributed.allgather` op handler to the experimental eager
@@ -151,6 +199,17 @@ This version is still a work in progress.
   without falling back to compilation.
 - Added `distributed_broadcast` collective to `distributed_functional` for
   hardware-accelerated root-to-all tensor replication.
+- Added `non_maximum_suppression` op handler to the experimental eager
+  interpreter (CPU), enabling NMS to run through the interpreter without
+  falling back to compilation.
+- Added `max.graph.ops.non_maximum_suppression` graph operation (and
+  `max.experimental.functional.non_maximum_suppression` wrapper) for
+  constructing ONNX-style non-maximum suppression in MAX graphs.
+- Added `distributed.reducescatter.sum` op handler to the eager interpreter,
+  enabling multi-GPU eager execution of reduce-scatter collectives without
+  falling back to compilation.
+- Added `distributed_reducescatter_sum` collective to `distributed_functional`
+  for hardware-accelerated reduce-and-scatter tensor distribution.
 - `Module.compile()` now accepts a `custom_extensions` parameter for loading
   custom Mojo kernel libraries at graph construction time, fixing validation
   failures for kernels with struct-level parameters.
@@ -198,6 +257,18 @@ This version is still a work in progress.
 - Optimized GPU `topk` stage-1 kernel with a per-thread register heap that
   caches the top-8 elements during a single scan pass, eliminating redundant
   global memory re-reads for the first 8 extraction iterations.
+
+- Moved `partial_simd_load` and `partial_simd_store` from
+  `buffer.buffer` to `linalg.utils` and removed the `buffer` package. Update
+  imports from `from buffer.buffer import ...` to
+  `from linalg.utils import ...`.
+
+## 🛠️ Fixed {#26-3-fixed}
+
+- Fixed `enqueue_fill()` taking O(N) HIP API calls for `float64` buffers on
+  AMD GPUs when the high and low 32-bit halves of the fill value differ (e.g.,
+  `2.0`), reducing the call count to O(log N).
+  ([Issue #6417](https://github.com/modular/modular/issues/6417))
 
 ## Mojo language {#26-3-mojo}
 
