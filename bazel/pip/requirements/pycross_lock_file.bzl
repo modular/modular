@@ -10,7 +10,6 @@ load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@@rules_pycross+//pycross:defs.bzl", "pycross_wheel_build", "pycross_wheel_library")
 
 _TESTONLY_DEPS = [
-    "accelerate",
     "einx",
     "frozendict",
     "hypothesis",
@@ -65,7 +64,6 @@ PINS = {
     "google-auth": "google-auth@2.48.0",
     "google-cloud-bigquery": "google-cloud-bigquery@3.40.1",
     "gptqmodel": "gptqmodel@2.0.0+cu126torch2.6",
-    "grpcio": "grpcio@1.76.0",
     "hf-transfer": "hf-transfer@0.1.9",
     "httpx": "httpx@0.27.2",
     "huggingface-hub": "huggingface-hub@1.8.0",
@@ -127,7 +125,6 @@ PINS = {
     "pytest": "pytest@8.2.2",
     "pytest-asyncio": "pytest-asyncio@0.23.7",
     "pytest-benchmark": "pytest-benchmark@4.0.0",
-    "pytest-grpc": "pytest-grpc@0.8.0",
     "pytest-mock": "pytest-mock@3.14.0",
     "pytest-xdist": "pytest-xdist@3.6.1",
     "python-json-logger": "python-json-logger@2.0.7",
@@ -7975,22 +7972,6 @@ def targets():
         deps = _pytest_benchmark_4_0_0_deps,
         wheel = ":_wheel_pytest-benchmark@4.0.0",
         testonly = "pytest-benchmark" in _TESTONLY_DEPS,
-    )
-
-    _pytest_grpc_0_8_0_deps = [
-        ":pytest@8.2.2",
-    ]
-
-    native.alias(
-        name = "_wheel_pytest-grpc@0.8.0",
-        actual = "@pycross_lock_file_wheel_pytest_grpc_0.8.0_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "pytest-grpc@0.8.0",
-        deps = _pytest_grpc_0_8_0_deps,
-        wheel = ":_wheel_pytest-grpc@0.8.0",
-        testonly = "pytest-grpc" in _TESTONLY_DEPS,
     )
 
     _pytest_mock_3_14_0_deps = [
@@ -24932,16 +24913,6 @@ def repositories():
         ],
         sha256 = "fdb7db64e31c8b277dff9850d2a2556d8b60bcb0ea6524e36e28ffd7c87f71d6",
         downloaded_file_path = "pytest_benchmark-4.0.0-py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_pytest_grpc_0.8.0_py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/f7/bd/42605fdba6a8350d0a765b53ba1f1b6d98afa84f5bc11c644cb1d73885a4/pytest_grpc-0.8.0-py3-none-any.whl",
-        ],
-        sha256 = "5b062cf498e59995e84b3051da76f7bcff8cfe307927869f7bdc27ab967eee35",
-        downloaded_file_path = "pytest_grpc-0.8.0-py3-none-any.whl",
     )
 
     maybe(

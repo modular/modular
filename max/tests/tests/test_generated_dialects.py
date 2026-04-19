@@ -81,7 +81,7 @@ def test_builtin_integerattr(mlir_context) -> None:  # noqa: ANN001
 def test_builtin_moduleop(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
     assert loc
-    op = builtin.ModuleOp(loc)
+    builtin.ModuleOp(loc)
 
 
 def test_mo_graph_op(mlir_context) -> None:  # noqa: ANN001

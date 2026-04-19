@@ -126,6 +126,10 @@ __extension SM100MLA:
         )
     )
     @__llvm_metadata(`nvvm.minctasm`=Int(1))
+    @__name(
+        t"sm100_mla_prefill_blockscale_{Self.qkv_dtype}_{Self.output_dtype}_{blockwise_scale}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
+        mangle=True,
+    )
     def mla_prefill_kernel_blockscale[
         blockwise_scale: Int = 0,
     ](

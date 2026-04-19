@@ -152,7 +152,7 @@ def _rms_norm_fused_residual_cpu_2d[
         var norm_factor = rsqrt(mean_val + epsilon.cast[intermediate_type]())
 
         # Second pass: apply normalization
-        def _normalize[sw: Int](col: Int) unified {mut}:
+        def _normalize[sw: Int](col: Int) unified {gamma, weight_offset, mut}:
             # Read the pre-computed sum values (input + residual) from first pass
             var sum_vals = residual_read_fn[sw](row, col).cast[
                 intermediate_type
@@ -280,6 +280,10 @@ def rms_norm_fused_residual_cpu[
 # ===----------------------------------------------------------------------=== #
 
 
+@__name(
+    t"rms_norm_fused_residual_gpu_block_{dtype}_{multiply_before_cast}",
+    mangle=True,
+)
 def rms_norm_fused_residual_gpu_block[
     dtype: DType,
     GammaLayout: TensorLayout,

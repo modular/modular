@@ -30,9 +30,7 @@ from max.graph import (
 )
 from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
 from max.nn.moe import MoE, MoEGate
-from max.nn.transformer.distributed_transformer import (
-    forward_sharded_layers,
-)
+from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 
 """
 Fixtures for EP tests, including dummy weights.
@@ -54,6 +52,7 @@ class CompiledEPModels:
     gate_model: Model
     ep_comm_init: EPCommInitializer
     devices: list[Accelerator]
+    swiglu_limit: float = 0.0
 
 
 @pytest.fixture
@@ -361,11 +360,11 @@ def moe_weights() -> dict[str, torch.Tensor]:
     return moe_weights
 
 
-@pytest.fixture(scope="module")
-def compiled_ep_models(
+def _build_compiled_ep_models(
     moe_weights: dict[str, torch.Tensor],
+    swiglu_limit: float = 0.0,
 ) -> CompiledEPModels | None:
-    """Compile MoE and MoEGate graphs once, shared across parametrized runs.
+    """Compile MoE and MoEGate graphs once.
 
     Returns None when hardware requirements are not met.
     """
@@ -405,6 +404,7 @@ def compiled_ep_models(
         ep_size=n_devices,
         dtype=dtype,
         apply_router_weight_first=False,
+        swiglu_limit=swiglu_limit,
         ep_batch_manager=ep_batch_manager,
     )
     moe.sharding_strategy = ShardingStrategy.expert_parallel(n_devices)
@@ -432,7 +432,7 @@ def compiled_ep_models(
     ) as graph:
         inputs_tensors = [x.tensor for x in graph.inputs[:n_devices]]
         ep_batch_manager.fetch_buffers(graph.inputs[n_devices:])
-        outputs = forward_sharded_layers(moe_shards, inputs_tensors)
+        outputs = forward_moe_sharded_layers(moe_shards, inputs_tensors)
         graph.output(*outputs)
 
     moe_model = session.load(graph, weights_registry=moe.state_dict())
@@ -473,4 +473,27 @@ def compiled_ep_models(
         gate_model=gate_model,
         ep_comm_init=ep_comm_init,
         devices=devices,
+        swiglu_limit=swiglu_limit,
     )
+
+
+@pytest.fixture(scope="module")
+def compiled_ep_models(
+    moe_weights: dict[str, torch.Tensor],
+) -> CompiledEPModels | None:
+    """Compile MoE and MoEGate graphs once, shared across parametrized runs.
+
+    Returns None when hardware requirements are not met.
+    """
+    return _build_compiled_ep_models(moe_weights)
+
+
+@pytest.fixture(scope="module")
+def compiled_ep_models_swiglu(
+    moe_weights: dict[str, torch.Tensor],
+) -> CompiledEPModels | None:
+    """Compile MoE and MoEGate graphs with swiglu_limit enabled.
+
+    Returns None when hardware requirements are not met.
+    """
+    return _build_compiled_ep_models(moe_weights, swiglu_limit=10.0)

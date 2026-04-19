@@ -31,7 +31,7 @@ from std.testing import assert_true
 def alloc_test_fn[cta_group: Int32]():
     var ptr_tmem_addr = UnsafePointer[
         UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ]()
+    ](unsafe_from_address=0)
     var num_cols: UInt32 = 32
     tcgen05_alloc[cta_group](ptr_tmem_addr, num_cols)
 
@@ -56,7 +56,7 @@ def test_tcgen05_alloc() raises:
 def alloc_dealloc_test_fn():
     var ptr_tmem_addr = UnsafePointer[
         UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ]()
+    ](unsafe_from_address=0)
     var tmem_addr: UInt32 = 0
     var num_cols: UInt32 = 32
     tcgen05_alloc[1](ptr_tmem_addr, num_cols)
@@ -78,7 +78,7 @@ def test_tcgen05_dealloc() raises:
 def ld_test_fn[repeat: Int]():
     var ptr_tmem_addr = UnsafePointer[
         UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ]()
+    ](unsafe_from_address=0)
     var num_cols: UInt32 = 32
     tcgen05_alloc[1](ptr_tmem_addr, num_cols)
     var tmem_addr = ptr_tmem_addr[0]
@@ -113,7 +113,7 @@ def test_tcgen05_ld() raises:
 def st_test_fn():
     var ptr_tmem_addr = UnsafePointer[
         UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ]()
+    ](unsafe_from_address=0)
     var num_cols: UInt32 = 32
     tcgen05_alloc[1](ptr_tmem_addr, num_cols)
     var tmem_addr = ptr_tmem_addr[0]
@@ -140,7 +140,7 @@ def test_tcgen05_st() raises:
 def cp_test_fn():
     var ptr_tmem_addr = UnsafePointer[
         UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-    ]()
+    ](unsafe_from_address=0)
     var num_cols: UInt32 = 32
     tcgen05_alloc[1](ptr_tmem_addr, num_cols)
     var tmem_addr = ptr_tmem_addr[0]

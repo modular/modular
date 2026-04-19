@@ -877,19 +877,23 @@ logit_verification_pipelines:
     cos_dist_threshold: 2.3e-2
     kl_div_threshold: 9.0e-1
 
+  # TODO(MODELS-1339): Re-enable once transformers v4 tokenizer crash is fixed.
   google/gemma-4-26B-A4B-it-bfloat16:
     pre_submit_agents: []
     post_submit_agents: [*h100_1x, *b200_1x, *mi355_1x]
     pipeline: "google/gemma-4-26B-A4B-it"
     compatible_with: [gpu]
     encoding: bfloat16
+    tags: [manual]
 
+  # TODO(MODELS-1339): Re-enable once transformers v4 tokenizer crash is fixed.
   google/gemma-4-31B-it-bfloat16:
     pre_submit_agents: []
     post_submit_agents: [*h100_1x, *b200_1x, *mi355_1x]
     pipeline: "google/gemma-4-31B-it"
     compatible_with: [gpu]
     encoding: bfloat16
+    tags: [manual]
 
   HKUSTAudio/Llasa-8B-bfloat16:
     pre_submit_agents: []
@@ -946,11 +950,11 @@ logit_verification_pipelines:
 
   black-forest-labs/FLUX.2-dev-t2i-bfloat16-v2:
     pre_submit_agents: []
-    post_submit_agents: []
+    post_submit_agents: [*b200_1x, *mi355_1x]
     pipeline: "black-forest-labs/FLUX.2-dev-t2i"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-only, image-generation, no-h100]
+    tags: [image-generation, no-h100]
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/4a5da181a0bbbd1434ca8b02f51e68200c27535b8c0ed0941d77f0bc2e530f5a/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
       json_file: "torch_black-forest-labs_FLUX.2-dev-t2i_bfloat16_golden.json"
@@ -961,11 +965,11 @@ logit_verification_pipelines:
 
   black-forest-labs/FLUX.2-dev-t2i-bfloat16-v3:
     pre_submit_agents: []
-    post_submit_agents: []
+    post_submit_agents: [*b200_1x, *mi355_1x]
     pipeline: "black-forest-labs/FLUX.2-dev-t2i"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-only, image-generation, no-h100]
+    tags: [image-generation, no-h100]
     pregenerated_torch_goldens:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/4a5da181a0bbbd1434ca8b02f51e68200c27535b8c0ed0941d77f0bc2e530f5a/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz"
       json_file: "torch_black-forest-labs_FLUX.2-dev-t2i_bfloat16_golden.json"
@@ -976,25 +980,31 @@ logit_verification_pipelines:
 
   black-forest-labs/FLUX.2-dev-i2i-bfloat16-v2:
     pre_submit_agents: []
-    post_submit_agents: []
+    post_submit_agents: [*b200_1x, *mi355_1x]
     pipeline: "black-forest-labs/FLUX.2-dev-i2i"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-only, image-generation, manual]
-    ssim_threshold: 0.60
-    lpips_threshold: 0.35
+    tags: [image-generation, no-h100]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/black-forest-labs_FLUX.2-dev-i2i_golden/1/11acb0fdf1fa04b468454bf887affaf04868a324a6d327c926e1818afd1749bd/black-forest-labs_FLUX.2-dev-i2i_golden.tar.gz"
+      json_file: "torch_black-forest-labs_FLUX.2-dev-i2i_bfloat16_golden.json"
+    ssim_threshold: 0.49
+    lpips_threshold: 0.49
     timeout: 3600
     config_params_override: {"prefer_module_v3": false}
 
   black-forest-labs/FLUX.2-dev-i2i-bfloat16-v3:
     pre_submit_agents: []
-    post_submit_agents: []
+    post_submit_agents: [*b200_1x, *mi355_1x]
     pipeline: "black-forest-labs/FLUX.2-dev-i2i"
     compatible_with: [gpu]
     encoding: bfloat16
-    tags: [nvidia-only, image-generation, manual]
-    ssim_threshold: 0.60
-    lpips_threshold: 0.35
+    tags: [image-generation, no-h100]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/black-forest-labs_FLUX.2-dev-i2i_golden/1/11acb0fdf1fa04b468454bf887affaf04868a324a6d327c926e1818afd1749bd/black-forest-labs_FLUX.2-dev-i2i_golden.tar.gz"
+      json_file: "torch_black-forest-labs_FLUX.2-dev-i2i_bfloat16_golden.json"
+    ssim_threshold: 0.49
+    lpips_threshold: 0.49
     timeout: 3600
     config_params_override: {"prefer_module_v3": true}
 

@@ -45,7 +45,7 @@ def test_tensor() -> None:
 
 @pytest.mark.parametrize("dtype", list(DType))
 def test_allocate(dtype: DType) -> None:
-    buffer = Buffer(shape=[2], dtype=dtype, device=CPU())
+    Buffer(shape=[2], dtype=dtype, device=CPU())
 
 
 def test_get_and_set() -> None:
@@ -662,7 +662,7 @@ def test_from_dlpack_noncontiguous() -> None:
         ValueError,
         match=r"from_dlpack only accepts contiguous arrays. First call np.ascontiguousarray",
     ):
-        tensor = Buffer.from_dlpack(array)
+        Buffer.from_dlpack(array)
 
 
 def test_from_dlpack_torch_noncontiguous() -> None:
@@ -674,7 +674,7 @@ def test_from_dlpack_torch_noncontiguous() -> None:
     with pytest.raises(
         ValueError, match="from_dlpack only accepts contiguous tensors"
     ):
-        max_tensor = Buffer.from_dlpack(torch_tensor)
+        Buffer.from_dlpack(torch_tensor)
 
 
 def test_item_success() -> None:

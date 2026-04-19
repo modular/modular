@@ -24,9 +24,7 @@ from typing import Any
 
 from max import driver, graph
 from max.driver import Accelerator, DLPackArray
-from max.experimental.distributed_functional.collectives import (
-    shard as functional_shard,
-)
+from max.experimental.distributed_functional import transfer_to
 from max.experimental.sharding import (
     DeviceMapping,
     DistributedType,
@@ -275,7 +273,7 @@ def _prepare_weight_for_parameter(
             )
         return weight_tensor
 
-    return functional_shard(weight_tensor, param._mapping)
+    return transfer_to(weight_tensor, param._mapping)
 
 
 def _process_provided_weights(
@@ -288,7 +286,7 @@ def _process_provided_weights(
 
     - **Non-distributed parameter**: Weight passes through as-is.
     - **Distributed parameter**: If weight is a single-device buffer, shards
-      it using ``shard()``. If weight is already a dtensor, extracts shards.
+      it using ``transfer_to()``. If weight is already a dtensor, extracts shards.
       Both cases produce ``name._shard.N`` entries.
 
     Args:

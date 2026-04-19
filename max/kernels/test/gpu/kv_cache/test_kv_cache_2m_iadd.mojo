@@ -53,14 +53,12 @@ def _create_kv_collection_from_host[
     max_full_context_length: Int,
 ) -> PagedKVCacheCollection[
     dtype,
-    KVCacheStaticParams(num_heads=UInt(num_heads), head_size=UInt(head_dim)),
+    KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
     page_size,
 ]:
     return PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_heads), head_size=UInt(head_dim)
-        ),
+        KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         page_size,
     ](
         kv_block_paged_host,
@@ -320,9 +318,7 @@ def test_kv_cache_2m_iadd_gpu[
 
     var kv_collection_device = PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_heads), head_size=UInt(head_dim)
-        ),
+        KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         page_size,
     ](
         kv_block_paged.device_tensor(),

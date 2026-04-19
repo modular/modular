@@ -46,7 +46,6 @@ from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume
-from std.collections.string.string_slice import get_static_string
 
 
 comptime _PDL_LEVEL = PDLLevel(1)
@@ -161,8 +160,11 @@ def _elementwise_impl_gpu_clc[
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
     )
-    @__name(name, mangle=True)
-    def _kernel[*, handle_uneven_simd: Bool, name: StaticString]():
+    @__name(
+        t"{trace_description}_r{rank}_w{simd_width}_b{block_size}.clc.{handle_uneven_simd}",
+        mangle=True,
+    )
+    def _kernel[*, handle_uneven_simd: Bool]():
         var result = stack_allocation[
             1,
             UInt128,
@@ -282,20 +284,14 @@ def _elementwise_impl_gpu_clc[
                 )
 
     if shape[rank - 1] % simd_width == 0:
-        comptime kernel = _kernel[
-            handle_uneven_simd=False,
-            name=get_static_string[trace_description, ".clc.even"](),
-        ]
+        comptime kernel = _kernel[handle_uneven_simd=False]
         ctx.enqueue_function[kernel, kernel](
             grid_dim=num_tiles,
             block_dim=block_size,
             attributes=pdl_launch_attributes(pdl_level),
         )
     else:
-        comptime kernel = _kernel[
-            handle_uneven_simd=True,
-            name=get_static_string[trace_description, ".clc.uneven"](),
-        ]
+        comptime kernel = _kernel[handle_uneven_simd=True]
         ctx.enqueue_function[kernel, kernel](
             grid_dim=num_tiles,
             block_dim=block_size,
@@ -376,8 +372,11 @@ def _elementwise_impl_gpu_grid_stride[
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
     )
-    @__name(name, mangle=True)
-    def _kernel[*, handle_uneven_simd: Bool, name: StaticString]():
+    @__name(
+        t"{trace_description}_r{rank}_w{simd_width}_b{block_size}.gs.{handle_uneven_simd}",
+        mangle=True,
+    )
+    def _kernel[*, handle_uneven_simd: Bool]():
         # process the packed region — each thread handles multiple packed
         # elements at stride block_size for coalesced access and ILP.
         var tid = thread_idx.x + block_size * block_idx.x
@@ -425,20 +424,14 @@ def _elementwise_impl_gpu_grid_stride[
                 )
 
     if shape[rank - 1] % simd_width == 0:
-        comptime kernel = _kernel[
-            handle_uneven_simd=False,
-            name=get_static_string[trace_description, ".gs.even"](),
-        ]
+        comptime kernel = _kernel[handle_uneven_simd=False]
         ctx.enqueue_function[kernel, kernel](
             grid_dim=num_blocks,
             block_dim=block_size,
             attributes=pdl_launch_attributes(pdl_level),
         )
     else:
-        comptime kernel = _kernel[
-            handle_uneven_simd=True,
-            name=get_static_string[trace_description, ".gs.uneven"](),
-        ]
+        comptime kernel = _kernel[handle_uneven_simd=True]
         ctx.enqueue_function[kernel, kernel](
             grid_dim=num_blocks,
             block_dim=block_size,
