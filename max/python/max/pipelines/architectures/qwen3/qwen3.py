@@ -38,6 +38,7 @@ from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.moe import MoE, MoEQuantized
+from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.transformer.distributed_transformer import (
@@ -221,12 +222,13 @@ class Qwen3TransformerBlock(Module):
             self.post_attention_layernorm_shards, hs
         )
 
-        # MLP/MoE on each shard
-        mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
-
-        # Allreduce MLP outputs (TP mode only)
-        if not self.use_dp and len(self.devices) > 1:
-            mlp_outs = self.allreduce(mlp_outs, signal_buffers)
+        # MLP/MoE
+        if self.use_dp:
+            mlp_outs = forward_moe_sharded_layers(self.mlp_shards, norm_outs)
+        else:
+            mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
+            if len(self.devices) > 1:
+                mlp_outs = self.allreduce(mlp_outs, signal_buffers)
 
         # Residual connection
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]

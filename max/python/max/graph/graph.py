@@ -336,6 +336,9 @@ def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
         )
 
 
+Module = mlir.Module
+
+
 class Graph:
     """Represents a single MAX graph.
 
@@ -859,6 +862,12 @@ class Graph:
             raise LookupError("No graph found") from exc
         assert current
         return current
+
+    @staticmethod
+    def empty_module() -> mlir.Module:
+        """Create a new module to hold one or more graphs."""
+        with _location():
+            return mlir.Module.create()
 
     @property
     def _body(self) -> mlir.Block:

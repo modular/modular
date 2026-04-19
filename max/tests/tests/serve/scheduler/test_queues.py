@@ -33,6 +33,7 @@ from max.serve.worker_interface.zmq_queue import (
     ZmqConfig,
     ZmqPullSocket,
     ZmqPushSocket,
+    _validate_zmq_address,
     generate_zmq_ipc_path,
 )
 from pytest_mock import MockerFixture
@@ -319,6 +320,44 @@ def test_zmq_push_pull_queue_endpoint_validation() -> None:
             endpoint="ipc://" + ("a" * (zmq.IPC_PATH_MAX_LEN + 1)),
             payload_type=int,
         )
+
+
+def test_zmq_tcp_endpoint_validation() -> None:
+    """Test TCP address validation including IPv4, IPv6, and edge cases."""
+    # Valid IPv4 / hostname / wildcard
+    _validate_zmq_address("tcp://127.0.0.1:5555")
+    _validate_zmq_address("tcp://localhost:5555")
+    _validate_zmq_address("tcp://*:5555")
+    _validate_zmq_address("tcp://0.0.0.0:5555")
+    _validate_zmq_address("tcp://hostname:1")
+    _validate_zmq_address("tcp://hostname:65535")
+
+    # Valid bracketed IPv6
+    _validate_zmq_address("tcp://[::1]:5555")
+    _validate_zmq_address("tcp://[::]:5555")
+    _validate_zmq_address("tcp://[2600:1f18:b39:ec10:1cfb::9]:5555")
+
+    # Missing port
+    with pytest.raises(ValueError, match="tcp://host:port"):
+        _validate_zmq_address("tcp://localhost")
+
+    # IPv6 without port
+    with pytest.raises(ValueError, match="tcp://host:port"):
+        _validate_zmq_address("tcp://[::1]")
+
+    # Non-numeric port
+    with pytest.raises(ValueError, match="ZMQ tcp port must be a number"):
+        _validate_zmq_address("tcp://localhost:abc")
+
+    # Port 0 (out of range)
+    with pytest.raises(
+        ValueError, match="ZMQ tcp port must be between 1 and 65535"
+    ):
+        _validate_zmq_address("tcp://localhost:0")
+
+    # Port > 65535
+    with pytest.raises(ValueError):
+        _validate_zmq_address("tcp://localhost:65536")
 
 
 def test_zmq_push_pull_queue_with_vision_context() -> None:

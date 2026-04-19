@@ -29,24 +29,19 @@ from typing import ClassVar
 
 import numpy as np
 import pytest
-from _test_helpers import from_np, shard, to_np
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.distributed_functional.collectives import all_reduce_sum
-from max.experimental.distributed_functional.collectives import (
-    shard as distribute,
-)
-from max.experimental.distributed_functional.creation import full
-from max.experimental.distributed_functional.elementwise import (
+from max.experimental.distributed_functional import (
     add,
+    full,
+    matmul,
+    mean,
     mul,
     relu,
     rsqrt,
     silu,
+    transfer_to,
 )
-from max.experimental.distributed_functional.matmul import matmul
-from max.experimental.distributed_functional.reduction import mean
 from max.experimental.nn.module import Module, module_dataclass
 from max.experimental.sharding import (
     DeviceMesh,
@@ -64,7 +59,6 @@ FFL = 16
 BATCH = 3
 SEED_WEIGHTS = 42
 SEED_INPUT = 123
-
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -115,7 +109,8 @@ class AutoTPMLP(Module[[Tensor], Tensor]):
         up = matmul(x, self.W_up)
         hidden = mul(gate, up)
         out = matmul(hidden, self.W_down)
-        return all_reduce_sum(out)
+        replicated = tuple(Replicated() for _ in range(out.mesh.ndim))
+        return transfer_to(out, PlacementMapping(out.mesh, replicated))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -153,14 +148,22 @@ class E2ETests:
                 (Sharded(0),) if mesh.ndim == 1 else (Replicated(), Sharded(0))
             )
         return AutoTPMLP(
-            W_gate=shard(from_np(W_gate_np), mesh, list(placements_col)),
-            W_up=shard(from_np(W_up_np), mesh, list(placements_col)),
-            W_down=shard(from_np(W_down_np), mesh, list(placements_row)),
+            W_gate=transfer_to(
+                Tensor(W_gate_np),
+                PlacementMapping(mesh, tuple(placements_col)),
+            ),
+            W_up=transfer_to(
+                Tensor(W_up_np), PlacementMapping(mesh, tuple(placements_col))
+            ),
+            W_down=transfer_to(
+                Tensor(W_down_np),
+                PlacementMapping(mesh, tuple(placements_row)),
+            ),
         )
 
     def _distribute_input(self, data: np.ndarray, mesh: DeviceMesh) -> Tensor:
         placements = (Replicated(),) * mesh.ndim
-        return distribute(from_np(data), PlacementMapping(mesh, placements))
+        return transfer_to(Tensor(data), PlacementMapping(mesh, placements))
 
     # ── TestTPMLP ────────────────────────────────────────────────────────
 
@@ -171,7 +174,7 @@ class E2ETests:
         x = self._distribute_input(make_input(), self.MESH_1D)
         result = model(x)
         assert result.placements == (Replicated(),)
-        result_np = to_np(result)
+        result_np = result.to_numpy()
         assert result_np.shape == (BATCH, HIDDEN)
         np.testing.assert_allclose(result_np, expected, rtol=5e-2)
 
@@ -181,7 +184,7 @@ class E2ETests:
         x = self._distribute_input(make_input(), self.MESH_2)
         result = model(x)
         assert result.placements == (Replicated(),)
-        result_np = to_np(result)
+        result_np = result.to_numpy()
         assert result_np.shape == (BATCH, HIDDEN)
         expected = reference_mlp(make_input(), W_gate, W_up, W_down)
         np.testing.assert_allclose(result_np, expected, rtol=5e-2)
@@ -192,10 +195,10 @@ class E2ETests:
         x = self._distribute_input(make_input(), self.MESH_2D)
         result = model(x)
         assert result.is_distributed
-        # all_reduce_sum defaults to axis 0 (dp), but Partial is on
-        # axis 1 (tp). dp axis stays Replicated, tp axis gets reduced.
+        # Partial is on axis 1 (tp) from row-parallel matmul.
+        # transfer_to resolves it; dp stays Replicated.
         assert isinstance(result.placements[0], Replicated)
-        result_np = to_np(result)
+        result_np = result.to_numpy()
         assert result_np.shape == (BATCH, HIDDEN)
         expected = reference_mlp(make_input(), W_gate, W_up, W_down)
         np.testing.assert_allclose(result_np, expected, rtol=5e-2)
@@ -204,19 +207,19 @@ class E2ETests:
 
     def test_distributed_linear_row_tp(self) -> None:
         mesh = self.MESH_2
-        x = distribute(
-            from_np(np.ones((3, 8), dtype=np.float32)),
+        x = transfer_to(
+            Tensor(np.ones((3, 8), dtype=np.float32)),
             PlacementMapping(mesh, (Sharded(1),)),
         )
-        W = distribute(
-            from_np(np.ones((8, 4), dtype=np.float32)),
+        W = transfer_to(
+            Tensor(np.ones((8, 4), dtype=np.float32)),
             PlacementMapping(mesh, (Sharded(0),)),
         )
         out = matmul(x, W)
         assert any(isinstance(p, Partial) for p in out.placements)
-        reduced = all_reduce_sum(out)
+        reduced = transfer_to(out, PlacementMapping(mesh, (Replicated(),)))
         assert reduced.placements == (Replicated(),)
-        result_np = to_np(reduced)
+        result_np = reduced.to_numpy()
         assert result_np.shape == (3, 4)
         np.testing.assert_allclose(result_np, np.full((3, 4), 8.0), rtol=1e-4)
 
@@ -237,13 +240,13 @@ class E2ETests:
         x_np = rng.standard_normal((4, 8)).astype(np.float32)
         w_np = np.ones(8, dtype=np.float32)
 
-        x = F.transfer_to(from_np(x_np), mesh.devices[0])
-        w = F.transfer_to(from_np(w_np), mesh.devices[0])
+        x = transfer_to(Tensor(x_np), mesh.devices[0])
+        w = transfer_to(Tensor(w_np), mesh.devices[0])
         result = self._decomposed_rms_norm(x, w, 1e-6, mesh)
 
         variance = np.mean(x_np**2, axis=-1, keepdims=True)
         expected = x_np / np.sqrt(variance + 1e-6) * w_np
-        np.testing.assert_allclose(to_np(result), expected, rtol=1e-4)
+        np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-4)
 
     def test_rms_batch_sharded(self) -> None:
         mesh = self.MESH_2
@@ -251,12 +254,12 @@ class E2ETests:
         x_np = rng.standard_normal((4, 8)).astype(np.float32)
         w_np = np.ones(8, dtype=np.float32)
 
-        x = shard(from_np(x_np), mesh, [Sharded(0)])
-        w = shard(from_np(w_np), mesh, [Replicated()])
+        x = transfer_to(Tensor(x_np), PlacementMapping(mesh, (Sharded(0),)))
+        w = transfer_to(Tensor(w_np), PlacementMapping(mesh, (Replicated(),)))
 
         result = self._decomposed_rms_norm(x, w, 1e-6, mesh)
         assert result.placements == (Sharded(0),)
-        result_np = to_np(result)
+        result_np = result.to_numpy()
         assert result_np.shape == (4, 8)
         variance = np.mean(x_np**2, axis=-1, keepdims=True)
         expected = x_np / np.sqrt(variance + 1e-6) * w_np
@@ -264,10 +267,14 @@ class E2ETests:
 
     def test_rms_hidden_dim_raises(self) -> None:
         mesh = self.MESH_2
-        x = shard(
-            from_np(np.ones((3, 8), dtype=np.float32)), mesh, [Sharded(1)]
+        x = transfer_to(
+            Tensor(np.ones((3, 8), dtype=np.float32)),
+            PlacementMapping(mesh, (Sharded(1),)),
         )
-        w = shard(from_np(np.ones(4, dtype=np.float32)), mesh, [Replicated()])
+        w = transfer_to(
+            Tensor(np.ones(4, dtype=np.float32)),
+            PlacementMapping(mesh, (Replicated(),)),
+        )
         with pytest.raises(ValueError, match="sharded axis"):
             self._decomposed_rms_norm(x, w, 1e-6, mesh)
 
@@ -277,12 +284,12 @@ class E2ETests:
         x_np = rng.standard_normal((4, 8)).astype(np.float32)
         w_np = np.ones(8, dtype=np.float32)
 
-        x = shard(from_np(x_np), mesh, [Sharded(0)])
-        w = shard(from_np(w_np), mesh, [Replicated()])
+        x = transfer_to(Tensor(x_np), PlacementMapping(mesh, (Sharded(0),)))
+        w = transfer_to(Tensor(w_np), PlacementMapping(mesh, (Replicated(),)))
 
         decomposed = self._decomposed_rms_norm(x, w, 1e-6, mesh)
         assert decomposed.placements == (Sharded(0),)
-        result_np = to_np(decomposed)
+        result_np = decomposed.to_numpy()
         assert result_np.shape == (4, 8)
         variance = np.mean(x_np**2, axis=-1, keepdims=True)
         expected = x_np / np.sqrt(variance + 1e-6) * w_np
@@ -300,30 +307,30 @@ class E2ETests:
         W2_np = rng.standard_normal((D, D)).astype(np.float32) * 0.1
         x_np = rng.standard_normal((3, D)).astype(np.float32)
 
-        w_norm = distribute(
-            from_np(w_norm_np),
+        w_norm = transfer_to(
+            Tensor(w_norm_np),
             PlacementMapping(mesh, (Replicated(),)),
         )
-        W1 = distribute(
-            from_np(W1_np),
+        W1 = transfer_to(
+            Tensor(W1_np),
             PlacementMapping(mesh, (Sharded(1),)),
         )
-        W2 = distribute(
-            from_np(W2_np),
+        W2 = transfer_to(
+            Tensor(W2_np),
             PlacementMapping(mesh, (Sharded(0),)),
         )
-        x = distribute(
-            from_np(x_np),
+        x = transfer_to(
+            Tensor(x_np),
             PlacementMapping(mesh, (Replicated(),)),
         )
 
         normed = self._decomposed_rms_norm(x, w_norm, 1e-6, mesh)
         hidden = relu(matmul(normed, W1))
         out = matmul(hidden, W2)
-        reduced = all_reduce_sum(out)
+        reduced = transfer_to(out, PlacementMapping(mesh, (Replicated(),)))
         result = add(x, reduced)
         assert result.placements == (Replicated(),)
-        result_np = to_np(result)
+        result_np = result.to_numpy()
         assert result_np.shape == (3, D)
         # Numerical: x + relu(rms_norm(x) @ W1) @ W2
         var = np.mean(x_np**2, axis=-1, keepdims=True)
@@ -339,19 +346,19 @@ class E2ETests:
         W1_np = rng.standard_normal((D, D)).astype(np.float32) * 0.1
         x_np = rng.standard_normal((3, D)).astype(np.float32)
 
-        W1 = distribute(
-            from_np(W1_np),
+        W1 = transfer_to(
+            Tensor(W1_np),
             PlacementMapping(mesh, (Replicated(), Sharded(1))),
         )
-        x = distribute(
-            from_np(x_np),
+        x = transfer_to(
+            Tensor(x_np),
             PlacementMapping(mesh, (Replicated(), Replicated())),
         )
         out = matmul(x, W1)
         assert out.placements == (Replicated(), Sharded(1)), (
             f"Expected (Replicated(), Sharded(1)), got {out.placements}"
         )
-        result_np = to_np(out)
+        result_np = out.to_numpy()
         assert result_np.shape == (3, D)
         np.testing.assert_allclose(
             result_np, x_np @ W1_np, rtol=5e-2, atol=1e-4
@@ -365,7 +372,7 @@ class E2ETests:
         t = full([8, 4], 2.0, dtype=F32, device=mapping)
         out = relu(t)
         assert out.placements == (Sharded(0),)
-        result_np = to_np(out)
+        result_np = out.to_numpy()
         assert result_np.shape == (8, 4)
         np.testing.assert_allclose(result_np, np.full((8, 4), 2.0), rtol=1e-5)
 
@@ -376,7 +383,7 @@ class E2ETests:
         b = full([4, 4], 3.0, dtype=F32, device=mapping)
         out = add(mul(a, b), a)
         assert out.placements == (Sharded(0), Replicated())
-        result_np = to_np(out)
+        result_np = out.to_numpy()
         assert result_np.shape == (4, 4)
         np.testing.assert_allclose(result_np, np.full((4, 4), 8.0), rtol=1e-5)
 
@@ -387,7 +394,7 @@ class E2ETests:
         x = self._distribute_input(make_input(), mesh)
         result = model(x)
         assert result.placements == (Replicated(),)
-        result_np = to_np(result)
+        result_np = result.to_numpy()
         assert result_np.shape == (BATCH, HIDDEN)
         expected = reference_mlp(make_input(), W_gate, W_up, W_down)
         np.testing.assert_allclose(result_np, expected, rtol=5e-2)
@@ -413,9 +420,15 @@ class IRTests:
         mesh = self.MESH_2
 
         model = AutoTPMLP(
-            W_gate=shard(from_np(W_gate), mesh, [Sharded(1)]),
-            W_up=shard(from_np(W_up), mesh, [Sharded(1)]),
-            W_down=shard(from_np(W_down), mesh, [Sharded(0)]),
+            W_gate=transfer_to(
+                Tensor(W_gate), PlacementMapping(mesh, (Sharded(1),))
+            ),
+            W_up=transfer_to(
+                Tensor(W_up), PlacementMapping(mesh, (Sharded(1),))
+            ),
+            W_down=transfer_to(
+                Tensor(W_down), PlacementMapping(mesh, (Sharded(0),))
+            ),
         )
 
         input_type = DistributedTensorType(
@@ -432,9 +445,36 @@ class IRTests:
         mesh = self.MESH_2D
 
         model = AutoTPMLP(
-            W_gate=shard(from_np(W_gate), mesh, [Replicated(), Sharded(1)]),
-            W_up=shard(from_np(W_up), mesh, [Replicated(), Sharded(1)]),
-            W_down=shard(from_np(W_down), mesh, [Replicated(), Sharded(0)]),
+            W_gate=transfer_to(
+                Tensor(W_gate),
+                PlacementMapping(
+                    mesh,
+                    (
+                        Replicated(),
+                        Sharded(1),
+                    ),
+                ),
+            ),
+            W_up=transfer_to(
+                Tensor(W_up),
+                PlacementMapping(
+                    mesh,
+                    (
+                        Replicated(),
+                        Sharded(1),
+                    ),
+                ),
+            ),
+            W_down=transfer_to(
+                Tensor(W_down),
+                PlacementMapping(
+                    mesh,
+                    (
+                        Replicated(),
+                        Sharded(0),
+                    ),
+                ),
+            ),
         )
 
         input_type = DistributedTensorType(

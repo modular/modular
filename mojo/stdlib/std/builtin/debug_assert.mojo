@@ -101,7 +101,7 @@ def debug_assert[
     message. No string allocation occurs unless the assertion is triggered.
 
     ```mojo
-    x = 0
+    var x = 0
     debug_assert(x > 0, "expected x to be more than 0 but got: ", x)
     ```
 
@@ -110,6 +110,7 @@ def debug_assert[
     `safe` to create an assertion that's on by default:
 
     ```mojo
+    var x = 0
     debug_assert[assert_mode="safe"](
         x > 0, "expected x to be more than 0 but got: ", x
     )
@@ -134,8 +135,8 @@ def debug_assert[
     condition expressions. For example:
 
     ```mojo
-    person = "name: john, age: 50"
-    name = "john"
+    var person = "name: john, age: 50"
+    var name = "john"
     debug_assert(String("name: ", name) in person, "unexpected name")
     ```
 
@@ -145,17 +146,28 @@ def debug_assert[
     on:
 
     ```mojo
-    def check_name() capturing -> Bool:
-        return String("name: ", name) in person
+    def main():
+        var person = "name: john, age: 50"
+        var name = "john"
 
-    debug_assert[check_name]("unexpected name")
+        def check_name() capturing -> Bool:
+            return String("name: ", name) in person
+
+        debug_assert[check_name]("unexpected name")
     ```
 
     If you need to allocate, and so don't want the assert to ever run on GPU,
     you can set it to CPU only:
 
     ```mojo
-    debug_assert[check_name, cpu_only=True]("unexpected name")
+    def main():
+        var person = "name: john, age: 50"
+        var name = "john"
+
+        def check_name() capturing -> Bool:
+            return String("name: ", name) in person
+
+        debug_assert[check_name, cpu_only=True]("unexpected name")
     ```
 
     For compile-time assertions, see
@@ -210,7 +222,7 @@ def debug_assert[
     message. No string allocation occurs unless the assertion is triggered.
 
     ```mojo
-    x = 0
+    var x = 0
     debug_assert(x > 0, "expected x to be more than 0 but got: ", x)
     ```
 
@@ -219,6 +231,7 @@ def debug_assert[
     `safe` to create an assertion that's on by default:
 
     ```mojo
+    var x = 0
     debug_assert[assert_mode="safe"](
         x > 0, "expected x to be more than 0 but got: ", x
     )
@@ -243,8 +256,8 @@ def debug_assert[
     condition expressions. For example:
 
     ```mojo
-    person = "name: john, age: 50"
-    name = "john"
+    var person = "name: john, age: 50"
+    var name = "john"
     debug_assert(String("name: ", name) in person, "unexpected name")
     ```
 
@@ -254,17 +267,28 @@ def debug_assert[
     on:
 
     ```mojo
-    def check_name() capturing -> Bool:
-        return String("name: ", name) in person
+    def main():
+        var person = "name: john, age: 50"
+        var name = "john"
 
-    debug_assert[check_name]("unexpected name")
+        def check_name() capturing -> Bool:
+            return String("name: ", name) in person
+
+        debug_assert[check_name]("unexpected name")
     ```
 
     If you need to allocate, and so don't want the assert to ever run on GPU,
     you can set it to CPU only:
 
     ```mojo
-    debug_assert[check_name, cpu_only=True]("unexpected name")
+    def main():
+        var person = "name: john, age: 50"
+        var name = "john"
+
+        def check_name() capturing -> Bool:
+            return String("name: ", name) in person
+
+        debug_assert[check_name, cpu_only=True]("unexpected name")
     ```
 
     For compile-time assertions, see
@@ -325,7 +349,7 @@ def debug_assert[
     message. No string allocation occurs unless the assertion is triggered.
 
     ```mojo
-    x = 0
+    var x = 0
     debug_assert(x > 0, "expected x to be more than 0 but got: ", x)
     ```
 
@@ -334,6 +358,7 @@ def debug_assert[
     `safe` to create an assertion that's on by default:
 
     ```mojo
+    var x = 0
     debug_assert[assert_mode="safe"](
         x > 0, "expected x to be more than 0 but got: ", x
     )
@@ -358,8 +383,8 @@ def debug_assert[
     condition expressions. For example:
 
     ```mojo
-    person = "name: john, age: 50"
-    name = "john"
+    var person = "name: john, age: 50"
+    var name = "john"
     debug_assert(String("name: ", name) in person, "unexpected name")
     ```
 
@@ -369,17 +394,28 @@ def debug_assert[
     on:
 
     ```mojo
-    def check_name() capturing -> Bool:
-        return String("name: ", name) in person
+    def main():
+        var person = "name: john, age: 50"
+        var name = "john"
 
-    debug_assert[check_name]("unexpected name")
+        def check_name() capturing -> Bool:
+            return String("name: ", name) in person
+
+        debug_assert[check_name]("unexpected name")
     ```
 
     If you need to allocate, and so don't want the assert to ever run on GPU,
     you can set it to CPU only:
 
     ```mojo
-    debug_assert[check_name, cpu_only=True]("unexpected name")
+    def main():
+        var person = "name: john, age: 50"
+        var name = "john"
+
+        def check_name() capturing -> Bool:
+            return String("name: ", name) in person
+
+        debug_assert[check_name, cpu_only=True]("unexpected name")
     ```
 
     For compile-time assertions, see

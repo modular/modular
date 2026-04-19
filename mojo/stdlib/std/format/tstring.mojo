@@ -74,7 +74,7 @@ struct TString[
 
         # Alternate writing NUL terminated string-literal part, followed
         # by the interpolated replacement field.
-        comptime for i in range(TypeList[*Self.Ts].size):
+        comptime for i in range(Self.Ts.size):
             var length = write_string()
             offset += length + 1
             self._values[i].write_to(writer)
@@ -119,7 +119,7 @@ struct TString[
 
         fmt.FormatStruct(writer, "TString").params(
             fmt.Repr(self.format_string),
-            fmt.TypeNames[*Self.Ts](),
+            fmt.TypeNames[*Self.Ts.upcast[AnyType]()](),
         ).fields[FieldsFn=fields]()
 
 

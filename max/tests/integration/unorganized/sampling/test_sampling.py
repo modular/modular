@@ -541,7 +541,7 @@ def test_sampling_with_seed(session: InferenceSession) -> None:
         np.array([sampling_params.seed] * batch_size, dtype=np.uint64)
     ).to(device)
 
-    sampler = session.load(graph)
+    session.load(graph)
 
     # Create a random logits vector [1, vocab_size]
     np.random.seed(123)  # Fix seed for generating the same logits across runs

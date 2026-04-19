@@ -135,6 +135,7 @@ def flare_mla_decoding[
     ragged: Bool = False,
     decoding_warp_split_k: Bool = False,
     per_token_scale_rope_aware: Bool = False,
+    sparse: Bool = False,
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
@@ -158,9 +159,30 @@ def flare_mla_decoding[
     # Per-token Q scale pointer: float32 array with one scale per Q token.
     # sigma_Q[q_token_idx] is folded into scale_log2e inside the Softmax function.
     # Default is null (sigma_Q = 1.0, no effect).
-    q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
+    q_scale_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
+    # Sparse indices: when non-null, the kernel uses gather4 TMA with
+    # pre-computed physical row indices instead of page-table lookups.
+    # d_indices[batch * indices_stride + token] = physical KV row index.
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    indices_stride: Int = 0,
+    # Per-batch topk lengths: when non-null, topk_lengths[batch_idx] gives
+    # the actual number of valid sparse indices for that batch. indices_stride
+    # is the allocation stride (max topk across all batches).
+    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
+    # Extra KV: separate always-attend cache. Tokens from extra_k are
+    # appended after the topk tokens in a unified attention loop.
+    extra_k: OptionalReg[cache_t] = None,
+    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_indices_stride: Int = 0,
+    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_scales_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
 ) raises:
     """MLA decoding kernel that would only be called in the optimized compute
     graph.
@@ -222,7 +244,7 @@ def flare_mla_decoding[
         ]._get_detail_str[description_fn](),
         task_id=Int(ctx.id()),
     ):
-        comptime kv_num_heads = Int(cache_t.kv_params.num_heads)
+        comptime kv_num_heads = cache_t.kv_params.num_heads
 
         var max_prompt_len: Int
         var num_keys = Int(k.max_context_length())
@@ -238,12 +260,18 @@ def flare_mla_decoding[
         # but the logical depth is 576. Override config to use 576.
         comptime if per_token_scale_rope_aware:
             comptime rope_aware_config = MHAConfig[dtype](config.num_heads, 576)
+            # Build extra_k_operand when extra_k is provided.
+            var extra_k_operand: OptionalReg[type_of(k_operand)] = None
+            if extra_k is not None:
+                extra_k_operand = KVCacheMHAOperand(extra_k.value())
+
             flare_mla_decoding_dispatch[
                 kv_num_heads=kv_num_heads,
                 config=rope_aware_config,
                 ragged=ragged,
                 decoding_warp_split_k=decoding_warp_split_k,
                 per_token_scale_rope_aware=True,
+                sparse=sparse,
             ](
                 output,
                 q,
@@ -258,14 +286,29 @@ def flare_mla_decoding[
                 kv_input_row_offsets,
                 num_partitions,
                 q_scale_ptr,
+                d_indices,
+                indices_stride,
+                topk_lengths,
+                attn_sink_ptr,
+                extra_k=extra_k_operand,
+                extra_d_indices=extra_d_indices,
+                extra_indices_stride=extra_indices_stride,
+                extra_topk_lengths=extra_topk_lengths,
+                extra_scales_ptr=extra_scales_ptr,
             )
         else:
+            # Build extra_k_operand when extra_k is provided.
+            var extra_k_operand: OptionalReg[type_of(k_operand)] = None
+            if extra_k is not None:
+                extra_k_operand = KVCacheMHAOperand(extra_k.value())
+
             flare_mla_decoding_dispatch[
                 kv_num_heads=kv_num_heads,
                 config=config,
                 ragged=ragged,
                 decoding_warp_split_k=decoding_warp_split_k,
                 per_token_scale_rope_aware=False,
+                sparse=sparse,
             ](
                 output,
                 q,
@@ -280,6 +323,15 @@ def flare_mla_decoding[
                 kv_input_row_offsets,
                 num_partitions,
                 q_scale_ptr,
+                d_indices,
+                indices_stride,
+                topk_lengths,
+                attn_sink_ptr,
+                extra_k=extra_k_operand,
+                extra_d_indices=extra_d_indices,
+                extra_indices_stride=extra_indices_stride,
+                extra_topk_lengths=extra_topk_lengths,
+                extra_scales_ptr=extra_scales_ptr,
             )
 
 
@@ -320,8 +372,8 @@ def flare_mla_decoding[
         )
     )
 
-    var valid_length = TileTensor(
-        UnsafePointer[UInt32, MutExternalOrigin](),
+    var valid_length = TileTensor[DType.uint32, _, MutExternalOrigin](
+        None,
         row_major(Coord(Idx(0))),
     )
 
@@ -367,6 +419,7 @@ def flare_mla_decoding_dispatch[
     _use_valid_length: Bool = True,
     decoding_warp_split_k: Bool = False,
     per_token_scale_rope_aware: Bool = False,
+    sparse: Bool = False,
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     q: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
@@ -388,9 +441,23 @@ def flare_mla_decoding_dispatch[
         ]
     ] = None,
     num_partitions: Optional[Int] = None,
-    q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin] = {
-        _unsafe_null = ()
-    },
+    q_scale_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    indices_stride: Int = 0,
+    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
+    # Extra KV: separate always-attend cache operand.
+    extra_k: OptionalReg[k_t] = None,
+    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_indices_stride: Int = 0,
+    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_scales_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
 ) raises:
     comptime num_heads = config.num_heads
     comptime depth = config.depth
@@ -451,6 +518,7 @@ def flare_mla_decoding_dispatch[
                 _is_cache_length_accurate=_is_cache_length_accurate,
                 decoding_warp_split_k=decoding_warp_split_k,
                 per_token_scale_rope_aware=per_token_scale_rope_aware,
+                sparse=sparse,
             ](
                 q,
                 k,
@@ -464,6 +532,15 @@ def flare_mla_decoding_dispatch[
                 max_cache_valid_length,
                 ctx,
                 q_scale_ptr,
+                d_indices,
+                indices_stride,
+                topk_lengths,
+                attn_sink_ptr,
+                extra_k=extra_k,
+                extra_d_indices=extra_d_indices,
+                extra_indices_stride=extra_indices_stride,
+                extra_topk_lengths=extra_topk_lengths,
+                extra_scales_ptr=extra_scales_ptr,
             )
         else:
             # Legacy path: compute dispatch params and GPU buffer from inputs.
@@ -495,6 +572,7 @@ def flare_mla_decoding_dispatch[
                 _is_cache_length_accurate=_is_cache_length_accurate,
                 decoding_warp_split_k=decoding_warp_split_k,
                 per_token_scale_rope_aware=per_token_scale_rope_aware,
+                sparse=sparse,
             ](
                 q,
                 k,
@@ -513,6 +591,15 @@ def flare_mla_decoding_dispatch[
                 max_cache_valid_length,
                 ctx,
                 q_scale_ptr,
+                d_indices,
+                indices_stride,
+                topk_lengths,
+                attn_sink_ptr,
+                extra_k=extra_k,
+                extra_d_indices=extra_d_indices,
+                extra_indices_stride=extra_indices_stride,
+                extra_topk_lengths=extra_topk_lengths,
+                extra_scales_ptr=extra_scales_ptr,
             )
             _ = local_args^
 
@@ -583,10 +670,6 @@ def flare_mla_decoding_dispatch[
             decoding_warp_split_k=decoding_warp_split_k,
         ]
 
-        comptime nullptr = UnsafePointer[Scalar[accum_type], MutExternalOrigin](
-            _unsafe_null=()
-        )
-
         var num_partitions_value: Int = 1
         var q_device = DeviceBuffer[q.dtype](
             ctx, q.ptr, q.num_elements(), owning=False
@@ -594,9 +677,7 @@ def flare_mla_decoding_dispatch[
         var output_device = DeviceBuffer[output.dtype](
             ctx, output.ptr, output.num_elements(), owning=False
         )
-        var nullptr_device = DeviceBuffer[accum_type](
-            ctx, nullptr, 0, owning=False
-        )
+        var nullptr_device = DeviceBuffer[accum_type].empty(ctx)
 
         ctx.enqueue_function[kernel, kernel](
             q_device,
@@ -624,6 +705,10 @@ def flare_mla_decoding_dispatch[
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(
+    t"mla_decoding_{q_type}_{output_type}_{BM}x{BN}x{BK}_{ragged}_nqh{num_heads}_nkvh{num_heads // group}",
+    mangle=True,
 )
 def mla_decoding[
     q_type: DType,
@@ -678,13 +763,13 @@ def mla_decoding[
     )
     var exp_sum_offset = qk_max_offset
 
-    # split-k intermediate buffers
-    var qk_max_batch_ptr = type_of(qk_max_ptr)(_unsafe_null=())
-    if qk_max_ptr._is_not_null():
+    # split-k intermediate buffers — only used when num_partitions > 1
+    var qk_max_batch_ptr = qk_max_ptr
+    if num_partitions > 1:
         qk_max_batch_ptr = qk_max_ptr + qk_max_offset
 
-    var exp_sum_batch_ptr = type_of(exp_sum_ptr)(_unsafe_null=())
-    if exp_sum_ptr._is_not_null():
+    var exp_sum_batch_ptr = exp_sum_ptr
+    if num_partitions > 1:
         exp_sum_batch_ptr = exp_sum_ptr + exp_sum_offset
 
     var seq_len: Int
@@ -1502,12 +1587,11 @@ def flare_mla_prefill[
         )
         var k_rope_operand = KVCacheMHAOperand(k_rope)
 
-        comptime kv_num_heads = Int(cache_t.kv_params.num_heads)
-        comptime cache_depth = Int(cache_t.kv_params.head_size)
+        comptime kv_num_heads = cache_t.kv_params.num_heads
+        comptime cache_depth = cache_t.kv_params.head_size
         comptime q_depth = type_of(q).static_shape[rank - 1]
 
-        # BN = 64 for nvidia, 128 in the only supported BN for amd
-        comptime num_keys_per_block = 64 if has_nvidia_gpu_accelerator() else 128
+        comptime num_keys_per_block = 64
 
         comptime mha_config = MHAConfig[dtype](
             type_of(q).static_shape[rank - 2],  # num_heads
@@ -1660,8 +1744,7 @@ def flare_mla_prefill[
         comptime kv_num_heads = type_of(k_rope).static_shape[2]
         comptime cache_depth = type_of(k_rope).static_shape[3]
         comptime q_depth = type_of(q).static_shape[q.rank - 1]
-        # BN = 64 for nvidia, 128 in the only supported BN for amd
-        comptime num_keys_per_block = 64 if has_nvidia_gpu_accelerator() else 128
+        comptime num_keys_per_block = 64
         comptime mha_config = MHAConfig[dtype](
             type_of(q).static_shape[rank - 2],
             type_of(k).static_shape[rank - 1],
@@ -1816,8 +1899,7 @@ def flare_mla_prefill[
         comptime kv_num_heads = type_of(k_rope).static_shape[2]
         comptime cache_depth = type_of(k_rope).static_shape[3]
         comptime q_depth = type_of(q).static_shape[q.rank - 1]
-        # BN = 64 for nvidia, 128 in the only supported BN for amd
-        comptime num_keys_per_block = 64 if has_nvidia_gpu_accelerator() else 128
+        comptime num_keys_per_block = 64
         comptime mha_config = MHAConfig[dtype](
             type_of(q).static_shape[rank - 2],
             type_of(k).static_shape[rank - 1],
@@ -1981,8 +2063,7 @@ def flare_mla_prefill[
         comptime q_depth = type_of(q_nope).static_shape[
             q_nope.rank - 1
         ] + type_of(q_rope).static_shape[q_rope.rank - 1]
-        # BN = 64 for nvidia, 128 in the only supported BN for amd
-        comptime num_keys_per_block = 64 if has_nvidia_gpu_accelerator() else 128
+        comptime num_keys_per_block = 64
         comptime mha_config = MHAConfig[dtype](
             type_of(q_nope).static_shape[rank - 2],
             type_of(k).static_shape[rank - 1],
@@ -2106,8 +2187,11 @@ def flare_mla_prefill_dispatch[
 
     else:
         comptime assert (
-            k_rope_t.dtype == DType.bfloat16
-        ), "Only support bfloat16 for non-B200 devices"
+            k_rope_t.dtype == DType.bfloat16 or has_amd_gpu_accelerator()
+        ), (
+            "Only support bfloat16 for non-SM100 Nvidia GPUs; AMD supports"
+            " bfloat16 and float8_e4m3fn"
+        )
 
         var q_device = DeviceBuffer[q.dtype](
             ctx, q.ptr, q.num_elements(), owning=False
@@ -2160,10 +2244,15 @@ def flare_mla_prefill_dispatch[
         )
 
 
+@__llvm_metadata(`rocdl.waves_per_eu`=Int(2))
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(config.num_threads())
     )
+)
+@__name(
+    t"mla_prefill_{q_type}_{output_type}_{q_depth}_{cache_depth}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
+    mangle=True,
 )
 def mla_prefill[
     q_type: DType,
@@ -2279,7 +2368,7 @@ def mla_prefill[
             Int(start_pos),
             Int(cache_start_pos),
         )
-        attention.mla_prefill(
+        attention.mla_prefill_gfx950(
             k_rope,
         )
     else:
@@ -2735,7 +2824,7 @@ def mla_prefill_single_batch[
             swizzle_a=True,
             prefetch_init=False,
             static_num_iters=q_depth // BK,
-            k_group_size=UInt(config.k_group_size),
+            k_group_size=config.k_group_size,
         ](
             p_reg_tile,
             q_smem_iter,
@@ -2922,7 +3011,7 @@ def mla_prefill_single_batch[
                 swizzle_a=True,
                 prefetch_init=False,
                 static_num_iters=ufloordiv(BN, BK),
-                k_group_size=UInt(config.k_group_size),
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_smem_iter,
@@ -2954,7 +3043,7 @@ def mla_prefill_single_batch[
                 swizzle_a=False,
                 prefetch_init=False,
                 static_num_iters=ufloordiv(BN, BK),
-                k_group_size=UInt(config.k_group_size),
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_reg_iter,
@@ -3127,6 +3216,7 @@ def mla_prefill_plan[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
+@__name(t"mla_prefill_plan", mangle=True)
 def mla_prefill_plan_kernel[
     BufferRowOffsetsLayoutType: TensorLayout,
     CacheOffsetsLayoutType: TensorLayout,

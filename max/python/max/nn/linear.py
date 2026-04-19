@@ -31,11 +31,7 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.nn.quant_config import (
-    QuantConfig,
-    ScaleGranularity,
-    fp4_packed_k,
-)
+from max.nn.quant_config import QuantConfig, ScaleGranularity, fp4_packed_k
 from max.nn.quant_ops import quantized_matmul
 from max.support.math import ceildiv
 
@@ -217,13 +213,16 @@ class Linear(Module, Shardable):
             weight_scale_shape = ()
         elif weight_scale.is_block:
             assert quant_config.weight_scale.block_size is not None
+            k_dim = int(self.weight.shape[1])
+            if quant_config.is_fp4:
+                k_dim *= 2  # FP4 weights are packed 2x as uint8
             weight_scale_shape = (
                 ceildiv(
                     int(self.weight.shape[0]),
                     quant_config.weight_scale.block_size[0],
                 ),
                 ceildiv(
-                    int(self.weight.shape[1]),
+                    k_dim,
                     quant_config.weight_scale.block_size[1],
                 ),
             )
@@ -792,6 +791,7 @@ class MLP(Module, Shardable):
         has_bias: bool = False,
         activation_function: str = "silu",
         quant_config: QuantConfig | None = None,
+        swiglu_limit: float = 0.0,
         is_sharding: bool = False,
     ) -> None:
         """Initializes the MLP layer.
@@ -854,6 +854,7 @@ class MLP(Module, Shardable):
 
         self.quantization_encoding = quantization_encoding
         self.quant_config = quant_config
+        self.swiglu_limit = swiglu_limit
         self._activation_function_name = activation_function
         self.activation_function = activation_function_from_name(
             activation_function
@@ -953,10 +954,8 @@ class MLP(Module, Shardable):
             The transformed tensor after applying the MLP layers.
         """
         if not self._can_used_fused_mlp():
-            return self.down_proj(
-                self.activation_function(self.gate_proj(TensorValue(x)))
-                * self.up_proj(TensorValue(x))
-            )
+            gate_out = self.activation_function(self.gate_proj(TensorValue(x)))
+            up_out = self.up_proj(TensorValue(x))
         else:
             # Optimization to compute a single matmul by merging the
             # gate and up projection weights.
@@ -980,8 +979,19 @@ class MLP(Module, Shardable):
                 output, [feed_forward_length, feed_forward_length], axis=1
             )
 
-            hidden = self.activation_function(gate_out) * up_out
-            return self.down_proj(hidden)
+            gate_out = self.activation_function(gate_out)
+
+        if self.swiglu_limit > 0:
+            lim = ops.constant(
+                self.swiglu_limit, gate_out.dtype, device=gate_out.device
+            )
+            neg_lim = ops.constant(
+                -self.swiglu_limit, up_out.dtype, device=up_out.device
+            )
+            gate_out = ops.min(gate_out, lim)
+            up_out = ops.min(ops.max(up_out, neg_lim), lim)
+
+        return self.down_proj(gate_out * up_out)
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
@@ -1050,6 +1060,7 @@ class MLP(Module, Shardable):
                 has_bias=self.gate_proj.bias is not None,
                 activation_function=self._activation_function_name,
                 quant_config=self.quant_config,
+                swiglu_limit=self.swiglu_limit,
                 is_sharding=True,
             )
 

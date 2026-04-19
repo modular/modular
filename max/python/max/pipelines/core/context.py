@@ -140,11 +140,6 @@ class TextContext:
             self._spec_decoding_state = SpecDecodingState()
         return self._spec_decoding_state
 
-    @property
-    def num_draft_tokens(self) -> int:
-        """Returns the total sequence length including speculative tokens."""
-        return len(self.spec_decoding_state.saved_draft_tokens)
-
     def apply_processing_offset(self, offset: int) -> None:
         """Applies a processing offset to the token buffer."""
         self.tokens.apply_processing_offset(offset)
