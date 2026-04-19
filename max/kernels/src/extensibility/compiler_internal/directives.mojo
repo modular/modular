@@ -52,14 +52,10 @@ comptime _RowMajorTileLayout[
 ]
 """A TileLayout with row-major strides derived from the given shape types."""
 
-comptime _AsCoordLike[T: CoordLike] = T
-
 comptime _IndexListToCoordLikeTabulator[
     list: IndexList,
     idx: Int,
-]: CoordLike = ComptimeInt[list[idx]] if list[idx] >= 0 else _AsCoordLike[
-    RuntimeInt[]
-]
+]: CoordLike = ComptimeInt[list[idx]] if list[idx] >= 0 else RuntimeInt[]
 
 """Maps a single IndexList element to a CoordLike type.
 Negative values (-1 = dynamic) become RuntimeInt, others become ComptimeInt."""

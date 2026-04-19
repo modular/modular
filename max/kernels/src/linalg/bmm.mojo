@@ -112,7 +112,7 @@ def _get_batch_dims[
 
 
 @always_inline
-def _slice_types[
+def _slice_types_impl[
     stride_types: TypeList[Trait=CoordLike, ...], n_dims: Int
 ]() -> Variadic.TypesOfTrait[CoordLike]:
     """
@@ -122,13 +122,13 @@ def _slice_types[
     comptime assert 0 <= rank - n_dims <= stride_types.size
     comptime assert rank <= stride_types.size
 
-    return Variadic.slice_types[stride_types.values, rank - n_dims]().values
+    return stride_types.slice[rank - n_dims]().values
 
 
 @always_inline
-def _slice_types_tl[
+def _slice_types[
     stride_types: TypeList[Trait=CoordLike, ...], n_dims: Int
-]() -> TypeList[Trait=CoordLike, _slice_types[stride_types, n_dims]()]:
+]() -> TypeList[Trait=CoordLike, _slice_types_impl[stride_types, n_dims]()]:
     return {}
 
 
@@ -152,7 +152,7 @@ def _shape_types_to_3d[
     ]
 
     return Variadic.concat_types[
-        _get_first_dim[DType.int64, *TypeList[batch_dims]()], last_two_dims
+        _get_first_dim[DType.int64, *batch_dims], last_two_dims.values
     ]
 
 
@@ -163,7 +163,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
         mut=tensor.mut,
         LayoutType=TileLayout[
             TypeList[_shape_types_to_3d[tensor.LayoutType._shape_types]()](),
-            _slice_types_tl[tensor.LayoutType._stride_types, 3](),
+            _slice_types[tensor.LayoutType._stride_types, 3](),
         ],
         dtype=tensor.dtype,
         origin=tensor.origin,
@@ -571,21 +571,21 @@ def batched_matmul_kernel_gpu[
         a_ptr,
         TileLayout(
             (Idx(m), Idx[a_tensor.static_shape[2]]()),
-            Coord[*_slice_types_tl[ATensorType._stride_types, 2]()](),
+            Coord[*_slice_types[ATensorType._stride_types, 2]()](),
         ),
     )
     var b = TileTensor(
         b_ptr,
         TileLayout(
-            Coord[*_slice_types_tl[BTensorType._shape_types, 2]()](),
-            Coord[*_slice_types_tl[BTensorType._stride_types, 2]()](),
+            Coord[*_slice_types[BTensorType._shape_types, 2]()](),
+            Coord[*_slice_types[BTensorType._stride_types, 2]()](),
         ),
     )
     var c = TileTensor(
         c_ptr,
         TileLayout(
             (Idx(m), Idx[c_tensor.static_shape[2]]()),
-            Coord[*_slice_types_tl[CTensorType._stride_types, 2]()](),
+            Coord[*_slice_types[CTensorType._stride_types, 2]()](),
         ),
     )
 

@@ -130,6 +130,64 @@ def test_type_list_map_to_values_empty() raises:
     assert_equal(pl.size, 0)
 
 
+comptime _KeepEvenIdx[T: HasStaticValue, idx: Int]: Bool = (idx & 1) == 0
+
+
+comptime _KeepAllIdx[T: HasStaticValue, idx: Int]: Bool = True
+
+
+def test_type_list_filter_idx_even_positions() raises:
+    comptime filtered = TypeList.of[
+        Trait=HasStaticValue,
+        WithValue[10],
+        WithValue[20],
+        WithValue[30],
+        WithValue[40],
+    ]().filter_idx[_KeepEvenIdx]()
+    assert_equal(filtered.size, 2)
+    assert_true(_type_is_eq[filtered[0], WithValue[10]]())
+    assert_true(_type_is_eq[filtered[1], WithValue[30]]())
+
+
+def test_type_list_filter_idx_keep_all() raises:
+    comptime filtered = TypeList.of[
+        Trait=HasStaticValue, WithValue[1], WithValue[2]
+    ]().filter_idx[_KeepAllIdx]()
+    assert_equal(filtered.size, 2)
+    assert_true(_type_is_eq[filtered[0], WithValue[1]]())
+    assert_true(_type_is_eq[filtered[1], WithValue[2]]())
+
+
+def test_type_list_filter_idx_empty() raises:
+    comptime filtered = TypeList.of[Trait=HasStaticValue]().filter_idx[
+        _KeepEvenIdx
+    ]()
+    assert_equal(filtered.size, 0)
+
+
+def test_type_list_filter_idx_even_positions_pair() raises:
+    comptime filtered = TypeList.of[
+        Trait=HasStaticValue, WithValue[7], WithValue[8]
+    ]().filter_idx[_KeepEvenIdx]()
+    assert_equal(filtered.size, 1)
+    assert_true(_type_is_eq[filtered[0], WithValue[7]]())
+
+
+comptime _KeepFirstTwo[T: HasStaticValue, idx: Int]: Bool = idx < 2
+
+
+def test_type_list_filter_idx_by_index() raises:
+    comptime filtered = TypeList.of[
+        Trait=HasStaticValue,
+        WithValue[100],
+        WithValue[200],
+        WithValue[300],
+    ]().filter_idx[_KeepFirstTwo]()
+    assert_equal(filtered.size, 2)
+    assert_true(_type_is_eq[filtered[0], WithValue[100]]())
+    assert_true(_type_is_eq[filtered[1], WithValue[200]]())
+
+
 def test_variadic_value_reducer() raises:
     comptime mapped_values = IntToWithValue[1, 2, 3]
     assert_true(_type_is_eq[mapped_values[0], WithValue[1]]())
@@ -312,15 +370,13 @@ def test_zip_values_triple() raises:
 
 
 def test_slice_types_empty() raises:
-    comptime types = Variadic.slice_types[
-        Variadic.empty_of_trait[Writable], start=0, end=0
-    ]
+    comptime types = TypeList.of[Trait=Writable]().slice[start=0, end=0]()
     assert_equal(types.size, 0)
 
 
 def test_slice_types() raises:
-    comptime types = Variadic.slice_types[
-        Variadic.types[T=AnyType, Int, String, Float32], start=0, end=2
+    comptime types = TypeList.of[Trait=AnyType, Int, String, Float32]().slice[
+        start=0, end=2
     ]()
     assert_equal(types.size, 2)
     assert_true(_type_is_eq[types[0], Int]())

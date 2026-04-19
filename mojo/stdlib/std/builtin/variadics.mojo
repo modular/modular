@@ -111,50 +111,6 @@ struct Variadic:
         Ts: The variadic sequences to concatenate.
     """
 
-    comptime slice_types[
-        T: type_of(AnyType),
-        //,
-        element_types: Variadic.TypesOfTrait[T],
-        start: Int where start >= 0 = 0,
-        end: Int where start <= end <= TypeList[element_types].size = TypeList[
-            element_types
-        ].size,
-    ] = TypeList[
-        _ReduceVariadicAndIdxToVariadic[
-            BaseVal=Variadic.empty_of_trait[T],
-            ParamListType=element_types,
-            Reducer=_SliceReducer[T, start, end, ...],
-        ]
-    ]
-    """Extract a contiguous subsequence from a variadic sequence.
-
-    Returns a new variadic containing elements from index `start` (inclusive)
-    to index `end` (exclusive). Similar to Python's slice notation [start:end].
-
-    Parameters:
-        T: The trait that the types conform to.
-        element_types: The variadic sequence to slice.
-        start: The starting index (inclusive).
-        end: The ending index (exclusive).
-
-    Constraints:
-        - 0 <= start <= end <= TypeList[element_types].size
-
-    Examples:
-        ```text
-        from std.builtin.variadics import Variadic
-
-        # Given a variadic of types [Int, String, Float64, Bool]
-        comptime MyTypes = Tuple[Int, String, Float64, Bool].element_types
-        # Extract middle elements: [String, Float64]
-        comptime Sliced = Variadic.slice_types[start=1, end=3, element_types=MyTypes]
-        # Extract first two: [Int, String]
-        comptime First2 = Variadic.slice_types[start=0, end=2, element_types=MyTypes]
-        # Extract last element: [Bool]
-        comptime Last = Variadic.slice_types[start=3, end=4, element_types=MyTypes]
-        ```
-    """
-
     comptime zip_types[
         Trait: type_of(AnyType), //, *types: Variadic.TypesOfTrait[Trait]
     ] = ParameterList[
@@ -240,6 +196,24 @@ Parameters:
     T: The trait that the types conform to.
 """
 
+comptime _TypeIndexPredicateGenerator[T: type_of(AnyType)] = __mlir_type[
+    `!lit.generator<<"Elt": `,
+    T,
+    `, "Idx":`,
+    Int,
+    `>`,
+    Bool,
+    `>`,
+]
+"""Generator type for indexed type predicates.
+
+A predicate takes an element type and its index in the list and returns whether
+to retain that element in the filtered list.
+
+Parameters:
+    T: The trait that the types conform to.
+"""
+
 # ===-----------------------------------------------------------------------===#
 # TypeList
 # ===-----------------------------------------------------------------------===#
@@ -307,11 +281,6 @@ struct TypeList[
         idx: The index of the type to access.
     """
 
-    @always_inline("builtin")
-    def __init__(out self):
-        """Constructs a TypeList."""
-        pass
-
     # TODO: Support implicit conversion from a more derived trait to a base one.
     comptime upcast[dst_trait: type_of(AnyType)] = TypeList[
         Trait=dst_trait,
@@ -330,6 +299,15 @@ struct TypeList[
     Returns:
         A new TypeList with the types downcasted to the base trait.
     """
+
+    # ===-------------------------------------------------------------------===#
+    # Constructors
+    # ===-------------------------------------------------------------------===#
+
+    @always_inline("builtin")
+    def __init__(out self):
+        """Constructs a TypeList."""
+        pass
 
     comptime of[Trait: type_of(AnyType), //, *values: Trait] = TypeList[
         Trait=Trait, values.values
@@ -396,11 +374,23 @@ struct TypeList[
         type: The type to splat.
     """
 
-    comptime _ReverseTabulator[idx: Int]: Self.Trait = Self.values[
-        Self.size - 1 - idx
+    # Note: this is _concat instead of concat because it takes MLIR typelists
+    comptime _concat[
+        Trait: type_of(AnyType), //, *Ts: Variadic.TypesOfTrait[Trait]
+    ] = TypeList[
+        __mlir_attr[
+            `#kgen.param_list.concat<`,
+            Ts.values,
+            `> :`,
+            Variadic.TypesOfTrait[Trait],
+        ]
     ]
-    comptime reverse = TypeList.tabulate[Self.size, Self._ReverseTabulator[_]]
-    """Returns this type list in reverse order."""
+    """Form a TypeList from the concatenation of multiple MLIR type lists.
+
+    Parameters:
+        Trait: The trait that types in the variadic sequences must conform to.
+        Ts: The variadic sequences to concatenate.
+    """
 
     # ===-------------------------------------------------------------------===#
     # Reductions
@@ -558,6 +548,39 @@ struct TypeList[
             The generator type is `[T: Trait] -> To`.
     """
 
+    comptime _FilterIdxTabulator[
+        Predicate: _TypeIndexPredicateGenerator[Self.Trait],
+        idx: Int,
+    ]: Variadic.TypesOfTrait[Self.Trait] = TypeList.of[
+        Trait=Self.Trait, Self.__getitem_param__[idx]
+    ]().values if Predicate[
+        Self.__getitem_param__[idx], idx
+    ] else TypeList.of[
+        Trait=Self.Trait
+    ]().values
+
+    comptime filter_idx[
+        Predicate: _TypeIndexPredicateGenerator[Self.Trait],
+    ] = TypeList._concat[
+        *ParameterList.tabulate[
+            Self.size,
+            Self._FilterIdxTabulator[Predicate, _],
+        ]()
+    ]
+    """Returns a new `TypeList` containing only elements selected by a predicate.
+
+    The predicate is evaluated at compile time for each `(element, index)` pair.
+    Indices are the positions in this list, from `0` through `size - 1`.
+
+    Parameters:
+        Predicate: A compile-time generator
+            `[element: Self.Trait, idx: Int] -> Bool`. When it returns `True`,
+            `element` is kept in order; when `False`, the element is dropped.
+
+    Returns:
+        A `TypeList` of the same trait containing the kept elements in order.
+    """
+
     comptime _MapToValuesGeneratorType[
         ValueType: AnyType,
     ] = _TypeToValueGeneratorType[Self.Trait, ValueType]
@@ -596,15 +619,23 @@ struct TypeList[
     # Other
     # ===-------------------------------------------------------------------===#
 
+    comptime _ReverseTabulator[idx: Int]: Self.Trait = Self.values[
+        Self.size - 1 - idx
+    ]
+    comptime reverse = TypeList.tabulate[Self.size, Self._ReverseTabulator[_]]
+    """Returns this type list in reverse order."""
+
+    comptime _SliceTabulator[
+        start: Int,
+        idx: Int,
+    ]: Self.Trait = Self.__getitem_param__[start + idx]
+
     comptime slice[
         start: Int where start >= 0 = 0,
         end: Int where start <= end <= Self.size = Self.size,
-    ] = TypeList[
-        _ReduceVariadicAndIdxToVariadic[
-            BaseVal=Variadic.empty_of_trait[Self.Trait],
-            ParamListType=Self.values,
-            Reducer=_SliceReducer[Self.Trait, start, end, ...],
-        ]
+    ] = TypeList.tabulate[
+        end - start,
+        Self._SliceTabulator[start, _],
     ]
     """Extracts a contiguous subsequence from the type list.
 
@@ -862,6 +893,21 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         value: The value to repeat at every index.
     """
 
+    comptime _concat[
+        type: AnyType, //, *values: Variadic.ValuesOfType[type]
+    ] = __mlir_attr[
+        `#kgen.param_list.concat<`,
+        values.values,
+        `> :`,
+        Variadic.ValuesOfType[type],
+    ]
+    """Represents the concatenation of multiple variadic sequences of values.
+
+    Parameters:
+        type: The types of the values in the variadic sequences.
+        values: The variadic sequences to concatenate.
+    """
+
     # ===-------------------------------------------------------------------===#
     # Reductions
     # ===-------------------------------------------------------------------===#
@@ -966,9 +1012,9 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
             Self._AllSatisfiesReducer[predicate, ...],
         ]
 
-    # NOTE: The def that utilizes this checks for conformance to equatable.
     comptime _ContainsValuePredicate[
-        search_value: Self.type, element_value: Self.type
+        search_value: Self.type,
+        element_value: Self.type where conforms_to(Self.type, Equatable),
     ] = trait_downcast[Equatable](search_value) == trait_downcast[Equatable](
         element_value
     )
@@ -1776,30 +1822,4 @@ Parameters:
     BaseVal: The initial value to reduce on.
     ParamListType: The variadic to be reduced.
     Reducer: A `[BaseVal: Variadic.TypesOfTrait[To], Ts: *From, idx: index] -> To` that does the reduction.
-"""
-
-# ===-----------------------------------------------------------------------===#
-# VariadicMap
-# ===-----------------------------------------------------------------------===#
-
-comptime _SliceReducer[
-    Trait: type_of(AnyType),
-    start: Int,
-    end: Int,
-    Prev: Variadic.TypesOfTrait[Trait],
-    From: Variadic.TypesOfTrait[Trait],
-    idx: Int,
-] = (
-    Variadic.concat_types[Prev, Variadic.types[T=Trait, From[idx]]] if idx
-    >= start
-    and idx < end else Prev
-)
-"""A reducer that extracts elements within a specified index range.
-Parameters:
-    Trait: The trait that the types conform to.
-    start: The starting index (inclusive).
-    end: The ending index (exclusive).
-    Prev: The accumulated result variadic so far.
-    From: The input variadic sequence.
-    idx: The current index being processed.
 """

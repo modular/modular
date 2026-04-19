@@ -2104,8 +2104,6 @@ struct Transpose:
         return Self.shape_impl(input, permutations)
 
 
-comptime _AsCoordLike[T: CoordLike] = T
-
 # Type-level slice stride computation: multiplies input stride types by step
 # types element-wise.
 comptime _SliceStrideTypesTabulator[
@@ -2118,9 +2116,7 @@ comptime _SliceStrideTypesTabulator[
     idx
 ].is_static_value and step_types[
     idx
-].is_static_value else _AsCoordLike[
-    RuntimeInt[]
-]
+].is_static_value else RuntimeInt[]
 
 comptime _SliceStrideTypes[
     rank: Int,
