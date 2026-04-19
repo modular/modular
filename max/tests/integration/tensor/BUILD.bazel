@@ -107,7 +107,6 @@ modular_py_test(
     imports = ["."],
     tags = [
         "gpu",
-        "no-pydeps",
     ],
     deps = [
         "//max/python/max:tensor",

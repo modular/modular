@@ -27,6 +27,8 @@ from typing_extensions import override
 # Ideally these can be determined from bazel, but some of them cannot be, specifically
 # ones that share a top-level namespace, like the google and otel ones.
 _THIRD_PARTY_IMPORTS = {
+    "apache_tvm_ffi": ["tvm_ffi"],
+    "flashinfer_python": ["flashinfer"],
     "google_auth": ["google.auth"],
     "google_cloud_bigquery": ["google.cloud.bigquery"],
     "grpcio": ["grpc"],
