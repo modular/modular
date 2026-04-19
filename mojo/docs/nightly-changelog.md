@@ -8,6 +8,14 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- The ternary `if/else` expression now coerces each element to its contextual
+  type when it is obvious. For example, this works instead of producing an
+  error about incompatible metatypes:
+
+  ```mojo
+    comptime some_type: Movable = Int if cond else String
+  ```
+
 - Unified closures now accept default capturing conventions when there are
   explicit captures already.
 
