@@ -111,6 +111,10 @@ from .sync import (
         Int32(threads_per_block)
     )
 )
+@__name(
+    t"allreduce_rmsnorm_fp8_warp_tiling_{in_dtype}_{out_dtype}_{ngpus}_{has_residual}",
+    mangle=True,
+)
 def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     mut: Bool,
     origin: Origin[mut=mut],
@@ -286,6 +290,10 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(threads_per_block)
     )
+)
+@__name(
+    t"allreduce_rmsnorm_fp8_2stage_{in_dtype}_{out_dtype}_{ngpus}_{has_residual}",
+    mangle=True,
 )
 def _allreduce_rmsnorm_fp8_kernel_2stage[
     mut: Bool,

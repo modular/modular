@@ -19,7 +19,7 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
-from max.driver import DeviceSpec, accelerator_count
+from max.driver import Buffer, DeviceSpec, accelerator_count
 from max.interfaces import (
     PipelineTokenizer,
     RequestID,
@@ -367,7 +367,7 @@ def test_kv_cache_claiming_protocol() -> None:
 
     def track_runtime_inputs(
         batches: list[list[TextContext]], num_steps: int
-    ) -> KVCacheInputs:
+    ) -> KVCacheInputs[Buffer, Buffer]:
         request_ids = [ctx.request_id for batch in batches for ctx in batch]
         call_order.append(("runtime_inputs", request_ids, num_steps))
         return KVCacheInputs(inputs=[])

@@ -146,7 +146,7 @@ def elementwise[
     *,
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
-    _trace_description: StaticString = "functional.elementwise",
+    _trace_description: StaticString = "elementwise",
 ](shape: Int) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -186,7 +186,7 @@ def elementwise[
     *,
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
-    _trace_description: StaticString = "functional.elementwise",
+    _trace_description: StaticString = "elementwise",
 ](shape: IndexList[rank, ...]) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -234,7 +234,7 @@ def elementwise[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel(1),
-    _trace_description: StaticString = "functional.elementwise",
+    _trace_description: StaticString = "elementwise",
 ](shape: Int, context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -278,7 +278,7 @@ def elementwise[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel(1),
-    _trace_description: StaticString = "functional.elementwise",
+    _trace_description: StaticString = "elementwise",
 ](shape: IndexList[rank, ...], context: DeviceContext) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -327,7 +327,7 @@ def elementwise[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel(1),
-    _trace_description: StaticString = "functional.elementwise",
+    _trace_description: StaticString = "elementwise",
 ](shape: IndexList[rank, ...], context: DeviceContextPtr) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
@@ -406,7 +406,7 @@ def _elementwise_impl[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     pdl_level: PDLLevel = PDLLevel(1),
-    trace_description: StaticString = "functional.elementwise",
+    trace_description: StaticString = "elementwise",
 ](func: FuncType, shape: IndexList[rank, ...], context: DeviceContext) raises:
     @always_inline
     @parameter

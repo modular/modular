@@ -242,21 +242,23 @@ struct FileHandle(Defaultable, Movable, Writer):
         Read the first 8 bytes, skip 2 bytes, and then read the next 8 bytes:
 
         ```mojo
-        import std.os
+        from std.os import SEEK_CUR
         var file = open("/tmp/example.txt", "r")
         var word1 = file.read(8)
         print(word1)
-        _ = file.seek(2, os.SEEK_CUR)
+        _ = file.seek(2, SEEK_CUR)
         var word2 = file.read(8)
         print(word2)
         ```
 
         Read the last 8 bytes in the file, then the first 8 bytes
         ```mojo
-        _ = file.seek(-8, os.SEEK_END)
+        from std.os import SEEK_SET, SEEK_END
+        var file = open("/tmp/example.txt", "r")
+        _ = file.seek(-8, SEEK_END)
         var last_word = file.read(8)
         print(last_word)
-        _ = file.seek(8, os.SEEK_SET) # os.SEEK_SET is the default start of file
+        _ = file.seek(8, SEEK_SET) # SEEK_SET is the default start of file
         var first_word = file.read(8)
         print(first_word)
         ```
@@ -293,7 +295,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         Examples:
 
         ```mojo
-        import std.os
+        from std.os import SEEK_CUR
         from std.sys.info import size_of
 
         comptime file_name = "/tmp/example.txt"
@@ -308,7 +310,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         print(first_element)
 
         # Skip 2 elements
-        _ = file.seek(2 * size_of[DType.float32](), os.SEEK_CUR)
+        _ = file.seek(2 * size_of[DType.float32](), SEEK_CUR)
 
         # Allocate and load 8 more elements from file handle seek position
         var buffer2 = InlineArray[Float32, size=8](fill=0)
@@ -365,21 +367,21 @@ struct FileHandle(Defaultable, Movable, Writer):
         8 bytes:
 
         ```mojo
-        import std.os
+        from std.os import SEEK_CUR
         var file = open("/tmp/example.txt", "r")
         var list1 = file.read(8)
-        _ = file.seek(2, os.SEEK_CUR)
+        _ = file.seek(2, SEEK_CUR)
         var list2 = file.read(8)
         ```
 
         Reading the last 8 bytes in the file, then the first 8 bytes:
 
         ```mojo
-        import std.os
+        from std.os import SEEK_SET, SEEK_END
         var file = open("/tmp/example.txt", "r")
-        _ = file.seek(-8, os.SEEK_END)
+        _ = file.seek(-8, SEEK_END)
         var last_data = file.read(8)
-        _ = file.seek(8, os.SEEK_SET) # os.SEEK_SET is the default start of file
+        _ = file.seek(8, SEEK_SET) # SEEK_SET is the default start of file
         var first_data = file.read(8)
         ```
         """
@@ -446,17 +448,17 @@ struct FileHandle(Defaultable, Movable, Writer):
         Skip 32 bytes from the current read position:
 
         ```mojo
-        import std.os
+        from std.os import SEEK_CUR
         var f = open("/tmp/example.txt", "r")
-        _ = f.seek(32, os.SEEK_CUR)
+        _ = f.seek(32, SEEK_CUR)
         ```
 
         Start from 32 bytes from the end of the file:
 
         ```mojo
-        import std.os
+        from std.os import SEEK_END
         var f = open("/tmp/example.txt", "r")
-        _ = f.seek(-32, os.SEEK_END)
+        _ = f.seek(-32, SEEK_END)
         ```
         """
         if self.handle < 0:

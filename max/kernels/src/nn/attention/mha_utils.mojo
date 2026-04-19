@@ -341,7 +341,9 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             var bk_type_factor = 1 if Self.dtype == DType.float32 else 2
             self.BK = BK.or_else(
                 16 * bk_arch_factor * bk_type_factor
-            ) if has_nvidia_gpu_accelerator() else 32
+            ) if has_nvidia_gpu_accelerator() else BK.or_else(
+                64 if Self.dtype.is_float8() else 32
+            )
             self.WN = WN.or_else(
                 32 if Self.dtype == DType.float32 else self.num_keys_per_block
             )
@@ -778,9 +780,9 @@ struct NoPartition[dtype: DType](
     def get_exp_sum_qk_max_pointer(
         self,
     ) -> UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]:
-        return UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin](
-            _unsafe_null=()
-        )
+        return UnsafePointer[
+            Scalar[Self.accum_dtype], MutAnyOrigin
+        ].unsafe_dangling()
 
 
 struct SplitKPartition[dtype: DType](
@@ -797,9 +799,6 @@ struct SplitKPartition[dtype: DType](
         ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin],
         num_partitions_value: UInt32,
     ):
-        assert ptr != UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin](
-            _unsafe_null=()
-        )
         self.ptr = ptr
         self.num_partitions_value = num_partitions_value
 

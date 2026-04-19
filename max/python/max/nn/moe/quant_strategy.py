@@ -24,7 +24,7 @@ from ..comm.ep.ep_kernels import fused_silu_quantized
 from ..kernels import (
     block_scales_interleave,
     grouped_dynamic_scaled_fp8_matmul,
-    grouped_dynamic_scaled_nvfp4_matmul,
+    grouped_matmul_block_scaled,
     quantize_dynamic_block_scaled_fp4,
     quantize_dynamic_scaled_float8,
 )
@@ -210,7 +210,7 @@ class Nvfp4Strategy:
             usage_stats,
         ) = expert_inputs
 
-        return grouped_dynamic_scaled_nvfp4_matmul(
+        return grouped_matmul_block_scaled(
             hidden,
             weight,
             hidden_scales,

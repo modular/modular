@@ -188,16 +188,19 @@ class Flux2Executor(
 
     Graph structure (4 graphs, 3 for t2i):
 
-    +---------+-----------------------------------------+-----------------------+
-    | Graph   | Purpose                                 | Called                |
-    +---------+-----------------------------------------+-----------------------+
-    | 1       | Text Encode: Mistral3 -> embeddings      | Once per request      |
-    | 2       | Image Encode: VAE encode + BN-norm + pack | Once (img2img only)  |
-    | 3       | Denoise Step: concat + transformer +     | Every denoising step  |
-    |         |   scheduler step                         |                       |
-    | 4       | Decode: BN-denorm + unpatchify +         | Once per request      |
-    |         |   VAE decode -> uint8                    |                       |
-    +---------+-----------------------------------------+-----------------------+
+    +---------+-------------------------------------------+------------------------+
+    | Graph   | Purpose                                   | Called                 |
+    +=========+===========================================+========================+
+    | 1       | Text Encode: Mistral3 -> embeddings       | Once per request       |
+    +---------+-------------------------------------------+------------------------+
+    | 2       | Image Encode: VAE encode + BN-norm + pack | Once (img2img only)    |
+    +---------+-------------------------------------------+------------------------+
+    | 3       | Denoise Step: concat + transformer +      | Every denoising step   |
+    |         | scheduler step                            |                        |
+    +---------+-------------------------------------------+------------------------+
+    | 4       | Decode: BN-denorm + unpatchify +          | Once per request       |
+    |         | VAE decode -> uint8                       |                        |
+    +---------+-------------------------------------------+------------------------+
     """
 
     # -- Compiled graphs (set during __init__) --------------------------------
@@ -258,7 +261,12 @@ class Flux2Executor(
         # Extract transformer config for helper methods.
         transformer_config = manifest["transformer"]
         encoding = transformer_config.quantization_encoding or "bfloat16"
-        self._model_dtype: DType = supported_encoding_dtype(encoding)
+        # For NVFP4, weights are stored as FP4 but compute stays bfloat16.
+        self._model_dtype: DType = (
+            DType.bfloat16
+            if encoding == "float4_e2m1fnx2"
+            else supported_encoding_dtype(encoding)
+        )
         self._model_device: Device = load_devices(
             transformer_config.device_specs
         )[0]

@@ -27,6 +27,19 @@ from typing_extensions import TypedDict
 DatasetMode = Literal["local", "huggingface"]
 
 
+@dataclass
+class SharedContext:
+    """A single entry in the prefix-cache warmup list.
+
+    Represents the longest observed variant of a unique shared context.
+    Sending the longest variant is sufficient because all shorter variants
+    built from the same base are token-level prefixes of it.
+    """
+
+    text: str
+    num_tokens: int
+
+
 class OpenAIImageURL(TypedDict):
     url: str
 
@@ -43,6 +56,7 @@ class SampledRequest:
     output_len: int | None
     encoded_images: list[OpenAIImage]
     ignore_eos: bool
+    response_format: dict[str, Any] | None = None
 
 
 @dataclass
@@ -92,11 +106,13 @@ class ChatSession:
 @dataclass
 class RequestSamples:
     requests: Sequence[SampledRequest]
+    shared_contexts: list[SharedContext] = field(default_factory=list)
 
 
 @dataclass
 class ChatSamples:
     chat_sessions: Sequence[ChatSession]
+    shared_contexts: list[SharedContext] = field(default_factory=list)
 
 
 Samples = RequestSamples | ChatSamples

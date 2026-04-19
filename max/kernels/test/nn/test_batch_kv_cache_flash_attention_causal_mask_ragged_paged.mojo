@@ -89,33 +89,33 @@ def execute_ragged_flash_attention[
 
     comptime layout_3d = Layout.row_major[3]()
     var q_ragged_heap = alloc[Scalar[dtype]](
-        total_length * num_q_heads * Int(kv_params.head_size)
+        total_length * num_q_heads * kv_params.head_size
     )
     var q_ragged = LayoutTensor[dtype, layout_3d](
         q_ragged_heap,
         RuntimeLayout[layout_3d].row_major(
-            IndexList[3](total_length, num_q_heads, Int(kv_params.head_size))
+            IndexList[3](total_length, num_q_heads, kv_params.head_size)
         ),
     )
     random(q_ragged)
 
     # initialize reference output
     var test_output_heap = alloc[Scalar[dtype]](
-        total_length * num_q_heads * Int(kv_params.head_size)
+        total_length * num_q_heads * kv_params.head_size
     )
     var test_output = LayoutTensor[dtype, layout_3d](
         test_output_heap,
         RuntimeLayout[layout_3d].row_major(
-            IndexList[3](total_length, num_q_heads, Int(kv_params.head_size))
+            IndexList[3](total_length, num_q_heads, kv_params.head_size)
         ),
     ).fill(0)
     var ref_output_heap = alloc[Scalar[dtype]](
-        total_length * num_q_heads * Int(kv_params.head_size)
+        total_length * num_q_heads * kv_params.head_size
     )
     var ref_output = LayoutTensor[dtype, layout_3d](
         ref_output_heap,
         RuntimeLayout[layout_3d].row_major(
-            IndexList[3](total_length, num_q_heads, Int(kv_params.head_size))
+            IndexList[3](total_length, num_q_heads, kv_params.head_size)
         ),
     ).fill(0)
 
@@ -125,8 +125,8 @@ def execute_ragged_flash_attention[
         2,
         num_layers,
         max_seq_len_cache,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_heap = alloc[Scalar[dtype]](block_shape.flattened_length())
     kv_block_continuous = LayoutTensor[dtype, Layout.row_major[6]()](
@@ -196,8 +196,8 @@ def execute_ragged_flash_attention[
         * 2
         * num_layers
         * page_size
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
     var kv_block_paged = LayoutTensor[dtype, Layout.row_major[6]()](
         kv_block_paged_heap,
@@ -207,8 +207,8 @@ def execute_ragged_flash_attention[
                 2,
                 num_layers,
                 page_size,
-                Int(kv_params.num_heads),
-                Int(kv_params.head_size),
+                kv_params.num_heads,
+                kv_params.head_size,
             ),
         ),
     )
@@ -251,25 +251,20 @@ def execute_ragged_flash_attention[
                         0,
                     )
                 )
-                var dest_byte_offset = UInt(Int(dest)) - UInt(
-                    Int(kv_block_paged.ptr)
+                var dest_byte_offset = Int(dest) - Int(kv_block_paged.ptr)
+                var src_byte_offset = Int(src) - Int(kv_block_continuous.ptr)
+                var dest_len = (
+                    kv_block_paged.size() * size_of[kv_block_paged.dtype]()
+                    - dest_byte_offset
                 )
-                var src_byte_offset = UInt(Int(src)) - UInt(
-                    Int(kv_block_continuous.ptr)
-                )
-                var dest_len = kv_block_paged.size() * size_of[
-                    kv_block_paged.dtype
-                ]() - Int(dest_byte_offset)
-                var src_len = kv_block_continuous.size() - Int(src_byte_offset)
+                var src_len = kv_block_continuous.size() - src_byte_offset
                 memcpy(
                     dest=dest,
                     src=src,
                     count=min(
                         dest_len // size_of[dest.type](),
                         src_len // size_of[src.type](),
-                        page_size
-                        * Int(kv_params.num_heads)
-                        * Int(kv_params.head_size),
+                        page_size * kv_params.num_heads * kv_params.head_size,
                     ),
                 )
 
@@ -337,8 +332,8 @@ def execute_ragged_flash_attention[
                 for hd in range(kv_params.head_size):
                     try:
                         assert_almost_equal(
-                            ref_out[ragged_offset + s, h, Int(hd)][0],
-                            test_out[ragged_offset + s, h, Int(hd)][0],
+                            ref_out[ragged_offset + s, h, hd][0],
+                            test_out[ragged_offset + s, h, hd][0],
                             atol=1e-2,
                         )
                     except e:
@@ -348,8 +343,8 @@ def execute_ragged_flash_attention[
                             s,
                             h,
                             hd,
-                            ref_out[ragged_offset + s, h, Int(hd)][0],
-                            test_out[ragged_offset + s, h, Int(hd)][0],
+                            ref_out[ragged_offset + s, h, hd][0],
+                            test_out[ragged_offset + s, h, hd][0],
                         )
                         raise e^
 

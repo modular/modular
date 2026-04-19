@@ -32,6 +32,7 @@ trait Sized:
     method. For example:
 
     ```mojo
+    @fieldwise_init
     struct Foo(Sized):
         var length: Int
 
@@ -43,6 +44,13 @@ trait Sized:
     length:
 
     ```mojo
+    @fieldwise_init
+    struct Foo(Sized):
+        var length: Int
+
+        def __len__(self) -> Int:
+            return self.length
+
     var foo = Foo(42)
     print(len(foo) == 42)
     ```
@@ -77,6 +85,7 @@ trait SizedRaising:
     method, which can raise an error. For example:
 
     ```mojo
+    @fieldwise_init
     struct Foo(SizedRaising):
         var length: Int
 
@@ -90,6 +99,15 @@ trait SizedRaising:
     length:
 
     ```mojo
+    @fieldwise_init
+    struct Foo(SizedRaising):
+        var length: Int
+
+        def __len__(self) raises -> Int:
+            if self.length < 0:
+                raise Error("Length is negative")
+            return self.length
+
     def main() raises:
         var foo = Foo(42)
         print(len(foo) == 42)
