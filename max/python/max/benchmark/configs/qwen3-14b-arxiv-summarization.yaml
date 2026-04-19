@@ -1,4 +1,4 @@
-##===----------------------------------------------------------------------===##
+# ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
@@ -9,7 +9,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-##===----------------------------------------------------------------------===##
+# ===----------------------------------------------------------------------=== #
 
 # max serve --model Qwen/Qwen3-14B
 # max benchmark --config-file qwen3-14b-arxiv-summarization.yaml

@@ -189,9 +189,9 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     ]
     var _storage: Self._union_type
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Life cycle methods
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     def __init__(out self, *, unsafe_uninitialized: ()):
         """Unsafely create an uninitialized `UnsafeUnion`.
@@ -254,9 +254,9 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
     # cannot call destructors. Users must manually manage destruction if needed.
     # For trivial types (integers, floats, pointers) this is fine.
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Internal methods
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     @always_inline("nodebug")
     def _get_ptr[T: AnyType](ref[_] self) -> UnsafePointer[T, origin_of(self)]:
@@ -270,9 +270,9 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         ](ptr)
         return typed_ptr
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Operator dunders
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     @always_inline("nodebug")
     def unsafe_get[T: AnyType](ref self) -> ref[self] T:
@@ -334,9 +334,9 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         """
         self.write_to(writer)
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Methods
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     @always_inline("nodebug")
     def unsafe_take[T: Movable](mut self) -> T:
@@ -431,9 +431,9 @@ struct UnsafeUnion[*Ts: AnyType](ImplicitlyCopyable, Movable, Writable):
         """
         return self._get_ptr[T]()
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Static methods
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     @staticmethod
     def _is_element[T: AnyType]() -> Bool:

@@ -348,9 +348,9 @@ def call_ep_dispatch_wait(
     ]
 
     if input_tokens is not None:
-        assert config.fused_shared_expert, (
-            "Shared experts fusion must be enabled when input_tokens is provided"
-        )
+        assert (
+            config.fused_shared_expert
+        ), "Shared experts fusion must be enabled when input_tokens is provided"
         op_name += ".fused_shared_expert"
         input_vals.append(input_tokens)
         max_recv_tokens += config.max_tokens_per_rank
@@ -465,9 +465,9 @@ def call_ep_combine_async(
     if config.fused_shared_expert:
         op_name += ".fused_shared_expert"
 
-        assert num_output_tokens is not None, (
-            "num_output_tokens must be provided when fused_shared_expert is enabled"
-        )
+        assert (
+            num_output_tokens is not None
+        ), "num_output_tokens must be provided when fused_shared_expert is enabled"
         out_types.append(
             TensorType(
                 dtype=config.combine_dtype,
@@ -565,9 +565,9 @@ def call_ep_combine_wait(
     return result[0].tensor
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Expert Parallelism Fused Kernels
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 def call_ep_dispatch(
@@ -973,9 +973,9 @@ def call_ep_combine(
     return result[0].tensor
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Expert Parallelism Utils
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 def fused_silu(
@@ -1079,9 +1079,9 @@ def fused_silu_quantized(
     if quant_config.is_nvfp4:
         op_name += ".nvfp4"
         hidden_size //= 2  # Two FP4 elements are packed into one uint8 element
-        assert scales_offsets is not None and input_scales is not None, (
-            "scales_offsets and input_scales must be provided when using NVFP4"
-        )
+        assert (
+            scales_offsets is not None and input_scales is not None
+        ), "scales_offsets and input_scales must be provided when using NVFP4"
         input_vals.append(scales_offsets)
         input_vals.append(1.0 / input_scales.to(input.device))
 

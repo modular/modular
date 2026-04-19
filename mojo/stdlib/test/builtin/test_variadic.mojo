@@ -556,7 +556,7 @@ def test_variadic_pack_forwarding_through_two_levels() raises:
 def test_variadic_pack_some() raises:
     """Test using SomeTypeList in a variadic pack."""
 
-    def foo(*args: *SomeTypeList[Writable]) raises:
+    def foo(*args: * SomeTypeList[Writable]) raises:
         var s = String()
         args.write_to(s)
         assert_equal(s, "(a, True)")
@@ -564,9 +564,9 @@ def test_variadic_pack_some() raises:
     foo("a", True)
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # TypeList tests
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 def test_typelist_size() raises:

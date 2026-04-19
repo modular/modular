@@ -72,9 +72,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
     var _impl: UnsafePointer[mut=False, CPython, StaticConstantOrigin]
     """The underlying implementation of Mojo's Python interface."""
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Life cycle methods
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     def __init__(out self):
         """Construct a new `Python` instance."""
@@ -204,9 +204,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
         var sys = Python.import_module("sys")
         _ = sys.path.append(PythonObject(dir_path))
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # PythonObject "Module" Operations
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     @staticmethod
     def import_module(var module: String) raises -> PythonObject:
@@ -349,9 +349,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
         if errno == -1:
             raise cpy.unsafe_get_error()
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Methods
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     @doc_hidden
     @staticmethod
@@ -604,9 +604,9 @@ struct Python(Defaultable, ImplicitlyCopyable):
             raise cpy.unsafe_get_error()
         return PythonObject(from_owned=float_ptr)
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Checked Conversions
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     @staticmethod
     def py_long_as_ssize_t(obj: PythonObject) raises -> Py_ssize_t:

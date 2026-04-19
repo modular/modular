@@ -382,9 +382,9 @@ class EPBatchManager:
         # two-batch-overlap.
 
         src_info = self._src_info[device_id]
-        assert src_info is not None, (
-            "Source info is not set, you should call ep_dispatch_wait() first."
-        )
+        assert (
+            src_info is not None
+        ), "Source info is not set, you should call ep_dispatch_wait() first."
 
         self._shared_expert_outputs[device_id] = call_ep_combine_async(
             input_tokens,
@@ -423,9 +423,9 @@ class EPBatchManager:
         # always use group 0 atomic counters unless we enable
         # two-batch-overlap.
         dispatch_dim = self._dispatch_dim[device_id]
-        assert dispatch_dim is not None, (
-            "Dispatch dimension is not set, you should call ep_dispatch_async() first."
-        )
+        assert (
+            dispatch_dim is not None
+        ), "Dispatch dimension is not set, you should call ep_dispatch_async() first."
         results = call_ep_combine_wait(
             self.atomic_counters[0][device_id],
             self.recv_buf_ptrs[COMBINE_GROUP],
@@ -442,9 +442,9 @@ class EPBatchManager:
 
         return results
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Fused EP Operations
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     def ep_dispatch(
         self,
@@ -588,14 +588,14 @@ class EPBatchManager:
         dispatch_dims: list[Dim] = []
         for device_id in device_ids:
             si = self._src_info[device_id]
-            assert si is not None, (
-                "Source info is not set, call ep_dispatch_all() first."
-            )
+            assert (
+                si is not None
+            ), "Source info is not set, call ep_dispatch_all() first."
             src_info_list.append(si)
             dd = self._dispatch_dim[device_id]
-            assert dd is not None, (
-                "Dispatch dim is not set, call ep_dispatch_all() first."
-            )
+            assert (
+                dd is not None
+            ), "Dispatch dim is not set, call ep_dispatch_all() first."
             dispatch_dims.append(dd)
 
         atomic_counters = [self.atomic_counters[0][d] for d in device_ids]

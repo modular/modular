@@ -16,9 +16,9 @@ from std.collections import Set
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Benchmark Data
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 def make_int_set[size: Int]() -> Set[Int]:
     var s = Set[Int]()
     for i in range(size):
@@ -33,9 +33,9 @@ def make_string_set[size: Int]() -> Set[String]:
     return s^
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Benchmark Set.__eq__ (Int keys)
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 @parameter
 def bench_set_eq_int[size: Int](mut b: Bencher) raises:
     """Benchmark equality check of two equal Int sets."""
@@ -49,9 +49,9 @@ def bench_set_eq_int[size: Int](mut b: Bencher) raises:
     b.iter(call_fn)
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Benchmark Set.__eq__ (String keys - expensive hash)
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 @parameter
 def bench_set_eq_string[size: Int](mut b: Bencher) raises:
     """Benchmark equality check of two equal String sets."""
@@ -65,9 +65,9 @@ def bench_set_eq_string[size: Int](mut b: Bencher) raises:
     b.iter(call_fn)
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Benchmark Set.__eq__ early exit (different sizes)
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 @parameter
 def bench_set_eq_diff_size[size: Int](mut b: Bencher) raises:
     """Benchmark equality fast-path rejection when sizes differ."""
@@ -81,9 +81,9 @@ def bench_set_eq_diff_size[size: Int](mut b: Bencher) raises:
     b.iter(call_fn)
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Benchmark Set.__eq__ early exit (same size, different elements)
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 @parameter
 def bench_set_eq_diff_elems[size: Int](mut b: Bencher) raises:
     """Benchmark equality when sets have same size but different elements."""
@@ -99,9 +99,9 @@ def bench_set_eq_diff_elems[size: Int](mut b: Bencher) raises:
     b.iter(call_fn)
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Benchmark Set.__contains__
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 @parameter
 def bench_set_contains[size: Int](mut b: Bencher) raises:
     """Benchmark membership check for 10 elements."""
@@ -116,9 +116,9 @@ def bench_set_contains[size: Int](mut b: Bencher) raises:
     b.iter(call_fn)
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Benchmark Set.add
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 @parameter
 def bench_set_add[size: Int](mut b: Bencher) raises:
     """Benchmark adding 10 existing elements (duplicate check) to a set."""
@@ -133,9 +133,9 @@ def bench_set_add[size: Int](mut b: Bencher) raises:
     b.iter(call_fn)
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Benchmark Set.union
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 @parameter
 def bench_set_union[size: Int](mut b: Bencher) raises:
     """Benchmark union of two sets with 50% overlap."""
@@ -152,9 +152,9 @@ def bench_set_union[size: Int](mut b: Bencher) raises:
     b.iter(call_fn)
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Benchmark Set.intersection
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 @parameter
 def bench_set_intersection[size: Int](mut b: Bencher) raises:
     """Benchmark intersection of two sets with 50% overlap."""
@@ -171,9 +171,9 @@ def bench_set_intersection[size: Int](mut b: Bencher) raises:
     b.iter(call_fn)
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Benchmark Set.difference
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 @parameter
 def bench_set_difference[size: Int](mut b: Bencher) raises:
     """Benchmark difference of two sets with 50% overlap."""
@@ -190,9 +190,9 @@ def bench_set_difference[size: Int](mut b: Bencher) raises:
     b.iter(call_fn)
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Benchmark Set.intersection_update (50% overlap, destructive)
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 @parameter
 def bench_set_intersection_update[size: Int](mut b: Bencher) raises:
     """Benchmark in-place intersection with 50% overlap.
@@ -221,9 +221,9 @@ def bench_set_intersection_update[size: Int](mut b: Bencher) raises:
     b.iter_preproc[call_fn, reset]()
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Benchmark Set.intersection_update (asymmetric: large self, small other)
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 @parameter
 def bench_set_intersection_update_asymmetric[
     size: Int
@@ -253,9 +253,9 @@ def bench_set_intersection_update_asymmetric[
     b.iter_preproc[call_fn, reset]()
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Benchmark Main
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 def main() raises:
     var m = Bench(BenchConfig(num_repetitions=10))
     comptime sizes = (10, 100, 1000, 10_000)
