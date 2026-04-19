@@ -17,13 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from max.experimental.distributed_functional.collectives import (
-    materialize,
-    to_numpy,
-)
-from max.experimental.distributed_functional.collectives import (
-    shard as df_shard,
-)
+from max.experimental.distributed_functional import transfer_to
 from max.experimental.sharding import (
     DeviceMesh,
     Placement,
@@ -31,21 +25,6 @@ from max.experimental.sharding import (
     Replicated,
 )
 from max.experimental.tensor import Tensor
-
-
-def from_np(arr: np.ndarray[Any, Any]) -> Tensor:
-    """Creates a Tensor from a numpy array."""
-    return Tensor.from_dlpack(np.ascontiguousarray(arr))
-
-
-def to_np(t: Tensor) -> np.ndarray[Any, Any]:
-    """Converts a (possibly distributed) Tensor to numpy."""
-    return to_numpy(t)
-
-
-def full_tensor(t: Tensor) -> Tensor:
-    """Gathers a distributed Tensor into a single non-distributed Tensor."""
-    return materialize(t)
 
 
 def make_partial(
@@ -59,22 +38,10 @@ def make_partial(
     then re-labels as the requested Partial placement.
     """
     replicated = PlacementMapping(mesh, tuple(Replicated() for _ in placements))
-    t = df_shard(from_np(data), replicated)
+    t = transfer_to(Tensor(data), replicated)
     return Tensor._from_shards(
         tuple(s.driver_tensor for s in t.local_shards),
         mesh,
         placements,
         data.shape,
     )
-
-
-gpu_partial = make_partial
-
-
-def shard(
-    t: Tensor,
-    mesh: DeviceMesh,
-    placements: list[Placement] | tuple[Placement, ...],
-) -> Tensor:
-    """Distributes a single-device Tensor across a mesh via ``DF.shard``."""
-    return df_shard(t, PlacementMapping(mesh, tuple(placements)))

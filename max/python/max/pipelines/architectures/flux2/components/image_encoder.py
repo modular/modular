@@ -248,7 +248,9 @@ class ImageEncoder(CompiledComponent):
         packed_h = h_pixels // (self._vae_scale_factor * 2)
         packed_w = w_pixels // (self._vae_scale_factor * 2)
 
-        image_latent_ids = self._build_image_ids(packed_h, packed_w)
+        image_latent_ids = self._build_image_ids(packed_h, packed_w).to(
+            self._device
+        )
 
         return image_latents, image_latent_ids
 

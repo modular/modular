@@ -117,6 +117,11 @@ class PostprocessAndDecode(Module):
         decoded = ops.permute(decoded, [0, 2, 3, 1])
 
         # Normalize [-1, 1] -> [0, 255] and cast to uint8.
+        # Upcast to float32 for the normalization + scaling so that the
+        # x255 multiplication doesn't amplify bfloat16 rounding errors
+        # into +-1-2 pixel differences.  This matches the precision path
+        # used by diffusers (AutoencoderKL outputs float32 by default).
+        decoded = ops.cast(decoded, DType.float32)
         decoded = decoded * 0.5 + 0.5
         decoded = ops.max(decoded, 0.0)
         decoded = ops.min(decoded, 1.0)

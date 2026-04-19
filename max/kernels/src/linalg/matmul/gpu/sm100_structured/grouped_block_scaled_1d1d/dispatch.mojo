@@ -47,7 +47,7 @@ from std.utils.index import Index
 from layout import TileTensor
 
 from linalg.fp4_utils import NVFP4_SF_DTYPE, MXFP4_SF_DTYPE, MXFP8_SF_DTYPE
-from ..structured_kernels.config import BlockScaledMatmulConfig
+from ..structured_kernels.config import BlockScaledMatmulConfig, GEMMKind
 from .grouped_1d1d_matmul import grouped_matmul_block_scaled
 
 
@@ -114,6 +114,7 @@ def _launch_grouped_block_scaled[
         num_pipeline_stages=num_pipeline_stages,
         num_accum_pipeline_stages=1 if mma_bn > 128 else 2,
         is_gmm=True,
+        gemm_kind=GEMMKind.GMM,
     )
 
     grouped_matmul_block_scaled[transpose_b=transpose_b, config=config](

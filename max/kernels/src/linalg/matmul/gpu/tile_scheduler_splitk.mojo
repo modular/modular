@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_up, ceildiv
-from std.math.uutils import umod
-from std.os.atomic import Atomic
+from std.math.uutils import umod, ualign_up
+from std.atomic import Atomic
 from std.sys import size_of
 
 from std.gpu import NamedBarrierSemaphore
@@ -154,13 +154,13 @@ struct SplitKTileScheduler[
         var problem_blocks = Self.get_problem_blocks_shape(
             prob_shape, Self.tile_shape, Self.cluster_shape
         )
-        var problem_blocks_m = align_up(
-            UInt(problem_blocks[0]),
-            UInt(self.cluster_shape[0]),
+        var problem_blocks_m = ualign_up(
+            problem_blocks[0],
+            self.cluster_shape[0],
         )
-        var problem_blocks_n = align_up(
-            UInt(problem_blocks[1]),
-            UInt(self.cluster_shape[1]),
+        var problem_blocks_n = ualign_up(
+            problem_blocks[1],
+            self.cluster_shape[1],
         )
 
         comptime if Self.raster_order == RasterOrder.AlongN:
@@ -174,7 +174,7 @@ struct SplitKTileScheduler[
                 log2_floor(self.cluster_shape[0])
             )
             self.cluster_blk_major = UInt32(
-                problem_blocks_n >> UInt(self.log_cluster_shape_major)
+                problem_blocks_n >> Int(self.log_cluster_shape_major)
             )
 
         else:  # rasterize along M
@@ -188,7 +188,7 @@ struct SplitKTileScheduler[
                 log2_floor(self.cluster_shape[1])
             )
             self.cluster_blk_major = UInt32(
-                problem_blocks_m >> UInt(self.log_cluster_shape_major)
+                problem_blocks_m >> Int(self.log_cluster_shape_major)
             )
 
         self.blocks_per_problem = UInt32(problem_blocks_m) * UInt32(
@@ -424,15 +424,15 @@ struct SplitKTileScheduler[
             problem_shape, dyn_tile_shape, dyn_cluster_shape
         )
 
-        var problem_blocks_m = align_up(
-            UInt(problem_blocks[0]),
-            UInt(dyn_cluster_shape[0]),
+        var problem_blocks_m = ualign_up(
+            problem_blocks[0],
+            dyn_cluster_shape[0],
         )
-        var problem_blocks_n = align_up(
-            UInt(problem_blocks[1]),
-            UInt(dyn_cluster_shape[1]),
+        var problem_blocks_n = ualign_up(
+            problem_blocks[1],
+            dyn_cluster_shape[1],
         )
-        return Int(problem_blocks_m * problem_blocks_n)
+        return problem_blocks_m * problem_blocks_n
 
     @staticmethod
     @always_inline

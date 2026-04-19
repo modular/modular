@@ -10,16 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Op implementation for pooling (max, avg, etc)."""
+"""Op implementation for pooling (max, avg, roi_align, etc)."""
 
 from __future__ import annotations
 
+from max._core.dialects import builtin, kgen
+from max._core.dialects import rmo as _rmo
+from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..dim import DimLike
 from ..graph import Graph
 from ..shape import Shape
+from ..type import TensorType
 from ..value import TensorValue, TensorValueLike
+from .constant import constant
 
 
 def avg_pool2d(
@@ -133,4 +138,86 @@ def max_pool2d(
         dilations=Shape(dilation).to_mlir(),
         paddings=Shape(_padding).to_mlir(),
         ceil_mode=ceil_mode,
+    )[0].tensor
+
+
+def roi_align(
+    input: TensorValueLike,
+    rois: TensorValueLike,
+    output_height: int,
+    output_width: int,
+    spatial_scale: float = 1.0,
+    sampling_ratio: float = 0.0,
+    aligned: bool = False,
+    mode: str = "AVG",
+) -> TensorValue:
+    """Perform ROI Align pooling on the input tensor.
+
+    Extracts fixed-size feature maps from regions of interest (ROIs) in the
+    input tensor using bilinear interpolation. The input is expected in NHWC
+    layout.
+
+    Args:
+        input: The input tensor with shape ``[N, H, W, C]``.
+        rois: Regions of interest with shape ``[M, 5]``, where each row is
+            ``[batch_index, x1, y1, x2, y2]``.
+        output_height: Height of each output feature map.
+        output_width: Width of each output feature map.
+        spatial_scale: Multiplicative factor mapping ROI coordinates to
+            input spatial coordinates. Defaults to ``1.0``.
+        sampling_ratio: Number of sampling points per bin in each direction.
+            ``0`` means adaptive (``ceil(bin_size)``). Defaults to ``0.0``.
+        aligned: If ``True``, applies a half-pixel offset to ROI
+            coordinates for more precise alignment. Defaults to ``False``.
+        mode: Pooling mode, either ``"AVG"`` or ``"MAX"``.
+            Defaults to ``"AVG"``.
+
+    Returns:
+        A symbolic tensor with shape ``[M, output_height, output_width, C]``.
+
+    Raises:
+        ValueError: If ``input`` is not rank 4, ``rois`` is not rank 2 with
+            5 columns, or ``mode`` is invalid.
+    """
+    input = TensorValue(input)
+    rois = TensorValue(rois)
+
+    if input.rank != 4:
+        raise ValueError(
+            f"roi_align expects rank-4 NHWC input, got rank {input.rank}"
+        )
+    if rois.rank != 2:
+        raise ValueError(
+            f"roi_align expects rank-2 rois [M, 5], got rank {rois.rank}"
+        )
+    if mode not in ("AVG", "MAX"):
+        raise ValueError(f"roi_align mode must be 'AVG' or 'MAX', got '{mode}'")
+
+    device = input.type.device
+    num_rois = rois.type.shape[0]
+    channels = input.type.shape[3]
+
+    result_type = TensorType(
+        input.dtype,
+        [num_rois, output_height, output_width, channels],
+        device,
+    )
+
+    oh_val = constant(output_height, DType.int64, device)
+    ow_val = constant(output_width, DType.int64, device)
+    scale_val = constant(spatial_scale, DType.float32, device)
+    ratio_val = constant(sampling_ratio, DType.float32, device)
+
+    return Graph.current._add_op_generated(
+        _rmo.MoRoiAlignOp,
+        result_type,
+        input,
+        rois,
+        oh_val,
+        ow_val,
+        scale_val,
+        ratio_val,
+        builtin.BoolAttr(aligned),
+        builtin.StringAttr(mode),
+        kgen.ParamDeclArrayAttr([]),
     )[0].tensor

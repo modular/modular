@@ -1,0 +1,30 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+name: attention_fp8
+file: $BUILD_WORKSPACE_DIRECTORY/max/python/benchmarks/testbed/kbench_entrypoint.py
+single_invoke: true
+
+params:
+# Llama3.1-405B FP8 dynamic, TP=8 per-shard config (multi-turn workload)
+- $harness: attention_with_rope
+  $dtype: fp8
+  $model_name: llama3-405b-tp8-fp8
+  $hidden_size: 16384
+  $n_heads: 16
+  $n_kv_heads: 1
+  $head_dim: 128
+  $max_seq_len: 131072
+  $rope_theta: 500000.0
+  $batch_size: [1, 8, 16, 32]
+  $seq_len: [1, 125, 10000]
+  $ctx_len: [8192, 16384, 32768]

@@ -72,7 +72,7 @@ def band_part_op[
     num_lower: Int,
     num_upper: Int,
     exclude_flag: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Apply band_part masking over the last two dims of a tensor.
 
@@ -124,7 +124,7 @@ def band_part_op[
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx)
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )
@@ -149,7 +149,7 @@ struct _BandPartBody(Dispatchable):
     var num_lower: Int
     var num_upper: Int
     var exclude_flag: Int
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def call[t: DType](self) raises -> None:
         band_part_op(

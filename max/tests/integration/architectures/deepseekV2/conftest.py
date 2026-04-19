@@ -27,10 +27,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
 from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
-from max.nn.kv_cache import (
-    KVCacheParams,
-    unflatten_ragged_attention_inputs,
-)
+from max.nn.kv_cache import KVCacheParams
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
@@ -165,14 +162,16 @@ def _generate_latent_attention_max_outputs(
             input_types=(
                 hidden_state_type,
                 input_row_offsets_type,
-                *kv_params.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs().flatten(),
             ),
         ) as graph:
             hidden_states = graph.inputs[0].tensor
             input_row_offsets = graph.inputs[1].tensor
-            kv_collection = unflatten_ragged_attention_inputs(
-                graph.inputs[2:], n_devices=1
-            )[0]
+            kv_collection = (
+                kv_params.get_symbolic_inputs()
+                .unflatten(iter(graph.inputs[2:]))
+                .inputs[0]
+            )
 
             result = latent_attention(
                 ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
@@ -208,7 +207,7 @@ def _generate_latent_attention_max_outputs(
         for tok_idx in range(total_tokens):
             for ctx in batch:
                 kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-            kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+            kv_inputs = kv_manager.runtime_inputs([batch])
             input_tensor_device = (
                 Buffer.from_numpy(
                     input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -217,7 +216,9 @@ def _generate_latent_attention_max_outputs(
                 .to(device0)
             )
             max_output = compiled.execute(
-                input_tensor_device, input_row_offsets.to(device0), *kv_inputs
+                input_tensor_device,
+                input_row_offsets.to(device0),
+                *kv_inputs.flatten(),
             )
 
             for ctx in batch:
@@ -230,14 +231,14 @@ def _generate_latent_attention_max_outputs(
 
     for ctx in batch:
         kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-    kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    kv_inputs = kv_manager.runtime_inputs([batch])
     input_tensor_device = (
         Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
         .view(DType.bfloat16)
         .to(device0)
     )
     max_output = compiled.execute(
-        input_tensor_device, input_row_offsets.to(device0), *kv_inputs
+        input_tensor_device, input_row_offsets.to(device0), *kv_inputs.flatten()
     )
     torch_output = from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
     return torch_output[None, :, :]

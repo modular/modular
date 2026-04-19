@@ -111,15 +111,16 @@ struct StackTrace(Copyable, Movable, Writable):
         if depth < 0:
             return None
 
-        var buffer = UnsafePointer[UInt8, MutExternalOrigin](_unsafe_null=())
-        var num_bytes = external_call["KGEN_CompilerRT_GetStackTrace", Int](
-            UnsafePointer(to=buffer), depth
-        )
+        var buffer = Optional[UnsafePointer[UInt8, MutExternalOrigin]]()
+        var num_bytes = external_call[
+            "KGEN_CompilerRT_GetStackTrace", SIMDSize
+        ](UnsafePointer(to=buffer), depth)
         # When num_bytes is zero, the stack trace was not collected.
         if num_bytes == 0:
             return None
 
-        return StackTrace(unsafe_from_raw_pointer=buffer)
+        # If num_bytes > 0, `buffer` will not be left null.
+        return StackTrace(unsafe_from_raw_pointer=buffer.unsafe_value())
 
     def write_to(self, mut writer: Some[Writer]):
         """Writes the StackTrace to the provided Writer.
