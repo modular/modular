@@ -82,7 +82,7 @@ from linalg.matmul.gpu.amd.amd_target import (
 )
 
 # Default (single-buffer) matmul schedule.
-from linalg.matmul.gpu.amd.matmul_schedule import (
+from linalg.matmul.gpu.amd.amd_matmul_schedule import (
     COMPUTE,
     DefaultMatmulOps,
     LOAD_DRAM,
@@ -99,7 +99,7 @@ from linalg.matmul.gpu.amd.matmul_schedule import (
 )
 
 # Ping-pong (double-buffer) matmul schedule.
-from linalg.matmul.gpu.amd.pingpong_schedule import (
+from linalg.matmul.gpu.amd.amd_ping_pong_schedule import (
     DeclarativeSchedule,
     build_schedule,
     LOAD_A,
@@ -1713,7 +1713,7 @@ def test_optimize_within_barriers_single_buffer() raises:
       3. Preserve barrier positions
       4. Satisfy all d=0 dependency edges
     """
-    from linalg.matmul.gpu.amd.matmul_schedule import _logical_body
+    from linalg.matmul.gpu.amd.amd_matmul_schedule import _logical_body
     from linalg.matmul.gpu.amd.amd_target import mi355x_single_buffer_target
     from pipeline.types import annotate_ops
     from pipeline.program_builder import single_buffer_reorder
@@ -2475,7 +2475,7 @@ def _assert_ops_equal(a: List[OpDesc], b: List[OpDesc], msg: String) raises:
 def test_pipeline_body_single_buffer() raises:
     """PipelineBody produces identical output to _logical_body for single-buffer.
     """
-    from linalg.matmul.gpu.amd.matmul_schedule import _logical_body
+    from linalg.matmul.gpu.amd.amd_matmul_schedule import _logical_body
     from linalg.matmul.gpu.amd.pipeline_body import PipelineBody
 
     # Build via current code.
@@ -2494,7 +2494,7 @@ def test_pipeline_body_single_buffer() raises:
 
 def test_pipeline_body_pingpong() raises:
     """PipelineBody produces identical output to _logical_half for ping-pong."""
-    from linalg.matmul.gpu.amd.pingpong_schedule import _logical_half
+    from linalg.matmul.gpu.amd.amd_ping_pong_schedule import _logical_half
     from linalg.matmul.gpu.amd.pipeline_body import PipelineBody
 
     # Test both halves.

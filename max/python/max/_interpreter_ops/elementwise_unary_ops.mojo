@@ -129,7 +129,7 @@ def PyInit_elementwise_unary_ops() -> PythonObject:
         var b = PythonModuleBuilder("elementwise_unary_ops")
 
         # Unary elementwise operations
-        comptime for i in range(TypeList[*UNARY_ELEMENTWISE_OPS].size):
+        comptime for i in range(TypeList[UNARY_ELEMENTWISE_OPS].size):
             comptime op = UNARY_ELEMENTWISE_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString("Elementwise " + name)
@@ -138,7 +138,7 @@ def PyInit_elementwise_unary_ops() -> PythonObject:
             )
 
         # Unary float-only operations
-        comptime for i in range(TypeList[*UNARY_FLOAT_ONLY_OPS].size):
+        comptime for i in range(TypeList[UNARY_FLOAT_ONLY_OPS].size):
             comptime op = UNARY_FLOAT_ONLY_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(
@@ -154,7 +154,7 @@ def PyInit_elementwise_unary_ops() -> PythonObject:
         )
 
         # Unary predicate operations (float -> bool)
-        comptime for i in range(TypeList[*UNARY_PREDICATE_OPS].size):
+        comptime for i in range(TypeList[UNARY_PREDICATE_OPS].size):
             comptime op = UNARY_PREDICATE_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(
@@ -412,7 +412,7 @@ def unary_elementwise_op[
     out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     size: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Elementwise unary operation: out = op(input).
 
@@ -444,7 +444,7 @@ def unary_elementwise_op[
             comptime if _is_gpu_allowed_unary_op[
                 op
             ]() and dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
                 )
@@ -464,7 +464,7 @@ def unary_mixed_op[
     out_ptr: UnsafePointer[Scalar[out_dtype], MutExternalOrigin],
     in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     size: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Elementwise unary mixed-type operation: out = op(input).
 
@@ -499,7 +499,7 @@ def unary_mixed_op[
             comptime if _is_gpu_allowed_mixed_unary_op[
                 op
             ]() and dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
                 )

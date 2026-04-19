@@ -79,7 +79,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
                 input_row_offsets_type,
                 k_buffer_type,
                 v_buffer_type,
-                *kv_params.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs().flatten(),
             ],
         ) as g:
             (
@@ -156,7 +156,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
         input_row_offsets.to(cuda),
         k_buffer_tensor.to(cuda),
         v_buffer_tensor.to(cuda),
-        *(kv_runtime_inputs.inputs[0].as_list()),
+        *(kv_runtime_inputs.inputs[0].flatten()),
     )[0]
     assert isinstance(result, Buffer)
 

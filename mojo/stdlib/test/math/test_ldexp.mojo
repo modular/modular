@@ -43,7 +43,7 @@ def test_ldexp_vector() raises:
 
 
 def ldexp_libm[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](arg: SIMD[dtype, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:

@@ -25,6 +25,8 @@ managed and destroyed in Mojo:
 These traits are built into Mojo and do not need to be imported.
 """
 
+from std.builtin.variadics import _MLIR
+
 # ===----------------------------------------------------------------------=== #
 #  AnyType
 # ===----------------------------------------------------------------------=== #
@@ -94,22 +96,24 @@ trait AnyType:
     a named destructor method:
 
     ```mojo
+    from std.pathlib import Path
+
     @explicit_destroy
     struct FileBuffer:
         def __init__(out self, path: Path):
-            # ... open the file at the specified `path` ...
+            pass  # ... open the file at the specified `path` ...
 
         def write(self, data: Some[Writable]):
-            # ... buffered write of the specified data to this file ...
+            pass  # ... buffered write of the specified data to this file ...
 
         def save_and_close(deinit self):
-            # ... save out the buffered data ...
+            pass  # ... save out the buffered data ...
 
-    # 🔴 ERROR: 'file' abandoned without being explicitly destroyed
-    def write_greeting_to_file(var file: FileBuffer):
-        file.write("Hello there!")
-
-        # 🟢 FIX: add `file^.save_and_close()`
+    # ERROR: 'file' abandoned without being explicitly destroyed
+    # def write_greeting_to_file(var file: FileBuffer):
+    #     file.write("Hello there!")
+    #
+    # FIX: add `file^.save_and_close()`
     ```
 
     In the above example, the user is saved from forgetting to flush any
@@ -149,11 +153,13 @@ trait ImplicitlyDestructible:
     Example:
 
     ```mojo
+    from std.memory import UnsafePointer, alloc
+
     struct ResourceOwner(ImplicitlyDestructible):
-        var ptr: UnsafePointer[Int]
+        var ptr: UnsafePointer[Int, MutAnyOrigin]
 
         def __init__(out self, size: Int):
-            self.ptr = UnsafePointer[Int].alloc(size)
+            self.ptr = alloc[Int](size)
 
         def __del__(deinit self):
             # Clean up owned resources
@@ -195,6 +201,9 @@ trait ImplicitlyDestructible:
 
 
 comptime __SomeImpl[Trait: type_of(AnyType), T: Trait] = T
+comptime __SomeTypeListImpl[
+    Trait: type_of(AnyType), values: _MLIR.KGENTypeListType[Trait]
+] = TypeList[Trait=Trait, values]()
 
 comptime Some[Trait: type_of(AnyType)] = __SomeImpl[Trait, ...]
 """An alias allowing users to tersely express that a function argument is an
@@ -216,4 +225,25 @@ def foo(x: Some[Intable]) -> Int:
 
 Parameters:
     Trait: The trait or trait composition that the argument type must implement.
+"""
+
+comptime SomeTypeList[Trait: type_of(AnyType)] = __SomeTypeListImpl[Trait, ...]
+"""An alias allowing users to tersely express that a function argument is a
+list of types that implement a trait or trait composition. This is particularly
+useful for variadic packs.
+
+For example, instead of writing
+
+```mojo
+def foo[*arg_types: Copyable](*args: *arg_types) -> Int: ...
+```
+
+one can write:
+
+```mojo
+def foo(*args: *SomeTypeList[Copyable]) -> Int: ...
+```
+
+Parameters:
+    Trait: The trait or trait composition that the argument types must implement.
 """
