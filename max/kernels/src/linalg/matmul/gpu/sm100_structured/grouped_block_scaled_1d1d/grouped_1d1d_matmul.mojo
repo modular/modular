@@ -55,6 +55,7 @@ from linalg.fp4_utils import (
 )
 from ..structured_kernels.config import BlockScaledMatmulConfig
 from .grouped_1d1d_matmul_kernel import Grouped1D1DMatmulKernel
+from std.memory import UnsafePointer
 
 
 def grouped_matmul_block_scaled[
@@ -284,6 +285,11 @@ def grouped_matmul_block_scaled[
         sfb_4d_layout,
     )
 
+    # Raw SFB pointer and strides for cp.async path (MMA_N < 64).
+    # When group_size < SF_MN_GROUP_SIZE, the SfbTMALoad warp uses cp.async
+    # instead of TMA to avoid loading full 128-row atoms for small groups.
+    comptime _sfb_K_TILE_ELEMS = SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
+
     # Define kernel function
     comptime kernel = matmul_kernel.run
 
@@ -293,10 +299,10 @@ def grouped_matmul_block_scaled[
         1,
     )
 
-    # Thread count from WarpRole1D1D (single source of truth):
-    # MMA_N >= 64: 192 threads (6 warps: 4 epilogue + 1 load + 1 MMA)
-    # MMA_N <  64: 352 threads (+ 1 SFB TMA load + 4 SFB TMEM load)
-    comptime block_threads = WarpRole1D1D.TOTAL_THREADS_WITH_SFB if MMA_N < 64 else WarpRole1D1D.TOTAL_THREADS
+    # Always launch with scheduler warp. SFB warps only on MMA_N < 64 decode
+    # path, so MMA_N >= 64 (prefill / 2SM) shrinks from 384 → 224 threads and
+    # frees ~7.5K registers per CTA.
+    comptime block_threads = WarpRole1D1D[MMA_N < 64].TOTAL_THREADS_WITH_SCHED
 
     # Re-wrap 1D TileTensors with GMEMLayout1D to match the kernel's
     # expected types. The caller's TileTensors may have a different symbolic
@@ -375,6 +381,12 @@ def grouped_matmul_block_scaled[
             c_device,
             num_active_experts,
             UInt32(K),
+            # AB_swapped: SFB data comes from a_scales.
+            rebind[UnsafePointer[Scalar[sfa_dtype], ImmutAnyOrigin]](
+                a_scales.ptr
+            ),
+            Int(a_scales.layout.shape[1]().value()) * _sfb_K_TILE_ELEMS,
+            Int(a_scales.layout.shape[1]().value()),
             grid_dim=grid_dim,
             block_dim=block_threads,
             cluster_dim=Dim(
@@ -434,6 +446,12 @@ def grouped_matmul_block_scaled[
             c_device,
             num_active_experts,
             UInt32(K),
+            # Non-swapped: SFB data comes from _b_scales.
+            rebind[UnsafePointer[Scalar[sfb_dtype], ImmutAnyOrigin]](
+                _b_scales.ptr
+            ),
+            Int(_b_scales.layout.shape[2]().value()) * _sfb_K_TILE_ELEMS,
+            Int(_b_scales.layout.shape[2]().value()),
             grid_dim=grid_dim,
             block_dim=block_threads,
             cluster_dim=Dim(

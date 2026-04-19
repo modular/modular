@@ -16,7 +16,7 @@ from std.sys import prefetch
 from std.sys.info import CompilationTarget, align_of
 from std.sys.intrinsics import PrefetchOptions
 
-from buffer.buffer import partial_simd_load
+from linalg.utils import partial_simd_load
 from layout import Coord, Idx, TileTensor, stack_allocation
 from layout.tile_layout import row_major
 from std.memory.unsafe import bitcast

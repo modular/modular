@@ -556,8 +556,10 @@ class LatentAttentionWithRope(Module, Shardable):
         if self.graph_mode in ["decode", "auto"]:
             attn_kwargs["w_uk"] = self.w_uk
             attn_kwargs["w_uv"] = self.w_uv
-            assert kv_collection.dispatch_metadata is not None
-            attn_kwargs["scalar_args"] = kv_collection.dispatch_metadata.tensor
+            assert kv_collection.attention_dispatch_metadata is not None
+            attn_kwargs["scalar_args"] = (
+                kv_collection.attention_dispatch_metadata
+            )
 
         if self.graph_mode == "prefill":
             result = mla_prefill_graph(**attn_kwargs)

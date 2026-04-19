@@ -27,6 +27,7 @@ from std.builtin.constrained import _constrained_conforms_to
 import std.format._utils as fmt
 from std.hashlib import Hasher
 from std.memory import uninit_copy_n, uninit_move_n
+from std.collections import check_bounds
 
 # ===-----------------------------------------------------------------------===#
 # Deque
@@ -390,6 +391,23 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """
         return (self._tail - self._head) & (self._capacity - 1)
 
+    @always_inline
+    def __getitem__(ref self, idx: IntLiteral) -> ref[self] Self.ElementType:
+        """Gets the deque element at the given index.
+
+        Args:
+            idx: The index of the element.
+
+        Returns:
+            A reference to the element at the given index.
+        """
+        comptime assert (
+            IntLiteral[idx.value]() >= 0
+        ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
+        check_bounds(idx, len(self))
+        return self._unchecked_get(idx)
+
+    @always_inline
     def __getitem__(ref self, idx: Int) -> ref[self] Self.ElementType:
         """Gets the deque element at the given index.
 
@@ -399,21 +417,13 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Returns:
             A reference to the element at the given index.
         """
-        normalized_idx = idx
+        check_bounds(idx, len(self))
+        return self._unchecked_get(idx)
 
-        debug_assert(
-            -len(self) <= normalized_idx < len(self),
-            "index: ",
-            normalized_idx,
-            " is out of bounds for `Deque` of size: ",
-            len(self),
-        )
-
-        if normalized_idx < 0:
-            normalized_idx += len(self)
-
-        offset = self._physical_index(self._head + normalized_idx)
-        return (self._data + offset)[]
+    @always_inline
+    def _unchecked_get(ref self, idx: Int) -> ref[self] Self.ElementType:
+        offset = self._physical_index(self._head + idx)
+        return self._data[offset]
 
     def _write_self_to[
         f: def(Self.ElementType, mut Some[Writer]) thin
@@ -654,6 +664,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
                 return idx
         raise "ValueError: Given element is not in deque"
 
+    @always_inline
     def insert(mut self, idx: Int, var value: Self.ElementType) raises:
         """Inserts the `value` into the deque at position `idx`.
 
@@ -669,31 +680,22 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         if deque_len == self._maxlen:
             raise "IndexError: Deque is already at its maximum size"
 
-        normalized_idx = idx
+        check_bounds(idx, deque_len + 1)
 
-        if normalized_idx < -deque_len:
-            normalized_idx = 0
-
-        if normalized_idx > deque_len:
-            normalized_idx = deque_len
-
-        if normalized_idx < 0:
-            normalized_idx += deque_len
-
-        if normalized_idx <= deque_len // 2:
-            for i in range(normalized_idx):
+        if idx <= deque_len // 2:
+            for i in range(idx):
                 src = self._physical_index(self._head + i)
                 dst = self._physical_index(src - 1)
                 (self._data + dst).init_pointee_move_from(self._data + src)
             self._head = self._physical_index(self._head - 1)
         else:
-            for i in range(deque_len - normalized_idx):
+            for i in range(deque_len - idx):
                 dst = self._physical_index(self._tail - i)
                 src = self._physical_index(dst - 1)
                 (self._data + dst).init_pointee_move_from(self._data + src)
             self._tail = self._physical_index(self._tail + 1)
 
-        offset = self._physical_index(self._head + normalized_idx)
+        offset = self._physical_index(self._head + idx)
         (self._data + offset).init_pointee_move(value^)
 
         if self._head == self._tail:

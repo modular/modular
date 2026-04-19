@@ -38,10 +38,7 @@ CTA role split (cta_group=2):
 """
 
 from std.sys import size_of
-from std.gpu.primitives.cluster import (
-    block_rank_in_cluster,
-    elect_one_sync_with_mask,
-)
+from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.compute.arch.mma_nvidia_sm100 import mma_arrive_multicast
 from linalg.arch.sm100.mma import smem_descriptor
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
@@ -207,7 +204,6 @@ def depth512_mma[
 
     # CTA mask for multicast arrive: signal both CTAs in the pair.
     comptime cta_mask = UInt16(0x3)
-    var elect_one = elect_one_sync_with_mask()
 
     # ---- Helper: P@V with depth-dependent commit strategy ---------------------
 
@@ -260,12 +256,12 @@ def depth512_mma[
                     and pv_stage == 0 else UInt32(1),
                     elect=e,
                 )
-                if elect_one:
+                if e != 0:
                     mma_arrive_multicast[cta_group](
                         kv_pipeline.consumer_mbar(), cta_mask
                     )
                 kv_pipeline.state.step()
-            if elect_one:
+            if e != 0:
                 mma_arrive_multicast[cta_group](
                     pipeline_o_lo.producer_mbar(), cta_mask
                 )
@@ -284,12 +280,12 @@ def depth512_mma[
                     and pv_stage == 0 else UInt32(1),
                     elect=e,
                 )
-                if elect_one:
+                if e != 0:
                     mma_arrive_multicast[cta_group](
                         kv_pipeline.consumer_mbar(), cta_mask
                     )
                 kv_pipeline.state.step()
-            if elect_one:
+            if e != 0:
                 mma_arrive_multicast[cta_group](
                     pipeline_o_hi.producer_mbar(), cta_mask
                 )
@@ -321,12 +317,12 @@ def depth512_mma[
                     and pv_stage == 0 else UInt32(1),
                     elect=e,
                 )
-                if elect_one:
+                if e != 0:
                     mma_arrive_multicast[cta_group](
                         kv_pipeline.consumer_mbar(), cta_mask
                     )
                 kv_pipeline.state.step()
-            if elect_one:
+            if e != 0:
                 mma_arrive_multicast[cta_group](
                     pipeline_o_lo.producer_mbar(), cta_mask
                 )
@@ -344,12 +340,12 @@ def depth512_mma[
             c_scale=UInt32(0) if qk_stage == 0 else UInt32(1),
             elect=e,
         )
-        if elect_one:
+        if e != 0:
             mma_arrive_multicast[cta_group](
                 kv_pipeline.consumer_mbar(), cta_mask
             )
         kv_pipeline.state.step()
-    if elect_one:
+    if e != 0:
         mma_arrive_multicast[cta_group](
             pipeline_s_even.producer_mbar(), cta_mask
         )
@@ -391,12 +387,12 @@ def depth512_mma[
                 c_scale=UInt32(0) if qk_stage == 0 else UInt32(1),
                 elect=e,
             )
-            if elect_one:
+            if e != 0:
                 mma_arrive_multicast[cta_group](
                     kv_pipeline.consumer_mbar(), cta_mask
                 )
             kv_pipeline.state.step()
-        if elect_one:
+        if e != 0:
             mma_arrive_multicast[cta_group](
                 s_cur_pipeline.producer_mbar(), cta_mask
             )

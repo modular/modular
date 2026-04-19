@@ -111,6 +111,122 @@ def resize_linear(
     )[0].tensor
 
 
+def resize_nearest(
+    input: TensorValueLike,
+    size: ShapeLike,
+    coordinate_transform_mode: int = 0,
+    round_mode: int = 0,
+) -> TensorValue:
+    """Resize a tensor using nearest-neighbor interpolation.
+
+    Produces an output tensor whose dimensions are given by ``size`` by
+    selecting the nearest input sample for each output coordinate.
+
+    Args:
+        input: The input symbolic tensor to resize.
+        size: Desired output shape.  Must have the same rank as ``input``.
+        coordinate_transform_mode: How to map an output coordinate to an input
+            coordinate.  Allowed values:
+
+            - ``0`` -- ``half_pixel`` (default).
+            - ``1`` -- ``align_corners``.
+            - ``2`` -- ``asymmetric``.
+            - ``3`` -- ``half_pixel_1D``.
+        round_mode: How to round the mapped coordinate to select the nearest
+            input sample.  Allowed values:
+
+            - ``0`` -- ``HalfDown`` (default): ``ceil(x - 0.5)``.
+            - ``1`` -- ``HalfUp``: ``floor(x + 0.5)``.
+            - ``2`` -- ``Floor``: ``floor(x)``.
+            - ``3`` -- ``Ceil``: ``ceil(x)``.
+
+    Returns:
+        A new symbolic tensor with shape ``size`` and the same dtype as
+        ``input``.
+
+    Raises:
+        ValueError: If ``coordinate_transform_mode`` is not 0-3,
+            ``round_mode`` is not 0-3, or ``size`` has a different rank
+            than ``input``.
+    """
+    if coordinate_transform_mode not in (0, 1, 2, 3):
+        raise ValueError(
+            f"coordinate_transform_mode must be 0-3, got"
+            f" {coordinate_transform_mode}"
+        )
+    if round_mode not in (0, 1, 2, 3):
+        raise ValueError(f"round_mode must be 0-3, got {round_mode}")
+
+    input = TensorValue(input)
+    size = Shape(size)
+
+    if len(size) != input.rank:
+        raise ValueError(
+            f"size must have the same rank as input ({input.rank}), got"
+            f" {len(size)}"
+        )
+
+    result_type = TensorType(dtype=input.dtype, shape=size, device=input.device)
+
+    return Graph.current._add_op_generated(
+        rmo.MoResizeNearestOp,
+        result_type.to_mlir(),
+        input,
+        shape_to_tensor(size),
+        mo.CoordinateTransformModeAttr(
+            mo.CoordinateTransformMode(coordinate_transform_mode)
+        ),
+        builtin.IntegerAttr(builtin.IntegerType(64), round_mode),
+        kgen.ParamDeclArrayAttr([]),
+    )[0].tensor
+
+
+def resize_bicubic(
+    input: TensorValueLike,
+    size: ShapeLike,
+) -> TensorValue:
+    """Resize a tensor using bicubic interpolation.
+
+    Produces an output tensor whose dimensions are given by ``size`` using
+    a 4x4-pixel Catmull-Rom (a=-0.75) cubic convolution filter with
+    half_pixel coordinate mapping.  Input must be rank-4 NCHW.
+
+    Args:
+        input: The input symbolic tensor to resize.  Must have rank 4.
+        size: Desired output shape of length 4 (N, C, H, W).
+
+    Returns:
+        A new symbolic tensor with shape ``size`` and the same dtype as
+        ``input``.
+
+    Raises:
+        ValueError: If ``input`` doesn't have rank 4 or ``size`` has a
+            different length.
+    """
+    input = TensorValue(input)
+    size = Shape(size)
+
+    if input.rank != 4:
+        raise ValueError(
+            f"resize_bicubic requires rank-4 (NCHW) input, got rank"
+            f" {input.rank}"
+        )
+    if len(size) != 4:
+        raise ValueError(
+            f"size must have 4 elements for NCHW format, got {len(size)}"
+        )
+
+    result_type = TensorType(dtype=input.dtype, shape=size, device=input.device)
+
+    return Graph.current._add_op_generated(
+        rmo.MoResizeBicubicOp,
+        result_type.to_mlir(),
+        input,
+        shape_to_tensor(size),
+        kgen.ParamDeclArrayAttr([]),
+    )[0].tensor
+
+
 def resize(
     input: TensorValueLike,
     shape: ShapeLike,
@@ -134,7 +250,6 @@ def resize(
     Raises:
         ValueError: If the input doesn't have rank 4, shape has wrong number
             of elements, or unsupported interpolation mode is specified.
-        NotImplementedError: If ``InterpolationMode.NEAREST`` is specified.
     """
     input = TensorValue(input)
     shape = Shape(shape)
@@ -152,27 +267,10 @@ def resize(
         )
 
     if interpolation == InterpolationMode.NEAREST:
-        raise NotImplementedError(
-            "InterpolationMode.NEAREST is not yet supported."
-        )
+        return resize_nearest(input, shape)
 
     if interpolation == InterpolationMode.BILINEAR:
-        # Delegate to resize_linear with default half_pixel coordinate mode.
         return resize_linear(input, shape)
 
-    # NOTE: half_pixel is the default coordinate transform mode.
-    # This matches the behavior of torchvision and other libraries.
-
-    # Create the result type with the new shape.
-    result_type = TensorType(
-        dtype=input.dtype, shape=shape, device=input.device
-    )
-
-    # Stage bicubic resize op.
-    return Graph.current._add_op_generated(
-        rmo.MoResizeBicubicOp,
-        result_type.to_mlir(),
-        input,
-        shape_to_tensor(shape),
-        kgen.ParamDeclArrayAttr([]),
-    )[0].tensor
+    # BICUBIC (only remaining option after NEAREST and BILINEAR).
+    return resize_bicubic(input, shape)

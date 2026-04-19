@@ -44,6 +44,7 @@ from linalg.fp4_utils import (
 
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
+    GEMMKind,
 )
 from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
@@ -308,6 +309,7 @@ def test_existing_kernel_single_group[
         cta_group=cta_group,
         k_group_size=1,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     comptime if transpose_b:
@@ -627,6 +629,7 @@ def test_grouped_kernel_single_group[
         cta_group=cta_group,
         k_group_size=1,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     launch_grouped_gemm_with_templates[
@@ -946,6 +949,7 @@ def test_grouped_kernel_multi_group_same_ptr[
         cta_group=cta_group,
         k_group_size=1,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     launch_grouped_gemm_with_templates[
@@ -1321,6 +1325,7 @@ def test_grouped_kernel_two_groups_different_ptrs[
         cta_group=cta_group,
         k_group_size=1,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     launch_grouped_gemm_with_templates[
