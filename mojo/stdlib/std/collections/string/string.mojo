@@ -1358,31 +1358,31 @@ struct String(
         return substr in StringSlice(self)
 
     def find(self, substr: StringSlice, start: Int = 0) -> Int:
-        """Finds the offset of the first occurrence of `substr` starting at
-        `start`. If not found, returns -1.
+        """Finds the offset in bytes of the first occurrence of `substr`
+        starting at `start`. If not found, returns -1.
 
         Args:
-          substr: The substring to find.
-          start: The offset from which to find.
+            substr: The substring to find.
+            start: The offset in bytes from which to find.
 
         Returns:
-          The offset of `substr` relative to the beginning of the string.
+            The offset in bytes of `substr` relative to the beginning of the
+            string.
         """
-
         return StringSlice(self).find(substr, start)
 
     def rfind(self, substr: StringSlice, start: Int = 0) -> Int:
-        """Finds the offset of the last occurrence of `substr` starting at
-        `start`. If not found, returns -1.
+        """Finds the offset in bytes of the last occurrence of `substr` starting
+        at `start`. If not found, returns -1.
 
         Args:
-          substr: The substring to find.
-          start: The offset from which to find.
+            substr: The substring to find.
+            start: The offset in bytes from which to find.
 
         Returns:
-          The offset of `substr` relative to the beginning of the string.
+            The offset in bytes of `substr` relative to the beginning of the
+            string.
         """
-
         return StringSlice(self).rfind(substr, start=start)
 
     def isspace(self) -> Bool:

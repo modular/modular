@@ -1472,29 +1472,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             The offset in bytes of `substr` relative to the beginning of the
             string.
         """
-        if not substr:
-            return 0
-
-        if self.byte_length() < substr.byte_length() + start:
-            return -1
-
-        # The substring to search within, offset from the beginning if `start`
-        # is positive, and offset from the end if `start` is negative.
-        var haystack = self.as_bytes()[start:]
-
-        var loc = _memmem(
-            haystack.get_immutable(),
-            substr.as_bytes().get_immutable(),
-        )
-
-        if not loc:
-            return -1
-
-        return Int(loc.unsafe_value()) - Int(self.unsafe_ptr())
+        return self.as_bytes().find(substr.as_bytes(), start)
 
     def rfind(self, substr: StringSlice, start: Int = 0) -> Int:
-        """Finds the offset in bytes of the last occurrence of `substr` starting at
-        `start`. If not found, returns `-1`.
+        """Finds the offset in bytes of the last occurrence of `substr` starting
+        at `start`. If not found, returns `-1`.
 
         Args:
             substr: The substring to find.
@@ -1504,25 +1486,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             The offset in bytes of `substr` relative to the beginning of the
             string.
         """
-        if not substr:
-            return self.byte_length()
-
-        if self.byte_length() < substr.byte_length() + start:
-            return -1
-
-        # The substring to search within, offset from the beginning if `start`
-        # is positive, and offset from the end if `start` is negative.
-        var haystack = self.as_bytes()[start:]
-
-        var loc = _memrmem(
-            haystack,
-            substr.as_bytes(),
-        )
-
-        if not loc:
-            return -1
-
-        return Int(loc.unsafe_value()) - Int(self.unsafe_ptr())
+        return self.as_bytes().rfind(substr.as_bytes(), start)
 
     def isspace[single_character: Bool = False](self) -> Bool:
         """Determines whether every character in the given StringSlice is a
