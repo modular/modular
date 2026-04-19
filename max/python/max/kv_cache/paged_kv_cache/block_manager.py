@@ -34,11 +34,9 @@ from max.interfaces import (
     VLMTextGenerationContext,
 )
 from max.kv_cache.kv_connector import KVConnector
+from max.kv_cache.memory_tier import MemoryTier
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
-from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
-    MemoryTier,
-)
 from max.support.math import ceildiv
 
 from .block_pool import BlockPool
@@ -56,7 +54,8 @@ def _compute_seq_len(
 ) -> int:
     seq_len = (
         len(ctx.tokens)
-        + ctx.spec_decoding_state.num_draft_tokens
+        + len(ctx.spec_decoding_state.draft_tokens_to_verify)
+        + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
         + num_speculative_steps
         + num_steps
         - 1
@@ -492,7 +491,11 @@ class BlockManager:
         # This should literally never happen unless the user sets an absurdly
         # large max seq len or the KV cache is very small.
         total_kv_slots = self.total_num_blocks * self.block_size
-        seq_len = len(ctx.tokens) + ctx.spec_decoding_state.num_draft_tokens
+        seq_len = (
+            len(ctx.tokens)
+            + len(ctx.spec_decoding_state.draft_tokens_to_verify)
+            + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
+        )
         if seq_len > total_kv_slots:
             raise InsufficientBlocksError(
                 f"Insufficient KV pages for a single request with {seq_len} tokens.\n"

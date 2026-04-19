@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.os.atomic import Atomic
+from std.atomic import Atomic
 from std.random import randint
 from std.sys import has_accelerator, size_of
 
@@ -140,7 +140,7 @@ def main() raises:
 
         # Initialise a with random integers between 0 and 10
         with a.map_to_host() as a_host:
-            randint[dtype](a_host.unsafe_ptr(), SIZE, 0, 10)
+            randint[dtype](a_host.as_span(), low=0, high=10)
 
         # Call the kernel
         ctx.enqueue_function[kernel, kernel](

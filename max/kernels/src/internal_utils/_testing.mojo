@@ -75,9 +75,70 @@ def _format_index(i: Int, shape: List[Int]) -> String:
         return String(t"i={i}")
 
 
+def _check_span_length(
+    a: Span[...], b: Span[...], location: SourceLocation
+) raises:
+    if len(a) != len(b):
+        raise Error(
+            t"Spans to not have equal lengths: {len(a)}, {len(b)}: {location}"
+        )
+
+
 # ===----------------------------------------------------------------------=== #
 # assert_almost_equal
 # ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+def assert_almost_equal[
+    dtype: DType,
+    //,
+](
+    x: Span[Scalar[dtype], _],
+    y: Span[Scalar[dtype], _],
+    msg: String = "",
+    *,
+    shape: List[Int] = List[Int](),
+    location: Optional[SourceLocation] = None,
+    atol: Float64 = 1e-08,
+    rtol: Float64 = 1e-05,
+    equal_nan: Bool = False,
+) raises:
+    """Assert that two buffers are element-wise almost equal.
+
+    Compares each element of `x` and `y` using the formula:
+    `|x - y| <= atol + rtol * |y|`
+
+    Args:
+        x: Span to the first buffer.
+        y: Span to the second buffer.
+        msg: Optional message to include in assertion errors.
+        shape: Optional shape for N-dimensional index display in error messages.
+               If provided, error messages will show indices like "[2, 3, 4]"
+               instead of flat indices like "i=52".
+        location: Optional source location for error reporting.
+        atol: Absolute tolerance (default: 1e-08).
+        rtol: Relative tolerance (default: 1e-05).
+        equal_nan: If True, NaN values in the same position are considered equal.
+
+    Raises:
+        Error: If any elements differ by more than the specified tolerances, or
+            if the spans are unequal length.
+    """
+    var loc = location.or_else(call_location())
+    _check_span_length(x, y, loc)
+
+    assert_almost_equal(
+        x.unsafe_ptr(),
+        y.unsafe_ptr(),
+        len(x),
+        msg,
+        shape=shape,
+        location=loc,
+        atol=atol,
+        rtol=rtol,
+        equal_nan=equal_nan,
+    )
 
 
 @always_inline
@@ -193,6 +254,40 @@ def assert_equal[
             msg=String(t"{msg} at {_format_index(i, shape)}"),
             location=location.or_else(call_location()),
         )
+
+
+@always_inline
+def assert_equal[
+    dtype: DType,
+    //,
+](
+    x: Span[Scalar[dtype], _],
+    y: Span[Scalar[dtype], _],
+    msg: String = "",
+    *,
+    shape: List[Int] = List[Int](),
+    location: Optional[SourceLocation] = None,
+) raises:
+    """Assert that two spans are element-wise exactly equal.
+
+    Args:
+        x: Span of the first buffer.
+        y: Span of the second buffer.
+        msg: Optional message to include in assertion errors.
+        shape: Optional shape for N-dimensional index display in error messages.
+                If provided, error messages will show indices like "[2, 3, 4]"
+                instead of flat indices like "i=52".
+        location: Optional source location for error reporting.
+
+    Raises:
+        Error: If any elements are not exactly equal or if the spans have unequal
+            length.
+    """
+    var loc = location.or_else(call_location())
+    _check_span_length(x, y, loc)
+    assert_equal(
+        x.unsafe_ptr(), y.unsafe_ptr(), len(x), msg, shape=shape, location=loc
+    )
 
 
 # ===----------------------------------------------------------------------=== #

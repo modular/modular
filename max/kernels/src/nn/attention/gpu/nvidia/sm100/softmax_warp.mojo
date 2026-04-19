@@ -24,7 +24,9 @@ from std.gpu.sync import (
     named_barrier,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
+    umma_arrive_leader_cta,
 )
+from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.compute.arch.tcgen05 import (
     tcgen05_dealloc,
     tcgen05_fence_after,
@@ -345,11 +347,11 @@ def fa4_softmax[
     comptime HalfBM = BM // 2
     comptime group = config.group
     comptime fuse_gqa = config.fuse_gqa
-    comptime BM_mask: Int = config.BM_eff()
+    comptime BM_mask: Int = config.PairBM_eff()
     comptime padded_ov_depth = config.padded_ov_depth
     comptime page_size = KVLUTType.page_size
     comptime ragged = not ValidLengthType.is_null
-    comptime cta_group = 1
+    comptime cta_group = config.cta_group()
 
     var mbars = smem.misc_mbars()
     comptime MiscMBarsType = type_of(mbars)
@@ -358,23 +360,25 @@ def fa4_softmax[
     comptime UMMA0Type = SM100TensorAccumulatorSS[
         qkv_type,
         accum_dtype,
-        MMA_M=HalfBM,
+        MMA_M=config.MMA_M,
         MMA_N=BN,
         BK=align_up(config.qk_depth, config.MMA_K),
         swizzle_a=config.swizzle_mode,
         swizzle_b=config.swizzle_mode,
         transpose_b=True,
         num_stages=config.num_qk_stages,
+        cta_group=cta_group,
     ]
     comptime UMMA1Type = SM100TensorAccumulatorTS[
         qkv_type,
         accum_dtype,
-        MMA_M=HalfBM,
+        MMA_M=config.MMA_M,
         MMA_N=padded_ov_depth,
         BK=BN,
         swizzle_b=config.swizzle_mode,
         transpose_b=False,
         num_stages=config.num_pv_stages,
+        cta_group=cta_group,
     ]
     comptime PositionType = MHAPosition[
         config.BM,
@@ -399,6 +403,12 @@ def fa4_softmax[
     var warp_idx: UInt32 = warp.broadcast(tid // 32)
     var warp_group_idx: UInt32 = warp.broadcast(tid // 128)
 
+    var cta_q_offset: UInt32 = 0
+    comptime if config.pair_cta:
+        cta_q_offset = UInt32(
+            warp.broadcast(block_rank_in_cluster()) % 2
+        ) * UInt32(config.BM_eff())
+
     # 2-Q path: S1 is at +BN columns
     s_tmem += UInt32(config.BN) * warp_group_idx
 
@@ -411,12 +421,11 @@ def fa4_softmax[
     pipeline_c = mbars.producer_c(warp_group_idx)
     var order_phase: UInt32 = 1 - warp_group_idx
 
+    var order_s_wait: Optional[MBarType] = None
+    var order_s_arrive: Optional[MBarType] = None
     comptime if EnableForcedOrdering:
         order_s_wait = mbars.pipeline_order_wait(warp_group_idx)
         order_s_arrive = mbars.pipeline_order_arrive(warp_group_idx)
-    else:
-        order_s_wait = {_unsafe_null = ()}
-        order_s_arrive = {_unsafe_null = ()}
 
     # When fuse_gqa, head_idx is a kv_head_idx
     # the output will match, so `head_idx` is what we use for writing
@@ -462,7 +471,9 @@ def fa4_softmax[
             max_seq_len=max_seq_len,
             num_keys=Int32(num_keys),
             score_row=Int32(
-                score_row + (tid // UInt32(group) if fuse_gqa else tid)
+                score_row
+                + cta_q_offset
+                + (tid // UInt32(group) if fuse_gqa else tid)
             ),
         )
 
@@ -472,6 +483,7 @@ def fa4_softmax[
     num_output_rows = min(
         Int32(seq_info.seq_len)
         - Int32(seq_info.prompt_offset)
+        - Int32(cta_q_offset)
         - Int32(warp_group_idx) * Int32(splitBM_seq),
         Int32(splitBM_seq),
     )
@@ -519,7 +531,7 @@ def fa4_softmax[
         *, mask_strategy: MaskStrategy
     ](kv_row: UInt32) -> StaticTuple[Float32, max_unroll]:
         comptime if EnableForcedOrdering:
-            order_s_wait[].wait(order_phase)
+            order_s_wait.unsafe_value()[].wait(order_phase)
         # break up into sets of 32
         # minimize wait time by using smallest first
         comptime BM = config.BM // 2
@@ -746,14 +758,20 @@ def fa4_softmax[
                 comptime if 4 * b == 3 * num_batch_iters:
                     tcgen05_store_wait()
                     tcgen05_fence_before()
-                    pipeline_s.release_no_step[0]()
+                    comptime if config.pair_cta:
+                        umma_arrive_leader_cta(pipeline_s.consumer_mbar[0]())
+                    else:
+                        pipeline_s.release_no_step[0]()
             elif config.num_pv_stages > 1:
                 comptime assert config.num_pv_stages == num_batch_iters
                 tcgen05_store_wait()
                 tcgen05_fence_before()
 
                 comptime assert config.num_pv_stages == num_batch_iters
-                pipeline_s.release_no_step[b - 1]()
+                comptime if config.pair_cta:
+                    umma_arrive_leader_cta(pipeline_s.consumer_mbar[b - 1]())
+                else:
+                    pipeline_s.release_no_step[b - 1]()
 
             comptime for idx in range(offset, offset + batch_size):
                 exp_iter[idx]()
@@ -762,7 +780,7 @@ def fa4_softmax[
                     and b == max(1, num_batch_iters - 1)
                     and idx == offset + order_arrive_offset
                 ):
-                    _ = order_s_arrive[].arrive()
+                    _ = order_s_arrive.unsafe_value()[].arrive()
                     order_phase ^= 1
 
             comptime el_offset = offset * exp_simd
@@ -789,7 +807,13 @@ def fa4_softmax[
 
         tcgen05_store_wait()
         tcgen05_fence_before()
-        pipeline_s.release[config.num_pv_stages - 1]()
+        comptime if config.pair_cta:
+            umma_arrive_leader_cta(
+                pipeline_s.consumer_mbar[config.num_pv_stages - 1]()
+            )
+            pipeline_s.step()
+        else:
+            pipeline_s.release[config.num_pv_stages - 1]()
 
         pipeline_c.acquire()
         # now we can sum the remaining elements of `acc`
@@ -971,7 +995,7 @@ def fa4_softmax[
             o_phase ^= 1
     # Do the final correction and write
     inv_row_sum = recip(row_sum.reduce_add())
-    o_tile = UMMA1Type.CType(
+    o_tile = TMemTile[accum_dtype, HalfBM, padded_ov_depth](
         tmem_addr
         + UInt32(config.TMEM_O0)
         + warp_group_idx * UInt32(padded_ov_depth)
@@ -994,9 +1018,13 @@ def fa4_softmax[
             num_output_rows,
             head_idx,
             gmem_row
+            + cta_q_offset
             + warp_group_idx * UInt32(HalfBM // group if fuse_gqa else HalfBM),
         )
     WarpGroupBarrier[2 * WARPGROUP_SIZE, 2].sync()
-    if warp_idx == 0:
-        tcgen05_release_allocation_lock[Int32(cta_group)]()
-        tcgen05_dealloc[Int32(cta_group)](tmem_addr, UInt32(512))
+    # Pair-CTA: dealloc is deferred to the kernel after cluster_sync so that
+    # the peer CTA cannot exit while cluster-scoped stmatrix is in flight.
+    comptime if not config.pair_cta:
+        if warp_idx == 0:
+            tcgen05_release_allocation_lock[Int32(cta_group)]()
+            tcgen05_dealloc[Int32(cta_group)](tmem_addr, UInt32(512))

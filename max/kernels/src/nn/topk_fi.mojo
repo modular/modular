@@ -32,6 +32,7 @@ from std.gpu.memory import AddressSpace, external_memory
 from std.sys.info import has_apple_gpu_accelerator, is_apple_gpu
 from layout import (
     ComptimeInt,
+    Coord,
     Idx,
     RuntimeInt,
     TensorLayout,
@@ -43,7 +44,7 @@ from layout.tile_layout import Layout
 from std.math import ceildiv, gcd, exp
 from std.math.uutils import ufloordiv
 from std.memory import stack_allocation
-from std.os import Atomic
+from std.atomic import Atomic
 from std.random import Random
 from std.sys import align_of, simd_width_of, size_of
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
@@ -195,6 +196,7 @@ def get_min_max_value[
     return Tuple[Float32, Float32](min_val, max_val)
 
 
+@__name(t"topk_mask_logits_{dtype}_{out_idx_type}", mangle=True)
 def TopKMaskLogitsKernel[
     block_size: Int,
     vec_size: Int,
@@ -209,7 +211,7 @@ def TopKMaskLogitsKernel[
     masked_logits: TileTensor[
         dtype, MaskedLogitsLayoutType, masked_logits_origin
     ],
-    top_k_arr: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
+    top_k_arr: Optional[UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]],
     top_k_val: Int,
     d: Int,
 ):
@@ -227,8 +229,8 @@ def TopKMaskLogitsKernel[
 
     with PDL():
         var k = top_k_val
-        if top_k_arr._is_not_null():
-            k = Int(top_k_arr[bx])
+        if top_k_arr:
+            k = Int(top_k_arr.unsafe_value()[bx])
 
         # Initialize pivot to negative infinity.
         var pivot = Float32.MIN
@@ -349,8 +351,8 @@ def topk_mask_logits[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types=Variadic.types[RuntimeInt[DType.int64]],
-        stride_types=Variadic.types[ComptimeInt[1]],
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
 ](
     ctx: DeviceContext,
@@ -396,16 +398,11 @@ def topk_mask_logits[
         # per-element idx < d guard handles non-aligned tails correctly.
         var vec_size = gcd(8, d)
 
-        var top_k_buf: DeviceBuffer[out_idx_type]
+        var top_k_ptr: Optional[
+            UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]
+        ] = None
         if top_k_arr:
-            top_k_buf = top_k_arr.value().to_device_buffer(ctx)
-        else:
-            top_k_buf = DeviceBuffer[out_idx_type](
-                ctx,
-                {_unsafe_null = ()},
-                0,
-                owning=False,
-            )
+            top_k_ptr = top_k_arr.value().ptr
 
         @parameter
         def launch_kernel[vec_size: Int]() raises:
@@ -422,7 +419,7 @@ def topk_mask_logits[
             ctx.enqueue_function[kernel, kernel](
                 logits.as_immut(),
                 masked_logits,
-                top_k_buf,
+                top_k_ptr,
                 top_k_val,
                 d,
                 grid_dim=batch_size,
@@ -674,6 +671,10 @@ def _block_reduce_value_count[
     return result
 
 
+@__name(
+    t"topk_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}",
+    mangle=True,
+)
 def TopKSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
     probs_origin: ImmutOrigin,
@@ -687,8 +688,8 @@ def TopKSamplingFromProbKernel[
 ](
     probs: TileTensor[dtype, ProbsLayoutType, probs_origin],
     output: TileTensor[out_idx_type, OutputLayoutType, output_origin],
-    indices: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
-    top_k_arr: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
+    indices: Optional[UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]],
+    top_k_arr: Optional[UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]],
     top_k_val: Int,
     d: Int,
     rng_seed: UInt64,
@@ -726,11 +727,11 @@ def TopKSamplingFromProbKernel[
     with PDL():
         var generator = Random(seed=rng_seed, offset=UInt64(bx) + rng_offset)
         var k = top_k_val
-        if top_k_arr._is_not_null():
-            k = Int(top_k_arr.load(bx))
+        if top_k_arr:
+            k = Int(top_k_arr.unsafe_value().load(bx))
         var row_idx = bx
-        if indices._is_not_null():
-            row_idx = Int(indices.load(bx))
+        if indices:
+            row_idx = Int(indices.unsafe_value().load(bx))
 
         var probs_ptr = probs.ptr + row_idx * d
         var probs_row = TileTensor(probs_ptr, row_major(Idx[1](), Idx(d)))
@@ -882,12 +883,12 @@ def topk_sampling_from_prob[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types=Variadic.types[RuntimeInt[DType.int64]],
-        stride_types=Variadic.types[ComptimeInt[1]],
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     IndicesLayoutType: TensorLayout = Layout[
-        shape_types=Variadic.types[RuntimeInt[DType.int64]],
-        stride_types=Variadic.types[ComptimeInt[1]],
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
 ](
     ctx: DeviceContext,
@@ -958,26 +959,17 @@ def topk_sampling_from_prob[
         # per-element idx < d guard handles non-aligned tails correctly.
         var vec_size = gcd(8, d)
 
-        var indices_buf: DeviceBuffer[out_idx_type]
+        var indices_ptr: Optional[
+            UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]
+        ] = None
         if indices:
-            indices_buf = indices.value().to_device_buffer(ctx)
-        else:
-            indices_buf = DeviceBuffer[out_idx_type](
-                ctx,
-                {_unsafe_null = ()},
-                0,
-                owning=False,
-            )
-        var top_k_buf: DeviceBuffer[out_idx_type]
+            indices_ptr = indices.value().ptr
+
+        var top_k_ptr: Optional[
+            UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]
+        ] = None
         if top_k_arr:
-            top_k_buf = top_k_arr.value().to_device_buffer(ctx)
-        else:
-            top_k_buf = DeviceBuffer[out_idx_type](
-                ctx,
-                {_unsafe_null = ()},
-                0,
-                owning=False,
-            )
+            top_k_ptr = top_k_arr.value().ptr
 
         @parameter
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
@@ -995,8 +987,8 @@ def topk_sampling_from_prob[
             ctx.enqueue_function[kernel, kernel](
                 probs.as_immut(),
                 output,
-                indices_buf,
-                top_k_buf,
+                indices_ptr,
+                top_k_ptr,
                 top_k_val,
                 d,
                 rng_seed,
@@ -1020,6 +1012,10 @@ def topk_sampling_from_prob[
             dispatch_vec_size[False]()
 
 
+@__name(
+    t"topk_topp_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}",
+    mangle=True,
+)
 def TopKTopPSamplingFromProbKernel[
     ProbsLayoutType: TensorLayout,
     probs_origin: ImmutOrigin,
@@ -1033,13 +1029,13 @@ def TopKTopPSamplingFromProbKernel[
 ](
     probs: TileTensor[dtype, ProbsLayoutType, probs_origin],
     output: TileTensor[out_idx_type, OutputLayoutType, output_origin],
-    indices: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
-    top_k_arr: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
+    indices: Optional[UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]],
+    top_k_arr: Optional[UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]],
     top_k_val: Int,
-    top_p_arr: UnsafePointer[Float32, MutExternalOrigin],
+    top_p_arr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
     top_p_val: Float32,
     d: Int,
-    rng_seed: UnsafePointer[UInt64, MutExternalOrigin],
+    rng_seed: Optional[UnsafePointer[UInt64, ImmutAnyOrigin]],
     rng_offset: UInt64,
 ):
     """Kernel for joint top-k + top-p sampling from probability distribution.
@@ -1071,8 +1067,8 @@ def TopKTopPSamplingFromProbKernel[
     var tx = thread_idx.x
 
     var row_idx = bx
-    if indices._is_not_null():
-        row_idx = Int(indices.load(bx))
+    if indices:
+        row_idx = Int(indices.unsafe_value().load(bx))
 
     var sampled_id_sram = stack_allocation[
         1, Int, address_space=AddressSpace.SHARED
@@ -1083,20 +1079,20 @@ def TopKTopPSamplingFromProbKernel[
 
     with PDL():
         var seed_val = UInt64(0)
-        if rng_seed._is_not_null():
-            seed_val = rng_seed[row_idx]
+        if rng_seed:
+            seed_val = rng_seed.unsafe_value()[row_idx]
 
         var generator = Random(seed=seed_val, offset=UInt64(bx) + rng_offset)
 
-        var k = Int(
-            top_k_arr.load(row_idx)
-        ) if top_k_arr._is_not_null() else top_k_val
+        var k = top_k_val
+        if top_k_arr:
+            k = Int(top_k_arr.unsafe_value().load(row_idx))
         if k == -1:
             k = top_k_val
 
         var p = top_p_val
-        if top_p_arr._is_not_null():
-            p = top_p_arr[row_idx]
+        if top_p_arr:
+            p = top_p_arr.unsafe_value()[row_idx]
 
         var probs_ptr = probs.ptr + row_idx * d
         var probs_row = TileTensor(probs_ptr, row_major(Idx[1](), Idx(d)))
@@ -1250,20 +1246,20 @@ def topk_topp_sampling_from_prob[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types=Variadic.types[RuntimeInt[DType.int64]],
-        stride_types=Variadic.types[ComptimeInt[1]],
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     IndicesLayoutType: TensorLayout = Layout[
-        shape_types=Variadic.types[RuntimeInt[DType.int64]],
-        stride_types=Variadic.types[ComptimeInt[1]],
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     TopPArrLayoutType: TensorLayout = Layout[
-        shape_types=Variadic.types[RuntimeInt[DType.int64]],
-        stride_types=Variadic.types[ComptimeInt[1]],
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     SeedLayoutType: TensorLayout = Layout[
-        shape_types=Variadic.types[RuntimeInt[DType.int64]],
-        stride_types=Variadic.types[ComptimeInt[1]],
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
 ](
     ctx: DeviceContext,
@@ -1344,46 +1340,25 @@ def topk_topp_sampling_from_prob[
         # per-element idx < d guard handles non-aligned tails correctly.
         var vec_size = gcd(8, d)
 
-        var indices_buf: DeviceBuffer[out_idx_type]
+        var indices_ptr: Optional[
+            UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]
+        ] = None
         if indices:
-            indices_buf = indices.value().to_device_buffer(ctx)
-        else:
-            indices_buf = DeviceBuffer[out_idx_type](
-                ctx,
-                {_unsafe_null = ()},
-                0,
-                owning=False,
-            )
-        var top_k_buf: DeviceBuffer[out_idx_type]
+            indices_ptr = indices.unsafe_value().ptr
+
+        var top_k_ptr: Optional[
+            UnsafePointer[Scalar[out_idx_type], ImmutAnyOrigin]
+        ] = None
         if top_k_arr:
-            top_k_buf = top_k_arr.value().to_device_buffer(ctx)
-        else:
-            top_k_buf = DeviceBuffer[out_idx_type](
-                ctx,
-                {_unsafe_null = ()},
-                0,
-                owning=False,
-            )
-        var top_p_buf: DeviceBuffer[DType.float32]
+            top_k_ptr = top_k_arr.unsafe_value().ptr
+
+        var top_p_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]] = None
         if top_p_arr:
-            top_p_buf = top_p_arr.value().to_device_buffer(ctx)
-        else:
-            top_p_buf = DeviceBuffer[DType.float32](
-                ctx,
-                {_unsafe_null = ()},
-                0,
-                owning=False,
-            )
-        var seed_buf: DeviceBuffer[DType.uint64]
+            top_p_ptr = top_p_arr.unsafe_value().ptr
+
+        var seed_ptr: Optional[UnsafePointer[UInt64, ImmutAnyOrigin]] = None
         if rng_seed:
-            seed_buf = rng_seed.value().to_device_buffer(ctx)
-        else:
-            seed_buf = DeviceBuffer[DType.uint64](
-                ctx,
-                {_unsafe_null = ()},
-                0,
-                owning=False,
-            )
+            seed_ptr = rng_seed.unsafe_value().ptr
 
         @parameter
         def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
@@ -1401,13 +1376,13 @@ def topk_topp_sampling_from_prob[
             ctx.enqueue_function[kernel, kernel](
                 probs.as_immut(),
                 output,
-                indices_buf,
-                top_k_buf,
+                indices_ptr,
+                top_k_ptr,
                 top_k_val,
-                top_p_buf,
+                top_p_ptr,
                 top_p_val,
                 d,
-                seed_buf,
+                seed_ptr,
                 rng_offset,
                 grid_dim=batch_size,
                 block_dim=block_size,
@@ -1426,6 +1401,7 @@ def topk_topp_sampling_from_prob[
             dispatch_vec_size[False]()
 
 
+@__name(t"topk_softmax_sample_{dtype}_{out_idx_type}", mangle=True)
 def topk_softmax_sample_kernel[
     block_size: Int,
     vec_size: Int,
@@ -1440,12 +1416,12 @@ def topk_softmax_sample_kernel[
     sampled_indices: TileTensor[
         out_idx_type, SampledLayoutType, sampled_origin
     ],
-    top_k_arr: UnsafePointer[Scalar[out_idx_type], MutExternalOrigin],
+    top_k_arr: Optional[UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]],
     top_k_val: Int,
     temperature_val: Float32,
-    temperature: UnsafePointer[Float32, MutExternalOrigin],
+    temperature: Optional[UnsafePointer[Float32, MutExternalOrigin]],
     seed_val: UInt64,
-    seed: UnsafePointer[UInt64, MutExternalOrigin],
+    seed: Optional[UnsafePointer[UInt64, MutExternalOrigin]],
     d: Int,
 ):
     comptime assert sampled_indices.flat_rank == 1
@@ -1459,11 +1435,11 @@ def topk_softmax_sample_kernel[
     var logits_row = TileTensor(logits_ptr, row_major(Idx[1](), Idx(d)))
 
     var k = top_k_val
-    if top_k_arr._is_not_null():
-        k = Int(top_k_arr[bx])
+    if top_k_arr:
+        k = Int(top_k_arr.unsafe_value()[bx])
     var temp_val = temperature_val
-    if temperature._is_not_null():
-        temp_val = max(temperature[bx], 1e-6)
+    if temperature:
+        temp_val = max(temperature.unsafe_value()[bx], 1e-6)
 
     # Allocate shared memory for caching top-k elements.
     # Round up to ensure proper alignment for Int array.
@@ -1622,8 +1598,8 @@ def topk_softmax_sample_kernel[
         # PHASE 3: Sampling (thread 0 only).
         if tx == 0:
             var seed_val = seed_val
-            if seed._is_not_null():
-                seed_val = seed[bx]
+            if seed:
+                seed_val = seed.unsafe_value()[bx]
             var rng_state = Random(seed=seed_val)
             var rng = rng_state.step_uniform()
             var r = block_sum * rng[0]
@@ -1642,16 +1618,16 @@ def topk_softmax_sample[
     out_idx_type: DType,
     block_size: Int = 1024,
     TopKArrLayoutType: TensorLayout = Layout[
-        shape_types=Variadic.types[RuntimeInt[DType.int64]],
-        stride_types=Variadic.types[ComptimeInt[1]],
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     TemperatureLayoutType: TensorLayout = Layout[
-        shape_types=Variadic.types[RuntimeInt[DType.int64]],
-        stride_types=Variadic.types[ComptimeInt[1]],
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
     SeedLayoutType: TensorLayout = Layout[
-        shape_types=Variadic.types[RuntimeInt[DType.int64]],
-        stride_types=Variadic.types[ComptimeInt[1]],
+        shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+        stride_types=Coord[ComptimeInt[1]].element_types,
     ],
 ](
     ctx: DeviceContext,
@@ -1758,36 +1734,19 @@ def topk_softmax_sample[
                     t" top_k_val or using a smaller block_size."
                 )
 
-        var top_k_buf: DeviceBuffer[out_idx_type]
+        var top_k_ptr: Optional[
+            UnsafePointer[Scalar[out_idx_type], MutExternalOrigin]
+        ] = None
         if top_k_arr:
-            top_k_buf = top_k_arr.value().to_device_buffer(ctx)
-        else:
-            top_k_buf = DeviceBuffer[out_idx_type](
-                ctx,
-                {_unsafe_null = ()},
-                0,
-                owning=False,
-            )
-        var temp_buf: DeviceBuffer[DType.float32]
+            top_k_ptr = top_k_arr.unsafe_value().ptr
+
+        var temp_ptr: Optional[UnsafePointer[Float32, MutExternalOrigin]] = None
         if temperature:
-            temp_buf = temperature.value().to_device_buffer(ctx)
-        else:
-            temp_buf = DeviceBuffer[DType.float32](
-                ctx,
-                {_unsafe_null = ()},
-                0,
-                owning=False,
-            )
-        var seed_buf: DeviceBuffer[DType.uint64]
+            temp_ptr = temperature.unsafe_value().ptr
+
+        var seed_ptr: Optional[UnsafePointer[UInt64, MutExternalOrigin]] = None
         if seed:
-            seed_buf = seed.value().to_device_buffer(ctx)
-        else:
-            seed_buf = DeviceBuffer[DType.uint64](
-                ctx,
-                {_unsafe_null = ()},
-                0,
-                owning=False,
-            )
+            seed_ptr = seed.unsafe_value().ptr
 
         @parameter
         def launch_kernel[vec_size: Int]() raises:
@@ -1804,12 +1763,12 @@ def topk_softmax_sample[
             ctx.enqueue_function[kernel, kernel](
                 logits.as_immut(),
                 sampled_indices,
-                top_k_buf,
+                top_k_ptr,
                 top_k_val,
                 temperature_val,
-                temp_buf,
+                temp_ptr,
                 seed_val,
-                seed_buf,
+                seed_ptr,
                 d,
                 grid_dim=batch_size,
                 block_dim=block_size,
