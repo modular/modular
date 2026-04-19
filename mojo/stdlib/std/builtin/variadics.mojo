@@ -415,7 +415,7 @@ struct TypeList[
         PrevV: FromAndTo,
         VA: Variadic.TypesOfTrait[Self.Trait],
         idx: SIMDSize,
-    ] = ToWrap[PrevV, VA[idx]]
+    ] = ToWrap[PrevV, TypeList[VA].__getitem_param__[idx]]
     """Adapts a (prev, element) reducer to the variadic reduce index signature."""
 
     comptime reduce[
@@ -668,7 +668,7 @@ struct TypeList[
     # Other
     # ===-------------------------------------------------------------------===#
 
-    comptime _ReverseTabulator[idx: Int]: Self.Trait = Self.values[
+    comptime _ReverseTabulator[idx: Int]: Self.Trait = Self.__getitem_param__[
         Self.size - 1 - idx
     ]
     comptime reverse = TypeList.tabulate[Self.size, Self._ReverseTabulator[_]]

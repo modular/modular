@@ -2595,7 +2595,9 @@ struct DeviceFunction[
         var num_translated_args = 0
 
         comptime for i in range(num_args):
-            comptime declared_arg_type = Self.declared_arg_types.value()[i]
+            comptime declared_arg_type = TypeList[
+                Self.declared_arg_types.value()
+            ]()[i]
             comptime actual_arg_type = Ts[i]
 
             def declared_arg_type_name() -> String:

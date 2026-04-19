@@ -1086,7 +1086,7 @@ def idx2crd[
         var stride_t = stride.tuple()
 
         comptime for i in range(shape_len):
-            comptime if Shape.ParamListType[i].is_tuple:
+            comptime if TypeList[Shape.ParamListType]()[i].is_tuple:
                 # Nested shape: recurse into sub-shape/sub-stride.
                 var nested = idx2crd[out_dtype=out_dtype](
                     idx, shape_t[i], stride_t[i]
@@ -1095,8 +1095,8 @@ def idx2crd[
                     rebind[ResultTypes[i]](nested)
                 )
             elif (
-                Shape.ParamListType[i].is_static_value
-                and Shape.ParamListType[i].static_value == 1
+                TypeList[Shape.ParamListType]()[i].is_static_value
+                and TypeList[Shape.ParamListType]()[i].static_value == 1
             ):
                 UnsafePointer(to=result[i]).init_pointee_copy(
                     rebind[ResultTypes[i]](ComptimeInt[0]())
@@ -1188,7 +1188,7 @@ def idx2crd[
         var stride_t = stride.tuple()
 
         comptime for i in range(shape_len):
-            comptime if Shape.ParamListType[i].is_tuple:
+            comptime if TypeList[Shape.ParamListType]()[i].is_tuple:
                 # Nested shape: recurse into sub-shape/sub-stride.
                 var nested = idx2crd[out_dtype=out_dtype](
                     idx.value(), shape_t[i], stride_t[i]
@@ -1197,16 +1197,16 @@ def idx2crd[
                     rebind[ResultTypes[i]](nested)
                 )
             elif (
-                Shape.ParamListType[i].is_static_value
-                and Shape.ParamListType[i].static_value == 1
+                TypeList[Shape.ParamListType]()[i].is_static_value
+                and TypeList[Shape.ParamListType]()[i].static_value == 1
             ):
                 UnsafePointer(to=result[i]).init_pointee_copy(
                     rebind[ResultTypes[i]](ComptimeInt[0]())
                 )
             elif (
                 Index.is_static_value
-                and Shape.ParamListType[i].is_static_value
-                and Stride.ParamListType[i].is_static_value
+                and TypeList[Shape.ParamListType]()[i].is_static_value
+                and TypeList[Stride.ParamListType]()[i].is_static_value
             ):
                 # All static: result is ComptimeInt, already default-initialized.
                 pass
@@ -1414,9 +1414,9 @@ comptime _FlattenReducer[
     idx: Int,
 ] = Variadic.concat_types[
     Prev,
-    From[idx]
-    .ParamListType if From[idx]
-    .is_tuple else Variadic.types[T=CoordLike, From[idx]],
+    TypeList[From]()[idx]
+    .ParamListType if TypeList[From]()[idx]
+    .is_tuple else Variadic.types[T=CoordLike, TypeList[From]()[idx]],
 ]
 
 
@@ -1472,8 +1472,8 @@ comptime _FlattenOffsetReducer[
         ComptimeInt[
             0 if idx
             == 0 else _NextOffset[
-                Prev[TypeList[Prev].size - 1].static_value,
-                From[idx - 1],
+                TypeList[Prev]()[TypeList[Prev].size - 1].static_value,
+                TypeList[From]()[idx - 1],
             ]
         ],
     ],
@@ -1763,7 +1763,7 @@ comptime _DeepDynamicCoord4[
 comptime _Idx2CrdResultMapper[
     out_dtype: DType,
     idx_type: CoordLike,
-    stride_types: Variadic.TypesOfTrait[CoordLike],
+    stride_types: TypeList[Trait=CoordLike, ...],
     Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.TypesOfTrait[CoordLike],
     i: Int,
@@ -1774,21 +1774,25 @@ comptime _Idx2CrdResultMapper[
     Variadic.types[
         T=CoordLike,
         Coord[
-            *_DeepDynamicCoord4[out_dtype, *TypeList[From[i].ParamListType]()]
+            *_DeepDynamicCoord4[
+                out_dtype, *TypeList[TypeList[From]()[i].ParamListType]()
+            ]
         ],
-    ] if From[i].is_tuple
+    ] if TypeList[From]()[i].is_tuple
     # shape == 1: always ComptimeInt[0]
-    else Variadic.types[T=CoordLike, ComptimeInt[0]] if From[i].is_static_value
-    and From[i].static_value == 1
+    else Variadic.types[T=CoordLike, ComptimeInt[0]] if TypeList[From]()[
+        i
+    ].is_static_value
+    and TypeList[From]()[i].static_value == 1
     # all three (idx, shape, stride) static: compute at compile time
     else Variadic.types[
         T=CoordLike,
         ComptimeInt[
             (idx_type.static_value // stride_types[i].static_value)
-            % From[i].static_value
+            % TypeList[From]()[i].static_value
         ],
     ] if idx_type.is_static_value
-    and From[i].is_static_value
+    and TypeList[From]()[i].is_static_value
     and stride_types[i].is_static_value
     # otherwise: runtime
     else Variadic.types[T=CoordLike, RuntimeInt[out_dtype]],
@@ -1813,7 +1817,9 @@ comptime _Idx2CrdResultTypes[
     _ReduceVariadicAndIdxToVariadic[
         BaseVal=Variadic.empty_of_trait[CoordLike],
         ParamListType=shape_types,
-        Reducer=_Idx2CrdResultMapper[out_dtype, idx_type, stride_types, ...],
+        Reducer=_Idx2CrdResultMapper[
+            out_dtype, idx_type, TypeList[stride_types](), ...
+        ],
     ]
 ]()
 """Computes the result types for idx2crd based on shape, stride, and index.
@@ -2050,59 +2056,39 @@ struct _RegTuple[*element_types: CoordLike](
 
 
 comptime _MultiplyReducer[
-    Rhs: Variadic.TypesOfTrait[CoordLike],
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
+    Rhs: TypeList[Trait=CoordLike, ...],
+    coord: CoordLike,
     idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[
-        T=CoordLike,
-        ComptimeInt[From[idx].static_value * Rhs[idx].static_value],
-    ] if From[idx].is_static_value
-    and Rhs[idx].is_static_value else Variadic.types[
-        T=CoordLike, RuntimeInt[From[idx].DTYPE]
-    ],
+]: CoordLike = ComptimeInt[
+    coord.static_value * Rhs[idx].static_value
+] if coord.is_static_value and Rhs[
+    idx
+].is_static_value else RuntimeInt[
+    coord.DTYPE
 ]
 
 
 comptime _Multiply[
     Lhs: TypeList[Trait=CoordLike, ...],
     Rhs: TypeList[Trait=CoordLike, ...],
-] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=Lhs.values,
-        Reducer=_MultiplyReducer[Rhs=Rhs.values, ...],
-    ]
-]()
+] = Lhs.map_idx[_MultiplyReducer[Rhs, ...]]()
 
 
 comptime _MultiplyByScalarReducer[
     scalar: Int,
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[
-        T=CoordLike,
-        ComptimeInt[From[idx].static_value * scalar],
-    ] if From[idx].is_static_value else Variadic.types[
-        T=CoordLike, RuntimeInt[From[idx].DTYPE]
-    ],
+    coord: CoordLike,
+]: CoordLike = ComptimeInt[
+    coord.static_value * scalar
+] if coord.is_static_value else RuntimeInt[
+    coord.DTYPE
 ]
 
 
 comptime _MultiplyByScalar[
-    Types: Variadic.TypesOfTrait[CoordLike],
+    Types: TypeList[Trait=CoordLike, ...],
     scalar: Int,
-] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=Types,
-        Reducer=_MultiplyByScalarReducer[scalar=scalar, ...],
-    ]
+] = Types.map[
+    _MultiplyByScalarReducer[scalar=scalar, ...],
 ]()
 """Multiply each element in Types by a scalar value.
 
