@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import numpy as np
 from max.driver import Buffer, load_devices
 from max.engine import InferenceSession, Model
 from max.graph import Graph
@@ -32,17 +31,15 @@ from ...mistral3.text_encoder.model_config import Mistral3TextEncoderConfig
 
 
 class TextEncoder(CompiledComponent):
-    """Graph 1: Mistral3 text encoder -> prompt_embeds + text_ids.
+    """Graph 1: Mistral3 text encoder -> prompt_embeds.
 
     Encapsulates the full lifecycle: config extraction from the manifest,
     weight loading and key adaptation, Module construction, graph
     compilation, and runtime execution.
 
-    Output shapes:
-        - ``prompt_embeds``: ``(1, S, L*D)`` where L = number of hidden
-          state layers, D = hidden_size
-        - ``text_ids``: ``(1, S, 4)`` int64 with T=0, H=0, W=0,
-          L=arange(S)
+    Output shape:
+        ``prompt_embeds``: ``(1, S, L*D)`` where L = number of hidden
+        state layers, D = hidden_size.
     """
 
     _model: Model
@@ -75,53 +72,22 @@ class TextEncoder(CompiledComponent):
             outputs = module(*(v.tensor for v in graph.inputs))
             graph.output(outputs)
 
-        self._model = self._session.load(
+        self._model = self._load_graph(
             graph, weights_registry=module.state_dict()
         )
 
     @traced(message="TextEncoder.__call__")
-    def __call__(self, tokens: Buffer) -> tuple[Buffer, Buffer]:
-        """Encode token IDs into prompt embeddings and text position IDs.
+    def __call__(self, tokens: Buffer) -> Buffer:
+        """Encode token IDs into prompt embeddings.
 
         Args:
             tokens: Token IDs, shape ``(S,)`` int64.
 
         Returns:
-            A tuple of ``(prompt_embeds, text_ids)`` where:
-            - ``prompt_embeds`` has shape ``(1, S, L*D)``
-            - ``text_ids`` has shape ``(1, S, 4)`` int64
+            ``prompt_embeds`` Buffer of shape ``(1, S, L*D)``.
         """
         result = self._model.execute(tokens)
-        prompt_embeds = (
-            result[0] if isinstance(result, (list, tuple)) else result
-        )
-
-        batch_size = prompt_embeds.shape[0]
-        seq_len = prompt_embeds.shape[1]
-        text_ids = self._build_text_ids(batch_size, seq_len)
-
-        return prompt_embeds, text_ids
-
-    @staticmethod
-    def _build_text_ids(batch_size: int, seq_len: int) -> Buffer:
-        """Create 4D text position IDs in (T, H, W, L) format.
-
-        For text tokens: T=0, H=0, W=0, L=arange(S).
-
-        Returns:
-            Buffer of shape ``(batch_size, seq_len, 4)`` int64.
-        """
-        coords = np.stack(
-            [
-                np.zeros(seq_len, dtype=np.int64),
-                np.zeros(seq_len, dtype=np.int64),
-                np.zeros(seq_len, dtype=np.int64),
-                np.arange(seq_len, dtype=np.int64),
-            ],
-            axis=-1,
-        )  # (seq_len, 4)
-        text_ids = np.tile(coords[np.newaxis, :, :], (batch_size, 1, 1))
-        return Buffer.from_dlpack(np.ascontiguousarray(text_ids))
+        return result[0] if isinstance(result, (list, tuple)) else result
 
     @staticmethod
     def _adapt_state_dict(weights: Weights) -> dict[str, Any]:

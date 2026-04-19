@@ -81,8 +81,8 @@ def test_tuple_slicing() raises:
     print("== test_tuple_slicing")
 
     comptime tr = IntTuple(0, 1, 2, 3, 4)
-    comptime sl0 = String(tr[-1])
-    comptime sl1 = String(tr[-2])
+    comptime sl0 = String(tr[len(tr) - 1])
+    comptime sl1 = String(tr[len(tr) - 2])
     comptime sl2 = String(tr[1:4])
     comptime sl3 = String(tr[1:5:2])
     comptime sl4 = String(tr[:])

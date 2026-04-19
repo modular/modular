@@ -132,23 +132,23 @@ def test[
     )
 
     var a_dev = TileTensor(
-        a_dev_buffer.unsafe_ptr(),
+        a_dev_buffer,
         row_major(Coord(Idx(total_num_tokens), Idx[K]())),
     )
     var b_dev = TileTensor(
-        b_dev_buffer.unsafe_ptr(),
+        b_dev_buffer,
         row_major[num_experts, 3 * N, K](),
     )
     var c_dev = TileTensor(
-        c_dev_buffer.unsafe_ptr(),
+        c_dev_buffer,
         row_major(Coord(Idx(3), Idx(total_num_tokens), Idx[N]())),
     )
     var c_ref_dev = TileTensor(
-        c_ref_dev_buffer.unsafe_ptr(),
+        c_ref_dev_buffer,
         row_major(Coord(Idx(total_num_tokens), Idx[actual_N]())),
     )
     var a_offsets_dev = TileTensor(
-        a_offsets_dev_buffer.unsafe_ptr(),
+        a_offsets_dev_buffer,
         row_major(
             Coord(
                 Idx(num_experts + 1),
@@ -156,7 +156,7 @@ def test[
         ),
     )
     var expert_ids_dev = TileTensor(
-        expert_ids_dev_buffer.unsafe_ptr(),
+        expert_ids_dev_buffer,
         row_major(
             Coord(
                 Idx(num_experts),

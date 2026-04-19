@@ -49,6 +49,7 @@ from linalg.fp4_utils import (
 from linalg.utils import elementwise_compute_lambda_type
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
+    GEMMKind,
 )
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
@@ -125,13 +126,13 @@ def test_grouped_gemm_epilogue[
 
     # Device allocations
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     # Scale factor shapes (5D)
     var a_scales_shape = row_major(
@@ -158,9 +159,9 @@ def test_grouped_gemm_epilogue[
 
     # Scale factor device allocations
     var sfa_device = ctx.enqueue_create_buffer[scales_dtype](sfa_size)
-    var sfa_tensor = TileTensor(sfa_device.unsafe_ptr(), a_scales_shape)
+    var sfa_tensor = TileTensor(sfa_device, a_scales_shape)
     var sfb_device = ctx.enqueue_create_buffer[scales_dtype](sfb_size)
-    var sfb_tensor = TileTensor(sfb_device.unsafe_ptr(), b_scales_shape)
+    var sfb_tensor = TileTensor(sfb_device, b_scales_shape)
 
     # Scale factor host allocations
     var sfa_host_ptr = alloc[Scalar[scales_dtype]](sfa_size)
@@ -221,6 +222,7 @@ def test_grouped_gemm_epilogue[
         mma_shape=mma_shape,
         cta_group=cta_group,
         register_based_epilogue=register_based_epilogue,
+        gemm_kind=GEMMKind.GMM,
     )
 
     # Problem sizes tensor
@@ -236,7 +238,7 @@ def test_grouped_gemm_epilogue[
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
 
     var problem_sizes_tensor = TileTensor(
-        problem_sizes_device.unsafe_ptr(), row_major[max_groups, 4]()
+        problem_sizes_device, row_major[max_groups, 4]()
     )
 
     # Pointer arrays
@@ -264,20 +266,14 @@ def test_grouped_gemm_epilogue[
     ctx.enqueue_copy(sfa_ptrs_device, sfa_ptrs_host)
     ctx.enqueue_copy(sfb_ptrs_device, sfb_ptrs_host)
 
-    var a_ptrs_tensor = TileTensor(
-        a_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var b_ptrs_tensor = TileTensor(
-        b_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var c_ptrs_tensor = TileTensor(
-        c_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
+    var a_ptrs_tensor = TileTensor(a_ptrs_device, row_major[max_groups, 1]())
+    var b_ptrs_tensor = TileTensor(b_ptrs_device, row_major[max_groups, 1]())
+    var c_ptrs_tensor = TileTensor(c_ptrs_device, row_major[max_groups, 1]())
     var sfa_ptrs_tensor = TileTensor(
-        sfa_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfa_ptrs_device, row_major[max_groups, 1]()
     )
     var sfb_ptrs_tensor = TileTensor(
-        sfb_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfb_ptrs_device, row_major[max_groups, 1]()
     )
 
     # Compute total tiles
@@ -300,9 +296,9 @@ def test_grouped_gemm_epilogue[
         )
     )
     var c_3d_shape = row_major(Coord(Idx[1](), m, n))
-    var a_template = TileTensor(a_device.unsafe_ptr(), a_3d_shape)
-    var b_template = TileTensor(b_device.unsafe_ptr(), b_3d_shape)
-    var c_template = TileTensor(c_device.unsafe_ptr(), c_3d_shape)
+    var a_template = TileTensor(a_device, a_3d_shape)
+    var b_template = TileTensor(b_device, b_3d_shape)
+    var c_template = TileTensor(c_device, c_3d_shape)
 
     # Scale factor template tensors - 5D with batch=1 and merged last dims
     var a_scales_5d_shape = row_major(
@@ -314,7 +310,7 @@ def test_grouped_gemm_epilogue[
             Idx[SF_ATOM_M[1] * SF_ATOM_K](),
         )
     )
-    var a_scales_5d = TileTensor(sfa_device.unsafe_ptr(), a_scales_5d_shape)
+    var a_scales_5d = TileTensor(sfa_device, a_scales_5d_shape)
     var b_scales_5d_shape = row_major(
         Coord(
             Idx[1](),
@@ -324,7 +320,7 @@ def test_grouped_gemm_epilogue[
             Idx[SF_ATOM_M[1] * SF_ATOM_K](),
         )
     )
-    var b_scales_5d = TileTensor(sfb_device.unsafe_ptr(), b_scales_5d_shape)
+    var b_scales_5d = TileTensor(sfb_device, b_scales_5d_shape)
 
     # Launch grouped GEMM with epilogue
     grouped_block_scaled_matmul[

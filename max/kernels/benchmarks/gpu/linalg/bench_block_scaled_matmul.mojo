@@ -140,15 +140,13 @@ def verify_matmul[
     var b_size = shape_b[0].value() * shape_b[1].value()
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = TileTensor(a_device.unsafe_ptr(), row_major(shape_a))
+    var a_device_nd = TileTensor(a_device, row_major(shape_a))
     var b_device = ctx.enqueue_create_buffer[a_type](b_size)
-    var b_device_nd = TileTensor(b_device.unsafe_ptr(), row_major(shape_b))
+    var b_device_nd = TileTensor(b_device, row_major(shape_b))
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = TileTensor(c_device.unsafe_ptr(), row_major(shape_c))
+    var c_device_nd = TileTensor(c_device, row_major(shape_c))
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = TileTensor(
-        c_device_ref.unsafe_ptr(), row_major(shape_c)
-    )
+    var c_device_ref_nd = TileTensor(c_device_ref, row_major(shape_c))
 
     init_vector_launch[a_type](a_device, a_size, init_type, ctx)
     init_vector_launch[a_type](b_device, b_size, init_type, ctx)
@@ -627,52 +625,184 @@ def get_dtype[micro_scaling_mode: StaticString]() -> DType:
         micro_scaling_mode == "mxfp8" or micro_scaling_mode == "nvfp4"
     ), "invalid micro_scaling_mode"
 
-    comptime if micro_scaling_mode == "mxfp8":  # micro_scaling_mode == "mxfp8"
+    comptime if micro_scaling_mode == "mxfp8":
         return DType.float8_e4m3fn
     else:  # micro_scaling_mode == "nvfp4"
         return DType.uint8
 
 
+# ===----------------------------------------------------------------------=== #
+# AMD MXFP4 native benchmark (CDNA4)
+# ===----------------------------------------------------------------------=== #
+
+
+def bench_mxfp4_amd[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
+    *,
+    cache_busting: Bool,
+    transpose_b: Bool = True,
+    use_vendor_blas: Bool = False,
+    epilogue: Bool = False,
+    micro_scaling_mode: StaticString = "mxfp4_amd",
+](
+    ctx: DeviceContext,
+    mut b: Bench,
+    m: MType,
+    n: NType,
+    k: KType,
+    init_type: InitializationType,
+    verify: Bool,
+    run_benchmark: Bool,
+) raises:
+    """Benchmark native MXFP4 block-scaled matmul on AMD CDNA4.
+
+    Uses mxfp4_block_scaled_matmul_amd with simple 2D scale tensors
+    [rows, K//32] in float8_e8m0fnu. Output is float32.
+    """
+    from linalg.matmul.gpu.amd import mxfp4_block_scaled_matmul_amd
+
+    comptime K_ELEMS = KType.static_value
+    comptime K_PACKED = K_ELEMS // 2
+    comptime N_VAL = NType.static_value
+    comptime K_SCALES = K_ELEMS // 32
+
+    var M = m.value()
+    var a_size = M * K_PACKED
+    var b_size = N_VAL * K_PACKED
+    var c_size = M * N_VAL
+    var a_scales_size = M * K_SCALES
+    var b_scales_size = N_VAL * K_SCALES
+
+    var a_shape = row_major(Coord(Idx(M), Idx[K_PACKED]()))
+    comptime b_shape = row_major(Coord(Idx[N_VAL](), Idx[K_PACKED]()))
+    var c_shape = row_major(Coord(Idx(M), Idx[N_VAL]()))
+    var sfa_shape = row_major(Coord(Idx(M), Idx[K_SCALES]()))
+    comptime sfb_shape = row_major(Coord(Idx[N_VAL](), Idx[K_SCALES]()))
+
+    comptime simd_size = 4
+    var cb_a = CacheBustingBuffer[DType.uint8](a_size, simd_size, ctx)
+    var cb_b = CacheBustingBuffer[DType.uint8](b_size, simd_size, ctx)
+    var cb_c = CacheBustingBuffer[DType.float32](c_size, simd_size, ctx)
+    var cb_sfa = CacheBustingBuffer[DType.float8_e8m0fnu](
+        a_scales_size, simd_size, ctx
+    )
+    var cb_sfb = CacheBustingBuffer[DType.float8_e8m0fnu](
+        b_scales_size, simd_size, ctx
+    )
+
+    cb_a.init_on_device(init_type, ctx)
+    cb_b.init_on_device(init_type, ctx)
+    cb_sfa.init_scales_on_device(init_type, ctx)
+    cb_sfb.init_scales_on_device(init_type, ctx)
+
+    @parameter
+    @always_inline
+    def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        var a_tt = TileTensor[mut=False](cb_a.offset_ptr(iteration), a_shape)
+        var b_tt = TileTensor[mut=False](cb_b.offset_ptr(iteration), b_shape)
+        var c_tt = TileTensor[mut=True](cb_c.offset_ptr(iteration), c_shape)
+        var sfa_tt = TileTensor[mut=False](
+            cb_sfa.offset_ptr(iteration), sfa_shape
+        )
+        var sfb_tt = TileTensor[mut=False](
+            cb_sfb.offset_ptr(iteration), sfb_shape
+        )
+        mxfp4_block_scaled_matmul_amd(c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx)
+
+    @parameter
+    @always_inline
+    def bench_func(mut bencher: Bencher) raises:
+        bencher.iter_custom[kernel_launch](ctx)
+
+    var flops = ThroughputMeasure(
+        BenchMetric.flops,
+        2 * M * N_VAL * K_ELEMS,
+    )
+    var run_name = _get_run_name[
+        DType.uint8,
+        transpose_b=transpose_b,
+        cache_busting=cache_busting,
+        use_vendor_blas=use_vendor_blas,
+        micro_scaling_mode=micro_scaling_mode,
+    ](
+        M,
+        N_VAL,
+        K_ELEMS,
+        Coord(Idx(M), Idx[N_VAL]()),
+        Coord(Idx(M), Idx[K_PACKED]()),
+        Coord(Idx[N_VAL](), Idx[K_PACKED]()),
+    )
+
+    if run_benchmark:
+        b.bench_function[bench_func](BenchId(run_name), [flops])
+    else:
+        kernel_launch(ctx, 0)
+
+
 def main() raises:
     comptime micro_scaling_mode = get_defined_string["scaling_mode", "nvfp4"]()
-    comptime dtype = get_dtype[micro_scaling_mode]()
 
     var M = Int(arg_parse("M", 1))
     comptime N = get_defined_int["N", 7168]()
-    comptime K = get_defined_int[
-        "K", 2048
-    ]() // 2 if micro_scaling_mode == "nvfp4" else get_defined_int["K", 2048]()
+    var run_benchmark = arg_parse("run_benchmark", True)
 
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
     )
     var verify = arg_parse("verify", True)
-    comptime cache_busting = True
-    comptime transpose_b = True
-    comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
-    comptime epilogue = get_defined_bool["epilogue", False]()
-
-    var run_benchmark = arg_parse("run_benchmark", True)
 
     var m = Bench()
     with DeviceContext() as ctx:
-        create_matmul_bench[
-            dtype,
-            transpose_b=transpose_b,
-            cache_busting=cache_busting,
-            use_vendor_blas=use_vendor_blas,
-            epilogue=epilogue,
-            micro_scaling_mode=micro_scaling_mode,
-        ](
-            ctx,
-            m,
-            Idx(M),
-            Idx[N](),
-            Idx[K](),
-            init_type,
-            verify,
-            run_benchmark,
-        )
+        comptime cache_busting = True
+        comptime transpose_b = True
+        comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
+        comptime epilogue = get_defined_bool["epilogue", False]()
+
+        comptime if micro_scaling_mode == "mxfp4_amd":
+            bench_mxfp4_amd[
+                cache_busting=cache_busting,
+                transpose_b=transpose_b,
+                use_vendor_blas=use_vendor_blas,
+                epilogue=epilogue,
+                micro_scaling_mode=micro_scaling_mode,
+            ](
+                ctx,
+                m,
+                Idx(M),
+                Idx[N](),
+                Idx[get_defined_int["K", 2048]()](),
+                init_type,
+                verify,
+                run_benchmark,
+            )
+        else:
+            comptime dtype = get_dtype[micro_scaling_mode]()
+            comptime K = get_defined_int[
+                "K", 2048
+            ]() // 2 if micro_scaling_mode == "nvfp4" else get_defined_int[
+                "K", 2048
+            ]()
+
+            create_matmul_bench[
+                dtype,
+                transpose_b=transpose_b,
+                cache_busting=cache_busting,
+                use_vendor_blas=use_vendor_blas,
+                epilogue=epilogue,
+                micro_scaling_mode=micro_scaling_mode,
+            ](
+                ctx,
+                m,
+                Idx(M),
+                Idx[N](),
+                Idx[K](),
+                init_type,
+                verify,
+                run_benchmark,
+            )
 
     if run_benchmark:
         m.dump_report()

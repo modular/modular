@@ -1215,9 +1215,26 @@ class KVTransferEngine:
         else:
             self._cleanup_recv_transfer(transfer_req)
 
-    def sync_and_release(self, transfer_req: TransferReqData) -> None:
-        """Waits for a transfer to complete and releases it."""
+    def sync_and_release(
+        self,
+        transfer_req: TransferReqData,
+        timeout_s: float = 30.0,
+    ) -> None:
+        """Waits for a transfer to complete and releases it.
+
+        Args:
+            transfer_req: The transfer request to wait on.
+            timeout_s: Maximum seconds to wait before raising TimeoutError.
+
+        Raises:
+            TimeoutError: If the transfer does not complete within timeout_s.
+        """
+        deadline = time.monotonic() + timeout_s
         while not self.is_complete(transfer_req):
+            if time.monotonic() > deadline:
+                raise TimeoutError(
+                    f"NIXL transfer did not complete within {timeout_s}s"
+                )
             time.sleep(0.001)
         self.cleanup_transfer(transfer_req)
 

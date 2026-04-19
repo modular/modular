@@ -32,8 +32,7 @@ Import compute operations directly:
 ```mojo
 from std.gpu.compute import mma
 
-# Automatically dispatches to the correct GPU architecture
-result = mma.mma(a, b, c)
+# Usage: var result = mma.mma(a, b, c)
 ```
 
 Architecture-specific implementations in `arch/` are internal and should not

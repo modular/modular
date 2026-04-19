@@ -434,7 +434,8 @@ struct VBufferRDNA[
             64,
             128,
             256,
-        ), "depth must be 64, 128, or 256"
+            512,
+        ), "depth must be 64, 128, 256, or 512"
 
         self.global_base_tile = global_tile
         self.global_iterator = global_tile.tiled_iterator[

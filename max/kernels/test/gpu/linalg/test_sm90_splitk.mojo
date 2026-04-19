@@ -91,10 +91,10 @@ def test_warp_specialize_gemm_with_multicasting[
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
 
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     # Initialize matmul operands
     rand(a_host.ptr, a_host.num_elements())
@@ -157,8 +157,8 @@ def test_warp_specialize_gemm_with_multicasting[
         block_tile_shape=block_tile_shape,
         mma_shape=wgmma_shape,
         cluster_shape=cluster_shape,
-        num_pipeline_stages=UInt(num_pipeline_stages),
-        num_consumer=UInt(num_consumer),
+        num_pipeline_stages=num_pipeline_stages,
+        num_consumer=num_consumer,
         partitioned_multicast=partitioned_multicast,
     )
 

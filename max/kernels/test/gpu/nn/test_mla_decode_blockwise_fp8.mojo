@@ -156,16 +156,16 @@ def run_test_blockwise_fp8[
         kv_dim2,
         NUM_LAYERS,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * page_size
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[kv_type]](block_elems)
@@ -188,7 +188,7 @@ def run_test_blockwise_fp8[
         kv_dim2,
         NUM_LAYERS,
         page_size,
-        Int(kv_params.num_heads),
+        kv_params.num_heads,
         head_dim_gran,
     )
     var scales_elems = (
@@ -196,7 +196,7 @@ def run_test_blockwise_fp8[
         * kv_dim2
         * NUM_LAYERS
         * page_size
-        * Int(kv_params.num_heads)
+        * kv_params.num_heads
         * head_dim_gran
     )
 
@@ -206,13 +206,9 @@ def run_test_blockwise_fp8[
     # scale(token_global, block_idx) = palette[(token_global * 7 + block_idx) % 9]
     # The factor 7 is coprime to 9, ensuring all palette entries are exercised
     # even for small token counts.
-    var scale_tok_stride = Int(kv_params.num_heads) * head_dim_gran
+    var scale_tok_stride = kv_params.num_heads * head_dim_gran
     var scale_page_stride = (
-        kv_dim2
-        * NUM_LAYERS
-        * page_size
-        * Int(kv_params.num_heads)
-        * head_dim_gran
+        kv_dim2 * NUM_LAYERS * page_size * kv_params.num_heads * head_dim_gran
     )
     var global_tok = 0
     var cur_page = 0
@@ -226,7 +222,7 @@ def run_test_blockwise_fp8[
             if valid_toks > page_size:
                 valid_toks = page_size
             for tok_in_page in range(page_size):
-                for h in range(Int(kv_params.num_heads)):
+                for h in range(kv_params.num_heads):
                     for blk in range(head_dim_gran):
                         var offset = (
                             cur_page * scale_page_stride
@@ -277,13 +273,13 @@ def run_test_blockwise_fp8[
     # The new token at position cache_len has real randn data (written by
     # the fused_rope_rmsnorm kernel in production). Tokens beyond num_keys
     # are zeroed so TMA reads produce zeros that get masked out.
-    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+    var _tok_stride = kv_params.num_heads * kv_params.head_size
     var _page_stride = (
         kv_dim2
         * NUM_LAYERS
         * page_size
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
     cur_page = 0
     for bi in range(batch_size):
@@ -425,17 +421,17 @@ def run_test_blockwise_fp8[
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -454,7 +450,7 @@ def run_test_blockwise_fp8[
 
     flare_mla_decoding[
         rank=3,
-        config=MHAConfig[q_type](UInt(num_heads), UInt(DEPTH)),
+        config=MHAConfig[q_type](num_heads, DEPTH),
         ragged=True,
     ](
         out_tt,
@@ -517,12 +513,12 @@ def run_test_blockwise_fp8[
                         * kv_dim2
                         * NUM_LAYERS
                         * page_size
-                        * Int(kv_params.num_heads)
-                        * Int(kv_params.head_size)
+                        * kv_params.num_heads
+                        * kv_params.head_size
                         + tok_in_page
-                        * Int(kv_params.num_heads)
-                        * Int(kv_params.head_size)
-                        + h * Int(kv_params.head_size)
+                        * kv_params.num_heads
+                        * kv_params.head_size
+                        + h * kv_params.head_size
                         + d
                     )
                     var fp8_val = blocks_host[src_offset].cast[DType.float32]()
@@ -708,16 +704,16 @@ def run_bench_blockwise_fp8[
         kv_dim2,
         NUM_LAYERS,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * page_size
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[kv_type]](block_elems)
@@ -733,7 +729,7 @@ def run_bench_blockwise_fp8[
         kv_dim2,
         NUM_LAYERS,
         page_size,
-        Int(kv_params.num_heads),
+        kv_params.num_heads,
         head_dim_gran,
     )
     var scales_elems = (
@@ -741,7 +737,7 @@ def run_bench_blockwise_fp8[
         * kv_dim2
         * NUM_LAYERS
         * page_size
-        * Int(kv_params.num_heads)
+        * kv_params.num_heads
         * head_dim_gran
     )
     var scales_host = alloc[Scalar[DType.float32]](scales_elems)
@@ -749,13 +745,13 @@ def run_bench_blockwise_fp8[
     for i in range(scales_elems):
         scales_host[i] = 1.0
 
-    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+    var _tok_stride = kv_params.num_heads * kv_params.head_size
     var _page_stride = (
         kv_dim2
         * NUM_LAYERS
         * page_size
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var cache_lengths_host = alloc[UInt32](batch_size)
@@ -901,17 +897,17 @@ def run_bench_blockwise_fp8[
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -936,7 +932,7 @@ def run_bench_blockwise_fp8[
     def kernel_launch(ctx: DeviceContext) raises:
         flare_mla_decoding[
             rank=3,
-            config=MHAConfig[q_type](UInt(num_heads), UInt(DEPTH)),
+            config=MHAConfig[q_type](num_heads, DEPTH),
             ragged=True,
         ](
             out_tt,

@@ -53,7 +53,6 @@ from std.algorithm import min as reduce_min
 from std.algorithm import elementwise, product, sum
 from std.algorithm.reduction import _reduce_generator
 from std.builtin.simd import _pow
-from std.builtin.variadics import _ReduceVariadicAndIdxToVariadic
 from comm.allgather import allgather
 from comm.allreduce import allreduce
 
@@ -100,6 +99,7 @@ from linalg.fp4_quantization import (
     block_scaled_matmul,
     quantize_dynamic_block_scaled,
     block_scales_interleave,
+    quantize_mxfp4_amd,
 )
 from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
 from linalg.mxfp4_dequant import dequant_mxfp4
@@ -189,7 +189,10 @@ from nn.kv_cache import (
     rms_norm_kv_cache_ragged_paged,
     rms_norm_value_cache_ragged_paged,
 )
-from nn.rope_split_store import rope_split_store_paged_ragged
+from nn.rope_split_store import (
+    rope_split_store_paged_ragged,
+    rope_split_store_paged_ragged_with_position_ids,
+)
 from nn.kv_cache_ragged import (
     generic_cross_attention_kv_cache,
     generic_flare_mla_decode_kv_cache_ragged,
@@ -234,7 +237,7 @@ from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     compute_mla_dispatch_scalars,
 )
-from nn.moe import moe_create_indices, router_group_limited
+from nn.moe import moe_create_indices, router_group_limited, single_group_router
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import (
     group_norm,
@@ -242,6 +245,7 @@ from nn.normalization import (
     rms_norm,
     rms_norm_fused_fp8,
     rms_norm_fused_residual_add,
+    rms_norm_rope_gpu,
 )
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
 from nn.pad_gpu import pad_constant as pad_constant_gpu
@@ -1972,36 +1976,27 @@ struct Reshape:
         )
 
 
-# Type-level transpose stride computation.  Uses _ReduceVariadicAndIdxToVariadic
-# (MLIR attribute evaluation) to permute input stride CoordLike types according
-# to a permutation IntTuple.  This avoids the interpreter heap limit that
-# prevents direct IntTuple element access in comptime-for loops.
-comptime _TransposeStrideMapper[
+# Type-level transpose stride computation.  Permute input stride CoordLike types
+# according to a permutation IntTuple.  This avoids the interpreter heap limit
+# that prevents direct IntTuple element access in comptime-for loops.
+comptime _TransposeStrideTypesTabulator[
     permutations: IntTuple,
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: TypeList[Trait=CoordLike, ...],
     idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[T=CoordLike, RuntimeInt[]] if Int(permutations[idx])
-    == UNKNOWN_VALUE else Variadic.types[
-        T=CoordLike, input_stride_types[Int(permutations[idx])]
-    ],
+]: CoordLike = RuntimeInt[] if Int(
+    permutations[idx]
+) == UNKNOWN_VALUE else input_stride_types[
+    Int(permutations[idx])
 ]
+
 
 comptime _TransposeStrideTypes[
     permutations: IntTuple,
     rank: Int,
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
-] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal=Variadic.empty_of_trait[CoordLike],
-    ParamListType=Variadic.types[
-        T=CoordLike,
-        *Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[]],
-    ],
-    Reducer=_TransposeStrideMapper[permutations, input_stride_types, ...],
-]
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+] = TypeList.tabulate[
+    rank, _TransposeStrideTypesTabulator[permutations, input_stride_types, _]
+]()
 
 
 @compiler.register("mo.transpose")
@@ -2109,40 +2104,31 @@ struct Transpose:
         return Self.shape_impl(input, permutations)
 
 
+comptime _AsCoordLike[T: CoordLike] = T
+
 # Type-level slice stride computation: multiplies input stride types by step
-# types element-wise.  Uses _ReduceVariadicAndIdxToVariadic (MLIR attribute
-# evaluation) to avoid the interpreter heap limit.
-comptime _SliceStrideMapper[
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
-    step_types: Variadic.TypesOfTrait[CoordLike],
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
+# types element-wise.
+comptime _SliceStrideTypesTabulator[
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+    step_types: TypeList[Trait=CoordLike, ...],
     idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[
-        T=CoordLike,
-        ComptimeInt[
-            input_stride_types[idx].static_value * step_types[idx].static_value
-        ],
-    ] if input_stride_types[idx].is_static_value
-    and step_types[idx].is_static_value else Variadic.types[
-        T=CoordLike, RuntimeInt[]
-    ],
+]: CoordLike = ComptimeInt[
+    input_stride_types[idx].static_value * step_types[idx].static_value
+] if input_stride_types[
+    idx
+].is_static_value and step_types[
+    idx
+].is_static_value else _AsCoordLike[
+    RuntimeInt[]
 ]
 
 comptime _SliceStrideTypes[
     rank: Int,
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
-    step_types: Variadic.TypesOfTrait[CoordLike],
-] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal=Variadic.empty_of_trait[CoordLike],
-    ParamListType=Variadic.types[
-        T=CoordLike,
-        *Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[]],
-    ],
-    Reducer=_SliceStrideMapper[input_stride_types, step_types, ...],
-]
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+    step_types: TypeList[Trait=CoordLike, ...],
+] = TypeList.tabulate[
+    rank, _SliceStrideTypesTabulator[input_stride_types, step_types, _]
+]()
 
 
 @compiler.register("mo.slice")
@@ -2342,7 +2328,7 @@ struct MutableStoreSlice:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.arg_max")
+@compiler.register("mo.reduce.arg_max")
 struct ArgMax:
     @staticmethod
     def execute[
@@ -2378,7 +2364,7 @@ struct ArgMax:
             )
 
 
-@compiler.register("mo.arg_min")
+@compiler.register("mo.reduce.arg_min")
 struct ArgMin:
     @staticmethod
     def execute[
@@ -2431,7 +2417,7 @@ struct ArgNonZero:
         )
 
 
-@compiler.register("mo.mean")
+@compiler.register("mo.reduce.mean")
 struct Mean:
     @staticmethod
     def execute[
@@ -2682,121 +2668,6 @@ struct ReduceMin:
         axis: Scalar,
     ) raises -> IndexList[input_rank]:
         return reduce_shape(input, Int(axis))
-
-
-@compiler.register("reduce_min_and_max")
-struct ReduceMinMax:
-    @staticmethod
-    def execute[
-        target: StaticString,
-        _trace_name: StaticString,
-        dtype: DType,
-        rank: Int,
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        axis0: Scalar,
-        ctx: DeviceContextPtr,
-    ) raises:
-        """Given a tensor of shape [A, B, C, D] and reducing along dimension 'C'
-        writes to a tensor of shape [A, B, 2, D] where [:, :, 0, :] contains
-        the minimum reduction and [:, :, 1, :] contains the maximum reduction.
-        """
-
-        comptime num_reductions = 2
-        var axis = normalize_neg_index(Int(axis0), rank)
-
-        @parameter
-        @always_inline
-        def input_0_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
-            return input._fused_load[width=width](
-                rebind[IndexList[input.rank]](coords)
-            )
-
-        @parameter
-        @always_inline
-        def output_0_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
-            output._fused_store[width=width](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, width]](val),
-            )
-
-        @always_inline
-        @parameter
-        def input_0_fn_wrapper[
-            _type: DType, width: Int, rank: Int
-        ](idx: IndexList[rank]) -> SIMD[_type, width]:
-            return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
-
-        @always_inline
-        @parameter
-        def output_0_fn_wrapper[
-            _type: DType,
-            width: Int,
-            rank: Int,
-        ](
-            indices: IndexList[rank],
-            val: StaticTuple[SIMD[_type, width], num_reductions],
-        ):
-            # TODO: once we support multiple outputs, change this to route to
-            # TODO: multiple output tensors.
-            var indices_min = indices
-            indices_min[axis] = 0
-            output_0_fn[width, rank](
-                indices_min, rebind[SIMD[dtype, width]](val[0])
-            )
-
-            var indices_max = indices
-            indices_max[axis] = 1
-            output_0_fn[width, rank](
-                indices_max, rebind[SIMD[dtype, width]](val[1])
-            )
-
-        @always_inline
-        @parameter
-        def reduce_fn[
-            ty: DType,
-            width: Int,
-            reduction_idx: Int,
-        ](left: SIMD[ty, width], right: SIMD[ty, width]) -> SIMD[ty, width]:
-            comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
-
-            comptime if reduction_idx == 0:
-                return min(left, right)
-            else:
-                return max(left, right)
-
-        var init_min = Scalar[dtype].MAX
-        var init_max = Scalar[dtype].MIN
-        var init = StaticTuple[Scalar[dtype], num_reductions](
-            init_min, init_max
-        )
-
-        _reduce_generator[
-            num_reductions,
-            dtype,
-            input_0_fn_wrapper,
-            output_0_fn_wrapper,
-            reduce_fn,
-            target=target,
-        ](
-            input.shape(),
-            init=init,
-            reduce_dim=axis,
-            context=ctx,
-        )
-        _ = axis
-
-    @staticmethod
-    def shape(input: InputTensor[...], axis: Scalar) -> IndexList[input.rank]:
-        var new_shape = input.shape()
-        new_shape[_unsafe_normalize_neg_index(Int(axis), input.rank)] = 2
-
-        return new_shape
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3270,7 +3141,7 @@ struct GatherSum:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.layer_norm")
+@compiler.register("mo.reduce.layer_norm")
 struct LayerNorm:
     @staticmethod
     def execute[
@@ -3335,8 +3206,407 @@ struct LayerNorm:
         return input.shape()
 
 
-@compiler.register("rms_norm_fused_residual_add")
-struct RMSNormFusedResidualAdd:
+@compiler.register("rms_norm_fused_quantize_dynamic_scaled_fp8")
+struct RMSNormFusedQuantizeDynamicScaledFP8:
+    @staticmethod
+    def execute[
+        input_dtype: DType,
+        output_dtype: DType,
+        scale_dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_dtype, rank=rank, ...],
+        scales: OutputTensor[dtype=scale_dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=input_dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=input_dtype, rank=1, ...],
+        epsilon: Scalar[dtype=input_dtype],
+        weight_offset: Scalar[dtype=input_dtype],
+        scale_ub: Float32,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[input_dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        rms_norm_fused_fp8[
+            input_dtype,
+            output_dtype,
+            scale_dtype,
+            rank,
+            input_fn,
+            target=target,
+        ](
+            input.shape(),
+            output.to_tile_tensor[DType.int64](),
+            gamma.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            ctx,
+            scale_ub,
+            scales.to_tile_tensor[DType.int64](),
+        )
+
+    @staticmethod
+    def shape[
+        input_dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=input_dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=input_dtype, rank=1, ...],
+        epsilon: Scalar[dtype=input_dtype],
+        weight_offset: Scalar[dtype=input_dtype],
+        scale_ub: Float32,
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("mo.reduce.rms_norm")
+struct ReduceRMSNorm:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        multiply_before_cast: Bool = True,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: Int, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            output._lambda_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        rms_norm[
+            dtype,
+            rank,
+            input_fn,
+            output_fn,
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            input.shape(),
+            gamma.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            ctx,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("mo.reduce.rms_norm.RoPE")
+struct ReduceRMSNormRoPE:
+    """Fuses RMS normalization and Rotary Position Embedding (RoPE) into one operation.
+
+    Computes per-row RMS normalization scaled by `weight`, then applies RoPE to
+    the normalized values using the provided cosine and sine tables.  The last
+    dimension of the input must be an even number.
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        cos_sin_dtype: DType,
+        rank: Int,
+        target: StaticString,
+        multiply_before_cast: Bool = True,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        weight: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        cos_vals: FusedInputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+        sin_vals: FusedInputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def cos_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
+            return cos_vals._fused_load[width=width](
+                rebind[IndexList[cos_vals.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def sin_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
+            return sin_vals._fused_load[width=width](
+                rebind[IndexList[sin_vals.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: Int, alignment: Int
+        ](coords: IndexList[rank], val: SIMD[dtype, width]):
+            output._lambda_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        rms_norm_rope_gpu[
+            input_fn,
+            cos_fn,
+            sin_fn,
+            output_fn,
+            multiply_before_cast,
+        ](
+            input.shape(),
+            weight.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            cos_vals.to_tile_tensor[DType.int64](),
+            sin_vals.to_tile_tensor[DType.int64](),
+            ctx.get_device_context(),
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        cos_sin_dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        weight: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        cos_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+        sin_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("mo.reduce.group_norm")
+struct ReduceGroupNorm:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        gamma: FusedInputTensor[dtype=dtype, rank=1, ...],
+        beta: FusedInputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        num_groups: Int32,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def gamma_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+            return gamma._lambda_load[width=width](coords)
+
+        @parameter
+        @always_inline
+        def beta_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+            return beta._lambda_load[width=width](coords)
+
+        group_norm[dtype, rank, input_fn, gamma_fn, beta_fn, target](
+            shape=input.shape(),
+            epsilon=epsilon,
+            groups=num_groups,
+            output=output.to_tile_tensor[DType.int64](),
+            ctx=ctx,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        beta: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        num_groups: Int32,
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("mo.reduce.reduce_min_and_max")
+struct ReduceMinAndMax:
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+        dtype: DType,
+        rank: Int,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        axis0: Scalar,
+        ctx: DeviceContextPtr,
+    ) raises:
+        """Given a tensor of shape [A, B, C, D] and reducing along dimension 'C'
+        writes to a tensor of shape [A, B, 2, D] where [:, :, 0, :] contains
+        the minimum reduction and [:, :, 1, :] contains the maximum reduction.
+        """
+
+        comptime num_reductions = 2
+        var axis = normalize_neg_index(Int(axis0), rank)
+
+        @parameter
+        @always_inline
+        def input_0_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
+            return input._fused_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_0_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+            output._fused_store[width=width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        @always_inline
+        @parameter
+        def input_0_fn_wrapper[
+            _type: DType, width: Int, rank: Int
+        ](idx: IndexList[rank]) -> SIMD[_type, width]:
+            return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
+
+        @always_inline
+        @parameter
+        def output_0_fn_wrapper[
+            _type: DType,
+            width: Int,
+            rank: Int,
+        ](
+            indices: IndexList[rank],
+            val: StaticTuple[SIMD[_type, width], num_reductions],
+        ):
+            # TODO: once we support multiple outputs, change this to route to
+            # TODO: multiple output tensors.
+            var indices_min = indices
+            indices_min[axis] = 0
+            output_0_fn[width, rank](
+                indices_min, rebind[SIMD[dtype, width]](val[0])
+            )
+
+            var indices_max = indices
+            indices_max[axis] = 1
+            output_0_fn[width, rank](
+                indices_max, rebind[SIMD[dtype, width]](val[1])
+            )
+
+        @always_inline
+        @parameter
+        def reduce_fn[
+            ty: DType,
+            width: Int,
+            reduction_idx: Int,
+        ](left: SIMD[ty, width], right: SIMD[ty, width]) -> SIMD[ty, width]:
+            comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
+
+            comptime if reduction_idx == 0:
+                return min(left, right)
+            else:
+                return max(left, right)
+
+        var init_min = Scalar[dtype].MAX
+        var init_max = Scalar[dtype].MIN
+        var init = StaticTuple[Scalar[dtype], num_reductions](
+            init_min, init_max
+        )
+
+        _reduce_generator[
+            num_reductions,
+            dtype,
+            input_0_fn_wrapper,
+            output_0_fn_wrapper,
+            reduce_fn,
+            target=target,
+        ](
+            input.shape(),
+            init=init,
+            reduce_dim=axis,
+            context=ctx,
+        )
+        _ = axis
+
+    @staticmethod
+    def shape(input: InputTensor[...], axis: Scalar) -> IndexList[input.rank]:
+        var new_shape = input.shape()
+        new_shape[_unsafe_normalize_neg_index(Int(axis), input.rank)] = 2
+
+        return new_shape
+
+
+@compiler.register("mo.reduce.rms_norm_fused_residual_add")
+struct ReduceRMSNormFusedResidualAdd:
     @staticmethod
     def execute[
         dtype: DType,
@@ -3433,192 +3703,6 @@ struct RMSNormFusedResidualAdd:
         epsilon2: Scalar[dtype=dtype],
         weight_offset1: Scalar[dtype=dtype],
         weight_offset2: Scalar[dtype=dtype],
-    ) -> IndexList[rank]:
-        return input.shape()
-
-
-@compiler.register("rms_norm")
-struct RMSNorm:
-    @staticmethod
-    def execute[
-        dtype: DType,
-        rank: Int,
-        target: StaticString,
-        multiply_before_cast: Bool = True,
-    ](
-        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
-        weight_offset: Scalar[dtype=dtype],
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        if output.shape() != input.shape():
-            raise Error("Input and output buffers are not same shape")
-
-        @parameter
-        @always_inline
-        def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width, element_alignment=width](
-                rebind[IndexList[input.rank]](coords)
-            )
-
-        @parameter
-        @always_inline
-        def output_fn[
-            width: Int, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
-            output._lambda_store[width=width, element_alignment=alignment](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, width]](val),
-            )
-
-        rms_norm[
-            dtype,
-            rank,
-            input_fn,
-            output_fn,
-            target=target,
-            multiply_before_cast=multiply_before_cast,
-        ](
-            input.shape(),
-            gamma.to_tile_tensor[DType.int64](),
-            epsilon,
-            weight_offset,
-            ctx,
-        )
-
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
-        weight_offset: Scalar[dtype=dtype],
-    ) -> IndexList[rank]:
-        return input.shape()
-
-
-@compiler.register("rms_norm_fused_quantize_dynamic_scaled_fp8")
-struct RMSNormFusedQuantizeDynamicScaledFP8:
-    @staticmethod
-    def execute[
-        input_dtype: DType,
-        output_dtype: DType,
-        scale_dtype: DType,
-        rank: Int,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=output_dtype, rank=rank, ...],
-        scales: OutputTensor[dtype=scale_dtype, rank=rank, ...],
-        input: FusedInputTensor[dtype=input_dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=input_dtype, rank=1, ...],
-        epsilon: Scalar[dtype=input_dtype],
-        weight_offset: Scalar[dtype=input_dtype],
-        scale_ub: Float32,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        if output.shape() != input.shape():
-            raise Error("Input and output buffers are not same shape")
-
-        @parameter
-        @always_inline
-        def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[input_dtype, width]:
-            return input._lambda_load[width=width, element_alignment=width](
-                rebind[IndexList[input.rank]](coords)
-            )
-
-        rms_norm_fused_fp8[
-            input_dtype,
-            output_dtype,
-            scale_dtype,
-            rank,
-            input_fn,
-            target=target,
-        ](
-            input.shape(),
-            output.to_tile_tensor[DType.int64](),
-            gamma.to_tile_tensor[DType.int64](),
-            epsilon,
-            weight_offset,
-            ctx,
-            scale_ub,
-            scales.to_tile_tensor[DType.int64](),
-        )
-
-    @staticmethod
-    def shape[
-        input_dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=input_dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=input_dtype, rank=1, ...],
-        epsilon: Scalar[dtype=input_dtype],
-        weight_offset: Scalar[dtype=input_dtype],
-        scale_ub: Float32,
-    ) -> IndexList[rank]:
-        return input.shape()
-
-
-@compiler.register("group_norm")
-struct GroupNorm:
-    @staticmethod
-    def execute[
-        dtype: DType,
-        rank: Int,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        gamma: FusedInputTensor[dtype=dtype, rank=1, ...],
-        beta: FusedInputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
-        num_groups: Int32,
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        @parameter
-        @always_inline
-        def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width](
-                rebind[IndexList[input.rank]](coords)
-            )
-
-        @parameter
-        @always_inline
-        def gamma_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
-            return gamma._lambda_load[width=width](coords)
-
-        @parameter
-        @always_inline
-        def beta_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
-            return beta._lambda_load[width=width](coords)
-
-        group_norm[dtype, rank, input_fn, gamma_fn, beta_fn, target](
-            shape=input.shape(),
-            epsilon=epsilon,
-            groups=num_groups,
-            output=output.to_tile_tensor[DType.int64](),
-            ctx=ctx,
-        )
-
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        beta: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
-        num_groups: Int32,
     ) -> IndexList[rank]:
         return input.shape()
 
@@ -3796,7 +3880,7 @@ struct Matmul:
 
         @parameter
         @always_inline
-        def epilgue_fn[
+        def epilogue_fn[
             _dtype: DType, _width: Int, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_dtype, _width]):
             c._lambda_store[width=_width, element_alignment=alignment](
@@ -3822,7 +3906,7 @@ struct Matmul:
         comptime elementwise_lambda = Optional[
             matmul_elementwise_epilogue_type
         ](
-            epilgue_fn
+            epilogue_fn
         ) if lambdas_have_fusion and not has_compute_lambda else None
 
         comptime compute_lambda = Optional[
@@ -4291,7 +4375,7 @@ struct RandomUniform:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.softmax")
+@compiler.register("mo.reduce.softmax")
 struct Softmax:
     @staticmethod
     def execute[
@@ -4326,7 +4410,7 @@ struct Softmax:
         )
 
 
-@compiler.register("mo.logsoftmax")
+@compiler.register("mo.reduce.logsoftmax")
 struct LogSoftmax:
     @staticmethod
     def execute[
@@ -4509,6 +4593,98 @@ struct Concat:
         axis: Scalar, inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...]
     ) raises -> IndexList[rank]:
         return concat_shape_impl(Int(axis), inputs)
+
+
+@compiler.register("mo.fused_concat_slice")
+struct FusedConcatSlice:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        static_starts: IntTuple,
+        static_steps: IntTuple,
+    ](
+        concat_output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        slice_output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        axis: Scalar,
+        inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
+
+        comptime for i in range(inputs.size):
+            input_shapes[i] = inputs[i].shape()
+
+        @always_inline
+        @parameter
+        def inputs_lambda[
+            input_index: Int,
+            width: Int,
+            _rank: Int,
+        ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
+            comptime assert (
+                input_index < inputs.size
+            ), "tensor index out of bounds"
+            return inputs[input_index]._lambda_load[width=width](
+                rebind[IndexList[rank]](indices)
+            )
+
+        @always_inline
+        @parameter
+        def epilogue_wrapper[
+            _dtype: DType, _rank: Int, width: Int, *, alignment: Int = 1
+        ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
+            var concat_indices = rebind[IndexList[rank]](indices)
+
+            # Write to the full concat output.
+            concat_output._lambda_store[
+                width=width, element_alignment=alignment
+            ](
+                concat_indices,
+                rebind[SIMD[concat_output.dtype, width]](value),
+            )
+
+            # Check if the current position falls within the slice range.
+            # The inner dimension is guaranteed not to be sliced by the pattern,
+            # so we only check the outer rank-1 dimensions.
+            var slice_indices = IndexList[rank]()
+
+            comptime for i in range(rank - 1):
+                comptime start = Int(static_starts[i])
+                comptime step = Int(static_steps[i])
+                var start_norm = (
+                    start if start >= 0 else start + concat_output.dim_size[i]()
+                )
+                if (indices[i] - start_norm) % step != 0:
+                    return
+                var slice_idx = (indices[i] - start_norm) // step
+                if slice_idx < 0 or slice_idx >= slice_output.dim_size[i]():
+                    return
+                slice_indices[i] = slice_idx
+
+            # Inner dimension is not sliced: index passes through directly.
+            slice_indices[rank - 1] = concat_indices[rank - 1]
+            slice_output._lambda_store[
+                width=width, element_alignment=alignment
+            ](
+                slice_indices,
+                rebind[SIMD[slice_output.dtype, width]](value),
+            )
+
+        fused_concat[
+            dtype,
+            rank,
+            False,
+            inputs_lambda,
+            epilogue_wrapper,
+            target=target,
+        ](
+            normalize_neg_index(Int(axis), rank),
+            input_shapes,
+            concat_output.to_tile_tensor[DType.int64](),
+            ctx,
+        )
 
 
 # NOTE: there are a lot of similarities between this and the shape func
@@ -5252,9 +5428,7 @@ struct MLAIndexerRaggedFloat8Paged:
         comptime head_dim = Int(k_blocks.static_spec.shape_tuple[5])
         comptime k_num_heads = Int(k_blocks.static_spec.shape_tuple[4])
         comptime is_mla = Int(k_blocks.static_spec.shape_tuple[1]) == 1
-        comptime kv_params = KVCacheStaticParams(
-            UInt(k_num_heads), UInt(head_dim), is_mla
-        )
+        comptime kv_params = KVCacheStaticParams(k_num_heads, head_dim, is_mla)
         comptime assert quantization_granularity >= depth, (
             "quantization_granularity must be >= depth for MLA (one scale per"
             " token per head)"
@@ -6436,6 +6610,69 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
         )
 
 
+@compiler.register("mo.rope_split_store.ragged.paged.with_position_id")
+struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        freq_dtype: DType,
+        //,
+        mrope_section: StaticString,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        qkv: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        position_ids: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        comptime if mrope_section == "":
+            return rope_split_store_paged_ragged_with_position_ids[
+                target=target,
+                interleaved=Self.interleaved,
+            ](
+                qkv.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_collection,
+                position_ids.to_tile_tensor[DType.int64](),
+                layer_idx,
+                output.to_tile_tensor[DType.int64](),
+                ctx,
+            )
+        else:
+            comptime mrope = _unsafe_str_to_coord[mrope_section]()
+            return rope_split_store_paged_ragged_with_position_ids[
+                target=target,
+                interleaved=Self.interleaved,
+                mrope_types=mrope.element_types.values,
+                mrope_section=mrope,
+            ](
+                qkv.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_collection,
+                position_ids.to_tile_tensor[DType.int64](),
+                layer_idx,
+                output.to_tile_tensor[DType.int64](),
+                ctx,
+            )
+
+
 @compiler.register("mo.fused_qkv_matmul.ragged.paged.quantized")
 struct Struct_fused_qkv_matmul_padded_ragged_quantized:
     @always_inline
@@ -6767,7 +7004,7 @@ def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
         CoordLike
     ],
-    mrope_section: Optional[Coord[*mrope_types]] = None,
+    mrope_section: Optional[Coord[*TypeList[mrope_types]()]] = None,
 ](
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3, ...],
     input_row_offsets: ManagedTensorSlice[dtype=DType.uint32, rank=1, ...],
@@ -6831,7 +7068,7 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
             interleaved=Self.interleaved,
             has_position_ids=True,
             target=target,
-            mrope_types=mrope.element_types,
+            mrope_types=mrope.element_types.values,
             mrope_section=mrope,
         ](
             q_proj,
@@ -6869,7 +7106,7 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     ) raises:
         # Dummy position_ids - won't be used since has_position_ids=False
         var dummy_position_ids = DynamicTensor[dtype=DType.uint32, rank=2, ...](
-            {_unsafe_null = ()}, IndexList[2](0)
+            None, IndexList[2](0)
         )
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
@@ -7464,9 +7701,7 @@ struct Struct_mla_decode_ragged_paged_scaled:
         comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
         comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
         comptime kv_num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
-        comptime kv_params = KVCacheStaticParams(
-            UInt(kv_num_heads), UInt(head_dim), True
-        )
+        comptime kv_params = KVCacheStaticParams(kv_num_heads, head_dim, True)
 
         var kv_collection = generic_get_paged_cache_with_scales[
             kv_dtype,
@@ -7662,33 +7897,6 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
         )
 
 
-@compiler.register("mo.kv_cache.get_max_seq_len.paged")
-struct Struct_kv_cache_get_max_seq_len_paged:
-    @always_inline
-    @staticmethod
-    def execute[
-        dtype: DType,
-        //,
-        target: StaticString,
-    ](
-        max_seq_len: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
-        context: DeviceContextPtr,
-    ) raises:
-        var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            cache_lengths,
-            kv_lookup_table,
-            max_lengths,
-        )
-        # TODO: use max_lengths[0, 0] in the graphcause a CUDA_INVALID_MEMORY_ACCESS error,
-        # as the graph compiler assumes it is a GPU tensor, and inserts a DtoH copy.
-        max_seq_len[0] = kv_collection.max_seq_length
-
-
 @compiler.register("mo.mla.graph.prefill.paged.fp8")
 struct Struct_mla_prefill_graph_paged:
     @always_inline
@@ -7802,6 +8010,14 @@ struct Struct_mla_compute_dispatch_args_scalar:
             max_cache_valid_length_tensor.unsafe_ptr()[0]
         )
         var q_max_seq_len = Int(q_max_seq_len_tensor.unsafe_ptr()[0])
+
+        if batch_size < 0:
+            raise Error("batch_size must be non-negative.")
+        if batch_size == 0:
+            output[0] = Int64(0)
+            output[1] = Int64(q_max_seq_len)
+            output[2] = Int64(1)
+            return
 
         comptime sm_count = ctx.default_device_info.sm_count
         comptime _half_sms = sm_count // 2
@@ -8460,6 +8676,54 @@ struct Struct_moe_router_group_limited:
         )
 
 
+@compiler.register("mo.moe.single.group.router")
+struct Struct_moe_single_group_router:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        scores_type: DType,
+        bias_type: DType,
+        //,
+        n_routed_experts: Int,
+        n_experts_per_tok: Int,
+        norm_weights: Bool,
+        target: StaticString,
+    ](
+        expert_indices: OutputTensor[dtype=DType.int32, rank=2, ...],
+        expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
+        expert_scores: FusedInputTensor[dtype=scores_type, rank=2, ...],
+        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
+        routed_scaling_factor: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        @parameter
+        @always_inline
+        def scores_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[scores_type, width]:
+            return expert_scores._lambda_load[width=width](coords)
+
+        single_group_router[
+            n_routed_experts,
+            n_experts_per_tok,
+            norm_weights=norm_weights,
+            target=target,
+            scores_input_fn=OptionalReg[
+                def[
+                    width: Int
+                ](IndexList[2]) capturing -> SIMD[scores_type, width]
+            ](scores_input_fn),
+        ](
+            expert_indices.to_tile_tensor[DType.int64](),
+            expert_weights.to_tile_tensor[DType.int64](),
+            expert_scores.to_tile_tensor[DType.int64]().as_immut(),
+            expert_bias.to_tile_tensor[DType.int64]().as_immut(),
+            routed_scaling_factor,
+            context,
+        )
+
+
 @compiler.register("mo.grouped.matmul.ragged")
 struct Struct_grouped_matmul_ragged:
     @always_inline
@@ -8693,10 +8957,11 @@ struct Struct_matmul_dynamic_block_scaled:
         b_type: DType,
         scales_type: DType,
         //,
+        lambdas_have_fusion: Bool,
         SF_VECTOR_SIZE: Int,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=c_type, rank=2, ...],
+        c: _FusedComputeOutputTensor[dtype=c_type, rank=2, ...],
         a: InputTensor[dtype=a_type, rank=2, ...],
         b: InputTensor[dtype=b_type, rank=2, ...],
         a_scales: InputTensor[dtype=scales_type, rank=5, ...],
@@ -8709,10 +8974,49 @@ struct Struct_matmul_dynamic_block_scaled:
             " block scaled support"
         )
 
+        @parameter
+        @always_inline
+        def epilogue_fn[
+            _dtype: DType, _width: Int, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]):
+            c._lambda_store[width=_width, element_alignment=alignment](
+                coords,
+                rebind[SIMD[c.dtype, _width]](val),
+            )
+
+        @parameter
+        @always_inline
+        def output_compute_fn[
+            _dtype: DType, _width: Int, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
+            _dtype, _width
+        ]:
+            return rebind[SIMD[_dtype, _width]](
+                c._fused_compute_output_lambda(
+                    coords, rebind[SIMD[c.dtype, _width]](val)
+                )
+            )
+
+        comptime has_compute_lambda = type_of(c)._has_compute_fusion
+
+        comptime elementwise_lambda = Optional[
+            matmul_elementwise_epilogue_type
+        ](
+            epilogue_fn
+        ) if lambdas_have_fusion and not has_compute_lambda else None
+
+        comptime compute_lambda = Optional[
+            matmul_elementwise_compute_lambda_type
+        ](
+            output_compute_fn
+        ) if lambdas_have_fusion and has_compute_lambda else None
+
         cuda_ctx = context.get_device_context()
         block_scaled_matmul[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=True,
+            elementwise_lambda_fn=elementwise_lambda,
+            elementwise_compute_lambda_fn=compute_lambda,
             target=target,
         ](
             c.to_tile_tensor[DType.int64](),
@@ -8734,11 +9038,12 @@ struct Struct_quantize_dynamic_block_scaled:
         scales_type: DType,
         in_dtype: DType,
         //,
+        scales_rank: Int,
         SF_VECTOR_SIZE: Int,
         target: StaticString,
     ](
         output: OutputTensor[dtype=out_dtype, rank=2, ...],
-        scales: OutputTensor[dtype=scales_type, rank=5, ...],
+        scales: OutputTensor[dtype=scales_type, rank=scales_rank, ...],
         input: InputTensor[dtype=in_dtype, rank=2, ...],
         tensor_sf: Float32,
         context: DeviceContextPtr,
@@ -8970,9 +9275,7 @@ struct Struct_kv_cache_store_k_scales_paged:
         comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
         comptime num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
         comptime is_mla = Int(kv_blocks.static_spec.shape_tuple[1]) == 1
-        comptime kv_params = KVCacheStaticParams(
-            UInt(num_heads), UInt(head_dim), is_mla
-        )
+        comptime kv_params = KVCacheStaticParams(num_heads, head_dim, is_mla)
 
         var k_collection = generic_get_paged_cache_with_scales[
             cache_dtype,
@@ -10123,7 +10426,7 @@ struct DistributedAllReduceSum:
         # Marshal signal buffers into the expected format.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={_unsafe_null = ()})
+        ](uninitialized=True)
         comptime for i in range(num_devices):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
@@ -10255,7 +10558,7 @@ struct BundledAllReduceSum:
         var out_buf = output.to_tile_tensor[DType.int64]()
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={_unsafe_null = ()})
+        ](uninitialized=True)
 
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
@@ -10342,7 +10645,7 @@ struct DistributedReduceScatterSum:
         # Marshal signal buffers.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={_unsafe_null = ()})
+        ](uninitialized=True)
 
         comptime for i in range(num_devices):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
@@ -10456,7 +10759,7 @@ struct DistributedAllGather:
         # Marshal signal buffers.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={_unsafe_null = ()})
+        ](uninitialized=True)
 
         comptime for i in range(num_devices):
             in_tensors[i] = TileTensor(
@@ -10567,7 +10870,7 @@ struct DistributedBroadcast:
 
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={_unsafe_null = ()})
+        ](uninitialized=True)
 
         comptime for i in range(signal_buffers.size):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
@@ -10651,7 +10954,7 @@ struct DistributedScatter:
         var in_tensors = InlineArray[InputTensorType, ngpus](uninitialized=True)
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={_unsafe_null = ()})
+        ](uninitialized=True)
 
         comptime for i in range(ngpus):
             in_tensors[i] = rebind[InputTensorType](
@@ -10742,7 +11045,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         # Marshal signal buffers.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={_unsafe_null = ()})
+        ](uninitialized=True)
 
         comptime for i in range(inputs.size):
             in_tensors[i] = rebind[InputTensorType](
@@ -11197,49 +11500,6 @@ struct QuantizeDynamicScaledFloat8:
         )
 
 
-@compiler.register("mo.batched.quantize.dynamic.scaled.fp8")
-struct BatchedQuantizeDynamicScaledFloat8:
-    @always_inline
-    @staticmethod
-    def execute[
-        input_type: DType,
-        scales_type: DType,
-        output_type: DType,
-        //,
-        group_size_or_per_token: Int,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=output_type, rank=3, ...],
-        scales: OutputTensor[dtype=scales_type, rank=3, ...],
-        input: FusedInputTensor[dtype=input_type, rank=3, ...],
-        scale_ub: Float32,
-        ctx: DeviceContextPtr,
-    ) raises:
-        comptime assert is_gpu[target](), "only valid on GPUs"
-
-        @parameter
-        @always_inline
-        def input_fn[
-            width: Int, alignment: Int
-        ](batch: Int, row: Int, col: Int) capturing -> SIMD[input_type, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                Index(batch, row, col)
-            )
-
-        batched_quantize_dynamic_scaled_fp8[
-            input_fn=input_fn,
-            group_size_or_per_token=group_size_or_per_token,
-            num_cols=Int(input.static_spec.shape_tuple[2]),
-        ](
-            output.to_tile_tensor[DType.int64](),
-            scales.to_tile_tensor[DType.int64](),
-            scale_ub,
-            ctx.get_device_context(),
-            num_rows=input.dim_size(1),
-            batch_size=input.dim_size(0),
-        )
-
-
 @compiler.register("mo.matmul_dynamic_scaled_fp8")
 struct MatmulDynamicScaledFloat8:
     @always_inline
@@ -11324,8 +11584,8 @@ struct MatmulStaticScaledFloat8:
         # temp buffer; the epilogue lambda writes to the real output.
         comptime N = type_of(weight_tt).static_shape[0]
         var M = Int(input_tt.dim[0]())
-        var output_dummy = TileTensor(
-            UnsafePointer[Scalar[DType.float32], MutAnyOrigin](_unsafe_null=()),
+        var output_dummy = TileTensor[DType.float32, _, MutAnyOrigin](
+            None,
             row_major(Coord(RuntimeInt[DType.int64](Int64(M)), Idx[N]())),
         )
 

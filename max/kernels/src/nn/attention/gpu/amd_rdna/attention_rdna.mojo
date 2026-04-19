@@ -212,9 +212,9 @@ struct AttentionRDNA[
     group: Int,
     token_gen: Bool,
     sink: Bool,
-    q_depth: Int = Int(config.depth),
-    cache_depth: Int = Int(config.depth),
-    output_depth: Int = Int(config.depth),
+    q_depth: Int = config.depth,
+    cache_depth: Int = config.depth,
+    output_depth: Int = config.depth,
 ]:
     """RDNA-specific Attention implementation for Wave32 WMMA.
 
@@ -243,10 +243,10 @@ struct AttentionRDNA[
     comptime output_frag_size = RDNA_CD_FRAG_SIZE
     comptime fragment_layout_nested = Layout.row_major(1, RDNA_CD_FRAG_SIZE)
 
-    comptime num_m_mmas = ceildiv(Self.WM, UInt(Self.mma_shape[0]))
-    comptime num_n_mmas = ceildiv(Self.WN, UInt(Self.mma_shape[1]))
+    comptime num_m_mmas = ceildiv(Self.WM, Self.mma_shape[0])
+    comptime num_n_mmas = ceildiv(Self.WN, Self.mma_shape[1])
     comptime num_n_mmas_output = ceildiv(
-        Self.output_depth // Int(Self.num_warps_n), Self.mma_shape[1]
+        Self.output_depth // Self.num_warps_n, Self.mma_shape[1]
     )
 
     comptime swap_a_b = True
@@ -255,7 +255,7 @@ struct AttentionRDNA[
     # RDNA k_group_size is always 1
     comptime k_group_size = RDNA_K_GROUP_SIZE
     comptime num_k_mmas2 = ceildiv(
-        Self.BK, UInt(Self.mma_shape[2] * Self.k_group_size)
+        Self.BK, Self.mma_shape[2] * Self.k_group_size
     )
 
     # RDNA warp layout: 16 rows x 2 columns = 32 threads
@@ -266,26 +266,26 @@ struct AttentionRDNA[
     # RDNA-specific buffer types
     comptime OutputRegisterBufferType = OutputRegisterBufferRDNA[
         Self.accum_type,
-        Int(Self.num_m_mmas),
+        Self.num_m_mmas,
         Self.num_n_mmas_output,
     ]
 
     comptime PRegisterBufferType = PRegisterBufferRDNA[
         Self.accum_type,
         Self.q_type,
-        Int(Self.BM),
-        Int(Self.BN),
-        Int(Self.BK),
-        Int(Self.WM),
-        Int(Self.WN),
-        Int(Self.num_m_mmas),
-        Int(Self.num_n_mmas),
+        Self.BM,
+        Self.BN,
+        Self.BK,
+        Self.WM,
+        Self.WN,
+        Self.num_m_mmas,
+        Self.num_n_mmas,
         Self.mma_shape,
         Self.k_group_size,
     ]
 
     comptime row_tt_layout = tt_row_major[
-        Int(Self.num_m_mmas), Self.fragment_layout.shape[0].value()
+        Self.num_m_mmas, Self.fragment_layout.shape[0].value()
     ]()
 
     comptime RowMaxTensorType = TileTensor[
@@ -316,10 +316,10 @@ struct AttentionRDNA[
         Self.attention_config_t.depth_padded,
         Self.attention_config_t.double_buffer,
         Self.q_type,
-        Int(Self.BM),
-        Int(Self.BN),
-        Int(Self.BK),
-        Int(Self.depth),
+        Self.BM,
+        Self.BN,
+        Self.BK,
+        Self.depth,
         Self.token_gen,
     ]
 
@@ -327,10 +327,10 @@ struct AttentionRDNA[
         dtype=Self.q_type,
         mma_shape=Self.mma_shape,
         k_group_size=Self.k_group_size,
-        WM=Int(Self.WM),
-        WN=Int(Self.WN),
-        BN=Int(Self.BN),
-        BK=Int(Self.BK),
+        WM=Self.WM,
+        WN=Self.WN,
+        BN=Self.BN,
+        BK=Self.BK,
         depth=Self.q_depth,
         thread_layout=Self.warp_layout,
     ]
@@ -366,22 +366,22 @@ struct AttentionRDNA[
 
     var warp_scratch_tensor: SharedLayoutTensor[
         Self.accum_type,
-        Layout.row_major(2 * Int(Self.num_warps_n), Int(Self.BM)),
+        Layout.row_major(2 * Self.num_warps_n, Self.BM),
     ]
 
     @staticmethod
     @always_inline
-    def q_head_idx() -> UInt:
+    def q_head_idx() -> Int:
         return Self.attention_config_t.q_head_idx()
 
     @staticmethod
     @always_inline
-    def q_tile_idx() -> UInt:
+    def q_tile_idx() -> Int:
         return Self.attention_config_t.q_tile_idx()
 
     @staticmethod
     @always_inline
-    def kv_head_idx() -> UInt:
+    def kv_head_idx() -> Int:
         return Self.attention_config_t.kv_head_idx()
 
     @always_inline
@@ -424,12 +424,12 @@ struct AttentionRDNA[
         //,
         prefetch_function: OptionalReg[def() capturing -> None] = None,
         beg_iter: Int = 0,
-        num_iters: Int = Int(Self.depth // Self.BK),
+        num_iters: Int = Self.depth // Self.BK,
         prefetched_b_tile: Bool = False,
     ](mut self, mut k_buffer: k_buffer_type):
         mma_rdna[
             tensor_core_mma=Self.get_tensor_core_mma_qk(),
-            BK=Int(Self.BK),
+            BK=Self.BK,
             prefetch_function=prefetch_function,
             swap_a_b=Self.swap_a_b,
             beg_iter=beg_iter,
@@ -455,10 +455,10 @@ struct AttentionRDNA[
 
         mma_rdna[
             tensor_core_mma=Self.get_tensor_core_mma_pv(),
-            BK=Int(Self.BK),
+            BK=Self.BK,
             prefetch_function=prefetch_function,
             swap_a_b=Self.swap_a_b,
-            num_iters=Int(Self.BN // Self.BK),
+            num_iters=Self.BN // Self.BK,
             prefetched_b_tile=prefetched_b_tile,
             a_copy_fn=copy_p_chunk,
         ](
@@ -478,7 +478,7 @@ struct AttentionRDNA[
                     Int(self.num_keys - 1),
                     Int(kv_tile_start_row),
                 ),
-                Index[dtype=DType.uint32](Int(1), Int(Self.BN)),
+                Index[dtype=DType.uint32](1, Self.BN),
             )
         else:
             return self.mask.status(
@@ -486,7 +486,7 @@ struct AttentionRDNA[
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
                 ),
-                Index[dtype=DType.uint32](Int(Self.BM), Int(Self.BN)),
+                Index[dtype=DType.uint32](Self.BM, Self.BN),
             )
 
     @always_inline
@@ -527,8 +527,8 @@ struct AttentionRDNA[
                 accum_type=Self.accum_type,
                 token_gen=Self.token_gen,
                 mma_shape=Self.mma_shape,
-                num_m_mmas=Int(Self.num_m_mmas),
-                num_n_mmas=Int(Self.num_n_mmas),
+                num_m_mmas=Self.num_m_mmas,
+                num_n_mmas=Self.num_n_mmas,
                 mask_t=Self.mask_t,
                 group=Self.group,
                 frag_num_rows=RDNA_CD_FRAG_SIZE,
@@ -594,10 +594,8 @@ struct AttentionRDNA[
             UInt32(Self.q_tile_idx()),
             UInt32(Self.kv_head_idx()),
             seq_len,
-            Self.attention_config_t.get_q_offset[UInt(Self.q_depth)](),
-            Self.attention_config_t.get_output_offset[
-                UInt(Self.output_depth)
-            ](),
+            Self.attention_config_t.get_q_offset[Self.q_depth](),
+            Self.attention_config_t.get_output_offset[Self.output_depth](),
         )
         self.smem_manager = Self.SharedMemoryManagerType()
 
@@ -610,7 +608,7 @@ struct AttentionRDNA[
             # K only has BN*BK elements, and BM can exceed BN (e.g. depth=64:
             # BM=128, BN=64), so we allocate a dedicated P buffer.
             var p_ptr = stack_allocation[
-                Int(Self.BM) * Int(Self.BK),
+                Self.BM * Self.BK,
                 Self.q_type,
                 address_space=AddressSpace.SHARED,
             ]()
@@ -629,10 +627,10 @@ struct AttentionRDNA[
         self.mask = mask
 
         self.mask_block_row = UInt32(self.q_tile_idx() * Self.BM)
-        var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
-        var warp_col = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[1]
-        self.mask_warp_row = UInt32(warp_row * Int(Self.WM))
-        self.mask_warp_col = UInt32(warp_col * Int(Self.WN))
+        var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
+        var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
+        self.mask_warp_row = UInt32(warp_row * Self.WM)
+        self.mask_warp_col = UInt32(warp_col * Self.WN)
 
         self.batch_idx = batch_idx
         self.scale = scale
@@ -647,7 +645,7 @@ struct AttentionRDNA[
                 sink_weights
             ), "expect sink_weights to be non-null when sink=true"
             var sink_weight = (
-                sink_weights.value()[Int(self.q_head_idx())][0].cast[
+                sink_weights.value()[self.q_head_idx()][0].cast[
                     Self.accum_type
                 ]()
                 * log2e
@@ -661,21 +659,19 @@ struct AttentionRDNA[
     @always_inline
     def online_softmax(self):
         var warp_scratch = self.warp_scratch_tensor
-        var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
+        var warp_row: Int = get_warp_coords[Self.BN, Self.WN]()[0]
 
         _online_softmax_iter_for_mma_output[
             Self.accum_type,
-            Layout.row_major(Int(Self.num_m_mmas), Int(Self.num_n_mmas)),
-            Layout.row_major(Int(Self.num_warps_m), Int(Self.num_warps_n)),
+            Layout.row_major(Self.num_m_mmas, Self.num_n_mmas),
+            Layout.row_major(Self.num_warps_m, Self.num_warps_n),
             Self.warp_layout,
             use_exp2=Self.use_exp2,
             fragment_layout=Self.fragment_layout,
         ](
             self.out_reg_buffer.vectorize(),
             self.p_reg_buffer.vectorize(),
-            warp_scratch.tile[2 * Int(Self.num_warps_n), Int(Self.WM)](
-                0, Int(warp_row)
-            ),
+            warp_scratch.tile[2 * Self.num_warps_n, Self.WM](0, warp_row),
             self.rowmax.ptr.address_space_cast[AddressSpace.GENERIC](),
             self.rowsum.ptr.address_space_cast[AddressSpace.GENERIC](),
         )
@@ -683,8 +679,8 @@ struct AttentionRDNA[
     @always_inline
     def store_output(self):
         """Store output from registers to global memory."""
-        var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
-        var warp_col = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[1]
+        var warp_row: Int = get_warp_coords[Self.BN, Self.WN]()[0]
+        var warp_col: Int = get_warp_coords[Self.BN, Self.WN]()[1]
         var output_tile = self.gmem_manager.get_output_tensor(self.output_ptr)
 
         var reg_tile = self.out_reg_buffer.get_reg_tile()
@@ -694,16 +690,12 @@ struct AttentionRDNA[
 
         # For decoding, M-dim rows are heads in the GQA group (stride=output_depth).
         # For prefill, M-dim rows are seq positions (stride=num_heads*output_depth).
-        comptime row_stride = Int(Self.output_depth) if Self.token_gen else Int(
-            Self.num_heads
-        ) * Int(Self.output_depth)
-        var row_bound = Int(Self.group) if Self.token_gen else self.seq_len
+        comptime row_stride = Self.output_depth if Self.token_gen else Self.num_heads * Self.output_depth
+        var row_bound = Self.group if Self.token_gen else self.seq_len
 
         comptime for depth_tile in range(Self.num_n_mmas_output):
             comptime for seq_tile in range(Self.num_m_mmas):
-                comptime mma_idx = Int(depth_tile) * Int(Self.num_m_mmas) + Int(
-                    seq_tile
-                )
+                comptime mma_idx = depth_tile * Self.num_m_mmas + seq_tile
 
                 comptime for elem in range(8):
                     # RDNA WMMA C/D: lane l, elem v → D[row=v*2+l//16, col=l%16]
@@ -712,15 +704,11 @@ struct AttentionRDNA[
                     var depth_in_mma = elem * 2 + row_group
 
                     var global_seq = (
-                        Int(warp_row) * Int(Self.WM)
-                        + Int(seq_tile) * 16
-                        + seq_in_mma
+                        warp_row * Self.WM + seq_tile * 16 + seq_in_mma
                     )
                     var global_depth = (
-                        Int(warp_col)
-                        * Int(Self.output_depth)
-                        // Int(Self.num_warps_n)
-                        + Int(depth_tile) * 16
+                        warp_col * Self.output_depth // Self.num_warps_n
+                        + depth_tile * 16
                         + depth_in_mma
                     )
 

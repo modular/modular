@@ -41,6 +41,8 @@ A custom architecture lives in a directory:
 └── weight_adapters.py
 ```
 
+Each file serves a distinct role:
+
 - `layers/`: holds custom layer implementations for components that differ
   fundamentally from anything in `max.nn`.
 - `__init__.py`: exposes the `ARCHITECTURES` list that MAX reads to register
@@ -210,6 +212,17 @@ MAX supports multiple weight formats through
 Write a separate adapter function for each format you need to support, following
 the same rename-map pattern. For the full API, see
 [`max.graph.weights`](/max/api/python/graph.weights/).
+
+### FP8 and FP4 checkpoints
+
+For architectures that load FP8 or FP4 checkpoints, use
+[`QuantFormat`](/max/api/python/generated/max.nn.QuantFormat) and
+[`QuantConfig`](/max/api/python/generated/max.nn.QuantConfig) from `max.nn`.
+`QuantFormat` identifies the checkpoint's quantization scheme (such as
+`COMPRESSED_TENSORS_FP8` or `NVFP4`) and `QuantConfig` carries the per-layer
+scaling settings: which layers are quantized, the granularity and dtype of
+weight and activation scales, and the block sizes that the hardware-accelerated
+kernels require.
 
 ## Connect to the KV cache
 

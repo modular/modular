@@ -40,7 +40,7 @@ def _ensure_runtime_init():
 
 
 def __wrap_and_execute_main[
-    main_func: def() -> None
+    main_func: def() thin -> None
 ](
     argc: Int32,
     argv: __mlir_type[`!kgen.pointer<!kgen.pointer<scalar<ui8>>>`],
@@ -74,7 +74,7 @@ def __wrap_and_execute_main[
 
 
 def __wrap_and_execute_raising_main[
-    main_func: def() raises -> None
+    main_func: def() thin raises -> None
 ](
     argc: Int32,
     argv: __mlir_type[`!kgen.pointer<!kgen.pointer<scalar<ui8>>>`],

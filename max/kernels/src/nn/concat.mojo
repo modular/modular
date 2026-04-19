@@ -696,6 +696,7 @@ def concat[
             )
 
 
+@__name(t"concat_gpu_flat_{dtype}_ax{axis}_w{vec_width}", mangle=True)
 def _concat_gpu_flat_kernel[
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
@@ -756,6 +757,7 @@ def _concat_gpu_flat_kernel[
         acc += input_concat_dim
 
 
+@__name(t"concat_inner_most_single_dim_{dtype}", mangle=True)
 def _concat_inner_most_single_dim[
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
@@ -944,13 +946,13 @@ def _concat_gpu_elementwise[
     # dimension, so all elements belong to the same input and we can safely
     # use vectorized loads/stores (float4 = 128-bit transactions).
     comptime if axis != output.rank - 1:
-        elementwise[per_output_elem, 4, target="gpu"](
-            coord_to_index_list(output.layout.shape_coord()), ctx
-        )
+        elementwise[
+            per_output_elem, 4, target="gpu", _trace_description="concat"
+        ](coord_to_index_list(output.layout.shape_coord()), ctx)
     else:
-        elementwise[per_output_elem, 1, target="gpu"](
-            coord_to_index_list(output.layout.shape_coord()), ctx
-        )
+        elementwise[
+            per_output_elem, 1, target="gpu", _trace_description="concat"
+        ](coord_to_index_list(output.layout.shape_coord()), ctx)
 
 
 @always_inline
@@ -1083,11 +1085,13 @@ def _fused_concat_cpu[
             elementwise_wrapper,
             1,
             use_blocking_impl=single_thread_blocking_override,
+            _trace_description="concat_fused",
         ](input_shape, ctx)
         offset = offset + input_shape[axis]
 
 
 @always_inline
+@__name(t"fused_concat_inner_most_single_dim_{dtype}", mangle=True)
 def _fused_concat_inner_most_single_dim[
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
@@ -1165,9 +1169,9 @@ def _fused_concat_gpu_elementwise[
     # When axis != rank-1, the SIMD group spans the innermost (non-concat)
     # dimension, so we can safely use vectorized loads/stores.
     comptime if axis != rank - 1:
-        elementwise[per_output_elem, 4, target="gpu"](
-            coord_to_index_list(output.layout.shape_coord()), ctx
-        )
+        elementwise[
+            per_output_elem, 4, target="gpu", _trace_description="concat_fused"
+        ](coord_to_index_list(output.layout.shape_coord()), ctx)
     else:
         comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
@@ -1178,13 +1182,19 @@ def _fused_concat_gpu_elementwise[
                 use_simd_width = False
 
         if use_simd_width:
-            elementwise[per_output_elem, simd_width, target="gpu"](
-                coord_to_index_list(output.layout.shape_coord()), ctx
-            )
+            elementwise[
+                per_output_elem,
+                simd_width,
+                target="gpu",
+                _trace_description="concat_fused",
+            ](coord_to_index_list(output.layout.shape_coord()), ctx)
         else:
-            elementwise[per_output_elem, 1, target="gpu"](
-                coord_to_index_list(output.layout.shape_coord()), ctx
-            )
+            elementwise[
+                per_output_elem,
+                1,
+                target="gpu",
+                _trace_description="concat_fused",
+            ](coord_to_index_list(output.layout.shape_coord()), ctx)
 
 
 @always_inline

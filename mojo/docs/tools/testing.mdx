@@ -39,7 +39,7 @@ For your first example of using the Mojo testing framework, create a file named
 # Content of test_quickstart.mojo
 from std.testing import assert_equal, TestSuite
 
-def inc(n: Int) raises -> Int:
+def inc(n: Int) -> Int:
     return n + 1
 
 def test_inc_zero() raises:

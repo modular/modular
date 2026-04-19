@@ -24,7 +24,7 @@ This module defines two traits that define the roles of the different structs
 
 from std.math import align_up
 from std.gpu.host import DeviceContext
-from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.nvidia.tma import TensorMapL2Promotion, TensorMapSwizzle
 from layout import (
     ComptimeInt,
     Coord,
@@ -143,18 +143,18 @@ def _make_cache_tt[
 
 
 struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
-    var num_heads: UInt
-    var head_size: UInt
+    var num_heads: Int
+    var head_size: Int
     var is_mla: Bool
 
     def __init__(
-        out self, num_heads: UInt, head_size: UInt, is_mla: Bool = False
+        out self, num_heads: Int, head_size: Int, is_mla: Bool = False
     ):
         """
         Initialize KVCacheStaticParams.
         Args:
-            num_heads (UInt): Number of attention heads.
-            head_size (UInt): Size of each attention head.
+            num_heads (Int): Number of attention heads.
+            head_size (Int): Size of each attention head.
             is_mla (Bool, optional): Whether to use Multi-Linear Attention (MLA) mode.
                 If true, we only store k cache. If False, we store k and v cache.
                 Defaults to False.
@@ -166,19 +166,17 @@ struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
 
 # Explicit 1D TileTensor layout that lets the compiler prove flat_rank == 1,
 # bypassing the LTToTTLayout comptime alias chain where the compiler can't
-# simplify TypeList[*_Flattened[...].size] to 1.
+# simplify TypeList[_Flattened[...]].size to 1.
 comptime _1d_tt_layout = InternalLayout[
-    shape_types=Variadic.types[T=CoordLike, RuntimeInt[DType.int64]],
-    stride_types=Variadic.types[T=CoordLike, ComptimeInt[1]],
+    shape_types=Coord[RuntimeInt[DType.int64]].element_types,
+    stride_types=Coord[ComptimeInt[1]].element_types,
 ]
 
 comptime _2d_row_major_tt_layout = InternalLayout[
-    shape_types=Variadic.types[
-        T=CoordLike, RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-    ],
-    stride_types=Variadic.types[
-        T=CoordLike, RuntimeInt[DType.int64], ComptimeInt[1]
-    ],
+    shape_types=Coord[
+        RuntimeInt[DType.int64], RuntimeInt[DType.int64]
+    ].element_types,
+    stride_types=Coord[RuntimeInt[DType.int64], ComptimeInt[1]].element_types,
 ]
 
 
@@ -339,12 +337,23 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         ...
 
     @always_inline
+    def get_tma_row(self, encoded_index: Int32) -> Int32:
+        """Convert an encoded sparse index to a physical TMA row.
+
+        For paged caches the encoded index is
+        ``physical_block * page_size + offset`` and this method returns
+        ``physical_block * stride + offset``.  Non-paged caches return
+        the encoded index unchanged.
+        """
+        ...
+
+    @always_inline
     def create_tma_tile[
         swizzle_mode: TensorMapSwizzle,
         *,
         BN: Int,
         BK: Int = padded_depth[
-            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+            Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
@@ -362,7 +371,7 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         *,
         BN: Int,
         BK: Int = padded_depth[
-            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+            Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
     ](self, ctx: DeviceContext) raises -> RaggedTMA3DTile[
         Self.dtype,
@@ -403,17 +412,20 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         *,
         tile_height: Int = 4,
         tile_width: Int,
+        tile_stride: Int = tile_width,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+        tma_dtype: DType = Self.dtype,
+        l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
-        Self.dtype,
+        tma_dtype,
         2,
         tile_shape=IndexList[2](
             tile_height,
-            _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+            _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
         ),
         desc_shape=IndexList[2](
             1,
-            _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+            _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
         ),
     ]:
         """Creates a 2D TMA gather4 descriptor for this KV cache.
@@ -428,18 +440,76 @@ trait KVCacheT(DevicePassable, TrivialRegisterPassable):
         rows) in the returned ``TMATensorTile.tile_shape``. The hardware
         descriptor shape stays ``(1, box_width)`` as required by TMA gather4.
 
+        When ``tma_dtype`` differs from ``Self.dtype``, the underlying data
+        pointer is bitcast to ``tma_dtype`` at descriptor creation time.
+        This allows, for example, creating an INT64/SWIZZLE_NONE descriptor
+        over FP8 data for linear SMEM layout.
+
         Parameters:
             tile_height: Number of rows in the tile. Must be a multiple of 4.
                 Defaults to 4 for backward compatibility.
-            tile_width: Number of elements per row (innermost dimension).
+            tile_width: Number of elements per row to load (box width) in
+                ``tma_dtype`` elements.
+            tile_stride: Row stride in elements in global memory. Defaults to
+                ``tile_width``. Use a larger value when the global row is
+                wider than the portion to load.
             swizzle_mode: TMA swizzle mode for shared memory access pattern.
                 Defaults to SWIZZLE_NONE.
+            tma_dtype: The data type used for the TMA descriptor. Defaults to
+                ``Self.dtype``. When different, the pointer is bitcast.
+            l2_promotion: L2 cache promotion hint for TMA loads. Defaults to
+                NONE.
 
         Args:
             ctx: The CUDA device context used to create the TMA descriptor.
 
         Returns:
             A TMATensorTile with box width derived from the swizzle mode.
+        """
+        ...
+
+    @always_inline
+    def create_rope_gather4_tma_tile[
+        *,
+        tile_height: Int = 4,
+        tile_width: Int,
+        padded_depth: Int,
+        swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+        l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
+    ](self, ctx: DeviceContext) raises -> TMATensorTile[
+        DType.bfloat16,
+        2,
+        tile_shape=IndexList[2](
+            tile_height,
+            _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+        ),
+        desc_shape=IndexList[2](
+            1,
+            _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+        ),
+    ]:
+        """Creates a BF16 gather4 TMA descriptor for the rope portion of the
+        KV cache.
+
+        For the per-tensor rope-aware layout each token row is stored as
+        ``padded_depth`` FP8 bytes (content) followed by BF16 rope elements.
+        This method offsets the base pointer by ``padded_depth`` bytes,
+        reinterprets as BF16, and creates a gather4 TMA descriptor with
+        ``tile_width`` BF16 elements per row.
+
+        Parameters:
+            tile_height: Number of rows in the tile. Must be a multiple of 4.
+            tile_width: Number of BF16 elements per row in global memory.
+            padded_depth: Byte offset from row start to the rope data.
+            swizzle_mode: TMA swizzle mode for shared memory access pattern.
+            l2_promotion: L2 cache promotion hint for TMA loads. Defaults to
+                NONE.
+
+        Args:
+            ctx: The CUDA device context used to create the TMA descriptor.
+
+        Returns:
+            A BF16 TMATensorTile configured for gather4.
         """
         ...
 
@@ -472,8 +542,8 @@ struct ContinuousBatchingKVCache[
     comptime blocks_shape = IntTuple(
         UNKNOWN_VALUE,
         UNKNOWN_VALUE,
-        Int(Self.kv_params.num_heads),
-        Int(Self.kv_params.head_size),
+        Self.kv_params.num_heads,
+        Self.kv_params.head_size,
     )
     comptime blocks_layout = Layout.row_major(Self.blocks_shape)
 
@@ -519,10 +589,10 @@ struct ContinuousBatchingKVCache[
         self, block_idx: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
     ) -> DynamicCoord[DType.int64, 4]:
         assert (
-            UInt(head_idx) < Self.kv_params.num_heads
+            head_idx < Self.kv_params.num_heads
         ), "KVCache head_idx out of range"
         assert (
-            UInt(head_dim_idx) < Self.kv_params.head_size
+            head_dim_idx < Self.kv_params.head_size
         ), "KVCache head_dim_idx is out of range"
         assert tok_idx < Int(
             self.blocks.dim[1]()
@@ -547,11 +617,11 @@ struct ContinuousBatchingKVCache[
         comptime assert (
             not self.quantization_enabled
         ), "ContinuousBatchingKVCache does not support quantization"
-        assert Int(blocks.dim[2]()) == Int(
-            Self.kv_params.num_heads
+        assert (
+            Int(blocks.dim[2]()) == Self.kv_params.num_heads
         ), "blocks.dim[2]() must be equal to kv_params.num_heads"
-        assert Int(blocks.dim[3]()) == Int(
-            Self.kv_params.head_size
+        assert (
+            Int(blocks.dim[3]()) == Self.kv_params.head_size
         ), "blocks.dim[3]() must be equal to kv_params.head_size"
 
         self.blocks = blocks
@@ -681,6 +751,15 @@ struct ContinuousBatchingKVCache[
         )
 
     @always_inline
+    def get_tma_row(self, encoded_index: Int32) -> Int32:
+        """Convert an encoded sparse index to a physical TMA row.
+
+        For non-paged caches the encoded index is already the row, so
+        this is an identity operation.
+        """
+        return encoded_index
+
+    @always_inline
     def num_kv_rows(self) -> Int:
         """Returns the total number of virtual rows in this KV cache view."""
         var total_blocks = self.blocks.dim[0]()
@@ -701,7 +780,7 @@ struct ContinuousBatchingKVCache[
         *,
         BN: Int,
         BK: Int = padded_depth[
-            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+            Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
@@ -729,8 +808,8 @@ struct ContinuousBatchingKVCache[
         comptime smem_dim = IndexList[3](BN, 1, BK)
         comptime gmem_dim = IndexList[3](
             UNKNOWN_VALUE,
-            Int(Self.kv_params.num_heads),
-            Int(Self.kv_params.head_size),
+            Self.kv_params.num_heads,
+            Self.kv_params.head_size,
         )
         return create_split_tma[smem_dim, gmem_dim, swizzle_mode](
             ctx, self.blocks.ptr, Int(rows)
@@ -741,17 +820,20 @@ struct ContinuousBatchingKVCache[
         *,
         tile_height: Int = 4,
         tile_width: Int,
+        tile_stride: Int = tile_width,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+        tma_dtype: DType = Self.dtype,
+        l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
-        Self.dtype,
+        tma_dtype,
         2,
         tile_shape=IndexList[2](
             tile_height,
-            _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+            _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
         ),
         desc_shape=IndexList[2](
             1,
-            _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+            _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
         ),
     ]:
         """Creates a 2D TMA gather4 descriptor for this KV cache.
@@ -762,12 +844,23 @@ struct ContinuousBatchingKVCache[
         is derived from the swizzle mode; for SWIZZLE_NONE it equals
         ``tile_width``.
 
+        When ``tma_dtype`` differs from ``Self.dtype``, the underlying data
+        pointer is bitcast to ``tma_dtype`` at descriptor creation time.
+
         Parameters:
             tile_height: Number of rows in the tile. Must be a multiple of 4.
                 Defaults to 4 for backward compatibility.
-            tile_width: Number of elements per row (innermost dimension).
+            tile_width: Number of elements per row to load (box width) in
+                ``tma_dtype`` elements.
+            tile_stride: Row stride in elements in global memory. Defaults to
+                ``tile_width``. Use a larger value when the global row is
+                wider than the portion to load.
             swizzle_mode: TMA swizzle mode for shared memory access pattern.
                 Defaults to SWIZZLE_NONE.
+            tma_dtype: The data type used for the TMA descriptor. Defaults to
+                ``Self.dtype``. When different, the pointer is bitcast.
+            l2_promotion: L2 cache promotion hint for TMA loads. Defaults to
+                NONE.
 
         Args:
             ctx: The CUDA device context used to create the TMA descriptor.
@@ -776,11 +869,17 @@ struct ContinuousBatchingKVCache[
             A TMATensorTile with box width derived from the swizzle mode.
         """
         return create_tma_tile_gather4[
-            Self.dtype,
+            tma_dtype,
             tile_height=tile_height,
             tile_width=tile_width,
+            tile_stride=tile_stride,
             swizzle_mode=swizzle_mode,
-        ](ctx, self.blocks.ptr, self.num_kv_rows())
+            l2_promotion=l2_promotion,
+        ](
+            ctx,
+            self.blocks.ptr.bitcast[Scalar[tma_dtype]](),
+            self.num_kv_rows(),
+        )
 
     @always_inline
     def create_ragged_tma_tile[
@@ -788,7 +887,7 @@ struct ContinuousBatchingKVCache[
         *,
         BN: Int,
         BK: Int = padded_depth[
-            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+            Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
     ](
         self,
@@ -807,11 +906,11 @@ struct ContinuousBatchingKVCache[
         var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
             self.blocks.dim[1]()
         )
-        tma = type_of(tma).create[depth=Int(Self.kv_params.head_size)](
+        tma = type_of(tma).create[depth=Self.kv_params.head_size](
             ctx,
             self.blocks.ptr,
             rows=Int(rows),
-            middle_dim=Int(Self.kv_params.num_heads),
+            middle_dim=Self.kv_params.num_heads,
         )
 
     @always_inline
@@ -834,6 +933,32 @@ struct ContinuousBatchingKVCache[
         comptime assert (
             False
         ), "create_rope_tma_tile is not supported for ContinuousBatchingKVCache"
+
+    @always_inline
+    def create_rope_gather4_tma_tile[
+        *,
+        tile_height: Int = 4,
+        tile_width: Int,
+        padded_depth: Int,
+        swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+        l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
+    ](self, ctx: DeviceContext) raises -> TMATensorTile[
+        DType.bfloat16,
+        2,
+        tile_shape=IndexList[2](
+            tile_height,
+            _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+        ),
+        desc_shape=IndexList[2](
+            1,
+            _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+        ),
+    ]:
+        """Not supported for ContinuousBatchingKVCache."""
+        comptime assert False, (
+            "create_rope_gather4_tma_tile is not supported for"
+            " ContinuousBatchingKVCache"
+        )
 
     @always_inline
     def block_paged_ptr[
@@ -865,21 +990,25 @@ struct ContinuousBatchingKVCache[
         """Returns a pointer to the scales block at the requested indices.
 
         Note: ContinuousBatchingKVCache does not support KVCache quantization.
-        This function returns a NULL pointer.
+        This function returns a dangling pointer.
         """
-        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin](
-            _unsafe_null=()
-        )
+        # SAFETY: Callers only dereference scales pointers behind comptime
+        # `quantization_enabled` guards, which are False for this cache type.
+        return UnsafePointer[
+            Scalar[Self.scale_dtype], MutAnyOrigin
+        ].unsafe_dangling()
 
     @always_inline
     def scales_raw_ptr(
         self,
     ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
-        """Returns a null pointer. ContinuousBatchingKVCache does not support
+        """Returns a dangling pointer. ContinuousBatchingKVCache does not support
         quantization."""
-        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin](
-            _unsafe_null=()
-        )
+        # SAFETY: Callers only dereference scales pointers behind comptime
+        # `quantization_enabled` guards, which are False for this cache type.
+        return UnsafePointer[
+            Scalar[Self.scale_dtype], MutAnyOrigin
+        ].unsafe_dangling()
 
 
 struct PagedKVCache[
@@ -921,14 +1050,14 @@ struct PagedKVCache[
     comptime blocks_shape = IntTuple(
         UNKNOWN_VALUE,
         Self.page_size,
-        Int(Self.kv_params.num_heads),
-        Int(Self.kv_params.head_size),
+        Self.kv_params.num_heads,
+        Self.kv_params.head_size,
     )
     comptime blocks_strides = IntTuple(
         # Runtime value: 2 * num_layers * page_size * num_heads * head_size
         UNKNOWN_VALUE,
-        Int(Self.kv_params.num_heads) * Int(Self.kv_params.head_size),
-        Int(Self.kv_params.head_size),
+        Self.kv_params.num_heads * Self.kv_params.head_size,
+        Self.kv_params.head_size,
         1,
     )
     comptime blocks_layout = Layout(Self.blocks_shape, Self.blocks_strides)
@@ -964,14 +1093,16 @@ struct PagedKVCache[
 
     # Number of quantization scale values per token.
     comptime head_dim_granularity = ceildiv(
-        Int(Self.kv_params.head_size),
+        Self.kv_params.head_size,
         Self.quantization_granularity,
     )
     comptime scales_tt_layout = RowMajorLayout[
-        RuntimeInt[DType.int64],
-        ComptimeInt[Self.page_size],
-        ComptimeInt[Int(Self.kv_params.num_heads)],
-        ComptimeInt[Self.head_dim_granularity],
+        *Coord[
+            RuntimeInt[DType.int64],
+            ComptimeInt[Self.page_size],
+            ComptimeInt[Self.kv_params.num_heads],
+            ComptimeInt[Self.head_dim_granularity],
+        ].element_types
     ]
     comptime scales_tt_type = TileTensor[
         Self.scale_dtype, Self.scales_tt_layout, MutAnyOrigin
@@ -1001,11 +1132,11 @@ struct PagedKVCache[
         assert (
             Int(blocks.dim[1]()) == Self.page_size
         ), "blocks.dim[1]() must be equal to page_size"
-        assert Int(blocks.dim[2]()) == Int(
-            Self.kv_params.num_heads
+        assert (
+            Int(blocks.dim[2]()) == Self.kv_params.num_heads
         ), "blocks.dim[2]() must be equal to kv_params.num_heads"
-        assert Int(blocks.dim[3]()) == Int(
-            Self.kv_params.head_size
+        assert (
+            Int(blocks.dim[3]()) == Self.kv_params.head_size
         ), "blocks.dim[3]() must be equal to kv_params.head_size"
 
         self.blocks = blocks
@@ -1033,6 +1164,21 @@ struct PagedKVCache[
         return UInt32(self.blocks.layout.stride[0]().value()) // UInt32(
             self.kv_params.num_heads * self.kv_params.head_size
         )
+
+    @always_inline
+    def get_tma_row(self, encoded_index: Int32) -> Int32:
+        """Convert an encoded sparse index to a physical TMA row.
+
+        The encoded index is ``physical_block * page_size + offset``.  This
+        method decomposes it and returns
+        ``physical_block * stride + offset`` where *stride* is the distance
+        (in rows) between consecutive physical blocks in the flattened
+        memory view.
+        """
+        var phys_block = encoded_index // Int32(Self.page_size)
+        var offset = encoded_index % Int32(Self.page_size)
+        var stride = Int32(self._stride())
+        return phys_block * stride + offset
 
     @always_inline
     def num_kv_rows(self) -> Int:
@@ -1072,7 +1218,7 @@ struct PagedKVCache[
         *,
         BN: Int,
         BK: Int = padded_depth[
-            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+            Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
     ](self, ctx: DeviceContext) raises -> SplitLastDimTMATensorTile[
         Self.dtype,
@@ -1102,8 +1248,8 @@ struct PagedKVCache[
         comptime smem_dim = IndexList[3](BN, 1, BK)
         comptime gmem_dim = IndexList[3](
             UNKNOWN_VALUE,
-            Int(Self.kv_params.num_heads),
-            Int(Self.kv_params.head_size),
+            Self.kv_params.num_heads,
+            Self.kv_params.head_size,
         )
         return create_split_tma[smem_dim, gmem_dim, swizzle_mode](
             ctx, self.blocks.ptr, Int(rows)
@@ -1114,17 +1260,20 @@ struct PagedKVCache[
         *,
         tile_height: Int = 4,
         tile_width: Int,
+        tile_stride: Int = tile_width,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+        tma_dtype: DType = Self.dtype,
+        l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
     ](self, ctx: DeviceContext) raises -> TMATensorTile[
-        Self.dtype,
+        tma_dtype,
         2,
         tile_shape=IndexList[2](
             tile_height,
-            _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+            _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
         ),
         desc_shape=IndexList[2](
             1,
-            _gather4_box_width[Self.dtype, tile_width, swizzle_mode](),
+            _gather4_box_width[tma_dtype, tile_width, swizzle_mode](),
         ),
     ]:
         """Creates a 2D TMA gather4 descriptor for this KV cache.
@@ -1135,12 +1284,23 @@ struct PagedKVCache[
         is derived from the swizzle mode; for SWIZZLE_NONE it equals
         ``tile_width``.
 
+        When ``tma_dtype`` differs from ``Self.dtype``, the underlying data
+        pointer is bitcast to ``tma_dtype`` at descriptor creation time.
+
         Parameters:
             tile_height: Number of rows in the tile. Must be a multiple of 4.
                 Defaults to 4 for backward compatibility.
-            tile_width: Number of elements per row (innermost dimension).
+            tile_width: Number of elements per row to load (box width) in
+                ``tma_dtype`` elements.
+            tile_stride: Row stride in elements in global memory. Defaults to
+                ``tile_width``. Use a larger value when the global row is
+                wider than the portion to load.
             swizzle_mode: TMA swizzle mode for shared memory access pattern.
                 Defaults to SWIZZLE_NONE.
+            tma_dtype: The data type used for the TMA descriptor. Defaults to
+                ``Self.dtype``. When different, the pointer is bitcast.
+            l2_promotion: L2 cache promotion hint for TMA loads. Defaults to
+                NONE.
 
         Args:
             ctx: The CUDA device context used to create the TMA descriptor.
@@ -1149,11 +1309,17 @@ struct PagedKVCache[
             A TMATensorTile with box width derived from the swizzle mode.
         """
         return create_tma_tile_gather4[
-            Self.dtype,
+            tma_dtype,
             tile_height=tile_height,
             tile_width=tile_width,
+            tile_stride=tile_stride,
             swizzle_mode=swizzle_mode,
-        ](ctx, self.blocks.ptr, self.num_kv_rows())
+            l2_promotion=l2_promotion,
+        ](
+            ctx,
+            self.blocks.ptr.bitcast[Scalar[tma_dtype]](),
+            self.num_kv_rows(),
+        )
 
     @always_inline
     def create_ragged_tma_tile[
@@ -1161,7 +1327,7 @@ struct PagedKVCache[
         *,
         BN: Int,
         BK: Int = padded_depth[
-            Self.dtype, swizzle_mode, Int(Self.kv_params.head_size)
+            Self.dtype, swizzle_mode, Self.kv_params.head_size
         ](),
     ](
         self,
@@ -1180,11 +1346,11 @@ struct PagedKVCache[
         var rows = UInt32(total_blocks - 1) * self._stride() + UInt32(
             Self.page_size
         )
-        tma = type_of(tma).create[depth=Int(Self.kv_params.head_size)](
+        tma = type_of(tma).create[depth=Self.kv_params.head_size](
             ctx,
             self.blocks.ptr,
             rows=Int(rows),
-            middle_dim=Int(Self.kv_params.num_heads),
+            middle_dim=Self.kv_params.num_heads,
         )
 
     @always_inline
@@ -1235,7 +1401,7 @@ struct PagedKVCache[
         comptime smem_dim = IndexList[3](BN, 1, BK)
         comptime gmem_dim = IndexList[3](
             UNKNOWN_VALUE,
-            Int(Self.kv_params.num_heads),
+            Self.kv_params.num_heads,
             bf16_row_stride,
         )
         tma = create_split_tma[smem_dim, gmem_dim, swizzle_mode](
@@ -1243,17 +1409,60 @@ struct PagedKVCache[
         )
 
     @always_inline
+    def create_rope_gather4_tma_tile[
+        *,
+        tile_height: Int = 4,
+        tile_width: Int,
+        padded_depth: Int,
+        swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+        l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
+    ](self, ctx: DeviceContext) raises -> TMATensorTile[
+        DType.bfloat16,
+        2,
+        tile_shape=IndexList[2](
+            tile_height,
+            _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+        ),
+        desc_shape=IndexList[2](
+            1,
+            _gather4_box_width[DType.bfloat16, tile_width, swizzle_mode](),
+        ),
+    ]:
+        """Creates a BF16 gather4 TMA descriptor for the rope portion of the
+        KV cache.
+
+        For the per-tensor rope-aware layout each token row is stored as
+        ``padded_depth`` FP8 bytes (content) followed by BF16 rope elements.
+        The total row width in BF16 units is
+        ``(padded_depth + tile_width * 2) // 2``.
+
+        This method offsets ``blocks.ptr`` by ``padded_depth`` bytes,
+        reinterprets as BF16, and creates a gather4 TMA descriptor whose row
+        stride is the full row width in BF16 elements.
+        """
+        var rope_ptr = (self.blocks.ptr + padded_depth).bitcast[
+            Scalar[DType.bfloat16]
+        ]()
+        return create_tma_tile_gather4[
+            DType.bfloat16,
+            tile_height=tile_height,
+            tile_width=tile_width,
+            swizzle_mode=swizzle_mode,
+            l2_promotion=l2_promotion,
+        ](ctx, rope_ptr, self.num_kv_rows())
+
+    @always_inline
     def _get_idx(
         self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
     ) -> DynamicCoord[DType.int64, 4]:
         debug_assert(
-            UInt(head_idx) < Self.kv_params.num_heads,
+            head_idx < Self.kv_params.num_heads,
             "KVCache head_idx out of range (",
             head_idx,
             ")",
         )
         assert (
-            UInt(head_dim_idx) < Self.kv_params.head_size
+            head_dim_idx < Self.kv_params.head_size
         ), "KVCache head_dim_idx is out of range"
 
         var lut_block_index, tok_in_block_idx = divmod(tok_idx, self.page_size)
@@ -1284,7 +1493,7 @@ struct PagedKVCache[
         head_dim_idx: Int,
     ) -> DynamicCoord[DType.int64, 4]:
         debug_assert(
-            UInt(head_idx) < Self.kv_params.num_heads,
+            head_idx < Self.kv_params.num_heads,
             "KVCache head_idx out of range (",
             head_idx,
             ")",
@@ -1494,14 +1703,16 @@ struct PagedKVCache[
     def scales_raw_ptr(
         self,
     ) -> UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin]:
-        """Returns the base pointer to the scales tensor, or null if scales
-        are not set."""
+        """Returns the base pointer to the scales tensor, or a
+        dangling pointer if scales are not set."""
 
         comptime if Self.quantization_enabled:
             return self.scales.value().ptr
-        return UnsafePointer[Scalar[Self.scale_dtype], MutAnyOrigin](
-            _unsafe_null=()
-        )
+        # SAFETY: Only reached when quantization is disabled; callers guard
+        # scales access behind comptime `quantization_enabled` checks.
+        return UnsafePointer[
+            Scalar[Self.scale_dtype], MutAnyOrigin
+        ].unsafe_dangling()
 
 
 trait KVCollectionT(ImplicitlyCopyable):
@@ -1549,8 +1760,8 @@ struct ContinuousBatchingKVCacheCollection[
         UNKNOWN_VALUE,
         UNKNOWN_VALUE,
         UNKNOWN_VALUE,
-        Int(Self.kv_params.num_heads),
-        Int(Self.kv_params.head_size),
+        Self.kv_params.num_heads,
+        Self.kv_params.head_size,
     )
     comptime blocks_layout = Layout.row_major(Self.blocks_shape)
     comptime blocks_tt_layout = LTToTTLayout[Self.blocks_layout]
@@ -1679,8 +1890,8 @@ struct PagedKVCacheCollection[
         2 if not Self.kv_params.is_mla else 1,
         UNKNOWN_VALUE,
         Self.page_size,
-        Int(Self.kv_params.num_heads),
-        Int(Self.kv_params.head_size),
+        Self.kv_params.num_heads,
+        Self.kv_params.head_size,
     )
     comptime blocks_layout = Layout.row_major(Self.blocks_shape)
     comptime blocks_tt_layout = LTToTTLayout[Self.blocks_layout]
@@ -1690,7 +1901,7 @@ struct PagedKVCacheCollection[
 
     # Match PagedKVCache.head_dim_granularity.
     comptime head_dim_granularity = ceildiv(
-        Int(Self.kv_params.head_size),
+        Self.kv_params.head_size,
         Self.CacheType.quantization_granularity,
     )
     # Define scales tensor with shape [total_num_blocks, 2, num_layers, page_size, num_heads, granularity]
@@ -1699,7 +1910,7 @@ struct PagedKVCacheCollection[
         2 if not Self.kv_params.is_mla else 1,
         UNKNOWN_VALUE,  # num_layers
         Self.page_size,  # page_size
-        Int(Self.kv_params.num_heads),  # num_heads
+        Self.kv_params.num_heads,  # num_heads
         Self.head_dim_granularity,  # scales per token
     )
     comptime scales_layout = Layout.row_major(Self.scales_shape)

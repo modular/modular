@@ -49,7 +49,7 @@ def argmaxmin_gpu[
         out_vals_shape.flattened_length()
     )
     var out_vals = TileTensor(
-        out_vals_buf.unsafe_ptr(),
+        out_vals_buf,
         row_major(Coord(out_vals_shape)),
     )
 

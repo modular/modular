@@ -22,7 +22,7 @@ Key features:
 """
 
 from std.collections import OptionalReg
-from std.math.uutils import umod
+from std.math.uutils import umod, ufloordiv
 
 from std.gpu import barrier, block_idx, lane_id
 from nn.attention.mha_utils import MHAConfig, get_start_and_end_for_partitions
@@ -68,24 +68,24 @@ struct MHAAttentionConfigRDNA[token_gen: Bool, config: MHAConfig, group: Int](
 
     @staticmethod
     @always_inline
-    def q_head_idx() -> UInt:
+    def q_head_idx() -> Int:
         comptime if Self.token_gen:
             var group_idx = umod(lane_id(), Self.group)
-            return UInt(block_idx.y) * UInt(Self.group) + UInt(group_idx)
+            return block_idx.y * Self.group + group_idx
         else:
-            return UInt(block_idx.x)
+            return block_idx.x
 
     @staticmethod
     @always_inline
-    def q_tile_idx() -> UInt:
-        return UInt(block_idx.y) if not Self.token_gen else 0
+    def q_tile_idx() -> Int:
+        return block_idx.y if not Self.token_gen else 0
 
     @staticmethod
     @always_inline
-    def kv_head_idx() -> UInt:
-        return UInt(
-            block_idx.y
-        ) if Self.token_gen else Self.q_head_idx() // UInt(Self.group)
+    def kv_head_idx() -> Int:
+        return block_idx.y if Self.token_gen else ufloordiv(
+            Self.q_head_idx(), Self.group
+        )
 
     @staticmethod
     @always_inline
@@ -95,13 +95,13 @@ struct MHAAttentionConfigRDNA[token_gen: Bool, config: MHAConfig, group: Int](
 
     @staticmethod
     @always_inline
-    def get_q_offset[q_depth: UInt]() -> UInt32:
+    def get_q_offset[q_depth: Int]() -> UInt32:
         return UInt32(
             q_depth
             * (
                 (
                     Self.kv_head_idx()
-                    * UInt(Self.group) if Self.token_gen else Self.q_head_idx()
+                    * Self.group if Self.token_gen else Self.q_head_idx()
                 )
                 + Self.config.num_heads
                 * Self.q_tile_idx()
@@ -111,7 +111,7 @@ struct MHAAttentionConfigRDNA[token_gen: Bool, config: MHAConfig, group: Int](
 
     @staticmethod
     @always_inline
-    def get_output_offset[output_depth: UInt]() -> UInt32:
+    def get_output_offset[output_depth: Int]() -> UInt32:
         return Self.get_q_offset[output_depth]()
 
 
@@ -142,7 +142,7 @@ __extension AttentionRDNA:
             )
 
             var k_tile = self.gmem_manager.get_kv_tensor(
-                self.k.block_paged_ptr[Int(Self.BN)](
+                self.k.block_paged_ptr[Self.BN](
                     UInt32(self.get_batch_idx()),
                     kv_tile_start_row,
                     UInt32(Self.kv_head_idx()),
@@ -152,7 +152,7 @@ __extension AttentionRDNA:
             )
 
             var v_tile = self.gmem_manager.get_kv_tensor(
-                self.v.block_paged_ptr[Int(Self.BN)](
+                self.v.block_paged_ptr[Self.BN](
                     UInt32(self.get_batch_idx()),
                     kv_tile_start_row,
                     UInt32(Self.kv_head_idx()),
@@ -168,11 +168,11 @@ __extension AttentionRDNA:
             var k_buffer = KBufferRDNA[
                 tensor_core_mma=Self.get_tensor_core_mma_qk(),
                 swizzle=None,
-                BN=Int(Self.BN),
-                WN=Int(Self.WN),
-                BK=Int(Self.BK),
-                depth=Int(Self.depth),
-                num_threads=Int(Self.num_threads),
+                BN=Self.BN,
+                WN=Self.WN,
+                BK=Self.BK,
+                depth=Self.depth,
+                num_threads=Self.num_threads,
                 num_stages=Self.num_stages,
             ](
                 k_tile,
@@ -182,12 +182,12 @@ __extension AttentionRDNA:
 
             var v_buffer = VBufferRDNA[
                 tensor_core_mma=Self.get_tensor_core_mma_pv(),
-                BN=Int(Self.BN),
-                BK=Int(Self.BK),
-                depth=Int(Self.depth),
-                num_threads=Int(Self.num_threads),
+                BN=Self.BN,
+                BK=Self.BK,
+                depth=Self.depth,
+                num_threads=Self.num_threads,
                 num_stages=Self.num_stages,
-                num_warps_n=Int(Self.num_warps_n),
+                num_warps_n=Self.num_warps_n,
             ](
                 v_tile,
                 self.smem_manager.get_v_ptr[v_tile.dtype](),
@@ -215,9 +215,7 @@ __extension AttentionRDNA:
 
         for i in range(UInt32(0), UInt32(self.num_keys), UInt32(Self.BN)):
             var end = min(i + UInt32(Self.BN), UInt32(self.num_keys))
-            loop_over_kvcache[Int(Self.BN)](
-                i, end, end != UInt32(self.num_keys)
-            )
+            loop_over_kvcache[Self.BN](i, end, end != UInt32(self.num_keys))
 
         self.out_reg_buffer.apply_softmax_denominator(self.rowsum)
 
@@ -253,7 +251,7 @@ __extension AttentionRDNA:
             var kv_tile_num_rows = min(Int(tile_size), end - kv_tile_start_row)
 
             var k_tile = self.gmem_manager.get_kv_tensor(
-                self.k.block_paged_ptr[Int(Self.BN)](
+                self.k.block_paged_ptr[Self.BN](
                     UInt32(self.get_batch_idx()),
                     UInt32(kv_tile_start_row),
                     UInt32(self.kv_head_idx()),
@@ -263,7 +261,7 @@ __extension AttentionRDNA:
             )
 
             var v_tile = self.gmem_manager.get_kv_tensor(
-                self.v.block_paged_ptr[Int(Self.BN)](
+                self.v.block_paged_ptr[Self.BN](
                     UInt32(self.get_batch_idx()),
                     UInt32(kv_tile_start_row),
                     UInt32(self.kv_head_idx()),
@@ -281,11 +279,11 @@ __extension AttentionRDNA:
             var k_buffer = KBufferRDNA[
                 tensor_core_mma=Self.get_tensor_core_mma_qk(),
                 swizzle=None,
-                BN=Int(Self.BN),
-                WN=Int(Self.WN),
-                BK=Int(Self.BK),
-                depth=Int(Self.depth),
-                num_threads=Int(Self.num_threads),
+                BN=Self.BN,
+                WN=Self.WN,
+                BK=Self.BK,
+                depth=Self.depth,
+                num_threads=Self.num_threads,
                 num_stages=Self.num_stages,
             ](
                 k_tile,
@@ -293,15 +291,15 @@ __extension AttentionRDNA:
                 self.smem_manager.get_k_ptr[k_tile.dtype](),
             )
 
-            var v_tile_slice = v_tile.slice[:, : Int(Self.output_depth)]()
+            var v_tile_slice = v_tile.slice[:, : Self.output_depth]()
             var v_buffer = VBufferRDNA[
                 tensor_core_mma=Self.get_tensor_core_mma_pv(),
-                BN=Int(Self.BN),
-                BK=Int(Self.BK),
+                BN=Self.BN,
+                BK=Self.BK,
                 depth=Self.output_depth,
-                num_threads=Int(Self.num_threads),
+                num_threads=Self.num_threads,
                 num_stages=Self.num_stages,
-                num_warps_n=Int(Self.num_warps_n),
+                num_warps_n=Self.num_warps_n,
             ](
                 v_tile_slice,
                 self.smem_manager.get_v_ptr[v_tile.dtype](),
@@ -328,13 +326,13 @@ __extension AttentionRDNA:
             self.mma_pv(v_buffer)
             barrier()
 
-        start, end = get_start_and_end_for_partitions[Int(Self.BN)](
+        start, end = get_start_and_end_for_partitions[Self.BN](
             self.num_keys, num_partitions, block_idx.x
         )
 
-        for i in range(start, end, Int(Self.BN)):
-            var end_ = min(i + Int(Self.BN), end)
-            loop_over_kvcache[Int(Self.BN)](i, end_, end_ != end)
+        for i in range(start, end, Self.BN):
+            var end_ = min(i + Self.BN, end)
+            loop_over_kvcache[Self.BN](i, end_, end_ != end)
 
         self.out_reg_buffer.apply_softmax_denominator(self.rowsum)
         self.store_partition_info(num_partitions, exp_sum_ptr, qk_max_ptr)

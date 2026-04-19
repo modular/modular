@@ -123,7 +123,7 @@ def gather_reduce[
     simd_width: Int,
     reduce_fn: def[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) -> SIMD[dtype, width],
+    ) thin -> SIMD[dtype, width],
 ](
     output: TileTensor[mut=True, dtype, ...],
     input: TileTensor[dtype, ...],

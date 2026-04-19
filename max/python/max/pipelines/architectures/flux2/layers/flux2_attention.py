@@ -19,7 +19,9 @@ from max.nn.kernels import flash_attention_gpu, rope_ragged_with_position_ids
 from max.nn.layer import LayerList, Module
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
+from max.nn.quant_config import QuantConfig
 
+from ..model_config import Flux2BlockQuant
 from .embeddings import get_1d_rotary_pos_embed
 
 
@@ -104,6 +106,7 @@ class Flux2FeedForward(Module):
         *,
         dtype: DType,
         device: DeviceRef,
+        quant_config: QuantConfig | None = None,
     ):
         """Initialize Flux2FeedForward.
 
@@ -121,19 +124,21 @@ class Flux2FeedForward(Module):
             inner_dim = int(dim * mult)
         dim_out = dim_out or dim
         self.linear_in = Linear(
-            in_dim=dim,
-            out_dim=inner_dim * 2,
-            dtype=dtype,
-            device=device,
+            dim,
+            inner_dim * 2,
+            dtype,
+            device,
             has_bias=bias,
+            quant_config=quant_config,
         )
         self.act_fn = Flux2SwiGLU()
         self.linear_out = Linear(
-            in_dim=inner_dim,
-            out_dim=dim_out,
-            dtype=dtype,
-            device=device,
+            inner_dim,
+            dim_out,
+            dtype,
+            device,
             has_bias=bias,
+            quant_config=quant_config,
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
@@ -217,6 +222,7 @@ class Flux2Attention(Module):
         *,
         dtype: DType,
         device: DeviceRef,
+        quant: Flux2BlockQuant = Flux2BlockQuant(),
     ) -> None:
         """Initialize Flux2Attention.
 
@@ -233,6 +239,7 @@ class Flux2Attention(Module):
             out_dim: Output dimension (defaults to query_dim).
             dtype: Weight dtype.
             device: Weight device.
+            quant: Per-Linear quant plan; defaults to all-BF16.
         """
         super().__init__()
         del dropout
@@ -244,20 +251,44 @@ class Flux2Attention(Module):
 
         # Main Q/K/V projections
         self.to_q = Linear(
-            query_dim, self.inner_dim, dtype, device, has_bias=bias
+            query_dim,
+            self.inner_dim,
+            dtype,
+            device,
+            has_bias=bias,
+            quant_config=quant.attn_qkv,
         )
         self.to_k = Linear(
-            query_dim, self.inner_dim, dtype, device, has_bias=bias
+            query_dim,
+            self.inner_dim,
+            dtype,
+            device,
+            has_bias=bias,
+            quant_config=quant.attn_qkv,
         )
         self.to_v = Linear(
-            query_dim, self.inner_dim, dtype, device, has_bias=bias
+            query_dim,
+            self.inner_dim,
+            dtype,
+            device,
+            has_bias=bias,
+            quant_config=quant.attn_qkv,
         )
         # QK normalization
         self.norm_q = RMSNorm(dim_head, dtype=dtype, eps=eps)
         self.norm_k = RMSNorm(dim_head, dtype=dtype, eps=eps)
         # Output projection (skip dropout as it's not supported)
         self.to_out = LayerList(
-            [Linear(self.inner_dim, out_dim, dtype, device, has_bias=out_bias)]
+            [
+                Linear(
+                    self.inner_dim,
+                    out_dim,
+                    dtype,
+                    device,
+                    has_bias=out_bias,
+                    quant_config=quant.attn_out,
+                )
+            ]
         )
 
         # Optional: encoder projections
@@ -278,6 +309,7 @@ class Flux2Attention(Module):
                 dtype,
                 device,
                 has_bias=proj_bias,
+                quant_config=quant.added_attn_qkv,
             )
             self.add_k_proj = Linear(
                 added_kv_proj_dim,
@@ -285,6 +317,7 @@ class Flux2Attention(Module):
                 dtype,
                 device,
                 has_bias=proj_bias,
+                quant_config=quant.added_attn_qkv,
             )
             self.add_v_proj = Linear(
                 added_kv_proj_dim,
@@ -292,6 +325,7 @@ class Flux2Attention(Module):
                 dtype,
                 device,
                 has_bias=proj_bias,
+                quant_config=quant.added_attn_qkv,
             )
             self.to_add_out = Linear(
                 self.inner_dim,
@@ -299,6 +333,7 @@ class Flux2Attention(Module):
                 dtype,
                 device,
                 has_bias=out_bias,
+                quant_config=quant.added_attn_out,
             )
         else:
             self.norm_added_q = None
@@ -446,6 +481,7 @@ class Flux2ParallelSelfAttention(Module):
         *,
         dtype: DType,
         device: DeviceRef,
+        quant_config: QuantConfig | None = None,
     ) -> None:
         """Initialize Flux2ParallelSelfAttention.
 
@@ -481,6 +517,7 @@ class Flux2ParallelSelfAttention(Module):
             dtype,
             device,
             has_bias=bias,
+            quant_config=quant_config,
         )
 
         # MLP activation
@@ -497,6 +534,7 @@ class Flux2ParallelSelfAttention(Module):
             dtype,
             device,
             has_bias=out_bias,
+            quant_config=quant_config,
         )
 
     def __call__(

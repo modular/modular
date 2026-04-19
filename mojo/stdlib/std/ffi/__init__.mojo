@@ -39,7 +39,9 @@ from std.ffi import OwnedDLHandle
 
 def main() raises:
     var lib = OwnedDLHandle("libm.so")
-    var sqrt = lib.get_function[def(Float64) abi("C") -> Float64]("sqrt")
+    var sqrt = lib.get_function[def(Float64) thin abi("C") -> Float64](
+        "sqrt"
+    )
     print(sqrt(4.0))  # 2.0
 ```
 """
@@ -54,7 +56,7 @@ from std.sys._libc import dlclose, dlerror, dlopen, dlsym
 from std.sys._libc_errno import ErrNo, get_errno, set_errno
 
 from std.memory import OwnedPointer
-from std.memory._nonnull import bitcast, NonNullUnsafePointer
+from std.memory.unsafe_pointer import unsafe_cast
 
 from std.sys.info import CompilationTarget, is_32bit, is_64bit, size_of
 from std.sys.intrinsics import _type_is_eq
@@ -179,7 +181,7 @@ struct RTLD:
     """
     comptime NOW = 2
     """Load library immediately (resolve all symbols on load)."""
-    comptime LOCAL = 4
+    comptime LOCAL = 0 if CompilationTarget.is_linux() else 4
     """Make symbols not available for symbol resolution of subsequently loaded
     libraries."""
     comptime GLOBAL = 256 if CompilationTarget.is_linux() else 8
@@ -207,7 +209,9 @@ struct OwnedDLHandle(Movable):
 
     def main() raises:
         var lib = OwnedDLHandle("libm.so")
-        var sqrt = lib.get_function[def(Float64) abi("C") -> Float64]("sqrt")
+        var sqrt = lib.get_function[def(Float64) thin abi("C") -> Float64](
+            "sqrt"
+        )
         print(sqrt(4.0))  # Prints: 2.0
         # Library automatically closed when lib goes out of scope
     ```
@@ -309,6 +313,9 @@ struct OwnedDLHandle(Movable):
 
         Example:
         ```mojo
+        from std.ffi import OwnedDLHandle
+
+        var lib = OwnedDLHandle("libm.so")
         var sqrt = lib.get_function[def(Float64) abi("C") -> Float64]("sqrt")
         ```
 
@@ -357,12 +364,13 @@ struct OwnedDLHandle(Movable):
         """
         return self._handle._get_function[result_type](cstr_name=cstr_name)
 
-    # TODO: These should return nullable-pointers
     def get_symbol[
         result_type: AnyType,
-    ](self, name: StringSlice) -> UnsafePointer[result_type, MutAnyOrigin]:
+    ](self, name: StringSlice) -> Optional[
+        UnsafePointer[result_type, MutAnyOrigin]
+    ]:
         """Returns a pointer to the symbol with the given name in the dynamic
-        library.
+        library, or `None` if the symbol is not found.
 
         Parameters:
             result_type: The type of the symbol to return.
@@ -371,18 +379,17 @@ struct OwnedDLHandle(Movable):
             name: The name of the symbol to get the handle for.
 
         Returns:
-            A pointer to the symbol.
+            An optional pointer to the symbol, or `None` if not found.
         """
         return self._handle.get_symbol[result_type](name)
 
-    # TODO: These should return nullable-pointers
     def get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> UnsafePointer[
-        result_type, MutAnyOrigin
+    ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> Optional[
+        UnsafePointer[result_type, MutAnyOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
-        library.
+        library, or `None` if the symbol is not found.
 
         Parameters:
             result_type: The type of the symbol to return.
@@ -391,7 +398,7 @@ struct OwnedDLHandle(Movable):
             cstr_name: The name of the symbol to get the handle for.
 
         Returns:
-            A pointer to the symbol.
+            An optional pointer to the symbol, or `None` if not found.
         """
         return self._handle.get_symbol[result_type](cstr_name=cstr_name)
 
@@ -473,7 +480,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             If `dlopen(nullptr, flags)` fails.
         """
         self = Self._dlopen(
-            UnsafePointer[c_char, MutExternalOrigin](_unsafe_null=()), flags
+            Optional[UnsafePointer[c_char, ExternalOrigin[mut=False]]](), flags
         )
 
     def __init__[
@@ -498,7 +505,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
 
     @staticmethod
     def _dlopen(
-        file: UnsafePointer[mut=False, c_char, _], flags: Int
+        file: OptionalUnsafePointer[c_char, _], flags: Int
     ) raises -> _DLHandle:
         var handle = dlopen(file, Int32(flags))
         if not handle:
@@ -567,10 +574,13 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             plain Mojo function type causes silent ABI corruption for struct
             arguments and return values.
         """
-        comptime assert __fn_type_is_cabi[result_type](), (
-            'result_type must be a C-ABI function pointer type: use abi("C") on'
-            ' the function type, e.g. `def(Float64) abi("C") -> Float64`'
-        )
+        # TODO(MOCO-3709): Re-enable this constraint once kgen-opt passes
+        # (e.g. mogg-annotate-kernels) can parse extern|cabi function types
+        # in prebuilt stdlib packages without failing with "expected '->'".
+        # comptime assert __fn_type_is_cabi[result_type](), (
+        #     'result_type must be a C-ABI function pointer type: use abi("C") on'
+        #     ' the function type, e.g. `def(Float64) abi("C") -> Float64`'
+        # )
 
         return self._get_function[result_type](
             cstr_name=name.as_c_string_slice().unsafe_ptr()
@@ -614,14 +624,23 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         """
         var opaque_function_ptr = self.get_symbol[NoneType](cstr_name=cstr_name)
 
-        return UnsafePointer(to=opaque_function_ptr).bitcast[result_type]()[]
+        if not opaque_function_ptr:
+            abort(
+                t"symbol not found: "
+                t"{StringSlice(unsafe_from_utf8_ptr=cstr_name)}"
+            )
 
-    # TODO: These should return nullable-pointers
+        return UnsafePointer(to=opaque_function_ptr.value()).bitcast[
+            result_type
+        ]()[]
+
     def get_symbol[
         result_type: AnyType,
-    ](self, name: StringSlice) -> UnsafePointer[result_type, MutAnyOrigin]:
+    ](self, name: StringSlice) -> Optional[
+        UnsafePointer[result_type, MutAnyOrigin]
+    ]:
         """Returns a pointer to the symbol with the given name in the dynamic
-        library.
+        library, or `None` if the symbol is not found.
 
         Parameters:
             result_type: The type of the symbol to return.
@@ -630,21 +649,20 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             name: The name of the symbol to get the handle for.
 
         Returns:
-            A pointer to the symbol.
+            An optional pointer to the symbol, or `None` if not found.
         """
         name_copy = String(name)
         return self.get_symbol[result_type](
             cstr_name=name_copy.as_c_string_slice().unsafe_ptr()
         )
 
-    # TODO: These should return nullable-pointers
     def get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> UnsafePointer[
-        result_type, MutAnyOrigin
+    ](self, *, cstr_name: UnsafePointer[mut=False, Int8, _]) -> Optional[
+        UnsafePointer[result_type, MutAnyOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
-        library.
+        library, or `None` if the symbol is not found.
 
         Parameters:
             result_type: The type of the symbol to return.
@@ -653,7 +671,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             cstr_name: The name of the symbol to get the handle for.
 
         Returns:
-            A pointer to the symbol.
+            An optional pointer to the symbol, or `None` if not found.
         """
         debug_assert(
             Bool(self.handle),
@@ -661,51 +679,37 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             StringSlice(unsafe_from_utf8_ptr=cstr_name),
         )
 
-        # To check for `dlsym()` results that are _validly_ NULL, we do the
-        # dance described in https://man7.org/linux/man-pages/man3/dlsym.3.html:
+        # Follow the dance described in
+        # https://man7.org/linux/man-pages/man3/dlsym.3.html to distinguish
+        # a symbol that was not found from a symbol whose value is NULL:
         #
-        # > In unusual cases (see NOTES) the value of the symbol could
-        # > actually be NULL.  Therefore, a NULL return from dlsym() need not
-        # > indicate an error.  The correct way to distinguish an error from
-        # > a symbol whose value is NULL is to call dlerror(3) to clear any
-        # > old error conditions, then call dlsym(), and then call dlerror(3)
-        # > again, saving its return value into a variable, and check whether
-        # > this saved value is not NULL.
+        # 1. Clear any old error with dlerror()
+        # 2. Call dlsym()
+        # 3. Call dlerror() again — if it returns non-NULL, an error occurred
+
+        # Clear any pre-existing error.
+        _ = dlerror()
 
         var res = dlsym[result_type](self.handle, cstr_name)
 
         if not res:
-            # Clear any potential unrelated error that pre-dates the `dlsym`
-            # call above.
-            _ = dlerror()
-
-            # Redo the `dlsym` call
-            res = dlsym[result_type](self.handle, cstr_name)
-
-            if not res:
-                var name = StringSlice(unsafe_from_utf8_ptr=cstr_name)
-                abort(
-                    t"dlsym unexpectedly returned non-NULL result when loading"
-                    t" symbol: {name}"
-                )
-            debug_assert(
-                not res,
-                (
-                    "dlsym unexpectedly returned non-NULL result when loading"
-                    " symbol: "
-                ),
-                StringSlice(unsafe_from_utf8_ptr=cstr_name),
-            )
-
-            # Check if an error occurred during the 2nd `dlsym` call.
+            # Result is NULL — check if it's an error or a valid NULL symbol.
             var err = dlerror()
             if err:
-                abort(
-                    t"dlsym failed:"
-                    t" {StringSlice(unsafe_from_utf8_ptr=err.value())}"
-                )
+                # Symbol lookup failed.
+                return None
 
-        return res.value()
+            # Symbol is validly NULL (unusual but possible per dlsym docs).
+            # Abort rather than returning a null pointer wrapped in Some,
+            # which would be misleading. Callers who need to handle NULL
+            # symbols should specify a nullable pointer as the result_type.
+            abort(
+                t"symbol resolved to NULL: "
+                t"{StringSlice(unsafe_from_utf8_ptr=cstr_name)}"
+            )
+
+        var ptr: UnsafePointer[result_type, MutAnyOrigin] = res.value()
+        return ptr
 
     @always_inline
     def call[
@@ -738,7 +742,9 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         # not the expanded individual argument types, and Mojo function type
         # syntax has no variadic parameter form. Safe in practice only for
         # scalar/register-passable arguments where Mojo and C conventions agree.
-        return self._get_function[name, def(type_of(v)) -> return_type]()(v)
+        return self._get_function[name, def(type_of(v)) thin -> return_type]()(
+            v
+        )
 
 
 @always_inline
@@ -842,7 +848,7 @@ def _find_dylib[
 
 
 def _find_dylib[
-    msg: def() -> String, abort_on_failure: Bool = True
+    msg: def() thin -> String, abort_on_failure: Bool = True
 ](paths: List[Path]) -> OwnedDLHandle:
     """Load a dynamically linked library given a list of possible paths or names.
 
@@ -892,8 +898,8 @@ struct _Global[
     StorageType: Movable,
     //,
     name: StaticString,
-    init_fn: def() -> StorageType,
-    on_error_msg: Optional[def() -> Error] = None,
+    init_fn: def() thin -> StorageType,
+    on_error_msg: Optional[def() thin -> Error] = None,
 ](Defaultable):
     comptime ResultType = UnsafePointer[Self.StorageType, MutExternalOrigin]
 
@@ -908,9 +914,7 @@ struct _Global[
         #   with the ABI destination result pointer already set to `ptr`?
         var ptr = OwnedPointer(Self.init_fn())
 
-        return NonNullUnsafePointer(
-            unsafe_from_nullable=ptr^.steal_data().bitcast[NoneType]()
-        )
+        return ptr^.steal_data().bitcast[NoneType]()
 
     @staticmethod
     def _deinit_wrapper(
@@ -930,7 +934,7 @@ struct _Global[
             if not ptr:
                 raise Self.on_error_msg.value()()
 
-        return bitcast[Self.StorageType](ptr).value()
+        return unsafe_cast[Type=Self.StorageType](ptr).value()
 
     # Currently known values for get_or_create_indexed_ptr. See
     # NUM_INDEXED_GLOBALS in CompilerRT.
@@ -958,14 +962,14 @@ struct _Global[
             if not ptr:
                 raise Self.on_error_msg.value()()
 
-        return bitcast[Self.StorageType](ptr).value()
+        return unsafe_cast[Type=Self.StorageType](ptr).value()
 
 
 @always_inline
 def _get_global[
     name: StaticString,
-    init_fn: def() -> _CPointer[NoneType, ExternalOrigin[mut=True]],
-    destroy_fn: def(_CPointer[NoneType, ExternalOrigin[mut=True]]) -> None,
+    init_fn: def() thin -> _CPointer[NoneType, ExternalOrigin[mut=True]],
+    destroy_fn: def(_CPointer[NoneType, ExternalOrigin[mut=True]]) thin -> None,
 ]() -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
     return external_call[
         "KGEN_CompilerRT_GetOrCreateGlobal",
@@ -993,7 +997,7 @@ def _get_global_or_null(
 
 comptime _CPointer[
     mut: Bool, //, T: AnyType, origin: Origin[mut=mut]
-] = Optional[NonNullUnsafePointer[T, origin]]
+] = Optional[UnsafePointer[T, origin]]
 
 
 @always_inline("nodebug")

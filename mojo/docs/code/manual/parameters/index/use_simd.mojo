@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def main() raises:
+def main():
     var vector = SIMD[DType.int16, 4](1, 2, 3, 4)
     vector = vector * vector
     for i in range(4):

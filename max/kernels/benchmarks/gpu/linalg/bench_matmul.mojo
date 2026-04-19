@@ -127,15 +127,13 @@ def verify_matmul[
     var b_size = b_shape[0].value() * b_shape[1].value()
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = TileTensor(a_device.unsafe_ptr(), row_major(a_shape))
+    var a_device_nd = TileTensor(a_device, row_major(a_shape))
     var b_device = ctx.enqueue_create_buffer[a_type](b_size)
-    var b_device_nd = TileTensor(b_device.unsafe_ptr(), row_major(b_shape))
+    var b_device_nd = TileTensor(b_device, row_major(b_shape))
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = TileTensor(c_device.unsafe_ptr(), row_major(c_shape))
+    var c_device_nd = TileTensor(c_device, row_major(c_shape))
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = TileTensor(
-        c_device_ref.unsafe_ptr(), row_major(c_shape)
-    )
+    var c_device_ref_nd = TileTensor(c_device_ref, row_major(c_shape))
 
     # Initialize matmul operands
     comptime if not init_on_gpu:
@@ -442,8 +440,8 @@ def bench_matmul[
 
         # create a dummy buffer to force using the mojo the matmul kernel to output values
         # in the correct c_type
-        var c_dummy = TileTensor(
-            UnsafePointer[Scalar[DType.bfloat16], MutExternalOrigin](),
+        var c_dummy = TileTensor[DType.bfloat16, _, MutExternalOrigin](
+            None,
             row_major(shape_c),
         )
 

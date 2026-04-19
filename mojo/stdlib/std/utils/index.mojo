@@ -57,7 +57,9 @@ def _reduce_and_fn(a: Bool, b: Bool) -> Bool:
 
 @always_inline
 def _int_tuple_binary_apply[
-    binary_fn: def[dtype: DType](Scalar[dtype], Scalar[dtype]) -> Scalar[dtype],
+    binary_fn: def[dtype: DType](Scalar[dtype], Scalar[dtype]) thin -> Scalar[
+        dtype
+    ],
 ](a: IndexList, b: type_of(a), out c: type_of(a)):
     """Applies a given element binary function to each pair of corresponding
     elements in two tuples.
@@ -88,7 +90,7 @@ def _int_tuple_binary_apply[
 
 @always_inline
 def _int_tuple_compare[
-    comp_fn: def[dtype: DType](Scalar[dtype], Scalar[dtype]) -> Bool,
+    comp_fn: def[dtype: DType](Scalar[dtype], Scalar[dtype]) thin -> Bool,
 ](a: IndexList, b: type_of(a)) -> StaticTuple[Bool, a.size]:
     """Applies a given element compare function to each pair of corresponding
     elements in two tuples and produces a tuple of Bools containing result.
@@ -119,7 +121,7 @@ def _int_tuple_compare[
 
 @always_inline
 def _bool_tuple_reduce[
-    reduce_fn: def(Bool, Bool) -> Bool,
+    reduce_fn: def(Bool, Bool) thin -> Bool,
 ](a: StaticTuple[Bool, _], init: Bool) -> Bool:
     """Reduces the tuple argument with the given reduce function and initial
     value.
@@ -205,7 +207,9 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
     @always_inline
     @implicit
-    def __init__[*Ts: Movable & Intable](out self, elems: Tuple[*Ts]):
+    def __init__[
+        *Ts: Movable & Intable
+    ](out self, elems: Tuple[*Ts.upcast[Movable]()]):
         """Constructs a static int tuple given a tuple of integers.
 
         Parameters:

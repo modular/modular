@@ -208,19 +208,19 @@ def test[
 
     # ---- Construct TileTensors for kernel inputs ----
     var q_fp8_tt = TileTensor(
-        q_fp8_device_ptr.unsafe_ptr(),
+        q_fp8_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
     var out_tt = TileTensor(
-        output_device_ptr.unsafe_ptr(),
+        output_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[v_depth]())
         ),
     )
-    var null_valid_length_tt = TileTensor(
-        UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
+    var null_valid_length_tt = TileTensor[DType.uint32, _, MutAnyOrigin](
+        None,
         row_major(Idx(0)),
     )
 
@@ -267,9 +267,11 @@ def test[
 
     # Valid length (empty -- not using ragged) for mha_gpu_naive
     var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        DType.uint32,
+        Layout.row_major(UNKNOWN_VALUE),
+        MutAnyOrigin,
     ](
-        UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
+        None,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
@@ -308,7 +310,7 @@ def test[
         scalar_args_buf_lt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
-        comptime config = MHAConfig[q_type](UInt(num_heads), UInt(depth))
+        comptime config = MHAConfig[q_type](num_heads, depth)
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             mla_decode_sm100_dispatch[
                 q_type,
@@ -543,19 +545,19 @@ def bench[
 
     # TileTensors for kernel inputs
     var q_fp8_tt = TileTensor(
-        q_fp8_device_ptr.unsafe_ptr(),
+        q_fp8_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
     var out_tt = TileTensor(
-        output_device_ptr.unsafe_ptr(),
+        output_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[v_depth]())
         ),
     )
-    var null_valid_length_tt = TileTensor(
-        UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
+    var null_valid_length_tt = TileTensor[DType.uint32, _, MutAnyOrigin](
+        None,
         row_major(Idx(0)),
     )
 
@@ -601,7 +603,7 @@ def bench[
         scalar_args_buf_lt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
-        comptime config = MHAConfig[q_type](UInt(num_heads), UInt(depth))
+        comptime config = MHAConfig[q_type](num_heads, depth)
         mla_decode_sm100_dispatch[
             q_type,
             type_of(k_operand),

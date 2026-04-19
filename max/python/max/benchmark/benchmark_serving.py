@@ -24,29 +24,30 @@ import math
 import os
 import random
 import re
-import resource
 import statistics
 import subprocess
 import sys
 import time
 import warnings
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Iterator, Sequence
+from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, TypeGuard
 from urllib.parse import urlparse
 from uuid import uuid4
+
+try:
+    from asyncio import TaskGroup  # type: ignore[attr-defined]  # added in 3.11
+except ImportError:
+    from taskgroup import TaskGroup  # Python < 3.11 backport
 
 import numpy as np
 import yaml
 from cyclopts import App, Parameter
 from cyclopts.config import Env
 from tqdm.asyncio import tqdm
-from transformers import (
-    AutoTokenizer,
-    PreTrainedTokenizer,
-    PreTrainedTokenizerBase,
-    PreTrainedTokenizerFast,
-)
+from transformers import PreTrainedTokenizerBase
 
 if TYPE_CHECKING:
     from max.benchmark.benchmark_shared.server_metrics import ParsedMetrics
@@ -54,6 +55,7 @@ if TYPE_CHECKING:
     from max.diagnostics.gpu import GPUStats
 
 from max.benchmark.benchmark_shared.config import (
+    CACHE_RESET_ENDPOINT_MAP,
     PIXEL_GEN_DEFAULT_ENDPOINT,
     PIXEL_GENERATION_ENDPOINTS,
     PIXEL_GENERATION_TASKS,
@@ -96,6 +98,7 @@ from max.benchmark.benchmark_shared.metrics import (
     BenchmarkMetrics,
     PixelGenerationBenchmarkMetrics,
     SpecDecodeMetrics,
+    SpecDecodeStats,
     StandardPercentileMetrics,
     ThroughputMetrics,
     calculate_spec_decode_stats,
@@ -118,6 +121,15 @@ from max.benchmark.benchmark_shared.server_metrics import (
     print_server_metrics,
 )
 from max.benchmark.benchmark_shared.steady_state import detect_steady_state
+from max.benchmark.benchmark_shared.utils import (
+    argmedian,
+    get_tokenizer,
+    int_or_none,
+    is_castable_to_int,
+    parse_comma_separated,
+    print_section,
+    set_ulimit,
+)
 from max.diagnostics.cpu import (
     CPUMetrics,
     CPUMetricsCollector,
@@ -132,7 +144,7 @@ BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
     " before running this command."
 )
 
-logger = logging.getLogger("benchmark_serving")
+logger = logging.getLogger(__name__)
 
 
 def compute_output_len(
@@ -144,18 +156,6 @@ def compute_output_len(
             output.generated_text,
             add_special_tokens=False,
         ).input_ids
-    )
-
-
-def get_tokenizer(
-    pretrained_model_name_or_path: str,
-    model_max_length: int | None,
-    trust_remote_code: bool,
-) -> PreTrainedTokenizer | PreTrainedTokenizerFast:
-    return AutoTokenizer.from_pretrained(
-        pretrained_model_name_or_path,
-        model_max_length=model_max_length,
-        trust_remote_code=trust_remote_code,
     )
 
 
@@ -206,16 +206,44 @@ def _prepend_run_prefix_to_formatted_prompt(
     return [new_msg, *prompt[1:]]
 
 
-# from https://github.com/sgl-project/sglang/blob/v0.4.0/python/sglang/bench_serving.py#L1283
-def set_ulimit(target_soft_limit: int = 65535) -> None:
-    resource_type = resource.RLIMIT_NOFILE
-    current_soft, current_hard = resource.getrlimit(resource_type)
+def parse_response_format(
+    response_format_arg: str | None,
+) -> dict[str, Any] | None:
+    """Parse response format from CLI arg (inline JSON or @filepath).
 
-    if current_soft < target_soft_limit:
+    Args:
+        response_format_arg: Either a JSON string or '@path/to/schema.json' to load
+            from file. If None, returns None.
+
+    Returns:
+        Parsed response format dictionary, or None if input is None.
+
+    Raises:
+        ValueError: If the JSON is invalid or the file cannot be read.
+    """
+    if response_format_arg is None:
+        return None
+
+    if response_format_arg.startswith("@"):
+        # Load from file
+        file_path = response_format_arg[1:]
         try:
-            resource.setrlimit(resource_type, (target_soft_limit, current_hard))
-        except ValueError as e:
-            print(f"Fail to set RLIMIT_NOFILE: {e}")
+            with open(file_path) as f:
+                return json.load(f)
+        except FileNotFoundError as e:
+            raise ValueError(
+                f"Response format file not found: {file_path}"
+            ) from e
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Invalid JSON in response format file {file_path}: {e}"
+            ) from e
+
+    # Parse inline JSON
+    try:
+        return json.loads(response_format_arg)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in response format: {e}") from e
 
 
 def get_default_trace_path() -> str:
@@ -360,6 +388,7 @@ def build_single_turn_request_input(
             prompt_len=prompt_len,
             max_tokens=max_tokens,
             ignore_eos=request.ignore_eos,
+            response_format=request.response_format,
         )
     if benchmark_task in PIXEL_GENERATION_TASKS:
         if not isinstance(request, PixelGenerationSampledRequest):
@@ -380,33 +409,28 @@ def build_single_turn_request_input(
     raise ValueError(f"Unsupported benchmark task: {benchmark_task}")
 
 
-def print_section(title: str, char: str = "-") -> None:
-    """Helper function to print a section with formatted header."""
-    print("{s:{c}^{n}}".format(s=title, n=50, c=char))
-
-
 def _is_vllm_backend(backend: Backend) -> bool:
     return backend in ("vllm", "vllm-chat")
 
 
 def _add_spec_decode_result(
     result: dict[str, Any],
-    spec_decode_stats: dict[str, Any] | None,
+    spec_decode_stats: SpecDecodeStats | None,
 ) -> None:
     """Add speculative decoding stats to the JSON result."""
     if spec_decode_stats is None:
         return
-    result["spec_decode_acceptance_rate"] = spec_decode_stats["acceptance_rate"]
-    result["spec_decode_acceptance_length"] = spec_decode_stats[
-        "acceptance_length"
-    ]
-    result["spec_decode_num_drafts"] = int(spec_decode_stats["num_drafts"])
-    result["spec_decode_draft_tokens"] = int(spec_decode_stats["draft_tokens"])
-    result["spec_decode_accepted_tokens"] = int(
-        spec_decode_stats["accepted_tokens"]
+    result["spec_decode_acceptance_rate"] = spec_decode_stats.acceptance_rate
+    result["spec_decode_acceptance_length"] = (
+        spec_decode_stats.acceptance_length
     )
-    result["spec_decode_per_position_acceptance_rates"] = spec_decode_stats.get(
-        "per_position_acceptance_rates", []
+    result["spec_decode_num_drafts"] = int(spec_decode_stats.num_drafts)
+    result["spec_decode_draft_tokens"] = int(spec_decode_stats.draft_tokens)
+    result["spec_decode_accepted_tokens"] = int(
+        spec_decode_stats.accepted_tokens
+    )
+    result["spec_decode_per_position_acceptance_rates"] = (
+        spec_decode_stats.per_position_acceptance_rates
     )
 
 
@@ -502,7 +526,7 @@ def print_benchmark_summary(
     achieved_request_rate: float,
     collect_gpu_stats: bool,
     collect_cpu_stats: bool,
-    spec_decode_stats: dict[str, Any] | None = None,
+    spec_decode_stats: SpecDecodeStats | None = None,
     lora_manager: LoRABenchmarkManager | None = None,
 ) -> None:
     """Print benchmark summary for text-generation and pixel-generation."""
@@ -553,6 +577,16 @@ def print_benchmark_summary(
         )
     )
     print("{:<40} {:<10}".format("Max Concurrency:", metrics.max_concurrency))
+    if (
+        isinstance(metrics, BenchmarkMetrics)
+        and metrics.max_concurrent_conversations is not None
+    ):
+        print(
+            "{:<40} {:<10}".format(
+                "Max Concurrent Conversations:",
+                metrics.max_concurrent_conversations,
+            )
+        )
 
     if isinstance(metrics, BenchmarkMetrics):
         print_section(title="Client Experience Metrics")
@@ -627,32 +661,28 @@ def print_benchmark_summary(
         print_section(title="Speculative Decoding")
         print(
             "{:<40} {:<10.2f}".format(
-                "Acceptance rate (%):", spec_decode_stats["acceptance_rate"]
+                "Acceptance rate (%):", spec_decode_stats.acceptance_rate
             )
         )
         print(
             "{:<40} {:<10.2f}".format(
-                "Acceptance length:", spec_decode_stats["acceptance_length"]
+                "Acceptance length:", spec_decode_stats.acceptance_length
+            )
+        )
+        print(
+            "{:<40} {:<10}".format("Drafts:", int(spec_decode_stats.num_drafts))
+        )
+        print(
+            "{:<40} {:<10}".format(
+                "Draft tokens:", int(spec_decode_stats.draft_tokens)
             )
         )
         print(
             "{:<40} {:<10}".format(
-                "Drafts:", int(spec_decode_stats["num_drafts"])
+                "Accepted tokens:", int(spec_decode_stats.accepted_tokens)
             )
         )
-        print(
-            "{:<40} {:<10}".format(
-                "Draft tokens:", int(spec_decode_stats["draft_tokens"])
-            )
-        )
-        print(
-            "{:<40} {:<10}".format(
-                "Accepted tokens:", int(spec_decode_stats["accepted_tokens"])
-            )
-        )
-        per_pos_rates = spec_decode_stats.get(
-            "per_position_acceptance_rates", []
-        )
+        per_pos_rates = spec_decode_stats.per_position_acceptance_rates
         if per_pos_rates:
             print("Per-position acceptance (%):")
             for pos, rate in enumerate(per_pos_rates):
@@ -1008,6 +1038,7 @@ def calculate_metrics(
     skip_first_n_requests: int,
     skip_last_n_requests: int,
     max_concurrency: int | None,
+    max_concurrent_conversations: int | None,
     collect_gpu_stats: bool,
     server_metrics: ParsedMetrics | None = None,
 ) -> tuple[BenchmarkMetrics, list[int]]:
@@ -1112,6 +1143,7 @@ def calculate_metrics(
         total_output=sum(actual_output_lens),
         nonempty_response_chunks=nonempty_response_chunks,
         max_concurrency=max_concurrency or len(outputs),
+        max_concurrent_conversations=max_concurrent_conversations,
         request_throughput=completed / dur_s,
         # Use specialized metric classes that handle percentile calculations automatically
         input_throughput=ThroughputMetrics(
@@ -1371,6 +1403,7 @@ async def chat_session_driver(
 
 
 async def run_single_turn_benchmark(
+    *,
     input_requests: Sequence[SampledRequest],
     benchmark_task: BenchmarkTask,
     request_rate: float,
@@ -1447,6 +1480,7 @@ async def run_single_turn_benchmark(
 
 
 async def run_multiturn_benchmark(
+    *,
     chat_sessions: Sequence[ChatSession],
     max_requests: int,
     semaphore: asyncio.Semaphore | None,
@@ -1546,6 +1580,148 @@ async def run_multiturn_benchmark(
         )
 
     return [output for sublist in session_outputs for output in sublist]
+
+
+class _ConcurrentTurnsRequestDriver(RequestDriver):
+    """Wraps a RequestDriver to cap the number of concurrent in-flight turns.
+
+    Acquires a semaphore slot before issuing each turn request and releases it
+    as soon as the response returns. Inter-turn delays (e.g. delay_until_next_message)
+    fall outside the slot's hold window, so idle user-think-time does not consume
+    concurrency capacity.
+
+    With many concurrent conversations, a turn request may wait in the semaphore
+    backlog long enough for the deadline to expire. Cancel it when stale.
+    """
+
+    def __init__(
+        self,
+        request_driver: RequestDriver,
+        semaphore: asyncio.Semaphore,
+        benchmark_should_end_time: int | None = None,
+    ) -> None:
+        super().__init__(tokenizer=request_driver.tokenizer)
+        self._request_driver = request_driver
+        self._semaphore = semaphore
+        self._benchmark_should_end_time = benchmark_should_end_time
+
+    async def request(
+        self, request_func_input: BaseRequestFuncInput
+    ) -> BaseRequestFuncOutput:
+        async with self._semaphore:
+            if (
+                self._benchmark_should_end_time is not None
+                and time.perf_counter_ns() >= self._benchmark_should_end_time
+            ):
+                return request_func_input.get_output_type()(
+                    cancelled=True, request_submit_time=time.perf_counter()
+                )
+            return await self._request_driver.request(request_func_input)
+
+
+async def run_kv_cache_stress_benchmark(
+    *,
+    chat_sessions: Sequence[ChatSession],
+    max_requests: int,
+    max_concurrent_conversations: int,
+    semaphore: asyncio.Semaphore | None,
+    benchmark_should_end_time: int | None,
+    request_driver: RequestDriver,
+    model_id: str,
+    api_url: str,
+    tokenizer: PreTrainedTokenizerBase,
+    skip_first_n_requests: int,
+    ignore_first_turn_stats: bool,
+    lora_manager: LoRABenchmarkManager | None,
+    warmup_delay_ms: float,
+    temperature: float | None,
+    top_p: float | None,
+    top_k: int | None,
+    randomize_session_start: bool = False,
+    run_prefix: str | None = None,
+    run_prefix_len: int = 0,
+) -> list[RequestFuncOutput]:
+    """Run a KV-cache stress benchmark with independent conversation and turn concurrency.
+
+    Two independent concurrency controls:
+
+    - `max_concurrent_conversations`: at most this many chat sessions are
+      driven at once. Workers pick up the next session from the queue when one
+      finishes, growing the server's KV-cache footprint.
+    - `semaphore` (`max_concurrency` in the CLI): caps the number of turn
+      requests in-flight globally across all concurrent sessions. Workers that
+      cannot acquire a turn slot block without sending a request; the session's
+      `session_id` and client-side conversation state are preserved in the
+      backlog until a slot becomes available.
+
+    NOTE: TTFT reflects pure server-side cost (KV re-computation or reloading)
+          since the timer starts only after the semaphore is acquired. Backlog
+          wait reduces each session's firing cadence beyond what
+          `delay_between_chat_turns` specifies — sessions are less frequent
+          than configured.
+    """
+    request_counter = RequestCounter(
+        max_requests=max_requests,
+        total_sent_requests=0,
+    )
+
+    inflight_limited_driver: RequestDriver = (
+        _ConcurrentTurnsRequestDriver(
+            request_driver, semaphore, benchmark_should_end_time
+        )
+        if semaphore is not None
+        else request_driver
+    )
+
+    # Queue holds (original_index, session) pairs so LoRA assignment is stable.
+    session_queue: asyncio.Queue[tuple[int, ChatSession]] = asyncio.Queue()
+    for idx, session in enumerate(chat_sessions):
+        await session_queue.put((idx, session))
+
+    num_workers = min(max_concurrent_conversations, len(chat_sessions))
+    worker_outputs: list[list[RequestFuncOutput]] = [
+        [] for _ in range(num_workers)
+    ]
+
+    async def _conversation_worker(worker_idx: int) -> None:
+        # Stagger workers to avoid thundering-herd at startup.
+        if warmup_delay_ms > 0:
+            await asyncio.sleep(worker_idx * warmup_delay_ms / 1000)
+
+        while True:
+            try:
+                idx, chat_session = session_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return
+
+            lora_id = (
+                lora_manager.get_lora_for_request(idx) if lora_manager else None
+            )
+            session_outputs = await chat_session_driver(
+                model_id=model_id if lora_id is None else lora_id,
+                api_url=api_url,
+                request_driver=inflight_limited_driver,
+                request_counter=request_counter,
+                chat_session=chat_session,
+                max_chat_len=tokenizer.model_max_length,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                skip_session_count=skip_first_n_requests,
+                ignore_first_turn_stats=ignore_first_turn_stats,
+                benchmark_should_end_time=benchmark_should_end_time,
+                randomize_session_start=randomize_session_start,
+                run_prefix=run_prefix,
+                run_prefix_len=run_prefix_len,
+            )
+
+            worker_outputs[worker_idx].extend(session_outputs)
+
+    async with TaskGroup() as tg:
+        for i in range(num_workers):
+            tg.create_task(_conversation_worker(i))
+
+    return [output for worker in worker_outputs for output in worker]
 
 
 def create_benchmark_pbar(disable_tqdm: bool, samples: Samples) -> tqdm | None:
@@ -1704,9 +1880,10 @@ def _build_text_generation_result(
     skip_first_n_requests: int,
     skip_last_n_requests: int,
     max_concurrency: int | None,
+    max_concurrent_conversations: int | None,
     collect_gpu_stats: bool,
     server_metrics: ParsedMetrics | None,
-    spec_decode_stats: dict[str, Any] | None,
+    spec_decode_stats: SpecDecodeStats | None,
 ) -> tuple[dict[str, object], BenchmarkMetrics]:
     """Compute metrics and build the result dict for text-generation tasks."""
     if not _is_text_generation_outputs(outputs):
@@ -1723,6 +1900,7 @@ def _build_text_generation_result(
         skip_first_n_requests=skip_first_n_requests,
         skip_last_n_requests=skip_last_n_requests,
         max_concurrency=max_concurrency,
+        max_concurrent_conversations=max_concurrent_conversations,
         collect_gpu_stats=collect_gpu_stats,
         server_metrics=server_metrics,
     )
@@ -1759,6 +1937,7 @@ def _build_text_generation_result(
         gpu_metrics=gpu_metrics,
         cpu_metrics=cpu_metrics,
         max_concurrency=max_concurrency,
+        max_concurrent_conversations=max_concurrent_conversations,
         collect_gpu_stats=collect_gpu_stats,
         server_metrics=server_metrics,
     )
@@ -1774,6 +1953,7 @@ def _add_steady_state_result(
     gpu_metrics: list[dict[str, GPUStats]] | None,
     cpu_metrics: CPUMetrics | None,
     max_concurrency: int | None,
+    max_concurrent_conversations: int | None,
     collect_gpu_stats: bool,
     server_metrics: ParsedMetrics | None,
 ) -> None:
@@ -1815,6 +1995,7 @@ def _add_steady_state_result(
                 skip_first_n_requests=0,
                 skip_last_n_requests=0,
                 max_concurrency=max_concurrency,
+                max_concurrent_conversations=max_concurrent_conversations,
                 collect_gpu_stats=collect_gpu_stats,
                 server_metrics=server_metrics,
             )
@@ -1834,6 +2015,99 @@ def _add_steady_state_result(
         logger.warning(f"Steady-state detection: {steady.warning}")
 
 
+async def prime_shared_contexts(
+    model_id: str,
+    api_url: str,
+    samples: Samples,
+    request_driver: RequestDriver,
+    temperature: float | None,
+    top_p: float | None,
+    top_k: int | None,
+    run_prefix: str | None = None,
+    run_prefix_len: int = 0,
+) -> None:
+    """Warm up prefix caching by sending each shared context for prefilling."""
+    warmup_entries = samples.shared_contexts
+
+    if not warmup_entries:
+        logger.warning(
+            "shared_contexts is empty; the prefix cache could not be primed."
+            " Check that --random-sys-prompt-ratio > 0 and input lengths are"
+            " sufficient to produce a non-trivial shared context."
+        )
+        return
+
+    logger.info(
+        f"Warming prefix cache with {len(warmup_entries)}"
+        " unique shared context(s)..."
+    )
+
+    is_chat = isinstance(samples, ChatSamples)
+    warmup_inputs: list[RequestFuncInput] = []
+    for entry in warmup_entries:
+        warmup_prompt: str | list[dict[str, Any]]
+        if is_chat:
+            warmup_prompt = [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": entry.text}],
+                }
+            ]
+        else:
+            warmup_prompt = entry.text
+
+        if run_prefix:
+            warmup_prompt = _prepend_run_prefix_to_formatted_prompt(
+                warmup_prompt, run_prefix
+            )
+
+        warmup_inputs.append(
+            RequestFuncInput(
+                model=model_id,
+                session_id=None,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                prompt=warmup_prompt,
+                images=[],
+                api_url=api_url,
+                prompt_len=entry.num_tokens + run_prefix_len,
+                max_tokens=1,
+                ignore_eos=True,
+            )
+        )
+
+    warmup_results: list[BaseRequestFuncOutput | None] = [None] * len(
+        warmup_inputs
+    )
+
+    async def _run_warmup_index(idx: int, inp: RequestFuncInput) -> None:
+        warmup_results[idx] = await request_driver.request(inp)
+
+    warmup_start = time.perf_counter()
+    async with TaskGroup() as tg:
+        for idx, inp in enumerate(warmup_inputs):
+            tg.create_task(_run_warmup_index(idx, inp))
+    warmup_elapsed_s = time.perf_counter() - warmup_start
+    for sys_idx, inp in enumerate(warmup_inputs):
+        result = warmup_results[sys_idx]
+        if result is None:
+            raise RuntimeError(
+                f"Warmup task {sys_idx} did not produce a result (this is a bug)"
+            )
+        if not result.success:
+            raise ValueError(
+                f"Shared context warmup request failed at index {sys_idx}:"
+                f" (prompt: (SKIPPED), prompt_len: {inp.prompt_len}),"
+                f" error: {result.error}"
+            )
+
+    logger.info(
+        "Prefix cache warmup completed and took %.2f seconds.",
+        warmup_elapsed_s,
+    )
+
+
 async def benchmark(
     backend: Backend,
     benchmark_task: BenchmarkTask,
@@ -1845,8 +2119,10 @@ async def benchmark(
     request_rate: float,
     burstiness: float,
     max_concurrency: int | None,
+    max_concurrent_conversations: int | None,
     disable_tqdm: bool,
     do_test_prompt: bool,
+    warm_shared_prefix: bool,
     collect_gpu_stats: bool,
     collect_cpu_stats: bool,
     collect_server_stats: bool,
@@ -1916,6 +2192,19 @@ async def benchmark(
     test_request_driver: RequestDriver = request_driver_class(
         tokenizer=tokenizer
     )
+
+    if warm_shared_prefix:
+        await prime_shared_contexts(
+            model_id=model_id,
+            api_url=api_url,
+            samples=samples,
+            request_driver=test_request_driver,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            run_prefix=run_prefix,
+            run_prefix_len=run_prefix_len,
+        )
 
     if do_test_prompt:
         await run_single_test_prompt(
@@ -2027,6 +2316,12 @@ async def benchmark(
         try:
             outputs: Sequence[BaseRequestFuncOutput]
             if isinstance(samples, RequestSamples):
+                if max_concurrent_conversations is not None:
+                    raise ValueError(
+                        "--max-concurrent-conversations is only valid for "
+                        "multi-turn workloads. Set --num-chat-sessions to "
+                        "enable multi-turn mode."
+                    )
                 # single-turn chat scenario
                 outputs = await run_single_turn_benchmark(
                     input_requests=samples.requests,
@@ -2044,6 +2339,44 @@ async def benchmark(
                     top_p=top_p,
                     top_k=top_k,
                     lora_manager=lora_manager,
+                    run_prefix=run_prefix,
+                    run_prefix_len=run_prefix_len,
+                )
+            elif max_concurrent_conversations is not None:
+                # KV-cache stress benchmark: two independent concurrency knobs.
+                # max_concurrent_conversations caps active session workers;
+                # max_concurrency (semaphore) caps in-flight turns globally.
+                if (
+                    max_concurrency is not None
+                    and max_concurrency > max_concurrent_conversations
+                ):
+                    raise ValueError(
+                        f"--max-concurrency ({max_concurrency}) must be <= "
+                        f"--max-concurrent-conversations "
+                        f"({max_concurrent_conversations}): to stress the "
+                        "server's KV-cache, more sessions must be open than "
+                        "turns in-flight."
+                    )
+                assert tokenizer is not None
+                assert isinstance(max_concurrent_conversations, int)
+                outputs = await run_kv_cache_stress_benchmark(
+                    chat_sessions=samples.chat_sessions,
+                    max_requests=max_requests,
+                    max_concurrent_conversations=max_concurrent_conversations,
+                    semaphore=semaphore,
+                    benchmark_should_end_time=benchmark_should_end_time,
+                    request_driver=request_driver,
+                    model_id=model_id,
+                    api_url=api_url,
+                    tokenizer=tokenizer,
+                    skip_first_n_requests=skip_first_n_requests,
+                    ignore_first_turn_stats=ignore_first_turn_stats,
+                    lora_manager=lora_manager,
+                    warmup_delay_ms=warmup_delay_ms,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    randomize_session_start=randomize_session_start,
                     run_prefix=run_prefix,
                     run_prefix_len=run_prefix_len,
                 )
@@ -2192,6 +2525,7 @@ async def benchmark(
             skip_first_n_requests=skip_first_n_requests,
             skip_last_n_requests=skip_last_n_requests,
             max_concurrency=max_concurrency,
+            max_concurrent_conversations=max_concurrent_conversations,
             collect_gpu_stats=collect_gpu_stats,
             server_metrics=server_metrics,
             spec_decode_stats=spec_decode_stats,
@@ -2218,19 +2552,10 @@ async def benchmark(
     return result, metrics
 
 
-# Backends that only support pixel generation, not text generation.
-PIXEL_GEN_ONLY_BACKENDS: frozenset[str] = frozenset({"vllm-omni"})
-
-
 def validate_task_and_endpoint(
     benchmark_task: BenchmarkTask, endpoint: Endpoint, backend: str
 ) -> None:
     if benchmark_task == "text-generation":
-        if backend in PIXEL_GEN_ONLY_BACKENDS:
-            raise ValueError(
-                f"Backend {backend!r} only supports pixel generation"
-                f" tasks, not --benchmark-task text-generation."
-            )
         if endpoint in ("/v1/responses", "/v1/images/generations"):
             raise ValueError(
                 f"--benchmark-task text-generation does not support "
@@ -2248,9 +2573,299 @@ def validate_task_and_endpoint(
 ServingBenchmarkMetrics = BenchmarkMetrics | PixelGenerationBenchmarkMetrics
 
 
+def _apply_workload_to_config(
+    config: ServingBenchmarkConfig,
+    workload: dict[str, Any],
+) -> None:
+    """Set workload YAML values as fields on *config*.
+
+    Keys are converted from kebab-case to snake_case.  Path objects are
+    stringified and env vars in string values are expanded.
+
+    Fields already in `config.model_fields_set` (i.e. explicitly provided
+    by the caller, whether via CLI args or direct construction) are left
+    unchanged so that CLI values always take precedence over workload YAML.
+    """
+    for k, v in workload.items():
+        field_name = k.replace("-", "_")
+        if field_name not in ServingBenchmarkConfig.model_fields:
+            logger.warning(f"Ignoring unknown workload key: {k}")
+            continue
+        if field_name in config.model_fields_set:
+            logger.info(
+                f"CLI flag --{k} takes precedence over workload YAML"
+                f" (CLI: {getattr(config, field_name)!r},"
+                f" workload: {v!r})"
+            )
+            continue
+        if isinstance(v, Path):
+            v = str(v)
+        elif isinstance(v, str):
+            v = os.path.expandvars(v)
+        logger.info(f"Applying workload YAML value: --{k}={v!r}")
+        setattr(config, field_name, v)
+
+
+def flush_prefix_cache(
+    backend: Backend, host: str, port: int, dry_run: bool
+) -> None:
+    """Flush the serving engine's prefix cache via HTTP POST."""
+    if backend not in CACHE_RESET_ENDPOINT_MAP:
+        raise ValueError(
+            f"Cannot flush prefix cache for {backend} backend: this backend"
+            " does not support prefix cache flush."
+        )
+    import requests as _http_requests  # lazy - avoid hard dep for non-sweep use
+
+    api_url = f"http://{host}:{port}{CACHE_RESET_ENDPOINT_MAP[backend]}"
+    if dry_run:
+        logger.info(f"Dry-run flush: POST {api_url}")
+        return
+    response = _http_requests.post(api_url)
+    if response.status_code == 400:
+        logger.warning(
+            f"Prefix caching is not enabled on backend {backend} at {api_url};"
+            " skipping cache flush."
+        )
+    elif response.status_code == 404:
+        logger.warning(
+            f"Prefix cache reset is not supported at {api_url} (HTTP 404);"
+            " skipping cache flush."
+        )
+    elif response.status_code != 200:
+        raise RuntimeError(
+            f"Failed to flush prefix cache for backend {backend} at {api_url}: "
+            f"status={response.status_code} body={response.text}"
+        )
+
+
+@dataclass
+class BenchmarkRunResult:
+    """Result of one (max_concurrency, request_rate) benchmark configuration.
+
+    Yielded by :func:`main_with_parsed_args` — one entry per (mc, rr) combo
+    after median selection across ``num_iters`` iterations.
+    """
+
+    max_concurrency: int | None
+    request_rate: float
+    num_prompts: int
+    metrics: ServingBenchmarkMetrics | None = None
+    result_dict: dict[str, Any] | None = None
+
+
+@dataclass
+class BenchmarkSession:
+    """Resolved, session-level state shared across all sweep iterations.
+
+    Created once after argument parsing / dataset loading in
+    :func:`main_with_parsed_args` and threaded into each
+    :func:`_execute_benchmark` call.
+    """
+
+    benchmark_task: BenchmarkTask
+    endpoint: Endpoint
+    api_url: str
+    base_url: str
+    model_id: str
+    tokenizer_id: str
+    tokenizer: PreTrainedTokenizerBase | None
+    samples: Samples
+    lora_manager: LoRABenchmarkManager | None
+    trace_path: str | None
+    orig_skip_first: int | None
+    orig_skip_last: int | None
+
+
+def _execute_benchmark(
+    args: ServingBenchmarkConfig,
+    session: BenchmarkSession,
+    max_concurrency: int | None,
+    request_rate: float,
+) -> tuple[dict[str, Any], ServingBenchmarkMetrics]:
+    """Run a single benchmark invocation and return *(result_dict, metrics)*.
+
+    ``session.orig_skip_first`` / ``session.orig_skip_last`` are the
+    user-supplied values (``None`` = auto-derive from *max_concurrency*).
+    """
+    backend: Backend = args.backend
+
+    skip_first = session.orig_skip_first
+    skip_last = session.orig_skip_last
+    if request_rate != float("inf"):
+        # Finite rate → steady drip with no ramp-up / ramp-down artifacts,
+        # so skip nothing (PERF-878).
+        if skip_first is None:
+            skip_first = 0
+        if skip_last is None:
+            skip_last = 0
+    elif max_concurrency is not None:
+        if skip_first is None:
+            skip_first = max_concurrency
+            logger.info(
+                f"Auto-setting skip_first_n_requests={skip_first}"
+                f" (max_concurrency={max_concurrency})"
+            )
+        if skip_last is None:
+            skip_last = max_concurrency
+            logger.info(
+                f"Auto-setting skip_last_n_requests={skip_last}"
+                f" (max_concurrency={max_concurrency})"
+            )
+    if skip_first is None:
+        skip_first = 0
+    if skip_last is None:
+        skip_last = 0
+
+    if args.warm_shared_prefix:
+        if args.dataset_name not in ("random", "synthetic"):
+            raise ValueError(
+                f"--warm-shared-prefix is not supported for dataset"
+                f" '{args.dataset_name}'. Only random/synthetic datasets have a"
+                " defined shared prefix to cache."
+            )
+        if args.random_sys_prompt_ratio <= 0:
+            raise ValueError(
+                "--warm-shared-prefix requires --random-sys-prompt-ratio > 0."
+            )
+
+    logger.info("Starting benchmark run")
+    assert args.num_prompts is not None
+    benchmark_result, benchmark_metrics = asyncio.run(
+        benchmark(
+            backend=backend,
+            benchmark_task=session.benchmark_task,
+            api_url=session.api_url,
+            base_url=session.base_url,
+            model_id=session.model_id,
+            tokenizer=session.tokenizer,
+            samples=session.samples,
+            request_rate=request_rate,
+            burstiness=args.burstiness,
+            max_concurrency=max_concurrency,
+            max_concurrent_conversations=args.max_concurrent_conversations,
+            disable_tqdm=args.disable_tqdm,
+            do_test_prompt=not args.skip_test_prompt,
+            warm_shared_prefix=args.warm_shared_prefix,
+            collect_gpu_stats=args.collect_gpu_stats,
+            collect_cpu_stats=args.collect_cpu_stats,
+            collect_server_stats=args.collect_server_stats,
+            print_inputs_and_outputs=args.print_inputs_and_outputs,
+            max_requests=args.num_prompts,
+            skip_first_n_requests=skip_first,
+            skip_last_n_requests=skip_last,
+            max_output_len=args.max_output_len,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            top_k=args.top_k,
+            max_benchmark_duration_s=args.max_benchmark_duration_s,
+            warmup_delay_ms=args.chat_warmup_delay_ms,
+            ignore_first_turn_stats=args.ignore_first_turn_stats,
+            randomize_session_start=args.randomize_session_start,
+            timing_data=None,
+            lora_manager=session.lora_manager,
+            trace_path=session.trace_path,
+            trace_session=args.trace_session,
+            force_unique_runs=args.force_unique_runs,
+        )
+    )
+
+    ok, validation_errors = benchmark_metrics.validate()
+    if not ok:
+        for err in validation_errors:
+            logger.error(f"Benchmark result validation failed: {err}")
+        logger.info("finished benchmark run: Failed.")
+        sys.exit(1)
+
+    logger.info("finished benchmark run: Success.")
+    return benchmark_result, benchmark_metrics
+
+
+def save_result_json(
+    args: ServingBenchmarkConfig,
+    benchmark_result: dict[str, Any],
+    benchmark_metrics: ServingBenchmarkMetrics,
+    *,
+    benchmark_task: BenchmarkTask,
+    model_id: str,
+    tokenizer_id: str,
+    request_rate: float,
+) -> None:
+    """Persist benchmark results to the JSON file at *args.result_filename*."""
+    if not args.result_filename:
+        return
+    backend: Backend = args.backend
+    client_args = args.model_dump()
+    client_args["request_rate"] = str(client_args["request_rate"])
+    result_json: dict[str, Any] = {
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "backend": backend,
+        "benchmark_task": benchmark_task,
+        "model_id": model_id,
+        "tokenizer_id": tokenizer_id,
+        "num_prompts": benchmark_metrics.completed,
+        "dataset_name": args.dataset_name,
+        "client_args": client_args,
+        "request_rate": (
+            request_rate if request_rate < float("inf") else "inf"
+        ),
+        "burstiness": args.burstiness,
+        "max_concurrency": args.max_concurrency,
+        "max_concurrent_conversations": args.max_concurrent_conversations,
+        **_parse_metadata(args.metadata),
+        **benchmark_result,
+    }
+    file_name = args.result_filename
+    logger.info(f"Writing file: {file_name}")
+    if os.path.isfile(file_name):
+        logger.warning(
+            "This is going to overwrite an existing file.  "
+            f"The existing file will be moved to {file_name}.orig."
+        )
+        os.rename(file_name, f"{file_name}.orig")
+    with open(file_name, "w") as outfile:
+        json.dump(result_json, outfile)
+
+
+def _save_output_lengths(
+    args: ServingBenchmarkConfig,
+    benchmark_result: dict[str, Any],
+    benchmark_task: BenchmarkTask,
+) -> None:
+    """Save output lengths to a YAML file if configured."""
+    if not args.record_output_lengths:
+        return
+    if benchmark_task != "text-generation":
+        logger.warning(
+            "--record-output-lengths is only supported for text-generation"
+        )
+        return
+    args_to_save = (
+        "backend",
+        "burstiness",
+        "dataset_name",
+        "dataset_path",
+        "endpoint",
+        "max_concurrency",
+        "max_output_len",
+        "model",
+        "request_rate",
+        "seed",
+        "temperature",
+        "top_k",
+        "top_p",
+    )
+    output_lens_dict: dict[str, object] = {}
+    args_dict = args.model_dump()
+    output_lens_dict["args"] = {x: args_dict[x] for x in args_to_save}
+    output_lens_dict["output_lengths"] = benchmark_result["output_lens"]
+    with open(args.record_output_lengths, "w") as f:
+        yaml.dump(output_lens_dict, f)
+
+
 def main_with_parsed_args(
     args: ServingBenchmarkConfig,
-) -> ServingBenchmarkMetrics | None:
+) -> Iterator[BenchmarkRunResult]:
     logging.basicConfig(
         format="%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
         datefmt="%H:%M:%S",
@@ -2258,14 +2873,99 @@ def main_with_parsed_args(
     )
 
     logger.info(args)
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    # benchmarks can create a large number of concurrent in-flight requests
-    # so bump the file limit to make room for them
-    set_ulimit()
 
     if args.model is None:
         raise ValueError("--model is required when running benchmark")
+
+    # ---- Workload YAML ----
+    if args.workload_config:
+        with open(args.workload_config) as workload_file:
+            workload = yaml.safe_load(workload_file)
+        # Resolve relative paths against the YAML's directory.
+        for key in ("dataset-path", "output-lengths"):
+            if workload.get(key) is not None:
+                if is_castable_to_int(str(workload[key])):
+                    continue
+                path = Path(os.path.expandvars(workload[key]))
+                if not path.is_absolute():
+                    path = Path(args.workload_config).parent / path
+                workload[key] = path
+        # CLI max_concurrency always takes precedence over the YAML.
+        workload.pop("max-concurrency", None)
+        # Resolve num_prompts: CLI > YAML > default (deferred).
+        cli_num_prompts = args.num_prompts is not None
+        yaml_num_prompts = workload.pop("num-prompts", None)
+        if not cli_num_prompts:
+            if yaml_num_prompts is not None:
+                args.num_prompts = int(yaml_num_prompts)
+        # Resolve max_benchmark_duration_s: CLI > YAML.
+        w_duration = workload.pop("max-benchmark-duration-s", None)
+        if w_duration is not None and args.max_benchmark_duration_s is None:
+            args.max_benchmark_duration_s = int(w_duration)
+        _apply_workload_to_config(args, workload)
+        args.skip_test_prompt = True
+
+    # Warn + default when nothing constrains run length (common to both paths).
+    has_prompts = args.num_prompts is not None
+    has_duration = args.max_benchmark_duration_s is not None
+    has_multiplier = args.num_prompts_multiplier is not None
+    # The multiplier dynamically computes num_prompts per-mc, but only
+    # when no explicit duration also constrains the run.
+    multiplier_will_resolve = has_multiplier and not has_duration
+    if not has_prompts and not has_duration and not has_multiplier:
+        logger.warning(
+            "Neither --num-prompts nor --max-benchmark-duration-s is"
+            " specified. Defaulting to --num-prompts 1000 and"
+            " --max-benchmark-duration-s 300"
+        )
+        args.num_prompts = 1000
+        args.max_benchmark_duration_s = 300
+    elif not has_prompts and not multiplier_will_resolve:
+        args.num_prompts = 1000
+
+    # ---- Parse sweep ranges ----
+    concurrency_range = parse_comma_separated(args.max_concurrency, int_or_none)
+    request_rate_range = parse_comma_separated(args.request_rate, float)
+
+    # When num_prompts_multiplier is active AND no explicit num_prompts or
+    # duration constrains the run, dynamically compute num_prompts per
+    # concurrency level.
+    use_dynamic_num_prompts = (
+        args.num_prompts_multiplier is not None
+        and args.num_prompts is None
+        and args.max_benchmark_duration_s is None
+    )
+    if use_dynamic_num_prompts:
+        assert args.num_prompts_multiplier is not None
+        max_mc = max(
+            (mc for mc in concurrency_range if mc is not None), default=1
+        )
+        args.num_prompts = args.num_prompts_multiplier * max_mc
+
+    # ---- Dry run ----
+    if args.dry_run:
+        for mc in concurrency_range:
+            for rr in request_rate_range:
+                print(
+                    f"Dry run: model={args.model}"
+                    f" host={args.host} port={args.port}"
+                    f" endpoint={args.endpoint}"
+                    f" max_concurrency={mc}"
+                    f" request_rate={rr}"
+                    f" num_prompts={args.num_prompts}"
+                    f" max_benchmark_duration_s="
+                    f"{args.max_benchmark_duration_s}"
+                )
+                yield BenchmarkRunResult(
+                    max_concurrency=mc,
+                    request_rate=rr,
+                    num_prompts=args.num_prompts or 0,
+                )
+        return
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    set_ulimit()
     model_id = args.model
     tokenizer_id = args.tokenizer if args.tokenizer is not None else args.model
     benchmark_task: BenchmarkTask = args.benchmark_task
@@ -2273,7 +2973,7 @@ def main_with_parsed_args(
 
     # Auto-select the correct endpoint for pixel generation based on the
     # backend. Each pixel-gen backend requires a specific endpoint (e.g.,
-    # sglang needs /v1/images/generations, vllm-omni needs
+    # sglang needs /v1/images/generations, vllm needs
     # /v1/chat/completions). We auto-select when the current endpoint
     # doesn't match this backend's expected pixel-gen endpoint.
     if benchmark_task in PIXEL_GENERATION_TASKS:
@@ -2298,7 +2998,7 @@ def main_with_parsed_args(
     validate_task_and_endpoint(benchmark_task, endpoint, args.backend)
     # chat is only meaningful for text-generation (enables chat template
     # formatting). For pixel generation via /v1/chat/completions
-    # (vllm-omni), the pixel-gen code path ignores this flag.
+    # (vllm pixel gen), the pixel-gen code path ignores this flag.
     chat = endpoint == "/v1/chat/completions"
 
     if args.base_url is not None:
@@ -2314,7 +3014,7 @@ def main_with_parsed_args(
         logger.info(f"getting tokenizer. api url: {api_url}")
         tokenizer = get_tokenizer(
             tokenizer_id,
-            args.model_max_length,
+            model_max_length=args.model_max_length,
             trust_remote_code=args.trust_remote_code,
         )
 
@@ -2624,6 +3324,21 @@ def main_with_parsed_args(
     else:
         raise ValueError(f"Unsupported benchmark task: {benchmark_task}")
 
+    # Inject response_format into all sampled requests if specified
+    if args.response_format:
+        response_format = parse_response_format(args.response_format)
+        if isinstance(samples, RequestSamples):
+            for request in samples.requests:
+                request.response_format = response_format
+            logger.info(
+                f"Injected response_format into {len(samples.requests)} requests"
+            )
+        else:
+            logger.warning(
+                "response_format is only supported for single-turn benchmarks, "
+                "ignoring for multi-turn chat sessions"
+            )
+
     if args.print_workload_stats:
         print_workload_stats(samples)
 
@@ -2650,24 +3365,7 @@ def main_with_parsed_args(
         )
         lora_manager.log_traffic_distribution()
 
-    max_concurrency: int | None = None
-    if args.max_concurrency is not None:
-        try:
-            max_concurrency = int(args.max_concurrency)
-        except ValueError as e:
-            raise ValueError(
-                f"Expected a single integer value for max_concurrency, got {args.max_concurrency}"
-            ) from e
-    try:
-        request_rate = float(args.request_rate)
-    except ValueError as e:
-        raise ValueError(
-            f"Expected a single float value for request_rate, got {args.request_rate}"
-        ) from e
-
-    backend: Backend = args.backend
-
-    # Handle trace flag
+    # Handle trace flag (once, before loop)
     trace_path = None
     if args.trace:
         assert_nvidia_gpu()
@@ -2676,139 +3374,84 @@ def main_with_parsed_args(
         )
         logger.info(f"Tracing enabled, output: {trace_path}")
 
-    # Auto-default skip counts to max_concurrency when not explicitly set.
-    # None means "auto" (user did not pass the flag); 0 means "explicitly
-    # no skipping" (user passed --skip-first-n-requests 0).
-    skip_first_n_requests = args.skip_first_n_requests
-    skip_last_n_requests = args.skip_last_n_requests
-    if max_concurrency is not None:
-        if skip_first_n_requests is None:
-            skip_first_n_requests = max_concurrency
-            logger.info(
-                f"Auto-setting skip_first_n_requests={skip_first_n_requests}"
-                f" (max_concurrency={max_concurrency})"
-            )
-        if skip_last_n_requests is None:
-            skip_last_n_requests = max_concurrency
-            logger.info(
-                f"Auto-setting skip_last_n_requests={skip_last_n_requests}"
-                f" (max_concurrency={max_concurrency})"
-            )
-    if skip_first_n_requests is None:
-        skip_first_n_requests = 0
-    if skip_last_n_requests is None:
-        skip_last_n_requests = 0
-
-    logger.info("Starting benchmark run")
-    assert args.num_prompts is not None
-    benchmark_result, benchmark_metrics = asyncio.run(
-        benchmark(
-            backend=backend,
-            benchmark_task=benchmark_task,
-            api_url=api_url,
-            base_url=base_url,
-            model_id=model_id,
-            tokenizer=tokenizer,
-            samples=samples,
-            request_rate=request_rate,
-            burstiness=args.burstiness,
-            max_concurrency=max_concurrency,
-            disable_tqdm=args.disable_tqdm,
-            do_test_prompt=not args.skip_test_prompt,
-            collect_gpu_stats=args.collect_gpu_stats,
-            collect_cpu_stats=args.collect_cpu_stats,
-            collect_server_stats=args.collect_server_stats,
-            print_inputs_and_outputs=args.print_inputs_and_outputs,
-            max_requests=args.num_prompts,
-            skip_first_n_requests=skip_first_n_requests,
-            skip_last_n_requests=skip_last_n_requests,
-            max_output_len=args.max_output_len,
-            temperature=args.temperature,
-            top_p=args.top_p,
-            top_k=args.top_k,
-            max_benchmark_duration_s=args.max_benchmark_duration_s,
-            warmup_delay_ms=args.chat_warmup_delay_ms,
-            ignore_first_turn_stats=args.ignore_first_turn_stats,
-            randomize_session_start=args.randomize_session_start,
-            timing_data=None,
-            lora_manager=lora_manager,
-            trace_path=trace_path,
-            trace_session=args.trace_session,
-            force_unique_runs=args.force_unique_runs,
-        )
+    session = BenchmarkSession(
+        benchmark_task=benchmark_task,
+        endpoint=endpoint,
+        api_url=api_url,
+        base_url=base_url,
+        model_id=model_id,
+        tokenizer_id=tokenizer_id,
+        tokenizer=tokenizer,
+        samples=samples,
+        lora_manager=lora_manager,
+        trace_path=trace_path,
+        orig_skip_first=args.skip_first_n_requests,
+        orig_skip_last=args.skip_last_n_requests,
     )
 
-    # Validate that metrics are meaningful (no failures, not 0 or NaN)
-    ok, validation_errors = benchmark_metrics.validate()
-    if not ok:
-        for err in validation_errors:
-            logger.error(f"Benchmark result validation failed: {err}")
-        logger.info("finished benchmark run: Failed.")
-        sys.exit(1)
-
-    # Optionally persist to file (used by the standalone CLI entry point
-    # and BigQuery upload in the sweep harness).
-    if args.result_filename:
-        client_args = args.model_dump()
-        client_args["request_rate"] = str(client_args["request_rate"])
-        result_json: dict[str, Any] = {
-            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "backend": backend,
-            "benchmark_task": benchmark_task,
-            "model_id": model_id,
-            "tokenizer_id": tokenizer_id,
-            "num_prompts": benchmark_metrics.completed,
-            "dataset_name": args.dataset_name,
-            "client_args": client_args,
-            "request_rate": (
-                request_rate if request_rate < float("inf") else "inf"
-            ),
-            "burstiness": args.burstiness,
-            "max_concurrency": args.max_concurrency,
-            **_parse_metadata(args.metadata),
-            **benchmark_result,
-        }
-        file_name = args.result_filename
-        logger.info(f"Writing file: {file_name}")
-        if os.path.isfile(file_name):
-            logger.warning(
-                "This is going to overwrite an existing file.  "
-                f"The existing file will be moved to {file_name}.orig."
+    # ---- Sweep loop ----
+    for mc in concurrency_range:
+        if use_dynamic_num_prompts:
+            assert args.num_prompts_multiplier is not None
+            assert mc is not None
+            args.num_prompts = args.num_prompts_multiplier * mc
+            logger.info(
+                f"Using num_prompts = {args.num_prompts_multiplier}"
+                f" * {mc} = {args.num_prompts}"
             )
-            os.rename(file_name, f"{file_name}.orig")
-        with open(file_name, "w") as outfile:
-            json.dump(result_json, outfile)
 
-    # Save output lengths if requested
-    if args.record_output_lengths and benchmark_task == "text-generation":
-        args_to_save = (
-            "backend",
-            "burstiness",
-            "dataset_name",
-            "dataset_path",
-            "endpoint",
-            "max_concurrency",
-            "max_output_len",
-            "model",
-            "request_rate",
-            "seed",
-            "temperature",
-            "top_k",
-            "top_p",
-        )
-        output_lens_dict: dict[str, object] = {}
-        args_dict = args.model_dump()
-        output_lens_dict["args"] = {x: args_dict[x] for x in args_to_save}
-        output_lens_dict["output_lengths"] = benchmark_result["output_lens"]
-        with open(args.record_output_lengths, "w") as f:
-            yaml.dump(output_lens_dict, f)
-    elif args.record_output_lengths:
-        logger.warning(
-            "--record-output-lengths is only supported for text-generation"
-        )
+        for rr in request_rate_range:
+            # Temporarily write the per-iteration values so that downstream
+            # code reading args.max_concurrency / args.request_rate sees the
+            # correct scalar value.
+            args.max_concurrency = str(mc) if mc is not None else None
+            args.request_rate = str(rr)
 
-    logger.info("finished benchmark run: Success.")
-    return benchmark_metrics
+            iteration_results: list[
+                tuple[dict[str, Any], ServingBenchmarkMetrics]
+            ] = []
+            for _iteration in range(args.num_iters):
+                if args.flush_prefix_cache:
+                    flush_prefix_cache(
+                        args.backend, args.host, args.port, args.dry_run
+                    )
+
+                args.seed = int(np.random.randint(0, 10000))
+
+                result_dict, metrics = _execute_benchmark(args, session, mc, rr)
+                iteration_results.append((result_dict, metrics))
+
+            # Median selection when running multiple iterations.
+            if len(iteration_results) > 1:
+                throughputs = np.asarray(
+                    [m.request_throughput for _, m in iteration_results]
+                )
+                idx = argmedian(throughputs)
+            else:
+                idx = 0
+            best_result, best_metrics = iteration_results[idx]
+
+            # JSON result file (for the median iteration).
+            save_result_json(
+                args,
+                best_result,
+                best_metrics,
+                benchmark_task=session.benchmark_task,
+                model_id=session.model_id,
+                tokenizer_id=session.tokenizer_id,
+                request_rate=rr,
+            )
+
+            # Output lengths recording (for the median iteration).
+            _save_output_lengths(args, best_result, session.benchmark_task)
+
+            yield BenchmarkRunResult(
+                mc,
+                rr,
+                args.num_prompts or 0,
+                best_metrics,
+                best_result,
+            )
 
 
 def _extract_metadata_args(
@@ -2843,57 +3486,45 @@ def _extract_metadata_args(
     return clean_args, metadata_values
 
 
-def parse_args(args: Sequence[str] | None = None) -> ServingBenchmarkConfig:
-    """Parse command line arguments into a ServingBenchmarkConfig using cyclopts.
+def parse_args(
+    args: Sequence[str] | None = None,
+    *,
+    app_name: str = "benchmark_serving",
+    description: str = BENCHMARK_SERVING_ARGPARSER_DESCRIPTION,
+) -> ServingBenchmarkConfig:
+    """Parse command line arguments into a ServingBenchmarkConfig.
 
     Args:
         args: Command line arguments to parse. If None, parse from sys.argv.
+        app_name: Name shown in --help output.
+        description: Description shown in --help output.
     """
     raw_args = list(sys.argv[1:] if args is None else args)
 
-    # Pre-extract --metadata values because cyclopts interprets bare key=value
-    # tokens as keyword assignments. Tokens matching real model field names
-    # (e.g. enable_prefix_caching=True) would be routed to those fields
-    # instead of being consumed as --metadata list items.
     clean_args, metadata_values = _extract_metadata_args(raw_args)
 
-    result: list[ServingBenchmarkConfig] = []
+    parsed_configs: list[ServingBenchmarkConfig] = []
 
     app = App(
-        name="benchmark_serving",
-        help=BENCHMARK_SERVING_ARGPARSER_DESCRIPTION,
+        name=app_name,
+        help=description,
         help_formatter="plain",
         config=[Env(prefix="MODULAR_")],
         result_action="return_value",
     )
 
-    # TODO: Parameter(name="*") flattens flags to match legacy argparse
-    # behavior (e.g. --dataset-name instead of --config.dataset-name).
-    # Remove this once callers are migrated to use the dotted names.
     @app.default
     def _capture(
         config: Annotated[
             ServingBenchmarkConfig, Parameter(name="*")
         ] = ServingBenchmarkConfig(),
     ) -> None:
-        result.append(config)
+        parsed_configs.append(config)
 
     app(clean_args)
-    if not result:
-        # --help was requested: cyclopts printed help and returned without
-        # invoking the handler.  (Parse errors still raise SystemExit(1)
-        # via cyclopts' exit_on_error, so they never reach here.)
+    if not parsed_configs:
         raise SystemExit(0)
-    config = result[0]
+    config = parsed_configs[0]
     if metadata_values:
         config.metadata = metadata_values
     return config
-
-
-def main(args: Sequence[str] | None = None) -> None:
-    parsed_args = parse_args(args)
-    main_with_parsed_args(parsed_args)
-
-
-if __name__ == "__main__":
-    main()

@@ -197,6 +197,12 @@ t"Use {{braces}} in t-strings"  # "Use {braces} in t-strings"
 T-strings can be nested. An interpolation expression can itself contain
 t-strings, up to 20 levels deep.
 
+```mojo
+var name = "world"
+var greeting = t"Hello, {t"dear {name}"}!"
+print(greeting) # "Hello, dear world!"
+```
+
 ## Boolean literals
 
 `True` and `False` represent boolean truth values.

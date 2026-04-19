@@ -17,7 +17,7 @@ from std.math import align_up, ceildiv
 from std.math.uutils import umod
 from std.memory import stack_allocation
 
-from std.os.atomic import Atomic
+from std.atomic import Atomic
 from std.sys.info import simd_width_of
 
 import std.gpu.primitives.warp as warp
@@ -461,12 +461,12 @@ def _copy_tokens_smem_to_gmem[
                     g_offset_copy + UInt32(smem_idx) + UInt32(i)
                 )
 
-    var start_idx = UInt((smem_writes // UInt64(width)) * UInt64(width))
+    var start_idx: UInt64 = (smem_writes // UInt64(width)) * UInt64(width)
 
     g_offset_copy += UInt32(start_idx)
 
-    if UInt64(thread_idx.x) < smem_writes - UInt64(start_idx):
-        var smem_val = smem[0, start_idx + UInt(thread_idx.x)]
+    if UInt64(thread_idx.x) < smem_writes - start_idx:
+        var smem_val = smem[0, start_idx + UInt64(thread_idx.x)]
         token_expert_order.store(
             Coord(Idx(Int(g_offset_copy + UInt32(thread_idx.x)))),
             smem_val,
@@ -571,6 +571,9 @@ def _copy_tokens_to_gmem[
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(
+    t"moe_create_indices_bucket_group_{input_type}_t{num_threads}", mangle=True
 )
 def moe_create_indices_bucket_group_kernel[
     input_type: DType,
@@ -741,7 +744,7 @@ def moe_create_indices[
     ):
         var lock_buffer = cuda_ctx.enqueue_create_buffer[DType.uint32](1)
         lock_buffer.enqueue_fill(0)
-        var lock = TileTensor(lock_buffer.unsafe_ptr(), row_major[1]())
+        var lock = TileTensor(lock_buffer, row_major[1]())
 
         var topk_2D = TileTensor(
             topk_ids.ptr,
@@ -851,6 +854,10 @@ def _warp_bitonic_sort[
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(
+    t"group_limited_router_{scores_type}_{bias_type}_t{num_threads}",
+    mangle=True,
 )
 def group_limited_router_kernel[
     scores_type: DType,
@@ -1131,4 +1138,302 @@ def router_group_limited[
             grid_dim=expert_scores.dim(0),
             block_dim=num_threads,
             attributes=pdl_launch_attributes(PDLLevel(1)),
+        )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(
+    t"single_group_router_{scores_type}_{bias_type}_t{num_threads}", mangle=True
+)
+def single_group_router_kernel[
+    scores_type: DType,
+    bias_type: DType,
+    ExpertIndicesLayoutType: TensorLayout,
+    ExpertWeightsLayoutType: TensorLayout,
+    ExpertScoresLayoutType: TensorLayout,
+    ExpertBiasLayoutType: TensorLayout,
+    n_routed_experts: Int,
+    n_experts_per_tok: Int,
+    norm_weights: Bool,
+    num_threads: Int,
+    scores_input_fn: OptionalReg[
+        def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
+    ] = None,
+](
+    expert_indices: TileTensor[
+        mut=True, DType.int32, ExpertIndicesLayoutType, MutAnyOrigin
+    ],
+    expert_weights: TileTensor[
+        mut=True, scores_type, ExpertWeightsLayoutType, MutAnyOrigin
+    ],
+    expert_scores: TileTensor[
+        scores_type, ExpertScoresLayoutType, ImmutAnyOrigin
+    ],
+    expert_bias: TileTensor[bias_type, ExpertBiasLayoutType, ImmutAnyOrigin],
+    routed_scaling_factor: Float32,
+):
+    """Single-group MoE router kernel. One block per token, one thread per expert.
+
+    Fuses: corrected = scores + bias → top-k selection → weight = corrected - bias
+    → optional normalize → scale.
+    Uses warp-bitonic sort across 2 or 3 phases
+    depending on WARP_SIZE. NVIDIA (WARP_SIZE=32): 3-phase. AMD (WARP_SIZE=64):
+    2-phase (phase 2 eliminated at compile time when phase1_candidates fits in
+    one wavefront).
+    """
+
+    comptime assert expert_indices.flat_rank == 2
+    comptime assert expert_weights.flat_rank == 2
+    comptime assert expert_scores.flat_rank == 2
+    comptime assert expert_bias.flat_rank == 1
+
+    comptime assert (
+        expert_scores.static_shape[1] == n_routed_experts
+    ), "expert_scores.static_shape[1] must be equal to n_routed_experts"
+
+    comptime assert (
+        expert_weights.static_shape[1] == n_experts_per_tok
+    ), "expert_weights.static_shape[1] must be equal to n_experts_per_tok"
+
+    comptime assert (
+        expert_indices.static_shape[1] == n_experts_per_tok
+    ), "expert_indices.static_shape[1] must be equal to n_experts_per_tok"
+
+    comptime assert (
+        num_threads == n_routed_experts
+    ), "num_threads must be equal to n_routed_experts"
+
+    comptime assert (
+        num_threads % WARP_SIZE == 0
+    ), "WARP_SIZE must be divisible by num_threads"
+
+    # k = n_experts_per_tok must be a power of 2 because _warp_bitonic_sort[num_lanes=k] uses a bitonic sort algorithm
+    comptime assert (
+        n_experts_per_tok.is_power_of_two()
+    ), "n_experts_per_tok must be a power of two"
+
+    # Phase 1 produces num_warps × n_experts_per_tok survivors:
+    comptime num_warps = num_threads // WARP_SIZE
+    comptime phase1_candidates = num_warps * n_experts_per_tok
+
+    # Phase 2 assign selected candidates to ceil(ph1/32) warps, each sorting 32:
+    comptime num_phase2_warps = ceildiv(phase1_candidates, WARP_SIZE)
+    comptime phase2_candidates = num_phase2_warps * n_experts_per_tok
+
+    # AMD has 64 warps per SM, so we can skip phase 2 for KIMIk2.5 with 384 MOE
+    comptime skip_phase2 = (num_phase2_warps == 1)
+    # Phase 3 takes ph2_candidates padded up to WARP_SIZE.
+    comptime assert (
+        phase2_candidates <= WARP_SIZE
+    ), "phase2_candidates must be less than or equal to WARP_SIZE"
+
+    comptime if skip_phase2:
+        # When skipping phase 2, warp 0 reads directly from smem_phase1.
+        # Requires phase1_candidates to fit within one warp.
+        comptime assert (
+            phase1_candidates <= WARP_SIZE
+        ), "phase1_candidates exceeds WARP_SIZE — cannot skip phase 2"
+    # comptime ph3_padding = WARP_SIZE - phase2_candidates
+
+    comptime total_smem = phase1_candidates if skip_phase2 else (
+        phase1_candidates + phase2_candidates
+    )
+
+    var token_idx = Int(block_idx.x)
+    var tid = Int(thread_idx.x)
+    var warp_id = tid // WARP_SIZE
+    var lane_id = tid % WARP_SIZE
+
+    var shared_mem = stack_allocation[
+        total_smem,
+        TopK_2[scores_type],
+        address_space=AddressSpace.SHARED,
+    ]()
+
+    var shared_mem_phase1 = shared_mem
+    var shared_mem_phase2 = shared_mem + phase1_candidates
+
+    with PDL():
+        var thread_expert_bias = expert_bias.load[width=1](
+            Coord(Idx(tid))
+        ).cast[scores_type]()
+
+        var thread_expert_score: Scalar[scores_type]
+        comptime if scores_input_fn:
+            comptime scores_fn = scores_input_fn.value()
+            thread_expert_score = scores_fn[width=1]((token_idx, tid))
+        else:
+            thread_expert_score = expert_scores.load[width=1](
+                (Idx(token_idx), Idx(tid))
+            )
+        var biased_score = thread_expert_score + thread_expert_bias
+
+        var val = TopK_2(u=biased_score, p=tid)
+        var sorted_val = _warp_bitonic_sort[num_lanes=WARP_SIZE](val)
+
+        if lane_id < n_experts_per_tok:
+            shared_mem_phase1[
+                warp_id * n_experts_per_tok + lane_id
+            ] = sorted_val
+
+        barrier()
+
+        comptime if not skip_phase2:
+            var val2: TopK_2[scores_type]
+            if warp_id < num_phase2_warps:
+                # Sequential read: warp W reads smem_phase1[W*32 .. W*32+31].
+                # No bank conflicts — each warp reads a contiguous slice.
+                val2 = shared_mem_phase1[tid]
+            else:
+                # Inactive warps: dead-value cannot corrupt the sort because
+                # _warp_bitonic_sort is fully intra-warp.
+                val2 = TopK_2[scores_type]()
+
+            var sorted_val2 = _warp_bitonic_sort[num_lanes=WARP_SIZE](val2)
+
+            if warp_id < num_phase2_warps and lane_id < n_experts_per_tok:
+                shared_mem_phase2[
+                    warp_id * n_experts_per_tok + lane_id
+                ] = sorted_val2
+
+            barrier()
+
+        # WARP 0 ONLY gives top n_experts_per_tok
+        if warp_id == 0:
+            var val3: TopK_2[scores_type]
+
+            comptime if skip_phase2:
+                # AMD path: read phase1_candidates (48) entries directly.
+                if lane_id < phase1_candidates:
+                    val3 = shared_mem_phase1[lane_id]
+                else:
+                    val3 = TopK_2[scores_type]()  # padding: -inf
+            else:
+                # NVIDIA path: read phase2_candidates (24) entries.
+                if lane_id < phase2_candidates:
+                    val3 = shared_mem_phase2[lane_id]
+                else:
+                    val3 = TopK_2[scores_type]()  # padding: -inf
+
+            var sorted_val3 = _warp_bitonic_sort[num_lanes=WARP_SIZE](val3)
+
+            # get the original weights and normalize them
+            var original_weight: Scalar[scores_type] = 0
+            if lane_id < n_experts_per_tok:
+                comptime if scores_input_fn:
+                    comptime d_fn = scores_input_fn.value()
+                    original_weight = d_fn[width=1]((token_idx, sorted_val3.p))
+                else:
+                    original_weight = expert_scores.load[width=1](
+                        (Idx(token_idx), Idx(sorted_val3.p))
+                    )
+
+            var weights_sum = warp.lane_group_sum[num_lanes=n_experts_per_tok](
+                original_weight
+            )
+
+            comptime if norm_weights:
+                original_weight /= weights_sum
+
+            original_weight *= Scalar[scores_type](routed_scaling_factor)
+
+            # Write expert index and weight for this token.
+            if lane_id < n_experts_per_tok:
+                expert_indices.store(
+                    (Idx(token_idx), Idx(lane_id)), Int32(sorted_val3.p)
+                )
+                expert_weights[token_idx, lane_id] = original_weight
+
+
+@always_inline
+def single_group_router[
+    scores_type: DType,
+    bias_type: DType,
+    //,
+    n_routed_experts: Int,
+    n_experts_per_tok: Int,
+    norm_weights: Bool,
+    target: StaticString,
+    scores_input_fn: OptionalReg[
+        def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
+    ] = None,
+](
+    expert_indices: TileTensor[mut=True, DType.int32, ...],
+    expert_weight: TileTensor[mut=True, scores_type, ...],
+    expert_scores: TileTensor[scores_type, ...],
+    expert_bias: TileTensor[bias_type, ...],
+    routed_scaling_factor: Float32,
+    context: DeviceContextPtr,
+) raises:
+    """Launch the single-group MoE router on GPU.
+
+    One block per token, one thread per expert. Selects top n_experts_per_tok
+    experts using warp-bitonic sort with 2 or 3 reduction phases depending on
+    hardware warp size (AMD skips phase 2 at compile time).
+
+    Parameters:
+        scores_type: DType of routing scores and output weights.
+        bias_type: DType of the expert correction bias.
+        n_routed_experts: Total number of experts (e.g. 384 for Kimi K2.5).
+        n_experts_per_tok: Experts selected per token — must be a power of 2
+            (e.g. 8 for Kimi K2.5).
+        norm_weights: If True, normalize selected weights to sum to 1 before
+            applying routed_scaling_factor.
+        target: The target device to run the kernel on.
+        scores_input_fn: Optional fused input lambda to load scores. If None,
+            scores are loaded directly from expert_scores.
+
+    Inputs:
+        expert_indices: Output expert indices. Shape: [num_tokens, n_experts_per_tok].
+        expert_weights: Output expert weights. Shape: [num_tokens, n_experts_per_tok].
+        expert_scores: Input routing scores. Shape: [num_tokens, n_routed_experts].
+        expert_bias: Per-expert correction bias used for selection only.
+        routed_scaling_factor: Scalar multiplied into every output weight.
+        context: DeviceContextPtr.
+    """
+    comptime assert is_gpu[
+        target
+    ](), "Single group router is only supported on GPU"
+
+    if expert_scores.dim(0) == 0:
+        return
+
+    var gpu_ctx = context.get_device_context()
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.moe.router_single_group", task_id=Int(gpu_ctx.id())
+    ):
+        # comptime num_tokens = Int(expert_scores.dim(0))
+        comptime num_threads = n_routed_experts
+        comptime hw_info = gpu_ctx.default_device_info
+        comptime blocks_per_sm = hw_info.threads_per_multiprocessor // num_threads
+
+        comptime num_sms = hw_info.sm_count
+
+        comptime kernel = single_group_router_kernel[
+            scores_type,
+            bias_type,
+            expert_indices.LayoutType,
+            expert_weight.LayoutType,
+            expert_scores.LayoutType,
+            expert_bias.LayoutType,
+            n_routed_experts,
+            n_experts_per_tok,
+            norm_weights,
+            num_threads,
+            scores_input_fn=scores_input_fn,
+        ]
+
+        # launch the kernle using gpu_ctx
+        gpu_ctx.enqueue_function[kernel, kernel](
+            expert_indices,
+            expert_weight,
+            expert_scores,
+            expert_bias,
+            routed_scaling_factor,
+            grid_dim=expert_scores.dim(0),
+            block_dim=num_threads,
+            attributes=pdl_launch_attributes(),
         )

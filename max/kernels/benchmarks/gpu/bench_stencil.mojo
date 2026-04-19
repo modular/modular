@@ -118,7 +118,7 @@ def bench_stencil_avg_pool[
     # Create device buffers
     var d_input_buf = ctx.enqueue_create_buffer[dtype](input_size)
     var d_input = TileTensor(
-        d_input_buf.unsafe_ptr(),
+        d_input_buf,
         row_major(
             Coord(
                 Idx[1](),
@@ -130,7 +130,7 @@ def bench_stencil_avg_pool[
     )
     var d_output_buf = ctx.enqueue_create_buffer[dtype](output_size)
     var d_output = TileTensor(
-        d_output_buf.unsafe_ptr(),
+        d_output_buf,
         row_major(
             Coord(
                 Idx[1](),
@@ -413,7 +413,7 @@ def bench_stencil_max_pool[
     # Create device buffers
     var d_input_buf = ctx.enqueue_create_buffer[dtype](input_size)
     var d_input = TileTensor(
-        d_input_buf.unsafe_ptr(),
+        d_input_buf,
         row_major(
             Coord(
                 Idx[1](),
@@ -425,7 +425,7 @@ def bench_stencil_max_pool[
     )
     var d_output_buf = ctx.enqueue_create_buffer[dtype](output_size)
     var d_output = TileTensor(
-        d_output_buf.unsafe_ptr(),
+        d_output_buf,
         row_major(
             Coord(
                 Idx[1](),
@@ -697,7 +697,7 @@ def bench_stencil_avg_pool_padded[
     # Create device buffers
     var d_input_buf = ctx.enqueue_create_buffer[dtype](input_size)
     var d_input = TileTensor(
-        d_input_buf.unsafe_ptr(),
+        d_input_buf,
         row_major(
             Coord(
                 Idx[1](),
@@ -709,7 +709,7 @@ def bench_stencil_avg_pool_padded[
     )
     var d_output_buf = ctx.enqueue_create_buffer[dtype](output_size)
     var d_output = TileTensor(
-        d_output_buf.unsafe_ptr(),
+        d_output_buf,
         row_major(
             Coord(
                 Idx[1](),

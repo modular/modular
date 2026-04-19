@@ -88,6 +88,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/mlir",
         requirement("hypothesis"),
@@ -142,6 +143,11 @@ modular_py_test(
         "//max/tests/tests/graph/uninit_check/read_uninit_op",
         "@mojo//:std",
     ],
+    # FIXME: GEX-3520 — max-engine crashes during shutdown on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

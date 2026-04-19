@@ -254,11 +254,7 @@ def local_tensor_type[
         element_layout=element_layout,
     ]
 ):
-    dummy_arg = {
-        UnsafePointer[
-            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.LOCAL
-        ](_unsafe_null=())
-    }
+    dummy_arg = {None}
 
 
 trait AccumulatorTile(TrivialRegisterPassable):
@@ -1315,15 +1311,15 @@ def mha_sm100_dispatch[
     ctx: DeviceContext,
     sink_weights: OptionalReg[ImmutTileTensor1D[q_type]],
 ) raises:
-    comptime decoding: Bool = MaxPromptLenType.static_value.or_else(0) == 1
+    comptime assert _is_decoding[MaxPromptLenType](), "mha_1q is decode-only"
     comptime new_config = MHAConfig[config.dtype](
         config.num_heads,
         config.depth,
-        num_queries_per_block=Optional[UInt](64),
-        num_keys_per_block=Optional[UInt](config.num_keys_per_block),
-        BK=Optional[UInt](config.BK),
-        num_pipeline_stages=UInt(2 if Int(config.padded_depth) >= 512 else 4),
-    ) if decoding else config
+        num_queries_per_block=64,
+        num_keys_per_block=config.num_keys_per_block,
+        BK=config.BK,
+        num_pipeline_stages=2 if config.padded_depth >= 512 else 4,
+    )
     comptime BM = new_config.block_m()
     comptime BK = new_config.padded_depth
     comptime assert BM % 64 == 0, "SM90 requires BM%64==0, but BM==" + String(
@@ -1352,52 +1348,46 @@ def mha_sm100_dispatch[
 
     var max_cache_valid_length: UInt32 = UInt32(max_cache_valid_length_arg)
     var batch_size: UInt32 = UInt32(batch_size_arg)
-    var max_prompt_len: UInt32 = max_prompt_len_arg.as_uint32()
-    var max_num_prompt_tiles: UInt32 = ceildiv(max_prompt_len, UInt32(BM))
 
-    comptime num_scheduler_heads = config.num_heads // UInt(
-        group
-    ) if decoding else config.num_heads
-    # if decoding,
-    comptime scheduler_tile_shape = 1 if decoding else BM
+    comptime num_scheduler_heads = config.num_heads // group
+    comptime scheduler_tile_shape = 1
     comptime swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
     q_tma_op = rebind[
         QTMATile[
             KVType.dtype,
             swizzle_mode,
-            BM=Int(new_config.block_m()),
-            depth=Int(new_config.depth),
+            BM=new_config.block_m(),
+            depth=new_config.depth,
             group=group,
             decoding=_is_decoding[MaxPromptLenType](),
         ]
     ](
         q_tma[
             swizzle_mode,
-            BM=Int(BM),
-            depth=Int(new_config.depth),
-            q_num_heads=Int(new_config.num_heads),
+            BM=BM,
+            depth=new_config.depth,
+            q_num_heads=new_config.num_heads,
             group=group,
-            decoding=decoding,
+            decoding=_is_decoding[MaxPromptLenType](),
         ](ctx, q, num_rows_q)
     )
     k_tma_op = k.create_tma_tile[
         swizzle_mode,
-        BN=Int(new_config.block_n()),
-        depth=Int(new_config.depth),
-        BK=Int(new_config.padded_depth),
+        BN=new_config.block_n(),
+        depth=new_config.depth,
+        BK=new_config.padded_depth,
     ](ctx)
     v_tma_op = v.create_tma_tile[
         swizzle_mode,
-        BN=Int(new_config.block_n()),
-        depth=Int(new_config.depth),
-        BK=Int(new_config.padded_depth),
+        BN=new_config.block_n(),
+        depth=new_config.depth,
+        BK=new_config.padded_depth,
     ](ctx)
 
     comptime SchedulerType = TransientScheduler[
         UInt32(scheduler_tile_shape),
         UInt32(num_scheduler_heads),
-        flip_prompt_idx=not decoding
-        and MaskType.get_type_name() == "CausalMask",
+        flip_prompt_idx=False,
     ]
     var scheduler: SchedulerType = SchedulerType()
 
@@ -1494,22 +1484,22 @@ def _mha_sm100_kv_input_row_offset_dispatch[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM=Int(config.block_m()),
-        depth=Int(config.depth),
+        BM=config.block_m(),
+        depth=config.depth,
         group=group,
         decoding=_is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
-        BK=Int(config.padded_depth),
+        BN=config.block_n(),
+        BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
-        BK=Int(config.padded_depth),
+        BN=config.block_n(),
+        BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -1618,22 +1608,22 @@ def _mha_sm100_valid_length_dispatch[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM=Int(config.block_m()),
-        depth=Int(config.depth),
+        BM=config.block_m(),
+        depth=config.depth,
         group=group,
         decoding=_is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
-        BK=Int(config.padded_depth),
+        BN=config.block_n(),
+        BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
-        BK=Int(config.padded_depth),
+        BN=config.block_n(),
+        BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -1740,22 +1730,22 @@ def _mha_sm100_enqueue[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM=Int(config.block_m()),
-        depth=Int(config.depth),
+        BM=config.block_m(),
+        depth=config.depth,
         group=group,
         decoding=_is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
-        BK=Int(config.padded_depth),
+        BN=config.block_n(),
+        BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
-        BK=Int(config.padded_depth),
+        BN=config.block_n(),
+        BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
     kv_lut: KVLUTType,
@@ -1805,39 +1795,32 @@ def _mha_sm100_enqueue[
         partition,
     }
 
-    var max_num_prompt_tiles: UInt32 = ceildiv(
-        max_seq_len.as_uint32(), UInt32(config.block_m())
-    )
-    var block_x: UInt32 = max_num_prompt_tiles * partition.num_partitions()
+    var block_x: UInt32 = partition.num_partitions()
 
     comptime max_tmem_cols = 512
     comptime BN = config.block_n()
     comptime BM_enq = config.block_m()
-    comptime decoding_enq = _is_decoding[MaxSeqLenType]()
     # When P must go to SMEM (depth too large for P+O in one TMEM bank),
     # S and O go in separate TMEM banks, giving full 512 cols for S.
-    comptime use_p_smem = decoding_enq and (
-        Int(config.padded_depth) + Int(BN) // 2 > max_tmem_cols
-    )
+    comptime use_p_smem = config.padded_depth + BN // 2 > max_tmem_cols
     comptime num_s = (
         max_tmem_cols
-        // Int(BN) if use_p_smem else (
-            max_tmem_cols - (Int(BN) // 2) - Int(config.padded_depth)
+        // BN if use_p_smem else (
+            max_tmem_cols - (BN // 2) - config.padded_depth
         )
-        // Int(BN)
+        // BN
     )
     # P buffer in SMEM for depth=512 decoding (BM * BN * sizeof(bf16))
-    comptime p_smem_bytes = Int(BM_enq) * Int(BN) * size_of[
+    comptime p_smem_bytes = BM_enq * BN * size_of[
         config.dtype
     ]() if use_p_smem else 0
     # we add smem use for SharedMemBarrier synchronization
     # 2*8 for mma mbars
     comptime extra_B200_smem = (2 * num_s + 3) * 8 + p_smem_bytes
-    comptime smem_use = config.shared_mem_bytes[True, sm_90=True]() + UInt(
-        extra_B200_smem
-    )
+    comptime smem_use = config.shared_mem_bytes[
+        True, sm_90=True
+    ]() + extra_B200_smem
     comptime num_threads = config.num_threads[True]()
-    comptime decoding = _is_decoding[MaxSeqLenType]()
     logger.info("------ Dispatching to SM100 FMHA-1Q ------")
     logger.info(
         "QKV Type: ",
@@ -1847,11 +1830,11 @@ def _mha_sm100_enqueue[
         "Number of Q // KV Heads:",
         config.num_heads,
         "//",
-        config.num_heads // UInt(group),
+        config.num_heads // group,
         "Batch Size:",
         batch_size,
-        "Num Partitions:" if decoding else "Max Num Prompt Tiles:",
-        partition.num_partitions() if decoding else max_num_prompt_tiles,
+        "Num Partitions:",
+        partition.num_partitions(),
     )
     ctx.enqueue_function[kernel_sm100, kernel_sm100](
         q_tma_op,
@@ -1864,8 +1847,8 @@ def _mha_sm100_enqueue[
         num_keys_arg,
         pack,
         grid_dim=SchedulerType.grid_dim(batch_size, block_x),
-        block_dim=(Int(num_threads), 1, 1),
-        shared_mem_bytes=Int(smem_use),
+        block_dim=(num_threads, 1, 1),
+        shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_use)
         ),
@@ -1881,6 +1864,10 @@ def _mha_sm100_enqueue[
     )
 )
 @__llvm_metadata(`nvvm.minctasm`=Int(1))
+@__name(
+    t"sm100_mha_1q_depth{config.depth}_{KVLUTType.dtype}_{output_type}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
+    mangle=True,
+)
 def _mha_sm100[
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -1899,22 +1886,22 @@ def _mha_sm100[
     q_tma_op: QTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BM=Int(config.block_m()),
-        depth=Int(config.depth),
+        BM=config.block_m(),
+        depth=config.depth,
         group=group,
         decoding=_is_decoding[MaxSeqLenType](),
     ],
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
-        BK=Int(config.padded_depth),
+        BN=config.block_n(),
+        BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=Int(config.block_n()),
-        BK=Int(config.padded_depth),
+        BN=config.block_n(),
+        BK=config.padded_depth,
     ],
     o_ptr_arg: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     kv_lut: KVLUTType,
@@ -1944,26 +1931,26 @@ def _mha_sm100[
     """
     comptime kv_type = KVLUTType.dtype
     comptime assert kv_type == config.dtype
-    comptime decoding: Bool = _is_decoding[MaxSeqLenType]()
+    comptime assert _is_decoding[MaxSeqLenType](), "mha_1q is decode-only"
 
     comptime simd_size: Int = simd_width_of[kv_type]()
 
-    comptime num_softmax_threads: Int = Int(config.num_consumer_threads())
+    comptime num_softmax_threads: Int = config.num_consumer_threads()
     comptime num_softmax_warps = num_softmax_threads // 32
 
     comptime cta_group = 1
-    comptime BM: Int = Int(config.block_m())
-    comptime BN: Int = Int(config.block_n())
-    comptime BK: Int = Int(config.padded_depth)
-    comptime depth: Int = Int(config.depth)
-    comptime padded_depth: Int = Int(config.padded_depth)
+    comptime BM: Int = config.block_m()
+    comptime BN: Int = config.block_n()
+    comptime BK: Int = config.padded_depth
+    comptime depth: Int = config.depth
+    comptime padded_depth: Int = config.padded_depth
     # comptime mma_shape = Index(64, depth, 16)
     # comptime mma_shape = Index(128 if (BM % 128) == 0 else 64, depth, 16)
     # MMA_M here is defined as per-warp
     # comptime MMA_M = 64
     comptime MMA_M: Int = 128 if (BM % 128) == 0 else 64
     comptime MMA_N0: Int = BN
-    comptime MMA_N1: Int = Int(config.padded_depth)
+    comptime MMA_N1: Int = config.padded_depth
     comptime MMA_K: Int = 16
     # comptime WM = BM // num_softmax_warps
     # comptime WN = BN
@@ -2008,10 +1995,10 @@ def _mha_sm100[
     comptime num_k_mmas = BK // MMA_K
     # comptime num_warps_m = BM // WM  # 4 * num_softmax
     # comptime num_warps_n = BN // WN  # 1
-    comptime num_heads: Int = Int(config.num_heads)
+    comptime num_heads: Int = config.num_heads
     # num_softmax_threads ignores the producers
     # actual number of threads is num_softmax_threads + 128
-    comptime pipeline_stages = Int(config.num_pipeline_stages)
+    comptime pipeline_stages = config.num_pipeline_stages
     var tid = UInt32(thread_idx.x)
     # warp group idx concept is still useful for sm100
     # because sets of 4 warps access tmem;
@@ -2025,9 +2012,7 @@ def _mha_sm100[
     comptime max_tmem_cols = 512
     # When P can't fit alongside O in one TMEM bank, store P in SMEM
     # and use SS MMA for UMMA1 (P@V). S and O go in separate TMEM banks.
-    comptime use_p_smem = decoding and (
-        padded_depth + MMA_N0 // 2 > max_tmem_cols
-    )
+    comptime use_p_smem = padded_depth + MMA_N0 // 2 > max_tmem_cols
     comptime num_s = (
         max_tmem_cols
         // MMA_N0 if use_p_smem else (max_tmem_cols - (MMA_N0 // 2) - MMA_N1)
@@ -2219,9 +2204,11 @@ def _mha_sm100[
     comptime ragged = not ValidLengthType.is_null
 
     # Handle sink_weights
-    var sink_weights_ptr = UnsafePointer[Scalar[kv_type], ImmutAnyOrigin](
-        _unsafe_null=()
-    )
+    # SAFETY: Only dereferenced when SinkType is non-null (comptime guard
+    # below), at which point it's overwritten with the real pointer.
+    var sink_weights_ptr = UnsafePointer[
+        Scalar[kv_type], ImmutAnyOrigin
+    ].unsafe_dangling()
 
     comptime if not SinkType.is_null:
         sink_weights_ptr = rebind[
@@ -2269,10 +2256,6 @@ def _mha_sm100[
     initial_seq_info = scheduler.unsafe_seq_info(tile_summary, state)
     comptime assert not SchedulerType.may_advance
 
-    comptime if not decoding:
-        if not initial_seq_info.is_valid():
-            return
-
     if tid == 0:
         comptime for i in range(pipeline_stages):
             # until we can use TMA, we need 128 producers working on async copies
@@ -2290,7 +2273,7 @@ def _mha_sm100[
         padded_depth,
         num_heads,
         group,
-        decoding,
+        _is_decoding[MaxSeqLenType](),
     ]
 
     @parameter
@@ -2345,8 +2328,8 @@ def _mha_sm100[
                 kv_smem,
                 produced_mbar_kv,
                 producer_mbar_kv,
-                {_unsafe_null = ()},
-                {_unsafe_null = ()},
+                None,
+                None,
                 kv_lut,
                 position,
                 partition,
@@ -2402,7 +2385,7 @@ def _mha_sm100[
             def q_mul_k(read_idx: UInt32, read_phase: UInt32):
                 q = q_desc
                 k = k_desc + Int(
-                    UInt32(BN * Int(config.padded_depth) * size_of[kv_type]())
+                    UInt32(BN * config.padded_depth * size_of[kv_type]())
                     * read_idx
                 )
                 umma_0.wait_for_tmem()
@@ -2478,7 +2461,7 @@ def _mha_sm100[
                     scale_c: UInt32,
                     kv_row: UInt32,
                 ):
-                    comptime offset_elems_per = BN * Int(config.padded_depth)
+                    comptime offset_elems_per = BN * config.padded_depth
                     comptime offset_bytes_per = offset_elems_per * size_of[
                         kv_type
                     ]()
@@ -2660,9 +2643,7 @@ def _mha_sm100[
             mask_status: TileMaskStatus,
             kv_tile_start_row: UInt32,
         ):
-            var max_len: UInt32 = (
-                num_keys_arg if decoding else max_seq_len.as_uint32()
-            )
+            var max_len: UInt32 = num_keys_arg
             _apply_mask[WM, MMA_N0, num_m_mmas, num_n_mmas](
                 mask_warp_row,
                 position,
@@ -2719,7 +2700,7 @@ def _mha_sm100[
                 Scalar[output_type], MutAnyOrigin
             ] = o_ptr_arg
 
-            comptime if decoding and PartitionType.do_partition:
+            comptime if PartitionType.do_partition:
                 output_ptr = output_ptr + (
                     UInt32(depth * num_heads)
                     * batch_size
@@ -2739,7 +2720,7 @@ def _mha_sm100[
             comptime q_tile_size: UInt32 = q_smem_size // 2
             accum_smem_tile = LayoutTensor[
                 output_type,
-                Layout.row_major(BM, Int(config.padded_depth)),
+                Layout.row_major(BM, config.padded_depth),
                 address_space=AddressSpace.SHARED,
             ]((q_smem).bitcast[Scalar[output_type]]())
             accum_smem_warp_tile = accum_smem_tile.tile[WM, BN](
@@ -2774,9 +2755,7 @@ def _mha_sm100[
                 accum_smem_tile.vectorize[1, simd_size](),
             )
 
-        comptime if (
-            decoding and PartitionType.do_partition
-        ):  # we may have an empty partition
+        comptime if PartitionType.do_partition:  # we may have an empty partition
             if kv_tile_start_row >= end:
                 if umod(thread_idx.x, 4) == 0 and thread_idx.x < (
                     4 * min(group, 8) + 128
@@ -2863,16 +2842,10 @@ def _mha_sm100[
             # Include sink_weights in rowmax computation if present
             var q_head_indices = get_q_head_idx(position, lane)
 
-            comptime if decoding:
-                comptime for i in range(q_head_indices.size):
-                    var head_idx = q_head_indices[i]
-                    var sink_weight = sink_weights_ptr[head_idx] * log2e
-                    rowmax[i] = sink_weight.cast[accum_type]()
-            else:
-                var sink_weight = sink_weights_ptr[q_head_indices[0]] * log2e
-
-                comptime for i in range(num_rows_per_warp):
-                    rowmax[i] = sink_weight.cast[accum_type]()
+            comptime for i in range(q_head_indices.size):
+                var head_idx = q_head_indices[i]
+                var sink_weight = sink_weights_ptr[head_idx] * log2e
+                rowmax[i] = sink_weight.cast[accum_type]()
 
         # Compute initial rowmax
         var attention_rowmax = _rowmax_online_softmax[
@@ -2894,24 +2867,13 @@ def _mha_sm100[
         comptime if not SinkType.is_null:
             var q_head_indices = get_q_head_idx(position, lane)
 
-            comptime if decoding:
-                comptime for i in range(q_head_indices.size):
-                    var head_idx = q_head_indices[i]
-                    var sink_weight = (
-                        sink_weights_ptr[head_idx].cast[accum_type]() * log2e
-                    )
-                    var sink_contribution = exp2(sink_weight - rowmax[i])
-                    attention_rowsum[i] += sink_contribution[0]
-            else:
+            comptime for i in range(q_head_indices.size):
+                var head_idx = q_head_indices[i]
                 var sink_weight = (
-                    sink_weights_ptr[q_head_indices[0]].cast[accum_type]()
-                    * log2e
+                    sink_weights_ptr[head_idx].cast[accum_type]() * log2e
                 )
-
-                comptime for i in range(num_rows_per_warp):
-                    # Compute exp2((sink_weight - rowmax[j]) * log2e)
-                    var sink_contribution = exp2(sink_weight - rowmax[i])
-                    attention_rowsum[i] += sink_contribution[0]
+                var sink_contribution = exp2(sink_weight - rowmax[i])
+                attention_rowsum[i] += sink_contribution[0]
 
         rowsum.copy_from(attention_rowsum)
 
@@ -3034,7 +2996,7 @@ def _mha_sm100[
         #     output_scale,
         # )
 
-        comptime if decoding and PartitionType.do_partition:
+        comptime if PartitionType.do_partition:
             # Only the first thread of each row
             if umod(thread_idx.x, 4) == 0 and thread_idx.x < (
                 4 * min(group, 8) + 128

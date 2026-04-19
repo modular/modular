@@ -40,9 +40,7 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.transformer.distributed_transformer import (
-    forward_sharded_layers,
-)
+from max.nn.transformer.distributed_transformer import forward_sharded_layers
 
 from ..deepseekV3.deepseekV3 import (
     DeepseekV3DecoderLayer,
@@ -172,6 +170,7 @@ class DeepseekV3NextN(Module):
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
+        split_prefix: str = "draft",
     ) -> tuple[TensorValue, ...]:
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("host_input_row_offsets must be located on CPU")
@@ -201,7 +200,7 @@ class DeepseekV3NextN(Module):
                 unsplit_row_offsets,
                 host_offsets_i64,
                 data_parallel_splits,
-                prefix="draft",
+                prefix=split_prefix,
             )
             norm_hidden, _ = split_batch_replicated(
                 devices,
@@ -209,30 +208,49 @@ class DeepseekV3NextN(Module):
                 unsplit_row_offsets,
                 host_offsets_i64,
                 data_parallel_splits,
-                prefix="draft",
+                prefix=split_prefix,
             )
 
             norm_embed = [
                 ops.rebind(
                     norm_embed[i],
-                    [f"seq_len_device_{i}", self.config.hidden_size],
+                    [
+                        f"{split_prefix}_seq_len_device_{i}",
+                        self.config.hidden_size,
+                    ],
                 )
                 for i in range(len(devices))
             ]
             norm_hidden = [
                 ops.rebind(
                     norm_hidden[i],
-                    [f"seq_len_device_{i}", self.config.hidden_size],
+                    [
+                        f"{split_prefix}_seq_len_device_{i}",
+                        self.config.hidden_size,
+                    ],
                 )
                 for i in range(len(devices))
             ]
         else:
-            # Single-device case: rebind norm_embed to match hidden_states dimension names
-            # hidden_states uses 'seq_len_device_0' but norm_embed uses 'total_seq_len'
+            # TP or single-device case: rebind norm_embed and norm_hidden
+            # to use consistent per-device dimension names.
             norm_embed = [
                 ops.rebind(
                     norm_embed[i],
-                    [f"seq_len_device_{i}", self.config.hidden_size],
+                    [
+                        f"{split_prefix}_seq_len_device_{i}",
+                        self.config.hidden_size,
+                    ],
+                )
+                for i in range(len(devices))
+            ]
+            norm_hidden = [
+                ops.rebind(
+                    norm_hidden[i],
+                    [
+                        f"{split_prefix}_seq_len_device_{i}",
+                        self.config.hidden_size,
+                    ],
                 )
                 for i in range(len(devices))
             ]
@@ -272,11 +290,11 @@ class DeepseekV3NextN(Module):
 
         # Extract dispatch metadata from KV collections for MLA decode.
         mla_decode_scalar_args: list[TensorValue] | None = None
-        if kv_collections[0].dispatch_metadata is not None:
+        if kv_collections[0].attention_dispatch_metadata is not None:
             mla_decode_scalar_args = [
-                kv.dispatch_metadata.tensor
+                kv.attention_dispatch_metadata
                 for kv in kv_collections
-                if kv.dispatch_metadata is not None
+                if kv.attention_dispatch_metadata is not None
             ]
 
         h = self.decoder_layer(

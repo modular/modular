@@ -16,12 +16,14 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from unittest.mock import patch
+import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pytest
 from max.benchmark.benchmark_serving import (
     _add_spec_decode_result,
+    _ConcurrentTurnsRequestDriver,
     chat_session_driver,
     elide_data_uris_in_string,
     get_request,
@@ -35,6 +37,7 @@ from max.benchmark.benchmark_shared.datasets.types import (
 from max.benchmark.benchmark_shared.metrics import (
     PercentileMetrics,
     SpecDecodeMetrics,
+    SpecDecodeStats,
     StandardPercentileMetrics,
     ThroughputMetrics,
     calculate_spec_decode_stats,
@@ -55,7 +58,7 @@ def test_benchmark_serving_help(capsys: pytest.CaptureFixture[str]) -> None:
     test_args = ["benchmark_serving.py", "--help"]
     with patch.object(sys, "argv", test_args):
         with pytest.raises(SystemExit) as excinfo:
-            args = parse_args()
+            parse_args()
 
         # Verify it exited with code 0 (success)
         assert excinfo.value.code == 0
@@ -1021,12 +1024,12 @@ def test_calculate_spec_decode_stats_matches_vllm_math() -> None:
     stats = calculate_spec_decode_stats(before, after)
 
     assert stats is not None
-    assert stats["num_drafts"] == 12
-    assert stats["draft_tokens"] == 36
-    assert stats["accepted_tokens"] == 24
-    assert stats["acceptance_rate"] == pytest.approx((24 / 36) * 100)
-    assert stats["acceptance_length"] == pytest.approx(1 + 24 / 12)
-    assert stats["per_position_acceptance_rates"] == pytest.approx(
+    assert stats.num_drafts == 12
+    assert stats.draft_tokens == 36
+    assert stats.accepted_tokens == 24
+    assert stats.acceptance_rate == pytest.approx((24 / 36) * 100)
+    assert stats.acceptance_length == pytest.approx(1 + 24 / 12)
+    assert stats.per_position_acceptance_rates == pytest.approx(
         [12 / 12, 8 / 12, 4 / 12]
     )
 
@@ -1034,14 +1037,14 @@ def test_calculate_spec_decode_stats_matches_vllm_math() -> None:
 def test_add_spec_decode_result_uses_vllm_json_keys() -> None:
     """Spec decode stats are serialized under vLLM-compatible keys."""
     result: dict[str, object] = {}
-    stats = {
-        "num_drafts": 5,
-        "draft_tokens": 18,
-        "accepted_tokens": 9,
-        "acceptance_rate": 50.0,
-        "acceptance_length": 2.8,
-        "per_position_acceptance_rates": [1.0, 0.6, 0.2],
-    }
+    stats = SpecDecodeStats(
+        num_drafts=5,
+        draft_tokens=18,
+        accepted_tokens=9,
+        acceptance_rate=50.0,
+        acceptance_length=2.8,
+        per_position_acceptance_rates=[1.0, 0.6, 0.2],
+    )
 
     _add_spec_decode_result(result, stats)
 
@@ -1053,3 +1056,27 @@ def test_add_spec_decode_result_uses_vllm_json_keys() -> None:
         "spec_decode_accepted_tokens": 9,
         "spec_decode_per_position_acceptance_rates": [1.0, 0.6, 0.2],
     }
+
+
+def test_concurrent_turns_driver_expired_deadline_cancels_without_calling_base() -> (
+    None
+):
+    """A turn that acquires the semaphore after the deadline is cancelled, not forwarded."""
+    semaphore = asyncio.Semaphore(10)
+    mock_driver = AsyncMock()
+    mock_driver.tokenizer = None
+    driver = _ConcurrentTurnsRequestDriver(
+        mock_driver,
+        semaphore,
+        benchmark_should_end_time=time.perf_counter_ns() - 1,
+    )
+
+    output_cls = MagicMock()
+    output_cls.return_value = MagicMock()
+    inp = MagicMock()
+    inp.get_output_type.return_value = output_cls
+
+    asyncio.run(driver.request(inp))
+
+    assert output_cls.call_args.kwargs["cancelled"] is True
+    mock_driver.request.assert_not_called()

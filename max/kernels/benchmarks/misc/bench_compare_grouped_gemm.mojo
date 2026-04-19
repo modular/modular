@@ -51,6 +51,7 @@ from linalg.fp4_utils import (
 # Structured kernel
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
+    GEMMKind,
 )
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
@@ -145,15 +146,11 @@ def bench_cublas_per_group[
         Idx[SF_ATOM_K](),
     )
 
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), row_major(a_shape))
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), row_major(b_shape))
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), row_major(c_shape))
-    var sfa_tensor = TileTensor(
-        sfa_device.unsafe_ptr(), row_major(a_scales_shape)
-    )
-    var sfb_tensor = TileTensor(
-        sfb_device.unsafe_ptr(), row_major(b_scales_shape)
-    )
+    var a_tensor = TileTensor(a_device, row_major(a_shape))
+    var b_tensor = TileTensor(b_device, row_major(b_shape))
+    var c_tensor = TileTensor(c_device, row_major(c_shape))
+    var sfa_tensor = TileTensor(sfa_device, row_major(a_scales_shape))
+    var sfb_tensor = TileTensor(sfb_device, row_major(b_scales_shape))
 
     # FLOPs use logical K (not packed)
     var total_flops = 2 * m.value() * n.value() * k.value() * num_groups
@@ -282,21 +279,21 @@ def bench_structured_kernel[
 
     # Template tensors - 3D with batch=1
     var a_template = TileTensor(
-        a_device.unsafe_ptr(),
+        a_device,
         row_major(Coord(Idx[1](), m, Idx[K_ARRAY]())),
     )
     var b_template = TileTensor(
-        b_device.unsafe_ptr(),
+        b_device,
         row_major(Coord(Idx[1](), n, Idx[K_ARRAY]())),
     )
     var c_template = TileTensor(
-        c_device.unsafe_ptr(),
+        c_device,
         row_major(Coord(Idx[1](), m, n)),
     )
 
     # Scale factor template tensors - 5D with batch=1 and merged last dims
     var sfa_template = TileTensor(
-        sfa_device.unsafe_ptr(),
+        sfa_device,
         row_major(
             Coord(
                 Idx[1](),
@@ -308,7 +305,7 @@ def bench_structured_kernel[
         ),
     )
     var sfb_template = TileTensor(
-        sfb_device.unsafe_ptr(),
+        sfb_device,
         row_major(
             Coord(
                 Idx[1](),
@@ -359,23 +356,23 @@ def bench_structured_kernel[
     )
 
     var a_ptrs_tensor = TileTensor(
-        a_ptrs_device.unsafe_ptr(),
+        a_ptrs_device,
         row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
     var b_ptrs_tensor = TileTensor(
-        b_ptrs_device.unsafe_ptr(),
+        b_ptrs_device,
         row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
     var c_ptrs_tensor = TileTensor(
-        c_ptrs_device.unsafe_ptr(),
+        c_ptrs_device,
         row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
     var sfa_ptrs_tensor = TileTensor(
-        sfa_ptrs_device.unsafe_ptr(),
+        sfa_ptrs_device,
         row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
     var sfb_ptrs_tensor = TileTensor(
-        sfb_ptrs_device.unsafe_ptr(),
+        sfb_ptrs_device,
         row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
 
@@ -394,6 +391,7 @@ def bench_structured_kernel[
         cta_group=1,
         k_group_size=k_grp_size,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     # FLOPs use logical K (not packed)

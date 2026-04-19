@@ -26,7 +26,8 @@ tutorial](/mojo/manual/get-started), which includes installation steps.
 :::note System requirements
 
 You can use Mac, Linux, or Windows with WSL. For details, see the
-[system requirements](/mojo/requirements).
+[system requirements](/mojo/requirements). For GPU programming, see
+[GPU compatibility](/mojo/requirements#gpu-compatibility).
 
 :::
 
@@ -195,7 +196,7 @@ file with a `main()` function:
 1. Create a file named `hello.mojo` with this code:
 
     ```mojo title="hello.mojo"
-    def main() raises:
+    def main():
         print("Hello, World!")
     ```
 

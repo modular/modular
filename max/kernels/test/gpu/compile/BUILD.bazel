@@ -6,6 +6,7 @@ _LIT_TESTS = [
     "test_amd_asan_oob.mojo",
     "test_amd_block_sync_lds.mojo",
     "test_compile_via_param.mojo",
+    "test_elementwise_trace_description.mojo",
 ]
 
 _FILECHECK_TESTS = [

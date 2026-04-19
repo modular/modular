@@ -26,6 +26,7 @@ from max.interfaces import (
     ImageMetadata,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+    TextGenerationRequestTool,
     TokenBuffer,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
@@ -316,13 +317,18 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         self.executor: ThreadPoolExecutor | None = None
 
     def apply_chat_template(
-        self, messages: list[TextGenerationRequestMessage]
+        self,
+        messages: list[TextGenerationRequestMessage],
+        tools: list[TextGenerationRequestTool] | None = None,
     ) -> str:
         """Apply chat template using tokenizer directly (not processor)."""
 
         messages_dicts = [msg.model_dump() for msg in messages]
         templated_message = self.delegate.apply_chat_template(
-            messages_dicts, tokenize=False, add_generation_prompt=True
+            messages_dicts,
+            tokenize=False,
+            tools=tools,
+            add_generation_prompt=True,
         )
         assert isinstance(templated_message, str)
         return templated_message

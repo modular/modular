@@ -43,7 +43,7 @@ def test_slice_dim[
 ](dims: IndexList[outer_rank], start: Int, stop: Int, step: Int) raises:
     var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
     var in_tensor = TileTensor(
-        memory1.unsafe_ptr(),
+        memory1,
         row_major(Coord(dims)),
     )
 

@@ -2372,7 +2372,7 @@ struct SIMD[dtype: DType, size: Int](
         """
 
         comptime assert (
-            output_size == ParameterList[*mask].size
+            output_size == mask.size
         ), "size of the mask must match the output SIMD size"
 
         # FIXME: Support parameters on initializers better, removing __init__.
@@ -2694,7 +2694,7 @@ struct SIMD[dtype: DType, size: Int](
     def deinterleave(
         self,
     ) -> Tuple[
-        SIMD[Self.dtype, Self.size // 2], SIMD[Self.dtype, Self.size // 2]
+        SIMD[Self.dtype, Self.size / 2], SIMD[Self.dtype, Self.size / 2]
     ]:
         """Constructs two vectors by deinterleaving the even and odd lanes of
         the vector.
@@ -2715,8 +2715,8 @@ struct SIMD[dtype: DType, size: Int](
         var res = llvm_intrinsic[
             "llvm.vector.deinterleave2",
             _RegisterPackType[
-                SIMD[Self.dtype, Self.size // 2],
-                SIMD[Self.dtype, Self.size // 2],
+                SIMD[Self.dtype, Self.size / 2],
+                SIMD[Self.dtype, Self.size / 2],
             ],
             has_side_effect=False,
         ](self)
@@ -2731,7 +2731,9 @@ struct SIMD[dtype: DType, size: Int](
     # TODO: remove when non-capturing can be converted to capturing.
     @always_inline
     def reduce[
-        func: def[width: Int](Self._T[width], Self._T[width]) -> Self._T[width],
+        func: def[width: Int](Self._T[width], Self._T[width]) thin -> Self._T[
+            width
+        ],
         size_out: Int = 1,
     ](self) -> Self._T[size_out]:
         """Reduces the vector using a provided reduce operator.

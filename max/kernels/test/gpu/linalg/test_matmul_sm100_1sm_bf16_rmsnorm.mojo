@@ -104,32 +104,28 @@ def test_rmsnorm_then_matmul[
 
     # --- Device allocations ---
     var a_raw_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_raw_tensor = TileTensor(a_raw_device.unsafe_ptr(), ak_shape)
+    var a_raw_tensor = TileTensor(a_raw_device, ak_shape)
 
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
 
     var gamma_device = ctx.enqueue_create_buffer[a_type](K)
     var gamma_tensor = TileTensor(
-        gamma_device.unsafe_ptr(), row_major(Idx[KType.static_value]())
+        gamma_device, row_major(Idx[KType.static_value]())
     )
 
     # Separate normalized-A buffers — one per launch, intentionally independent
     var a_normed_vendor_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_normed_vendor_tensor = TileTensor(
-        a_normed_vendor_device.unsafe_ptr(), ak_shape
-    )
+    var a_normed_vendor_tensor = TileTensor(a_normed_vendor_device, ak_shape)
 
     var a_normed_ours_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_normed_ours_tensor = TileTensor(
-        a_normed_ours_device.unsafe_ptr(), ak_shape
-    )
+    var a_normed_ours_tensor = TileTensor(a_normed_ours_device, ak_shape)
 
     var c_vendor_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_vendor_tensor = TileTensor(c_vendor_device.unsafe_ptr(), c_shape)
+    var c_vendor_tensor = TileTensor(c_vendor_device, c_shape)
 
     var c_ours_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ours_tensor = TileTensor(c_ours_device.unsafe_ptr(), c_shape)
+    var c_ours_tensor = TileTensor(c_ours_device, c_shape)
 
     # H→D copies
     ctx.enqueue_copy(a_raw_device, a_raw_host_ptr)

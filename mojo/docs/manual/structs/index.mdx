@@ -22,7 +22,7 @@ members:
   data.
 - **Static methods** are functions provided by the type to perform behaviors,
   provide constants, or create specialized instances.
-- **Dunder methods** are named for their _d_ouble _under_scored form, with
+- **Dunder methods** are named for their *d*ouble *under*-scored form, with
   `__` on both sides. Also called "special methods", [they help define
   behaviors](/mojo/manual/structs/#special-methods) such as initialization
   and allow structs to conform to [traits](/mojo/manual/traits/).
@@ -67,11 +67,11 @@ struct MyPair:
         self.second = second
 ```
 
-Notice that the first argument in the `__init__()` method is `out self`. You'll
-have a `self` argument as the first argument on all struct methods. It
-references the current struct instance (it allows code in the method to refer to
-"itself"). *When you call the constructor, you never pass a value for
-`self`—Mojo passes it in automatically.*
+Notice that the first argument in the `__init__()` method is `out self`.
+You'll have a `self` argument as the first argument on all struct methods.
+It references the current struct instance (it allows code in the method to
+refer to "itself"). _When you call the constructor, you never pass a value
+for `self`—Mojo passes it in automatically._
 
 The `out` portion of `out self` is an [argument
 convention](/mojo/manual/values/ownership#argument-conventions) that declares
@@ -126,19 +126,19 @@ Initializer lists simplify code, improving readability and maintainability.
 
 For example, some machine-learning operations produce tensor view types whose
 fully spelled-out names can run to thousands of characters. Initializer lists
-let you construct these values concisely, relying on surrounding type context
+let you construct these values simply, relying on surrounding type context
 instead of repeating the entire type.
 
 Here's the standard way to call a function:
 
 ```mojo title="Calling a function"
-def process_pair(pair: MyPair) raises:
+def process_pair(pair: MyPair):
     ...
 
 process_pair(MyPair(2, 4))
 ```
 
-Because `process_pair` expects a `MyPair` instance, Mojo can infer the type from
+Because `process_pair` expects a `MyPair` instance, Mojo infers the type from
 context. The braces construct the instance using an initializer list. Although
 the syntax uses braces, this is not a `Set`. It is an initializer list used to
 create a `MyPair` value:
@@ -151,21 +151,20 @@ Initializer lists support all Mojo argument styles, including keyword
 arguments. For example:
 
 ```mojo title="Initializer lists with a keyword argument"
-def utility_function(argument: CustomType) raises:
+def utility_function(argument: CustomType):
     ...
 
 utility_function(CustomType(0.5, fish="swordfish"))
+```
 
-...is equivalent to...
+This refactors as follows, with the keyword preserved:
 
+```text
 utility_function({0.5, fish="swordfish"})
 ```
 
-The result is concise, and both calls are functionally identical in the
-preceding example.
-
-You can also update declared instances with initializer lists.
-Mojo knows the variable's type. For example:
+Use initializer lists with already-declared instances, as Mojo knows
+the variable's type:
 
 ```mojo title="Reassignment with initializer lists"
 # Construct a new instance

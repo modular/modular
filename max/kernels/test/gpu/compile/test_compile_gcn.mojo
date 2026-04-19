@@ -29,6 +29,7 @@ from std.gpu.globals import WARP_SIZE
 from std.gpu.host import get_gpu_target
 from std.gpu.host.compile import _compile_code
 from std.gpu.intrinsics import (
+    ds_read_tr8_b64,
     ds_read_tr16_b64,
     load_acquire,
     store_release,
@@ -115,7 +116,7 @@ def kernel_atomic[
 
 
 def parametric[
-    f: def(UnsafePointer[Int, MutAnyOrigin]) -> None
+    f: def(UnsafePointer[Int, MutAnyOrigin]) thin -> None
 ](ptr: UnsafePointer[Int, MutAnyOrigin]):
     f(ptr)
 
@@ -134,8 +135,8 @@ def load_store(
 def test_shuffle_compile() raises:
     print("== test_shuffle_compile")
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
-    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
+    # CHECK: %4 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %5 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = add i32 %5, %3
     # CHECK: %7 = icmp ult i32 %6, 64
     # CHECK: %8 = select i1 %7, i32 %3, i32 0
@@ -149,8 +150,8 @@ def test_shuffle_compile() raises:
     )
 
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
-    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
+    # CHECK: %4 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %5 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = sub i32 %5, %3
     # CHECK: %7 = and i32 %5, 64
     # CHECK: %8 = icmp slt i32 %6, %7
@@ -164,8 +165,8 @@ def test_shuffle_compile() raises:
     )
 
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
-    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
+    # CHECK: %4 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %5 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = xor i32 %5, %3
     # CHECK: %7 = and i32 %5, 64
     # CHECK: %8 = add nuw nsw i32 %7, 64
@@ -180,8 +181,8 @@ def test_shuffle_compile() raises:
     )
 
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
-    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
+    # CHECK: %4 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %5 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = and i32 %5, 64
     # CHECK: %7 = or i32 %6, %3
     # CHECK: %8 = shl i32 %7, 2
@@ -242,8 +243,8 @@ def test_exp_f16_compile() raises:
 def test_laneid_compile() raises:
     print("== test_laneid_compile")
 
-    # CHECK: %3 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %3)
+    # CHECK: %3 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %4 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %3)
     print(
         _compile_code[
             kernel_laneid, target=MI300X_TARGET, emission_kind="llvm-opt"
@@ -389,7 +390,7 @@ def test_ds_read_tr16_b64_compile() raises:
     def test_kernel[dtype: DType]():
         var x = UnsafePointer[
             Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
-        ](_unsafe_null=())
+        ].unsafe_dangling()
         var y = ds_read_tr16_b64(x)
         y[0] = y[0] + 1
         x[0] = y[0]
@@ -419,6 +420,34 @@ def test_ds_read_tr16_b64_compile() raises:
     print(
         _compile_code[
             test_kernel[DType.uint16],
+            target=MI355X_TARGET,
+        ]()
+    )
+
+
+# CHECK-LABEL: test_ds_read_tr8_b64_compile
+def test_ds_read_tr8_b64_compile() raises:
+    print("== test_ds_read_tr8_b64_compile")
+
+    def test_kernel[dtype: DType]():
+        var x = UnsafePointer[
+            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        ].unsafe_dangling()
+        var y = ds_read_tr8_b64(x)
+        y[0] = y[0] + 1
+        x[0] = y[0]
+
+    # CHECK: ds_read_b64_tr_b8 v[0:1], v2
+    print(
+        _compile_code[
+            test_kernel[DType.uint8],
+            target=MI355X_TARGET,
+        ]()
+    )
+    # CHECK: ds_read_b64_tr_b8 v[0:1], v2
+    print(
+        _compile_code[
+            test_kernel[DType.int8],
             target=MI355X_TARGET,
         ]()
     )
@@ -551,6 +580,7 @@ def main() raises:
     test_schedule_group_barrier_compile()
     test_atomic_compile()
     test_ds_read_tr16_b64_compile()
+    test_ds_read_tr8_b64_compile()
     test_permlane_compile()
     test_waitcnt_compile()
     test_nt_load_compile()

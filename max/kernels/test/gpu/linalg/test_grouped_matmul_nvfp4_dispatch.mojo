@@ -112,40 +112,40 @@ def _test_dispatch[
 
     # --- Device allocations ---
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts + 1
     )
     var a_offsets_tensor = TileTensor(
-        a_offsets_device.unsafe_ptr(),
+        a_offsets_device,
         row_major(Coord(Idx(Int(num_active_experts + 1)))),
     )
     var a_scale_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
-        a_scale_offsets_device.unsafe_ptr(),
+        a_scale_offsets_device,
         row_major(Coord(Idx(Int(num_active_experts)))),
     )
     var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](
         num_active_experts
     )
     var expert_ids_tensor = TileTensor(
-        expert_ids_device.unsafe_ptr(),
+        expert_ids_device,
         row_major(Coord(Idx(Int(num_active_experts)))),
     )
     var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
         num_experts
     )
     var expert_scales_tensor = TileTensor(
-        expert_scales_device.unsafe_ptr(),
+        expert_scales_device,
         row_major(Coord(Idx[num_experts]())),
     )
 
@@ -206,15 +206,11 @@ def _test_dispatch[
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
-    var a_scales_tensor = TileTensor(
-        a_scales_device.unsafe_ptr(), a_scales_shape
-    )
+    var a_scales_tensor = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
-    var b_scales_tensor = TileTensor(
-        b_scales_device.unsafe_ptr(), b_scales_shape
-    )
+    var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # --- Initialize data ---
     rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
@@ -298,7 +294,7 @@ def _test_dispatch[
 
     # --- Build TileTensors (5D/6D scales need explicit row_major layout) ---
     var a_scales_tt = TileTensor(
-        a_scales_device.unsafe_ptr().bitcast[Scalar[scales_dtype]](),
+        a_scales_device,
         row_major(
             Coord(
                 RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
@@ -310,7 +306,7 @@ def _test_dispatch[
         ),
     ).as_any_origin()
     var b_scales_tt = TileTensor(
-        b_scales_device.unsafe_ptr().bitcast[Scalar[scales_dtype]](),
+        b_scales_device,
         row_major(
             Coord(
                 Idx[num_experts](),
@@ -323,7 +319,7 @@ def _test_dispatch[
         ),
     ).as_any_origin()
     var expert_scales_tt = TileTensor(
-        expert_scales_device.unsafe_ptr().bitcast[Scalar[DType.float32]](),
+        expert_scales_device,
         row_major(
             Coord(
                 RuntimeInt[DType.int64](Scalar[DType.int64](num_experts)),
@@ -764,6 +760,68 @@ def main() raises:
             3,
             [256, 128, 192],
             [2, 0, 1],
+            ctx,
+        )
+
+        # ============================================================
+        # 7. cp.async SFB path: group_size < 128 (SF_MN_GROUP_SIZE)
+        #    When tokens_per_expert < 128 for an expert, the SfbTMALoad
+        #    warp uses cp.async instead of TMA to avoid wasting BW on
+        #    OOB zero-fill in full 128-row SF atoms.
+        # ============================================================
+        print("\n=== cp.async SFB: small group_size < 128 ===")
+
+        # 7a: All experts have very small groups (cp.async for all)
+        print("  7a: N=4096, K=7168, all tiny groups")
+        _test_dispatch[6, 4096, 7168](
+            4,
+            [1, 2, 3, 4],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
+        # 7b: Mixed cp.async and TMA within one launch
+        print("  7b: N=4096, K=7168, mixed cp.async(4,1) + TMA(256,200)")
+        _test_dispatch[6, 4096, 7168](
+            4,
+            [4, 256, 1, 200],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
+        # 7c: Boundary: gs=127 (cp.async) and gs=128 (TMA)
+        print("  7c: N=4096, K=7168, boundary 127/128")
+        _test_dispatch[6, 4096, 7168](
+            4,
+            [127, 128, 64, 256],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
+        # 7d: Same tests on down-proj shape
+        print("  7d: N=7168, K=2048, mixed small/large")
+        _test_dispatch[6, 7168, 2048](
+            4,
+            [8, 512, 16, 300],
+            [0, 3, 2, 4],
+            ctx,
+        )
+
+        # 7e: Single expert, single token
+        print("  7e: N=4096, K=7168, 1 expert, 1 token")
+        _test_dispatch[6, 4096, 7168](
+            1,
+            [1],
+            [3],
+            ctx,
+        )
+
+        # 7f: Many experts, all small (Kimi K2.5 decode-like)
+        print("  7f: N=4096, K=7168, 8 experts, 1 tok each")
+        _test_dispatch[8, 4096, 7168](
+            8,
+            [1, 1, 1, 1, 1, 1, 1, 1],
+            [0, 1, 2, 3, 4, 5, 6, 7],
             ctx,
         )
 

@@ -45,14 +45,17 @@ def _ri(v: Int) -> RuntimeInt[DType.int64]:
 
 
 def _get_run_name[
-    dtype: DType,
+    c_type: DType,
+    a_type: DType,
     *,
     transpose_b: Bool,
     use_vendor_blas: Bool,
     lambda_fn: Optional[epilogue_func_type] = None,
 ](b: Int, m: Int, n: Int, k: Int) -> String:
     var vendor_str = "vendor_bmm" if use_vendor_blas else "bmm"
-    var type_str = String("(", dtype, ") : ")
+    var type_str = String(
+        "(in=", String(a_type), ",out=", String(c_type), ") : "
+    )
     # B
     var b_str = String(b, "" if b else "_dynamic")
     # M
@@ -100,7 +103,8 @@ def bench_bmm[
     NType: CoordLike,
     KType: CoordLike,
     //,
-    dtype: DType,
+    c_type: DType,
+    a_type: DType,
     /,
     *,
     use_vendor_blas: Bool = False,
@@ -125,17 +129,17 @@ def bench_bmm[
     )
     var c_size = b.value() * m.value() * n.value()
 
-    var a_device_buffer = ctx.enqueue_create_buffer[dtype](a_size)
-    var b_device_buffer = ctx.enqueue_create_buffer[dtype](b_size)
-    var c_device_buffer = ctx.enqueue_create_buffer[dtype](c_size)
+    var a_device_buffer = ctx.enqueue_create_buffer[a_type](a_size)
+    var b_device_buffer = ctx.enqueue_create_buffer[a_type](b_size)
+    var c_device_buffer = ctx.enqueue_create_buffer[c_type](c_size)
 
     var a_device = TileTensor(
-        a_device_buffer.unsafe_ptr(),
+        a_device_buffer,
         row_major(Coord(b, m, k)),
     ).as_any_origin()
 
     var b_device = TileTensor(
-        b_device_buffer.unsafe_ptr(),
+        b_device_buffer,
         row_major(
             Coord(
                 b,
@@ -149,13 +153,13 @@ def bench_bmm[
         ),
     ).as_any_origin()
     var c_device = TileTensor(
-        c_device_buffer.unsafe_ptr(),
+        c_device_buffer,
         row_major(Coord(b, m, n)),
     ).as_any_origin()
 
     # Initialize data on the device
-    init_vector_launch[dtype](a_device_buffer, a_size, init_type, ctx)
-    init_vector_launch[dtype](b_device_buffer, b_size, init_type, ctx)
+    init_vector_launch[a_type](a_device_buffer, a_size, init_type, ctx)
+    init_vector_launch[a_type](b_device_buffer, b_size, init_type, ctx)
 
     @parameter
     @always_inline
@@ -171,7 +175,7 @@ def bench_bmm[
         var update_val = func(val)
         c_device.store_linear(idx, update_val.cast[c_device.dtype]())
 
-    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime pack_size = simd_width_of[c_type, target=get_gpu_target()]()
 
     @always_inline
     @__copy_capture(c_device, b, m, n)
@@ -218,7 +222,7 @@ def bench_bmm[
                         ),
                     )
 
-                    vendor_blas.matmul(
+                    vendor_blas.matmul[use_tf32=True](
                         ctx,
                         c_buffer,
                         a_buffer,
@@ -250,7 +254,7 @@ def bench_bmm[
                             ),
                         )
 
-                        vendor_blas.matmul(
+                        vendor_blas.matmul[use_tf32=True](
                             ctx,
                             c_buffer,
                             a_buffer,
@@ -290,7 +294,8 @@ def bench_bmm[
     bench.bench_function[bench_func](
         BenchId(
             _get_run_name[
-                dtype,
+                c_type,
+                a_type,
                 transpose_b=transpose_b,
                 use_vendor_blas=use_vendor_blas,
                 lambda_fn=lambda_fn,
@@ -317,7 +322,8 @@ def create_bmm_bench[
     NType: CoordLike,
     KType: CoordLike,
     //,
-    dtype: DType,
+    c_type: DType,
+    a_type: DType,
     *,
     transpose_b: Bool,
     use_vendor_blas: Bool,
@@ -332,7 +338,8 @@ def create_bmm_bench[
     init_type: InitializationType,
 ) raises:
     bench_bmm[
-        dtype,
+        c_type,
+        a_type,
         transpose_b=transpose_b,
         use_vendor_blas=use_vendor_blas,
         lambda_fn=lambda_fn,
@@ -348,7 +355,8 @@ def create_bmm_bench[
 
 
 def main() raises:
-    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime a_type = get_defined_dtype["atype", DType.bfloat16]()
+    comptime c_type = get_defined_dtype["ctype", DType.bfloat16]()
 
     var b = Int(arg_parse("B", 1))
     var m = Int(arg_parse("M", 1))
@@ -363,7 +371,8 @@ def main() raises:
     var bench = Bench()
     with DeviceContext() as ctx:
         create_bmm_bench[
-            dtype,
+            c_type,
+            a_type,
             transpose_b=transpose_b,
             use_vendor_blas=use_vendor_blas,
         ](

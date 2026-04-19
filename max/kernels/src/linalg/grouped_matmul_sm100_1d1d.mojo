@@ -86,7 +86,7 @@ from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
 from linalg.utils import elementwise_compute_lambda_type
-from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig, GEMMKind
 from structured_kernels.tile_types import (
     SMemTile,
     internal_sf_k_major,
@@ -357,14 +357,14 @@ def copy_accum_to_gmem[
             comptime if elementwise_compute_lambda_fn:
                 comptime if not register_based_epilogue:
                     shared_memory_epilogue[
-                        UInt(MMA_M),
+                        MMA_M,
                         data_paths,
-                        UInt(num_stages),
-                        UInt(stage),
-                        UInt(stageN),
+                        num_stages,
+                        Int(stage),
+                        stageN,
                         c_smem_warp_tile_upper.dtype,
-                        UInt(c_smem_tile.shape[1]()),
-                        UInt(simd_size),
+                        c_smem_tile.shape[1](),
+                        simd_size,
                         c_smem_warp_tile_upper.layout,
                         c_smem_warp_tile_lower.layout,
                         swizzle,
@@ -373,8 +373,8 @@ def copy_accum_to_gmem[
                     ](
                         M,
                         N,
-                        UInt(c_col),
-                        UInt(c_row),
+                        Int(c_col),
+                        Int(c_row),
                         c_smem_warp_tile_upper,
                         c_smem_warp_tile_lower,
                     )
@@ -823,7 +823,7 @@ def load_AB[
     mma_shape: IndexList[3],
     num_sf_k_tiles: Int,
     cta_group: Int = 1,
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
@@ -879,7 +879,7 @@ def load_AB[
             + sfa_expected_bytes
             + sfb_expected_bytes
         )
-    ) * Int(k_group_size)
+    ) * k_group_size
 
     comptime a_tma_load_size = _idx_product[a_tile_rank, a_desc_shape]()
     comptime b_tma_load_size = _idx_product[b_tile_rank, b_desc_shape]()
@@ -1724,6 +1724,14 @@ def _blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
+@__name(
+    StaticString(config.get_kernal_name())
+    + StaticString(
+        "_fused_compute_epi" if elementwise_compute_lambda_fn
+        is not None else ""
+    ),
+    mangle=True,
+)
 def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     a_type: DType,
     b_type: DType,
@@ -2052,7 +2060,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         block_tile_shape=config.block_tile_shape,
                         mma_shape=config.mma_shape,
                         cta_group=config.cta_group,
-                        k_group_size=UInt(config.k_group_size),
+                        k_group_size=config.k_group_size,
                         num_sf_k_tiles=config.num_sf_k_tiles,
                     ](
                         a_tma_op,
@@ -2103,7 +2111,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                 config.num_accum_pipeline_stages * MMA_N
             )
             var sfb_tmem = sfa_tmem + UInt32(
-                UInt(SFA_NUM_COLS) * UInt(config.num_pipeline_stages)
+                SFA_NUM_COLS * config.num_pipeline_stages
             )
 
             while not work_info.is_done():
@@ -2381,6 +2389,7 @@ def grouped_matmul_dynamic_scaled_nvfp4[
             AB_swapped=False,
             k_group_size=1,
             num_accum_pipeline_stages=2,
+            gemm_kind=GEMMKind.GMM,
         )
 
         blackwell_block_scaled_matmul_tma_umma_warp_specialized[

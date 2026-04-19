@@ -135,6 +135,10 @@ __extension SM100MLA:
         )
     )
     @__llvm_metadata(`nvvm.minctasm`=Int(1))
+    @__name(
+        t"sm100_mla_prefill_per_token_scale_{Self.qkv_dtype}_{Self.output_dtype}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
+        mangle=True,
+    )
     def mla_prefill_kernel_per_token_scale(
         q_nope_tma_op: QTMATile[
             Self.KVLUTType.dtype,
@@ -1143,7 +1147,7 @@ def mla_sm100_prefill_per_token_scale[
         rope_gmem_dtype=rope_dtype,
         scale_dtype=scale_dtype,
     ](
-        num_q_heads=Int(config.num_heads),
+        num_q_heads=config.num_heads,
         group=group,
         depth=q_depth,
         page_size=KType.page_size,

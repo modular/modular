@@ -32,6 +32,7 @@ import base64
 import gc
 import io
 import json
+import logging
 import os
 import random
 import shutil
@@ -916,7 +917,7 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
         max_length=max_length,
     )
 
-    cache_config = DenoisingCacheConfig(
+    config.runtime.denoising_cache = DenoisingCacheConfig(
         first_block_caching=args.first_block_caching,
         taylorseer=args.taylorseer,
         taylorseer_cache_interval=args.taylorseer_cache_interval,
@@ -931,7 +932,6 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
     pipeline = PixelGenerationPipeline[PixelContext](
         pipeline_config=config,
         pipeline_model=pipeline_model,
-        cache_config=cache_config,
     )
     return pipeline, tokenizer, config
 
@@ -1152,6 +1152,10 @@ def _print_per_iteration(
 
 
 def main(argv: list[str] | None = None) -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s: %(message)s",
+    )
     args = parse_args(argv)
 
     # Resolve seed: generate a random one if not explicitly provided.

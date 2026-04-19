@@ -1,0 +1,16 @@
+[workspace]
+authors = ["Modular <hello@modular.com>"]
+channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
+name = "modules"
+description = "An example of building model graphs with MAX Module"
+platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
+version = "0.1.0"
+
+[tasks]
+modules = "python modules.py"
+test = { depends-on = ["modules"] }
+
+[dependencies]
+python = ">=3.9,<3.14"
+modular = "*"
+numpy = "*"

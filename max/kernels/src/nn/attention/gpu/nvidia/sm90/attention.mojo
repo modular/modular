@@ -156,7 +156,7 @@ struct NonNullPointer[
 
     @always_inline
     def value(self) -> Self.PtrType:
-        assert self.ptr._is_not_null(), (
+        assert Int(self.ptr) != 0, (
             "NonNullPointer is supposed to provide a compile-time guarantee"
             " of being non-null"
         )
@@ -179,7 +179,9 @@ struct NullPointer[
 
     @always_inline
     def value(self) -> Self.PtrType:
-        return Self.PtrType(_unsafe_null=())
+        # NullPointer.value() should never be called at runtime — it exists
+        # only for trait conformance. Return dangling as a safe sentinel.
+        return Self.PtrType.unsafe_dangling()
 
 
 struct Pack[
@@ -504,10 +506,11 @@ def get_seq_info[
         flip_prompt_idx=flip_prompt_idx,
         pair_cta=pair_cta,
     ]()
+    # SAFETY: Stored in MHATileState.sidx_ptr but never dereferenced.
     var state: MHATileState = scheduler.initial_state(
-        UnsafePointer[UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED](
-            _unsafe_null=()
-        ),
+        UnsafePointer[
+            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
+        ].unsafe_dangling(),
         tile_summary,
     )
     return scheduler.unsafe_seq_info(tile_summary, state)
@@ -1130,11 +1133,15 @@ def produce[
     consumed_mbar_kv: UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
-    produced_mbar_q: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+    produced_mbar_q: Optional[
+        UnsafePointer[
+            SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        ]
     ],
-    consumed_mbar_q: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+    consumed_mbar_q: Optional[
+        UnsafePointer[
+            SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        ]
     ],
     kv_lut: KVLUTType,
     initial_position: MHAPosition[
@@ -1355,7 +1362,7 @@ def produce[
                 var q_idx_old: UInt32 = q_pipeline_state.index()
                 var q_phase_old: UInt32 = q_pipeline_state.phase()
                 q_pipeline_state.step()
-                consumed_mbar_q[q_idx_old].wait(q_phase_old)
+                consumed_mbar_q.unsafe_value()[q_idx_old].wait(q_phase_old)
                 # we must wait before advancing, as this mbar
                 # is for both `q_smem` and `sidx_ptr`
                 var q_idx: UInt32 = q_pipeline_state.index()
@@ -1366,7 +1373,7 @@ def produce[
                 # must signal somehow
                 if not docontinue:
                     break
-                ref pq_mbar = produced_mbar_q[q_idx_old]
+                ref pq_mbar = produced_mbar_q.unsafe_value()[q_idx_old]
                 position = get_position(docontinue.value())
                 pq_mbar.expect_bytes(
                     Int32(q_copy_rows * padded_depth * size_of[qkv_type]())
@@ -1384,12 +1391,12 @@ def produce[
 
                 else:
                     comptime for d_idx in range(depth // 64):
-                        comptime d: UInt = UInt(d_idx * 64)
+                        comptime d: Int = d_idx * 64
                         q_tma_op.async_copy_4d(
                             q_producer(q_idx),
                             pq_mbar,
                             (
-                                Int(d),
+                                d,
                                 0,
                                 Int(position.head_idx),
                                 Int(position.q_row),

@@ -16,8 +16,9 @@ from std.sys import prefetch
 from std.sys.info import CompilationTarget, align_of
 from std.sys.intrinsics import PrefetchOptions
 
-from buffer.buffer import partial_simd_load
-from layout import Layout, LayoutTensor, RuntimeTuple, TileTensor
+from linalg.utils import partial_simd_load
+from layout import Coord, Idx, TileTensor, stack_allocation
+from layout.tile_layout import row_major
 from std.memory.unsafe import bitcast
 
 from std.utils.index import Index, IndexList
@@ -46,8 +47,8 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         kernel_cols: Int,
     ](
         self,
-        a: LayoutTensor,
-        b_packed: LayoutTensor,
+        a: TileTensor,
+        b_packed: TileTensor,
         mut c_local: _Accumulator[
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
@@ -67,7 +68,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                 processing tile to index the packed B matrix.
             tile_n_k: TODO
         """
-        comptime assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
 
         comptime c_type = c_local.dtype
         # Seek outer indices in packed layout.
@@ -77,10 +78,9 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         # Global K index.
         var global_k = global_offset.K + kl
 
-        var b_offset = b_packed.runtime_layout(
-            RuntimeTuple[b_packed.layout.shape](Index(n_outer_idx, kl // 4, 0))
-        )
-        var b_ptr = (b_packed.ptr + b_offset).bitcast[Scalar[c_type]]()
+        var b_ptr = b_packed.ptr_at_offset(
+            Coord(Idx(n_outer_idx), Idx(kl // 4), Idx(0))
+        ).bitcast[Scalar[c_type]]()
 
         comptime if not is_tail:
             # Prefetch B matrix.
@@ -98,15 +98,12 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                     ](b_ptr + (prefetch_offset + idx * simd_size))
 
         # This inner kernels works with non-transposed A.
-        var K = a.dim[1]()
+        var K = Int(a.dim[1]())
 
         # Stack allocation for local A buffer
-        var a_local = LayoutTensor[
-            a.dtype,
-            Layout.row_major(kernel_rows * 4),
-            MutAnyOrigin,
-            address_space=a.address_space,
-        ].stack_allocation()
+        var a_local = stack_allocation[
+            dtype=a.dtype, address_space=a.address_space
+        ](row_major[kernel_rows * 4]())
         var a_base_ptr = a.ptr + (global_offset.M * K + global_k)
         var a_ptr = a_local.ptr if (
             is_tail
@@ -186,10 +183,6 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
         """
         comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
 
-        # Convert to LayoutTensor for _accumulate which uses runtime_layout.
-        var a_lt = a.to_layout_tensor()
-        var b_lt = b_packed.to_layout_tensor()
-
         var c_stride = Int(c.dim[1]())
 
         var c_ptr = c.ptr + (global_offset.M * c_stride + global_offset.N)
@@ -221,8 +214,8 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
             for idx_k in range(0, kl, 4):
                 # accumulate data for this (n, k) index
                 self._accumulate[False, simd_size, kernel_rows, kernel_cols](
-                    a_lt,
-                    b_lt,
+                    a,
+                    b_packed,
                     acc,
                     global_offset,
                     Index(idx_n, idx_k),
@@ -230,8 +223,8 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel, Movable):
                 )
             if kl != tile_n_k[1]:
                 self._accumulate[True, simd_size, kernel_rows, kernel_cols](
-                    a_lt,
-                    b_lt,
+                    a,
+                    b_packed,
                     acc,
                     global_offset,
                     Index(idx_n, kl),

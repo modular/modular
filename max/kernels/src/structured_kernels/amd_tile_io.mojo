@@ -29,7 +29,7 @@ Structs:
     RegTileWriter - AMD buffer-resource store from registers to DRAM.
 
 Free functions:
-    tt_copy_local_to_shared - Register-to-SMEM copy (TileTensor, col-major src).
+    copy_local_to_shared    - Register-to-SMEM copy (TileTensor, col-major src).
 """
 
 from std.sys import simd_width_of, size_of
@@ -41,7 +41,7 @@ from std.memory.unsafe import bitcast
 from std.math.uutils import umod, ufloordiv
 from std.sys.intrinsics import readfirstlane
 from std.utils import IndexList
-from layout import TileTensor
+from layout import TileTensor, TensorLayout
 from layout._utils import make_amd_buffer_resource
 from layout.tile_layout import Layout, row_major, col_major
 from layout.swizzle import Swizzle
@@ -371,7 +371,7 @@ def tt_copy_dram_to_sram_lds[
             Scalar[DType.bfloat16],
             MutAnyOrigin,
             address_space=AddressSpace.BUFFER_RESOURCE,
-        ](_unsafe_null=())
+        ].unsafe_dangling()
 
         var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
         var ptr_to_simd = UnsafePointer(to=bc.desc)
@@ -603,11 +603,9 @@ struct LdsTileLoader[
 
 struct RegTileLoader[
     dtype: DType,
-    thread_rows: Int,
-    thread_cols: Int,
-    num_threads: Int = thread_rows * thread_cols,
+    thread_layout: Layout,
+    num_threads: Int = thread_layout.size(),
     warp_scope: Bool = False,
-    col_major_threads: Bool = False,
 ](TrivialRegisterPassable):
     """AMD buffer-resource load from DRAM to registers.
 
@@ -615,25 +613,22 @@ struct RegTileLoader[
     Each load() call distributes a source tile across threads and
     issues buffer_load intrinsics to fill a LOCAL register TileTensor.
 
-    Mirrors RegTileWriter (which handles registers -> DRAM stores).
-    Uses the same distribute_with_offset + AMDBufferResource pattern.
-
     The dst register tile uses col-major element ordering, matching
     the LayoutTensor copy_dram_to_local convention. This ensures
-    compatibility with copy_local_to_shared (row_major=True path),
-    which reads registers in the same col-major order.
+    compatibility with copy_local_to_shared, which reads registers
+    in the same col-major order.
 
     Parameters:
         dtype: Element data type.
-        thread_rows: Number of rows in the thread distribution.
-        thread_cols: Number of columns in the thread distribution.
-        num_threads: Total threads; threads beyond thread_rows * thread_cols
-            are idle.
+        thread_layout: Thread distribution layout (e.g. row_major[r, c]()
+            or col_major[r, c]()).
+        num_threads: Total threads in the block. When the block has more
+            threads than thread_layout.size(), extra threads are idled.
+            Only needed when the block size differs from the layout size
+            (e.g. attention uses a warp-sized layout within a larger block).
+            Defaults to thread_layout.size().
         warp_scope: If True, uses lane_id() as worker index (warp scope).
             If False, uses thread_idx.x (block scope).
-        col_major_threads: If True, uses col-major thread distribution.
-            If False (default), uses row-major. Col-major matches the
-            warp_layout used by Q loading in MHA attention.
     """
 
     var bc: AMDBufferResource
@@ -656,6 +651,35 @@ struct RegTileLoader[
         self.base_ptr_as_int = Int(gmem_tile.ptr)
 
     @always_inline
+    def __init__(
+        out self,
+        gmem_tile: TileTensor[Self.dtype, ...],
+        *,
+        bounds_from: TileTensor[Self.dtype, ...],
+    ):
+        """Creates a loader with OOB bounds from a full (pre-tiled) tensor.
+
+        TileTensor.tile produces compile-time shapes that are never clipped
+        to the actual tensor extent. This overload derives the buffer
+        resource clamping range from bounds_from (which carries runtime
+        dimensions), so OOB loads return zero for partial edge blocks.
+
+        Args:
+            gmem_tile: Block-row tile (provides base pointer for loads).
+            bounds_from: Full tensor with runtime dims for OOB bounds.
+        """
+        from layout._utils import _get_bounds
+
+        var off = (Int(gmem_tile.ptr) - Int(bounds_from.ptr)) // size_of[
+            Self.dtype
+        ]()
+        self.bc = AMDBufferResource(
+            readfirstlane(gmem_tile.ptr),
+            readfirstlane(_get_bounds(bounds_from) - off),
+        )
+        self.base_ptr_as_int = Int(gmem_tile.ptr)
+
+    @always_inline
     def load(
         self,
         dst: TileTensor[
@@ -665,149 +689,30 @@ struct RegTileLoader[
     ):
         """Loads DRAM tile data into a LOCAL register tile.
 
-        Distributes the src DRAM tile across threads using the configured
-        thread layout (row-major by default, col-major if col_major_threads
-        is True), then each thread issues buffer_load intrinsics to fill
-        its portion of the dst register tile. OOB reads are hardware-clamped
-        to zero via the AMDBufferResource bounds.
-
-        Row-major iteration over src fragments for L1 cache locality,
-        col-major storage into dst for copy_local_to_shared compatibility.
+        Distributes src across threads, reads row-major from DRAM,
+        stores col-major into dst (for copy_local_to_shared compat).
 
         Args:
             dst: Destination register TileTensor (LOCAL address space).
-            src: Source DRAM TileTensor (vectorized). Must be within the
-                address range of the tile used to construct this loader.
+            src: Source DRAM TileTensor (vectorized).
         """
-        comptime if Self.col_major_threads:
-            self._load_with_layout[
-                col_major[Self.thread_rows, Self.thread_cols]()
-            ](dst, src)
-        else:
-            self._load_with_layout[
-                row_major[Self.thread_rows, Self.thread_cols]()
-            ](dst, src)
-
-    @always_inline
-    def _load_with_layout[
-        thread_layout: Layout,
-    ](
-        self,
-        dst: TileTensor[
-            mut=True, Self.dtype, _, _, address_space=AddressSpace.LOCAL, ...
-        ],
-        src: TileTensor[Self.dtype, ...],
-    ):
-        """Inner load implementation parameterized by thread layout.
-
-        Separated from load() because row_major and col_major return
-        different Layout type parameterizations that cannot be held in
-        a single comptime field or ternary expression.
-        """
-        comptime elem_size = type_of(src).element_size
-        comptime num_busy_threads = thread_layout.size()
-
-        var worker_idx = Int(lane_id()) if Self.warp_scope else thread_idx.x
-
-        comptime if Self.num_threads > num_busy_threads:
-            if worker_idx >= num_busy_threads:
-                return
-
-        var dist_result = src.distribute_with_offset[thread_layout](worker_idx)
-        var src_dist = dist_result[0]
-
-        # Base offset: thread fragment position relative to buffer base,
-        # in element units.
-        var base_offset = Int32(
-            (Int(src_dist.ptr) - self.base_ptr_as_int) // size_of[Self.dtype]()
+        comptime _DistType = type_of(
+            src.distribute_with_offset[Self.thread_layout](0)[0]
         )
+        comptime M = _DistType.static_shape[0]
+        comptime N = _DistType.static_shape[1]
 
-        # Distributed fragment shape and strides (all comptime).
-        comptime M = type_of(src_dist).static_shape[0]
-        comptime N = type_of(src_dist).static_shape[1]
-        comptime src_stride0 = type_of(src_dist).static_stride[0]
-        comptime src_stride1 = type_of(src_dist).static_stride[1]
-
-        # Row-major src iteration, col-major dst storage.
-        comptime for i in range(M):
-            comptime for j in range(N):
-                comptime src_elem_offset = i * src_stride0 + j * src_stride1
-                comptime dst_idx = i + j * M  # col_major(M, N)([i, j])
-
-                dst.ptr.store[width=elem_size](
-                    dst_idx * elem_size,
-                    self.bc.load[Self.dtype, elem_size](
-                        base_offset,
-                        scalar_offset=Int32(src_elem_offset),
-                    ),
-                )
-
-
-# ===----------------------------------------------------------------------=== #
-# tt_copy_local_to_shared
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-def tt_copy_local_to_shared[
-    thread_rows: Int,
-    thread_cols: Int,
-    swizzle: Optional[Swizzle] = None,
-    num_threads: Int = thread_rows * thread_cols,
-](
-    dst: TileTensor[mut=True, _, _, _, address_space=AddressSpace.SHARED, ...],
-    src: TileTensor[_, _, _, address_space=AddressSpace.LOCAL, ...],
-):
-    """Copy register data to SMEM, distributed across threads.
-
-    Mirrors LayoutTensor copy_local_to_shared[row_major=True] but operates
-    on TileTensors. Reads src registers in col-major element order to match
-    the storage convention of RegTileLoader.
-
-    Parameters:
-        thread_rows: Number of rows in the row-major thread distribution.
-        thread_cols: Number of columns in the row-major thread distribution.
-        swizzle: Optional swizzle to reduce SMEM bank conflicts.
-        num_threads: Total threads; threads beyond thread_rows*thread_cols
-            are idle.
-
-    Args:
-        dst: Destination TileTensor in shared memory.
-        src: Source TileTensor in local (register) memory.
-    """
-    comptime thread_layout = row_major[thread_rows, thread_cols]()
-    comptime num_busy_threads = thread_layout.size()
-    comptime elem_size = type_of(dst).element_size
-
-    var worker_idx = Int(thread_idx.x)
-
-    comptime if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
-            return
-
-    var dist_result = dst.distribute_with_offset[thread_layout, swizzle](
-        worker_idx
-    )
-    var dst_dist = dist_result[0]
-
-    comptime M = type_of(dst_dist).static_shape[0]
-    comptime N = type_of(dst_dist).static_shape[1]
-    comptime dst_stride0 = type_of(dst_dist).static_stride[0]
-    comptime dst_stride1 = type_of(dst_dist).static_stride[1]
-
-    # Col-major iteration order to match RegTileLoader's storage convention.
-    comptime for i in range(M):
-        comptime for j in range(N):
-            comptime src_idx = i + j * M  # col_major(M, N)([i, j])
-            comptime dst_elem_offset = i * dst_stride0 + j * dst_stride1
-
-            comptime DstVec = SIMD[type_of(dst_dist).dtype, elem_size]
-            dst_dist.ptr.store[width=elem_size](
-                dst_elem_offset,
-                rebind[DstVec](
-                    src.ptr.load[width=elem_size](src_idx * elem_size)
-                ),
-            )
+        _buffer_load_impl[
+            Self.thread_layout,
+            Self.num_threads,
+            Self.warp_scope,
+        ](
+            dst,
+            src,
+            self.bc,
+            self.base_ptr_as_int,
+            dst_layout=col_major[M, N](),
+        )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -968,3 +873,282 @@ struct RegTileWriter[
                     base_offset + Int32(dst_elem_offset),
                     data.cast[Self.dtype](),
                 )
+
+
+@always_inline
+def _buffer_load_impl[
+    thread_layout: Layout,
+    num_threads: Int = thread_layout.size(),
+    warp_scope: Bool = False,
+](
+    dst: TileTensor[mut=True, _, _, _, address_space=AddressSpace.LOCAL, ...],
+    src: TileTensor[dst.dtype, ...],
+    bc: AMDBufferResource,
+    base_ptr_as_int: Int,
+    dst_layout: Layout,
+):
+    """Load DRAM data into registers with a caller-specified storage layout.
+
+    Distributes src across threads via thread_layout, reads row-major from
+    DRAM (for cache locality), stores into dst using dst_layout strides.
+    The dst_layout controls how the M x N per-thread fragment is packed
+    into registers (e.g. col_major for copy_local_to_shared compatibility,
+    row_major for direct use).
+
+    Parameters:
+        thread_layout: Thread distribution layout (row_major or col_major).
+        num_threads: Total threads; threads beyond layout size are idle.
+        warp_scope: If True, uses lane_id() (warp scope).
+
+    Args:
+        dst: Destination register tile (LOCAL).
+        src: Source DRAM tile (vectorized).
+        bc: AMD buffer resource descriptor with OOB bounds.
+        base_ptr_as_int: Integer address of the DRAM tile base pointer.
+        dst_layout: Layout controlling register storage order. Shape must
+            match the per-thread fragment dimensions (M, N).
+    """
+    var worker_idx = Int(lane_id()) if warp_scope else Int(thread_idx.x)
+
+    comptime if num_threads > thread_layout.size():
+        if worker_idx >= thread_layout.size():
+            return
+
+    var dist = src.distribute_with_offset[thread_layout](worker_idx)[0]
+    var base_offset = Int32(
+        (Int(dist.ptr) - base_ptr_as_int) // size_of[dst.dtype]()
+    )
+
+    comptime elem_size = type_of(src).element_size
+    comptime M = type_of(dist).static_shape[0]
+    comptime N = type_of(dist).static_shape[1]
+    comptime src_s0 = type_of(dist).static_stride[0]
+    comptime src_s1 = type_of(dist).static_stride[1]
+    comptime dst_s0 = dst_layout.static_stride[0]
+    comptime dst_s1 = dst_layout.static_stride[1]
+
+    comptime for i in range(M):
+        comptime for j in range(N):
+            dst.ptr.store[width=elem_size](
+                (i * dst_s0 + j * dst_s1) * elem_size,
+                bc.load[dst.dtype, elem_size](
+                    base_offset,
+                    scalar_offset=Int32(i * src_s0 + j * src_s1),
+                ),
+            )
+
+
+# ===----------------------------------------------------------------------=== #
+# copy_local_to_shared
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+def copy_local_to_shared[
+    thread_layout: Layout,
+    swizzle: Optional[Swizzle] = None,
+    num_threads: Int = thread_layout.size(),
+](
+    dst: TileTensor[mut=True, _, _, _, address_space=AddressSpace.SHARED, ...],
+    src: TileTensor[_, _, _, address_space=AddressSpace.LOCAL, ...],
+):
+    """Copy register data to SMEM, distributed across threads.
+
+    Reads src registers in col-major element order to match the storage
+    convention of RegTileLoader. Supports both flat (rank 2) and
+    hierarchical (rank 3) distributed layouts.
+
+    Parameters:
+        thread_layout: Thread distribution layout (e.g. row_major[r, c]()).
+        swizzle: Optional swizzle to reduce SMEM bank conflicts.
+        num_threads: Total threads; threads beyond layout size are idle.
+
+    Args:
+        dst: Destination TileTensor in shared memory.
+        src: Source TileTensor in local (register) memory.
+    """
+    comptime num_busy_threads = thread_layout.size()
+    comptime elem_size = type_of(dst).element_size
+
+    var worker_idx = Int(thread_idx.x)
+
+    comptime if num_threads > num_busy_threads:
+        if worker_idx >= num_busy_threads:
+            return
+
+    var dist_result = dst.distribute_with_offset[thread_layout, swizzle](
+        worker_idx
+    )
+    var dst_dist = dist_result[0]
+
+    comptime dist_type = type_of(dst_dist)
+    comptime DstVec = SIMD[dist_type.dtype, elem_size]
+    comptime rank = dist_type.LayoutType.flat_rank
+
+    # Col-major iteration order to match RegTileLoader's storage convention.
+    # Handles both flat (rank 2) and hierarchical Coord layouts (rank 3).
+    comptime if rank == 2:
+        comptime R0 = dist_type.static_shape[0]
+        comptime R1 = dist_type.static_shape[1]
+        comptime s0 = dist_type.static_stride[0]
+        comptime s1 = dist_type.static_stride[1]
+        comptime for i in range(R0):
+            comptime for j in range(R1):
+                comptime src_idx = i + j * R0
+                comptime dst_off = i * s0 + j * s1
+                dst_dist.ptr.store[width=elem_size](
+                    dst_off,
+                    rebind[DstVec](
+                        src.ptr.load[width=elem_size](src_idx * elem_size)
+                    ),
+                )
+    elif rank == 3:
+        comptime R0 = dist_type.static_shape[0]
+        comptime R1 = dist_type.static_shape[1]
+        comptime R2 = dist_type.static_shape[2]
+        comptime s0 = dist_type.static_stride[0]
+        comptime s1 = dist_type.static_stride[1]
+        comptime s2 = dist_type.static_stride[2]
+        comptime for i in range(R0):
+            comptime for j in range(R1):
+                comptime for k in range(R2):
+                    comptime src_idx = i + j * R0 + k * R0 * R1
+                    comptime dst_off = i * s0 + j * s1 + k * s2
+                    dst_dist.ptr.store[width=elem_size](
+                        dst_off,
+                        rebind[DstVec](
+                            src.ptr.load[width=elem_size](src_idx * elem_size)
+                        ),
+                    )
+    else:
+        comptime assert False, "copy_local_to_shared: unsupported flat_rank"
+
+
+# ===----------------------------------------------------------------------=== #
+# Blocked-product data movement
+# ===----------------------------------------------------------------------=== #
+#
+# When thread_layout and SMEM layout are both blocked_product but with
+# different inner/outer splits, TileTensor's distribute_with_offset
+# can't handle the structural mismatch (it uses element-wise _Divide).
+#
+# blocked_copy_local_to_shared computes per-element offsets directly
+# for register → SMEM copies with blocked_product structure.
+
+
+@always_inline
+def blocked_copy_local_to_shared[
+    thread_layout: Layout,
+    block_cols: Int,
+    swizzle: Optional[Swizzle] = None,
+    num_threads: Int = thread_layout.size(),
+](dst: SMemTile[mut=True, _, _, _], src: RegTile[dst.dtype, _, _],):
+    """Copy register tile to blocked_product SMEM layout.
+
+    Handles structural mismatches between thread_layout and SMEM layout
+    by computing per-element SMEM offsets using the blocked_product formula.
+    Reads registers in col-major order (matching RegTileLoader convention).
+
+    The SMEM layout is blocked_product with blocks of dst.shape[0] x block_cols.
+    The thread_layout distributes a 2D grid of (data_rows, data_cols/simd_width)
+    vector positions across threads.
+
+    Parameters:
+        thread_layout: Thread distribution layout (flat or blocked_product).
+        block_cols: Cols per SMEM block in blocked_product layout.
+        swizzle: Optional swizzle for bank conflict reduction.
+        num_threads: Total threads (threads beyond layout size are idle).
+
+    Args:
+        dst: Destination [block_rows, data_cols] in SHARED.
+        src: Source register tile in LOCAL (col-major elements).
+    """
+    comptime block_rows = type_of(dst).static_shape[0]
+    comptime data_cols = type_of(dst).static_shape[1]
+    comptime simd_width = simd_width_of[dst.dtype]()
+
+    var worker_idx = Int(thread_idx.x)
+
+    comptime if num_threads > thread_layout.size():
+        if worker_idx >= thread_layout.size():
+            return
+
+    # Thread grid dimensions (flat rows/cols in the thread grid).
+    # Cols are in vector units (each = simd_width elements).
+    comptime tgr = thread_layout.static_shape[0] * (
+        1 if thread_layout.flat_rank == 2 else thread_layout.static_shape[1]
+    )
+    comptime tgc = (
+        thread_layout.static_shape[1] if thread_layout.flat_rank
+        == 2 else thread_layout.static_shape[2] * thread_layout.static_shape[3]
+    )
+
+    # Number of vector positions per thread in each dimension.
+    comptime data_vcols = data_cols // simd_width
+    comptime vectors_per_thread = (block_rows * data_vcols) // (tgr * tgc)
+    comptime cols_per_blk = block_cols // simd_width
+
+    # Distribute thread ID → (row, vcol) using UInt32 bitwise ops.
+    # All grid dimensions are power-of-2 so divmod compiles to shift/mask.
+    var tid = UInt32(thread_idx.x)
+    var base_row = tid // UInt32(tgc)
+    var base_vcol = tid % UInt32(tgc)
+
+    # blocked_product base address: compute within-block super-element
+    # index, apply swizzle once, then use compile-time row deltas for
+    # subsequent stores.  Inter-row stride bits are above the swizzle
+    # range, so swz(base + delta) == swz(base) + delta.
+    var blk = base_vcol // UInt32(cols_per_blk)
+    var col_in_blk = base_vcol % UInt32(cols_per_blk)
+    var local_idx = base_row * UInt32(cols_per_blk) + col_in_blk
+    comptime if swizzle:
+        comptime swizzle_fn = swizzle.value()
+        local_idx = UInt32(swizzle_fn(Int(local_idx)))
+
+    var base_offset = blk * UInt32(
+        block_rows * block_cols
+    ) + local_idx * UInt32(simd_width)
+
+    # Compile-time vector stride (above swizzle range for typical configs).
+    comptime row_delta = tgr * cols_per_blk * simd_width
+
+    comptime for v in range(vectors_per_thread):
+        dst.ptr.store[width=simd_width](
+            Int(base_offset + UInt32(v * row_delta)),
+            src.ptr.load[width=simd_width](v * simd_width),
+        )
+
+
+# ===----------------------------------------------------------------------=== #
+# Tile type aliases
+# ===----------------------------------------------------------------------=== #
+
+
+comptime GMemTile[
+    mut: Bool,
+    //,
+    dtype: DType,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+] = TileTensor[dtype, LayoutType, origin]
+"""Global memory tile. Alias for TileTensor in default (GENERIC) address space."""
+
+
+comptime SMemTile[
+    mut: Bool,
+    //,
+    dtype: DType,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+] = TileTensor[dtype, LayoutType, origin, address_space=AddressSpace.SHARED]
+"""Shared memory tile. Alias for TileTensor in SHARED address space."""
+
+
+comptime RegTile[
+    mut: Bool,
+    //,
+    dtype: DType,
+    LayoutType: TensorLayout,
+    origin: Origin[mut=mut],
+] = TileTensor[dtype, LayoutType, origin, address_space=AddressSpace.LOCAL]
+"""Register tile. Alias for TileTensor in LOCAL address space."""

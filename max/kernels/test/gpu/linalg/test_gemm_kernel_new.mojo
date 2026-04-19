@@ -182,9 +182,9 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var mat_a = TileTensor(a_device.unsafe_ptr(), row_major[M, K]())
-    var mat_b = TileTensor(b_device.unsafe_ptr(), row_major[K, N]())
-    var mat_c = TileTensor(c_device.unsafe_ptr(), row_major[M, N]())
+    var mat_a = TileTensor(a_device, row_major[M, K]())
+    var mat_b = TileTensor(b_device, row_major[K, N]())
+    var mat_c = TileTensor(c_device, row_major[M, N]())
 
     comptime kernel = gemm_kernel[
         DType.float32,
@@ -213,7 +213,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(c_host, c_device)
 
-    var c_tensor_ref = TileTensor(c_device_ref.unsafe_ptr(), row_major[M, N]())
+    var c_tensor_ref = TileTensor(c_device_ref, row_major[M, N]())
 
     # Naive gemm.
     comptime BLOCK_DIM = 16
@@ -265,7 +265,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
             )
 
         # Warmup
-        for i in range(nwarmup):
+        for _i in range(nwarmup):
             ctx.enqueue_function_experimental[kernel](
                 mat_c,
                 mat_a.as_immut(),
@@ -329,9 +329,9 @@ def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var mat_a = TileTensor(a_device.unsafe_ptr(), row_major[M, K]())
-    var mat_b = TileTensor(b_device.unsafe_ptr(), row_major[K, N]())
-    var mat_c = TileTensor(c_device.unsafe_ptr(), row_major[M, N]())
+    var mat_a = TileTensor(a_device, row_major[M, K]())
+    var mat_b = TileTensor(b_device, row_major[K, N]())
+    var mat_c = TileTensor(c_device, row_major[M, N]())
 
     comptime kernel = gemm_kernel[
         DType.float32,
@@ -360,7 +360,7 @@ def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(c_host, c_device)
 
-    var c_tensor_ref = TileTensor(c_device_ref.unsafe_ptr(), row_major[M, N]())
+    var c_tensor_ref = TileTensor(c_device_ref, row_major[M, N]())
 
     # Naive gemm for reference
     comptime BLOCK_DIM = 16

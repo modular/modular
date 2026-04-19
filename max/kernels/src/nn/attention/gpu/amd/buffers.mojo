@@ -23,7 +23,7 @@ from layout._utils import idx2crd
 from layout.coord import Coord, ComptimeInt
 from layout.tile_layout import Layout as TileLayout, col_major as tt_col_major
 from layout.swizzle import Swizzle
-from layout.tensor_core import TiledTensorCore
+from layout.tensor_core import TiledTensorCore, num_matrix_reg
 from layout.tile_layout import row_major as tt_row_major
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from std.utils import IndexList
@@ -31,7 +31,7 @@ from std.utils import IndexList
 from structured_kernels.amd_tile_io import (
     LdsTileLoader,
     RegTileLoader,
-    tt_copy_local_to_shared,
+    copy_local_to_shared,
 )
 
 from .mma import TiledMmaOp
@@ -243,8 +243,11 @@ struct KVBufferImpl[
     comptime GmemTileType = TileTensor[
         Self.dtype, Self.kv_tile_layout, ImmutAnyOrigin
     ]
+    # num_threads overridden: block has more threads than the load layout.
     comptime RegLoaderType = RegTileLoader[
-        Self.dtype, Self._thread_rows, Self._thread_cols, Self.num_threads
+        Self.dtype,
+        tt_row_major[Self._thread_rows, Self._thread_cols](),
+        Self.num_threads,
     ]
     var gmem_tile: Self.GmemTileType
     var reg_loader: Self.RegLoaderType
@@ -305,9 +308,8 @@ struct KVBufferImpl[
     def copy_to_shared[
         tile_id: Int = 0
     ](self,):
-        tt_copy_local_to_shared[
-            Self._thread_rows,
-            Self._thread_cols,
+        copy_local_to_shared[
+            tt_row_major[Self._thread_rows, Self._thread_cols](),
             Self.swizzle,
             Self.num_threads,
         ](
@@ -329,7 +331,7 @@ struct KVBufferImpl[
                 Self.wtile_dim0, Self.wtile_dim1
             ](wtile_coord0, wtile_coord1)
             Self._TiledMma.load_b[swizzle=Self.swizzle](
-                warp_tile, self.mma_tile, UInt(k_mma)
+                warp_tile, self.mma_tile, k_mma
             )
         else:
             # Token-gen: use LayoutTensor path (TileTensor distribute
@@ -354,7 +356,7 @@ struct KVBufferImpl[
             Self.tensor_core_mma.mma_op.load_b[swizzle=Self.swizzle](
                 warp_tile,
                 mma_frag.vectorize[1, Self.simd_width](),
-                UInt(k_mma),
+                k_mma,
             )
 
 
@@ -599,7 +601,7 @@ struct KVBufferLDS[
             wtile_coord0, wtile_coord1
         )
         Self._TiledMma.load_b[swizzle=Self.swizzle](
-            warp_tile, self.mma_tile, UInt(k_mma)
+            warp_tile, self.mma_tile, k_mma
         )
 
 
@@ -709,8 +711,7 @@ struct VBufferTransposeLoads[
     comptime _dram_thread_cols = Self.depth_tile_size // Self.load_width
     comptime RegLoaderType = RegTileLoader[
         Self.dtype,
-        Self._dram_thread_rows,
-        Self._dram_thread_cols,
+        tt_row_major[Self._dram_thread_rows, Self._dram_thread_cols](),
         warp_scope=True,
     ]
     var gmem_tile: Self.GmemTileType
@@ -894,9 +895,14 @@ struct QRegisterBuffer[
 ]:
     comptime reg_dtype = Self.dtype
     comptime mma_dtype = Self.dtype
-    comptime simd_width = simd_width_of[Self.dtype]()
     comptime MMA_M = Self.mma_shape[0]
     comptime MMA_K = Self.mma_shape[2]
+    # A-operand fragment size per lane: num_matrix_reg[MMA_M, MMA_K].
+    # For bf16 [32,32,16]: (32*16)/64 = 8.
+    # For fp8  [32,32,64]: (32*64)/64 = 32.
+    comptime input_frag_size = num_matrix_reg[
+        Self.MMA_M, Self.MMA_K
+    ]() * Self.k_group_size
     comptime num_mmas = ceildiv(Self.WM, Self.MMA_M)
     comptime num_k_tiles = ceildiv(Self.BK, Self.MMA_K * Self.k_group_size)
 
@@ -905,7 +911,7 @@ struct QRegisterBuffer[
     comptime _rows_per_tile = Self.num_mmas * Self.num_k_tiles
 
     # TileTensor storage in registers.
-    comptime reg_layout = tt_row_major[Self._total_rows, Self.simd_width]()
+    comptime reg_layout = tt_row_major[Self._total_rows, Self.input_frag_size]()
     comptime RegType = TileTensor[
         Self.dtype,
         type_of(Self.reg_layout),
@@ -941,21 +947,20 @@ struct QRegisterBuffer[
         var warp_tile = q_tile.tile[Self.WM, Self.depth](warp_row, 0)
         var reg_loader = RegTileLoader[
             Self.dtype,
-            Self._q_thread_rows,
-            Self._q_thread_cols,
+            tt_col_major[Self._q_thread_rows, Self._q_thread_cols](),
             warp_scope=True,
-            col_major_threads=True,
         ](warp_tile)
 
         # Load each BK-wide strip along the depth axis.
+        comptime load_width = simd_width_of[Self.dtype]()
         comptime for i in range(Self.num_tiles):
             var src = warp_tile.tile[Self.WM, Self.BK](0, i)
-            var dst = self.reg_tile.tile[Self._rows_per_tile, Self.simd_width](
-                i, 0
-            )
+            var dst = self.reg_tile.tile[
+                Self._rows_per_tile, Self.input_frag_size
+            ](i, 0)
             reg_loader.load(
                 dst,
-                src.vectorize[1, Self.simd_width](),
+                src.vectorize[1, load_width](),
             )
 
     @always_inline
@@ -963,7 +968,7 @@ struct QRegisterBuffer[
         tile_idx: Int, k_idx: Int
     ](self) -> TileTensor[
         Self.dtype,
-        type_of(tt_row_major[Self.num_mmas, Self.simd_width]()),
+        type_of(tt_row_major[Self.num_mmas, Self.input_frag_size]()),
         MutExternalOrigin,
         address_space=AddressSpace.LOCAL,
     ]:
@@ -971,14 +976,14 @@ struct QRegisterBuffer[
         return rebind[
             TileTensor[
                 Self.dtype,
-                type_of(tt_row_major[Self.num_mmas, Self.simd_width]()),
+                type_of(tt_row_major[Self.num_mmas, Self.input_frag_size]()),
                 MutExternalOrigin,
                 address_space=AddressSpace.LOCAL,
             ]
         ](
-            self.reg_tile.tile[Self._rows_per_tile, Self.simd_width](
+            self.reg_tile.tile[Self._rows_per_tile, Self.input_frag_size](
                 tile_idx, 0
-            ).tile[Self.num_mmas, Self.simd_width](k_idx, 0)
+            ).tile[Self.num_mmas, Self.input_frag_size](k_idx, 0)
         )
 
     @always_inline
@@ -992,9 +997,9 @@ struct QRegisterBuffer[
         comptime for tile in range(Self.num_tiles):
             comptime for k in range(Self.num_k_tiles):
                 var sub = self.reg_tile.tile[
-                    Self._rows_per_tile, Self.simd_width
-                ](tile, 0).tile[Self.num_mmas, Self.simd_width](k, 0)
-                var vec = sub.vectorize[1, Self.simd_width]()
+                    Self._rows_per_tile, Self.input_frag_size
+                ](tile, 0).tile[Self.num_mmas, Self.input_frag_size](k, 0)
+                var vec = sub.vectorize[1, Self.input_frag_size]()
                 comptime for row in range(Self.num_mmas):
                     var q_f32 = vec[row, 0].cast[accum_type]()
                     q_f32 *= scale_factor
@@ -1151,7 +1156,7 @@ struct PRegisterBuffer[
             tt_row_major[Self.BM, Self.BK](),
         )
         var warp_tile = smem_block.tile[Self.WM, Self.BK](warp_row, 0)
-        Self._TiledMma.load_a[swizzle=None](warp_tile, result, UInt(k_idx))
+        Self._TiledMma.load_a[swizzle=None](warp_tile, result, k_idx)
         return result
 
     @always_inline
@@ -1164,8 +1169,11 @@ struct PRegisterBuffer[
         )
 
     # TileTensor type for MMA operand (cast from accum_type to mma_dtype).
-    comptime _mma_simd = simd_width_of[Self.mma_dtype]()
-    comptime _mma_layout = tt_row_major[Self.num_m_mmas, Self._mma_simd]()
+    # Fragment width = A-operand regs per thread * k_group_size.
+    comptime input_frag_size = num_matrix_reg[
+        Self.mma_shape[0], Self.mma_shape[2]
+    ]() * Self.k_group_size
+    comptime _mma_layout = tt_row_major[Self.num_m_mmas, Self.input_frag_size]()
     comptime MmaTileType = TileTensor[
         Self.mma_dtype,
         type_of(Self._mma_layout),
@@ -1188,7 +1196,7 @@ struct PRegisterBuffer[
         var result = tt_stack_allocation[Self.mma_dtype, AddressSpace.LOCAL](
             Self._mma_layout
         )
-        var result_vec = result.vectorize[1, Self._mma_simd]()
+        var result_vec = result.vectorize[1, Self.input_frag_size]()
 
         # Read source tile for this stage.
         var src = self.stage_tile[stage]()
@@ -1197,18 +1205,40 @@ struct PRegisterBuffer[
         comptime if Self.tr_load_enabled:
             comptime if Self.mma_shape[0] == 32:
                 # 32x32 MMA: cast full row, then slice to k_idx chunk.
-                # src is SIMD[f32, output_frag_size], cast → SIMD[bf16, frag].
-                # Result takes _mma_simd elements starting at k_idx offset.
+                # src is SIMD[f32, output_frag_size], cast → SIMD[mma_dtype, frag].
+                # Result takes input_frag_size elements starting at k_idx offset.
                 comptime assert (
                     Self.output_frag_size == 16
                 ), "output_frag_size must be 16 for 32x32 mma shape"
 
-                var casted = src_vec[tile_idx, 0].cast[Self.mma_dtype]()
-                result_vec[0, 0] = rebind[type_of(result_vec[0, 0])](
-                    casted.slice[
-                        Self._mma_simd, offset=k_idx * Self._mma_simd
-                    ]()
-                )
+                # When input_frag_size > output_frag_size (e.g. fp8 [32,32,64]),
+                # gather from multiple consecutive stage tile rows.
+                comptime num_gather = Self.input_frag_size // Self.output_frag_size
+                comptime if num_gather <= 1:
+                    # input_frag_size <= output_frag_size: cast one row, slice.
+                    # bf16 [32,32,16]: input_frag_size=8, frag=16 → slice 8 of 16.
+                    var casted = src_vec[tile_idx, 0].cast[Self.mma_dtype]()
+                    result_vec[0, 0] = rebind[type_of(result_vec[0, 0])](
+                        casted.slice[
+                            Self.input_frag_size,
+                            offset=k_idx * Self.input_frag_size,
+                        ]()
+                    )
+                elif num_gather == 2:
+                    # Gather 2 rows, cast each to mma_dtype, join to full frag.
+                    var lo = src_vec[tile_idx * 2, 0].cast[Self.mma_dtype]()
+                    var hi = src_vec[tile_idx * 2 + 1, 0].cast[Self.mma_dtype]()
+                    var joined = lo.join(hi)
+                    result_vec[0, 0] = rebind[type_of(result_vec[0, 0])](
+                        joined.slice[
+                            Self.input_frag_size,
+                            offset=k_idx * Self.input_frag_size,
+                        ]()
+                    )
+                else:
+                    comptime assert False, String(
+                        "Unsupported num_gather: ", num_gather
+                    )
 
             elif Self.mma_shape[0] == 16:
                 # 16x16 MMA: cast two halves and join.
@@ -1234,8 +1264,8 @@ struct PRegisterBuffer[
                     var joined = lo.join(hi)
                     result_vec[m, 0] = rebind[type_of(result_vec[m, 0])](
                         joined.slice[
-                            Self._mma_simd,
-                            offset=k_idx * Self._mma_simd,
+                            Self.input_frag_size,
+                            offset=k_idx * Self.input_frag_size,
                         ]()
                     )
             else:
@@ -1257,7 +1287,9 @@ struct PRegisterBuffer[
 
             var packed = lo_half.join(hi_half)  # 16 elems
             result_vec[0, 0] = rebind[type_of(result_vec[0, 0])](
-                packed.slice[Self._mma_simd, offset=k_idx * Self._mma_simd]()
+                packed.slice[
+                    Self.input_frag_size, offset=k_idx * Self.input_frag_size
+                ]()
             )
 
         return result

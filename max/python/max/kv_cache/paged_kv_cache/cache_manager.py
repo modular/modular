@@ -27,14 +27,15 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import RequestID, TextGenerationContext
 from max.kv_cache.kv_connector import KVConnector
+from max.kv_cache.memory_tier import MemoryTier
 from max.nn.kv_cache import (
     KVCacheBuffer,
     KVCacheInputs,
-    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
 )
+from max.nn.kv_cache import KVCacheInputsPerDevice as _KVCacheInputsPerDevice
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.nn.kv_cache.utils import (
@@ -42,13 +43,14 @@ from max.nn.kv_cache.utils import (
     build_max_lengths_tensor,
 )
 from max.profiler import traced
-from max.serve.kvcache_agent.kvcache_types import MemoryTier
 from max.support.math import ceildiv
 
 from ..connectors import create_connector
 from .block_manager import BlockManager, _compute_seq_len
 
 logger = logging.getLogger("max.pipelines")
+
+KVCacheInputsPerDevice = _KVCacheInputsPerDevice[Buffer, Buffer]
 
 
 def _contiguous_prefix_2d(buffer: Buffer, rows: int, cols: int) -> Buffer:
@@ -323,13 +325,12 @@ class PagedKVCacheManager:
         replica_idx: int,
         num_steps: int = 1,
         num_speculative_steps: int = 0,
-        skip_tokens: bool = True,
-    ) -> int:
+    ) -> None:
         """Allocates blocks for a request to run for N steps.
 
-        This method allocates blocks needed by a request to run for N steps.
         When prefix caching is enabled, some of the allocated blocks may be
-        retrieved from the prefix cache.
+        retrieved from the prefix cache and the context's active token window
+        is advanced accordingly.
 
         Args:
             data: The text generation context for the request. The request ID
@@ -338,30 +339,16 @@ class PagedKVCacheManager:
             num_steps: The number of steps to reserve blocks for. Default: 1.
             num_speculative_steps: The number of speculative steps to reserve
                 blocks for. Default: 0.
-            skip_tokens: When True (default), prefix-cache hits advance the
-                context's active token window via
-                ``data.tokens.skip_processing``.  Set to False when multiple
-                cache managers share a single context to avoid mutating shared
-                token state; the caller is then responsible for applying the
-                skip after all caches have allocated.
-
-        Returns:
-            The number of tokens skipped (or that should be skipped) due to
-            prefix-cache reuse.  When ``skip_tokens`` is True the skip has
-            already been applied; when False the caller must apply it.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
             satisfy the allocation.
         """
         replica = self._replica[replica_idx]
-        skipped = replica.block_manager.reuse_blocks_from_prefix_cache(
-            data, skip_tokens=skip_tokens
-        )
+        replica.block_manager.reuse_blocks_from_prefix_cache(data)
         replica.block_manager.allocate_new_blocks(
             data, num_steps, num_speculative_steps
         )
-        return skipped
 
     def _does_req_need_more_blocks(
         self,
@@ -386,7 +373,7 @@ class PagedKVCacheManager:
         *,
         max_cache_length: int | None = None,
         num_speculative_steps: int = 0,
-    ) -> Sequence[KVCacheInputsPerDevice]:
+    ) -> list[KVCacheInputsPerDevice]:
         """Gets runtime inputs for a batch of requests.
 
         Args:
@@ -522,13 +509,14 @@ class PagedKVCacheManager:
             )
 
             # Get the existing cache length for this sequence.
-            cache_length = ctx.tokens.processed_length
+            cache_length = ctx.tokens.processed_length + len(
+                ctx.spec_decoding_state.maybe_accepted_draft_tokens
+            )
             cache_lengths_np[batch_idx] = cache_length
 
             # Update the maximum lengths seen so far.
-            prompt_tokens = (
-                ctx.tokens.active_length
-                + ctx.spec_decoding_state.num_draft_tokens
+            prompt_tokens = ctx.tokens.active_length + len(
+                ctx.spec_decoding_state.draft_tokens_to_verify
             )
             max_prompt_len = max(max_prompt_len, prompt_tokens)
             max_cached_len = max(max_cached_len, cache_length + prompt_tokens)
@@ -578,7 +566,7 @@ class PagedKVCacheManager:
 
                 ret_list.append(
                     KVCacheInputsPerDevice(
-                        blocks=device_buffer.values[tp_shard],
+                        kv_blocks=device_buffer.values[tp_shard],
                         cache_lengths=cache_lengths_by_device[tp_shard],
                         lookup_table=lut_table_by_device[tp_shard],
                         max_lengths=max_lengths_host,
@@ -600,7 +588,7 @@ class PagedKVCacheManager:
         *,
         max_cache_length: int | None = None,
         num_speculative_steps: int = 0,
-    ) -> KVCacheInputs:
+    ) -> KVCacheInputs[Buffer, Buffer]:
         """Gets the graph inputs for per-replica batches of requests.
 
         This method will raise a RuntimeError if any request has insufficient blocks

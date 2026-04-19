@@ -1,0 +1,125 @@
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "tests",
+    size = "large",
+    srcs = glob(
+        ["**/test_*.py"],
+        exclude = [
+            "test_image_processor.py",
+            "test_tokenizer.py",
+            "test_tool_parser.py",
+            "test_video_processor.py",
+            "test_vision_rotary_embedding.py",
+        ],
+    ) + ["conftest.py"],
+    data = [
+        "//max/tests/integration/architectures/gemma4/testdata",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma4/testdata",
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        # Increased from 4 to 16 due to MODELS-958
+        "test.resources:gpu-memory": "16",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/tests/integration/test_common:context_utils",
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_image_processor",
+    srcs = [
+        "hf_gemma4_reference.py",
+        "test_image_processor.py",
+    ],
+    env_inherit = ["HF_TOKEN"],
+    imports = ["."],
+    tags = [
+        "manual",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tokenizer",
+    srcs = ["test_tokenizer.py"],
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("pytest-asyncio"),
+        requirement("pytest-mock"),
+    ],
+)
+
+modular_py_test(
+    name = "test_tool_parser",
+    srcs = ["test_tool_parser.py"],
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/architectures",
+    ],
+)
+
+modular_py_test(
+    name = "test_video_processor",
+    srcs = ["test_video_processor.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        requirement("av"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_vision_rotary_embedding",
+    srcs = ["test_vision_rotary_embedding.py"],
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+        requirement("torch"),
+    ],
+)

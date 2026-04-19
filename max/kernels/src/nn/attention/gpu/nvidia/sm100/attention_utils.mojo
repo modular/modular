@@ -909,7 +909,7 @@ setp.eq.s32 %pj, $6, 0;
             mma += "mov.b64 %rdb, {%rb, $5};\n"
             if k == 1:  # set predicate to 1
                 mma += "setp.ne.b32 %ps, 1, 0;\n"
-        mma += String("@%pj bra skip", k, ";")
+        mma += String("@%pj bra skip", k, ";\n")
         mma += tcgen05_mma + " [$0], %rda, %rdb, $2, " + mask + ", %ps;\n"
         mma += String("skip", k, ":\n")
     return mma + "}"
@@ -927,11 +927,14 @@ def build_mma_ts(
     # Our code tries to extensively re-use registers so that the upper half
     # of the descriptors can be re-used.
     #
-    # rda and rdb are the 64-bit smem descriptors.
+    # %ra holds the tmem A offset (computed inside the loop from base $7).
+    # %rb/%rdb hold the smem B descriptor (computed inside the loop from $4/$5).
     # %pj the jump-predicate.
-    # %ps the scale-prediate.
+    # %ps the scale-predicate.
     mma = """{
 .reg .b64 %rdb;
+.reg .s32 %ra;
+.reg .b32 %rab;
 .reg .s32 %rb;
 .reg .pred %pj;
 .reg .pred %ps;
@@ -942,24 +945,26 @@ setp.eq.s32 %pj, $6, 0;
         "{$1, $1, $1, $1}" if cta_group
         == 1 else "{$1, $1, $1, $1, $1, $1, $1, $1}"
     )
-    # prev_offset_a = 0
-    # prev_offset_b = 0
+    a_stride = mma_k * operand_size // 4  # tmem column stride per k-mma
     for k in range(num_k_mmas):
         if k == 0:  # set predicate based on c-scale
             mma += "mov.b64 %rdb, {$4, $5};\n"
             mma += "setp.ne.b32 %ps, $3, 0;\n"
         else:
-            # define rda and rdb
+            a_offset = a_stride * k
+            mma += String("add.s32 %ra, $7, ", a_offset, ";\n")
+            mma += String("mov.b32 %rab, %ra;\n")
             b_offset = (layout_b(IntTuple(0, mma_k * k)) * operand_size) >> 4
             mma += String("add.s32 %rb, $4, ", b_offset, ";\n")
             mma += "mov.b64 %rdb, {%rb, $5};\n"
             if k == 1:  # set predicate to 1
                 mma += "setp.ne.b32 %ps, 1, 0;\n"
-        mma += String("@%pj bra skip", k, ";")
+        a_operand = "$7" if k == 0 else "%rab"
+        mma += String("@%pj bra skip", k, ";\n")
         mma += String(
             tcgen05_mma,
-            " [$0], [$",
-            7 + k,
+            " [$0], [",
+            a_operand,
             "], %rdb, $2, ",
             mask,
             ", %ps;\n",
@@ -1032,74 +1037,9 @@ def bulk_mma[
         cta_group=cta_group,
     )
 
-    comptime constraints = "r,r,r,r,r,r,r" + ",r" * num_k_mmas
-    comptime x = UInt32(mma_k * operand_size // 4)
-    # fmt: off
-    comptime if num_k_mmas == 1:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a
-        )
-    elif num_k_mmas == 2:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x
-        )
-    elif num_k_mmas == 3:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x
-        )
-    elif num_k_mmas == 4:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x
-        )
-    elif num_k_mmas == 5:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x
-        )
-    elif num_k_mmas == 6:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x
-        )
-    elif num_k_mmas == 7:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x
-        )
-    elif num_k_mmas == 8:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x
-        )
-    elif num_k_mmas == 9:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x
-        )
-    elif num_k_mmas == 10:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x
-        )
-    elif num_k_mmas == 11:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x
-        )
-    elif num_k_mmas == 12:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x,a+11*x
-        )
-    elif num_k_mmas == 13:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x,a+11*x,a+12*x
-        )
-    elif num_k_mmas == 14:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x,a+11*x,a+12*x,a+13*x
-        )
-    elif num_k_mmas == 15:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x,a+11*x,a+12*x,a+13*x,a+14*x
-        )
-    else:
-        inlined_assembly[mma_string, NoneType, constraints=constraints](
-            c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a,a+x,a+2*x,a+3*x,a+4*x,a+5*x,a+6*x,a+7*x,a+8*x,a+9*x,a+10*x,a+11*x,a+12*x,a+13*x,a+14*x,a+15*x
-        )
-    # fmt: on
+    inlined_assembly[mma_string, NoneType, constraints="r,r,r,r,r,r,r,r"](
+        c_tmem, 0, idesc, c_scale, b.lo, b.hi, elect, a
+    )
 
 
 @always_inline
@@ -1536,15 +1476,16 @@ struct TMAProducerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     V loading (is_k=False): Always complete (qk_stage=0), uses mn_major layout.
     """
 
-    # Compute layout first using comptime, then use it in type
+    # Compute layout first using comptime, then use it in type.
+    # For pair-CTA: K uses k_rows_per_cta (BN/2), V uses v_cols_per_cta (ov/2).
     comptime tile_layout: Layout = tile_layout_k_major[
         Self.dtype,
-        Self.config.BN,
+        Self.config.k_rows_per_cta(),
         Self.config.BK0,
         Self.config.swizzle_mode,
     ]() if Self.is_k else tile_layout_mn_major[
         Self.dtype,
-        Self.config.padded_ov_depth,
+        Self.config.v_cols_per_cta(),
         Self.config.BK1,
         Self.config.swizzle_mode,
     ]()
@@ -1698,14 +1639,16 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     """
 
     comptime full_kv_bytes = (
-        Self.config.BN * Self.config.padded_ov_depth * size_of[Self.dtype]()
-        + Self.config.BN
+        Self.config.k_rows_per_cta()
+        * Self.config.padded_ov_depth
+        * size_of[Self.dtype]()
+        + Self.config.k_rows_per_cta()
         * Self.config.rope_depth()
         * Self.config.rope_dtype_size
     ) if Self.is_k else (
-        Self.config.BN * Self.config.padded_ov_depth * size_of[Self.dtype]()
+        Self.config.BN * Self.config.v_cols_per_cta() * size_of[Self.dtype]()
     )
-    comptime staged_k_bytes = Self.config.BN * Self.config.BK0 * size_of[
+    comptime staged_k_bytes = Self.config.k_rows_per_cta() * Self.config.BK0 * size_of[
         Self.dtype
     ]()
 
@@ -1713,7 +1656,7 @@ struct TMAConsumerPipeline[dtype: DType, config: FA4Config, is_k: Bool = True](
     comptime num_qk_stages_effective: Int = Self.config.num_qk_stages if Self.is_k else 1
 
     # Descriptor parameters differ by role
-    comptime BMN: Int = Self.config.BN if Self.is_k else Self.config.padded_ov_depth
+    comptime BMN: Int = Self.config.k_rows_per_cta() if Self.is_k else Self.config.v_cols_per_cta()
     comptime BK: Int = Self.config.BK0 if Self.is_k else Self.config.BK1
     comptime is_k_major: Bool = Self.is_k
 
@@ -2145,6 +2088,43 @@ def apply_mask[
             srow[frag_col + 1] = result[1]
 
 
+@always_inline
+def peel_mask[
+    num_sets: Int,
+    //,
+    mask_strategies: StaticTuple[MaskStrategy, num_sets],
+    load_fn: def[mask_strategy: MaskStrategy](UInt32) capturing -> Float32,
+](mut mask_iters: StaticTuple[UInt32, num_sets], kv_row: UInt32,) -> Float32:
+    """Determine which mask strategy applies to the peeled first iteration.
+
+    Walks through mask sets to find the first with remaining iterations,
+    calls load_fn with the corresponding strategy, and decrements the counter.
+    Prevents UInt32 underflow when early sets are empty (e.g.
+    SlidingWindowCausalMask with num_sets=3 and small sequences).
+    """
+    comptime assert num_sets in (1, 2, 3)
+    comptime if num_sets == 1:
+        mask_iters[0] -= 1
+        return load_fn[mask_strategies[0]](kv_row)
+    elif num_sets == 2:
+        if mask_iters[0] > 0:
+            mask_iters[0] -= 1
+            return load_fn[mask_strategies[0]](kv_row)
+        else:
+            mask_iters[1] -= 1
+            return load_fn[mask_strategies[1]](kv_row)
+    else:
+        if mask_iters[0] > 0:
+            mask_iters[0] -= 1
+            return load_fn[mask_strategies[0]](kv_row)
+        elif mask_iters[1] > 0:
+            mask_iters[1] -= 1
+            return load_fn[mask_strategies[1]](kv_row)
+        else:
+            mask_iters[2] -= 1
+            return load_fn[mask_strategies[2]](kv_row)
+
+
 struct FA4MiscMBars[
     *,
     num_qk_stages: Int = 1,
@@ -2152,6 +2132,7 @@ struct FA4MiscMBars[
     num_kv_stages: Int = 2,
     use_order_barriers: Bool = True,
     use_fused_kv: Bool = False,
+    pair_cta: Bool = False,
 ](TrivialRegisterPassable):
     """Manages all mbarrier resources for FA4.
 
@@ -2170,6 +2151,7 @@ struct FA4MiscMBars[
         use_order_barriers: When True, allocate order barriers to prevent softmax
             warp group overlap. When False, order barriers are omitted.
         use_fused_kv: Whether the K and V share the same pipeline, or separate.
+        pair_cta: Whether to use 1-cta or 2-cta implementation.
 
     Memory layout (count=128 first, then count=1):
         [S0_cons] [S1_cons] [C0] [C1] [Order*] | [S0_prod] [S1_prod] [Q1Sync] [K] [V] [O_prod]
@@ -2216,13 +2198,20 @@ struct FA4MiscMBars[
         """Return the mbarrier thread count for the given barrier index.
 
         S0_consumer[0] and S1_consumer[0] get count=256 (combined softmax +
-        correction), other count=128 barriers keep 128, and count=1 barriers
-        keep 1.
+        correction), other S_consumer barriers get count=128 (softmax only).
+        In pair-CTA mode, S_consumer counts double (both CTAs arrive).
+        C and Order barriers are CTA-local and always count=128.
         """
+        comptime cta_mult: Int = 2 if Self.pair_cta else 1
+        # S_consumer[0] = combined P+O: softmax + correction from each CTA.
         if lane_idx == Int32(Self.S0_consumer_offset) or lane_idx == Int32(
             Self.S1_consumer_offset
         ):
-            return 256
+            return Int32(256 * cta_mult)
+        # Other S_consumer barriers: softmax only, scaled by cta_mult.
+        if lane_idx < Int32(Self.C0_offset):
+            return Int32(128 * cta_mult)
+        # C and Order barriers: CTA-local, always 128.
         if lane_idx < Int32(Self.number_warpgroup_count):
             return 128
         return 1

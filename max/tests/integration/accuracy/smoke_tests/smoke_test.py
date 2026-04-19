@@ -85,43 +85,51 @@ class ModelAlias(TypedDict):
 # configurations while keeping results separate in dashboards.
 # max_serve_args are only applied to MAX frameworks, not vllm/sglang.
 MODEL_ALIASES: dict[str, ModelAlias] = {
-    "meta-llama/llama-3.1-8b-instruct__modulev3": {
-        "hf_model_path": "meta-llama/llama-3.1-8b-instruct",
+    "google/gemma-4-26B-A4B-it__no_dgc": {
+        "hf_model_path": "google/gemma-4-26B-A4B-it",
+        "max_serve_args": "--max-num-steps 1 --no-device-graph-capture --force",
+    },
+    "meta-llama/Llama-3.1-8B-Instruct__modulev3": {
+        "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
         "max_serve_args": "--prefer-module-v3",
     },
-    "meta-llama/llama-3.2-1b-instruct__modulev3": {
-        "hf_model_path": "meta-llama/llama-3.2-1b-instruct",
+    "meta-llama/Llama-3.2-1B-Instruct__modulev3": {
+        "hf_model_path": "meta-llama/Llama-3.2-1B-Instruct",
         "max_serve_args": "--prefer-module-v3",
     },
-    "unsloth/gpt-oss-20b-bf16__modulev3": {
-        "hf_model_path": "unsloth/gpt-oss-20b-bf16",
+    "unsloth/gpt-oss-20b-BF16__modulev3": {
+        "hf_model_path": "unsloth/gpt-oss-20b-BF16",
         "max_serve_args": "--prefer-module-v3",
     },
-    "microsoft/phi-3.5-mini-instruct__modulev3": {
-        "hf_model_path": "microsoft/phi-3.5-mini-instruct",
+    "microsoft/Phi-3.5-mini-instruct__modulev3": {
+        "hf_model_path": "microsoft/Phi-3.5-mini-instruct",
         "max_serve_args": "--prefer-module-v3",
     },
     "microsoft/phi-4__modulev3": {
         "hf_model_path": "microsoft/phi-4",
         "max_serve_args": "--prefer-module-v3",
     },
-    "nvidia/deepseek-v3.1-nvfp4__fp8kv": {
-        "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
+    "google/gemma-3-4b-it__modulev3": {
+        "hf_model_path": "google/gemma-3-4b-it",
+        "max_serve_args": "--prefer-module-v3",
+    },
+    "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": {
+        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
         "max_serve_args": "--kv-cache-format float8_e4m3fn",
     },
-    "nvidia/deepseek-v3.1-nvfp4__tpep": {
-        "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
+    "nvidia/DeepSeek-V3.1-NVFP4__tpep": {
+        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
         "max_serve_args": "--data-parallel-degree 1",
     },
-    "nvidia/kimi-k2.5-nvfp4__with_vision": {  # MODELS-1066
-        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
+    "nvidia/Kimi-K2.5-NVFP4__with_vision": {  # MODELS-1066
+        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
         "max_serve_args": "--ep-size 8 --data-parallel-degree 8 --max-batch-input-tokens 4096 --max-num-steps 1 --max-length 262144 --trust-remote-code --no-enable-in-flight-batching --device-memory-utilization 0.80 --enable-chunked-prefill --enable-prefix-caching",
     },
-    "nvidia/kimi-k2.5-nvfp4__no_vision": {
-        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
+    "nvidia/Kimi-K2.5-NVFP4__no_vision": {
+        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
         "max_serve_args": "--enable-prefix-caching --enable-chunked-prefill --max-num-steps 1 --trust-remote-code",
     },
-    "meta-llama/llama-3.1-8b-instruct__eagle": {
+    "meta-llama/Llama-3.1-8B-Instruct__eagle": {
         "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
         "max_serve_args": (
             "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
@@ -130,7 +138,7 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
     },
     # Llama Eagle + CUDA Graph only works when num_speculative_tokens == 1
     # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
-    "meta-llama/llama-3.1-8b-instruct__eagle_1_draft_token": {
+    "meta-llama/Llama-3.1-8B-Instruct__eagle_1_draft_token": {
         "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
         "max_serve_args": (
             "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
@@ -138,16 +146,45 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
             "--num-speculative-tokens 1"
         ),
     },
-    "nvidia/deepseek-v3.1-nvfp4__mtp": {
-        "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp": {
+        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
+        "max_serve_args": (
+            "--speculative-method eagle "
+            "--kv-cache-format float8_e4m3fn "
+            "--num-speculative-tokens 3"
+        ),
+    },
+    # Deepseek MTP + CUDA Graph only works when num_speculative_tokens == 1
+    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp_1_draft_token": {
+        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
         "max_serve_args": (
             "--speculative-method eagle "
             "--kv-cache-format float8_e4m3fn "
             "--num-speculative-tokens 1"
         ),
     },
-    "nvidia/kimi-k2.5-nvfp4__eagle": {
-        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
+    "nvidia/Kimi-K2.5-NVFP4__eagle": {
+        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
+        "max_serve_args": (
+            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
+            "--draft-trust-remote-code "
+            "--draft-devices gpu:0,1,2,3,4,5,6,7 "
+            "--draft-data-parallel-degree 8 "
+            "--draft-quantization-encoding bfloat16 "
+            "--speculative-method eagle "
+            "--num-speculative-tokens 3 "
+            "--kv-cache-format float8_e4m3fn "
+            "--device-memory-utilization 0.75 "
+            "--max-batch-input-tokens 4096 "
+            "--max-length 163840 "
+            "--max-num-steps 1"
+        ),
+    },
+    # Kimi Eagle + CUDA Graph only works when num_speculative_tokens == 1
+    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
+    "nvidia/Kimi-K2.5-NVFP4__eagle_1_draft_token": {
+        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
         "max_serve_args": (
             "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
             "--draft-trust-remote-code "
@@ -163,11 +200,55 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
             "--max-num-steps 1"
         ),
     },
+    "nvidia/Kimi-K2.5-NVFP4__eagle_tp": {
+        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
+        "max_serve_args": (
+            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
+            "--draft-trust-remote-code "
+            "--draft-devices gpu:0,1,2,3,4,5,6,7 "
+            "--draft-data-parallel-degree 1 "
+            "--draft-quantization-encoding bfloat16 "
+            "--speculative-method eagle "
+            "--num-speculative-tokens 2 "
+            "--kv-cache-format float8_e4m3fn "
+            "--device-memory-utilization 0.75 "
+            "--max-batch-input-tokens 4096 "
+            "--max-length 163840 "
+            "--max-num-steps 1"
+        ),
+    },
 }
+
+
+# TODO Refactor this to a model list/matrix specifying type of model
+def is_vision_model(model: str) -> bool:
+    """Check if the model supports vision tasks."""
+    model = model.casefold()
+    if any(
+        kw in model for kw in ("no_vision", "__eagle", "__mtp", "gemma-3-1b")
+    ):
+        return False
+    return any(
+        kw in model
+        for kw in (
+            "gemma-3",
+            "gemma-4",
+            "idefics",
+            "internvl",
+            "kimi-k2",
+            "kimi-vl",
+            "olmocr",
+            "pixtral",
+            "qwen2.5-vl",
+            "qwen3-vl",
+            "vision",
+        )
+    )
 
 
 def is_huge_moe(model: str) -> bool:
     """Large MoE models that need expert parallelism instead of tensor parallelism."""
+    model = model.casefold()
     if "deepseek" in model and "lite" not in model:
         return True
     return any(x in model for x in ["minimax-m", "kimi-k", "qwen3-235b"])
@@ -299,7 +380,7 @@ def get_server_cmd(
     if "gpt-oss" in model and framework in ["max-ci", "max"]:
         cmd += ["--enable-penalties"]
 
-    revision = _load_hf_repo_lock().get(model)
+    revision = _load_hf_repo_lock().get(model.casefold())
     if revision:
         if framework in ("max", "max-ci"):
             cmd += [
@@ -580,7 +661,7 @@ def smoke_test(
     disable_timeouts: bool,
 ) -> None:
     """
-    Example usage: ./bazelw run smoke-test -- meta-llama/llama-3.2-1b-instruct
+    Example usage: ./bazelw run smoke-test -- meta-llama/Llama-3.2-1B-Instruct
 
     This command asks 320 questions against the model behind the given hf_model_path.
     It runs the provided framework (defaulting to MAX serve) in the background,
@@ -600,9 +681,12 @@ def smoke_test(
     if output_path and build_workspace and not output_path.is_absolute():
         output_path = Path(build_workspace) / output_path
 
-    model = hf_model_path.lower().strip()
-    alias = MODEL_ALIASES.get(model)
-    hf_model_path = alias["hf_model_path"] if alias else model
+    model = hf_model_path.strip().casefold()
+    model_aliases_lowercase = {
+        k.casefold(): v for k, v in MODEL_ALIASES.items()
+    }
+    alias = model_aliases_lowercase.get(model)
+    hf_model_path = (alias["hf_model_path"] if alias else model).casefold()
     if alias and framework in ["max-ci", "max"]:
         serve_extra_args = (
             f"{serve_extra_args} {alias['max_serve_args']}".strip()
@@ -613,33 +697,8 @@ def smoke_test(
         serve_extra_args=serve_extra_args,
     )
 
-    # TODO Refactor this to a model list/matrix specifying type of model
-    is_vision_model = any(
-        kw in model
-        for kw in (
-            "gemma-3",
-            "gemma-4",
-            "idefics",
-            "internvl",
-            "kimi-k2",
-            "olmocr",
-            "pixtral",
-            "qwen2.5-vl",
-            "qwen3-vl",
-            "vision",
-            "kimi-vl",
-        )
-    )
-    # 1b is non-vision
-    if "gemma-3-1b" in model:
-        is_vision_model = False
-    if "no-vision" in model or model.endswith("__no_vision"):
-        is_vision_model = False
-    if "__eagle" in model or "__mtp" in model:
-        is_vision_model = False
-
     tasks = [TEXT_TASK]
-    if is_vision_model:
+    if is_vision_model(model):
         tasks = [VISION_TASK] + tasks
 
     logger.info(f"Starting server with command:\n {' '.join(cmd)}")
@@ -647,8 +706,9 @@ def smoke_test(
     all_samples = []
     if disable_timeouts:
         timeout = sys.maxsize
-    elif is_huge_moe(model):
-        timeout = 1800
+    elif is_huge_moe(hf_model_path):
+        # TODO(GEX-3508): Reduce timeout once model build time is optimized
+        timeout = 2700
     else:
         timeout = 900
 

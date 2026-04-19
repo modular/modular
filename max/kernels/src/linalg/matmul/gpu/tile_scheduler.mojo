@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.math.uutils import udivmod
 
 from std.gpu import block_idx, grid_dim
 
@@ -194,21 +195,19 @@ struct TileScheduler[
             var m_block_idx: UInt32 = 0
             var n_block_idx: UInt32 = 0
             var is_valid = self._get_next_block(m_block_idx, n_block_idx)
-            var m = UInt(m_block_idx * UInt32(Self.tile_shape[0]))
-            var n = UInt(n_block_idx * UInt32(Self.tile_shape[1]))
+            var m: UInt32 = m_block_idx * UInt32(Self.tile_shape[0])
+            var n: UInt32 = n_block_idx * UInt32(Self.tile_shape[1])
 
             return WorkInfo(
-                UInt32(m),
-                UInt32(n),
+                m,
+                n,
                 0,
                 UInt32(ceildiv(Self.problem_shape[2], Self.tile_shape[2])),
                 is_valid,
             )
         else:
-            m, n = self._index_to_mn()
-            is_valid = m < UInt(self.prob_shape[0]) and n < UInt(
-                self.prob_shape[1]
-            )
+            var m, n = self._index_to_mn()
+            is_valid = m < self.prob_shape[0] and n < self.prob_shape[1]
             return WorkInfo(
                 UInt32(m),
                 UInt32(n),
@@ -230,7 +229,7 @@ struct TileScheduler[
             return self.get_current_work_info()
 
     @always_inline
-    def _index_to_mn(self) -> Tuple[UInt, UInt]:
+    def _index_to_mn(self) -> Tuple[Int, Int]:
         """Map the thread block's index to coordinates of work tile."""
 
         comptime if Self.schedule == MatmulSchedule.TILE2D:
@@ -239,25 +238,25 @@ struct TileScheduler[
         return self._index_to_mn_tile1d()
 
     @always_inline
-    def _index_to_mn_tile1d(self) -> Tuple[UInt, UInt]:
+    def _index_to_mn_tile1d(self) -> Tuple[Int, Int]:
         # Grid dim as if there is no persist kernel
         logical_grid_dim = Index[dtype=DType.uint32](
             ceildiv(self.prob_shape[1], Self.tile_shape[1]),
             ceildiv(self.prob_shape[0], Self.tile_shape[0]),
         )
 
-        by, bx = divmod(UInt(self.idx), UInt(logical_grid_dim[0]))
+        by, bx = udivmod(Int(self.idx), logical_grid_dim[0])
         block_xy_swizzle = block_swizzle(
             Index[dtype=DType.uint32](bx, by), logical_grid_dim
         )
 
-        m = UInt(block_xy_swizzle[1] * Self.tile_shape[0])
-        n = UInt(block_xy_swizzle[0] * Self.tile_shape[1])
+        var m: Int = block_xy_swizzle[1] * Self.tile_shape[0]
+        var n: Int = block_xy_swizzle[0] * Self.tile_shape[1]
 
         return (m, n)
 
     @always_inline
-    def _index_to_mn_tile2d(self) -> Tuple[UInt, UInt]:
+    def _index_to_mn_tile2d(self) -> Tuple[Int, Int]:
         # We consider a sweep on busy SMs a wave, not all SMs
         comptime log_num_grids = FastDiv[DType.uint32](Int(Self.num_grids))
         comptime log_grid_shape = FastDiv[DType.uint32](Self.grid_shape[0])
@@ -283,15 +282,14 @@ struct TileScheduler[
         n_in_wave = FastUInt(idx_in_wave) % log_grid_shape
 
         return (
-            UInt(wave_m + m_in_wave * FastUInt(Self.tile_shape[0])),
-            UInt(wave_n + n_in_wave * FastUInt(Self.tile_shape[1])),
+            Int(wave_m + m_in_wave * FastUInt(Self.tile_shape[0])),
+            Int(wave_n + n_in_wave * FastUInt(Self.tile_shape[1])),
         )
 
     @always_inline
-    def num_output_tiles(self) -> UInt:
-        return UInt(
-            ceildiv(self.prob_shape[0], Self.wave_shape[0])
-            * ceildiv(self.prob_shape[1], Self.wave_shape[1])
+    def num_output_tiles(self) -> Int:
+        return ceildiv(self.prob_shape[0], Self.wave_shape[0]) * ceildiv(
+            self.prob_shape[1], Self.wave_shape[1]
         )
 
     @always_inline
@@ -300,12 +298,12 @@ struct TileScheduler[
         var n_block_idx: UInt32 = 0
         var is_valid = self._get_next_block(m_block_idx, n_block_idx)
 
-        var m = UInt(m_block_idx * UInt32(Self.tile_shape[0]))
-        var n = UInt(n_block_idx * UInt32(Self.tile_shape[1]))
+        var m: UInt32 = m_block_idx * UInt32(Self.tile_shape[0])
+        var n: UInt32 = n_block_idx * UInt32(Self.tile_shape[1])
         # Only support K starting from 0 for now.
         return WorkInfo(
-            UInt32(m),
-            UInt32(n),
+            m,
+            n,
             0,
             UInt32(ceildiv(Self.problem_shape[2], Self.tile_shape[2])),
             is_valid,

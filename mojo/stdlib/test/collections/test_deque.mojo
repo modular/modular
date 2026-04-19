@@ -806,8 +806,8 @@ def test_getitem() raises:
     q = Deque(1, 2)
     assert_equal(q[0], 1)
     assert_equal(q[1], 2)
-    assert_equal(q[-1], 2)
-    assert_equal(q[-2], 1)
+    assert_equal(q[len(q) - 1], 2)
+    assert_equal(q[len(q) - 2], 1)
 
 
 def test_setitem() raises:
@@ -817,7 +817,7 @@ def test_setitem() raises:
     q[0] = 3
     assert_equal(q[0], 3)
 
-    q[-1] = 4
+    q[len(q) - 1] = 4
     assert_equal(q[1], 4)
 
 
@@ -879,8 +879,8 @@ def test_index() raises:
 def test_insert() raises:
     q = Deque[Int](capacity=4, maxlen=7)
 
-    # negative index outbound
-    q.insert(-10, 0)
+    # index 0 (clamps to beginning)
+    q.insert(0, 0)
     # Deque(0)
     assert_equal(q[0], 0)
     assert_equal(len(q), 1)
@@ -892,14 +892,14 @@ def test_insert() raises:
     assert_equal(q[1], 0)
     assert_equal(len(q), 2)
 
-    # # positive index eq length
+    # positive index eq length
     q.insert(2, 2)
     # Deque(1, 0, 2)
     assert_equal(q[2], 2)
     assert_equal(q[1], 0)
 
-    # # positive index outbound
-    q.insert(10, 3)
+    # positive index at end
+    q.insert(len(q), 3)
     # Deque(1, 0, 2, 3)
     assert_equal(q[3], 3)
     assert_equal(q[2], 2)
@@ -908,22 +908,22 @@ def test_insert() raises:
     assert_equal(len(q), 4)
     assert_equal(q._capacity, 8)
 
-    # # positive index inbound
+    # positive index inbound
     q.insert(1, 4)
     # Deque(1, 4, 0, 2, 3)
     assert_equal(q[1], 4)
     assert_equal(q[0], 1)
     assert_equal(q[2], 0)
 
-    # # positive index inbound
+    # positive index inbound
     q.insert(3, 5)
     # Deque(1, 4, 0, 5, 2, 3)
     assert_equal(q[3], 5)
     assert_equal(q[2], 0)
     assert_equal(q[4], 2)
 
-    # # negative index inbound
-    q.insert(-3, 6)
+    # index from end
+    q.insert(len(q) - 3, 6)
     # Deque(1, 4, 0, 6, 5, 2, 3)
     assert_equal(q[3], 6)
     assert_equal(q[2], 0)
@@ -1083,11 +1083,11 @@ def test_iter_with_list() raises:
 def test_reversed_iter() raises:
     q = Deque(1, 2, 3)
 
-    i = 0
+    var i = 0
     for e in reversed(q):
-        i -= 1
-        assert_equal(e, q[i])
-    assert_equal(-i, len(q))
+        assert_equal(e, q[len(q) - 1 - i])
+        i += 1
+    assert_equal(i, len(q))
 
 
 def _test_deque_iter_bounds[

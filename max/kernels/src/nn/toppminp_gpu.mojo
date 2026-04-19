@@ -38,6 +38,9 @@ comptime DEBUG_FILE = False
 comptime SEED = 42
 
 
+@__name(
+    t"topk_wrapper_no_shmem_{input_type}_{index_type}_{is_top_p}", mangle=True
+)
 def topk_wrapper_no_shmem[
     input_type: DType,
     index_type: DType,
@@ -101,6 +104,7 @@ def topk_wrapper_no_shmem[
             partial.p = -1
 
 
+@__name(t"topk_wrapper_{input_type}_{index_type}_{is_top_p}", mangle=True)
 def topk_wrapper[
     input_type: DType,
     index_type: DType,
@@ -301,6 +305,7 @@ def normalize(
 
 
 @always_inline
+@__name(t"radix_sort_pairs_{dtype}_{out_idx_type}_{ascending}", mangle=True)
 def radix_sort_pairs_kernel[
     dtype: DType,
     out_idx_type: DType,
@@ -518,20 +523,13 @@ def radix_sort_pairs_kernel[
 
 struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
     var _d_buffers: InlineArray[
-        UnsafePointer[Scalar[Self.dtype], MutExternalOrigin], 2
+        Optional[UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]], 2
     ]
     var _selection: Int32
     var _size: Int
 
     def __init__(out self):
-        self._d_buffers = [
-            UnsafePointer[Scalar[Self.dtype], MutExternalOrigin](
-                _unsafe_null=()
-            ),
-            UnsafePointer[Scalar[Self.dtype], MutExternalOrigin](
-                _unsafe_null=()
-            ),
-        ]
+        self._d_buffers = {fill = None}
         self._selection = 0
         self._size = 0
 
@@ -552,21 +550,27 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
 
     @always_inline
     def current(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
-        return DeviceBuffer[Self.dtype](
-            ctx,
-            self._d_buffers[self._selection],
-            self._size,
-            owning=False,
-        )
+        if self._d_buffers[self._selection]:
+            return DeviceBuffer[Self.dtype](
+                ctx,
+                self._d_buffers[self._selection].unsafe_value(),
+                self._size,
+                owning=False,
+            )
+        else:
+            return DeviceBuffer[Self.dtype].empty(ctx)
 
     @always_inline
     def alternate(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
-        return DeviceBuffer[Self.dtype](
-            ctx,
-            self._d_buffers[self._selection ^ 1],
-            self._size,
-            owning=False,
-        )
+        if self._d_buffers[self._selection ^ 1]:
+            return DeviceBuffer[Self.dtype](
+                ctx,
+                self._d_buffers[self._selection ^ 1].unsafe_value(),
+                self._size,
+                owning=False,
+            )
+        else:
+            return DeviceBuffer[Self.dtype].empty(ctx)
 
     @always_inline
     def swap(mut self):
@@ -619,6 +623,7 @@ def run_radix_sort_pairs_gpu[
 
 
 @always_inline
+@__name(t"topp_minp_sampling_{dtype}_{out_idx_type}_{is_top_p}", mangle=True)
 def topp_minp_sampling_kernel[
     dtype: DType,
     out_idx_type: DType,
@@ -807,7 +812,7 @@ def _topp_minp_sampling_gpu[
     # TODO: Should softmax be done in-place without needing this other buffer?
     var probs_buf = ctx.enqueue_create_buffer[dtype](input_size * 2)
     var input_probs = TileTensor(
-        probs_buf.unsafe_ptr(),
+        probs_buf,
         row_major(Idx(batch_size), Idx(vocab_size)),
     )
 

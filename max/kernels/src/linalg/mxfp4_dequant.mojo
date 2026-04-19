@@ -43,6 +43,9 @@ from std.sys.info import simd_width_of
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(512))
 )
+@__name(
+    t"dequant_mxfp4_to_fp8_{out_dtype}_{scales_dtype}_{in_dtype}", mangle=True
+)
 def _dequant_mxfp4_to_fp8_kernel[
     out_dtype: DType,
     scales_dtype: DType,
@@ -250,6 +253,9 @@ def _cast_bf16_to_fp8(
             in_tt.load[width=width](coord).cast[out_tt.dtype](),
         )
 
-    elementwise[cast_fn, simd_width_of[input.dtype](), target="gpu"](
-        Index(num_rows, num_cols), ctx
-    )
+    elementwise[
+        cast_fn,
+        simd_width_of[input.dtype](),
+        target="gpu",
+        _trace_description="mxfp4_dequant_cast",
+    ](Index(num_rows, num_cols), ctx)

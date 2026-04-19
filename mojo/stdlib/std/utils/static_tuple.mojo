@@ -66,7 +66,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
     """
 
     comptime _mlir_type = __mlir_type[
-        `!pop.array<`, Self.size._mlir_value, `, `, Self.element_type, `>`
+        `!pop.array<`, Self.size._int_mlir_index(), `, `, Self.element_type, `>`
     ]
     comptime device_type: AnyType = Self
     """The device-side type for this `StaticTuple`."""
@@ -119,7 +119,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         self._mlir_value = __mlir_op.`pop.array.repeat`[
             _type=__mlir_type[
                 `!pop.array<`,
-                Self.size._mlir_value,
+                Self.size._int_mlir_index(),
                 `, `,
                 Self.element_type,
                 `>`,
@@ -151,7 +151,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         """
         _static_tuple_construction_checks[Self.element_type, Self.size]()
 
-        comptime num_values = ParameterList[*values].size
+        comptime num_values = values.size
         if num_values == 1:
             return Self(fill=values[0])
 
@@ -214,14 +214,14 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         comptime assert index < Self.size
         var val = __mlir_op.`pop.array.get`[
             _type=Self.element_type,
-            index=index._mlir_value,
+            index=index._int_mlir_index(),
         ](self._mlir_value)
         return val
 
     @always_inline("nodebug")
     def _unsafe_ref(ref self, idx: Int) -> ref[self] Self.element_type:
         var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self._mlir_value).address, idx._mlir_value
+            UnsafePointer(to=self._mlir_value).address, idx._int_mlir_index()
         )
         return UnsafePointer[origin=origin_of(self)](ptr)[]
 
@@ -243,12 +243,12 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         var array = __mlir_op.`pop.array.replace`[
             _type=__mlir_type[
                 `!pop.array<`,
-                Self.size._mlir_value,
+                Self.size._int_mlir_index(),
                 `, `,
                 Self.element_type,
                 `>`,
             ],
-            index=idx._mlir_value,
+            index=idx._int_mlir_index(),
         ](val, self._mlir_value)
 
         return Self(mlir_value=array)

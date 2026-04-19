@@ -23,7 +23,8 @@ from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
 from typing_extensions import Self
 
-from .pipeline_flux2 import Flux2Pipeline
+from .flux2_executor import Flux2Executor
+from .flux2_klein_executor import Flux2KleinExecutor
 
 
 @dataclass(kw_only=True)
@@ -51,11 +52,32 @@ flux2_arch = SupportedArchitecture(
     task=PipelineTask.PIXEL_GENERATION,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_encoding="bfloat16",
-    supported_encodings={"bfloat16"},
+    supported_encodings={"bfloat16", "float4_e2m1fnx2"},
     example_repo_ids=[
         "black-forest-labs/FLUX.2-dev",
+        "black-forest-labs/FLUX.2-dev-NVFP4",
     ],
-    pipeline_model=Flux2Pipeline,  # type: ignore[arg-type]
+    pipeline_model=Flux2Executor,
+    context_type=PixelContext,
+    default_weights_format=WeightsFormat.safetensors,
+    tokenizer=PixelGenerationTokenizer,
+    config=Flux2ArchConfig,
+)
+
+flux2_klein_arch = SupportedArchitecture(
+    name="Flux2KleinPipeline",
+    task=PipelineTask.PIXEL_GENERATION,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
+    default_encoding="bfloat16",
+    supported_encodings={"bfloat16", "float4_e2m1fnx2"},
+    example_repo_ids=[
+        "black-forest-labs/FLUX.2-klein-4B",
+        "black-forest-labs/FLUX.2-klein-9B",
+        "black-forest-labs/FLUX.2-klein-base-4B",
+        "black-forest-labs/FLUX.2-klein-base-9B",
+        "black-forest-labs/FLUX.2-klein-9b-nvfp4",
+    ],
+    pipeline_model=Flux2KleinExecutor,
     context_type=PixelContext,
     default_weights_format=WeightsFormat.safetensors,
     tokenizer=PixelGenerationTokenizer,

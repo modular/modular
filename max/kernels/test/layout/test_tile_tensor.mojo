@@ -17,6 +17,7 @@ from layout import (
     All,
     ComptimeInt,
     Coord,
+    CoordLike,
     Idx,
     RowMajorLayout,
     RuntimeInt,
@@ -1140,3 +1141,40 @@ def test_select_keep_all() raises:
     for i in range(3):
         for j in range(4):
             assert_equal(selected[i, j], Int32(i * 4 + j))
+
+
+def test_write_to_1d() raises:
+    comptime layout = row_major[4]()
+    var storage: InlineArray[Float32, layout.static_product] = [1, 2, 3, 4]
+    var tensor = TileTensor(storage, layout)
+    assert_equal(String(tensor), "[1.0, 2.0, 3.0, 4.0]")
+
+
+def test_write_to_1d_single_element() raises:
+    var storage: InlineArray[Float32, 1] = [42]
+    var tensor = TileTensor(storage, row_major[1]())
+    assert_equal(String(tensor), "[42.0]")
+
+
+def test_write_to_2d() raises:
+    var storage: InlineArray[Float32, 6] = [1, 2, 3, 4, 5, 6]
+    var tensor = TileTensor(storage, row_major[2, 3]())
+    assert_equal(String(tensor), "[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]")
+
+
+def test_write_to_2d_dynamic() raises:
+    """A 2D tensor with a runtime dimension falls through to the elementwise
+    printer because `static_shape` is unknown."""
+    var storage: InlineArray[Float32, 6] = [1, 2, 3, 4, 5, 6]
+    var tensor = TileTensor(storage, row_major(Idx[2](), Idx(Int(3))))
+    # Elementwise printer iterates in column-major coordinate order.
+    assert_equal(String(tensor), "[1.0, 4.0, 2.0, 5.0, 3.0, 6.0]")
+
+
+def test_write_to_3d() raises:
+    """Test that printing a 3D TileTensor produces output via the generic
+    fallback."""
+    var storage: InlineArray[Float32, 8] = [1, 2, 3, 4, 5, 6, 7, 8]
+    var tensor = TileTensor(storage, row_major[2, 2, 2]())
+    # Elements are printed in column-major coordinate order.
+    assert_equal(String(tensor), "[1.0, 5.0, 3.0, 7.0, 2.0, 6.0, 4.0, 8.0]")

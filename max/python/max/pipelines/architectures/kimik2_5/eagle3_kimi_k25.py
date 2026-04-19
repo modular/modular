@@ -39,6 +39,7 @@ from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -108,6 +109,8 @@ class Eagle3KimiK25(Module):
             scaling_params=scaling_params,
         )
 
+        self.use_tp_ep = config.data_parallel_degree == 1 and num_devices > 1
+
         wide_config = replace(config, hidden_size=config.hidden_size * 2)
         self.decoder_layer = DeepseekV3DecoderLayer(
             self.rope,
@@ -115,6 +118,12 @@ class Eagle3KimiK25(Module):
             layer_idx=0,  # Dense MLP (idx < first_k_dense_replace)
             ep_manager=None,  # No EP for dense MLP
         )
+
+        # The draft uses a dense MLP (not EP-MoE) so we don't need
+        # sequence-parallel form.  Disable skip_allreduce so the TP MLA
+        # does the allreduce internally, keeping data replicated.
+        if self.use_tp_ep:
+            self.decoder_layer.self_attn.skip_allreduce = False
 
         self.decoder_layer.input_layernorm = RMSNorm(
             config.hidden_size,
@@ -160,11 +169,16 @@ class Eagle3KimiK25(Module):
             devices[0],
             quantization_encoding=None,
         )
-        replacement_o_proj.sharding_strategy = ShardingStrategy.replicate(
-            num_devices
-        )
+        if self.use_tp_ep:
+            replacement_o_proj.sharding_strategy = ShardingStrategy.columnwise(
+                num_devices
+            )
+        else:
+            replacement_o_proj.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
         self.decoder_layer.self_attn.o_proj = replacement_o_proj
-        # The DP MLA eagerly shards into list_of_attentions during __init__,
+        # The MLA eagerly shards into list_of_attentions during __init__,
         # so we must propagate the replacement to every per-device shard.
         o_proj_shards = replacement_o_proj.shard(devices)
         for shard_idx, attn_shard in enumerate(
@@ -219,19 +233,26 @@ class Eagle3KimiK25(Module):
         host_input_row_offsets: TensorValue,
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
+        split_prefix: str = "eagle3_draft",
     ) -> tuple[TensorValue, ...]:
         """Forward pass of the Eagle3 draft model.
 
         Args:
             tokens: Input token IDs.
-            fused_target_hs: Concatenated hidden states from 3 target layers,
-                shape ``[seq, hidden_size * 3]``.
+            fused_target_hs: Hidden states — either concatenated from 3
+                target layers (shape ``[seq, hidden_size * 3]``) or from a
+                previous draft step (shape ``[seq, hidden_size]``). The
+                ``fc`` projection is applied only when the last dimension
+                is ``hidden_size * 3``.
+            split_prefix: Prefix for symbolic dim names. Must be unique per
+                graph invocation to avoid dim conflicts between prefill
+                (step 0) and decode (step 1+).
         """
         devices = self.config.devices
 
-        # Fuse 3 target hidden states: [seq, 21504] -> [seq, 7168]
         fused_hs = ops.distributed_broadcast(fused_target_hs, signal_buffers)
-        fused_hs = forward_sharded_layers(self.fc_shards, fused_hs)
+        if fused_target_hs.shape[-1] != self.config.hidden_size:
+            fused_hs = forward_sharded_layers(self.fc_shards, fused_hs)
 
         h_embed = self.embed_tokens(tokens, signal_buffers)
 
@@ -250,7 +271,7 @@ class Eagle3KimiK25(Module):
                 unsplit_row_offsets,
                 host_offsets_i64,
                 data_parallel_splits,
-                prefix="eagle3_draft",
+                prefix=split_prefix,
             )
             fused_hs, _ = split_batch_replicated(
                 devices,
@@ -258,28 +279,39 @@ class Eagle3KimiK25(Module):
                 unsplit_row_offsets,
                 host_offsets_i64,
                 data_parallel_splits,
-                prefix="eagle3_draft",
+                prefix=split_prefix,
             )
 
             h_embed = [
                 ops.rebind(
                     h_embed[i],
-                    [f"seq_len_device_{i}", self.config.hidden_size],
+                    [f"{split_prefix}_seq_dev_{i}", self.config.hidden_size],
                 )
                 for i in range(len(devices))
             ]
             fused_hs = [
                 ops.rebind(
                     fused_hs[i],
-                    [f"seq_len_device_{i}", self.config.hidden_size],
+                    [f"{split_prefix}_seq_dev_{i}", self.config.hidden_size],
                 )
                 for i in range(len(devices))
             ]
         else:
+            # TP or single-device case: rebind both h_embed and fused_hs.
+            # Use a COMMON dim name so reduce-scatter/allgather (which
+            # require matching shapes) work in TP mode.
+            common_dim = f"{split_prefix}_seq_len"
             h_embed = [
                 ops.rebind(
                     h_embed[i],
-                    [f"seq_len_device_{i}", self.config.hidden_size],
+                    [common_dim, self.config.hidden_size],
+                )
+                for i in range(len(devices))
+            ]
+            fused_hs = [
+                ops.rebind(
+                    fused_hs[i],
+                    [common_dim, self.config.hidden_size],
                 )
                 for i in range(len(devices))
             ]
@@ -293,7 +325,6 @@ class Eagle3KimiK25(Module):
             ops.concat([norm_embed[i], norm_fused[i]], axis=-1)
             for i in range(len(devices))
         ]
-
         mla_prefill_metadata: list[MLAPrefillMetadata] = []
         if self.config.graph_mode != "decode":
             mla_prefill_metadata = (
@@ -306,7 +337,6 @@ class Eagle3KimiK25(Module):
                 mla_prefill_metadata[i].buffer_lengths = batch_context_lengths[
                     i
                 ]
-
         mla_inputs: list[TensorValue] = []
         for metadata in mla_prefill_metadata:
             mla_inputs.extend(
@@ -326,7 +356,6 @@ class Eagle3KimiK25(Module):
             input_row_offsets=input_row_offsets_,
             mla_prefill_metadata=mla_prefill_metadata,
         )
-
         hs = [
             fused + attn_out
             for fused, attn_out in zip(fused_hs, attn_outs, strict=True)
@@ -335,7 +364,7 @@ class Eagle3KimiK25(Module):
         norm_outs = forward_sharded_layers(
             self.decoder_layer.post_attention_layernorm_shards, hs
         )
-        mlp_outs = forward_sharded_layers(
+        mlp_outs = forward_moe_sharded_layers(
             self.decoder_layer.mlp_shards, norm_outs
         )
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
@@ -367,8 +396,7 @@ class Eagle3KimiK25(Module):
         ret_val: tuple[TensorValue, ...] = (last_logits,)
 
         if self.return_logits == ReturnLogits.VARIABLE:
-            assert self.config.data_parallel_degree > 1
-            draft_rnl_range = ops.range(
+            draft_return_n_logits_range = ops.range(
                 start=return_n_logits[0],
                 stop=0,
                 step=-1,
@@ -376,30 +404,54 @@ class Eagle3KimiK25(Module):
                 dtype=DType.int64,
                 device=devices[0],
             )
-            variable_per_dev: list[TensorValue] = []
-            for dev_idx in range(len(devices)):
-                dev_range = draft_rnl_range.to(devices[dev_idx])
-                dev_offsets = (
-                    ops.unsqueeze(input_row_offsets_[dev_idx][1:], -1)
-                    - dev_range
+            if self.use_data_parallel_attention:
+                draft_return_n_logits_range_per_dev = ops.distributed_broadcast(
+                    draft_return_n_logits_range, signal_buffers
                 )
-                variable_per_dev.append(
-                    ops.gather(
-                        hs[dev_idx],
-                        ops.reshape(dev_offsets, shape=(-1,)),
-                        axis=0,
+                # DP: each device has a batch shard; gather per-device then
+                # allgather to reconstruct the full batch.
+                variable_per_dev: list[TensorValue] = []
+                for dev_idx in range(len(devices)):
+                    dev_offsets = (
+                        ops.unsqueeze(input_row_offsets_[dev_idx][1:], -1)
+                        - draft_return_n_logits_range_per_dev[dev_idx]
                     )
+                    variable_per_dev.append(
+                        ops.gather(
+                            hs[dev_idx],
+                            ops.reshape(dev_offsets, shape=(-1,)),
+                            axis=0,
+                        )
+                    )
+                variable_distributed = ops.allgather(
+                    variable_per_dev, signal_buffers
                 )
-            variable_distributed = ops.allgather(
-                variable_per_dev, signal_buffers
-            )
-            norm_variable = forward_sharded_layers(
-                self.norm_shards, variable_distributed
-            )
-            variable_logits = ops.cast(
-                self.lm_head(norm_variable, signal_buffers)[0],
-                DType.float32,
-            )
+                norm_variable = forward_sharded_layers(
+                    self.norm_shards, variable_distributed
+                )
+                variable_logits = ops.cast(
+                    self.lm_head(norm_variable, signal_buffers)[0],
+                    DType.float32,
+                )
+            else:
+                # TP: tokens replicated; gather from device 0's offsets,
+                # then norm + lm_head across all devices.
+                last_offsets = (
+                    ops.unsqueeze(input_row_offsets_[0][1:], -1)
+                    - draft_return_n_logits_range
+                )
+                last_indices = ops.reshape(last_offsets, shape=(-1,))
+                variable_logits = ops.gather(
+                    ops.cast(
+                        self.lm_head(
+                            forward_sharded_layers(self.norm_shards, hs),
+                            signal_buffers,
+                        )[0],
+                        DType.float32,
+                    ),
+                    last_indices,
+                    axis=0,
+                )
             logit_offsets = ops.range(
                 0,
                 TensorValue(variable_logits.shape[0]) + return_n_logits[0],

@@ -105,7 +105,7 @@ def matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
                     def dot[
                         simd_size: Int
                     ](n: Int) unified {
-                        mut C, mut A_val, read B, read m, mut x, mut k
+                        x, mut C, mut A_val, read B, read m, mut k
                     }:
                         var idx = n + x
                         C.store(
@@ -305,7 +305,7 @@ def matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
 
 @always_inline
 def bench[
-    func: def(mut Matrix, Matrix, Matrix) -> None, name: StaticString
+    func: def(mut Matrix, Matrix, Matrix) thin -> None, name: StaticString
 ]() raises:
     var A = Matrix[M, K].rand()
     var B = Matrix[K, N].rand()
@@ -330,7 +330,7 @@ def bench[
 
 @always_inline
 def test_matrix_equal[
-    func: def(mut Matrix, Matrix, Matrix) -> None
+    func: def(mut Matrix, Matrix, Matrix) thin -> None
 ](mut C: Matrix, A: Matrix, B: Matrix) raises -> Bool:
     """Runs a matmul function on A and B and tests the result for equality with
     C on every element.

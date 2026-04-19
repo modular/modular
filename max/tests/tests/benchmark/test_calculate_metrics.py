@@ -73,6 +73,7 @@ def test_per_chunk_tpot_collected_from_outputs() -> None:
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -117,6 +118,7 @@ def test_tpot_weighted_mean() -> None:
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -154,6 +156,7 @@ def test_tpot_zero_decode_tokens() -> None:
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -174,6 +177,7 @@ def test_empty_outputs_no_crash() -> None:
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -206,6 +210,7 @@ def test_itl_metrics_unchanged() -> None:
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -243,6 +248,7 @@ def test_failed_requests_excluded() -> None:
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -296,6 +302,7 @@ def test_skip_last_n_requests() -> None:
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -308,6 +315,7 @@ def test_skip_last_n_requests() -> None:
         skip_first_n_requests=0,
         skip_last_n_requests=1,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -360,6 +368,7 @@ def test_skip_first_and_last_n_requests() -> None:
         skip_first_n_requests=1,
         skip_last_n_requests=1,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -416,6 +425,7 @@ def test_skip_last_with_cancelled_requests() -> None:
         skip_first_n_requests=1,
         skip_last_n_requests=1,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -453,6 +463,7 @@ def test_skip_all_requests_warns() -> None:
             skip_first_n_requests=1,
             skip_last_n_requests=1,
             max_concurrency=None,
+            max_concurrent_conversations=None,
             collect_gpu_stats=False,
         )
         assert len(w) == 1
@@ -522,6 +533,7 @@ def test_request_submit_time_set_on_output() -> None:
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
     # Metrics are computed normally regardless of submit time

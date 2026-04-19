@@ -775,15 +775,12 @@ class TextBatchConstructor:
                     break
 
                 try:
-                    primary_skip = self.kv_cache.alloc(
+                    self.kv_cache.alloc(
                         ctx,
                         replica_idx=replica_idx,
                         num_steps=1,
                         num_speculative_steps=self.scheduler_config.num_speculative_tokens,
-                        skip_tokens=False,
                     )
-                    if primary_skip > 0:
-                        ctx.tokens.skip_processing(primary_skip)
                 except InsufficientBlocksError:
                     if len(replica_requests.tg_reqs) == 0 and len(batch) == 0:
                         raise
@@ -868,15 +865,12 @@ class TextBatchConstructor:
             # At this point, we can assume that the paged cache is active.
             while True:
                 try:
-                    primary_skip = self.kv_cache.alloc(
+                    self.kv_cache.alloc(
                         candidate_context,
                         replica_idx=replica_idx,
                         num_steps=batch.num_steps,
                         num_speculative_steps=self.scheduler_config.num_speculative_tokens,
-                        skip_tokens=False,
                     )
-                    if primary_skip > 0:
-                        candidate_context.tokens.skip_processing(primary_skip)
                     break
                 except InsufficientBlocksError:
                     if len(candidate_ids) == 0:

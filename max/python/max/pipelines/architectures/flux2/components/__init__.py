@@ -13,8 +13,20 @@
 
 """Compiled graph components for Flux2Executor."""
 
+from .cfg_combine import CfgCombineComponent
+from .denoise_compute import DenoiseCompute
+from .denoise_predict import DenoisePredict
+from .denoiser import Denoiser
 from .image_encoder import ImageEncoder
 from .text_encoder import TextEncoder
 from .vae_decoder import VaeDecoder
 
-__all__ = ["ImageEncoder", "TextEncoder", "VaeDecoder"]
+__all__ = [
+    "CfgCombineComponent",
+    "DenoiseCompute",
+    "DenoisePredict",
+    "Denoiser",
+    "ImageEncoder",
+    "TextEncoder",
+    "VaeDecoder",
+]

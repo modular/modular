@@ -23,12 +23,11 @@ graph's input tensor, using an API that abstracts-away the CPU and GPU device
 management. Then you'll learn to write specialized functions for CPUs and GPUs.
 (GPU functions that run in parallel are also known as _kernels_.)
 
-Before you begin, you should have a basic understanding of MAX graphs, which are
-computation graphs written in Python. These graphs are the foundation for
-high-performance AI models that run on MAX. To learn more, see our tutorial to
-[get started with MAX graphs in
-Python](/max/develop/get-started-with-max-graph-in-python). It also helps if
-you know the [Mojo language basics](/mojo/manual/basics).
+Before you begin, you should have a basic understanding of MAX graphs, which
+are computation graphs written in Python. These graphs are the foundation for
+high-performance AI models that run on MAX. To learn more, see [build a model
+graph with Module](/max/develop/modules). It also helps to know the [Mojo
+language basics](/mojo/manual/basics).
 
 ## Requirements
 
@@ -129,7 +128,7 @@ The rest of the `execute()` signature describes the custom op's graph node to
 the graph compiler: the parameters, inputs, and outputs. The `execute()`
 function must include `target` as the first compile-time parameter and `output`
 as the first runtime argument; the graph compiler uses this order to identify
-the op's hardware target and output slots.
+the op's hardware target and output slots:
 
 - There's one [compile-time
 parameter](/mojo/manual/parameters/#parameterized-functions), `target`, which
@@ -393,7 +392,7 @@ memory access patterns.
 ## Next steps
 
 export const docs = [
-  '../../develop/get-started-with-max-graph-in-python.mdx',
+  '../../develop/modules.mdx',
   '../../develop/custom-ops-matmul.mdx',
 ];
 

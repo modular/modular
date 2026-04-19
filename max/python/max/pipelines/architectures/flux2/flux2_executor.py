@@ -14,20 +14,38 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+import logging
+from dataclasses import dataclass, fields, replace
+from typing import Any, ClassVar
 
 import numpy as np
-from max.driver import Buffer
-from max.engine import InferenceSession, Model
+import numpy.typing as npt
+from max.driver import Buffer, Device, load_devices
+from max.dtype import DType
+from max.engine import InferenceSession
+from max.experimental.tensor import Tensor
 from max.pipelines.core import PixelContext
+from max.pipelines.lib import float32_array_to_buffer
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
+from max.pipelines.lib.denoising_cache import TaylorSeerCache
 from max.pipelines.lib.interfaces import TensorStruct
+from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_executor import PipelineExecutor
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.profiler import traced
 from typing_extensions import Self
 
-from .components import ImageEncoder, TextEncoder, VaeDecoder
+from .components import (
+    DenoiseCompute,
+    DenoisePredict,
+    Denoiser,
+    ImageEncoder,
+    TextEncoder,
+    VaeDecoder,
+)
+
+logger = logging.getLogger("max.pipelines")
 
 # ---------------------------------------------------------------------------
 # Input / Output structs
@@ -54,6 +72,9 @@ class Flux2ExecutorInputs(TensorStruct):
 
     tokens: Buffer
     """Token IDs for the text encoder, shape ``(S,)``."""
+
+    text_ids: Buffer
+    """Text position IDs for the transformer, shape ``(1, S, 4)`` int64."""
 
     latents: Buffer
     """Packed latent noise tensor, shape ``(B, seq, C*4)``."""
@@ -103,6 +124,31 @@ class Flux2ExecutorInputs(TensorStruct):
     """Scalar float32 threshold for FBCache residual gating.
     ``None`` when first-block caching is not enabled."""
 
+    # -- Device transfer -------------------------------------------------------
+
+    _CPU_FIELDS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "num_inference_steps",
+            "num_images_per_prompt",
+            "height",
+            "width",
+            "image_seq_len",
+            "h_carrier",
+            "w_carrier",
+        }
+    )
+
+    def to(self, device: Device) -> Self:
+        """Transfer GPU-bound tensors to *device*, keeping metadata on CPU."""
+        updates: dict[str, Any] = {}
+        for f in fields(self):
+            if f.name in self._CPU_FIELDS:
+                continue
+            val = getattr(self, f.name)
+            if isinstance(val, (Tensor, Buffer)):
+                updates[f.name] = val.to(device)
+        return replace(self, **updates)
+
     # -- Feature builders (return new frozen instance) ------------------------
 
     def with_image(self, input_image: Buffer) -> Self:
@@ -134,59 +180,49 @@ class Flux2ExecutorOutputs(TensorStruct):
 class Flux2Executor(
     PipelineExecutor[PixelContext, Flux2ExecutorInputs, Flux2ExecutorOutputs]
 ):
-    """Flux2 pipeline executor (stub).
+    """Flux2 pipeline executor.
 
     Implements the :class:`PipelineExecutor` interface for Flux2 image
-    generation. This class will eventually replace :class:`Flux2Pipeline`
-    by wiring together the same sub-components (text encoder, transformer
+    generation, wiring together the sub-components (text encoder, transformer
     denoiser, VAE) through the tensor-in/tensor-out executor contract.
 
-    Target graph structure (without TaylorSeer -- 4 graphs, 3 for t2i):
+    Graph structure (4 graphs, 3 for t2i):
 
-    +---------+-----------------------------------------+-----------------------+
-    | Graph   | Purpose                                 | Called                |
-    +---------+-----------------------------------------+-----------------------+
-    | 1       | Text Encode: Mistral3 -> embeddings      | Once per request      |
-    | 2       | Image Encode: VAE encode + BN-norm + pack | Once (img2img only)  |
-    | 3       | Denoise Step: concat + transformer +     | Every denoising step  |
-    |         |   scheduler step                         |                       |
-    | 4       | Decode: BN-denorm + unpatchify +         | Once per request      |
-    |         |   VAE decode -> uint8                    |                       |
-    +---------+-----------------------------------------+-----------------------+
-
-    With TaylorSeer enabled, Graph 3 splits into two variants (5 graphs):
-
-    - **3a** (Compute): concat + transformer + scheduler step + Taylor
-      factor update. Runs during warmup and every K-th step.
-    - **3b** (Predict): Taylor predict + scheduler step. Contains zero
-      model weights. Runs on all other steps.
-
-    Python-level branching dispatches between 3a and 3b -- MAX graphs
-    don't support true control flow, so both variants are independently
-    captured as CUDA graphs.
+    +---------+-------------------------------------------+------------------------+
+    | Graph   | Purpose                                   | Called                 |
+    +=========+===========================================+========================+
+    | 1       | Text Encode: Mistral3 -> embeddings       | Once per request       |
+    +---------+-------------------------------------------+------------------------+
+    | 2       | Image Encode: VAE encode + BN-norm + pack | Once (img2img only)    |
+    +---------+-------------------------------------------+------------------------+
+    | 3       | Denoise Step: concat + transformer +      | Every denoising step   |
+    |         | scheduler step                            |                        |
+    +---------+-------------------------------------------+------------------------+
+    | 4       | Decode: BN-denorm + unpatchify +          | Once per request       |
+    |         | VAE decode -> uint8                       |                        |
+    +---------+-------------------------------------------+------------------------+
     """
 
     # -- Compiled graphs (set during __init__) --------------------------------
 
     text_encoder: TextEncoder
-    """Graph 1: Mistral3 text encoder -> prompt_embeds + text_ids."""
+    """Graph 1: Mistral3 text encoder -> prompt_embeds."""
 
     image_encoder: ImageEncoder
     """Graph 2: VAE encode + BN-normalize + patchify + pack."""
 
-    denoise_compute: Model
-    """Graph 3a: concat + transformer + scheduler step (+ Taylor update)."""
-
-    denoise_predict: Model | None
-    """Graph 3b: Taylor predict + scheduler step. ``None`` when TaylorSeer
-    is disabled."""
+    denoiser: Denoiser | None
+    """Graph 3: Fused concat + transformer + scheduler step.
+    ``None`` when TaylorSeer is enabled (split into compute + predict)."""
 
     decoder: VaeDecoder
     """Graph 4: BN-denormalize + unpatchify + VAE decode -> uint8."""
 
+    default_num_inference_steps: int = 28
+    """Default number of denoising steps when the user does not specify one."""
+
     # Default residual threshold when FBCache is enabled but the request
-    # does not specify one.  Matches Flux2Pipeline.default_residual_threshold
-    # (overrides the DiffusionPipeline base default of 0.05).
+    # does not specify one.
     _DEFAULT_RESIDUAL_THRESHOLD: float = 0.06
 
     # Fallback VAE scale factor when not derivable from the manifest.
@@ -202,18 +238,74 @@ class Flux2Executor(
         self._session = session
         self._runtime_config = runtime_config
 
-        # Derived config from the manifest.
-        # TODO(GENAI-490): Derive vae_scale_factor from manifest VAE config
-        # once ModelManifest exposes per-component configs.
-        self._vae_scale_factor = self._DEFAULT_VAE_SCALE_FACTOR
+        # Cache configuration (TaylorSeer / FBCache / TeaCache).
+        self._cache_config: DenoisingCacheConfig = (
+            runtime_config.denoising_cache
+        )
+        self._resolve_cache_defaults()
+
+        # Derive VAE scale factor from manifest config, falling back to 8.
+        vae_config = (
+            manifest["vae"].huggingface_config.to_dict()
+            if "vae" in manifest
+            else {}
+        )
+        block_out_channels = vae_config.get("block_out_channels", None)
+        self._vae_scale_factor = (
+            2 ** (len(block_out_channels) - 1)
+            if block_out_channels
+            else self._DEFAULT_VAE_SCALE_FACTOR
+        )
         self._default_residual_threshold = self._DEFAULT_RESIDUAL_THRESHOLD
+
+        # Extract transformer config for helper methods.
+        transformer_config = manifest["transformer"]
+        encoding = transformer_config.quantization_encoding or "bfloat16"
+        # For NVFP4, weights are stored as FP4 but compute stays bfloat16.
+        self._model_dtype: DType = (
+            DType.bfloat16
+            if encoding == "float4_e2m1fnx2"
+            else supported_encoding_dtype(encoding)
+        )
+        self._model_device: Device = load_devices(
+            transformer_config.device_specs
+        )[0]
+        self._in_channels: int = 128  # Flux2 in_channels (pre-patchify: 32)
 
         # Build and store all compiled graphs.
         self.text_encoder = TextEncoder(manifest, session)
         self.image_encoder = ImageEncoder(manifest, session)
         self.decoder = VaeDecoder(manifest, session)
-        self.denoise_compute = self._build_denoise_compute_graph()
-        self.denoise_predict = self._build_denoise_predict_graph()
+
+        # Conditionally build fused OR split denoise graphs.
+        self._denoise_compute: DenoiseCompute | None
+        self._denoise_predict: DenoisePredict | None
+        self._taylor_cache: TaylorSeerCache | None
+
+        if self._cache_config.taylorseer:
+            logger.info(
+                "TaylorSeer enabled: building split DenoiseCompute + "
+                "DenoisePredict graphs (warmup=%d, interval=%d, order=%d).",
+                self._cache_config.taylorseer_warmup_steps,
+                self._cache_config.taylorseer_cache_interval,
+                self._cache_config.taylorseer_max_order,
+            )
+            self.denoiser = None
+            self._denoise_compute = DenoiseCompute(manifest, session)
+            self._denoise_predict = DenoisePredict(
+                manifest, session, self._model_dtype, self._model_device
+            )
+            self._taylor_cache = TaylorSeerCache(
+                config=self._cache_config,
+                dtype=self._model_dtype,
+                device=self._model_device,
+                session=session,
+            )
+        else:
+            self.denoiser = Denoiser(manifest, session)
+            self._denoise_compute = None
+            self._denoise_predict = None
+            self._taylor_cache = None
 
     # -- PipelineExecutor interface -------------------------------------------
 
@@ -249,11 +341,10 @@ class Flux2Executor(
         image_seq_len = packed_h * packed_w
 
         tokens = Buffer.from_dlpack(context.tokens.array)
-        latents = self._patchify_and_pack(Buffer.from_dlpack(context.latents))
+        text_ids = Buffer.from_dlpack(context.text_ids)
+        latents = self._patchify_and_pack(context.latents)
         latent_image_ids = Buffer.from_dlpack(context.latent_image_ids)
-        timesteps, dts = self._prepare_scheduler(
-            Buffer.from_dlpack(context.sigmas)
-        )
+        timesteps, dts = self._prepare_scheduler(context.sigmas)
 
         guidance = Buffer.from_dlpack(
             np.full(
@@ -290,6 +381,7 @@ class Flux2Executor(
 
         return Flux2ExecutorInputs(
             tokens=tokens,
+            text_ids=text_ids,
             latents=latents,
             latent_image_ids=latent_image_ids,
             timesteps=timesteps,
@@ -308,11 +400,17 @@ class Flux2Executor(
 
     @traced(message="execute")
     def execute(self, inputs: Flux2ExecutorInputs) -> Flux2ExecutorOutputs:
+        # Bulk device transfer -- CPU-only metadata fields are skipped by
+        # Flux2ExecutorInputs.to().  Buffers already on the target device
+        # are no-ops.
+        inputs = inputs.to(self._model_device)
+
         # 1) Encode prompts (Graph 1).
-        prompt_embeds, text_ids = self._encode_prompts(
+        prompt_embeds = self._encode_prompts(
             inputs.tokens,
             inputs.num_images_per_prompt,
         )
+        text_ids = inputs.text_ids
 
         # 2) Encode image if img2img (Graph 2).
         #    For text-to-image, pass zero-seq-length tensors so the fused
@@ -325,7 +423,7 @@ class Flux2Executor(
             image_latents = self._empty_image_latents()
             image_latent_ids = self._empty_image_latent_ids()
 
-        # 3) Denoising loop (Graphs 3a/3b).
+        # 3) Denoising loop (Graph 3).
         latents = self._run_denoising_loop(
             latents=inputs.latents,
             image_latents=image_latents,
@@ -356,17 +454,15 @@ class Flux2Executor(
         self,
         tokens: Buffer,
         num_images_per_prompt: Buffer,
-    ) -> tuple[Buffer, Buffer]:
-        """Run Graph 1: encode text prompts into embeddings and text IDs.
+    ) -> Buffer:
+        """Run Graph 1: encode text prompts into embeddings.
 
         Args:
             tokens: Token IDs, shape ``(S,)``.
             num_images_per_prompt: 1-element int64 tensor.
 
         Returns:
-            A tuple of ``(prompt_embeds, text_ids)`` where:
-            - ``prompt_embeds`` has shape ``(B, S, L*D)``
-            - ``text_ids`` has shape ``(B, S, 4)`` int64
+            ``prompt_embeds`` Buffer of shape ``(B, S, L*D)``.
         """
         return self.text_encoder(tokens)
 
@@ -391,112 +487,60 @@ class Flux2Executor(
         """
         return self.image_encoder(input_image)
 
-    # -- Graph 3a: Denoise Compute Step ---------------------------------------
+    # -- Graph 3: Denoise Step ------------------------------------------------
 
-    @traced(message="build_denoise_compute_graph")
-    def _build_denoise_compute_graph(self) -> Model:
-        """Compile the fused denoise compute step graph.
-
-        Fuses concat + transformer forward + scheduler step into a single
-        compiled graph. For text-to-image, ``image_latents`` is passed as
-        a zero-seq-length tensor ``(B, 0, C*4)``, making the concat a
-        no-op.
-
-        When TaylorSeer is enabled, this graph additionally updates
-        Taylor factors via divided differences.
-
-        Returns:
-            Compiled :class:`Model` for Graph 3a.
-        """
-        raise NotImplementedError
-
-    def _denoise_compute_step(
+    @traced(message="denoise_step")
+    def _denoise_step(
         self,
         latents: Buffer,
         image_latents: Buffer,
-        image_latent_ids: Buffer,
-        prompt_embeds: Buffer,
-        text_ids: Buffer,
-        latent_image_ids: Buffer,
+        encoder_hidden_states: Buffer,
         timestep: Buffer,
         dt: Buffer,
         guidance: Buffer,
-        taylor_factors: tuple[Buffer, ...] | None,
-        residual_threshold: Buffer | None,
-    ) -> tuple[Buffer, tuple[Buffer, ...] | None]:
-        """Run Graph 3a: full denoise compute step.
+        latent_image_ids: Buffer,
+        image_latent_ids: Buffer,
+        txt_ids: Buffer,
+    ) -> Buffer:
+        """Run Graph 3: one fused denoise step.
 
-        Executes concat + transformer forward + scheduler step. When
-        TaylorSeer is enabled, also updates Taylor factors via divided
-        differences.
+        Executes concat + transformer forward + Euler scheduler step.
+        Only used when TaylorSeer is disabled (fused path).
 
         Args:
-            latents: Current latent state, shape ``(B, seq, C*4)``.
+            latents: Current latent state, shape ``(B, seq, C)``.
             image_latents: Packed image latents for img2img, shape
-                ``(B, img_seq, C*4)``. Zero-seq-length ``(B, 0, C*4)``
+                ``(B, img_seq, C)``. Zero-seq-length ``(B, 0, C)``
                 for text-to-image.
-            image_latent_ids: Image latent position IDs, shape
-                ``(B, img_seq, 4)`` int64. Zero-seq-length for
-                text-to-image.
-            prompt_embeds: Text encoder embeddings, shape ``(B, S, L*D)``.
-            text_ids: Text position IDs, shape ``(B, S, 4)`` int64.
-            latent_image_ids: Latent position IDs, shape ``(B, seq, 4)``
-                int64.
-            timestep: Current sigma value, shape ``(1,)``.
+            encoder_hidden_states: Text embeddings, shape ``(B, S, D)``.
+            timestep: Current sigma, shape ``(B,)``.
             dt: Step delta ``sigma[i+1] - sigma[i]``, shape ``(1,)``.
             guidance: Guidance scale, shape ``(B,)``.
-            taylor_factors: Cached Taylor series factors from previous
-                compute steps, or ``None`` when TaylorSeer is disabled.
-            residual_threshold: FBCache residual threshold scalar, or
-                ``None`` when first-block caching is disabled.
+            latent_image_ids: Latent position IDs, shape ``(B, seq, 4)``
+                int64.
+            image_latent_ids: Image latent position IDs, shape
+                ``(B, img_seq, 4)`` int64.
+            txt_ids: Text position IDs, shape ``(B, S, 4)`` int64.
 
         Returns:
-            A tuple of ``(updated_latents, updated_taylor_factors)`` where
-            ``updated_taylor_factors`` is ``None`` when TaylorSeer is
-            disabled.
+            Updated latents, shape ``(B, seq, C)``.
         """
-        raise NotImplementedError
-
-    # -- Graph 3b: Denoise Predict Step (TaylorSeer only) ---------------------
-
-    @traced(message="build_denoise_predict_graph")
-    def _build_denoise_predict_graph(self) -> Model | None:
-        """Compile the Taylor predict + scheduler step graph.
-
-        This graph contains zero model weights -- it is purely arithmetic
-        on cached Taylor factors and latents. Only built when TaylorSeer
-        is enabled.
-
-        Returns:
-            Compiled :class:`Model` for Graph 3b, or ``None`` when
-            TaylorSeer is disabled.
-        """
-        raise NotImplementedError
-
-    def _denoise_predict_step(
-        self,
-        latents: Buffer,
-        taylor_factors: tuple[Buffer, ...],
-        step_offset: Buffer,
-        dt: Buffer,
-    ) -> Buffer:
-        """Run Graph 3b: Taylor series prediction step.
-
-        Skips the full transformer and estimates noise_pred via Taylor
-        approximation: ``factor_0 + factor_1 * d + factor_2 * d^2 / 2``.
-
-        Args:
-            latents: Current latent state, shape ``(B, seq, C*4)``.
-            taylor_factors: Cached Taylor series factors from the most
-                recent compute step.
-            step_offset: Offset from the last compute step, shape ``(1,)``.
-            dt: Step delta ``sigma[i+1] - sigma[i]``, shape ``(1,)``.
-
-        Returns:
-            Updated latents after the predicted scheduler step, shape
-            ``(B, seq, C*4)``.
-        """
-        raise NotImplementedError
+        assert self.denoiser is not None, (
+            "_denoise_step called but fused Denoiser was not compiled. "
+            "This is a bug — TaylorSeer path should use "
+            "_denoise_compute + _denoise_predict instead."
+        )
+        return self.denoiser(
+            latents,
+            image_latents,
+            encoder_hidden_states,
+            timestep,
+            dt,
+            guidance,
+            latent_image_ids,
+            image_latent_ids,
+            txt_ids,
+        )
 
     # -- Graph 4: Decode ------------------------------------------------------
 
@@ -538,23 +582,27 @@ class Flux2Executor(
         num_inference_steps: Buffer,
         residual_threshold: Buffer | None,
     ) -> Buffer:
-        """Orchestrate the N-step denoising loop with Python-level branching.
+        """Orchestrate the N-step denoising loop.
 
-        Dispatches between :meth:`_denoise_compute_step` (Graph 3a) and
-        :meth:`_denoise_predict_step` (Graph 3b) based on the step index.
-        When TaylorSeer is disabled, every step is a compute step.
+        When TaylorSeer is disabled, each step executes the fused denoise
+        graph (Graph 3: concat + transformer + Euler step).
 
-        The branching decision is simple modular arithmetic on the step
-        index -- no GPU sync or dynamic condition required.
+        When TaylorSeer is enabled, the loop alternates between:
+        - **Compute steps** (warmup + every K-th step): run
+          ``DenoiseCompute`` (transformer-only), then update Taylor
+          factors.
+        - **Predict steps** (all other steps): predict ``noise_pred``
+          from cached Taylor factors, skipping the transformer entirely.
+        Both paths feed into ``DenoisePredict`` (Euler step).
 
         Args:
-            latents: Preprocessed packed latents, shape ``(B, seq, C*4)``.
+            latents: Preprocessed packed latents, shape ``(B, seq, C)``.
             image_latents: Packed image latents for img2img, shape
-                ``(B, img_seq, C*4)``. Zero-seq-length for text-to-image.
+                ``(B, img_seq, C)``. Zero-seq-length for text-to-image.
             image_latent_ids: Image latent position IDs, shape
                 ``(B, img_seq, 4)`` int64. Zero-seq-length for
                 text-to-image.
-            prompt_embeds: Text encoder embeddings, shape ``(B, S, L*D)``.
+            prompt_embeds: Text encoder embeddings, shape ``(B, S, D)``.
             text_ids: Text position IDs, shape ``(B, S, 4)`` int64.
             latent_image_ids: Latent position IDs, shape ``(B, seq, 4)``
                 int64.
@@ -567,15 +615,67 @@ class Flux2Executor(
                 ``None`` when first-block caching is disabled.
 
         Returns:
-            Final denoised latents, shape ``(B, seq, C*4)``.
+            Final denoised latents, shape ``(B, seq, C)``.
         """
-        raise NotImplementedError
+        num_steps: int = np.from_dlpack(num_inference_steps).item()  # type: ignore[assignment]
+
+        if self._taylor_cache is None:
+            # Fused path (no TaylorSeer).
+            for i in range(num_steps):
+                timestep_i = timesteps[i : i + 1]
+                dt_i = dts[i : i + 1]
+                latents = self._denoise_step(
+                    latents,
+                    image_latents,
+                    prompt_embeds,
+                    timestep_i,
+                    dt_i,
+                    guidance,
+                    latent_image_ids,
+                    image_latent_ids,
+                    text_ids,
+                )
+        else:
+            # TaylorSeer path: split compute + predict.
+            assert self._denoise_compute is not None
+            assert self._denoise_predict is not None
+
+            # Infer state dimensions from latents shape for factor
+            # allocation.  latents is (B, seq, C).
+            batch_size, seq_len, output_dim = latents.shape
+            state = self._taylor_cache.create_state(
+                batch_size, seq_len, output_dim
+            )
+
+            for i in range(num_steps):
+                timestep_i = timesteps[i : i + 1]
+                dt_i = dts[i : i + 1]
+
+                if self._taylor_cache.should_skip(i):
+                    # Predict step: skip the transformer.
+                    noise_pred = self._taylor_cache.predict(state, i)
+                else:
+                    # Compute step: run full transformer.
+                    noise_pred = self._denoise_compute(
+                        latents,
+                        image_latents,
+                        prompt_embeds,
+                        timestep_i,
+                        guidance,
+                        latent_image_ids,
+                        image_latent_ids,
+                        text_ids,
+                    )
+                    self._taylor_cache.update(state, noise_pred, i)
+
+                latents = self._denoise_predict(latents, noise_pred, dt_i)
+        return latents
 
     # -- Latent preprocessing -------------------------------------------------
 
     def _patchify_and_pack(
         self,
-        latents: Buffer,
+        latents: npt.NDArray[np.float32],
     ) -> Buffer:
         """Patchify and pack raw latents for the transformer.
 
@@ -583,25 +683,41 @@ class Flux2Executor(
         2x2 patchification followed by sequence packing.
 
         Args:
-            latents: Raw latent noise, shape ``(B, C, H, W)``.
+            latents: Raw latent noise, shape ``(B, C, H, W)`` float32.
 
         Returns:
-            Packed latents, shape ``(B, seq, C*4)``.
+            Packed latents, shape ``(B, seq, C*4)`` in model dtype.
         """
-        raise NotImplementedError
+        arr = latents  # (B, C, H, W) float32
+        b, c, h, w = arr.shape
+        h2, w2 = h // 2, w // 2
+        # Patchify: (B, C, H, W) -> (B, C, H//2, 2, W//2, 2)
+        arr = arr.reshape(b, c, h2, 2, w2, 2)
+        # -> (B, C, 2, 2, H//2, W//2) -> (B, C*4, H//2, W//2)
+        arr = arr.transpose(0, 1, 3, 5, 2, 4).reshape(b, c * 4, h2, w2)
+        # Pack: (B, C*4, H//2, W//2) -> (B, H//2*W//2, C*4)
+        arr = arr.reshape(b, c * 4, h2 * w2).transpose(0, 2, 1)
+        arr = np.ascontiguousarray(arr)
+        return float32_array_to_buffer(
+            arr, dtype=self._model_dtype, device=self._model_device
+        )
 
     # -- Zero-seq-length image latents for t2i --------------------------------
 
     def _empty_image_latents(self) -> Buffer:
         """Create a zero-seq-length image latent buffer for text-to-image.
 
-        Returns a ``(1, 0, C*4)`` float32 buffer so the fused denoise
-        graph's concat is a no-op along the sequence dimension.
+        Returns a ``(1, 0, C)`` buffer in model dtype so the fused
+        denoise graph's concat is a no-op along the sequence dimension.
 
         Returns:
-            Buffer with shape ``(1, 0, C*4)``.
+            Buffer with shape ``(1, 0, C)``.
         """
-        raise NotImplementedError
+        return float32_array_to_buffer(
+            np.zeros((1, 0, self._in_channels), dtype=np.float32),
+            dtype=self._model_dtype,
+            device=self._model_device,
+        )
 
     def _empty_image_latent_ids(self) -> Buffer:
         """Create a zero-seq-length image latent ID buffer for text-to-image.
@@ -612,22 +728,51 @@ class Flux2Executor(
         Returns:
             Buffer with shape ``(1, 0, 4)``.
         """
-        raise NotImplementedError
+        return Buffer.from_dlpack(np.zeros((1, 0, 4), dtype=np.int64)).to(
+            self._model_device
+        )
 
     # -- Scheduler utilities --------------------------------------------------
 
     def _prepare_scheduler(
         self,
-        sigmas: Buffer,
+        sigmas: npt.NDArray[np.float32],
     ) -> tuple[Buffer, Buffer]:
         """Precompute timesteps and dt arrays from the sigma schedule.
 
+        Timesteps are kept as float32 (the denoise graph casts to model
+        dtype in-graph). Step deltas are float32 for numerical stability.
+
         Args:
-            sigmas: Sigma schedule, shape ``(num_steps+1,)``.
+            sigmas: Sigma schedule, shape ``(num_steps+1,)`` float32.
 
         Returns:
             A tuple of ``(timesteps, dts)`` where:
-            - ``timesteps`` has shape ``(num_steps,)`` (model dtype)
-            - ``dts`` has shape ``(num_steps,)`` (float32)
+            - ``timesteps`` has shape ``(num_steps,)`` float32 on device
+            - ``dts`` has shape ``(num_steps,)`` float32 on device
         """
-        raise NotImplementedError
+        timesteps = np.ascontiguousarray(sigmas[:-1])
+        dts = np.ascontiguousarray(sigmas[1:] - sigmas[:-1])
+        return (
+            Buffer.from_dlpack(timesteps),
+            Buffer.from_dlpack(dts),
+        )
+
+    # -- Cache defaults -------------------------------------------------------
+
+    # Flux2 model-specific defaults.
+    _DEFAULT_TAYLORSEER_CACHE_INTERVAL: int = 5
+    _DEFAULT_TAYLORSEER_WARMUP_STEPS: int = 9
+    _DEFAULT_TAYLORSEER_MAX_ORDER: int = 1
+
+    def _resolve_cache_defaults(self) -> None:
+        """Fill nullable DenoisingCacheConfig fields with Flux2 defaults."""
+        cc = self._cache_config
+        if cc.taylorseer_cache_interval is None:
+            cc.taylorseer_cache_interval = (
+                self._DEFAULT_TAYLORSEER_CACHE_INTERVAL
+            )
+        if cc.taylorseer_warmup_steps is None:
+            cc.taylorseer_warmup_steps = self._DEFAULT_TAYLORSEER_WARMUP_STEPS
+        if cc.taylorseer_max_order is None:
+            cc.taylorseer_max_order = self._DEFAULT_TAYLORSEER_MAX_ORDER

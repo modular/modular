@@ -458,13 +458,62 @@ class InferenceSession:
             custom_extensions: The extensions to load for the model.
               Supports paths to `.mojopkg` custom ops.
 
-            weights_registry: A mapping from names of model weights' names to
-              their values. The values are currently expected to be dlpack
-              arrays. If an array is a read-only numpy array, the user must
+            weights_registry: Model weight names mapped to
+              their values. The values should be dlpack
+              arrays. If an array is a read-only numpy array, you must
               ensure that its lifetime extends beyond the lifetime of the model.
+              Although ``weights_registry`` is technically optional, you'll always
+              need to load weights in practice.
 
         Returns:
             The loaded model, compiled and ready to execute.
+
+        Raises:
+            RuntimeError: If the path provided is invalid.
+        """
+        models = self.load_all(
+            model,
+            custom_extensions=custom_extensions,
+            weights_registry=weights_registry,
+        )
+        if len(models) != 1:
+            raise ValueError(
+                f"Expected exactly one model in the compiled artifact, but "
+                f"got {len(models)}. Use load_all() to load multi-model artifacts."
+            )
+        return models[0]
+
+    def load_all(
+        self,
+        model: str | Path | Graph,
+        *,
+        custom_extensions: CustomExtensionsType | None = None,
+        weights_registry: Mapping[str, DLPackArray] | None = None,
+    ) -> list[Model]:
+        """Loads all trained models and compiles it for inference.
+
+        A compiled MEF artifact may contain more than one model (for example a
+        vision encoder and a language model compiled together).  This method
+        returns one :class:`Model` per model encoded in the artifact, in MEF
+        order.  For single-model artifacts the returned list has exactly one
+        element.
+
+        Args:
+            model: Path to a model.
+
+            custom_extensions: The extensions to load for the model.
+              Supports paths to `.mojopkg` custom ops.
+
+            weights_registry: Model weight names mapped to
+              their values. The values should be dlpack
+              arrays. If an array is a read-only numpy array, you must
+              ensure that its lifetime extends beyond the lifetime of the model.
+              Although ``weights_registry`` is technically optional, you'll always
+              need to load weights in practice.
+
+        Returns:
+            The loaded models, compiled and ready to execute, one per model
+            primitive encoded in the compiled artifact.
 
         Raises:
             RuntimeError: If the path provided is invalid.
@@ -544,10 +593,9 @@ class InferenceSession:
         if is_virtual_device_mode():
             # In compile-only mode with virtual devices, skip initialization
             # Initialization requires device memory allocation which virtual devices don't support
-            return _model
+            return [_model]
 
-        _model._load(weights_registry_real)
-        return _model
+        return self._impl._load_all(_model, weights_registry_real)
 
     def set_debug_print_options(
         self,

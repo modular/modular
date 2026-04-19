@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import TYPE_CHECKING, Any, Generic
 
 import numpy as np
@@ -36,6 +35,7 @@ from ..interfaces.diffusion_pipeline import DiffusionPipeline
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
+    from ..pipeline_executor import PipelineExecutor
 
 logger = logging.getLogger("max.pipelines")
 
@@ -56,10 +56,12 @@ class PixelGenerationPipeline(
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[DiffusionPipeline],
+        pipeline_model: type[DiffusionPipeline]
+        | type[PipelineExecutor[Any, Any, Any]],
         cache_config: DenoisingCacheConfig | None = None,
     ) -> None:
         from max.engine import InferenceSession  # local import to avoid cycles
+        from max.pipelines.lib.pipeline_executor import PipelineExecutor
 
         self._pipeline_config = pipeline_config
         # Use the first component's device_specs for session initialization.
@@ -72,27 +74,18 @@ class PixelGenerationPipeline(
         # Configure session with pipeline settings.
         self._pipeline_config.configure_session(session)
 
-        # Experimental: opt into the PipelineExecutor-based Flux2Executor
-        # for development testing.  The default path is unchanged.
-        use_executor = (
-            os.environ.get("MODULAR_FLUX2_USE_EXECUTOR", "").lower() == "true"
-            and pipeline_model.__name__ == "Flux2Pipeline"
-        )
-
-        if use_executor:
-            from max.pipelines.architectures.flux2.flux2_executor import (  # type: ignore[import-not-found]
-                Flux2Executor,
-            )
-
-            logger.info(
-                "MODULAR_FLUX2_USE_EXECUTOR is set: using Flux2Executor "
-                "instead of Flux2Pipeline."
-            )
+        if issubclass(pipeline_model, PipelineExecutor):
+            # Merge CLI-supplied cache_config into runtime so the executor
+            # receives TaylorSeer / FBCache / TeaCache settings.
+            if cache_config is not None:
+                pipeline_config.runtime.denoising_cache = cache_config
             self._use_executor = True
-            self._executor = Flux2Executor(
-                manifest=pipeline_config.models,
-                session=session,
-                runtime_config=pipeline_config.runtime,
+            self._executor: PipelineExecutor[Any, Any, Any] | None = (
+                pipeline_model(
+                    manifest=pipeline_config.models,
+                    session=session,
+                    runtime_config=pipeline_config.runtime,
+                )
             )
             self._pipeline_model: DiffusionPipeline | None = None
         else:
@@ -105,7 +98,8 @@ class PixelGenerationPipeline(
                 session=session,
                 devices=self._devices,
                 weight_paths=[],
-                cache_config=cache_config or DenoisingCacheConfig(),
+                cache_config=cache_config
+                or pipeline_config.runtime.denoising_cache,
             )
 
     @property

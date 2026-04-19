@@ -114,9 +114,7 @@ def execute_kv_cache_ragged_flash_attention[
     var num_pages = batch_size * ceildiv(seq_len + cache_len, page_size) * 2
     comptime CollectionType = PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
-        ),
+        KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
         page_size,
     ]
 
@@ -201,7 +199,7 @@ def execute_kv_cache_ragged_flash_attention[
     var output_host_ptr = alloc[Scalar[dtype]](output_size)
     var output_dev_buffer = ctx.enqueue_create_buffer[dtype](output_size)
     var output_device_tensor = TileTensor(
-        output_dev_buffer.unsafe_ptr(),
+        output_dev_buffer,
         row_major((Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]())),
     )
     # Paged LUT allocation
@@ -296,12 +294,12 @@ def execute_kv_cache_ragged_flash_attention[
 
     # Create tensors for flash_attention inputs
     var q_device_tensor = TileTensor(
-        q_dev_buffer.unsafe_ptr(),
+        q_dev_buffer,
         row_major((Idx(total_seq_len), Idx[num_q_heads](), Idx[head_dim]())),
     )
 
     var input_row_offsets_tensor = TileTensor(
-        input_row_offsets_dev_buffer.unsafe_ptr(),
+        input_row_offsets_dev_buffer,
         row_major(Idx(batch_size + 1)),
     )
 

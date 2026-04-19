@@ -26,7 +26,7 @@ from .dtype import DataType, Property
 from .result import Result
 
 
-comptime cublasLtHandle_t = OpaquePointer[_]
+comptime cublasLtHandle_t = OptionalUnsafePointer[NoneType, _]
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -109,7 +109,7 @@ def cublasLtMatmulAlgoConfigSetAttribute(
             AlgorithmConfig,
             OpaquePointer[ImmutAnyOrigin],
             Int,
-        ) -> Result,
+        ) thin -> Result,
     ]()(algo, attr, buf, size_in_bytes)
 
 
@@ -118,7 +118,7 @@ def cublasLtCreate(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasLtCreate",
-        def(type_of(light_handle)) -> Result,
+        def(type_of(light_handle)) thin -> Result,
     ]()(light_handle)
 
 
@@ -138,7 +138,7 @@ def cublasLtMatrixTransformDescCreate(
         def(
             type_of(transform_desc),
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(transform_desc, scale_type)
 
 
@@ -234,7 +234,7 @@ def cublasLtMatrixLayoutSetAttribute(
             LayoutAttribute,
             OpaquePointer[ImmutAnyOrigin],
             Int,
-        ) -> Result,
+        ) thin -> Result,
     ]()(mat_layout, attr, buf, size_in_bytes)
 
 
@@ -527,7 +527,7 @@ struct ClusterShape(TrivialRegisterPassable, Writable):
 
 def cublasLtHeuristicsCacheSetCapacity(capacity: Int) raises -> Result:
     return _get_dylib_function[
-        "cublasLtHeuristicsCacheSetCapacity", def(Int) -> Result
+        "cublasLtHeuristicsCacheSetCapacity", def(Int) thin -> Result
     ]()(capacity)
 
 
@@ -723,7 +723,7 @@ def cublasLtGetStatusString(
 ) raises -> UnsafePointer[Int8, ImmutAnyOrigin]:
     return _get_dylib_function[
         "cublasLtGetStatusString",
-        def(Result) raises -> UnsafePointer[Int8, ImmutAnyOrigin],
+        def(Result) thin raises -> UnsafePointer[Int8, ImmutAnyOrigin],
     ]()(status)
 
 
@@ -807,13 +807,15 @@ def cublasLtMatmulDescGetAttribute(
             OpaquePointer[MutAnyOrigin],
             Int,
             UnsafePointer[Int, MutAnyOrigin],
-        ) -> Result,
+        ) thin -> Result,
     ]()(matmul_desc, attr, buf, size_in_bytes, size_written)
 
 
 # Opaque descriptor for matrix memory layout
 # .
-comptime cublasLtMatrixLayout_t = UnsafePointer[MatrixLayout, MutAnyOrigin]
+comptime cublasLtMatrixLayout_t = OptionalUnsafePointer[
+    MatrixLayout, MutAnyOrigin
+]
 
 # Opaque descriptor for cublasLtMatrixTransform() operation details
 # .
@@ -858,7 +860,7 @@ def cublasLtMatmulAlgoCheck(
             cublasLtMatrixLayout_t,
             UnsafePointer[MatmulAlgorithm, ImmutAnyOrigin],
             UnsafePointer[cublasLtMatmulHeuristicResult_t, MutAnyOrigin],
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         light_handle,
         operation_desc,
@@ -1000,7 +1002,7 @@ struct ReductionScheme(TrivialRegisterPassable, Writable):
 def cublasLtLoggerSetCallback(
     callback: def(
         Int16, UnsafePointer[Int8, ImmutAnyOrigin], OpaquePointer[MutAnyOrigin]
-    ) raises -> None
+    ) thin raises -> None
 ) raises -> Result:
     """Experimental: Logger callback setter.
 
@@ -1015,8 +1017,8 @@ def cublasLtLoggerSetCallback(
                 Int16,
                 UnsafePointer[Int8, ImmutAnyOrigin],
                 OpaquePointer[MutAnyOrigin],
-            ) raises -> None
-        ) -> Result,
+            ) thin raises -> None
+        ) thin -> Result,
     ]()(callback)
 
 
@@ -1025,12 +1027,12 @@ def cublasLtGetProperty(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasLtGetProperty",
-        def(Property, UnsafePointer[Int16, MutAnyOrigin]) -> Result,
+        def(Property, UnsafePointer[Int16, MutAnyOrigin]) thin -> Result,
     ]()(type, value)
 
 
 def cublasLtGetVersion() raises -> Int:
-    return _get_dylib_function["cublasLtGetVersion", def() -> Int]()()
+    return _get_dylib_function["cublasLtGetVersion", def() thin -> Int]()()
 
 
 def cublasLtMatrixLayoutGetAttribute(
@@ -1062,7 +1064,7 @@ def cublasLtMatrixLayoutGetAttribute(
             OpaquePointer[MutAnyOrigin],
             Int,
             UnsafePointer[Int, MutAnyOrigin],
-        ) -> Result,
+        ) thin -> Result,
     ]()(mat_layout, attr, buf, size_in_bytes, size_written)
 
 
@@ -1515,7 +1517,7 @@ def cublasLtMatrixTransformDescInit_internal(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixTransformDescInit_internal",
-        def(cublasLtMatrixTransformDesc_t, Int, DataType) -> Result,
+        def(cublasLtMatrixTransformDesc_t, Int, DataType) thin -> Result,
     ]()(transform_desc, size, scale_type)
 
 
@@ -1528,17 +1530,17 @@ def cublasLtMatrixLayoutDestroy(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixLayoutDestroy",
-        def(cublasLtMatrixLayout_t) -> Result,
+        def(cublasLtMatrixLayout_t) thin -> Result,
     ]()(mat_layout)
 
 
 # Opaque descriptor for cublasLtMatmul() operation details
 # .
-comptime cublasLtMatmulDesc_t = UnsafePointer[Descriptor, MutAnyOrigin]
+comptime cublasLtMatmulDesc_t = OptionalUnsafePointer[Descriptor, MutAnyOrigin]
 
 # Opaque descriptor for cublasLtMatmulAlgoGetHeuristic() configuration
 # .
-comptime cublasLtMatmulPreference_t = UnsafePointer[
+comptime cublasLtMatmulPreference_t = OptionalUnsafePointer[
     PreferenceOpaque, MutAnyOrigin
 ]
 
@@ -1552,7 +1554,7 @@ def cublasLtMatmul(
     _b: _CPointer[NoneType, ImmutAnyOrigin],
     _bdesc: cublasLtMatrixLayout_t,
     beta: OpaquePointer[ImmutAnyOrigin],
-    _c: OpaquePointer[ImmutAnyOrigin],
+    _c: _CPointer[NoneType, ImmutAnyOrigin],
     _cdesc: cublasLtMatrixLayout_t,
     _d: _CPointer[NoneType, MutAnyOrigin],
     _ddesc: cublasLtMatrixLayout_t,
@@ -1592,7 +1594,7 @@ def cublasLtMatmul(
             type_of(workspace),
             type_of(workspace_size_in_bytes),
             type_of(stream),
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         light_handle,
         compute_desc,
@@ -1622,7 +1624,7 @@ def cublasLtMatrixTransformDescDestroy(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixTransformDescDestroy",
-        def(cublasLtMatrixTransformDesc_t) -> Result,
+        def(cublasLtMatrixTransformDesc_t) thin -> Result,
     ]()(transform_desc)
 
 
@@ -1662,7 +1664,7 @@ def cublasLtMatmulAlgoCapGetAttribute(
             OpaquePointer[MutAnyOrigin],
             Int,
             UnsafePointer[Int, MutAnyOrigin],
-        ) -> Result,
+        ) thin -> Result,
     ]()(algo, attr, buf, size_in_bytes, size_written)
 
 
@@ -1690,7 +1692,7 @@ def cublasLtMatmulDescSetAttribute(
             cublasLtMatmulDescAttributes_t,
             OpaquePointer[ImmutAnyOrigin],
             Int,
-        ) -> Result,
+        ) thin -> Result,
     ]()(matmul_desc, attr, buf, size_in_bytes)
 
 
@@ -1718,7 +1720,7 @@ def cublasLtMatmulPreferenceSetAttribute(
             Preference,
             OpaquePointer[ImmutAnyOrigin],
             Int,
-        ) -> Result,
+        ) thin -> Result,
     ]()(pref, attr, buf, size_in_bytes)
 
 
@@ -1728,7 +1730,7 @@ comptime cublasLtLoggerCallback_t = def(
     Int32,
     UnsafePointer[Int8, ImmutAnyOrigin],
     UnsafePointer[Int8, ImmutAnyOrigin],
-) -> None
+) thin -> None
 
 
 def cublasLtMatrixLayoutInit_internal(
@@ -1750,7 +1752,7 @@ def cublasLtMatrixLayoutInit_internal(
             UInt64,
             UInt64,
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(mat_layout, size, type, rows, cols, ld)
 
 
@@ -1984,7 +1986,7 @@ def cublasLtMatmulPreferenceDestroy(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulPreferenceDestroy",
-        def(cublasLtMatmulPreference_t) -> Result,
+        def(cublasLtMatmulPreference_t) thin -> Result,
     ]()(pref)
 
 
@@ -2036,7 +2038,7 @@ def cublasLtMatmulAlgoGetHeuristic(
             Int16,
             UnsafePointer[cublasLtMatmulHeuristicResult_t, MutAnyOrigin],
             UnsafePointer[Int, MutAnyOrigin],
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         light_handle,
         operation_desc,
@@ -2313,12 +2315,14 @@ struct LayoutAttribute(TrivialRegisterPassable, Writable):
 
 def cublasLtDestroy(light_handle: cublasLtHandle_t) raises -> Result:
     return _get_dylib_function[
-        "cublasLtDestroy", def(type_of(light_handle)) -> Result
+        "cublasLtDestroy", def(type_of(light_handle)) thin -> Result
     ]()(light_handle)
 
 
 def cublasLtGetCudartVersion() raises -> Int:
-    return _get_dylib_function["cublasLtGetCudartVersion", def() -> Int]()()
+    return _get_dylib_function[
+        "cublasLtGetCudartVersion", def() thin -> Int
+    ]()()
 
 
 def cublasLtMatmulAlgoConfigGetAttribute(
@@ -2350,7 +2354,7 @@ def cublasLtMatmulAlgoConfigGetAttribute(
             OpaquePointer[MutAnyOrigin],
             Int,
             UnsafePointer[Int, MutAnyOrigin],
-        ) -> Result,
+        ) thin -> Result,
     ]()(algo, attr, buf, size_in_bytes, size_written)
 
 
@@ -2363,7 +2367,7 @@ def cublasLtLoggerForceDisable() raises -> Result:
         If the dynamic library cannot be found.
     ."""
     return _get_dylib_function[
-        "cublasLtLoggerForceDisable", def() -> Result
+        "cublasLtLoggerForceDisable", def() thin -> Result
     ]()()
 
 
@@ -2372,7 +2376,7 @@ def cublasLtHeuristicsCacheGetCapacity(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasLtHeuristicsCacheGetCapacity",
-        def(UnsafePointer[Int, MutAnyOrigin]) -> Result,
+        def(UnsafePointer[Int, MutAnyOrigin]) thin -> Result,
     ]()(capacity)
 
 
@@ -2391,7 +2395,7 @@ def cublasLtDisableCpuInstructionsSetMask(mask: Int16) raises -> Int16:
         If the dynamic library cannot be found.
     ."""
     return _get_dylib_function[
-        "cublasLtDisableCpuInstructionsSetMask", def(Int16) raises -> Int16
+        "cublasLtDisableCpuInstructionsSetMask", def(Int16) thin raises -> Int16
     ]()(mask)
 
 
@@ -2414,7 +2418,7 @@ def cublasLtLoggerSetLevel(level: Int16) raises -> Result:
         If the dynamic library cannot be found.
     ."""
     return _get_dylib_function[
-        "cublasLtLoggerSetLevel", def(Int16) -> Result
+        "cublasLtLoggerSetLevel", def(Int16) thin -> Result
     ]()(level)
 
 
@@ -2565,7 +2569,7 @@ def cublasLtMatmulDescDestroy(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulDescDestroy",
-        def(cublasLtMatmulDesc_t) -> Result,
+        def(cublasLtMatmulDesc_t) thin -> Result,
     ]()(matmul_desc)
 
 
@@ -2593,7 +2597,7 @@ def cublasLtMatrixTransformDescSetAttribute(
             TransformDescriptor,
             OpaquePointer[ImmutAnyOrigin],
             Int,
-        ) -> Result,
+        ) thin -> Result,
     ]()(transform_desc, attr, buf, size_in_bytes)
 
 
@@ -2626,7 +2630,7 @@ def cublasLtMatmulPreferenceGetAttribute(
             OpaquePointer[MutAnyOrigin],
             Int,
             UnsafePointer[Int, MutAnyOrigin],
-        ) -> Result,
+        ) thin -> Result,
     ]()(pref, attr, buf, size_in_bytes, size_written)
 
 
@@ -2659,7 +2663,7 @@ def cublasLtMatmulAlgoInit(
             DataType,
             Int16,
             UnsafePointer[MatmulAlgorithm, MutAnyOrigin],
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         light_handle,
         compute_type,
@@ -2843,7 +2847,7 @@ def cublasLtMatrixLayoutCreate(
             UInt64,
             UInt64,
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(mat_layout, type, rows, cols, ld)
 
 
@@ -2913,7 +2917,7 @@ def cublasLtMatmulDescCreate(
             UnsafePointer[cublasLtMatmulDesc_t, MutAnyOrigin],
             ComputeType,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(matmul_desc, compute_type, scale_type)
 
 
@@ -3660,7 +3664,7 @@ def cublasLtGetStatusName(
 ) raises -> UnsafePointer[Int8, ImmutAnyOrigin]:
     return _get_dylib_function[
         "cublasLtGetStatusName",
-        def(Result) raises -> UnsafePointer[Int8, ImmutAnyOrigin],
+        def(Result) thin raises -> UnsafePointer[Int8, ImmutAnyOrigin],
     ]()(status)
 
 
@@ -3674,7 +3678,9 @@ def cublasLtMatmulPreferenceCreate(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulPreferenceCreate",
-        def(UnsafePointer[cublasLtMatmulPreference_t, MutAnyOrigin]) -> Result,
+        def(
+            UnsafePointer[cublasLtMatmulPreference_t, MutAnyOrigin]
+        ) thin -> Result,
     ]()(pref)
 
 
@@ -3723,7 +3729,7 @@ def cublasLtLoggerSetFile(file: OpaquePointer[MutAnyOrigin]) raises -> Result:
         If the dynamic library cannot be found.
     ."""
     return _get_dylib_function[
-        "cublasLtLoggerSetFile", def(OpaquePointer[MutAnyOrigin]) -> Result
+        "cublasLtLoggerSetFile", def(OpaquePointer[MutAnyOrigin]) thin -> Result
     ]()(file)
 
 
@@ -3738,7 +3744,7 @@ def cublasLtLoggerOpenFile(
     ."""
     return _get_dylib_function[
         "cublasLtLoggerOpenFile",
-        def(UnsafePointer[Int8, ImmutAnyOrigin]) -> Result,
+        def(UnsafePointer[Int8, ImmutAnyOrigin]) thin -> Result,
     ]()(log_file)
 
 
@@ -3782,7 +3788,7 @@ def cublasLtMatrixTransform(
             OpaquePointer[MutAnyOrigin],
             cublasLtMatrixLayout_t,
             _CUstream_st,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         light_handle,
         transform_desc,
@@ -3814,9 +3820,9 @@ def cublasLtLoggerSetMask(mask: Int16) raises -> Result:
     Raises:
         If the dynamic library cannot be found.
     ."""
-    return _get_dylib_function["cublasLtLoggerSetMask", def(Int16) -> Result]()(
-        mask
-    )
+    return _get_dylib_function[
+        "cublasLtLoggerSetMask", def(Int16) thin -> Result
+    ]()(mask)
 
 
 # Opaque structure holding CUBLASLT context (typedef defined at top of file)
@@ -3851,7 +3857,7 @@ def cublasLtMatrixTransformDescGetAttribute(
             OpaquePointer[MutAnyOrigin],
             Int,
             UnsafePointer[Int, MutAnyOrigin],
-        ) -> Result,
+        ) thin -> Result,
     ]()(transform_desc, attr, buf, size_in_bytes, size_written)
 
 
@@ -3870,7 +3876,7 @@ def cublasLtMatmulDescInit_internal(
             Int,
             ComputeType,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(matmul_desc, size, compute_type, scale_type)
 
 
@@ -3881,7 +3887,7 @@ def cublasLtMatmulPreferenceInit_internal(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulPreferenceInit_internal",
-        def(cublasLtMatmulPreference_t, Int) -> Result,
+        def(cublasLtMatmulPreference_t, Int) thin -> Result,
     ]()(pref, size)
 
 

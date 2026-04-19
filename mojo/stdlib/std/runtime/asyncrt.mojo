@@ -13,10 +13,9 @@
 """This module implements the low level concurrency library."""
 
 from std.os import abort
-from std.os.atomic import Atomic
+from std.atomic import Atomic
 from std.ffi import _CPointer, external_call
 from std.gpu.host.device_context import _DeviceContextPtr
-from std.memory._nonnull import NonNullUnsafePointer
 
 from std.builtin.coroutine import (
     AnyCoroutine,
@@ -59,7 +58,7 @@ struct _AsyncContext(ImplicitlyCopyable, RegisterPassable):
     to available.
     """
 
-    comptime callback_fn_type = def(_Chain) -> None
+    comptime callback_fn_type = def(_Chain) thin -> None
 
     var callback: Self.callback_fn_type
     var chain: _Chain
@@ -460,7 +459,7 @@ struct TaskGroupContext(TrivialRegisterPassable):
     when they complete.
     """
 
-    comptime tg_callback_fn_type = def(mut TaskGroup) -> None
+    comptime tg_callback_fn_type = def(mut TaskGroup) thin -> None
     """Type definition for callback functions that operate on TaskGroups."""
 
     var callback: Self.tg_callback_fn_type
@@ -613,9 +612,7 @@ struct DeviceContextPtr(Defaultable, ImplicitlyCopyable, RegisterPassable):
     by the graph compiler.
     """
 
-    var _handle: Optional[
-        NonNullUnsafePointer[NoneType, ExternalOrigin[mut=True]]
-    ]
+    var _handle: Optional[UnsafePointer[NoneType, ExternalOrigin[mut=True]]]
     """The underlying pointer to the C++ `DeviceContext`."""
 
     @always_inline

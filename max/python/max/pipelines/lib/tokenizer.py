@@ -352,7 +352,7 @@ class TextTokenizer(
         TextContext, npt.NDArray[np.integer[Any]], TextGenerationRequest
     ]
 ):
-    """Encapsulates creation of TextContext and specific token encode/decode logic.
+    """Encapsulates creation of :class:`TextContext` and specific token encode/decode logic.
 
     Args:
         model_path: Path to the model/tokenizer
@@ -443,8 +443,9 @@ class TextTokenizer(
         chat_template_options: dict[str, Any] | None = None,
     ) -> str:
         """Applies the delegate chat template to messages (and optional tools)."""
-        chat_template_options = chat_template_options or {
-            "add_generation_prompt": True
+        chat_template_options = {
+            "add_generation_prompt": True,
+            **(chat_template_options or {}),
         }
 
         try:
@@ -521,7 +522,7 @@ class TextTokenizer(
     async def decode(
         self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
-        """Transformer a provided encoded token array, back into readable text."""
+        """Transforms a provided encoded token array back into readable text."""
         # Sometimes, encoded comes in as an int so, make it np array
         if isinstance(encoded, int):
             encoded = np.array(encoded)
@@ -593,7 +594,7 @@ class TextTokenizer(
     async def create_eos_tracker(
         self, request: TextGenerationRequest
     ) -> EOSTracker:
-        """Builds an EOSTracker from the request sampling params and tokenizer default EOS token IDs."""
+        """Builds an :class:`EOSTracker` from the request sampling params and tokenizer default EOS token IDs."""
         return await build_eos_tracker_for_request(
             self._default_eos_token_ids,
             request,
@@ -760,7 +761,9 @@ class TextAndVisionTokenizer(
             self.vision_token_ids.append(image_break_token_id)
 
     def apply_chat_template(
-        self, messages: list[TextGenerationRequestMessage]
+        self,
+        messages: list[TextGenerationRequestMessage],
+        tools: list[TextGenerationRequestTool] | None = None,
     ) -> str:
         """Applies the processor's chat template to the messages."""
         # This converts between the Pydantic TextGenerationRequestMessage
@@ -768,6 +771,7 @@ class TextAndVisionTokenizer(
         templated_message = self.processor.apply_chat_template(
             [msg.model_dump() for msg in messages],
             tokenize=False,
+            tools=tools,
             add_generation_prompt=True,
         )
         assert isinstance(templated_message, str)
@@ -820,7 +824,7 @@ class TextAndVisionTokenizer(
     async def decode(
         self, encoded: npt.NDArray[np.integer[Any]], **kwargs
     ) -> str:
-        """Transformer a provided encoded token array, back into readable text."""
+        """Transforms a provided encoded token array back into readable text."""
         try:
             return self.delegate.decode(encoded.tolist(), **kwargs)
         except OverflowError as e:
@@ -830,7 +834,7 @@ class TextAndVisionTokenizer(
     async def create_eos_tracker(
         self, request: TextGenerationRequest
     ) -> EOSTracker:
-        """Builds an EOSTracker from the request sampling params and tokenizer default EOS token IDs."""
+        """Builds an :class:`EOSTracker` from the request sampling params and tokenizer default EOS token IDs."""
         return await build_eos_tracker_for_request(
             self._default_eos_token_ids,
             request,
@@ -846,7 +850,7 @@ class TextAndVisionTokenizer(
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages:
-            prompt = self.apply_chat_template(request.messages)
+            prompt = self.apply_chat_template(request.messages, request.tools)
             add_special_tokens = False
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")

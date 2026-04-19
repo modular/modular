@@ -13,37 +13,19 @@
 
 """Benchmark configuration classes with inheritance structure for MAX benchmarks."""
 
-import argparse
-import logging
-import tempfile
-import types
-from collections.abc import Mapping, Sequence
-from pathlib import Path
-from typing import (
-    Any,
-    ClassVar,
-    Literal,
-    Union,
-    get_args,
-    get_origin,
-    get_type_hints,
-)
+from collections.abc import Mapping
+from typing import Literal
 
-import yaml
+from max.config import ConfigFileModel
 from pydantic import Field
 
 from .datasets import DatasetMode, DistributionParameter
-
-logger = logging.getLogger(__name__)
-
-from max.config import ConfigFileModel, deep_merge_max_configs
 
 BaseBackend = Literal[
     "modular",
     "sglang",
     "trtllm",
     "vllm",
-    "vllm-omni",
 ]
 
 Backend = Literal[
@@ -55,9 +37,6 @@ Backend = Literal[
     "trtllm-chat",
     "vllm",
     "vllm-chat",
-    # vllm-omni has no -chat variant: it always uses /v1/chat/completions
-    # for pixel generation and does not support text generation.
-    "vllm-omni",
 ]
 
 Endpoint = Literal[
@@ -96,95 +75,13 @@ PIXEL_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
 PIXEL_GEN_DEFAULT_ENDPOINT: Mapping[str, Endpoint] = {
     "modular": "/v1/responses",
     "sglang": "/v1/images/generations",
-    "vllm-omni": "/v1/chat/completions",
+    "vllm": "/v1/chat/completions",
 }
 
 # Valid endpoints for pixel generation tasks (union of all backend defaults).
 PIXEL_GENERATION_ENDPOINTS: frozenset[Endpoint] = frozenset(
     PIXEL_GEN_DEFAULT_ENDPOINT.values()
 )
-
-
-def _add_config_file_arg_to_parser(
-    parser: argparse.ArgumentParser,
-) -> argparse.ArgumentParser:
-    """Add the --config-file argument to a parser.
-
-    Args:
-        parser: The parser to add the argument to.
-    """
-    parser.add_argument(
-        "--config-file",
-        type=Path,
-        help="Path to configuration file. If provided, this config will inherit from the default config and override its values.",
-    )
-    return parser
-
-
-def _resolve_user_provided_config_file_cli_arg(
-    args: Sequence[str] | None = None,
-) -> tuple[Path | None, list[str]]:
-    """Resolve the user-provided --config-file argument from command line arguments.
-
-    This utility function extracts the config file path from command line arguments
-    before the main argument parsing, allowing the config file to be loaded and used
-    as defaults for the main parser.
-
-    Args:
-        args: Command line arguments to parse. If None, parse from sys.argv.
-
-    Returns:
-        Tuple of (config_file_path, remaining_args) where:
-        - config_file_path: Path to the config file if provided, None otherwise
-        - remaining_args: List of remaining arguments after removing --config-file
-    """
-    # Create a preliminary parser to get the config file path
-    preliminary_parser = argparse.ArgumentParser(add_help=False)
-    preliminary_parser = _add_config_file_arg_to_parser(preliminary_parser)
-
-    # Parse preliminary args to get config file path
-    preliminary_args, remaining_args = preliminary_parser.parse_known_args(
-        args=args
-    )
-    return preliminary_args.config_file, remaining_args
-
-
-def _resolve_argparse_type(
-    field_type: Any,
-) -> tuple[Any, str | type[argparse.Action] | None]:
-    """Determine the appropriate argparse type and action for a type annotation.
-
-    Args:
-        field_type: The type annotation to analyze.
-
-    Returns:
-        Tuple of (type_func, action) for argparse.add_argument().
-    """
-    origin = get_origin(field_type)
-    type_args = get_args(field_type)
-
-    is_union = origin is Union
-    if not is_union and origin is not None and hasattr(types, "UnionType"):
-        is_union = origin is types.UnionType
-
-    if is_union:
-        non_none = [a for a in type_args if a is not type(None)]
-        if len(non_none) == 1:
-            return _resolve_argparse_type(non_none[0])
-        return str, None
-
-    if origin is list:
-        if type_args and type_args[0] in (int, float, str):
-            return type_args[0], None
-        return str, None
-
-    if field_type in (int, float, str):
-        return field_type, None
-
-    if field_type is bool:
-        return None, argparse.BooleanOptionalAction
-
-    return str, None
 
 
 class HardwareConfig(ConfigFileModel):
@@ -247,9 +144,6 @@ class BaseBenchmarkConfig(ConfigFileModel):
     - Result saving configuration
     - Common control flags
     """
-
-    _config_file_section_name: ClassVar[str] = "benchmark_config"
-    """The section name to use when loading this config from a config file."""
 
     section_name: str | None = Field(default="benchmark_config", exclude=True)
     """Default section name for benchmark config files.
@@ -315,191 +209,6 @@ class BaseBenchmarkConfig(ConfigFileModel):
         default=False,
         description="Print all input and outputs to console.",
     )
-
-    # TODO: This can be removed once we're on cyclopts.
-    @classmethod
-    def help(cls) -> dict[str, str]:
-        """Build help dictionary from pydantic field descriptions.
-
-        Returns:
-            Dictionary of config options and their descriptions.
-        """
-        return {
-            name: field_info.description
-            for name, field_info in cls.model_fields.items()
-            if field_info.description
-        }
-
-    @classmethod
-    def get_default_required_fields(cls) -> set[str]:
-        """Get required fields for the benchmark config."""
-        return {"model"}
-
-    @classmethod
-    def from_config_file(
-        cls,
-        config_path: str | Path,
-        section_name: str | None = None,
-    ) -> "BaseBenchmarkConfig":
-        """Load configuration from a YAML file.
-
-        Args:
-            config_path: Path to the YAML configuration file.
-            section_name: Optional section name override.
-
-        Returns:
-            An instance of this config class populated from the file.
-        """
-        config_path = Path(config_path)
-        if not config_path.exists():
-            raise FileNotFoundError(
-                f"Configuration file not found: {config_path}"
-            )
-
-        with open(config_path, encoding="utf-8") as f:
-            config_dict = yaml.safe_load(f)
-
-        if not isinstance(config_dict, dict):
-            raise ValueError(
-                "Configuration file must contain a dictionary at the top level"
-            )
-
-        section = section_name or cls._config_file_section_name
-        if section in config_dict:
-            config_data = config_dict[section]
-            if not isinstance(config_data, dict):
-                config_data = {}
-        else:
-            config_data = config_dict
-
-        valid_fields = set(cls.model_fields.keys())
-        filtered = {
-            k: v
-            for k, v in config_data.items()
-            if k in valid_fields and v is not None
-        }
-        unknown = [k for k in config_data if k not in valid_fields]
-        if unknown:
-            logger.warning(
-                f"Ignoring unknown configuration keys for {cls.__name__}: {unknown}"
-            )
-
-        return cls(**filtered)
-
-    def cli_arg_parsers(
-        self,
-        choices_provider: dict[str, list[str]] | None = None,
-        description: str | None = None,
-        formatter_class: type[argparse.HelpFormatter] | None = None,
-        required_params: set[str] | None = None,
-    ) -> argparse.ArgumentParser:
-        """Create an ArgumentParser populated with all config fields.
-
-        Args:
-            choices_provider: Dictionary mapping field names to valid choices.
-            description: Description for the argument parser.
-            formatter_class: Formatter class for the argument parser.
-            required_params: Set of field names that should be required.
-
-        Returns:
-            A configured ArgumentParser.
-        """
-        extra_kwargs: dict[str, Any] = {}
-        if formatter_class is not None:
-            extra_kwargs["formatter_class"] = formatter_class
-
-        parser = argparse.ArgumentParser(
-            description=description, **extra_kwargs
-        )
-        choices_provider = choices_provider or {}
-        required_params = (
-            required_params
-            if required_params is not None
-            else self.get_default_required_fields()
-        )
-
-        try:
-            type_hints = get_type_hints(self.__class__)
-        except (NameError, AttributeError):
-            type_hints = {}
-
-        _internal_fields = {"config_file", "section_name"}
-        groups: dict[str, list[tuple[str, Any]]] = {}
-        ungrouped: list[tuple[str, Any]] = []
-
-        for name, field_info in self.model_fields.items():
-            if name.startswith("_") or name in _internal_fields:
-                continue
-            extra = field_info.json_schema_extra
-            raw_group = extra.get("group") if isinstance(extra, dict) else None
-            group_name = raw_group if isinstance(raw_group, str) else None
-            if group_name:
-                groups.setdefault(group_name, []).append((name, field_info))
-            else:
-                ungrouped.append((name, field_info))
-
-        for group_name, group_fields in groups.items():
-            group_desc = None
-            for _, fi in group_fields:
-                ex = fi.json_schema_extra
-                if isinstance(ex, dict) and "group_description" in ex:
-                    group_desc = ex["group_description"]
-                    break
-            group = parser.add_argument_group(group_name, group_desc)
-            for name, fi in group_fields:
-                self._add_field_as_cli_argument(
-                    group,
-                    name,
-                    fi,
-                    type_hints,
-                    choices_provider,
-                    required_params,
-                )
-
-        for name, fi in ungrouped:
-            self._add_field_as_cli_argument(
-                parser, name, fi, type_hints, choices_provider, required_params
-            )
-
-        return parser
-
-    def _add_field_as_cli_argument(
-        self,
-        parser_or_group: argparse.ArgumentParser | argparse._ArgumentGroup,
-        name: str,
-        field_info: Any,
-        type_hints: dict[str, Any],
-        choices_provider: dict[str, list[str]],
-        required_params: set[str],
-    ) -> None:
-        """Add a single pydantic field as an argparse argument."""
-        field_name = name.replace("_", "-")
-        arg_name = f"--{field_name}"
-
-        field_type = type_hints.get(name, field_info.annotation)
-        arg_type, action = _resolve_argparse_type(field_type)
-
-        field_value = getattr(self, name)
-        arg_kwargs: dict[str, Any] = {"default": field_value}
-
-        if name in choices_provider:
-            arg_kwargs["choices"] = choices_provider[name]
-
-        if field_info.description:
-            arg_kwargs["help"] = field_info.description
-
-        if name in required_params:
-            arg_kwargs["required"] = True
-
-        if action:
-            arg_kwargs["action"] = action
-            parser_or_group.add_argument(arg_name, **arg_kwargs)
-        elif get_origin(field_type) is list:
-            arg_kwargs.update({"type": arg_type, "nargs": "*"})
-            parser_or_group.add_argument(arg_name, **arg_kwargs)
-        else:
-            arg_kwargs["type"] = arg_type
-            parser_or_group.add_argument(arg_name, **arg_kwargs)
 
 
 class ServingBenchmarkConfig(BaseBenchmarkConfig):
@@ -571,6 +280,23 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={"group": "Request Configuration"},
     )
 
+    max_concurrent_conversations: int | None = Field(
+        default=None,
+        description=(
+            "Maximum conversation workers active at once for KV-cache stress "
+            "benchmarking. When set, runs run_kv_cache_stress_benchmark "
+            "instead of run_multiturn_benchmark: each worker drives one chat "
+            "session to completion before picking up the next, keeping all "
+            "session KV caches resident simultaneously. "
+            "--max-concurrency caps in-flight turn requests and must be <= "
+            "--max-concurrent-conversations to stress the server's KV-cache: "
+            "more open sessions than active turns grows the footprint and "
+            "increases the likelihood of offloading or dropping pre-computed "
+            "historical KV data."
+        ),
+        json_schema_extra={"group": "Request Configuration"},
+    )
+
     # Workload configuration (serving-specific)
     max_benchmark_duration_s: int | None = Field(
         default=None,
@@ -639,6 +365,16 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     top_k: int | None = Field(
         default=None,
         description="Top-k for sampling.",
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    response_format: str | None = Field(
+        default=None,
+        description=(
+            "JSON response format for structured output. Can be a JSON string "
+            "or '@path/to/schema.json' to load from file. "
+            'Example: \'{"type": "json_schema", "json_schema": {...}}\''
+        ),
         json_schema_extra={"group": "Output Control"},
     )
 
@@ -823,6 +559,18 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     )
 
     # Control flags (serving-specific)
+    warm_shared_prefix: bool = Field(
+        default=False,
+        description=(
+            "Send each unique shared prefix once (max_tokens=1) before the"
+            " benchmark run to prime prefix-cache KV entries. Only supported for"
+            " random/synthetic datasets with --random-sys-prompt-ratio > 0."
+        ),
+        json_schema_extra={
+            "group": "Control Flags",
+            "group_description": "Boolean flags controlling benchmark behavior",
+        },
+    )
     skip_test_prompt: bool = Field(
         default=False,
         description="Skip the test prompt. Useful when doing external profiling.",
@@ -832,7 +580,7 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         },
     )
     collect_gpu_stats: bool = Field(
-        default=False,
+        default=True,
         description="Enable GPU stats collection for serving benchmarks.",
         json_schema_extra={"group": "Control Flags"},
     )
@@ -852,6 +600,12 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     print_workload_stats: bool = Field(
         default=False,
         description="Print workload distribution statistics (input/output lengths, num turns, delays).",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    dry_run: bool = Field(
+        default=False,
+        description="Dry run the benchmark. If true, the benchmark will not be run but all the commands that would have run will be printed.",
         json_schema_extra={"group": "Control Flags"},
     )
 
@@ -888,8 +642,74 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
 
     metadata: list[str] = Field(
         default_factory=list,
-        description='Key-value pairs for metadata (format: ["key=value", ...]).',
+        description="Key-value pairs (e.g, --metadata version=0.3.3 tp=1) for metadata of this run to be saved in the result JSON file for record keeping purposes.",
         json_schema_extra={"group": "Result Saving"},
+    )
+
+    log_dir: str | None = Field(
+        default=None,
+        description="Path to save logs. Default: <backend>-latency-Y.m.d-H.M.S",
+        json_schema_extra={"group": "Result Saving"},
+    )
+
+    latency_percentiles: str = Field(
+        default="50,90,95,99",
+        description="Comma separated list of latency percentiles to include in CSV output. Only P50, P90, P95, and P99 are supported.",
+        json_schema_extra={"group": "Result Saving"},
+    )
+
+    # Workload config file
+    workload_config: str | None = Field(
+        default=None,
+        description="YAML file specifying the workload to benchmark.",
+        json_schema_extra={"group": "Workload Configuration"},
+    )
+
+    # Result upload configuration
+    upload_results: bool = Field(
+        default=False,
+        description="Upload results to BigQuery.",
+        json_schema_extra={"group": "Result Upload Configuration"},
+    )
+
+    benchmark_sha: str | None = Field(
+        default=None,
+        description="Commit hash of the docker image used for load generation.",
+        json_schema_extra={"group": "Result Upload Configuration"},
+    )
+
+    cluster_information_path: str | None = Field(
+        default=None,
+        description="Path to the cluster information file. Usually a json file with metadata about the cluster setup if you're benchmarking more than a single node.",
+        json_schema_extra={"group": "Result Upload Configuration"},
+    )
+
+    benchmark_config_name: str | None = Field(
+        default=None,
+        description="(For serving benchmarks) config name for tracking.",
+        json_schema_extra={"group": "Result Upload Configuration"},
+    )
+
+    # Sweep configuration
+    num_iters: int = Field(
+        default=1,
+        description="Number of iterations to run per configuration.",
+        json_schema_extra={"group": "Sweep Configuration"},
+    )
+
+    flush_prefix_cache: bool = Field(
+        default=True,
+        description="Flush the prefix cache between iterations.",
+        json_schema_extra={"group": "Sweep Configuration"},
+    )
+
+    num_prompts_multiplier: int | None = Field(
+        default=None,
+        description=(
+            "When set, num_prompts is computed as num_prompts_multiplier * max_concurrency "
+            "for each concurrency level, replacing the default 300s duration timeout."
+        ),
+        json_schema_extra={"group": "Sweep Configuration"},
     )
 
     lora_paths: list[str] = Field(
@@ -923,286 +743,3 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         description="Maximum concurrent LoRA loading/unloading operations.",
         json_schema_extra={"group": "LoRA Configuration"},
     )
-
-    @classmethod
-    def get_default_required_fields(cls) -> set[str]:
-        """Get required fields for the benchmark config."""
-        return super().get_default_required_fields().union({"dataset_name"})
-
-
-class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
-    """Configuration class for sweep serving benchmarks (sweep-benchmark-serving.py).
-
-    Inherits from ServingBenchmarkConfig and adds sweep-specific parameters:
-    - Workload configuration
-    - Logging and debugging options
-    - Result upload configuration
-    - Sweep-specific concurrency and duration parameters
-    - Metadata and result tracking
-    """
-
-    # Workload configuration (sweep-specific)
-    workload_config: str = Field(
-        default="",
-        description="YAML file specifying the workload to benchmark.",
-        json_schema_extra={
-            "group": "Workload Configuration",
-            "group_description": "Parameters controlling workload and dataset configuration",
-        },
-    )
-
-    # Logging and debugging (sweep-specific)
-    log_dir: str | None = Field(
-        default=None,
-        description="Path to save logs (in event of command failure only). Default: <backend>-latency-Y.m.d-H.M.S",
-        json_schema_extra={
-            "group": "Logging and Debugging",
-            "group_description": "Parameters controlling logging and debugging behavior",
-        },
-    )
-
-    dry_run: bool = Field(
-        default=False,
-        description="Dry run the benchmark. If true, the benchmark will not be run but all the commands that would have run will be printed.",
-        json_schema_extra={"group": "Logging and Debugging"},
-    )
-
-    # Result upload configuration (sweep-specific)
-    upload_results: bool = Field(
-        default=False,
-        description="Upload results to BigQuery.",
-        json_schema_extra={
-            "group": "Result Upload Configuration",
-            "group_description": "Parameters controlling result upload to BigQuery",
-        },
-    )
-
-    benchmark_sha: str | None = Field(
-        default=None,
-        description="Commit hash of the docker image used for load generation.",
-        json_schema_extra={"group": "Result Upload Configuration"},
-    )
-
-    cluster_information_path: str | None = Field(
-        default=None,
-        description="Path to the cluster information file. Usually a json file with metadata about the cluster setup if you're benchmarking more than a single node.",
-        json_schema_extra={"group": "Result Upload Configuration"},
-    )
-
-    benchmark_config_name: str | None = Field(
-        default=None,
-        description="(For serving benchmarks) config name for tracking.",
-        json_schema_extra={"group": "Result Upload Configuration"},
-    )
-
-    # Metadata and result tracking (sweep-specific)
-    metadata: list[str] = Field(
-        default_factory=list,
-        description="Key-value pairs (e.g, --metadata version=0.3.3 tp=1) for metadata of this run to be saved in the result JSON file for record keeping purposes.",
-        json_schema_extra={
-            "group": "Metadata and Result Tracking",
-            "group_description": "Parameters for metadata and result tracking",
-        },
-    )
-
-    latency_percentiles: str = Field(
-        default="50,90,95,99",
-        description="Comma separated list of latency percentiles to include in CSV output. Only P50, P90, P95, and P99 are supported (default: 50,90,95,99).",
-        json_schema_extra={"group": "Metadata and Result Tracking"},
-    )
-
-    # Sweep-specific concurrency and duration parameters
-    num_iters: int = Field(
-        default=1,
-        description="Number of iterations to run per configuration.",
-        json_schema_extra={
-            "group": "Sweep Configuration",
-            "group_description": "Parameters controlling sweep behavior and iteration",
-        },
-    )
-
-    flush_prefix_cache: bool = Field(
-        default=True,
-        description="Flush the prefix cache between iterations.",
-        json_schema_extra={"group": "Sweep Configuration"},
-    )
-
-    num_prompts_multiplier: int | None = Field(
-        default=None,
-        description=(
-            "When set, num_prompts is computed as num_prompts_multiplier * max_concurrency "
-            "for each concurrency level, replacing the default 300s duration timeout."
-        ),
-        json_schema_extra={
-            "group": "Sweep Configuration",
-            "cli_flag": "--num-prompts-multiplier",
-        },
-    )
-
-    collect_gpu_stats: bool = Field(
-        default=True,
-        description="Enable GPU stats collection for serving benchmarks.",
-        json_schema_extra={"group": "Control Flags"},
-    )
-
-    @classmethod
-    def get_default_required_fields(cls) -> set[str]:
-        """Get required fields for the sweep benchmark config."""
-
-        # TODO: This is really lame. dataset_name is a required flag in benchmark_serving.py,
-        # so you'd think it would also be required here, but it's not. This is
-        # because we only parse dataset_name from the workload config file and not
-        # through the command line in sweep-benchmark-serving.py. Turns out we
-        # also can't quite easily pull that apart trivially when we roll this
-        # part. Will circle back in a follow up PR. the --dataset-name flag
-        # is set to optional here and is a no-op.
-        parent_required_fields = super().get_default_required_fields()
-        parent_required_fields.remove("dataset_name")
-        return parent_required_fields.union({"workload_config"})
-
-
-def _load_user_provided_config(
-    user_config_path: Path,
-    default_config_path: Path,
-    config_class: type[BaseBenchmarkConfig],
-) -> BaseBenchmarkConfig:
-    """Load user-provided config file with inheritance from default config file.
-
-    This function ensures that a user-provided config file inherits from a default
-    config file, allowing users to override only the parameters they need
-    while keeping all the default values from the base configuration.
-
-    Args:
-        user_config_path: Path to the user-provided configuration file
-        default_config_path: Path to the default configuration file
-        config_class: The benchmark config class to instantiate (e.g., ServingBenchmarkConfig)
-
-    Returns:
-        Config instance with inherited and overridden values
-    """
-    # Load the user config file
-    with open(user_config_path, encoding="utf-8") as f:
-        user_config_dict = yaml.safe_load(f)
-
-    if not isinstance(user_config_dict, dict):
-        raise ValueError(
-            f"User configuration file {user_config_path} must contain a dictionary at the top level"
-        )
-    elif config_class._config_file_section_name not in user_config_dict:
-        logger.warning(
-            f"Cannot find {config_class._config_file_section_name} section in user configuration file {user_config_path}"
-            f"Will not override benchmark config values from default config"
-        )
-
-    # Load the default config file
-    with open(default_config_path, encoding="utf-8") as f:
-        default_config_dict = yaml.safe_load(f)
-
-    if not isinstance(default_config_dict, dict):
-        raise ValueError(
-            f"Default configuration file {default_config_path} must contain a dictionary at the top level"
-        )
-
-    # Merge the configs: user config overrides default config
-    merged_config_dict = deep_merge_max_configs(
-        default_config_dict, user_config_dict
-    )
-
-    # Resolve any depends_on paths relative to the default config file location
-    # This is necessary because user provided configs may not have context on where
-    # the "base" configs are located. This reference is only held in the default config file.
-    if "depends_on" in merged_config_dict:
-        depends_on_path = Path(merged_config_dict["depends_on"])
-        if not depends_on_path.is_absolute():
-            # Resolve relative to the default config file location
-            merged_config_dict["depends_on"] = str(
-                default_config_path.parent / depends_on_path
-            )
-
-    # Create a temporary config file with the merged content
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yaml", delete=False
-    ) as temp_file:
-        yaml.dump(merged_config_dict, temp_file)
-        temp_config_path = temp_file.name
-
-    try:
-        config = config_class.from_config_file(temp_config_path)
-        return config
-    finally:
-        # Clean up the temporary file
-        Path(temp_config_path).unlink(missing_ok=True)
-
-
-def parse_benchmark_args(
-    config_class: type[BaseBenchmarkConfig],
-    default_config_path: Path,
-    description: str,
-    args: Sequence[str] | None = None,
-) -> argparse.Namespace:
-    """Parse command line arguments for benchmark entrypoints with config file inheritance.
-
-    This function first parses a preliminary argument to get the config file path,
-    then loads the appropriate configuration and re-parses with the loaded config as defaults.
-
-    Its main purpose is to handle user provided config files which override params
-    of a particular benchmark entrypoint.
-
-    Args:
-        config_class: The benchmark config class to instantiate (e.g., ServingBenchmarkConfig)
-        default_config_path: Path to the default configuration file. For benchmark_serving.py,
-        this should be the path to the serving_config.yaml file.
-        description: Description for the argument parser
-        args: Command line arguments to parse. If None, parse from sys.argv.
-
-    Returns:
-        Parsed arguments namespace with config file values as defaults
-    """
-
-    # Parse the config file argument first
-    config_file_path, remaining_args = (
-        _resolve_user_provided_config_file_cli_arg(args=args)
-    )
-
-    if config_file_path is None:
-        logger.info(
-            f"No configuration file path provided, using default {default_config_path} file"
-        )
-        benchmark_config = config_class.from_config_file(default_config_path)
-    else:
-        # Check if user provided the same file as default
-        if config_file_path.resolve() == default_config_path.resolve():
-            logger.info(f"Using default configuration file: {config_file_path}")
-            benchmark_config = config_class.from_config_file(config_file_path)
-        else:
-            logger.info(
-                f"Using user-provided configuration file: {config_file_path} (will inherit from {default_config_path})"
-            )
-            # Load the user config file and ensure it inherits from default config
-            benchmark_config = _load_user_provided_config(
-                config_file_path, default_config_path, config_class
-            )
-
-    # Create parser using the enhanced config functionality
-    # When a config file is loaded, only require parameters that are not provided in the config
-    required_fields = config_class.get_default_required_fields()
-    provided_required_fields = set()
-
-    for field_name in required_fields:
-        if hasattr(benchmark_config, field_name):
-            field_value = getattr(benchmark_config, field_name)
-            # Consider a field as "provided" if it has a non-None, non-empty value
-            if field_value is not None and field_value != "":
-                provided_required_fields.add(field_name)
-
-    # Only require fields that are not provided in the config
-    still_required_fields = required_fields - provided_required_fields
-
-    parser = benchmark_config.cli_arg_parsers(
-        description=description, required_params=still_required_fields
-    )
-    # This is added only for its help message. It's a no-op and not actually used for parsing
-    # since it's done in the section above.
-    parser = _add_config_file_arg_to_parser(parser)
-    # Parse the remaining arguments with the loaded config as defaults
-    return parser.parse_args(args=remaining_args)

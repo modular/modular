@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device, DevicePinnedBuffer
+from max.driver import Buffer, Device, DeviceEvent, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import Model
 from max.interfaces import BatchProcessorInputs, TextGenerationContextType
@@ -101,6 +101,7 @@ class FusedSamplingProcessor:
         device: Device,
         bitmask: npt.NDArray[np.int32] | None = None,
         vocab_size: int | None = None,
+        pinned_new_tokens: Buffer | None = None,
     ):
         self.sampler = sampler
         self.batch_size = len(context_batch)
@@ -108,24 +109,46 @@ class FusedSamplingProcessor:
         self.bitmask = bitmask
         self.vocab_size = vocab_size
 
-        # If a structured decoding bitmask was provided, unpack packed-int masks once.
-        self.tensor_bitmask: Buffer | None
+        # If a structured decoding bitmask was provided, unpack packed-int masks
+        # and store in pinned memory for efficient per-step updates.
+        self.tensor_bitmask: Buffer | None = None
+        self._pinned_bitmask: Buffer | None = None
+
+        # Event to track D2H token copy completion. All transfers happen on the
+        # default stream; we use events for fine-grained synchronization.
+        self._d2h_copy_event: DeviceEvent | None = None
+
+        # Pre-allocated pinned buffer for D2H token copy (optional).
+        self._pinned_new_tokens = pinned_new_tokens
+
         if (
             self.bitmask is not None
             and self.vocab_size is not None
             and self.bitmask.shape[1] != self.vocab_size
         ):
-            # TODO: migrate bitmask to pinned memory
+            # Unpack packed-int masks to boolean format
             bits = 2 ** np.arange(32, dtype=np.int32)
-            self.bitmask = (self.bitmask[..., np.newaxis] & bits) != 0
-            self.bitmask = self.bitmask.reshape(self.batch_size, -1).astype(
-                np.bool_
-            )
-            self.tensor_bitmask = Buffer.from_numpy(self.bitmask).to(
-                self.device
-            )
-        else:
-            self.tensor_bitmask = None
+            unpacked = (self.bitmask[..., np.newaxis] & bits) != 0
+            unpacked = unpacked.reshape(self.batch_size, -1).astype(np.bool_)
+
+            # Allocate pinned bitmask buffer per-batch (actual_batch_size x vocab_size).
+            # This is smaller than pre-allocating max_batch_size x vocab_size.
+            if device.is_host:
+                # Host device case - no pinned memory needed
+                self._pinned_bitmask = Buffer(
+                    shape=unpacked.shape,
+                    dtype=DType.bool,
+                    device=device,
+                )
+            else:
+                # GPU - allocate pinned memory for faster H2D transfer
+                self._pinned_bitmask = DevicePinnedBuffer(
+                    shape=unpacked.shape,
+                    dtype=DType.bool,
+                    device=device,
+                )
+            self._pinned_bitmask.to_numpy()[:] = unpacked
+            self.tensor_bitmask = self._pinned_bitmask.to(self.device)
 
         batch_size = len(context_batch)
 
@@ -205,6 +228,79 @@ class FusedSamplingProcessor:
         self.new_tokens = new_tokens
 
         self.step_counter += 1
+
+    def update_bitmask(self, packed_bitmask: npt.NDArray[np.int32]) -> None:
+        """Update the GPU bitmask with new FSM state for multi-step execution.
+
+        This method unpacks the packed-int bitmask from llguidance, copies it
+        to the pinned host buffer, and transfers it to the GPU. This enables
+        multi-step execution with guided decoding by keeping the bitmask
+        synchronized with the FSM state after each token is sampled.
+
+        Args:
+            packed_bitmask: Packed int32 bitmask from
+                llguidance.numpy.allocate_token_bitmask. Shape is
+                [batch_size, ceil(vocab_size/32)].
+        """
+        if (
+            self.tensor_bitmask is None
+            or self._pinned_bitmask is None
+            or self.vocab_size is None
+        ):
+            return
+
+        # Unpack packed-int format to boolean
+        bits = 2 ** np.arange(32, dtype=np.int32)
+        unpacked = (packed_bitmask[..., np.newaxis] & bits) != 0
+        unpacked = unpacked.reshape(self.batch_size, -1).astype(np.bool_)
+
+        # Copy to pinned buffer
+        self._pinned_bitmask.to_numpy()[:] = unpacked
+
+        # Transfer to GPU on the default stream. The H2D copy will complete
+        # before subsequent GPU operations (like sampling) that use the bitmask.
+        self.tensor_bitmask.inplace_copy_from(self._pinned_bitmask)
+
+    def start_async_token_copy(self) -> None:
+        """Start D2H copy of new_tokens to pinned buffer on the default stream.
+
+        The copy happens on the default stream after sampling completes. We record
+        an event after the copy so get_new_tokens_numpy() can wait for just the
+        copy without waiting for subsequent GPU operations (like the next forward
+        pass).
+        """
+        if self.new_tokens is None or self._pinned_new_tokens is None:
+            return
+
+        # Copy tokens to pinned buffer on default stream (after sampling)
+        self._pinned_new_tokens.inplace_copy_from(self.new_tokens)
+
+        # Record event after copy so we can wait for it specifically
+        self._d2h_copy_event = self.device.default_stream.record_event()
+
+    def get_new_tokens_numpy(self) -> npt.NDArray[np.int64]:
+        """Wait for D2H copy and return the new tokens as numpy array.
+
+        If async copy was started via start_async_token_copy(), this waits for
+        the copy event. Otherwise, falls back to synchronous copy.
+
+        Returns:
+            Numpy array of the new tokens with shape (batch_size,).
+        """
+        assert self.new_tokens is not None
+
+        if self._d2h_copy_event is not None:
+            # Wait for the D2H copy to complete (not the entire stream)
+            self._d2h_copy_event.synchronize()
+            self._d2h_copy_event = None
+            assert self._pinned_new_tokens is not None
+            assert self._pinned_new_tokens.pinned
+            # Slice numpy result to batch_size (pinned buffer may be larger)
+            with Tracer("pinned_new_tokens_to_numpy"):
+                return self._pinned_new_tokens.to_numpy()[: self.batch_size]
+
+        # Fallback: synchronous copy (host device or no async copy started)
+        return self.new_tokens.to_numpy()
 
 
 @traced

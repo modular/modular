@@ -89,24 +89,26 @@ You can also see the
       <td className='gpus'>No</td>
     </tr>
     <tr>
-      <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/flux2_modulev3"><code>Flux2KleinPipeline</code></a></td>
+      <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/flux2"><code>Flux2KleinPipeline</code></a></td>
       <td className='models'>
         <a href="https://huggingface.co/black-forest-labs/FLUX.2-klein-4B">black-forest-labs/FLUX.2-klein-4B</a>,<br/>
         <a href="https://huggingface.co/black-forest-labs/FLUX.2-klein-9B">black-forest-labs/FLUX.2-klein-9B</a>,<br/>
         <a href="https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B">black-forest-labs/FLUX.2-klein-base-4B</a>,<br/>
-        <a href="https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9B">black-forest-labs/FLUX.2-klein-base-9B</a>
+        <a href="https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9B">black-forest-labs/FLUX.2-klein-base-9B</a>,<br/>
+        <a href="https://huggingface.co/black-forest-labs/FLUX.2-klein-9b-nvfp4">black-forest-labs/FLUX.2-klein-9b-nvfp4</a>
       </td>
       <td className='modality'>image-to-image,<br/>text-to-image</td>
-      <td className='encodings'>bfloat16</td>
+      <td className='encodings'>bfloat16, float4_e2m1fnx2</td>
       <td className='gpus'>No</td>
     </tr>
     <tr>
       <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/flux2"><code>Flux2Pipeline</code></a></td>
       <td className='models'>
-        <a href="https://huggingface.co/black-forest-labs/FLUX.2-dev">black-forest-labs/FLUX.2-dev</a>
+        <a href="https://huggingface.co/black-forest-labs/FLUX.2-dev">black-forest-labs/FLUX.2-dev</a>,<br/>
+        <a href="https://huggingface.co/black-forest-labs/FLUX.2-dev-NVFP4">black-forest-labs/FLUX.2-dev-NVFP4</a>
       </td>
       <td className='modality'>image-to-image,<br/>text-to-image</td>
-      <td className='encodings'>bfloat16</td>
+      <td className='encodings'>bfloat16, float4_e2m1fnx2</td>
       <td className='gpus'>No</td>
     </tr>
     <tr>
@@ -146,8 +148,7 @@ You can also see the
     <tr>
       <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/gemma4"><code>Gemma4ForConditionalGeneration</code></a></td>
       <td className='models'>
-        <a href="https://huggingface.co/google/gemma-4-31B-it">google/gemma-4-31B-it</a>,<br/>
-        <a href="https://huggingface.co/google/gemma-4-26B-A4B-it">google/gemma-4-26B-A4B-it</a>
+        <a href="https://huggingface.co/google/gemma-4-31B-it">google/gemma-4-31B-it</a>
       </td>
       <td className='modality'>image-to-text,<br/>text-to-text,<br/>video-to-text</td>
       <td className='encodings'>bfloat16</td>
@@ -410,6 +411,28 @@ You can also see the
       <td className='modality'>text-to-text</td>
       <td className='encodings'>bfloat16, float4_e2m1fnx2, float8_e4m3fn</td>
       <td className='gpus'>Yes</td>
+    </tr>
+    <tr>
+      <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/wan"><code>WanImageToVideoPipeline</code></a></td>
+      <td className='models'>
+        <a href="https://huggingface.co/Wan-AI/Wan2.2-I2V-A14B-Diffusers">Wan-AI/Wan2.2-I2V-A14B-Diffusers</a>,<br/>
+        <a href="https://huggingface.co/Wan-AI/Wan2.1-I2V-14B-720P-Diffusers">Wan-AI/Wan2.1-I2V-14B-720P-Diffusers</a>
+      </td>
+      <td className='modality'>text-to-image</td>
+      <td className='encodings'>bfloat16, float32</td>
+      <td className='gpus'>No</td>
+    </tr>
+    <tr>
+      <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/wan"><code>WanPipeline</code></a></td>
+      <td className='models'>
+        <a href="https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B-Diffusers">Wan-AI/Wan2.2-T2V-A14B-Diffusers</a>,<br/>
+        <a href="https://huggingface.co/Wan-AI/Wan2.1-T2V-14B-Diffusers">Wan-AI/Wan2.1-T2V-14B-Diffusers</a>,<br/>
+        <a href="https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffusers">Wan-AI/Wan2.2-TI2V-5B-Diffusers</a>,<br/>
+        <a href="https://huggingface.co/yetter-ai/Wan2.2-TI2V-5B-Turbo-Diffusers">yetter-ai/Wan2.2-TI2V-5B-Turbo-Diffusers</a>
+      </td>
+      <td className='modality'>text-to-image</td>
+      <td className='encodings'>bfloat16, float32</td>
+      <td className='gpus'>No</td>
     </tr>
     <tr>
       <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/z_image_modulev3"><code>ZImagePipeline</code></a></td>

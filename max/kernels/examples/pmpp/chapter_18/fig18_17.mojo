@@ -20,7 +20,7 @@ from std.gpu import block_idx, thread_idx, block_dim, grid_dim, barrier
 from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
-from std.os import Atomic
+from std.atomic import Atomic
 from std.collections import List
 
 from graph_utils import (

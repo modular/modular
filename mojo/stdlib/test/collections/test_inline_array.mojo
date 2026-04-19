@@ -53,12 +53,12 @@ def test_array_int() raises:
     assert_equal(arr[1], 2)
     assert_equal(arr[2], 3)
 
-    # test negative indexing
-    assert_equal(arr[-1], 3)
-    assert_equal(arr[-2], 2)
+    # test indexing from end
+    assert_equal(arr[len(arr) - 1], 3)
+    assert_equal(arr[len(arr) - 2], 2)
 
-    # test negative indexing with dynamic index
-    var i = -1
+    # test indexing from end with dynamic index
+    var i = len(arr) - 1
     assert_equal(arr[i], 3)
     i -= 1
     assert_equal(arr[i], 2)
@@ -96,7 +96,7 @@ def test_array_int() raises:
     ]() raises:
         comptime for current_batch_size in range(len(batch_sizes)):
             comptime for current_size in range(len(sizes)):
-                comptime for current_type in range(ParameterList[*dts].size):
+                comptime for current_type in range(dts.size):
                     test_init_fill[
                         sizes[current_size], batch_sizes[current_batch_size]
                     ](Scalar[dts[current_type]].MAX)
@@ -128,9 +128,9 @@ def test_array_String() raises:
     assert_equal(arr[1], "morning")
     assert_equal(arr[2], "wazzup")
 
-    # test negative indexing
-    assert_equal(arr[-1], "wazzup")
-    assert_equal(arr[-2], "morning")
+    # test indexing from end
+    assert_equal(arr[len(arr) - 1], "wazzup")
+    assert_equal(arr[len(arr) - 2], "morning")
 
     var copy = arr.copy()
     assert_equal(arr[0], copy[0])
@@ -553,4 +553,7 @@ def test_inline_array_iter_owned_bounds() raises:
 
 
 def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+    var suite = TestSuite.discover_tests[__functions_in_module()]()
+    # TODO: skipped to work around MOCO-3749
+    suite.skip[test_inline_array_copy_and_move_llvm_ir]()
+    suite^.run()

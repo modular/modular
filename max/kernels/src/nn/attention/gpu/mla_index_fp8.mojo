@@ -41,6 +41,7 @@ from std.utils.index import Index
 # ===----------------------------------------------------------------------=== #
 
 
+@__name(t"mla_apply_mask", mangle=True)
 def apply_mask_kernel[
     mask_t: MHAMask,
     ScoresLayoutType: TensorLayout,
@@ -76,6 +77,7 @@ def apply_mask_kernel[
     output.ptr[Int(global_seq_idx) * max_num_keys + key_idx] = masked_val
 
 
+@__name(t"mla_fill_invalid_topk_{use_causal_mask}", mangle=True)
 def fill_invalid_topk_kernel[
     IROLayoutType: TensorLayout,
     iro_origin: ImmutOrigin,
@@ -242,7 +244,7 @@ def mla_indexer_ragged_float8_paged[
     scores_buf.enqueue_fill(-Float32.MAX)
 
     var scores_tile = TileTensor(
-        scores_buf.unsafe_ptr(),
+        scores_buf,
         row_major(Idx(total_seq_len), Idx(max_num_keys)),
     )
 
@@ -328,7 +330,7 @@ def mla_indexer_ragged_float8_paged[
         total_seq_len * effective_k
     )
     var topk_vals_tile = TileTensor(
-        topk_vals_buf.unsafe_ptr(),
+        topk_vals_buf,
         row_major(Idx(total_seq_len), Idx(effective_k)),
     )
 

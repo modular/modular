@@ -25,6 +25,7 @@ from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
 from layout import Coord, Idx, TileTensor
+from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 
 from std.utils.index import Index, IndexList
@@ -37,9 +38,11 @@ from .....utils import (
 from .....utils_gpu import MatmulKernels, _vendor_blas_fallback_disabled
 from ..structured_kernels.config import (
     MatmulConfig,
-    build_configs,
+    build_sm100_matmul_configs,
+    build_sm100_batched_matmul_configs,
     choose_config,
     default_matmul_config_bf16_fp8,
+    GEMMKind,
 )
 from ... import matmul_kernel_naive, gemv_gpu, multistage_gemm
 from ....vendor.matmul import matmul as matmul_vendor
@@ -54,6 +57,7 @@ from .tuning_configs import (
     TuningConfigSM100,
     _get_tuning_list_sm100_bf16,
     _get_tuning_list_sm100_batched_bf16,
+    _get_tuning_list_sm100_batched_fp8,
 )
 
 comptime DISPATCH_MISS = 0
@@ -444,12 +448,12 @@ def heuristic_and_outliers_dispatch[
 
                 return DISPATCH_HIT
 
-    comptime configs = build_configs[
+    comptime configs = build_sm100_matmul_configs[
         a_type, b_type, c_type, static_N, static_K, transpose_b
     ]()
     var aligned_m = align_up(m, 64) if m >= 256 else m
     var config_runtime = choose_config[a_type, b_type, c_type, transpose_b](
-        aligned_m, static_N, static_K
+        aligned_m, static_N, static_K, 1
     )
 
     comptime for config in configs:
@@ -738,7 +742,7 @@ def _matmul_dispatch_sm100[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c_tensor: TileTensor[mut=True, c_type, ...],
+    c_tensor: NullableTileTensor[mut=True, c_type, ...],
     a_tensor: TileTensor[a_type, ...],
     b_tensor: TileTensor[b_type, ...],
     ctx: DeviceContext,
@@ -754,7 +758,7 @@ def _matmul_dispatch_sm100[
     ), "Either the epilogue lambda or the compute lambda can be used"
 
     comptime if not elementwise_lambda_fn:
-        if not c_tensor.ptr._is_not_null():
+        if not c_tensor.ptr:
             raise "c must be allocated!"
 
         blackwell_matmul_tma_umma_warp_specialized[
@@ -762,7 +766,7 @@ def _matmul_dispatch_sm100[
             config=config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
-        ](c_tensor, a_tensor, b_tensor, ctx)
+        ](c_tensor.value(), a_tensor, b_tensor, ctx)
         return
 
     else:
@@ -777,35 +781,36 @@ def _matmul_dispatch_sm100[
             simd_width_of[c_type, target=get_gpu_target()]()
         )
 
-        @parameter
-        @__copy_capture(c_tensor)
-        def epilogue_wrapper[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            comptime assert c_tensor.flat_rank >= 2
-            comptime assert idx.element_type.is_integral()
-            var c_coord = Coord(Idx(idx[0]), Idx(idx[1]))
-            var c_val = c_tensor.load[
-                width=simd_width,
-                # load_alignment is in bytes, lambda alignment is in elements
-                alignment=alignment * size_of[c_type](),
-            ](c_coord)
-            epilogue[c_type, simd_width, alignment=alignment](
-                IndexList[2](idx[0], idx[1]), c_val
-            )
-
         # If c is already allocated, we can just use the sm100 matmul and
         # apply the epilogue.
-        if c_tensor.ptr._is_not_null():
+        if c_tensor.ptr:
             var m = Int(c_tensor.dim[0]())
             var n = Int(c_tensor.dim[1]())
+            var c_tt = c_tensor.value()
+
+            @parameter
+            @__copy_capture(c_tt)
+            def epilogue_wrapper[
+                simd_width: Int, rank: Int, alignment: Int = 1
+            ](idx: IndexList[rank]):
+                comptime assert c_tt.flat_rank >= 2
+                comptime assert idx.element_type.is_integral()
+                var c_coord = Coord(Idx(idx[0]), Idx(idx[1]))
+                var c_val = c_tt.load[
+                    width=simd_width,
+                    # load_alignment is in bytes, lambda alignment is in elements
+                    alignment=alignment * size_of[c_type](),
+                ](c_coord)
+                epilogue[c_type, simd_width, alignment=alignment](
+                    IndexList[2](idx[0], idx[1]), c_val
+                )
 
             blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
-            ](c_tensor, a_tensor, b_tensor, ctx)
+            ](c_tt, a_tensor, b_tensor, ctx)
 
             elementwise[epilogue_wrapper, simd_size, target="gpu"](
                 Index(m, n), ctx
@@ -831,24 +836,25 @@ def _matmul_dispatch_sm100[
 
 
 @always_inline
-def batched_matmul_dispatch_sm100_bf16[
+def dispatch_sm100_batched_matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
     transpose_b: Bool,
-    pdl_level: PDLLevel = PDLLevel(),
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[mut=False, a_type, ...],
     b: TileTensor[mut=False, b_type, ...],
     ctx: DeviceContext,
 ) raises:
-    """Dispatch batched BF16 matmul to SM100 kernel with a default config.
+    """Dispatch batched matmul to SM100 kernel.
 
-    Uses a reasonable default config (256x256x16 MMA, 2x1x1 cluster, cta_group=2)
-    which works well for a variety of batched matmul shapes.
+    First, try to dispatch to a batched matmul config from the tuning table. Then try to find a optimized config for the given shape.
+    If not found, then dispatch to a default config.
     """
-    comptime MMA_K = 16
+
+    comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
     comptime BK = TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
 
     var batch_size = Int(c.dim(0))
@@ -859,7 +865,7 @@ def batched_matmul_dispatch_sm100_bf16[
     comptime static_NK = Index(static_N, static_K)
 
     logger.info(
-        "Dispatching to Batched BF16 matmul B= ",
+        "Dispatching to SM100 Batched Matmul B= ",
         batch_size,
         " M= ",
         m,
@@ -871,6 +877,8 @@ def batched_matmul_dispatch_sm100_bf16[
 
     comptime outliers = Table(
         _get_tuning_list_sm100_batched_bf16(), "batched_bf16_heuristic_outliers"
+    ) if a_type == DType.bfloat16 else Table(
+        _get_tuning_list_sm100_batched_fp8(), "batched_fp8_heuristic_outliers"
     )
 
     @parameter
@@ -880,52 +888,71 @@ def batched_matmul_dispatch_sm100_bf16[
 
     comptime outlier_configs = outliers.find[rule]()
 
-    comptime for tuning_config in outlier_configs:
-        if (
-            batch_size == tuning_config.batch_size
-            and m >= tuning_config.M
-            and m < tuning_config.M_end
-        ):
-            comptime matmul_config = MatmulConfig[
-                a_type, b_type, c_type, transpose_b
-            ](
-                mma_shape=tuning_config.mma_shape,
-                cta_group=tuning_config.cta_group,
-                cluster_shape=tuning_config.cluster_shape,
-                block_swizzle_size=tuning_config.block_swizzle_size,
-                raster_order=tuning_config.rasterize_order,
-                AB_swapped=tuning_config.swapAB,
-                num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
-                num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
-                k_group_size=tuning_config.k_group_size,
-                num_split_k=tuning_config.num_split_k,
-            )
+    comptime if c_type in (DType.bfloat16,):
+        comptime for tuning_config in outlier_configs:
+            if (
+                batch_size == tuning_config.batch_size
+                and m >= tuning_config.M
+                and m < tuning_config.M_end
+            ):
+                comptime matmul_config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    mma_shape=tuning_config.mma_shape,
+                    cta_group=tuning_config.cta_group,
+                    cluster_shape=tuning_config.cluster_shape,
+                    block_swizzle_size=tuning_config.block_swizzle_size,
+                    raster_order=tuning_config.rasterize_order,
+                    AB_swapped=tuning_config.swapAB,
+                    num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
+                    num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
+                    k_group_size=tuning_config.k_group_size,
+                    num_split_k=tuning_config.num_split_k,
+                    gemm_kind=GEMMKind.BMM,
+                )
 
-            logger.info("Using batched tuning config: ", matmul_config)
+                logger.info("Using batched tuning config: ", matmul_config)
+
+                blackwell_batched_matmul_tma_umma_warp_specialized[
+                    transpose_b=transpose_b,
+                    config=matmul_config,
+                    pdl_level=pdl_level,
+                ](c, a, b, ctx)
+
+                return
+
+    comptime configs = build_sm100_batched_matmul_configs[
+        a_type, b_type, c_type, static_N, static_K, transpose_b
+    ]()
+    var aligned_m = align_up(m, 64) if m >= 256 else m
+    var config_runtime = choose_config[
+        a_type, b_type, c_type, transpose_b, gemm_kind=GEMMKind.BMM
+    ](aligned_m, static_N, static_K, batch_size)
+
+    comptime for config in configs:
+        if config_runtime == config:
+            logger.info("dispatching to batched matmul config: ", config)
 
             blackwell_batched_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b,
-                config=matmul_config,
+                config=config,
                 pdl_level=pdl_level,
             ](c, a, b, ctx)
-
             return
 
     # fallback to default config
-    comptime block_tile_shape = Index(128, 128, BK)
-    comptime umma_shape = Index(
-        block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-    )
-    comptime cluster_shape = Index(2, 1, 1)
-    comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        mma_shape=umma_shape,
-        cluster_shape=cluster_shape,
-        block_swizzle_size=0,
-    )
+    comptime default_config = default_matmul_config_bf16_fp8[
+        a_type,
+        b_type,
+        c_type,
+        transpose_b,
+        gemm_kind=GEMMKind.BMM,
+    ]()
 
     blackwell_batched_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
-        config=config,
+        config=default_config,
+        pdl_level=pdl_level,
     ](c, a, b, ctx)
 
 
@@ -1005,12 +1032,12 @@ def sm100_heuristic_and_outliers_dispatch[
 
                 return DISPATCH_HIT
 
-    comptime configs = build_configs[
+    comptime configs = build_sm100_matmul_configs[
         a_type, b_type, c_type, static_N, static_K, transpose_b
     ]()
     var aligned_m = align_up(m, 64) if m >= 256 else m
     var config_runtime = choose_config[a_type, b_type, c_type, transpose_b](
-        aligned_m, static_N, static_K
+        aligned_m, static_N, static_K, 1
     )
 
     comptime for config in configs:

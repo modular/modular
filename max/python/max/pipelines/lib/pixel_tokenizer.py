@@ -143,6 +143,8 @@ class PipelineClassName(str, Enum):
     FLUX2 = "Flux2Pipeline"
     FLUX2_KLEIN = "Flux2KleinPipeline"
     ZIMAGE = "ZImagePipeline"
+    WAN = "WanPipeline"
+    WAN_I2V = "WanImageToVideoPipeline"
 
     @classmethod
     def from_class_name(cls, class_name: str) -> PipelineClassName:
@@ -283,7 +285,12 @@ class PixelGenerationTokenizer(
         if self._pipeline_class_name == PipelineClassName.ZIMAGE:
             self._num_channels_latents = transformer_config["in_channels"]
         else:
-            self._num_channels_latents = transformer_config["in_channels"] // 4
+            out_channels = transformer_config.get("out_channels")
+            self._num_channels_latents = (
+                out_channels
+                if out_channels is not None
+                else transformer_config["in_channels"] // 4
+            )
 
         # Create scheduler from its component config.
         scheduler_config = models["scheduler"].huggingface_config
@@ -348,6 +355,28 @@ class PixelGenerationTokenizer(
                 -1, latent_image_ids.shape[-1]
             ).astype(np.float32)
 
+    @staticmethod
+    def _build_text_ids(batch_size: int, seq_len: int) -> npt.NDArray[np.int64]:
+        """Create 4D text position IDs in (T, H, W, L) format.
+
+        For text tokens: T=0, H=0, W=0, L=arange(seq_len).
+
+        Returns:
+            Array of shape ``(batch_size, seq_len, 4)`` int64.
+        """
+        coords = np.stack(
+            [
+                np.zeros(seq_len, dtype=np.int64),
+                np.zeros(seq_len, dtype=np.int64),
+                np.zeros(seq_len, dtype=np.int64),
+                np.arange(seq_len, dtype=np.int64),
+            ],
+            axis=-1,
+        )  # (seq_len, 4)
+        return np.ascontiguousarray(
+            np.tile(coords[np.newaxis, :, :], (batch_size, 1, 1))
+        )
+
     def _randn_tensor(
         self,
         shape: tuple[int, ...],
@@ -360,6 +389,16 @@ class PixelGenerationTokenizer(
     def _resize_with_center_crop(
         image: PIL.Image.Image, target_width: int, target_height: int
     ) -> PIL.Image.Image:
+        # When the source is already at or above the target on both dims,
+        # do a pure PIL center crop to match the reference behavior.
+        # See `Flux2ImageProcessor._resize_and_crop` in `diffusers`.
+        w, h = image.size
+        if w >= target_width and h >= target_height:
+            left = (w - target_width) // 2
+            top = (h - target_height) // 2
+            return image.crop(
+                (left, top, left + target_width, top + target_height)
+            )
         ratio = target_width / target_height
         src_ratio = image.width / image.height
 
@@ -802,7 +841,7 @@ class PixelGenerationTokenizer(
         self,
         output: Any,
     ) -> Any:
-        """Post-process pipeline output.
+        """Post-processes pipeline output.
 
         Accepts either a raw numpy array or a GenerationOutput.
         For raw numpy arrays, denormalizes from [-1, 1] to [0, 1].
@@ -919,7 +958,7 @@ class PixelGenerationTokenizer(
         request: OpenResponsesRequest,
         input_image: PIL.Image.Image | None = None,
     ) -> PixelContext:
-        """Create a new PixelContext object, leveraging necessary information from OpenResponsesRequest."""
+        """Creates a new :class:`PixelContext` object, leveraging necessary information from :class:`OpenResponsesRequest`."""
         # Extract prompt from request using the helper method
         prompt = self._retrieve_prompt(request)
         if not prompt:
@@ -946,9 +985,17 @@ class PixelGenerationTokenizer(
                 " but may produce lower quality or unexpected results."
             )
 
+        # Resolve negative_prompt: prefer video options for video pipelines.
+        video_options = request.body.provider_options.video
+        negative_prompt_resolved = (
+            video_options.negative_prompt
+            if video_options and video_options.negative_prompt
+            else None
+        ) or image_options.negative_prompt
+
         if (
             image_options.true_cfg_scale > 1.0
-            and image_options.negative_prompt is None
+            and negative_prompt_resolved is None
         ):
             logger.warning(
                 f"true_cfg_scale={image_options.true_cfg_scale} is set, but no negative_prompt "
@@ -972,7 +1019,7 @@ class PixelGenerationTokenizer(
         else:
             do_true_cfg = (
                 image_options.true_cfg_scale > 1.0
-                and image_options.negative_prompt is not None
+                and negative_prompt_resolved is not None
             )
 
         # 1. Tokenize prompts
@@ -997,7 +1044,7 @@ class PixelGenerationTokenizer(
         ) = await self._generate_tokens_ids(
             prompt,
             image_options.secondary_prompt,
-            image_options.negative_prompt,
+            negative_prompt_resolved,
             image_options.secondary_negative_prompt,
             do_true_cfg or do_zimage_cfg,
             images=images_for_tokenization,
@@ -1108,6 +1155,23 @@ class PixelGenerationTokenizer(
             request.body.seed,
         )
 
+        # 4b. Build text position IDs for Flux2-family pipelines.
+        text_ids = np.array([], dtype=np.int64)
+        negative_text_ids = np.array([], dtype=np.int64)
+        if self._pipeline_class_name in (
+            PipelineClassName.FLUX2,
+            PipelineClassName.FLUX2_KLEIN,
+        ):
+            text_ids = self._build_text_ids(
+                image_options.num_images,
+                int(token_buffer.array.shape[0]),
+            )
+            if negative_token_buffer is not None:
+                negative_text_ids = self._build_text_ids(
+                    image_options.num_images,
+                    int(negative_token_buffer.array.shape[0]),
+                )
+
         # 5. Build the context
         context = PixelContext(
             request_id=request.request_id,
@@ -1122,6 +1186,8 @@ class PixelGenerationTokenizer(
             sigmas=sigmas,
             latents=latents,
             latent_image_ids=latent_image_ids,
+            text_ids=text_ids,
+            negative_text_ids=negative_text_ids,
             height=height,
             width=width,
             num_inference_steps=num_inference_steps,

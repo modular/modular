@@ -401,7 +401,7 @@ same thing).
 ```mojo
 from std.utils.numerics import max_finite, min_finite
 
-def describeDType[dtype: DType]() raises:
+def describeDType[dtype: DType]():
     print(dtype, "is floating-point:", dtype.is_floating_point())
     print(dtype, "is integral:", dtype.is_integral())
     print("Min/max finite values for", dtype)

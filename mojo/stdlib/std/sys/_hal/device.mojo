@@ -13,7 +13,7 @@
 """HAL Device — a device retrieved from a Driver."""
 
 from .plugin import (
-    Plugin,
+    RawDriver,
     OutParam,
     DeviceHandle,
 )
@@ -25,9 +25,29 @@ from std.memory import (
     UnsafeMaybeUninit,
 )
 
+from std.sys.info import _TargetType
+from std.gpu.host.compile import get_gpu_target
+
 
 @fieldwise_init
-struct Device[driver_origin: MutOrigin](Movable):
+struct DeviceSpec[target: CompilationTarget[value=get_gpu_target()]](
+    Movable, TrivialRegisterPassable
+):
+    pass
+
+
+# TODO(Sawyer: Static Device Info, DRIV-4):
+# Does not currently handle multiple accelerator architectures, but stubbed
+# in anyway. This should pull from machine topo and actually use the `device_id`.
+@doc_hidden
+def get_device_spec[
+    _device_id: Int64
+]() -> DeviceSpec[target=CompilationTarget[value=get_gpu_target()]()]:
+    return DeviceSpec[target=CompilationTarget[value=get_gpu_target()]()]()
+
+
+@fieldwise_init
+struct Device[driver_origin: MutOrigin, spec: DeviceSpec](Movable):
     """A device retrieved from a Driver.
 
     Does not own the device handle — the plugin manages device lifetime
@@ -35,40 +55,56 @@ struct Device[driver_origin: MutOrigin](Movable):
 
     Parameters:
         driver_origin: The origin of the parent Driver pointer.
+        spec: The DeviceSpec that describes the architecture and other characteristics
+                of this device.
     """
 
     var _handle: DeviceHandle
+    var _driver: MutPointer[Driver, Self.driver_origin]
+    var _raw: MutPointer[RawDriver, Self.driver_origin]
     var id: Int64
-    var driver: MutPointer[Driver, Self.driver_origin]
 
     def __init__[
         o1: MutOrigin
-    ](out self: Device[o1], ref[o1] driver: Driver, id: Int64) raises HALError:
-        self.driver = MutPointer(to=driver)
+    ](
+        out self: Device[o1, Self.spec], ref[o1] driver: Driver, id: Int64
+    ) raises HALError:
+        self.id = id
 
-        if id < 0 or id >= driver._device_count:
+        self._driver = MutPointer(to=driver)
+        self._raw = rebind[type_of(self._raw)](MutPointer(to=driver._raw))
+
+        ref raw = self._raw[]
+
+        if self.id < 0 or self.id >= driver._device_count:
             raise HALError(
                 STATUS_INVALID_ARG,
-                message="Invalid device ID "
-                + String(id)
-                + " — range is [0, "
-                + String(driver._device_count)
-                + ")",
+                message=String(
+                    t"Invalid device ID {self.id} — range is [0,"
+                    t" {driver._device_count})"
+                ),
             )
 
         var device_handle = UnsafeMaybeUninit[DeviceHandle]()
-        var status = driver._plugin.device_get.f(
-            driver._handle, id, OutParam[DeviceHandle](to=device_handle)
+        var status = raw._raw.device_get.f(
+            raw._driver_handle,
+            self.id,
+            OutParam[DeviceHandle](to=device_handle),
         )
         if status != STATUS_SUCCESS:
-            var err = driver._plugin.get_status_message(status)
+            var err = raw.get_status_message(status)
             raise HALError(
                 err.status,
-                message="Failed to get device "
-                + String(id)
-                + ": "
-                + err.message,
+                message=String(
+                    t"failed to get device {self.id}: {err.message}"
+                ),
             )
 
-        self.id = id
         self._handle = device_handle.unsafe_assume_init_ref()
+
+    def get_context(
+        mut self,
+    ) raises HALError -> Context[
+        origin_of(self, Self.driver_origin), Self.spec
+    ]:
+        return Context[origin_of(self, Self.driver_origin), Self.spec](self)

@@ -14,6 +14,7 @@
 
 from std.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
+from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 from linalg.fp4_utils import (
     SF_ATOM_M,
@@ -40,7 +41,7 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
-from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig, GEMMKind
 from linalg.matmul.gpu.sm100_structured.default.tuning_configs import (
     TuningConfigSM100,
     _get_tuning_list_sm100_nvfp4,
@@ -162,6 +163,10 @@ def heuristic_and_outliers_dispatch[
                 num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
                 k_group_size=tuning_config.k_group_size,
                 num_split_k=tuning_config.num_split_k,
+                num_pipeline_stages=Optional(
+                    tuning_config.num_pipeline_stages
+                ) if tuning_config.num_pipeline_stages
+                > 0 else None,
                 is_small_bn=tuning_config.is_small_bn,
             )
 
@@ -172,6 +177,7 @@ def heuristic_and_outliers_dispatch[
                 transpose_b=transpose_b,
                 config=matmul_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
             ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
 
@@ -198,6 +204,7 @@ def heuristic_and_outliers_dispatch[
             transpose_b=transpose_b,
             config=config,
             elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
         ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
 
@@ -226,6 +233,7 @@ def heuristic_and_outliers_dispatch[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
             ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
             return DISPATCH_HIT
@@ -251,9 +259,12 @@ def _block_scaled_matmul_with_epilogue[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: TileTensor[mut=True, c_type, ...],
+    c: NullableTileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     a_scales: TileTensor[scales_dtype, ...],
@@ -273,7 +284,7 @@ def _block_scaled_matmul_with_epilogue[
         return
 
     comptime if not elementwise_lambda_fn:
-        if not c.ptr._is_not_null():
+        if not c.ptr:
             raise "c must be allocated!"
 
         comptime K_phys = a.static_shape[1]
@@ -281,9 +292,10 @@ def _block_scaled_matmul_with_epilogue[
             transpose_b=transpose_b,
             K=K_phys,
             config=config,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
         ](
-            c,
+            c.value(),
             a,
             b,
             a_scales,
@@ -300,31 +312,36 @@ def _block_scaled_matmul_with_epilogue[
             simd_width_of[c_type, target=get_gpu_target()]()
         )
 
-        # The epilogue lambda takes IndexList[2]. We load from c's raw pointer
-        # using row-major offset since TileTensor.load's Coord constraint
-        # can't be proved when c's layout type is fully inferred.
-        @parameter
-        @__copy_capture(c, n)
-        def epilogue_wrapper[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            var c_coord = Index(idx[0], idx[1])
-            var c_val = rebind[SIMD[c_type, simd_width]](
-                c.load[width=simd_width](Coord(c_coord))
-            )
-            epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
-
         # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
         # apply the epilogue.
-        if c.ptr._is_not_null():
+        if c.ptr:
             comptime K_phys = a.static_shape[1]
+            var c_tt = c.value()
+
+            # The epilogue lambda takes IndexList[2]. We load from c's raw pointer
+            # using row-major offset since TileTensor.load's Coord constraint
+            # can't be proved when c's layout type is fully inferred.
+            @parameter
+            @__copy_capture(c_tt, n)
+            def epilogue_wrapper[
+                simd_width: Int, rank: Int, alignment: Int = 1
+            ](idx: IndexList[rank]):
+                var c_coord = Index(idx[0], idx[1])
+                var c_val = rebind[SIMD[c_type, simd_width]](
+                    c_tt.load[width=simd_width](Coord(c_coord))
+                )
+                epilogue[c_type, simd_width, alignment=alignment](
+                    c_coord, c_val
+                )
+
             blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b,
                 K=K_phys,
                 config=config,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
             ](
-                c,
+                c_tt,
                 a,
                 b,
                 a_scales,
@@ -352,6 +369,8 @@ def _block_scaled_matmul_with_epilogue[
             transpose_b=transpose_b,
             config=config,
             elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
         ](
             c_tmp,
             a,

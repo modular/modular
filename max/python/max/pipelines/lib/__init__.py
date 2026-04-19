@@ -74,7 +74,11 @@ from .pipeline_variants.overlap_text_generation import (
 )
 from .pixel_tokenizer import PixelGenerationTokenizer
 from .quant import parse_quant_config
-from .registry import PIPELINE_REGISTRY, SupportedArchitecture
+from .registry import (
+    PIPELINE_REGISTRY,
+    PipelineModelType,
+    SupportedArchitecture,
+)
 from .sampling import (
     SamplingConfig,
     rejection_sampler,
@@ -121,6 +125,7 @@ __all__ = [
     "OverlapTextGenerationPipeline",
     "PipelineConfig",
     "PipelineModel",
+    "PipelineModelType",
     "PipelineModelWithKVCache",
     "PipelineRole",
     "PipelineRuntimeConfig",

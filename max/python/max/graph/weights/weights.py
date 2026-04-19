@@ -205,8 +205,8 @@ class WeightData(DLPackArray):
     quantization_encoding: QuantizationEncoding | None = None
     """Optional quantization scheme applied to the weight."""
 
-    def __dlpack__(self) -> Any:
-        return self.data.__dlpack__()
+    def __dlpack__(self, *, stream: None = None) -> Any:
+        return self.data.__dlpack__(stream=stream)
 
     def __dlpack_device__(self) -> Any:
         return self.data.__dlpack_device__()

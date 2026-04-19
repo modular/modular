@@ -19,11 +19,12 @@ extracted from ``module.py`` to keep the public-facing module lean.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from max import driver, graph
 from max.driver import Accelerator, DLPackArray
+from max.experimental.distributed_functional import transfer_to
 from max.experimental.sharding import (
     DeviceMapping,
     DistributedType,
@@ -37,6 +38,31 @@ from max.nn.comm.allreduce import Signals
 # ─── Type aliases ──────────────────────────────────────────────────────
 
 InputType = graph.Type[Any] | DistributedType[Any]
+
+
+# ─── Validation ────────────────────────────────────────────────────────
+
+
+def _validate_loaded_parameter(
+    name: str, existing: Tensor, loaded: Tensor
+) -> None:
+    """Validates that a loaded tensor matches the existing parameter.
+
+    Args:
+        name: Parameter name for error messages.
+        existing: The existing parameter tensor (may be distributed).
+        loaded: The loaded tensor to validate.
+
+    Raises:
+        ValueError: If shape or dtype doesn't match.
+    """
+    existing_shape = existing.shape
+    if loaded.shape != existing_shape or loaded.dtype != existing.dtype:
+        raise ValueError(
+            f"{name!r}: Loaded tensor (shape={list(loaded.shape)}, "
+            f"dtype={loaded.dtype}) not assignable to parameter "
+            f"(shape={list(existing_shape)}, dtype={existing.dtype})."
+        )
 
 
 # ─── Slot descriptors ─────────────────────────────────────────────────
@@ -200,6 +226,93 @@ def _flatten_named_buffers(
                 result[key] = buf
         else:
             result[name] = t
+    return result
+
+
+def _prepare_weight_for_parameter(
+    name: str,
+    weight: DLPackArray | Tensor,
+    param: Tensor,
+) -> Tensor:
+    """Validates and prepares a weight for a parameter.
+
+    Handles conversion, validation, and sharding:
+
+    1. Converts DLPack array to Tensor if needed
+    2. Validates shape and dtype match the parameter
+    3. For distributed parameters: validates mapping or shards single-device weights
+
+    Args:
+        name: Parameter name for error messages.
+        weight: User-provided weight (DLPack array or Tensor).
+        param: The target parameter tensor.
+
+    Returns:
+        A Tensor ready to be assigned to the parameter.
+
+    Raises:
+        ValueError: If shape, dtype, or distribution doesn't match.
+    """
+    if isinstance(weight, Tensor):
+        weight_tensor = weight
+    else:
+        weight_tensor = Tensor.from_dlpack(weight)
+
+    _validate_loaded_parameter(name, param, weight_tensor)
+
+    if not param.is_distributed:
+        return weight_tensor
+
+    assert param._mapping is not None
+
+    if weight_tensor.is_distributed:
+        if weight_tensor._mapping != param._mapping:
+            raise ValueError(
+                f"Weight '{name}' has incompatible distribution. "
+                f"Expected {param._mapping}, got {weight_tensor._mapping}."
+            )
+        return weight_tensor
+
+    return transfer_to(weight_tensor, param._mapping)
+
+
+def _process_provided_weights(
+    weights: Mapping[str, DLPackArray],
+    parameters: Iterable[tuple[str, Tensor]],
+) -> dict[str, DLPackArray]:
+    """Processes user-provided weights based on parameter distribution.
+
+    Handles two cases for each parameter:
+
+    - **Non-distributed parameter**: Weight passes through as-is.
+    - **Distributed parameter**: If weight is a single-device buffer, shards
+      it using ``transfer_to()``. If weight is already a dtensor, extracts shards.
+      Both cases produce ``name._shard.N`` entries.
+
+    Args:
+        weights: User-provided weight buffers keyed by parameter name.
+        parameters: Module parameters with distribution metadata.
+
+    Returns:
+        A weights registry suitable for ``session.load(..., weights_registry=...)``.
+    """
+    result: dict[str, DLPackArray] = {}
+
+    for name, param in parameters:
+        if name not in weights:
+            raise KeyError(
+                f"Weight '{name}' is missing from the provided weights mapping."
+            )
+
+        prepared = _prepare_weight_for_parameter(name, weights[name], param)
+        shards = prepared.local_shards
+
+        if not param.is_distributed:
+            result[name] = shards[0]
+        else:
+            for i, shard in enumerate(shards):
+                result[f"{name}._shard.{i}"] = shard
+
     return result
 
 

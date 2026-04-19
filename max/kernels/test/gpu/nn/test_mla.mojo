@@ -124,13 +124,13 @@ def test[
 
     # Construct device TileTensors.
     var q_device = TileTensor(
-        q_device_ptr.unsafe_ptr(),
+        q_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
     var k_device = TileTensor(
-        k_device_ptr.unsafe_ptr(),
+        k_device_ptr,
         row_major(
             (
                 Idx(batch_size),
@@ -141,7 +141,7 @@ def test[
         ),
     )
     var output_device = TileTensor(
-        output_device_ptr.unsafe_ptr(),
+        output_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
@@ -166,7 +166,7 @@ def test[
     )
     def kernel_launch(ctx: DeviceContext) raises:
         flare_mla_decoding[
-            config=MHAConfig[qkv_type](UInt(num_heads), UInt(depth)),
+            config=MHAConfig[qkv_type](num_heads, depth),
             decoding_warp_split_k=decoding_warp_split_k,
         ](
             output_device.as_any_origin(),
@@ -201,7 +201,7 @@ def test[
     comptime if against_gpu_naive:
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
         var output_ref_device = TileTensor(
-            output_ref_device_ptr.unsafe_ptr(),
+            output_ref_device_ptr,
             row_major(
                 (
                     Idx(batch_size),
@@ -215,9 +215,9 @@ def test[
 
         var k_operand = LayoutTensorMHAOperand(k_device.to_layout_tensor())
         var null_valid_length = LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ](
-            UnsafePointer[UInt32, MutAnyOrigin](),
+            None,
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
         )
         mha_gpu_naive[_is_cache_length_accurate=True,](
@@ -400,23 +400,23 @@ def test_prefill[
 
     # construct device TileTensors
     var q_device = TileTensor(
-        q_device_ptr.unsafe_ptr(),
+        q_device_ptr,
         row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
     )
     var k_device = TileTensor(
-        k_device_ptr.unsafe_ptr(),
+        k_device_ptr,
         row_major(
             (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
     var v_device = TileTensor(
-        v_device_ptr.unsafe_ptr(),
+        v_device_ptr,
         row_major(
             (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
     var cache_device = TileTensor(
-        cache_device_ptr.unsafe_ptr(),
+        cache_device_ptr,
         row_major(
             (
                 Idx(batch_size),
@@ -427,17 +427,17 @@ def test_prefill[
         ),
     )
     var output_device = TileTensor(
-        output_device_ptr.unsafe_ptr(),
+        output_device_ptr,
         row_major(
             (Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
     var input_row_offsets_device = TileTensor(
-        input_row_offsets_device_ptr.unsafe_ptr(),
+        input_row_offsets_device_ptr,
         row_major(Idx(batch_size + 1)),
     )
     var cache_row_offsets_device = TileTensor(
-        cache_row_offsets_device_ptr.unsafe_ptr(),
+        cache_row_offsets_device_ptr,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -471,7 +471,7 @@ def test_prefill[
         comptime nrun = 200
 
         # Warmup
-        for i in range(20):
+        for _i in range(20):
             kernel_launch(ctx)
 
         var nstime = Float64(ctx.execution_time[kernel_launch](nrun)) / Float64(
@@ -549,7 +549,7 @@ def test_prefill[
 
     # view q_device as a rank 4 buffer
     var q_device_rank4 = TileTensor(
-        q_device_ptr.unsafe_ptr(),
+        q_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
@@ -567,19 +567,19 @@ def test_prefill[
     )
     # create device TileTensors for K_ref and V_ref
     var k_ref_device = TileTensor(
-        k_ref_device_ptr.unsafe_ptr(),
+        k_ref_device_ptr,
         row_major(
             (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
         ),
     )
     var v_ref_device = TileTensor(
-        v_ref_device_ptr.unsafe_ptr(),
+        v_ref_device_ptr,
         row_major(
             (Idx(batch_size), Idx(num_keys), Idx[num_heads](), Idx[depth]())
         ),
     )
     var output_ref_device = TileTensor(
-        output_ref_device_ptr.unsafe_ptr(),
+        output_ref_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
@@ -590,9 +590,9 @@ def test_prefill[
     ctx.enqueue_copy(v_ref_device_ptr, v_ref_ptr)
 
     var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ](
-        UnsafePointer[UInt32, MutAnyOrigin](),
+        None,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 

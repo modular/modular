@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Dispatch for depth=512 pair-CTA SM100 (Blackwell) MHA prefill.
+"""Dispatch for depth=256/512 pair-CTA SM100 (Blackwell) MHA prefill.
 
 Creates the Depth512SM100Config, TMA tile descriptors, and launches the
 pair-CTA kernel with cluster_dim=(2,1,1). The TransientScheduler uses
@@ -20,7 +20,7 @@ from block_idx.x >> 1.
 
 from std.collections import OptionalReg
 from std.math import ceildiv
-from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from std.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
 from layout.tma_async import RaggedTMA3DTile
 from std.logger import Logger
 from nn.attention.gpu.nvidia.sm90.attention import (
@@ -83,10 +83,10 @@ def mha_sm100_depth512_dispatch[
     comptime assert not decoding, "depth512 pair-CTA does not support decoding"
 
     comptime d512_config = Depth512SM100Config[KVType.dtype](
-        num_q_heads=Int(config.num_heads),
+        num_q_heads=config.num_heads,
         group=group,
-        qk_depth=Int(config.depth),
-        ov_depth=Int(config.depth),
+        qk_depth=config.depth,
+        ov_depth=config.depth,
         swizzle_mode=config.swizzle_mode,
         page_size=KVType.page_size,
     )
@@ -102,7 +102,7 @@ def mha_sm100_depth512_dispatch[
 
     # ---- TMA tile descriptors ------------------------------------------------
 
-    # Output store: BM=64 per CTA, full ov_depth=512.
+    # Output store: BM per CTA, full ov_depth.
     comptime RaggedStoreType = RaggedTMA3DTile[
         output_type,
         swizzle_mode,
@@ -117,7 +117,7 @@ def mha_sm100_depth512_dispatch[
         middle_dim=d512_config.num_kv_heads if fuse_gqa else d512_config.num_q_heads,
     )
 
-    # Q: BM=64 per CTA (not halved like 2Q).
+    # Q: BM per CTA (not halved like 2Q).
     q_tma_op = q_tma[
         swizzle_mode,
         BM=d512_config.BM,
@@ -137,12 +137,12 @@ def mha_sm100_depth512_dispatch[
         BK=d512_config.BK0,
     ](ctx)
 
-    # V: BK1 rows x ov_depth//4 columns (heavily sub-tiled for SMEM).
+    # V: BK1 rows x v_cols_per_cta columns (heavily sub-tiled for SMEM).
     v_tma_op = v.create_tma_tile[
         d512_config.swizzle_mode,
         BN=d512_config.BK1,
         depth=d512_config.ov_depth,
-        BK=d512_config.ov_depth // 4,
+        BK=d512_config.v_cols_per_cta,
     ](ctx)
 
     # ---- Scheduler -----------------------------------------------------------
@@ -237,6 +237,7 @@ def mha_sm100_depth512_dispatch[
                 pack,
                 grid_dim=SchedulerType.grid_dim(batch_size, block_x),
                 block_dim=(num_threads, 1, 1),
+                cluster_dim=Dim(2, 1, 1),
                 shared_mem_bytes=smem_use,
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                     UInt32(smem_use)

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.collections import OptionalReg
 from std.math import exp2, recip, align_up, log2, ceildiv
 from std.math.constants import log2e
 from std.sys import size_of, _RegisterPackType
@@ -571,6 +572,9 @@ struct OffsetPosition[
     is_cache_length_accurate: Bool,
     ValidLengthType: OptionalPointer,
     decoding_warp_split_k: Bool = False,
+    sparse: Bool = False,
+    has_extra_kv: Bool = False,
+    has_variable_topk: Bool = False,
 ](TrivialRegisterPassable):
     var seq_len: Int
     var max_seq_len: Int  # q_max_seq_len (padded seq dimension for all batches)
@@ -593,6 +597,15 @@ struct OffsetPosition[
         max_seq_len: Int,
         num_partitions: Int,
         batch_size: Int,
+        # Sparse attention parameters — only used when sparse=True (comptime).
+        sparse_indices_stride: Int = 0,
+        sparse_topk_lengths: OptionalReg[
+            UnsafePointer[Int32, MutAnyOrigin]
+        ] = None,
+        sparse_extra_indices_stride: Int = 0,
+        sparse_extra_topk_lengths: OptionalReg[
+            UnsafePointer[Int32, MutAnyOrigin]
+        ] = None,
     ):
         self.seq_len = 0
         self.max_seq_len = max_seq_len
@@ -711,6 +724,65 @@ struct OffsetPosition[
             # No split: process all keys starting from row 0
             self.kv_start_row = 0
             self.num_keys_this_split = self.num_keys
+
+        # -------------------------------------------------------------------
+        # Sparse attention: override num_keys with topk (clamped to
+        # actual_tokens).  When sparse=True (comptime) the kernel
+        # iterates over a sparse subset of tokens selected by d_indices
+        # instead of the full KV cache.
+        # -------------------------------------------------------------------
+        comptime if Self.sparse:
+            # self.num_keys already holds the correct total token count
+            # (cache_length + seq_len when _is_cache_length_accurate=False,
+            # or just cache_length otherwise).  Use it as the upper bound.
+            var actual_tokens = self.num_keys
+
+            var topk: Int
+            comptime if Self.has_variable_topk:
+                topk = Int(
+                    sparse_topk_lengths.unsafe_value()[Int(self.batch_idx)]
+                )
+            else:
+                topk = sparse_indices_stride
+
+            # Clamp topk to actual available tokens.
+            topk = min(topk, actual_tokens)
+
+            # Extra KV: always-attend tokens from a separate cache.
+            var extra_topk: Int = 0
+            comptime if Self.has_extra_kv:
+                comptime if Self.has_variable_topk:
+                    extra_topk = Int(
+                        sparse_extra_topk_lengths.unsafe_value()[
+                            Int(self.batch_idx)
+                        ]
+                    )
+                else:
+                    extra_topk = sparse_extra_indices_stride
+
+            # Override num_keys with the sparse token count.
+            self.num_keys = topk + extra_topk
+
+            # Recompute split-K boundaries for the sparse token count.
+            var total_topk = topk + extra_topk
+            comptime if Self.decoding_warp_split_k:
+                comptime page_size = Self.config.split_page_size
+                var total_pages_s = (total_topk + page_size - 1) // page_size
+                var pages_per_split_s = (
+                    total_pages_s + num_partitions - 1
+                ) // num_partitions
+                var start_page_s = self.split_idx * pages_per_split_s
+                var end_page_s = min(
+                    (self.split_idx + 1) * pages_per_split_s, total_pages_s
+                )
+                self.kv_start_row = start_page_s * page_size
+                var kv_end_row_s = min(end_page_s * page_size, total_topk)
+                self.num_keys_this_split = max(
+                    kv_end_row_s - self.kv_start_row, 0
+                )
+            else:
+                self.kv_start_row = 0
+                self.num_keys_this_split = total_topk
 
     @always_inline
     def cache_len(self) -> Int:
@@ -2906,8 +2978,8 @@ struct MLA_SM100_Decode_Common[
         ],
         smem: SharedMemPointer[Scalar[Self.kv_type]],
         mbar: MBarType,
-        col_start: UInt,
-        row_start: UInt,
+        col_start: Int,
+        row_start: Int,
     ):
         # TMA only uses .ptr from the destination — layout is irrelevant
         # (swizzle is in the TMA descriptor). Use flat row_major TileTensor.
@@ -2919,9 +2991,7 @@ struct MLA_SM100_Decode_Common[
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
         ](smem, kv_tt_layout)
-        tma.async_copy_3d(
-            smem_tensor, mbar[], (Int(col_start), Int(0), Int(row_start))
-        )
+        tma.async_copy_3d(smem_tensor, mbar[], (col_start, 0, row_start))
 
     @staticmethod
     @always_inline
@@ -2934,8 +3004,8 @@ struct MLA_SM100_Decode_Common[
         ],
         smem: SharedMemPointer[Scalar[Self.q_type]],
         mbar: MBarType,
-        col_start: UInt,
-        row_start: UInt,
+        col_start: Int,
+        row_start: Int,
     ):
         comptime q_elements = Self.config.BM * Self.config.BK0
         comptime q_tt_layout = tt_row_major[q_elements]()
@@ -2946,7 +3016,7 @@ struct MLA_SM100_Decode_Common[
             address_space=AddressSpace.SHARED,
         ](smem, q_tt_layout)
 
-        tma.async_copy(smem_tensor, mbar[], (Int(col_start), Int(row_start)))
+        tma.async_copy(smem_tensor, mbar[], (col_start, row_start))
 
     @staticmethod
     @always_inline
@@ -3029,6 +3099,10 @@ struct MLA_SM100_Decode_Common[
         num_sp_stages: Int = 2,
         fp8_p_stage_stride: Int = 0,
         has_per_token_scales: Bool = False,
+        has_attn_sink: Bool = False,
+        _op_sparse: Bool = False,
+        _op_has_extra_kv: Bool = False,
+        _op_has_variable_topk: Bool = False,
     ](
         tmem_addr: UInt32,
         s_bars: DecodeSM100MiscMBars[
@@ -3071,18 +3145,24 @@ struct MLA_SM100_Decode_Common[
             Self._is_cache_length_accurate,
             Self.ValidLengthType,
             Self.config.decoding_warp_split_k,
+            _op_sparse,
+            _op_has_extra_kv,
+            _op_has_variable_topk,
         ],
         scale: Float32,
         mask: Self.MaskType,
         prompt_idx: UInt32,  # batch index
         lse_accum_split_ptr: Self.SplitAccumType,
         batch_size: Int,
-        scale_k_smem: SharedMemPointer[Scalar[DType.float32]] = {
-            _unsafe_null = ()
-        },
-        q_scale_ptr: UnsafePointer[
-            Scalar[DType.float32], origin=MutAnyOrigin
-        ] = {_unsafe_null = ()},
+        scale_k_smem: OptionalReg[
+            SharedMemPointer[Scalar[DType.float32]]
+        ] = None,
+        q_scale_ptr: OptionalReg[
+            UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+        ] = None,
+        attn_sink_log2: Scalar[DType.float32] = Scalar[DType.float32](
+            min_or_neg_inf[DType.float32]()
+        ),
     ):
         comptime MaskName: String = Self.MaskType.name()
         comptime assert Self.AccumType.is_floating_point()
@@ -3160,7 +3240,7 @@ struct MLA_SM100_Decode_Common[
         var effective_scale = scale
         comptime if has_per_token_scales:
             var _q_token_idx = offset_position.q_token_idx
-            effective_scale = scale * q_scale_ptr[_q_token_idx]
+            effective_scale = scale * q_scale_ptr.unsafe_value()[_q_token_idx]
         var scale_log2e = effective_scale.cast[Self.AccumType]()
 
         var tiles_done: Int = 0
@@ -3211,8 +3291,9 @@ struct MLA_SM100_Decode_Common[
                 # per_token_scales_per_stage bytes = BN * 1 * sizeof(f32) = 256
                 # In float32 elements per stage: BN = 64.
                 comptime _scale_elems_per_stage = Self.config.BN
-                var _scale_stage_ptr = scale_k_smem + slot_idx * UInt32(
-                    _scale_elems_per_stage
+                var _scale_stage_ptr = (
+                    scale_k_smem.unsafe_value()
+                    + slot_idx * UInt32(_scale_elems_per_stage)
                 )
                 # Load all 32 sigma_KV values for this thread's columns into
                 # registers ONCE.  This is the ONLY SMEM read for scales in the
@@ -3516,9 +3597,26 @@ struct MLA_SM100_Decode_Common[
         # `li[0] > 0` instead of `li[0] != 0` ensures NaN maps to 0,
         # zeroing the output for this split — consistent with the LSE path's
         # max(li, 0) guard and the combine kernel's weighting.
-        var o_scale_li: Scalar[Self.AccumType] = (
-            recip(li)[0] if li[0] > 0 else 0
-        )
+        #
+        # Attn sink (no-split only): account for non-selected tokens by
+        # adding exp2(attn_sink_log2 - mi) to the denominator. For the
+        # split path, attn_sink is deferred to the combine kernel to
+        # avoid double-counting across splits.
+        var o_scale_li: Scalar[Self.AccumType]
+        comptime if has_attn_sink and not Self.config.decoding_warp_split_k:
+            # No-split path with attn_sink: o_scale = 1 / (li + exp2(attn_sink_log2 - mi))
+            # FlashMLA reference: kernel.cuh:346
+            var denominator = li[0] + exp2(
+                attn_sink_log2.cast[Self.AccumType]() - mi
+            )
+            o_scale_li = (
+                recip(SIMD[Self.AccumType, 1](denominator))[0] if li[0]
+                > 0 else 0
+            )
+        else:
+            # Split path or no attn_sink: standard recip(li).
+            # FlashMLA reference: kernel.cuh:387
+            o_scale_li = recip(li)[0] if li[0] > 0 else 0
 
         var warp_pair = UInt32(warp_idx >> 1)
         var epi_col0: Int = Int(
@@ -3592,7 +3690,11 @@ struct MLA_SM100_Decode_Common[
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
-    def Correction(
+    def Correction[
+        _op_sparse: Bool = False,
+        _op_has_extra_kv: Bool = False,
+        _op_has_variable_topk: Bool = False,
+    ](
         tmem_addr: UInt32,
         o_bars: DecodeSM100MiscMBars[
             num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
@@ -3614,6 +3716,9 @@ struct MLA_SM100_Decode_Common[
             Self._is_cache_length_accurate,
             Self.ValidLengthType,
             Self.config.decoding_warp_split_k,
+            _op_sparse,
+            _op_has_extra_kv,
+            _op_has_variable_topk,
         ],
     ):
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
@@ -3720,7 +3825,11 @@ struct MLA_SM100_Decode_Common[
     # O_tmem wait and release as it starts one stage before MMA
     @staticmethod
     @always_inline
-    def store(
+    def store[
+        _op_sparse: Bool = False,
+        _op_has_extra_kv: Bool = False,
+        _op_has_variable_topk: Bool = False,
+    ](
         out_pipeline: OutPipeline[
             num_out_stages=DecodeOutProducer[
                 Self.output_dtype, Self.config
@@ -3742,6 +3851,9 @@ struct MLA_SM100_Decode_Common[
             Self._is_cache_length_accurate,
             Self.ValidLengthType,
             Self.config.decoding_warp_split_k,
+            _op_sparse,
+            _op_has_extra_kv,
+            _op_has_variable_topk,
         ],
     ):
         comptime DecodeOutConsumerType = DecodeOutConsumer[

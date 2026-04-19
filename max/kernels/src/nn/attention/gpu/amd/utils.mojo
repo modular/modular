@@ -27,7 +27,7 @@ from layout.coord import Coord, CoordLike
 from std.builtin.variadics import Variadic
 from layout.tensor_core import num_matrix_reg
 from std.memory import AddressSpace as BaseAddressSpace
-from std.memory import stack_allocation
+from std.memory import stack_allocation, bitcast
 from std.math.uutils import umod, ufloordiv, udivmod
 
 from std.utils import IndexList
@@ -205,13 +205,13 @@ struct SharedMemoryManager[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]:
+        # SAFETY: Placeholder dangling pointer guarded by
+        # Self.token_gen.
         return self.k_smem.bitcast[
             Scalar[_dtype]
         ]() if Self.token_gen else UnsafePointer[
             Scalar[_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
-        ](
-            _unsafe_null=()
-        )
+        ].unsafe_dangling()
 
 
 struct GlobalMemoryManager[
@@ -250,16 +250,10 @@ struct GlobalMemoryManager[
         )
     )
     comptime OutputTileLayout = TileLayout[
-        Variadic.types[
-            T=CoordLike,
-            RuntimeInt[DType.int64],
-            ComptimeInt[Int(Self.output_depth)],
-        ],
-        Variadic.types[
-            T=CoordLike,
-            ComptimeInt[Self._output_stride0],
-            ComptimeInt[1],
-        ],
+        Coord[
+            RuntimeInt[DType.int64], ComptimeInt[Int(Self.output_depth)]
+        ].element_types,
+        Coord[ComptimeInt[Self._output_stride0], ComptimeInt[1]].element_types,
     ]
 
     comptime kv_gmem_layout = Layout(
@@ -270,16 +264,10 @@ struct GlobalMemoryManager[
     # TileTensor KV layout with RuntimeInt for valid_rows (OOB clamping).
     comptime _kv_stride0 = Int(Self.kv_num_heads) * Int(Self.depth)
     comptime KvTileLayout = TileLayout[
-        Variadic.types[
-            T=CoordLike,
-            RuntimeInt[DType.int64],
-            ComptimeInt[Int(Self.depth)],
-        ],
-        Variadic.types[
-            T=CoordLike,
-            ComptimeInt[Self._kv_stride0],
-            ComptimeInt[1],
-        ],
+        Coord[
+            RuntimeInt[DType.int64], ComptimeInt[Int(Self.depth)]
+        ].element_types,
+        Coord[ComptimeInt[Self._kv_stride0], ComptimeInt[1]].element_types,
     ]
 
     var q_offset: UInt32
@@ -343,16 +331,10 @@ struct GlobalMemoryManager[
         * Int(Self.q_depth) if not Self.token_gen else Int(Self.q_depth)
     )
     comptime QTileLayout = TileLayout[
-        Variadic.types[
-            T=CoordLike,
-            RuntimeInt[DType.int64],
-            ComptimeInt[Int(Self.q_depth)],
-        ],
-        Variadic.types[
-            T=CoordLike,
-            ComptimeInt[Self._q_stride0],
-            ComptimeInt[1],
-        ],
+        Coord[
+            RuntimeInt[DType.int64], ComptimeInt[Int(Self.q_depth)]
+        ].element_types,
+        Coord[ComptimeInt[Self._q_stride0], ComptimeInt[1]].element_types,
     ]
 
     @always_inline
@@ -670,12 +652,14 @@ def copy_dram_to_sram_lds[
 
     comptime M = src.shape[0]()
     comptime N = src.shape[1]()
-    # we use 16x4 thread layout to load 16x32 tile from dram to sram
-    # but we need to load 32x16 tiles from sram for mma, so swizzle need to be applied to
-    # the whole 32x32 tile.
+    # We use 16×4 thread layout to load sub-tiles from DRAM to SRAM.
+    # BN matches the source column count so fp8 (BK=64) and bf16 (BK=32)
+    # both load full rows in one iteration.
     comptime BM = 32
-    comptime BN = 32
+    comptime BN = N
     comptime BM_SUB = thread_layout.shape[0].value()
+    # Each thread loads BN/4 elements (4 columns in thread layout).
+    comptime load_width = BN // thread_layout.shape[1].value()
 
     comptime aux = 0  # _cache_operation_to_amd_aux[cache_policy]()
 
@@ -693,11 +677,11 @@ def copy_dram_to_sram_lds[
         comptime dst_layout = dst_partitions.layout
         # dst need to be contiguous
         comptime assert dst_layout.stride[1].value() == 1, String(dst_layout)
-        comptime assert dst_layout.stride[0].value() == 32, String(dst_layout)
+        comptime assert dst_layout.stride[0].value() == BN, String(dst_layout)
         var worker_idx_with_offset = worker_idx + m_sub_tile * WARP_SIZE
-        var src_dist = src_partitions.vectorize[
-            1, simd_width_of[src.dtype]()
-        ]().distribute[thread_layout](
+        var src_dist = src_partitions.vectorize[1, load_width]().distribute[
+            thread_layout
+        ](
             umod(
                 swizzle.value()(
                     worker_idx_with_offset
@@ -718,7 +702,7 @@ def copy_dram_to_sram_lds[
             Scalar[DType.bfloat16],
             MutAnyOrigin,
             address_space=AddressSpace.BUFFER_RESOURCE,
-        ](_unsafe_null=())
+        ].unsafe_dangling()
 
         var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
         var ptr_to_simd = UnsafePointer(to=bc.desc)
@@ -737,7 +721,7 @@ def copy_dram_to_sram_lds[
             _type=__mlir_type.`!llvm.ptr<3>`
         ](dst_ptr)
 
-        comptime num_bytes_per_lane = size_of[dtype]() * simd_width_of[dtype]()
+        comptime num_bytes_per_lane = size_of[dtype]() * load_width
         var vector_offset_bytes = Int(src_dist.ptr) - Int(src_partitions.ptr)
         var scalar_offset_bytes = Int(src_partitions.ptr) - Int(src.ptr)
 
@@ -761,7 +745,9 @@ def copy_dram_to_sram_lds[
 
 @always_inline
 def load_b_tile[
-    mma_shape: IndexList[3], swizzle: Optional[Swizzle], k_tile_idx: Int
+    mma_shape: IndexList[3],
+    swizzle: Optional[Swizzle],
+    k_tile_idx: Int,
 ](src: LayoutTensor) -> SIMD[src.dtype, simd_width_of[src.dtype]()]:
     comptime MMA_M = mma_shape[0]
     comptime MMA_K = mma_shape[2]
@@ -793,11 +779,11 @@ def load_b_tile[
     ](
         shared_ptr3,
     )
-
-    return rebind[SIMD[src.dtype, simd_width]](
-        __mlir_op.`pop.cast_from_builtin`[
-            _type=SIMD[src.dtype, simd_width]._mlir_type
-        ](llvm_res)
+    var as_bf16 = __mlir_op.`pop.cast_from_builtin`[
+        _type=SIMD[DType.bfloat16, 8]._mlir_type
+    ](llvm_res)
+    return bitcast[src.dtype, simd_width](
+        rebind[SIMD[DType.bfloat16, 8]](as_bf16)
     )
 
 
@@ -808,7 +794,11 @@ def load_b[
     src: LayoutTensor,
     out res: LayoutTensor[
         src.dtype,
-        Layout.row_major(src.layout.size() // (WARP_SIZE * 8), 8),
+        Layout.row_major(
+            src.layout.size()
+            // (WARP_SIZE * ((mma_shape[0] * mma_shape[2]) // WARP_SIZE)),
+            (mma_shape[0] * mma_shape[2]) // WARP_SIZE,
+        ),
         MutAnyOrigin,
         address_space=AddressSpace.LOCAL,
     ],
@@ -816,15 +806,36 @@ def load_b[
     var output = type_of(res).stack_allocation()
     comptime MMA_M = mma_shape[0]
     comptime MMA_K = mma_shape[2]
+    comptime frag_width = (MMA_M * MMA_K) // WARP_SIZE
+    comptime load_width = simd_width_of[src.dtype]()
+    comptime num_packs = frag_width // load_width
     comptime M = src.shape[0]() // MMA_M
     comptime N = src.shape[1]() // MMA_K
-    var output_vectorized = output.vectorize[1, 8]()
+    var output_vectorized = output.vectorize[1, frag_width]()
 
     comptime for i, j in product(range(M), range(N)):
-        var out_reg = load_b_tile[mma_shape, swizzle, j](
-            src.tile[MMA_M, src.shape[1]()](i, 0)
-        )
-        output_vectorized[i + j * M, 0] = rebind[
-            type_of(output_vectorized[i + j * M, 0])
-        ](out_reg)
+        comptime if num_packs == 1:
+            # bf16: single load covers the full fragment.
+            var out_reg = load_b_tile[mma_shape, swizzle, j](
+                src.tile[MMA_M, src.shape[1]()](i, 0)
+            )
+            output_vectorized[i + j * M, 0] = rebind[
+                type_of(output_vectorized[i + j * M, 0])
+            ](out_reg)
+        elif num_packs == 2:
+            # fp8: MMA fragment (32) = 2 × SMEM load width (16).
+            # Load two [MMA_M, MMA_K/2] halves and join so the
+            # K-dimension permutation matches Q loading (which also
+            # does two 16-element loads per lane).
+            comptime half_k_shape = IndexList[3](
+                MMA_M, mma_shape[1], MMA_K // 2
+            )
+            var src_row = src.tile[MMA_M, src.shape[1]()](i, 0)
+            var lo = load_b_tile[half_k_shape, swizzle, j * 2](src_row)
+            var hi = load_b_tile[half_k_shape, swizzle, j * 2 + 1](src_row)
+            output_vectorized[i + j * M, 0] = rebind[
+                type_of(output_vectorized[i + j * M, 0])
+            ](lo.join(hi))
+        else:
+            comptime assert False, "Unsupported num_packs"
     return output

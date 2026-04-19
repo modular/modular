@@ -62,7 +62,7 @@ def argminmax_reduce_op[
     dim0: Int,
     dim1: Int,
     dim2: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Scan the reduction axis for each output element to find extreme index.
 
@@ -115,7 +115,7 @@ def argminmax_reduce_op[
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx)
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )

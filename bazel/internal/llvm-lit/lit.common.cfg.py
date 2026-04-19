@@ -13,6 +13,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+import platform
 import shutil
 import sys
 from pathlib import Path
@@ -72,6 +73,17 @@ llvm_config.with_environment(
     str(Path(sys.executable).parent),
     append_path=True,
 )
+
+if sys.platform == "darwin":
+    # Expose macOS 26+ as a lit feature so tests can be selectively skipped.
+    # The ASAN runtime (libclang_rt.asan_osx_dynamic.dylib) comes from the
+    # pre-built @clang-macos toolchain (LLVM 20.1.8), which hangs on macOS 26
+    # in FindAvailableMemoryRange (fixed in llvm/llvm-project#191039,
+    # merged 2026-04-09 to LLVM main, not yet in any release). Remove once
+    # @clang-macos is updated to a release that includes the fix. MOTO-1516.
+    _mac_ver = platform.mac_ver()[0]
+    if _mac_ver and int(_mac_ver.split(".")[0]) >= 26:
+        config.available_features.add("macos-26+")
 
 #---------------------------------------
 # Mojo tools

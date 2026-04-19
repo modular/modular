@@ -33,15 +33,16 @@ from ...autoencoders_modulev3.model_config import AutoencoderKLFlux2Config
 
 
 class PreprocessAndEncode(Module):
-    """Fused VAE encode + mode extraction + patchify + BN normalize + pack.
+    """Fused preprocess + VAE encode + mode extraction + patchify + BN normalize + pack.
 
-    Accepts a float32 image (cast to model dtype inside the graph),
-    runs the VAE encoder, extracts the mean (mode), patchifies with 2x2
-    patches, applies BatchNorm normalization, and packs into sequence
-    format for the transformer.
+    Accepts a uint8 HWC image, preprocesses it in-graph (cast to float32,
+    scale to [-1, 1], permute HWC->CHW, unsqueeze batch, cast to model
+    dtype), then runs the VAE encoder, extracts the mean (mode),
+    patchifies with 2x2 patches, applies BatchNorm normalization, and
+    packs into sequence format for the transformer.
 
-    Input:  ``(B, in_channels, H, W)`` float32
-    Output: ``(B, H/16 * W/16, C*4)`` model dtype
+    Input:  ``(H, W, in_channels)`` uint8
+    Output: ``(1, H/16 * W/16, C*4)`` model dtype
     """
 
     def __init__(
@@ -75,7 +76,12 @@ class PreprocessAndEncode(Module):
         )
 
     def __call__(self, image: TensorValue) -> TensorValue:
-        # Cast float32 input to model dtype.
+        # Preprocess: (H, W, C) uint8 -> (1, C, H, W) model-dtype [-1, 1].
+        image = ops.cast(image, DType.float32)
+        image = image / ops.constant(127.5, DType.float32, device=self._device)
+        image = image - ops.constant(1.0, DType.float32, device=self._device)
+        image = ops.permute(image, [2, 0, 1])  # HWC -> CHW
+        image = ops.unsqueeze(image, 0)  # (1, C, H, W)
         image = ops.cast(image, self._dtype)
 
         # VAE encode -> (B, 2*C, H/8, W/8) mean|logvar concatenated.
@@ -123,12 +129,11 @@ class PreprocessAndEncode(Module):
     def input_types(self) -> tuple[TensorType, ...]:
         return (
             TensorType(
-                DType.float32,
+                DType.uint8,
                 shape=[
-                    "batch_size",
-                    self.encoder.in_channels,
                     "image_height",
                     "image_width",
+                    self.encoder.in_channels,
                 ],
                 device=self._device,
             ),
@@ -212,7 +217,7 @@ class ImageEncoder(CompiledComponent):
             outputs = fused(*(v.tensor for v in graph.inputs))
             graph.output(outputs)
 
-        self._model = self._session.load(
+        self._model = self._load_graph(
             graph, weights_registry=fused.state_dict()
         )
 
@@ -228,28 +233,24 @@ class ImageEncoder(CompiledComponent):
             - ``image_latents`` has shape ``(1, img_seq, C*4)``
             - ``image_latent_ids`` has shape ``(1, img_seq, 4)`` int64
         """
-        # Preprocess: HWC uint8 -> BCHW float32 [-1, 1].
-        image_np = np.from_dlpack(input_image)
-        img_float = (image_np.astype(np.float32) / 127.5) - 1.0
-        img_float = np.transpose(img_float, (2, 0, 1))  # HWC -> CHW
-        img_float = np.expand_dims(img_float, axis=0)  # (1, C, H, W)
-        img_float = np.ascontiguousarray(img_float)
+        # Transfer uint8 image to device; preprocessing happens in-graph.
+        image_buf = input_image.to(self._device)
 
-        image_buf = Buffer.from_dlpack(img_float).to(self._device)
-
-        # Execute fused graph: encode + mode + patchify + BN + pack.
+        # Execute fused graph: preprocess + encode + mode + patchify + BN + pack.
         result = self._model.execute(image_buf)
         image_latents = (
             result[0] if isinstance(result, (list, tuple)) else result
         )
 
         # Derive spatial dims for image IDs.
-        h_pixels = image_np.shape[0]
-        w_pixels = image_np.shape[1]
+        h_pixels = input_image.shape[0]
+        w_pixels = input_image.shape[1]
         packed_h = h_pixels // (self._vae_scale_factor * 2)
         packed_w = w_pixels // (self._vae_scale_factor * 2)
 
-        image_latent_ids = self._build_image_ids(packed_h, packed_w)
+        image_latent_ids = self._build_image_ids(packed_h, packed_w).to(
+            self._device
+        )
 
         return image_latents, image_latent_ids
 

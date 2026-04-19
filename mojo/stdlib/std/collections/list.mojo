@@ -21,7 +21,7 @@ from std.builtin.rebind import downcast
 import std.format._utils as fmt
 from std.hashlib import Hasher
 from std.reflection import get_type_name
-from std.collections._index_normalization import normalize_index
+from std.collections import check_bounds
 from std.collections._asan_annotations import (
     __sanitizer_annotate_contiguous_container,
 )
@@ -30,7 +30,6 @@ from std.sys import size_of
 from std.sys.intrinsics import _type_is_eq, _type_is_eq_parse_time
 
 from std.memory import Pointer, destroy_n, memcpy, uninit_copy_n, uninit_move_n
-from std.memory._nonnull import NonNullUnsafePointer
 from std.builtin.builtin_slice import ContiguousSlice, StridedSlice
 from .optional import Optional
 
@@ -189,7 +188,7 @@ struct List[T: Copyable](
       ```mojo
       var int_list = [1, 2, 3]        # List[Int]
       var str_list = ["a", "b", "c"]  # List[String]
-      var mixed = [1, "hello"]        # Error! All elements must be same type
+      # var mixed = [1, "hello"]      # Error! All elements must be same type
       ```
 
       However, you can get around this by defining your list type as
@@ -219,9 +218,9 @@ struct List[T: Copyable](
       ```mojo
       var numbers = [10, 20, 30]
 
-      # Default behavior creates immutable (read-only) references
-      for num in numbers:
-          num += 1  # error: expression must be mutable
+      # Default behavior creates immutable (read-only) references:
+      # for num in numbers:
+      #     num += 1  # error: expression must be mutable
 
       # Using `ref` gets mutable (read-write) references
       for ref num in numbers:
@@ -246,7 +245,7 @@ struct List[T: Copyable](
 
       ```mojo
       var my_list = [1, 2, 3]
-      print(my_list[5])  # Undefined behavior (out of bounds)
+      # print(my_list[5])  # Undefined behavior (out of bounds)
       ```
 
       For safe access, you should manually check bounds or use methods that
@@ -278,9 +277,9 @@ struct List[T: Copyable](
     my_list.extend([50, 60])     # [10, 15, 20, 30, 40, 50, 60]
 
     # Access elements
-    print(my_list[0])            # 10 (first element)
-    print(my_list[-1])           # 60 (last element)
-    my_list[1] = 25              # Modify element: [10, 25, 20, 30, 40, 50, 60]
+    print(my_list[0])                # 10 (first element)
+    print(my_list[len(my_list) - 1]) # 60 (last element)
+    my_list[1] = 25                  # Modify element: [10, 25, 20, 30, 40, 50, 60]
 
     # Remove elements
     print(my_list.pop())      # Removes and returns last element (60)
@@ -325,9 +324,7 @@ struct List[T: Copyable](
         T: The type of elements stored in the list.
     """
 
-    comptime _UnsafePointerType = NonNullUnsafePointer[
-        Self.T, MutExternalOrigin
-    ]
+    comptime _UnsafePointerType = UnsafePointer[Self.T, MutExternalOrigin]
 
     # Fields
     var _data: Self._UnsafePointerType
@@ -389,7 +386,7 @@ struct List[T: Copyable](
 
     def __init__(out self):
         """Constructs an empty list."""
-        self._data = Self._UnsafePointerType.dangling()
+        self._data = Self._UnsafePointerType.unsafe_dangling()
         self._len = 0
         self.capacity = 0
 
@@ -400,9 +397,9 @@ struct List[T: Copyable](
             capacity: The requested capacity of the list.
         """
         if capacity:
-            self._data = {unsafe_from_nullable = alloc[Self.T](capacity)}
+            self._data = alloc[Self.T](capacity)
         else:
-            self._data = Self._UnsafePointerType.dangling()
+            self._data = Self._UnsafePointerType.unsafe_dangling()
         self._len = 0
         self.capacity = capacity
         self._annotate_new()
@@ -689,7 +686,7 @@ struct List[T: Copyable](
         return len(self) > 0
 
     def _write_self_to[
-        f: def(Self.T, mut Some[Writer])
+        f: def(Self.T, mut Some[Writer]) thin
     ](self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         var iterator = self.__iter__()
 
@@ -752,7 +749,7 @@ struct List[T: Copyable](
         if self.capacity > 0:
             self._annotate_delete()
             self._data.free()
-        self._data = {unsafe_from_nullable = new_data}
+        self._data = new_data
         self.capacity = new_capacity
         self._annotate_new()
 
@@ -960,7 +957,24 @@ struct List[T: Copyable](
         memcpy(dest=self._unsafe_next_uninit_ptr(), src=v_ptr, count=count)
         self._len += count
 
-    def pop(mut self, i: Int = -1) -> Self.T:
+    def pop(mut self) -> Self.T:
+        """Pops the last value from the list.
+
+        Returns:
+            The popped value.
+
+        Examples:
+
+        ```mojo
+        numbers = ["1", "2", "3", "4", "5"]
+        value = numbers.pop(); print(value)   # 5
+        print("length", len(numbers))         # length 4
+        ```
+        """
+        return self.pop(len(self) - 1)
+
+    @always_inline
+    def pop(mut self, i: Int) -> Self.T:
         """Pops a value from the list at the given index.
 
         Args:
@@ -973,24 +987,16 @@ struct List[T: Copyable](
 
         ```mojo
         numbers = ["1", "2", "3", "4", "5"]
-        value = numbers.pop(); print(value)   # 5
-        print("length", len(numbers))         # length 4
         value = numbers.pop(2); print(value)  # 3
-        print(numbers)                        # ['1', '2', '4']
-        value = numbers.pop(-2); print(value) # 2, negative index
+        print(numbers)                        # ['1', '2', '4', '5']
         ```
         """
-        var normalized_idx = Int(
-            normalize_index["List", assert_always=False](i, UInt(len(self)))
-        )
-
-        assert normalized_idx < self._len, "pop index out of range"
-
-        var ret_val = (self._data + normalized_idx).take_pointee()
+        check_bounds(i, len(self))
+        var ret_val = (self._data + i).take_pointee()
         uninit_move_n[overlapping=True](
-            dest=self._data + normalized_idx,
-            src=self._data + normalized_idx + 1,
-            count=len(self) - normalized_idx - 1,
+            dest=self._data + i,
+            src=self._data + i + 1,
+            count=len(self) - i - 1,
         )
         self._len -= 1
         self._annotate_shrink(self._len + 1)
@@ -1245,7 +1251,7 @@ struct List[T: Copyable](
         """
         self._annotate_delete()
         var ptr = self._data
-        self._data = Self._UnsafePointerType.dangling()
+        self._data = Self._UnsafePointerType.unsafe_dangling()
         self._len = 0
         self.capacity = 0
         return ptr
@@ -1290,23 +1296,34 @@ struct List[T: Copyable](
             ptr=self.unsafe_ptr() + start, length=end - start
         )
 
-    def __getitem__[I: Indexer, //](ref self, idx: I) -> ref[self] Self.T:
+    @always_inline
+    def __getitem__(ref self, idx: IntLiteral) -> ref[self] Self.T:
         """Gets the list element at the given index.
 
         Args:
             idx: The index of the element.
 
-        Parameters:
-            I: A type that can be used as an index.
+        Returns:
+            A reference to the element at the given index.
+        """
+        comptime assert (
+            IntLiteral[idx.value]() >= 0
+        ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
+        check_bounds(idx, len(self))
+        return self._data[idx]
+
+    @always_inline
+    def __getitem__(ref self, idx: Some[Indexer]) -> ref[self] Self.T:
+        """Gets the list element at the given index.
+
+        Args:
+            idx: The index of the element.
 
         Returns:
             A reference to the element at the given index.
         """
-
-        var normalized_idx = normalize_index["List", assert_always=False](
-            idx, UInt(len(self))
-        )
-        return (self._data + normalized_idx)[]
+        check_bounds(idx, len(self))
+        return self._data[idx]
 
     @always_inline
     def unsafe_get(ref self, idx: Int) -> ref[self] Self.T:
@@ -1328,11 +1345,8 @@ struct List[T: Copyable](
             Never use `my_list.unsafe_get(-1)` to get the last element of the
             list. Instead, do `my_list.unsafe_get(len(my_list) - 1)`.
         """
-        assert 0 <= idx < len(self), (
-            "The index provided must be within the range [0, len(List) -1]"
-            " when using List.unsafe_get()"
-        )
-        return (self._data + idx)[]
+        check_bounds[cpu_default=False](idx, len(self))
+        return self._data[idx]
 
     @always_inline
     def unsafe_set(
@@ -1354,10 +1368,7 @@ struct List[T: Copyable](
             Never use `my_list.unsafe_set(-1, value)` to set the last element of
             the list. Instead, do `my_list.unsafe_set(len(my_list) - 1, value)`.
         """
-        assert 0 <= idx < len(self), (
-            "The index provided must be within the range [0, len(List) -1]"
-            " when using List.unsafe_set()"
-        )
+        check_bounds[cpu_default=False](idx, len(self))
         # TODO(MOCO-3679): Use `(self._data + idx).destroy_pointee()`
         # directly once where clause bounds propagate to callee inference.
         (self._data + idx).bitcast[

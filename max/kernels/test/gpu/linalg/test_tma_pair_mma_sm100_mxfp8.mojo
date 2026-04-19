@@ -577,11 +577,11 @@ def sm100_blockscaled_mxfp8_cta_pair[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, MutAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
+    c: LayoutTensor[mut=True, c_type, c_layout, _],
+    a: LayoutTensor[mut=True, a_type, a_layout, _],
+    b: LayoutTensor[mut=True, b_type, b_layout, _],
+    a_scales: LayoutTensor[mut=True, a_scales_type, a_scales_layout, _],
+    b_scales: LayoutTensor[mut=True, b_scales_type, b_scales_layout, _],
     ctx: DeviceContext,
 ) raises:
     comptime assert transpose_b, "Only support transposed B"
@@ -961,17 +961,13 @@ def test_blockscaled_pair_cta_mxfp8[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    var a = TileTensor(a_device.unsafe_ptr(), row_major(a_shape))
-    var b = TileTensor(b_device.unsafe_ptr(), row_major(b_shape))
-    var c = TileTensor(c_device.unsafe_ptr(), row_major(c_shape))
-    var a_scales = TileTensor(
-        a_scales_device.unsafe_ptr(), row_major(a_scales_shape)
-    )
-    var b_scales = TileTensor(
-        b_scales_device.unsafe_ptr(), row_major(b_scales_shape)
-    )
+    var a = TileTensor(a_device, row_major(a_shape))
+    var b = TileTensor(b_device, row_major(b_shape))
+    var c = TileTensor(c_device, row_major(c_shape))
+    var a_scales = TileTensor(a_scales_device, row_major(a_scales_shape))
+    var b_scales = TileTensor(b_scales_device, row_major(b_scales_shape))
 
-    var c_ref = TileTensor(c_device_ref.unsafe_ptr(), row_major(c_shape))
+    var c_ref = TileTensor(c_device_ref, row_major(c_shape))
 
     sm100_blockscaled_mxfp8_cta_pair[
         transpose_b=transpose_b,

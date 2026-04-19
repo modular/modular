@@ -141,14 +141,11 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                 for replica_batch in batches:
                     for ctx in replica_batch:
                         replica_idx = batch_to_replica_idx[ctx.request_id]
-                        primary_skip = self.kv_manager.alloc(
+                        self.kv_manager.alloc(
                             ctx,
                             replica_idx=replica_idx,
                             num_steps=num_steps,
-                            skip_tokens=False,
                         )
-                        if primary_skip > 0:
-                            ctx.tokens.skip_processing(primary_skip)
 
                 step_outputs = self.execute(inputs)
 

@@ -153,11 +153,14 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
 
             draft_config.return_hidden_states = ReturnHiddenStates.LAST
 
-            logger.info(
-                f"[DEBUG] load_model: target config devices={config.devices}, "
-                f"draft config devices={draft_config.devices}"
+            assert self.pipeline_config.speculative is not None
+            num_draft_steps = (
+                self.pipeline_config.speculative.num_speculative_tokens
             )
-            nn_model = UnifiedMTPDeepseekV3(config, draft_config)
+
+            nn_model = UnifiedMTPDeepseekV3(
+                config, draft_config, num_draft_steps=num_draft_steps
+            )
 
             # Share embed_tokens and lm_head BEFORE loading so state_dict()
             # deduplicates them — the adapter only emits target.* copies.
@@ -223,19 +226,12 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                     for _ in range(len(self.devices))
                 ]
 
-                fetch_types = self.kv_params.get_symbolic_inputs()[0]
+                fetch_types = (
+                    self.kv_params.get_symbolic_inputs().inputs[0].flatten()
+                )
                 len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
                 kv_caches_per_dev = self._unflatten_kv_inputs(
                     [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
-                )
-
-                logger.info(
-                    f"[DEBUG] load_model graph build: "
-                    f"n_devices={len(self.devices)}, "
-                    f"n_signal_buffers={len(signal_buffers)}, "
-                    f"n_kv_caches_per_dev={len(kv_caches_per_dev)}, "
-                    f"target_kv_params.n_devices={len(self.kv_params.get_symbolic_inputs())}, "
-                    f"draft_kv_params.n_devices={len(self._draft_kv_params.get_symbolic_inputs())}"
                 )
 
                 batch_context_lengths = [
@@ -267,9 +263,9 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                                 dev_idx
                             ].lookup_table,
                             max_lengths=kv_caches_per_dev[dev_idx].max_lengths,
-                            dispatch_metadata=kv_caches_per_dev[
+                            attention_dispatch_metadata=kv_caches_per_dev[
                                 dev_idx
-                            ].dispatch_metadata,
+                            ].attention_dispatch_metadata,
                         )
                     )
 
@@ -313,7 +309,7 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> UnifiedMTPDeepseekV3Inputs:
         base = DeepseekV3Model.prepare_initial_token_inputs(
@@ -380,13 +376,5 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                 f.name: getattr(base_config, f.name)
                 for f in fields(base_config)
             }
-        )
-        logger.info(
-            f"[DEBUG] _create_draft_config: "
-            f"devices={draft_config.devices}, "
-            f"dp={draft_config.data_parallel_degree}, "
-            f"ep_config={draft_config.ep_config is not None}, "
-            f"num_hidden_layers={draft_config.num_hidden_layers}, "
-            f"dtype={draft_config.dtype}"
         )
         return draft_config

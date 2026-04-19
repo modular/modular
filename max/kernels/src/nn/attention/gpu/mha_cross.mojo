@@ -30,6 +30,7 @@ from std.utils.numerics import get_accum_type
 
 
 @always_inline
+@__name(t"mha_cross_bmm0_{q_type}_{p_type}", mangle=True)
 def _bmm0_bs[
     QLayoutType: TensorLayout,
     KVLayoutType: TensorLayout,
@@ -106,7 +107,9 @@ def _bmm0_bs[
         var accum_vec = SIMD[p_type, simd_width_of[p_type]()](0)
         var k_ptr = k_cache.block_paged_ptr[tile_size=1](batch, x, kv_head, 0)
 
-        def accum_fn[width: Int](offset: Int) unified {mut}:
+        def accum_fn[
+            width: Int
+        ](offset: Int) unified {q, y, num_heads, depth, k_ptr, mut}:
             comptime alignment = align_of[SIMD[p_type, width]]()
             var q_val = q.load[width=width, alignment=alignment](
                 y * num_heads * depth + offset
@@ -136,6 +139,7 @@ def _bmm0_bs[
 
 
 @always_inline
+@__name(t"mha_cross_bmm1_{output_type}_{p_type}", mangle=True)
 def _bmm1_bs[
     QLayoutType: TensorLayout,
     KVLayoutType: TensorLayout,
@@ -265,12 +269,12 @@ def mha_cross_gpu_naive[
     ), "Only support single and half precision."
 
     comptime config = MHAConfig[dtype](
-        UInt(Int(q.static_shape[rank - 2])),
-        UInt(Int(q.static_shape[rank - 1])),
+        Int(q.static_shape[rank - 2]),
+        Int(q.static_shape[rank - 1]),
     )
 
-    comptime num_heads = Int(config.num_heads)
-    comptime depth = Int(config.depth)
+    comptime num_heads = config.num_heads
+    comptime depth = config.depth
     comptime kv_num_heads = cache_t.kv_params.num_heads
     comptime group = config.num_heads // kv_num_heads
     var kv_max_seq_len = Int(k.max_prompt_length())
@@ -290,7 +294,7 @@ def mha_cross_gpu_naive[
 
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
     var p_buffer = TileTensor(
-        p_device.unsafe_ptr(),
+        p_device,
         row_major(
             (Idx(batch_size * num_heads), Idx(q_max_seq_len), Idx(num_keys))
         ),
@@ -320,7 +324,7 @@ def mha_cross_gpu_naive[
         max_cache_size,
         num_heads,
         depth,
-        Int(group),
+        group,
         mask_functor,
         grid_dim=(
             ceildiv(num_keys, 32),
@@ -367,7 +371,7 @@ def mha_cross_gpu_naive[
         max_cache_size,
         num_heads,
         depth,
-        Int(group),
+        group,
         grid_dim=(
             ceildiv(depth, 32),
             ceildiv(q_max_seq_len, 16),

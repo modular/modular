@@ -44,6 +44,7 @@ from linalg.fp4_utils import (
 
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
+    GEMMKind,
 )
 from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
@@ -218,12 +219,12 @@ def test_existing_kernel_single_group[
 
     # Device allocations
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     # Scale factor shapes (5D)
     var a_scales_shape = row_major(
@@ -266,15 +267,11 @@ def test_existing_kernel_single_group[
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
-    var a_scales_tensor = TileTensor(
-        a_scales_device.unsafe_ptr(), a_scales_shape
-    )
+    var a_scales_tensor = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
-    var b_scales_tensor = TileTensor(
-        b_scales_device.unsafe_ptr(), b_scales_shape
-    )
+    var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # Initialize with random data
     rand(a_host_ptr, a_size)
@@ -312,11 +309,12 @@ def test_existing_kernel_single_group[
         cta_group=cta_group,
         k_group_size=1,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     comptime if transpose_b:
         var b_shape = row_major(Coord(n, k))
-        var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+        var b_tensor = TileTensor(b_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c_ref_tensor,
@@ -335,7 +333,7 @@ def test_existing_kernel_single_group[
         ](c_tensor, a_tensor, b_tensor, a_scales_tensor, b_scales_tensor, ctx)
     else:
         var b_shape = row_major(Coord(k, n))
-        var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+        var b_tensor = TileTensor(b_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c_ref_tensor,
@@ -448,11 +446,11 @@ def test_grouped_kernel_single_group[
 
     # Device allocations
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     # Scale factor shapes (5D)
     var a_scales_shape = row_major(
@@ -483,15 +481,11 @@ def test_grouped_kernel_single_group[
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
-    var a_scales_tensor = TileTensor(
-        a_scales_device.unsafe_ptr(), a_scales_shape
-    )
+    var a_scales_tensor = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
-    var b_scales_tensor = TileTensor(
-        b_scales_device.unsafe_ptr(), b_scales_shape
-    )
+    var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # Test with random data
     rand(a_host_ptr, a_size)
@@ -521,7 +515,7 @@ def test_grouped_kernel_single_group[
 
     comptime if transpose_b:
         var b_shape = row_major(Coord(n, k))
-        var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+        var b_tensor = TileTensor(b_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c_ref_tensor,
@@ -534,7 +528,7 @@ def test_grouped_kernel_single_group[
         )
     else:
         var b_shape = row_major(Coord(k, n))
-        var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+        var b_tensor = TileTensor(b_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c_ref_tensor,
@@ -570,7 +564,7 @@ def test_grouped_kernel_single_group[
 
     # Create DEVICE-based problem_sizes TileTensor for kernel
     var problem_sizes_tensor_device = TileTensor(
-        problem_sizes_device.unsafe_ptr(), row_major[max_groups, 4]()
+        problem_sizes_device, row_major[max_groups, 4]()
     )
 
     # Compute total tiles on HOST
@@ -612,20 +606,14 @@ def test_grouped_kernel_single_group[
     ctx.enqueue_copy(sfb_ptrs_device, sfb_ptrs_host)
     ctx.synchronize()
 
-    var a_ptrs_tensor = TileTensor(
-        a_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var b_ptrs_tensor = TileTensor(
-        b_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var c_ptrs_tensor = TileTensor(
-        c_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
+    var a_ptrs_tensor = TileTensor(a_ptrs_device, row_major[max_groups, 1]())
+    var b_ptrs_tensor = TileTensor(b_ptrs_device, row_major[max_groups, 1]())
+    var c_ptrs_tensor = TileTensor(c_ptrs_device, row_major[max_groups, 1]())
     var sfa_ptrs_tensor = TileTensor(
-        sfa_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfa_ptrs_device, row_major[max_groups, 1]()
     )
     var sfb_ptrs_tensor = TileTensor(
-        sfb_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfb_ptrs_device, row_major[max_groups, 1]()
     )
 
     # Run the grouped kernel
@@ -641,6 +629,7 @@ def test_grouped_kernel_single_group[
         cta_group=cta_group,
         k_group_size=1,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     launch_grouped_gemm_with_templates[
@@ -782,12 +771,12 @@ def test_grouped_kernel_multi_group_same_ptr[
     var c_shape = row_major(Coord(m, n))
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     # Scale factor shapes (5D)
     comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
@@ -819,15 +808,11 @@ def test_grouped_kernel_multi_group_same_ptr[
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
-    var a_scales_tensor = TileTensor(
-        a_scales_device.unsafe_ptr(), a_scales_shape
-    )
+    var a_scales_tensor = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
-    var b_scales_tensor = TileTensor(
-        b_scales_device.unsafe_ptr(), b_scales_shape
-    )
+    var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # Test with random data
     rand(a_host_ptr, a_size)
@@ -857,7 +842,7 @@ def test_grouped_kernel_multi_group_same_ptr[
 
     comptime if transpose_b:
         var b_shape = row_major(Coord(n, k))
-        var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+        var b_tensor = TileTensor(b_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c_ref_tensor,
@@ -870,7 +855,7 @@ def test_grouped_kernel_multi_group_same_ptr[
         )
     else:
         var b_shape = row_major(Coord(k, n))
-        var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+        var b_tensor = TileTensor(b_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c_ref_tensor,
@@ -933,20 +918,14 @@ def test_grouped_kernel_multi_group_same_ptr[
         problem_sizes_host, row_major[max_groups, 4]()
     )
 
-    var a_ptrs_tensor = TileTensor(
-        a_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var b_ptrs_tensor = TileTensor(
-        b_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var c_ptrs_tensor = TileTensor(
-        c_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
+    var a_ptrs_tensor = TileTensor(a_ptrs_device, row_major[max_groups, 1]())
+    var b_ptrs_tensor = TileTensor(b_ptrs_device, row_major[max_groups, 1]())
+    var c_ptrs_tensor = TileTensor(c_ptrs_device, row_major[max_groups, 1]())
     var sfa_ptrs_tensor = TileTensor(
-        sfa_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfa_ptrs_device, row_major[max_groups, 1]()
     )
     var sfb_ptrs_tensor = TileTensor(
-        sfb_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfb_ptrs_device, row_major[max_groups, 1]()
     )
 
     # Calculate total tiles across all groups
@@ -970,6 +949,7 @@ def test_grouped_kernel_multi_group_same_ptr[
         cta_group=cta_group,
         k_group_size=1,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     launch_grouped_gemm_with_templates[
@@ -1194,23 +1174,23 @@ def test_grouped_kernel_two_groups_different_ptrs[
     ctx.synchronize()
 
     # Create TileTensors for cuBLAS
-    var a0_tensor = TileTensor(a0_device.unsafe_ptr(), a_shape)
-    var c0_ref_tensor = TileTensor(c0_ref_device.unsafe_ptr(), c_shape)
-    var sfa0_tensor = TileTensor(sfa0_device.unsafe_ptr(), a_scales_shape)
-    var sfb0_tensor = TileTensor(sfb0_device.unsafe_ptr(), b_scales_shape)
+    var a0_tensor = TileTensor(a0_device, a_shape)
+    var c0_ref_tensor = TileTensor(c0_ref_device, c_shape)
+    var sfa0_tensor = TileTensor(sfa0_device, a_scales_shape)
+    var sfb0_tensor = TileTensor(sfb0_device, b_scales_shape)
 
-    var a1_tensor = TileTensor(a1_device.unsafe_ptr(), a_shape)
-    var c1_ref_tensor = TileTensor(c1_ref_device.unsafe_ptr(), c_shape)
-    var sfa1_tensor = TileTensor(sfa1_device.unsafe_ptr(), a_scales_shape)
-    var sfb1_tensor = TileTensor(sfb1_device.unsafe_ptr(), b_scales_shape)
+    var a1_tensor = TileTensor(a1_device, a_shape)
+    var c1_ref_tensor = TileTensor(c1_ref_device, c_shape)
+    var sfa1_tensor = TileTensor(sfa1_device, a_scales_shape)
+    var sfb1_tensor = TileTensor(sfb1_device, b_scales_shape)
 
     # Run cuBLAS for each group separately
     print("  Running cuBLAS for group 0...")
 
     comptime if transpose_b:
         var b_shape = row_major(Coord(n, k))
-        var b0_tensor = TileTensor(b0_device.unsafe_ptr(), b_shape)
-        var b1_tensor = TileTensor(b1_device.unsafe_ptr(), b_shape)
+        var b0_tensor = TileTensor(b0_device, b_shape)
+        var b1_tensor = TileTensor(b1_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c0_ref_tensor,
@@ -1234,8 +1214,8 @@ def test_grouped_kernel_two_groups_different_ptrs[
         )
     else:
         var b_shape = row_major(Coord(k, n))
-        var b0_tensor = TileTensor(b0_device.unsafe_ptr(), b_shape)
-        var b1_tensor = TileTensor(b1_device.unsafe_ptr(), b_shape)
+        var b0_tensor = TileTensor(b0_device, b_shape)
+        var b1_tensor = TileTensor(b1_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c0_ref_tensor,
@@ -1314,20 +1294,14 @@ def test_grouped_kernel_two_groups_different_ptrs[
         problem_sizes_host, row_major[max_groups, 4]()
     )
 
-    var a_ptrs_tensor = TileTensor(
-        a_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var b_ptrs_tensor = TileTensor(
-        b_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var c_ptrs_tensor = TileTensor(
-        c_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
+    var a_ptrs_tensor = TileTensor(a_ptrs_device, row_major[max_groups, 1]())
+    var b_ptrs_tensor = TileTensor(b_ptrs_device, row_major[max_groups, 1]())
+    var c_ptrs_tensor = TileTensor(c_ptrs_device, row_major[max_groups, 1]())
     var sfa_ptrs_tensor = TileTensor(
-        sfa_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfa_ptrs_device, row_major[max_groups, 1]()
     )
     var sfb_ptrs_tensor = TileTensor(
-        sfb_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfb_ptrs_device, row_major[max_groups, 1]()
     )
 
     # Calculate total tiles
@@ -1351,6 +1325,7 @@ def test_grouped_kernel_two_groups_different_ptrs[
         cta_group=cta_group,
         k_group_size=1,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     launch_grouped_gemm_with_templates[

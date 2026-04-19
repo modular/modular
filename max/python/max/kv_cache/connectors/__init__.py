@@ -71,7 +71,8 @@ def create_connector(
                 "when kv_connector is 'dkv'"
             )
         logger.info(
-            f"Creating DKVConnector: endpoint={cfg.block_store_endpoint}"
+            "Creating DKVConnector: endpoint=%s",
+            cfg.block_store_endpoint,
         )
         return DKVConnector(
             params=params,

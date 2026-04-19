@@ -62,7 +62,7 @@ def test_argmaxmin_gpu[
         row_major(Coord(in_shape)),
     )
     var out_idxs_host_ptr = alloc[Scalar[output_type]](out_size)
-    var out_idxs_host = TileTensor(
+    var _out_idxs_host = TileTensor(
         out_idxs_host_ptr,
         row_major(Coord(out_shape)),
     )
@@ -78,11 +78,11 @@ def test_argmaxmin_gpu[
 
     # Create device TileTensors
     var device_in_tensor = TileTensor(
-        device_in.unsafe_ptr(),
+        device_in,
         row_major(Coord(in_shape)),
     )
     var device_out_tensor = TileTensor(
-        device_out_idxs.unsafe_ptr(),
+        device_out_idxs,
         row_major(Coord(out_shape)),
     )
 

@@ -29,6 +29,7 @@ from max.engine import InferenceSession
 from max.graph.quantization import QuantizationEncoding
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib.hf_utils import is_diffusion_pipeline
+from max.pipelines.lib.interfaces import PipelineModel
 from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 from max.pipelines.lib.memory_estimation import (
     MemoryEstimator,
@@ -114,7 +115,7 @@ _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "Gemma4ForConditionalGeneration",
     "UnifiedEagleLlama3ForCausalLM",
     "UnifiedMTPDeepseekV3ForCausalLM",
-    "UnifiedEagleKimik25ForCausalLM",
+    "Eagle3DeepseekV2ForCausalLM",
 )
 
 _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
@@ -127,6 +128,7 @@ _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
     "Gemma4ForConditionalGeneration",
     "UnifiedEagleLlama3ForCausalLM",
     "UnifiedMTPDeepseekV3ForCausalLM",
+    "Eagle3DeepseekV2ForCausalLM",
 )
 
 
@@ -253,12 +255,6 @@ class PipelineConfig(ConfigFileModel):
     )
     """The model-agnostic runtime settings for pipeline execution."""
 
-    cache: DenoisingCacheConfig = Field(
-        default_factory=DenoisingCacheConfig,
-        description="Denoising cache configuration for diffusion pipelines.",
-    )
-    """Cache configuration for FBCache and TaylorSeer optimizations."""
-
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
     """The section name to use when loading this config from a MAXConfig file.
     This is used to differentiate between different config sections in a single
@@ -317,8 +313,10 @@ class PipelineConfig(ConfigFileModel):
 
         return extracted
 
-    def _create_cache_config_if_needed(self, kwargs: dict[str, Any]) -> None:
-        """Extract denoising cache kwargs and create DenoisingCacheConfig if any provided."""
+    def _create_denoising_cache_config_if_needed(
+        self, kwargs: dict[str, Any]
+    ) -> None:
+        """Extract denoising cache kwargs and set on runtime.denoising_cache."""
         cache_kwargs = PipelineConfig._extract_kwargs_for_config(
             kwargs, DenoisingCacheConfig
         )
@@ -326,7 +324,7 @@ class PipelineConfig(ConfigFileModel):
             # Remove None values so DenoisingCacheConfig defaults are used
             filtered = {k: v for k, v in cache_kwargs.items() if v is not None}
             if filtered:
-                self.cache = DenoisingCacheConfig(**filtered)
+                self.runtime.denoising_cache = DenoisingCacheConfig(**filtered)
 
     def _create_lora_config_if_needed(self, kwargs: dict[str, Any]) -> None:
         """Extract LoRA kwargs and create valid LoRAConfig if enable_lora provided."""
@@ -664,7 +662,7 @@ class PipelineConfig(ConfigFileModel):
         delattr(self, "_unmatched_kwargs")
 
         # Process specialized config creation
-        self._create_cache_config_if_needed(unmatched_kwargs)
+        self._create_denoising_cache_config_if_needed(unmatched_kwargs)
         self._create_lora_config_if_needed(unmatched_kwargs)
 
         # Build model manifest from kwargs — must come before sampling
@@ -879,6 +877,8 @@ class PipelineConfig(ConfigFileModel):
                 and max_batch_size is not None
                 and accelerator_api() == "cuda"
                 and self._is_eligible_for_overlap_serve_optimizations()
+                # Device graph capture is not supported for prefill-only workers.
+                and self.runtime.pipeline_role != "prefill_only"
                 # TODO: Support device graph capture for num_speculative_tokens > 1
                 and (
                     self.speculative is None
@@ -949,8 +949,7 @@ class PipelineConfig(ConfigFileModel):
 
     def _is_eligible_for_overlap_serve_optimizations(self) -> bool:
         return (
-            self.runtime.pipeline_role == "prefill_and_decode"
-            and not self.sampling.enable_structured_output
+            not self.sampling.enable_structured_output
             and not self.sampling.enable_variable_logits
             and not self.lora
             and self.model.device_specs[0].device_type != "cpu"
@@ -1093,15 +1092,6 @@ class PipelineConfig(ConfigFileModel):
             raise ValueError(
                 "structured outputs not currently supported with speculative decoding enabled"
             )
-
-        if self.model.kv_cache.enable_prefix_caching and not self.runtime.force:
-            logging.warning(
-                "Prefix caching is not supported with speculative decoding. "
-                "Overriding user setting to False. Pass --force to bypass this "
-                "validation, though this may result in unexpected behavior or errors."
-            )
-            self.model.kv_cache.enable_prefix_caching = False
-            self.draft_model.kv_cache.enable_prefix_caching = False
 
     def _validate_and_resolve_architecture(
         self, model_config: MAXModelConfig
@@ -1289,6 +1279,11 @@ class PipelineConfig(ConfigFileModel):
         if is_diffusion_pipeline(model_config.huggingface_model_repo):
             # Skip memory estimation for diffusion pipelines,
             # since they don't use KV cache.
+            return
+
+        if not issubclass(arch.pipeline_model, PipelineModel):
+            # Non-PipelineModel architectures (e.g. PipelineExecutor) skip
+            # memory estimation — they don't expose these classmethods.
             return
 
         devices = load_devices(model_config.device_specs)

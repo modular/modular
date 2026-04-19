@@ -897,6 +897,24 @@ components:
                             type: string
                             description: |
                               Either a URL of the image or a base64 encoded image with the data-uri scheme.
+                  - type: object
+                    required:
+                      - type
+                      - video_url
+                    properties:
+                      type:
+                        type: string
+                        enum: [video_url]
+                        description: The type of the content part.
+                      video_url:
+                        type: object
+                        required:
+                          - url
+                        properties:
+                          url:
+                            type: string
+                            description: |
+                              Either a URL of the video or the base64 encoded video data.
         name:
           type: string
           description: |

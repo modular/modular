@@ -117,7 +117,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs().flatten(),
         ],
     )
 
@@ -134,12 +134,12 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
 
     graph_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
     # First set KV blocks to all ones so that RMSNorm changes them.
-    kv_blocks = graph_inputs.blocks
+    kv_blocks = graph_inputs.kv_blocks
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
 
     # Create new KVCacheInputs with updated first element
     graph_inputs = KVCacheInputsPerDevice(
-        blocks=Buffer.from_numpy(all_ones.copy()),
+        kv_blocks=Buffer.from_numpy(all_ones.copy()),
         cache_lengths=graph_inputs.cache_lengths,
         lookup_table=graph_inputs.lookup_table,
         max_lengths=graph_inputs.max_lengths,
@@ -149,10 +149,10 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
 
     gamma = np.random.randn(kv_params.head_dim).astype(dtype.to_numpy())
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
-    model(gamma, input_row_offsets, *graph_inputs)
+    model(gamma, input_row_offsets, *graph_inputs.flatten())
 
     # Check that the RMSNorm wrote output to the KV cache.
-    assert (graph_inputs.blocks.to_numpy() != all_ones).any()
+    assert (graph_inputs.kv_blocks.to_numpy() != all_ones).any()
 
 
 @pytest.mark.parametrize(
@@ -198,7 +198,7 @@ def test_partial_rms_norm_key_cache(
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs().flatten(),
         ],
     )
 
@@ -215,12 +215,12 @@ def test_partial_rms_norm_key_cache(
 
     graph_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
     # First set KV blocks to all ones so that RMSNorm changes them.
-    kv_blocks = graph_inputs.blocks
+    kv_blocks = graph_inputs.kv_blocks
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
 
     # Create new KVCacheInputs with updated first element
     graph_inputs = KVCacheInputsPerDevice(
-        blocks=Buffer.from_numpy(all_ones.copy()),
+        kv_blocks=Buffer.from_numpy(all_ones.copy()),
         cache_lengths=graph_inputs.cache_lengths,
         lookup_table=graph_inputs.lookup_table,
         max_lengths=graph_inputs.max_lengths,
@@ -230,10 +230,10 @@ def test_partial_rms_norm_key_cache(
 
     gamma = np.random.randn(gamma_size).astype(dtype.to_numpy())
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
-    model(gamma, input_row_offsets, *graph_inputs)
+    model(gamma, input_row_offsets, *graph_inputs.flatten())
 
     # shape: [batch_size,kv_dim,num_layers,max_seq_len,n_kv_heads,head_dim]
-    kv_block = graph_inputs.blocks.to_numpy()
+    kv_block = graph_inputs.kv_blocks.to_numpy()
 
     # Check that the first 512 elements of each head is normalized
     for seq_idx in range(seq_lens[0]):
@@ -292,7 +292,7 @@ def test_rms_norm_new_key_cache(
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs().flatten(),
         ],
     )
 
@@ -316,12 +316,12 @@ def test_rms_norm_new_key_cache(
     graph_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
 
     # First set KV blocks to all ones so that RMSNorm changes them.
-    kv_blocks = graph_inputs.blocks
+    kv_blocks = graph_inputs.kv_blocks
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
 
     # Create new KVCacheInputs with updated first element
     graph_inputs = KVCacheInputsPerDevice(
-        blocks=Buffer.from_numpy(all_ones.copy()),
+        kv_blocks=Buffer.from_numpy(all_ones.copy()),
         cache_lengths=graph_inputs.cache_lengths,
         lookup_table=graph_inputs.lookup_table,
         max_lengths=graph_inputs.max_lengths,
@@ -331,10 +331,10 @@ def test_rms_norm_new_key_cache(
 
     gamma = np.random.randn(gamma_size).astype(dtype.to_numpy())
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
-    model(gamma, input_row_offsets, *graph_inputs)
+    model(gamma, input_row_offsets, *graph_inputs.flatten())
 
     # shape: [batch_size,kv_dim,num_layers,max_seq_len,n_kv_heads,head_dim]
-    kv_block = graph_inputs.blocks.to_numpy()
+    kv_block = graph_inputs.kv_blocks.to_numpy()
 
     # check that for the first 10 tokens all heads are unchanged
     for seq_idx in range(10):
@@ -386,7 +386,7 @@ def test_rms_norm_key_cache_dtype_mismatch(
         f"expected gamma dtype {gamma_dtype} to match KV dtype {kv_dtype}"
     )
     with pytest.raises(TypeError, match=expected_msg):
-        graph = Graph(
+        Graph(
             "matmul_kv_cache_ragged",
             forward=RMSNormKeyCacheModel(
                 kv_params, layer_idx=0, total_seq_len=sum(seq_lens)
@@ -394,7 +394,7 @@ def test_rms_norm_key_cache_dtype_mismatch(
             input_types=[
                 gamma_type,
                 input_row_offsets_type,
-                *kv_params.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs().flatten(),
             ],
         )
 
@@ -443,7 +443,7 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
         input_types=[
             gamma_type,
             input_row_offsets_type,
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs().flatten(),
         ],
     )
 
@@ -461,12 +461,12 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     graph_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
 
     # First set KV blocks to all ones so that RMSNorm changes them.
-    kv_blocks = graph_inputs.blocks
+    kv_blocks = graph_inputs.kv_blocks
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())
 
     # Create new KVCacheInputs with updated first element
     graph_inputs = KVCacheInputsPerDevice(
-        blocks=Buffer.from_numpy(all_ones.copy()),
+        kv_blocks=Buffer.from_numpy(all_ones.copy()),
         cache_lengths=graph_inputs.cache_lengths,
         lookup_table=graph_inputs.lookup_table,
         max_lengths=graph_inputs.max_lengths,
@@ -479,10 +479,10 @@ def test_rms_norm_key_cache_per_token_norm(session: InferenceSession) -> None:
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
 
     # Run the model
-    model(gamma, input_row_offsets, *graph_inputs)
+    model(gamma, input_row_offsets, *graph_inputs.flatten())
 
     # Verify that normalization was applied per token (across all heads)
-    kv_block = graph_inputs.blocks.to_numpy()
+    kv_block = graph_inputs.kv_blocks.to_numpy()
 
     # For per token norm, verify that normalization was applied consistently
     # across all heads for each token by checking that the output has expected properties

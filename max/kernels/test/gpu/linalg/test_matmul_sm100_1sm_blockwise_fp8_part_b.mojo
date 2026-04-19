@@ -16,6 +16,7 @@ from std.math import ceildiv
 from std.sys import argv, size_of
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
+    GEMMKind,
 )
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -140,13 +141,13 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_size)
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
@@ -154,13 +155,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_type](a_scales_size)
-    var a_scales_tensor = TileTensor(
-        a_scales_device.unsafe_ptr(), a_scales_shape
-    )
+    var a_scales_tensor = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_type](b_scales_size)
-    var b_scales_tensor = TileTensor(
-        b_scales_device.unsafe_ptr(), b_scales_shape
-    )
+    var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     memset_zero(c_host_ptr, c_size)
     memset_zero(c_host_ref_ptr, c_size)
@@ -215,6 +212,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         mma_shape=mma_shape,
         block_swizzle_size=0,
         cta_group=cta_group,
+        gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
     )
 
     blockwise_fp8_matmul[

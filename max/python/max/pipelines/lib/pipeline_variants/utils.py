@@ -102,6 +102,7 @@ def update_context_and_prepare_responses(
     batch_log_probabilities: list[list[LogProbabilities | None]] | None = None,
     enable_log_probs: bool = False,
     overwrite_future: bool = False,
+    fsm_already_advanced_steps: int = 0,
 ) -> dict[RequestID, TextGenerationOutput]:
     """Updates context objects and prepares response objects after generation.
 
@@ -115,6 +116,9 @@ def update_context_and_prepare_responses(
             None), each entry is a list per batch for that step.
         enable_log_probs: Whether to include log probability data in outputs.
         overwrite_future: Whether to overwrite future tokens in the context.
+        fsm_already_advanced_steps: Number of steps for which the FSM was
+            already advanced during multi-step execution. For these steps,
+            only the token buffer is updated (FSM is skipped).
 
     Returns:
         A dictionary mapping request IDs to their respective generation outputs.
@@ -144,9 +148,14 @@ def update_context_and_prepare_responses(
                         new_token=next_token, log_probabilities=log_probs
                     )
             else:
-                context.update(
+                # Update token buffer for all steps
+                context.advance_token_buffer(
                     new_token=next_token, log_probabilities=log_probs
                 )
+                # Only advance FSM for steps that weren't already advanced
+                # during multi-step execution
+                if step >= fsm_already_advanced_steps:
+                    context.advance_fsm(next_token)
 
             if context.is_done:
                 break
@@ -183,16 +192,35 @@ def update_spec_decode_context_and_prepare_responses(
         for num_accept in num_accepted_draft_tokens
     )
 
+    # Handle chunked prefill case where there are no future tokens.
     for batch_idx, ctx in enumerate(context_batch):
-        for token_idx in range(num_accepted_draft_tokens[batch_idx]):
-            if not ctx.is_done:
-                ctx.update(draft_tokens[batch_idx, token_idx])
+        if not ctx.tokens.generated_length:
+            continue
+
+        maybe_accepted_draft_tokens: list[int] = draft_tokens[
+            batch_idx
+        ].tolist()
+        num_accept = num_accepted_draft_tokens[batch_idx]
+        tokens = maybe_accepted_draft_tokens[:num_accept]
+        tokens += [next_tokens[batch_idx]]
+        for i, token in enumerate(tokens):
+            # The overlap scheduler leaves a FUTURE_TOKEN placeholder as the last
+            # generated token; realize_future_token overwrites it in place. Calling
+            # update() for that same index would append a duplicate (see
+            # update_context_and_prepare_responses with overwrite_future).
+            if i == 0:
+                ctx.realize_future_token(token)
+            elif ctx.is_done:
+                break
+            else:
+                ctx.update(token)
+
+        ctx.spec_decoding_state.maybe_accepted_draft_tokens = []
         if not ctx.is_done:
-            ctx.update(next_tokens[batch_idx])
             # Save the generated draft tokens for verification in next iteration.
-            ctx.spec_decoding_state.saved_draft_tokens = next_draft_tokens[
+            ctx.spec_decoding_state.draft_tokens_to_verify = next_draft_tokens[
                 batch_idx
-            ].copy()
+            ].tolist()
 
     return build_response(
         context_batch=context_batch,

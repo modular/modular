@@ -88,7 +88,7 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
         return ptr
 
     def static_constant_kernel[
-        get_constant_memory: def() -> UnsafePointer[
+        get_constant_memory: def() thin -> UnsafePointer[
             Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
         ]
     ](data: UnsafePointer[Float32, MutAnyOrigin]):

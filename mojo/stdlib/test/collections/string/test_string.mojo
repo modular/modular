@@ -254,12 +254,11 @@ def test_string_indexing() raises:
     var str = "Hello Mojo!!"
 
     assert_equal("H", str[byte=0])
-    assert_equal("!", str[byte=-1])
-    assert_equal("H", str[byte=-str.byte_length()])
+    assert_equal("!", str[byte=str.byte_length() - 1])
+    assert_equal("H", str[byte=0])
     assert_equal("llo Mojo!!", str[byte=2:])
     assert_equal("lo Mojo!", str[byte=3:-1])
     assert_equal("lo Moj", str[byte=3:-3])
-
     assert_equal("Hello Mojo!!", str[byte= -50::])
     assert_equal("Hello Mojo!!", str[byte=:50:])
 

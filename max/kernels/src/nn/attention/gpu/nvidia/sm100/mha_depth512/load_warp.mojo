@@ -10,22 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""TMA load warp logic for depth=512 pair-CTA SM100 attention.
+"""TMA load warp logic for depth=256/512 pair-CTA SM100 attention.
 
 Each CTA in the pair loads its own half of K/V data into its local SMEM.
 The pair-CTA MMA instruction reads from both SMs' SMEM to combine the halves.
 
 K is split along BN rows: even CTA loads K[0:BN//2, :], odd loads K[BN//2:BN, :].
-V is split into V_lo and V_hi (separate pipeline slots, each [BK1, ov_depth//4]):
-  V_lo: even loads V[:, 0:ov_depth//4], odd loads V[:, ov_depth//4:ov_depth//2]
-  V_hi: even loads V[:, ov_depth//2:3*ov_depth//4], odd loads V[:, 3*ov_depth//4:ov_depth]
-Q is per-CTA: even loads Q[0:64, :], odd loads Q[64:128, :].
+
+V loading depends on split_o (depth-dependent):
+  split_o=True (depth=512): V split into V_lo and V_hi (separate pipeline slots):
+    V_lo: even loads V[:, 0:ov_depth//4], odd loads V[:, ov_depth//4:ov_depth//2]
+    V_hi: even loads V[:, ov_depth//2:3*ov_depth//4], odd loads V[:, 3*ov_depth//4:ov_depth]
+  split_o=False (depth=256): Single V (no V_hi):
+    V: even loads V[:, 0:ov_depth//2], odd loads V[:, ov_depth//2:ov_depth]
+
+Q is per-CTA: even loads Q[0:BM, :], odd loads Q[BM:PairBM, :].
 
 All TMA loads use async_multicast_load_3d[cta_group=2] with a per-CTA mask.
 The cta_group=2 ensures the leader CTA's barrier tracks byte arrivals from both
 CTAs. Only the leader CTA calls expect_bytes and wait.
 
-Mask computations use PairBM (BM*2=128) so both CTAs make identical skip
+Mask computations use PairBM (BM*2) so both CTAs make identical skip
 decisions. If one CTA skips a tile and the other doesn't, barriers desync.
 """
 
@@ -92,7 +97,7 @@ def depth512_load[
         KVLUTType.dtype,
         config.swizzle_mode,
         BN=config.BK1,
-        BK=config.ov_depth // 4,
+        BK=config.v_cols_per_cta,
     ],
     kv_lut: KVLUTType,
 ):
@@ -164,10 +169,10 @@ def depth512_load[
 
     comptime q_stage_elements = BM * BK0
     comptime q_stage_bytes = q_stage_elements * qkv_size
-    # Per-CTA bytes: K tile is BN//2 rows, V tile is ov_depth//4 cols.
+    # Per-CTA bytes: K tile is BN//2 rows, V tile is v_cols_per_cta cols.
     # cta_group multiplier below accounts for both CTAs in the cluster.
     comptime k_stage_bytes = (BN // 2) * BK0 * qkv_size
-    comptime v_stage_bytes = BK1 * (config.ov_depth // 4) * qkv_size
+    comptime v_stage_bytes = BK1 * config.v_cols_per_cta * qkv_size
     comptime qk_expect_bytes = cta_group * (q_stage_bytes + k_stage_bytes)
     comptime k_expect_bytes = cta_group * k_stage_bytes
     comptime v_expect_bytes = cta_group * v_stage_bytes
@@ -183,7 +188,7 @@ def depth512_load[
 
     # ---- Pipeline setup -----------------------------------------------------
 
-    var mbars = Depth512MBars[num_kv_stages](smem.mbar_base())
+    var mbars = Depth512MBars[num_kv_stages, config.split_o](smem.mbar_base())
     comptime KVPipeType = StagedPipeline[num_kv_stages, 1]
     var kv_pipeline: KVPipeType = {mbars.get_kv_mbars()}
     kv_pipeline.state._phase = 1  # producer starts at phase 1
@@ -218,14 +223,15 @@ def depth512_load[
     )
 
     # CTA-specific offsets for K rows and V depth columns.
-    # With cta_group=2, each CTA loads ov_depth//4 V columns.
-    # V_lo: leader [0, ov_depth/4), peer [ov_depth/4, ov_depth/2)
-    # V_hi: leader [ov_depth/2, 3*ov_depth/4), peer [3*ov_depth/4, ov_depth)
+    # With cta_group=2, each CTA loads v_cols_per_cta V columns.
     var k_row_offset: UInt32 = UInt32(cta_rank) * UInt32(BN // 2)
-    var v_lo_col_offset = Int(cta_rank) * (config.ov_depth // 4)
+    # split_o: V_lo/V_hi separate loads. !split_o: single V load.
+    # Define all offsets unconditionally; unused ones are dead code.
+    var v_lo_col_offset = Int(cta_rank) * config.v_cols_per_cta
     var v_hi_col_offset = config.ov_depth // 2 + Int(cta_rank) * (
-        config.ov_depth // 4
+        config.v_cols_per_cta
     )
+    var v_col_offset = Int(cta_rank) * config.v_cols_per_cta
 
     # Mask check uses PairBM (128) so both CTAs make identical skip decisions.
     # If one CTA skips a tile and the other doesn't, the pipeline barriers
@@ -289,8 +295,9 @@ def depth512_load[
             )
         kv_pipeline.state.step()
 
-    # ---- Peeled first iteration: V_lo BN stages ------------------------------
-    # V_lo and V_hi occupy separate pipeline slots, each [BK1, ov_depth//4].
+    # ---- Peeled first iteration: V BN stages -----------------------------------
+    # split_o: V_lo and V_hi occupy separate pipeline slots, each [BK1, v_cols_per_cta].
+    # !split_o: single V, only V_lo-style loads (no V_hi).
 
     comptime for pv_stage in range(num_pv_stages):
         kv_pipeline.producer_acquire()
@@ -301,46 +308,62 @@ def depth512_load[
                 mbar[].expect_bytes(Int32(v_expect_bytes))
 
         if e != 0:
-            v_tma_op.async_multicast_load_3d[cta_group](
-                KVType(
-                    kv_smem + kv_pipeline.state.index() * UInt32(kv_elems),
-                    tt_row_major[kv_elems](),
-                ),
-                mbar[],
-                (
-                    v_lo_col_offset,
-                    Int(kv_head_idx),
-                    Int(kv_gmem_row) + pv_stage * BK1,
-                ),
-                local_mask,
-            )
+            comptime if config.split_o:
+                v_tma_op.async_multicast_load_3d[cta_group](
+                    KVType(
+                        kv_smem + kv_pipeline.state.index() * UInt32(kv_elems),
+                        tt_row_major[kv_elems](),
+                    ),
+                    mbar[],
+                    (
+                        v_lo_col_offset,
+                        Int(kv_head_idx),
+                        Int(kv_gmem_row) + pv_stage * BK1,
+                    ),
+                    local_mask,
+                )
+            else:
+                v_tma_op.async_multicast_load_3d[cta_group](
+                    KVType(
+                        kv_smem + kv_pipeline.state.index() * UInt32(kv_elems),
+                        tt_row_major[kv_elems](),
+                    ),
+                    mbar[],
+                    (
+                        v_col_offset,
+                        Int(kv_head_idx),
+                        Int(kv_gmem_row) + pv_stage * BK1,
+                    ),
+                    local_mask,
+                )
         kv_pipeline.state.step()
 
-    # ---- Peeled first iteration: V_hi BN stages ------------------------------
+    # ---- Peeled first iteration: V_hi BN stages (split_o only) ---------------
 
-    comptime for pv_stage in range(num_pv_stages):
-        kv_pipeline.producer_acquire()
-        var mbar = kv_pipeline.producer_mbar()
+    comptime if config.split_o:
+        comptime for pv_stage in range(num_pv_stages):
+            kv_pipeline.producer_acquire()
+            var mbar = kv_pipeline.producer_mbar()
 
-        if is_leader:
+            if is_leader:
+                if e != 0:
+                    mbar[].expect_bytes(Int32(v_expect_bytes))
+
             if e != 0:
-                mbar[].expect_bytes(Int32(v_expect_bytes))
-
-        if e != 0:
-            v_tma_op.async_multicast_load_3d[cta_group](
-                KVType(
-                    kv_smem + kv_pipeline.state.index() * UInt32(kv_elems),
-                    tt_row_major[kv_elems](),
-                ),
-                mbar[],
-                (
-                    v_hi_col_offset,
-                    Int(kv_head_idx),
-                    Int(kv_gmem_row) + pv_stage * BK1,
-                ),
-                local_mask,
-            )
-        kv_pipeline.state.step()
+                v_tma_op.async_multicast_load_3d[cta_group](
+                    KVType(
+                        kv_smem + kv_pipeline.state.index() * UInt32(kv_elems),
+                        tt_row_major[kv_elems](),
+                    ),
+                    mbar[],
+                    (
+                        v_hi_col_offset,
+                        Int(kv_head_idx),
+                        Int(kv_gmem_row) + pv_stage * BK1,
+                    ),
+                    local_mask,
+                )
+            kv_pipeline.state.step()
 
     # ---- Main KV producer loop ----------------------------------------------
 
@@ -392,7 +415,7 @@ def depth512_load[
                 )
             kv_pipeline.state.step()
 
-        # ---- V_lo BN stages ----
+        # ---- V BN stages ----
         comptime for pv_stage in range(num_pv_stages):
             kv_pipeline.producer_acquire()
             var mbar = kv_pipeline.producer_mbar()
@@ -402,42 +425,61 @@ def depth512_load[
                     mbar[].expect_bytes(Int32(v_expect_bytes))
 
             if e != 0:
-                v_tma_op.async_multicast_load_3d[cta_group](
-                    KVType(
-                        kv_smem + kv_pipeline.state.index() * UInt32(kv_elems),
-                        tt_row_major[kv_elems](),
-                    ),
-                    mbar[],
-                    (
-                        v_lo_col_offset,
-                        Int(kv_head_idx),
-                        Int(kv_gmem_row) + pv_stage * BK1,
-                    ),
-                    local_mask,
-                )
+                comptime if config.split_o:
+                    v_tma_op.async_multicast_load_3d[cta_group](
+                        KVType(
+                            kv_smem
+                            + kv_pipeline.state.index() * UInt32(kv_elems),
+                            tt_row_major[kv_elems](),
+                        ),
+                        mbar[],
+                        (
+                            v_lo_col_offset,
+                            Int(kv_head_idx),
+                            Int(kv_gmem_row) + pv_stage * BK1,
+                        ),
+                        local_mask,
+                    )
+                else:
+                    v_tma_op.async_multicast_load_3d[cta_group](
+                        KVType(
+                            kv_smem
+                            + kv_pipeline.state.index() * UInt32(kv_elems),
+                            tt_row_major[kv_elems](),
+                        ),
+                        mbar[],
+                        (
+                            v_col_offset,
+                            Int(kv_head_idx),
+                            Int(kv_gmem_row) + pv_stage * BK1,
+                        ),
+                        local_mask,
+                    )
             kv_pipeline.state.step()
 
-        # ---- V_hi BN stages ----
-        comptime for pv_stage in range(num_pv_stages):
-            kv_pipeline.producer_acquire()
-            var mbar = kv_pipeline.producer_mbar()
+        # ---- V_hi BN stages (split_o only) ----
+        comptime if config.split_o:
+            comptime for pv_stage in range(num_pv_stages):
+                kv_pipeline.producer_acquire()
+                var mbar = kv_pipeline.producer_mbar()
 
-            if is_leader:
+                if is_leader:
+                    if e != 0:
+                        mbar[].expect_bytes(Int32(v_expect_bytes))
+
                 if e != 0:
-                    mbar[].expect_bytes(Int32(v_expect_bytes))
-
-            if e != 0:
-                v_tma_op.async_multicast_load_3d[cta_group](
-                    KVType(
-                        kv_smem + kv_pipeline.state.index() * UInt32(kv_elems),
-                        tt_row_major[kv_elems](),
-                    ),
-                    mbar[],
-                    (
-                        v_hi_col_offset,
-                        Int(kv_head_idx),
-                        Int(kv_gmem_row) + pv_stage * BK1,
-                    ),
-                    local_mask,
-                )
-            kv_pipeline.state.step()
+                    v_tma_op.async_multicast_load_3d[cta_group](
+                        KVType(
+                            kv_smem
+                            + kv_pipeline.state.index() * UInt32(kv_elems),
+                            tt_row_major[kv_elems](),
+                        ),
+                        mbar[],
+                        (
+                            v_hi_col_offset,
+                            Int(kv_head_idx),
+                            Int(kv_gmem_row) + pv_stage * BK1,
+                        ),
+                        local_mask,
+                    )
+                kv_pipeline.state.step()

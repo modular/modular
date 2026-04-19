@@ -97,13 +97,76 @@ def ragged_increment_cache_lengths(
     return outputs
 
 
+def increment_cache_lengths_from_counts(
+    batch_increments: TensorValue,
+    data_parallel_splits: TensorValue,
+    cache_lengths: list[TensorValue],
+    signal_buffers: list[BufferValue] | None,
+) -> list[TensorValue]:
+    """Adds per-request cache-length increments to each device's cache lengths.
+
+    Unlike :func:`ragged_increment_cache_lengths`, this helper works directly
+    from batch-aligned per-request increments instead of reconstructing ragged
+    row offsets. To preserve empty-shard behavior, it broadcasts the full
+    increment vector and slices each replica's local range after the broadcast.
+
+    Args:
+        batch_increments: Per-request cache-length increments on device 0, shape
+            ``[batch]``.
+        data_parallel_splits: DP split boundaries, shape ``[dp+1]``, on CPU.
+        cache_lengths: Current cache lengths per device.
+        signal_buffers: Signal buffers for multi-device comm (``None`` for
+            single device).
+
+    Returns:
+        Updated cache lengths per device.
+    """
+    dp = int(data_parallel_splits.shape[0]) - 1
+    n_devices = len(cache_lengths)
+    replica_groups = split_into_groups(list(range(n_devices)), dp)
+
+    if signal_buffers is not None:
+        lengths_all = ops.distributed_broadcast(
+            batch_increments, signal_buffers
+        )
+    else:
+        lengths_all = [batch_increments]
+
+    outputs = []
+    for replica_idx, device_indices in enumerate(replica_groups):
+        if replica_idx + 1 >= dp:
+            end_idx = None
+        else:
+            end_idx = data_parallel_splits[replica_idx + 1]
+
+        for gpu_idx in device_indices:
+            cache_length = cache_lengths[gpu_idx]
+            assert isinstance(cache_length, TensorValue)
+            local_lengths = ops.slice_tensor(
+                lengths_all[gpu_idx],
+                [
+                    (
+                        slice(data_parallel_splits[replica_idx], end_idx),
+                        f"length_split_{gpu_idx}",
+                    )
+                ],
+            )
+            increment_amount = local_lengths.cast(cache_length.dtype).rebind(
+                cache_length.shape
+            )
+            outputs.append(cache_length + increment_amount)
+
+    return outputs
+
+
 def _build_ragged_increment_cache_lengths_graph(
     params: KVCacheParams,
     use_comm_kernel: bool,
 ) -> Graph:
     input_symbols = params.get_symbolic_inputs()
     cache_lengths_types = [
-        input_symbols[i].cache_lengths for i in range(len(params.devices))
+        input_symbols.inputs[i].cache_lengths
+        for i in range(len(params.devices))
     ]
     dp = params.data_parallel_degree
 
@@ -165,9 +228,9 @@ def _execute_ragged_increment_cache_lengths_graph(
     model: Model,
     params: KVCacheParams,
     use_comm_kernel: bool,
-    kv_cache_inputs: KVCacheInputs,
+    kv_cache_inputs: KVCacheInputs[Buffer, Buffer],
     prev_model_inputs: Any,
-) -> KVCacheInputs:
+) -> KVCacheInputs[Buffer, Buffer]:
     """Prepares cache inputs for the next token in multistep execution.
 
     Updates the cache lengths for the next inference step without requiring device
@@ -187,7 +250,9 @@ def _execute_ragged_increment_cache_lengths_graph(
     """
     devices = params.devices
     device0 = devices[0].to_device()
-    blocks = [kv_cache_inputs.inputs[i].blocks for i in range(len(devices))]
+    kv_blocks = [
+        kv_cache_inputs.inputs[i].kv_blocks for i in range(len(devices))
+    ]
     cache_lengths = [
         kv_cache_inputs.inputs[i].cache_lengths for i in range(len(devices))
     ]
@@ -266,7 +331,7 @@ def _execute_ragged_increment_cache_lengths_graph(
             updated_cache_length = updated_cache_lengths[start_idx + i]
             assert isinstance(updated_cache_length, Buffer)
             inputs[start_idx + i] = KVCacheInputsPerDevice(
-                blocks=blocks[start_idx + i],
+                kv_blocks=kv_blocks[start_idx + i],
                 cache_lengths=updated_cache_length,
                 lookup_table=lookup_table[start_idx + i],
                 max_lengths=updated_max_lengths,
@@ -305,9 +370,9 @@ class IncrementCacheLengthsProcessor:
 
     def execute(
         self,
-        kv_cache_inputs: KVCacheInputs,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer],
         prev_model_inputs: Any,
-    ) -> KVCacheInputs:
+    ) -> KVCacheInputs[Buffer, Buffer]:
         """Runs the increment cache lengths graph and returns updated cache inputs."""
         return _execute_ragged_increment_cache_lengths_graph(
             self._model,

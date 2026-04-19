@@ -60,9 +60,8 @@ from std.os import abort
 
 from std.builtin.range import _StridedRange
 from std.memory import memcpy
-from std.memory._nonnull import NonNullUnsafePointer
 from std.sys.intrinsics import _type_is_eq_parse_time
-
+from std.collections import check_bounds
 from std.utils.numerics import max_finite
 from std.utils import IndexList
 
@@ -132,7 +131,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
     data structures, optimized for high-performance tensor operations.
     """
 
-    var _data: Optional[NonNullUnsafePointer[Int, MutExternalOrigin]]
+    var _data: Optional[UnsafePointer[Int, MutExternalOrigin]]
     var _size: Int
 
     @always_inline("nodebug")
@@ -143,9 +142,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
             size: Number of integers to allocate space for. Defaults to 0.
         """
         if size > 0:
-            self._data = NonNullUnsafePointer(
-                unsafe_from_nullable=alloc[Int](size)
-            )
+            self._data = alloc[Int](size)
         else:
             self._data = {}
         self._size = size
@@ -162,9 +159,7 @@ struct IntArray(ImplicitlyCopyable, RegisterPassable):
         self._size = copy._size
         if copy.owning():
             var size = copy.size()
-            self._data = NonNullUnsafePointer(
-                unsafe_from_nullable=alloc[Int](size)
-            )
+            self._data = alloc[Int](size)
             self.copy_from(0, copy, size)
         else:
             self._data = copy._data
@@ -524,11 +519,10 @@ struct IntTuple(
               less than `MinimumValue`, assertion fails with an error message.
             - Structure validation performed when assertions are enabled.
         """
-        comptime size = ParameterList[*elements].size
-        self._store = IntArray(size + 1)
-        self._store[0] = size
-        for i in range(size):
-            var value = ParameterList[*elements]()[i]
+        self._store = IntArray(elements.size + 1)
+        self._store[0] = elements.size
+        for i in range(elements.size):
+            var value = elements[i]
             debug_assert(
                 value >= Self.MinimumValue,
                 "IntTuple value must be >= MinimumValue: ",
@@ -1124,25 +1118,42 @@ struct IntTuple(
         return _IntTupleIter(Pointer(to=self), 0)
 
     @always_inline
-    def __getitem__(self, _idx: Int) -> IntTuple:
-        """
-        Retrieves an element at the specified index from the `IntTuple`.
-
-        Supports negative indexing (e.g., `-1` for the last element).
+    def __getitem__(self, idx: IntLiteral) -> IntTuple:
+        """Gets the element at the given index.
 
         Args:
-            _idx: The index of the element to retrieve.
+            idx: The index of the element.
 
         Returns:
             An `IntTuple` containing either a single value or a sub-tuple.
         """
-        var idx = len(self) + _idx if _idx < 0 else _idx
-        # TODO(MOCO-3154) - put a bounds check here when the le comparison is fixed.
-        # and add below back to the docstring.
-        # Notes:
-        #     If index is out of bounds, assertion fails with an error message.
+        comptime assert (
+            IntLiteral[idx.value]() >= 0
+        ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
+        # This avoids an interpreter memcpy error
+        if not __is_run_in_comptime_interpreter:
+            check_bounds(idx, len(self))
+        return self._unchecked_get(Int(idx))
 
-        # The int value or the (negated) offset to the tuple
+    @always_inline
+    def __getitem__(self, idx: Int) -> IntTuple:
+        """
+        Retrieves an element at the specified index from the `IntTuple`.
+
+        Args:
+            idx: The index of the element to retrieve.
+
+        Returns:
+            An `IntTuple` containing either a single value or a sub-tuple.
+        """
+        # This avoids an interpreter memcpy error
+        if not __is_run_in_comptime_interpreter:
+            check_bounds(idx, len(self))
+        return self._unchecked_get(idx)
+
+    @always_inline
+    def _unchecked_get(self, idx: Int) -> IntTuple:
+        # The int value offset to the tuple
         var val = self._store[idx + 1]
         if val >= Self.MinimumValue:
             # Return the Int value
@@ -1653,7 +1664,7 @@ def to_unknown(t: IntTuple) -> IntTuple:
 
 @always_inline
 def _merge[
-    cmp: def(IntTuple, IntTuple) -> Bool,
+    cmp: def(IntTuple, IntTuple) thin -> Bool,
 ](left: IntTuple, right: IntTuple) -> IntTuple:
     var result = IntTuple()
     var i = 0
@@ -1674,7 +1685,7 @@ def _merge[
 
 
 def sorted[
-    cmp: def(IntTuple, IntTuple) -> Bool = IntTuple.__lt__,
+    cmp: def(IntTuple, IntTuple) thin -> Bool = IntTuple.__lt__,
 ](tuple: IntTuple) -> IntTuple:
     """Sort an IntTuple using the provided comparison function.
 
@@ -1799,7 +1810,7 @@ def apply[func: def(Int) capturing[_] -> Int](t: IntTuple) -> IntTuple:
     return res
 
 
-def shallow_apply[func: def(IntTuple) -> Int](t: IntTuple) -> IntTuple:
+def shallow_apply[func: def(IntTuple) thin -> Int](t: IntTuple) -> IntTuple:
     """Apply a function to each top-level element of an `IntTuple`.
 
     Unlike `apply()`, this function only operates on the immediate children
@@ -1822,7 +1833,7 @@ def shallow_apply[func: def(IntTuple) -> Int](t: IntTuple) -> IntTuple:
 
 @always_inline("nodebug")
 def apply_zip[
-    func: def(IntTuple, IntTuple) -> IntTuple
+    func: def(IntTuple, IntTuple) thin -> IntTuple
 ](t1: IntTuple, t2: IntTuple) -> IntTuple:
     """Apply a function to pairs of elements from two `IntTuple`s.
 
@@ -1871,7 +1882,7 @@ def apply_zip[
 
 @always_inline("nodebug")
 def apply_zip[
-    func: def(IntTuple, IntTuple, IntTuple) -> IntTuple
+    func: def(IntTuple, IntTuple, IntTuple) thin -> IntTuple
 ](t1: IntTuple, t2: IntTuple, t3: IntTuple) -> IntTuple:
     """Apply a function to triplets of elements from three `IntTuple`s.
 
@@ -2102,7 +2113,7 @@ def congruent(a: IntTuple, b: IntTuple) -> Bool:
 
 
 def apply_predicate[
-    predicate: def(IntTuple, IntTuple) -> Bool
+    predicate: def(IntTuple, IntTuple) thin -> Bool
 ](a: IntTuple, b: IntTuple) -> Bool:
     """Apply a predicate function recursively to two `IntTuple`s.
 
@@ -2650,7 +2661,9 @@ def crd2idx(
                 var remainder: Int
                 int_crd, remainder = divmod(int_crd, product(shape[i]))
                 result += crd2idx(remainder, shape[i], stride[i])
-            return result + crd2idx(int_crd, shape[-1], stride[-1])
+            return result + crd2idx(
+                int_crd, shape[len(shape) - 1], stride[len(stride) - 1]
+            )
         else:  # "int" "int" "int"
             return int_crd * Int(stride)
 

@@ -237,43 +237,43 @@ def run_varlen_causal_conv1d_fwd_gpu[
 
     # Create TileTensors for GPU kernel
     var x_device_tt = TileTensor(
-        x_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        x_device,
         row_major(Idx(dim), Idx(total_seqlen)),
     )
     var weight_device_tt = TileTensor(
-        weight_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        weight_device,
         row_major(Idx(dim), Idx(width)),
     )
     var bias_device_tt = TileTensor(
-        bias_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        bias_device,
         row_major(
             Idx(dim),
         ),
     )
     var query_start_loc_device_tt = TileTensor(
-        query_start_loc_device.unsafe_ptr().bitcast[Scalar[DType.int32]](),
+        query_start_loc_device,
         row_major(
             Idx(batch + 1),
         ),
     )
     var cache_indices_device_tt = TileTensor(
-        cache_indices_device.unsafe_ptr().bitcast[Scalar[DType.int32]](),
+        cache_indices_device,
         row_major(
             Idx(batch),
         ),
     )
     var has_initial_state_device_tt = TileTensor(
-        has_initial_state_device.unsafe_ptr().bitcast[Scalar[DType.bool]](),
+        has_initial_state_device,
         row_major(
             Idx(batch),
         ),
     )
     var conv_states_device_tt = TileTensor(
-        conv_states_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        conv_states_device,
         row_major(Idx(batch), Idx(dim), Idx(state_len)),
     )
     var output_device_tt = TileTensor(
-        output_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        output_device,
         row_major(Idx(dim), Idx(total_seqlen)),
     )
 
@@ -881,37 +881,37 @@ def run_varlen_causal_conv1d_update_gpu[
 
     # Create TileTensors for GPU kernel
     var x_upd_device_tt = TileTensor(
-        x_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        x_device,
         row_major(Idx(batch), Idx(dim), Idx(seqlen)),
     )
     var weight_upd_device_tt = TileTensor(
-        weight_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        weight_device,
         row_major(Idx(dim), Idx(width)),
     )
     var bias_upd_device_tt = TileTensor(
-        bias_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        bias_device,
         row_major(
             Idx(dim),
         ),
     )
     var conv_state_upd_device_tt = TileTensor(
-        conv_state_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        conv_state_device,
         row_major(Idx(batch), Idx(dim), Idx(state_len)),
     )
     var cache_seqlens_device_tt = TileTensor(
-        cache_seqlens_device.unsafe_ptr().bitcast[Scalar[DType.int32]](),
+        cache_seqlens_device,
         row_major(
             Idx(batch),
         ),
     )
     var conv_state_indices_device_tt = TileTensor(
-        conv_state_indices_device.unsafe_ptr().bitcast[Scalar[DType.int32]](),
+        conv_state_indices_device,
         row_major(
             Idx(batch),
         ),
     )
     var output_upd_device_tt = TileTensor(
-        output_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        output_device,
         row_major(Idx(batch), Idx(dim), Idx(seqlen)),
     )
 

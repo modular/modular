@@ -10,7 +10,7 @@ import MDXListing from '@site/src/components/Listing/MDXListing';
 import InstallModular from '../../_includes/install-modular.mdx';
 import InstallOpenAI from '../../_includes/install-openai.mdx';
 import Requirements from '@site/src/components/Requirements';
-import { requirementsNoGPU } from '../../requirements';
+import { requirementsWithGPU } from '../../requirements';
 
 MAX makes it easy to generate text with large language models, whether for
 conversational applications, single-turn prompts, or offline inference
@@ -28,8 +28,11 @@ and [`v1/completions`](/max/inference/text-to-text#v1completions).
 ## Endpoints
 
 The [`v1/chat/completions`](/max/api/serve#operation/createChatCompletion)
-endpoint is recommended as the default for most text use cases. It supports
-both single-turn and multi-turn scenarios. The `v1/completions` endpoint is
+endpoint is recommended as the default for most text use cases and works best
+with instruction-tuned models. This endpoint supports both single-turn and
+multi-turn scenarios.
+
+The [`v1/completions`](/max/api/serve/#operation/createCompletion) endpoint is
 also supported for traditional single-turn text generation tasks, which is
 useful for offline inference or generating text from a prompt without
 conversational context.
@@ -85,14 +88,14 @@ response per request, such as:
 
 ## Quickstart
 
-Get started quickly serving Gemma 3 locally with the `max` CLI and interact
-with it through the MAX REST and Python APIs. You'll learn to configure the
-server and make requests using the OpenAI client libraries as a drop-in
-replacement.
+Get started quickly serving `google/gemma-4-31B-it` locally with the `max` CLI
+and interact with it through the MAX REST and Python APIs. You'll learn to
+configure the server and make requests using the OpenAI client libraries as a
+drop-in replacement.
 
 System requirements:
 
-<Requirements requirementsData={requirementsNoGPU}
+<Requirements requirementsData={requirementsWithGPU}
 url="/max/packages#system-requirements" />
 
 ### Set up your environment
@@ -104,26 +107,27 @@ Create a Python project to install our APIs and CLI tools:
 ### Serve your model
 
 Use the [`max serve`](/max/cli/serve) command to start a local server with
-the Gemma 3 model:
+the Gemma 4 model:
 
 ```bash
-max serve --model google/gemma-3-12b-it
+max serve --model google/gemma-4-31B-it
 ```
 
-This creates a server running the `google/gemma-3-12b-it` large language
+This creates a server running the `google/gemma-4-31B-it` large language
 model on `http://localhost:8000/v1/chat/completions`, an [OpenAI compatible
 endpoint](https://platform.openai.com/docs/api-reference/chat).
 
-While this example uses the Gemma 3 model, you can replace it with any of the
-models listed in our [supported models](/max/models/).
+While this example uses the Gemma 4 model, you can replace it with any of the
+models listed in our [supported models](/max/models/). Make sure that the model
+you choose can fit into the memory of your machine.
 
 :::note
 
-When searching for a model using the MAX Builds site, ensure that the model
-type can fit into memory of your machine. You can filter and sort models by
-hardware type, and size of the model. For more information and to learn how to
-use the MAX Builds site, see [MAX Builds in 60
-seconds](https://www.youtube.com/watch?v=EqM1TB1GgCc).
+This quickstart uses `google/gemma-4-31B-it` with a `/chat/completions`
+endpoint because the model is instruction-tuned for chat purposes.
+
+If you want to use the `/completions` endpoint, use `google/gemma-4-31B`,
+which is not instruction-tuned.
 
 :::
 
@@ -160,7 +164,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-  model="google/gemma-3-12b-it",
+  model="google/gemma-4-31B-it",
   messages=[
     {"role": "system", "content": "You are a helpful assistant."},
     {"role": "user", "content": "Who won the world series in 2020?"},
@@ -196,7 +200,7 @@ completions endpoint:
 curl http://0.0.0.0:8000/v1/chat/completions \
     -H "Content-Type: application/json" \
     -d '{
-        "model": "google/gemma-3-12b-it",
+        "model": "google/gemma-4-31B-it",
         "messages": [
             {
             "role": "system",
@@ -234,7 +238,7 @@ You should receive a response similar to this:
     }
   ],
   "created": 1743543698,
-  "model": "google/gemma-3-12b-it",
+  "model": "google/gemma-4-31B-it",
   "service_tier": null,
   "system_fingerprint": null,
   "object": "chat.completion",

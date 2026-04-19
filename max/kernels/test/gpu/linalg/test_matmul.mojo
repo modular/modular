@@ -145,11 +145,11 @@ def test[
     var c_device_ref_buffer = ctx.enqueue_create_buffer[dtype](c_size)
 
     var a_device = TileTensor(
-        a_device_buffer.unsafe_ptr(),
+        a_device_buffer,
         row_major(Coord(Idx(m), Idx[K.value()]())),
     )
     var b_device = TileTensor(
-        b_device_buffer.unsafe_ptr(),
+        b_device_buffer,
         row_major(
             Coord(
                 Idx[N.value() if transpose_b else K.value()](),
@@ -158,11 +158,11 @@ def test[
         ),
     )
     var c_device = TileTensor(
-        c_device_buffer.unsafe_ptr(),
+        c_device_buffer,
         row_major(Coord(Idx(m), Idx[N.value()]())),
     )
     var c_device_ref = TileTensor(
-        c_device_ref_buffer.unsafe_ptr(),
+        c_device_ref_buffer,
         row_major(Coord(Idx(m), Idx[N.value()]())),
     )
 

@@ -55,7 +55,7 @@ def make_int_inputs(begin: Int, end: Int, num: Int) -> List[Int]:
 
 @parameter
 def bench_math[
-    math_f1p: def[dtype: DType, size: Int](SIMD[dtype, size]) -> SIMD[
+    math_f1p: def[dtype: DType, size: Int](SIMD[dtype, size]) thin -> SIMD[
         dtype, size
     ]
 ](mut b: Bencher) raises:
@@ -80,7 +80,7 @@ def bench_math[
 def bench_math3[
     math_f3p: def[dtype: DType, size: Int](
         SIMD[dtype, size], SIMD[dtype, size], SIMD[dtype, size]
-    ) -> SIMD[dtype, size]
+    ) thin -> SIMD[dtype, size]
 ](mut b: Bencher) raises:
     var inputs = make_inputs(0, 10_000, 1_000_000)
 
@@ -100,14 +100,16 @@ def bench_math3[
 # Benchmark lcm/gcd
 # ===-----------------------------------------------------------------------===#
 @parameter
-def bench_math2[math_f2p: def(Int, Int, /) -> Int](mut b: Bencher) raises:
+def bench_math2[math_f2p: def(Int, Int, /) thin -> Int](mut b: Bencher) raises:
     var int_inputs = make_int_inputs(0, 10_000_000, 1_000_000)
 
     @always_inline
     @parameter
     def call_fn() raises:
         for i, input_val in enumerate(List(int_inputs[: len(int_inputs) // 2])):
-            var result = keep(math_f2p(input_val, int_inputs[-(i + 1)]))
+            var result = keep(
+                math_f2p(input_val, int_inputs[len(int_inputs) - (i + 1)])
+            )
             keep(result)
 
     b.iter[call_fn]()

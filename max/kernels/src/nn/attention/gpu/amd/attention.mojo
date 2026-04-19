@@ -23,6 +23,7 @@ from layout import Layout, LayoutTensor, TileTensor, UNKNOWN_VALUE
 from layout import row_major as tt_row_major
 from layout._utils import idx2crd
 from structured_kernels.amd_tile_io import RegTileWriter
+from layout.layout_tensor import copy_local_to_dram, ThreadScope
 from nn.attention.mha_mask import CausalMask
 from layout.tensor_core import TiledTensorCore, num_matrix_reg
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
@@ -90,17 +91,17 @@ trait AttentionConfig(ImplicitlyCopyable):
 
     @staticmethod
     @always_inline
-    def q_head_idx() -> UInt:
+    def q_head_idx() -> Int:
         ...
 
     @staticmethod
     @always_inline
-    def q_tile_idx() -> UInt:
+    def q_tile_idx() -> Int:
         ...
 
     @staticmethod
     @always_inline
-    def kv_head_idx() -> UInt:
+    def kv_head_idx() -> Int:
         ...
 
     @staticmethod
@@ -110,12 +111,12 @@ trait AttentionConfig(ImplicitlyCopyable):
 
     @staticmethod
     @always_inline
-    def get_q_offset[q_depth: UInt]() -> UInt32:
+    def get_q_offset[q_depth: Int]() -> UInt32:
         ...
 
     @staticmethod
     @always_inline
-    def get_output_offset[output_depth: UInt]() -> UInt32:
+    def get_output_offset[output_depth: Int]() -> UInt32:
         ...
 
 
@@ -230,7 +231,7 @@ def _mask_apply[
                         p_reg_vectorized[mma_id, 0][j] = mask.mask(
                             IndexList[4, element_type=DType.uint32](
                                 block_idx.z,
-                                Int(q_head_idx),
+                                q_head_idx,
                                 Int(score_row_with_start_pos),
                                 Int(
                                     score_col_with_cache_start_pos
@@ -280,22 +281,22 @@ struct Attention[
     group: Int,
     token_gen: Bool,
     sink: Bool,
-    q_depth: Int = Int(config.depth),
-    cache_depth: Int = Int(config.depth),
-    output_depth: Int = Int(config.depth),
+    q_depth: Int = config.depth,
+    cache_depth: Int = config.depth,
+    output_depth: Int = config.depth,
 ]:
-    comptime BM = Self.config.block_m()
-    comptime BN = Self.config.block_n()
-    comptime BK = Self.config.block_k()
-    comptime WM = Self.config.warp_m()
-    comptime WN = Self.config.warp_n()
-    comptime num_threads = Self.config.num_threads()
-    comptime num_heads = Self.config.num_heads
-    comptime num_warps_n = Self.BN // Self.WN
-    comptime num_warps_m = Self.BM // Self.WM
-    comptime depth = Self.config.depth
-    comptime accum_type = get_accum_type[Self.q_type]()
+    comptime BM: Int = Self.config.block_m()
+    comptime BN: Int = Self.config.block_n()
+    comptime BK: Int = Self.config.block_k()
+    comptime WM: Int = Self.config.warp_m()
+    comptime WN: Int = Self.config.warp_n()
+    comptime num_threads: Int = Self.config.num_threads()
+    comptime num_heads: Int = Self.config.num_heads
+    comptime num_warps_n: Int = Self.BN // Self.WN
+    comptime num_warps_m: Int = Self.BM // Self.WM
+    comptime depth: Int = Self.config.depth
 
+    comptime accum_type = get_accum_type[Self.q_type]()
     comptime mma_shape = Self.attention_config_t.get_mma_shape()
 
     comptime fragment_layout = get_fragment_layout[Self.mma_shape]()
@@ -304,22 +305,33 @@ struct Attention[
         Self.mma_shape
     ]()
 
-    comptime num_m_mmas = ceildiv(Self.WM, UInt(Self.mma_shape[0]))
-    comptime num_n_mmas = ceildiv(Self.WN, UInt(Self.mma_shape[1]))
-    comptime num_n_mmas_output = ceildiv(
-        Self.output_depth // Int(Self.num_warps_n), Self.mma_shape[1]
+    comptime num_m_mmas: Int = ceildiv(Self.WM, Self.mma_shape[0])
+    comptime num_n_mmas: Int = ceildiv(Self.WN, Self.mma_shape[1])
+
+    comptime num_n_mmas_output: Int = ceildiv(
+        Self.output_depth // Self.num_warps_n, Self.mma_shape[1]
     )
 
     comptime swap_a_b = True
     comptime use_exp2 = True
-    # we want to load 16B of data for each fragment so k_group_size is set such that
-    # k_group_size * num_matrix_fragments * size_of[Self.q_type]() = 16B
-    comptime k_group_size = 16 // (
-        num_matrix_reg[Self.mma_shape[0], Self.mma_shape[2]]()
-        * size_of[Self.q_type]()
+    # We want to load 16B of data for each fragment so k_group_size is set
+    # such that k_group_size * num_matrix_fragments * size_of[q_type]() = 16B.
+    # Capped at 1 minimum and BK//MMA_K maximum to avoid exceeding tile bounds.
+    # On gfx950 this evaluates to 1; on gfx942 it can be 2.
+    comptime k_group_size: Int = max(
+        1,
+        min(
+            16
+            // (
+                num_matrix_reg[Self.mma_shape[0], Self.mma_shape[2]]()
+                * size_of[Self.q_type]()
+            ),
+            Self.BK // Self.mma_shape[2],
+        ),
     )
-    comptime num_k_mmas2 = ceildiv(
-        Self.BK, UInt(Self.mma_shape[2] * Self.k_group_size)
+
+    comptime num_k_mmas2: Int = ceildiv(
+        Self.BK, Self.mma_shape[2] * Self.k_group_size
     )
 
     comptime warp_layout = get_warp_layout[Self.mma_shape]()
@@ -328,7 +340,7 @@ struct Attention[
 
     comptime OutputRegisterBufferType = OutputRegisterBuffer[
         Self.accum_type,
-        Int(Self.num_m_mmas),
+        Self.num_m_mmas,
         Self.num_n_mmas_output,
         Self.output_frag_size,
     ]
@@ -336,13 +348,13 @@ struct Attention[
     comptime PRegisterBufferType = PRegisterBuffer[
         Self.accum_type,
         Self.q_type,
-        Int(Self.BM),
-        Int(Self.BN),
-        Int(Self.BK),
-        Int(Self.WM),
-        Int(Self.WN),
-        Int(Self.num_m_mmas),
-        Int(Self.num_n_mmas),
+        Self.BM,
+        Self.BN,
+        Self.BK,
+        Self.WM,
+        Self.WN,
+        Self.num_m_mmas,
+        Self.num_n_mmas,
         Self.output_frag_size,
         Self.BN != Self.WN,
         Self.mma_shape,
@@ -372,10 +384,10 @@ struct Attention[
         Self.attention_config_t.depth_padded,
         Self.attention_config_t.double_buffer,
         Self.q_type,
-        Int(Self.BM),
-        Int(Self.BN),
-        Int(Self.BK),
-        Int(Self.depth),
+        Self.BM,
+        Self.BN,
+        Self.BK,
+        Self.depth,
         Self.token_gen,
     ]
 
@@ -383,10 +395,10 @@ struct Attention[
         dtype=Self.q_type,
         mma_shape=Self.mma_shape,
         k_group_size=Self.k_group_size,
-        WM=Int(Self.WM),
-        WN=Int(Self.WN),
-        BN=Int(Self.BN),
-        BK=Int(Self.BK),
+        WM=Self.WM,
+        WN=Self.WN,
+        BN=Self.BN,
+        BK=Self.BK,
         depth=Self.q_depth,
         thread_layout=Self.warp_layout,
     ]
@@ -420,8 +432,8 @@ struct Attention[
 
     var softmax: Softmax[
         Self.accum_type,
-        Layout.row_major(Int(Self.num_m_mmas), Int(Self.num_n_mmas)),
-        Layout.row_major(Int(Self.num_warps_m), Int(Self.num_warps_n)),
+        Layout.row_major(Self.num_m_mmas, Self.num_n_mmas),
+        Layout.row_major(Self.num_warps_m, Self.num_warps_n),
         Self.warp_layout,
         Self.fragment_layout,
         Self.use_exp2,
@@ -439,17 +451,17 @@ struct Attention[
 
     @staticmethod
     @always_inline
-    def q_head_idx() -> UInt:
+    def q_head_idx() -> Int:
         return Self.attention_config_t.q_head_idx()
 
     @staticmethod
     @always_inline
-    def q_tile_idx() -> UInt:
+    def q_tile_idx() -> Int:
         return Self.attention_config_t.q_tile_idx()
 
     @staticmethod
     @always_inline
-    def kv_head_idx() -> UInt:
+    def kv_head_idx() -> Int:
         return Self.attention_config_t.kv_head_idx()
 
     @always_inline
@@ -520,7 +532,7 @@ struct Attention[
         //,
         prefetch_function: OptionalReg[def() capturing -> None] = None,
         beg_iter: Int = 0,
-        num_iters: Int = Int(Self.depth // Self.BK),
+        num_iters: Int = Self.depth // Self.BK,
         prefetched_b_tile: Bool = False,
     ](mut self, mut k_buffer: k_buffer_type):
         comptime num_k_mmas = ceildiv(
@@ -656,7 +668,7 @@ struct Attention[
                     self.num_keys - 1,
                     Int(kv_tile_start_row),
                 ),
-                Index[dtype=DType.uint32](Int(1), Int(Self.BN)),
+                Index[dtype=DType.uint32](1, Self.BN),
             )
         else:
             # Prefill or decoding without mask checking: check full tile
@@ -665,7 +677,7 @@ struct Attention[
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
                 ),
-                Index[dtype=DType.uint32](Int(Self.BM), Int(Self.BN)),
+                Index[dtype=DType.uint32](Self.BM, Self.BN),
             )
 
     @always_inline
@@ -708,8 +720,8 @@ struct Attention[
                 accum_type=Self.accum_type,
                 token_gen=Self.token_gen,
                 mma_shape=Self.mma_shape,
-                num_m_mmas=Int(Self.num_m_mmas),
-                num_n_mmas=Int(Self.num_n_mmas),
+                num_m_mmas=Self.num_m_mmas,
+                num_n_mmas=Self.num_n_mmas,
                 mask_t=Self.mask_t,
                 group=Self.group,
                 fragment_layout=Self.fragment_layout_nested,
@@ -772,10 +784,8 @@ struct Attention[
             UInt32(Self.q_tile_idx()),
             UInt32(Self.kv_head_idx()),
             seq_len,
-            Self.attention_config_t.get_q_offset[UInt(Self.q_depth)](),
-            Self.attention_config_t.get_output_offset[
-                UInt(Self.output_depth)
-            ](),
+            Self.attention_config_t.get_q_offset[Self.q_depth](),
+            Self.attention_config_t.get_output_offset[Self.output_depth](),
         )
         self.smem_manager = Self.SharedMemoryManagerType()
 
@@ -803,10 +813,10 @@ struct Attention[
         self.mask = mask
 
         self.mask_block_row = UInt32(self.q_tile_idx() * Self.BM)
-        var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
-        var warp_col = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[1]
-        self.mask_warp_row = UInt32(warp_row * Int(Self.WM))
-        self.mask_warp_col = UInt32(warp_col * Int(Self.WN))
+        var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
+        var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
+        self.mask_warp_row = UInt32(warp_row * Self.WM)
+        self.mask_warp_col = UInt32(warp_col * Self.WN)
 
         self.batch_idx = batch_idx
 
@@ -822,9 +832,9 @@ struct Attention[
         comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()
 
         comptime if is_causal_mask and Self.attention_config_t.double_buffer:
-            self.scale = bitcast[DType.float32](
-                readfirstlane(bitcast[DType.int32](scale_log2e))
-            ).cast[Self.accum_type]()
+            self.scale = readfirstlane(scale_log2e.cast[DType.float32]()).cast[
+                Self.accum_type
+            ]()
         else:
             self.scale = scale_log2e
         self.seq_len = seq_len
@@ -838,7 +848,7 @@ struct Attention[
                 sink_weights
             ), "expect sink_weights to be non-null when sink=true"
             var sink_weight = (
-                sink_weights.value()[Int(self.q_head_idx())][0].cast[
+                sink_weights.value()[self.q_head_idx()][0].cast[
                     Self.accum_type
                 ]()
                 * log2e
@@ -868,31 +878,57 @@ struct Attention[
     def store_output(self):
         var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
         var warp_col = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[1]
-        var output_tile = self.gmem_manager.get_output_tile[Self.output_type](
-            self.output_ptr
-        )
-        var output_warp_tile = output_tile.tile[
-            Int(Self.WM), Self.output_depth // Int(Self.num_warps_n)
-        ](warp_row, warp_col)
 
-        var writer = RegTileWriter[
-            Self.output_type,
-            Self.warp_layout.shape[0].value(),
-            Self.warp_layout.shape[1].value(),
-        ](output_tile)
-        comptime if Self.mma_shape[0] == 32:
-            writer.store_mfma32(
-                output_warp_tile.vectorize[1, 4](),
-                self.out_reg_buffer.reg_tile,
+        comptime if Self.token_gen and Self.mma_shape[0] != 32:
+            # Token-gen 16x16 MMA: use LayoutTensor copy_local_to_dram to
+            # match the LayoutTensor load_from_shared workaround in
+            # KVBufferImpl. RegTileWriter.store uses TileTensor
+            # distribute_with_offset which produces wrong output positions
+            # when group == mma_shape[0] (all MMA rows active).
+            var output_tensor = self.gmem_manager.get_output_tensor(
+                self.output_ptr
             )
-        else:
-            writer.store(
+            var output_warp_tile = output_tensor.tile[
+                Self.WM, Self.output_depth // Self.num_warps_n
+            ](warp_row, warp_col)
+            copy_local_to_dram[
+                dst_thread_layout=Self.warp_layout,
+                thread_scope=ThreadScope.WARP,
+            ](
                 output_warp_tile.vectorize[
                     Self.fragment_layout.shape[0].value(),
                     Self.fragment_layout.shape[1].value(),
                 ](),
-                self.out_reg_buffer.reg_tile,
+                self.out_reg_buffer.reg_tile.to_layout_tensor().vectorize[
+                    1, Self.output_frag_size
+                ](),
+                output_tensor,
             )
+        else:
+            var output_tile = self.gmem_manager.get_output_tile[
+                Self.output_type
+            ](self.output_ptr)
+            var output_warp_tile = output_tile.tile[
+                Self.WM, Self.output_depth // Self.num_warps_n
+            ](warp_row, warp_col)
+            var writer = RegTileWriter[
+                Self.output_type,
+                Self.warp_layout.shape[0].value(),
+                Self.warp_layout.shape[1].value(),
+            ](output_tile)
+            comptime if Self.mma_shape[0] == 32:
+                writer.store_mfma32(
+                    output_warp_tile.vectorize[1, 4](),
+                    self.out_reg_buffer.reg_tile,
+                )
+            else:
+                writer.store(
+                    output_warp_tile.vectorize[
+                        Self.fragment_layout.shape[0].value(),
+                        Self.fragment_layout.shape[1].value(),
+                    ](),
+                    self.out_reg_buffer.reg_tile,
+                )
 
     @always_inline
     def copy_fragment_to_smem(self):
