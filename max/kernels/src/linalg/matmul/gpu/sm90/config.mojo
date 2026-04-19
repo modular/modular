@@ -230,12 +230,12 @@ struct MatmulConfig[
             block_tile_shape=self.block_tile_shape,
             mma_shape=self.mma_shape,
             cluster_shape=self.cluster_shape,
-            num_pipeline_stages=UInt(self.num_pipeline_stages),
-            num_k_partitions=UInt(self.num_k_partitions),
-            num_consumer=UInt(self.num_consumer),
+            num_pipeline_stages=self.num_pipeline_stages,
+            num_k_partitions=self.num_k_partitions,
+            num_consumer=self.num_consumer,
             partitioned_multicast=self.partitioned_multicast,
             pdl_level=self._pdl_level,
-            k_group_size=UInt(self.k_group_size),
+            k_group_size=self.k_group_size,
         )
 
     def __eq__(self, other: Self) -> Bool:

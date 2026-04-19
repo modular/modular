@@ -763,12 +763,17 @@ class TextGenerationContext(BaseContext, Protocol):
 class SpecDecodingState:
     """Per-request state for speculative decoding."""
 
-    saved_draft_tokens: list[int] = field(default_factory=list)
+    draft_tokens_to_verify: list[int] = field(default_factory=list)
+    """The draft tokens to verify in the next batch"""
 
-    @property
-    def num_draft_tokens(self) -> int:
-        """Returns the number of speculative tokens."""
-        return len(self.saved_draft_tokens)
+    maybe_accepted_draft_tokens: list[int] = field(default_factory=list)
+    """The draft tokens that are being verified in the current batch
+
+    We are unsure whether these tokens will be accepted or not. However, to ensure
+    that we allocate enough KV, we conservatively assume that they will all be
+    accepted.
+
+    This should only be present when running with overlap scheduler."""
 
 
 TextGenerationContextType = TypeVar(

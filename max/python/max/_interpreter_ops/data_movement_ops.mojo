@@ -100,7 +100,7 @@ def static_broadcast_to_op[
     in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     in_shape: IndexList[MAX_RANK],
     out_shape: IndexList[MAX_RANK],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Call StaticBroadcastTo.execute with rank-5 tensors.
 
@@ -137,7 +137,7 @@ def static_broadcast_to_op[
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 StaticBroadcastTo.execute[
                     target="gpu",
                     dtype=dtype,
@@ -163,7 +163,7 @@ struct _StaticBroadcastToBody(Dispatchable):
     var in_addr: Int
     var in_shape: IndexList[MAX_RANK]
     var out_shape: IndexList[MAX_RANK]
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def call[t: DType](self) raises -> None:
         static_broadcast_to_op[t](
@@ -232,7 +232,7 @@ def transpose_op[
     in_shape: IndexList[MAX_RANK],
     out_shape: IndexList[MAX_RANK],
     perm_data: InlineArray[Int64, MAX_RANK],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Call Transpose.execute with MAX_RANK tensors.
 
@@ -277,7 +277,7 @@ def transpose_op[
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 Transpose.execute[
                     target="gpu",
                     _trace_name="interpreter.transpose",
@@ -303,7 +303,7 @@ struct _TransposeBody(Dispatchable):
     var in_shape: IndexList[MAX_RANK]
     var out_shape: IndexList[MAX_RANK]
     var perm: InlineArray[Int64, MAX_RANK]
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def call[t: DType](self) raises -> None:
         transpose_op[t](
@@ -390,7 +390,7 @@ struct _MemcpyBody(Dispatchable):
     var dst_offset: Int
     var src_offset: Int
     var count: Int
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def call[t: DType](self) raises -> None:
         memcpy_op[t](
@@ -453,7 +453,7 @@ def memcpy_op[
     dst_offset: Int,
     src_offset: Int,
     count: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Copy count elements from src+src_offset to dst+dst_offset.
 
@@ -486,7 +486,7 @@ def memcpy_op[
         # GPU execution
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](count), device_ctx
                 )
@@ -514,7 +514,7 @@ def slice_op[
     starts_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
     stops_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
     steps_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Call Slice.execute with MAX_RANK tensors.
 
@@ -575,7 +575,7 @@ def slice_op[
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 Slice.execute[
                     target="gpu",
                     _trace_name="interpreter.slice",
@@ -610,7 +610,7 @@ struct _SliceBody(Dispatchable):
     var starts_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
     var stops_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
     var steps_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def call[t: DType](self) raises -> None:
         slice_op[t](

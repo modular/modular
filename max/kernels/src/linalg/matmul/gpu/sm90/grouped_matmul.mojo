@@ -93,15 +93,13 @@ def grouped_matmul_sm90[
         Int32(config.cluster_shape[2]),
     )
 
-    comptime k_group_size = config.k_group_size
-
     comptime c_smem_layout = _get_c_smem_layout[
         config.block_tile_shape,
         a_type,
         b_type,
         c_type,
-        Int(config.num_pipeline_stages),
-        Int(k_group_size),
+        config.num_pipeline_stages,
+        config.k_group_size,
     ]()
     comptime c_smem_tile = Index(
         c_smem_layout.shape[0].value(), c_smem_layout.shape[1].value()
@@ -137,10 +135,8 @@ def grouped_matmul_sm90[
         ctx, c_tensor
     )
 
-    comptime num_threads = WARPGROUP_SIZE * Int(
-        config.num_consumer
-    ) + WARPGROUP_SIZE
-    comptime smem_size = Int(config.num_pipeline_stages) * (
+    comptime num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
+    comptime smem_size = config.num_pipeline_stages * (
         BM * BK * size_of[a_type]()
         + BN * BK * size_of[b_type]()
         + (size_of[Int64]() * 2)
@@ -157,7 +153,7 @@ def grouped_matmul_sm90[
         config.block_tile_shape,
         wgmma_shape,
         cluster_shape,
-        Int(config.num_pipeline_stages),
+        config.num_pipeline_stages,
         num_threads,
         transpose_b=True,
         a_swizzle=a_swizzle,
