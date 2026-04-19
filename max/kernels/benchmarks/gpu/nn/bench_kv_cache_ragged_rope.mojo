@@ -80,9 +80,7 @@ def execute_kv_cache_ragged_rope[
 
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_kv_heads), head_size=UInt(head_dim)
-        ),
+        KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
     ]
     var input_row_offsets_device = ctx.enqueue_create_buffer[dtype.uint32](
         batch_size + 1

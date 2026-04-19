@@ -19,6 +19,12 @@ from max.graph.weights import WeightData, Weights
 MISTRAL_SAFETENSOR_MAP = {
     "language_model.model.": "",
     "language_model.": "",
+    # Remap unfused Q/K/V projections into StackedLinear namespace to match
+    # the new `AttentionWithRope.qkv_proj.{q,k,v}` layout. Covers `.weight`,
+    # `.weight_scale`, `.input_scale`, and `.bias` (prefix match).
+    "self_attn.q_proj.": "self_attn.qkv_proj.q.",
+    "self_attn.k_proj.": "self_attn.qkv_proj.k.",
+    "self_attn.v_proj.": "self_attn.qkv_proj.v.",
 }
 
 

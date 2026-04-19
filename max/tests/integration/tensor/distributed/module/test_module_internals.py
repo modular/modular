@@ -32,7 +32,6 @@ from max.experimental.nn.module import (
     _flatten_named_buffers,
     _InputSlot,
     _OutputSlot,
-    _process_provided_weights,
     _reconstruct_outputs,
     _unflatten_args,
     module_dataclass,
@@ -298,8 +297,7 @@ class TestFlattenNamedBuffers:
         assert "weight" in result
         assert len(result) == 1
 
-    def test_distributed_expands_to_shards(self) -> None:
-        """Distributed tensor expands to ._shard.N entries."""
+    def test_sharded_expands(self) -> None:
         t = _make_realized_sharded([2, 8], 4, shard_axis=0)
         result = _flatten_named_buffers([("weight", t)])
         assert len(result) == 4
@@ -317,100 +315,17 @@ class TestFlattenNamedBuffers:
         assert "weight._shard.1" in result
         assert len(result) == 3
 
+    def test_two_shard_naming(self) -> None:
+        """Two-shard tensor uses ._shard.N naming, not bare name."""
+        t = _make_realized_sharded([4, 4], 2, shard_axis=0)
+        result = _flatten_named_buffers([("W", t)])
+        assert "W" not in result
+        assert "W._shard.0" in result
+        assert "W._shard.1" in result
+
     def test_empty_input(self) -> None:
         result = _flatten_named_buffers([])
         assert result == {}
-
-
-# ═════════════════════════════════════════════════════════════════════════
-#  _process_provided_weights
-# ═════════════════════════════════════════════════════════════════════════
-
-
-class TestProcessProvidedWeights:
-    """Tests for _process_provided_weights with user-provided weight buffers."""
-
-    def test_non_distributed_passthrough(self) -> None:
-        """Non-distributed parameter: weight passes through unchanged."""
-        param = Tensor.zeros([4, 8], dtype=DType.float32, device=CPU())
-        weight_arr = np.ones([4, 8], dtype=np.float32)
-        result = _process_provided_weights({"W": weight_arr}, [("W", param)])
-        assert "W" in result
-        assert len(result) == 1
-
-    def test_single_device_weight_sharded(self) -> None:
-        """Single-device weight is sharded for distributed parameter."""
-        param = _make_realized_sharded([4, 8], 2, shard_axis=0)
-        # Global shape is [8, 8], so provide single-device weight matching that
-        weight_arr = np.ones([8, 8], dtype=np.float32) * 2.0
-        result = _process_provided_weights({"W": weight_arr}, [("W", param)])
-        assert len(result) == 2
-        assert "W._shard.0" in result
-        assert "W._shard.1" in result
-        # Verify shard shapes
-        shard0 = np.from_dlpack(result["W._shard.0"])
-        shard1 = np.from_dlpack(result["W._shard.1"])
-        assert shard0.shape == (4, 8)
-        assert shard1.shape == (4, 8)
-        np.testing.assert_allclose(shard0, 2.0)
-        np.testing.assert_allclose(shard1, 2.0)
-
-    def test_dtensor_weight_expanded(self) -> None:
-        """Dtensor weight is expanded to ._shard.N entries."""
-        param = _make_realized_sharded([4, 8], 2, shard_axis=0)
-        weight = _make_realized_sharded([4, 8], 2, shard_axis=0)
-        result = _process_provided_weights({"W": weight}, [("W", param)])
-        assert len(result) == 2
-        assert "W._shard.0" in result
-        assert "W._shard.1" in result
-
-    def test_dtensor_mapping_mismatch_raises(self) -> None:
-        """Dtensor weight with different mapping raises ValueError."""
-        # Parameter sharded on axis 0
-        param = _make_realized_sharded([4, 8], 2, shard_axis=0)
-        # Weight sharded on axis 1 (different mapping)
-        weight = _make_realized_sharded([8, 4], 2, shard_axis=1)
-        with pytest.raises(ValueError, match="incompatible distribution"):
-            _process_provided_weights({"W": weight}, [("W", param)])
-
-    def test_missing_weight_raises(self) -> None:
-        """Missing weight raises KeyError."""
-        param = Tensor.zeros([4, 8], dtype=DType.float32, device=CPU())
-        with pytest.raises(KeyError, match="W"):
-            _process_provided_weights({}, [("W", param)])
-
-    def test_mixed_parameters(self) -> None:
-        """Mix of distributed and non-distributed parameters."""
-        single_param = Tensor.zeros([4], dtype=DType.float32, device=CPU())
-        dist_param = _make_realized_sharded([4, 8], 2, shard_axis=0)
-        weights = {
-            "bias": np.ones([4], dtype=np.float32),
-            "W": np.ones([8, 8], dtype=np.float32),
-        }
-        result = _process_provided_weights(
-            weights, [("bias", single_param), ("W", dist_param)]
-        )
-        assert "bias" in result
-        assert "W._shard.0" in result
-        assert "W._shard.1" in result
-        assert len(result) == 3
-
-    def test_tensor_weights_passthrough(self) -> None:
-        """Tensor weights (from module.parameters) pass through as-is."""
-        param = Tensor.zeros([4, 8], dtype=DType.float32, device=CPU())
-        weight = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
-        result = _process_provided_weights({"W": weight}, [("W", param)])
-        assert "W" in result
-        assert len(result) == 1
-
-    def test_distributed_tensor_weights_expanded(self) -> None:
-        """Distributed Tensor weights are expanded to shard entries."""
-        param = _make_realized_sharded([4, 8], 2, shard_axis=0)
-        weight = _make_realized_sharded([4, 8], 2, shard_axis=0)
-        result = _process_provided_weights({"W": weight}, [("W", param)])
-        assert len(result) == 2
-        assert "W._shard.0" in result
-        assert "W._shard.1" in result
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -447,46 +362,6 @@ class TestModuleCompileDistributed:
         assert list(result.shape) == [3, 8]
         np.testing.assert_allclose(np.from_dlpack(result), 1.0)
 
-    def test_compile_with_explicit_weights_sharded(self) -> None:
-        """User provides single-device weights for distributed parameter.
-
-        The compile method should slice the weights and create contiguous
-        copies for each shard, matching the parameter's distribution.
-        """
-        # Create distributed parameter: per-shard [4, 8], global [8, 8]
-        W = _make_realized_sharded([4, 8], 2, shard_axis=0)
-        model = _IdentityModule(W=W)
-
-        # User provides single-device weight matching global shape [8, 8]
-        single_weight = np.ones([8, 8], dtype=np.float32) * 2.0
-
-        input_type = TensorType(DType.float32, [3, 8], CPU())
-        # This test just verifies the compile succeeds with explicit weights.
-        # _IdentityModule doesn't use W in forward, so we can't verify values.
-        compiled = model.compile(input_type, weights={"W": single_weight})
-
-        x = Tensor.ones([3, 8], dtype=DType.float32, device=CPU())
-        result = compiled(x)
-        assert list(result.shape) == [3, 8]
-        # Output is the input (identity), not the weight
-        np.testing.assert_allclose(np.from_dlpack(result), 1.0)
-
-    def test_compile_with_parameter_tensors_as_weights(self) -> None:
-        """Passing dict(model.parameters) as weights compiles successfully.
-
-        Reproduces the pattern used in benchmarks where module parameters
-        (which may be Tensor objects rather than raw DLPackArrays) are
-        provided directly as the weights argument.
-        """
-        W = Tensor.ones([4], dtype=DType.float32, device=CPU())
-        model = _IdentityModule(W=W)
-        input_type = TensorType(DType.float32, [3, 8], CPU())
-        compiled = model.compile(input_type, weights=dict(model.parameters))
-        x = Tensor.ones([3, 8], dtype=DType.float32, device=CPU())
-        result = compiled(x)
-        assert list(result.shape) == [3, 8]
-        np.testing.assert_allclose(np.from_dlpack(result), 1.0)
-
     def test_compile_with_distributed_input_type(self) -> None:
         """DistributedTensorType input is flattened and reconstructed."""
         mesh = mesh_1d(2)
@@ -516,62 +391,6 @@ class TestModuleCompileDistributed:
         for shard in result.local_shards:
             arr = np.from_dlpack(shard)
             np.testing.assert_allclose(arr, 0.0)
-
-
-# ═════════════════════════════════════════════════════════════════════════
-#  Module.load_state_dict() with distributed parameters
-# ═════════════════════════════════════════════════════════════════════════
-
-
-class TestLoadStateDictDistributed:
-    """Tests for load_state_dict with distributed parameters."""
-
-    def test_single_device_weight_sharded(self) -> None:
-        """Single-device weight is sharded for distributed parameter."""
-        W = _make_realized_sharded([4, 8], 2, shard_axis=0)
-        model = _IdentityModule(W=W)
-
-        # Provide single-device weight matching global shape
-        new_weight = np.ones([8, 8], dtype=np.float32) * 3.0
-        model.load_state_dict({"W": new_weight})
-
-        # Verify the parameter is still distributed with correct values
-        assert model.W.is_distributed
-        assert model.W.num_shards == 2
-        for shard in model.W.local_shards:
-            arr = np.from_dlpack(shard)
-            np.testing.assert_allclose(arr, 3.0)
-
-    def test_dtensor_weight_loaded(self) -> None:
-        """Dtensor weight is loaded for distributed parameter."""
-        W = _make_realized_sharded([4, 8], 2, shard_axis=0)
-        model = _IdentityModule(W=W)
-
-        # Provide dtensor matching distribution
-        new_weight = _make_realized_sharded([4, 8], 2, shard_axis=0)
-        model.load_state_dict({"W": new_weight})
-
-        assert model.W.is_distributed
-        assert model.W.num_shards == 2
-
-    def test_mapping_mismatch_raises(self) -> None:
-        """Dtensor with wrong mapping raises ValueError."""
-        W = _make_realized_sharded([4, 8], 2, shard_axis=0)
-        model = _IdentityModule(W=W)
-
-        # Provide dtensor with different mapping
-        wrong_weight = _make_realized_sharded([8, 4], 2, shard_axis=1)
-        with pytest.raises(ValueError, match="incompatible distribution"):
-            model.load_state_dict({"W": wrong_weight})
-
-    def test_shape_mismatch_raises(self) -> None:
-        """Weight with wrong shape raises ValueError."""
-        W = _make_realized_sharded([4, 8], 2, shard_axis=0)
-        model = _IdentityModule(W=W)
-
-        wrong_weight = np.ones([4, 4], dtype=np.float32)
-        with pytest.raises(ValueError, match="not assignable"):
-            model.load_state_dict({"W": wrong_weight})
 
 
 # ═════════════════════════════════════════════════════════════════════════

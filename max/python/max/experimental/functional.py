@@ -567,6 +567,9 @@ greater = functional(ops.greater)
 #: Computes element-wise greater-than-or-equal comparison.
 #: See :func:`max.graph.ops.greater_equal` for details.
 greater_equal = functional(ops.greater_equal)
+#: Applies group normalization.
+#: See :func:`max.graph.ops.group_norm` for details.
+group_norm = functional(ops.group_norm)
 #: Creates a Hann window.
 #: See :func:`max.graph.ops.hann_window` for details.
 hann_window = functional(ops.hann_window)
@@ -723,6 +726,9 @@ mul = functional(ops.mul)
 #: Negates a tensor element-wise.
 #: See :func:`max.graph.ops.negate` for details.
 negate = functional(ops.negate)
+#: Filters boxes with high intersection-over-union.
+#: See :func:`max.graph.ops.non_maximum_suppression` for details.
+non_maximum_suppression = functional(ops.non_maximum_suppression)
 #: Returns the indices of non-zero elements.
 #: See :func:`max.graph.ops.nonzero` for details.
 nonzero = functional(ops.nonzero)
@@ -776,9 +782,21 @@ repeat_interleave = functional(ops.repeat_interleave)
 #: Reshapes a tensor to a new shape.
 #: See :func:`max.graph.ops.reshape` for details.
 reshape = functional(ops.reshape)
+#: Applies Root Mean Square layer normalization.
+#: See :func:`max.graph.ops.rms_norm` for details.
+rms_norm = functional(ops.rms_norm)
 #: Resizes a tensor using linear (bilinear) interpolation.
 #: See :func:`max.graph.ops.resize_linear` for details.
 resize_linear = functional(ops.resize_linear)
+#: Resizes a tensor using nearest-neighbor interpolation.
+#: See :func:`max.graph.ops.resize_nearest` for details.
+resize_nearest = functional(ops.resize_nearest)
+#: Resizes a tensor using bicubic interpolation.
+#: See :func:`max.graph.ops.resize_bicubic` for details.
+resize_bicubic = functional(ops.resize_bicubic)
+#: Performs ROI Align pooling on an NHWC input tensor.
+#: See :func:`max.graph.ops.roi_align` for details.
+roi_align = functional(ops.roi_align)
 #: Rounds tensor values element-wise.
 #: See :func:`max.graph.ops.round` for details.
 round = functional(ops.round)

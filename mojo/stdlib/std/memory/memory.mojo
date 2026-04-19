@@ -21,6 +21,7 @@ from std.memory import memcmp
 
 
 from std.math import iota
+from std.memory.unsafe_pointer import unsafe_cast
 from std.sys import _libc as libc
 from std.ffi import external_call
 from std.sys import (
@@ -172,7 +173,7 @@ def _memcpy_impl(
         n: The number of bytes to copy.
     """
 
-    def copy[width: Int](offset: Int) unified {mut}:
+    def copy[width: Int](offset: Int) unified {read}:
         dest_data.store(offset, src_data.load[width=width](offset))
 
     comptime if is_gpu():
@@ -236,8 +237,8 @@ def memcpy[
     T: AnyType
 ](
     *,
-    dest: UnsafePointer[mut=True, T, _],
-    src: UnsafePointer[mut=False, T, _],
+    dest: OptionalUnsafePointer[mut=True, T, _],
+    src: OptionalUnsafePointer[T, _],
     count: Int,
 ):
     """Copy `count * size_of[T]()` bytes from src to dest.
@@ -252,17 +253,27 @@ def memcpy[
         dest: The destination pointer.
         src: The source pointer.
         count: The number of elements to copy.
+
+    Safety:
+        `dest` and `src` must be valid for at least `count * size_of[T]()`
+        bytes. `dest` or `src` can only be `None` when `count == 0`.
     """
-    var n = count * size_of[dest.type]()
+    if count == 0:
+        return
+
+    var n = count * size_of[dest.T.type]()
+
+    var dest_bytes = dest.unsafe_value().bitcast[Byte]()
+    var src_bytes = src.unsafe_value().bitcast[Byte]()
 
     if __is_run_in_comptime_interpreter:
         # A fast version for the interpreter to evaluate
         # this function during compile time.
         llvm_intrinsic["llvm.memcpy", NoneType](
-            dest.bitcast[Byte](), src.bitcast[Byte](), n
+            dest_bytes, src_bytes, n._int_mlir_index()
         )
     else:
-        _memcpy_impl(dest.bitcast[Byte](), src.bitcast[Byte](), n)
+        _memcpy_impl(dest_bytes, src_bytes, n)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -314,7 +325,7 @@ def memmove[
 def _memset_impl(
     ptr: UnsafePointer[mut=True, Byte, ...], value: Byte, count: Int
 ):
-    def fill[width: Int](offset: Int) unified {mut}:
+    def fill[width: Int](offset: Int) unified {read}:
         ptr.store(offset, SIMD[DType.uint8, width](value))
 
     comptime simd_width = simd_width_of[Byte]()
@@ -366,7 +377,7 @@ def memset_zero[
     comptime if count > 128:
         return memset_zero(ptr, count)
 
-    def fill[width: Int](offset: Int) unified {mut}:
+    def fill[width: Int](offset: Int) unified {read}:
         ptr.store(offset, SIMD[dtype, width](0))
 
     vectorize[simd_width_of[dtype]()](count, fill)
@@ -386,12 +397,17 @@ def _malloc[
     /,
     *,
     alignment: Int = align_of[type](),
-    out res: UnsafePointer[
-        type,
-        MutExternalOrigin,
-        address_space=AddressSpace.GENERIC,
+    out result: Optional[
+        UnsafePointer[
+            type,
+            MutExternalOrigin,
+            address_space=AddressSpace.GENERIC,
+        ]
     ],
 ):
+    comptime MlirPointerType = type_of(result).T._mlir_type
+    var mlir_pointer: MlirPointerType
+
     comptime if is_gpu():
         comptime enable_gpu_malloc = get_defined_string[
             "ENABLE_GPU_MALLOC", "true"
@@ -402,17 +418,15 @@ def _malloc[
             "runtime allocation on GPU not allowed",
         ]()
 
-        comptime U = UnsafePointer[
-            NoneType,
-            MutExternalOrigin,
-            address_space=AddressSpace.GENERIC,
-        ]
-        var ptr = external_call["malloc", U](size)
-        return ptr.bitcast[type]()
+        mlir_pointer = external_call["malloc", MlirPointerType](size)
     else:
-        return __mlir_op.`pop.aligned_alloc`[_type=type_of(res)._mlir_type](
-            alignment._mlir_value, size._mlir_value
+        mlir_pointer = __mlir_op.`pop.aligned_alloc`[_type=MlirPointerType](
+            alignment._int_mlir_index(), size._int_mlir_index()
         )
+
+    # SAFETY: Due to the niche optimization, `Optional[UnsafePointer]` is
+    # represented exactly as the `MlirPointerType` so we can do a bit-cast.
+    result = UnsafePointer(to=mlir_pointer).bitcast[type_of(result)]()[]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -426,6 +440,18 @@ def _free(ptr: UnsafePointer[mut=True, ...]):
         libc.free(ptr.bitcast[NoneType]())
     else:
         __mlir_op.`pop.aligned_free`(ptr.address)
+
+
+@always_inline
+def _free(ptr: OptionalUnsafePointer[mut=True, ...]):
+    comptime if is_gpu():
+        libc.free(unsafe_cast[Type=NoneType, origin=MutExternalOrigin](ptr))
+    else:
+        comptime KgenPointerType = type_of(ptr).T._mlir_type
+        # SAFETY: Due to the niche optimization, `Optional[UnsafePointer]` is
+        # represented exactly as the `KgenPointerType` so we can do a bit-cast.
+        var kgen_pointer = UnsafePointer(to=ptr).bitcast[KgenPointerType]()[]
+        __mlir_op.`pop.aligned_free`(kgen_pointer)
 
 
 # ===-----------------------------------------------------------------------===#

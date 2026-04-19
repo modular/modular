@@ -13,7 +13,7 @@
 
 from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext
-from std.os import Atomic
+from std.atomic import Atomic
 
 
 # ========================== CONFIGURATION ==========================

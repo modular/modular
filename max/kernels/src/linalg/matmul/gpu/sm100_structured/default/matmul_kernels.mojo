@@ -1110,6 +1110,17 @@ struct BlackwellMatmulSM100Kernel[
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
+    @__name(
+        StaticString(Self.config.get_kernal_name())
+        + StaticString(
+            "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
+            is not None else ""
+        )
+        + StaticString(
+            "_fused_epi" if Self.elementwise_lambda_fn is not None else ""
+        ),
+        mangle=True,
+    )
     def run(
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
@@ -1401,6 +1412,17 @@ struct BlackwellMatmulSM100Kernel[
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
+    @__name(
+        StaticString(Self.config.get_kernal_name())
+        + StaticString(
+            "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
+            is not None else ""
+        )
+        + StaticString(
+            "_fused_epi" if Self.elementwise_lambda_fn is not None else ""
+        ),
+        mangle=True,
+    )
     def run_splitk[
         reduction_layout: TensorLayout,
     ](
@@ -1697,8 +1719,8 @@ struct BlackwellMatmulSM100FallbackKernel[
     # Used as stride_layout in tile/tile_with_offset to override
     # the parent TileTensor's dynamic strides with static values.
     comptime CGmemStrideLayout = _NewLayout[
-        Variadic.types[T=CoordLike, ComptimeInt[Self.static_N], ComptimeInt[1]],
-        Variadic.types[T=CoordLike, ComptimeInt[1], ComptimeInt[1]],
+        Coord[ComptimeInt[Self.static_N], ComptimeInt[1]].element_types,
+        Coord[ComptimeInt[1], ComptimeInt[1]].element_types,
     ]
 
     # Typed layouts (new Layout from tile_layout.mojo).

@@ -31,13 +31,15 @@ Example usage:
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
 
 from max import _core
 from max._core.dialects import builtin, kgen, mo, mosh
 from max.driver import Buffer
 from max.graph import Graph
+
+from ._interpreter_ops import handlers as _handlers_module
 
 # Import handlers to register them (side effect import)
 from ._interpreter_ops import lookup_handler
@@ -118,12 +120,15 @@ class MOInterpreter:
         self,
         graph: Graph,
         inputs: Sequence[Buffer],
+        weights: Mapping[str, Buffer] | None = None,
     ) -> Sequence[Buffer | None]:
         """Execute an MO graph and return output buffers.
 
         Args:
             graph: The finalized MO graph to execute.
             inputs: Input buffers corresponding to graph.inputs.
+            weights: Optional mapping of weight names to buffers for
+                resolving ``mo.constant.external`` ops.
 
         Returns:
             List of output buffers.
@@ -143,32 +148,35 @@ class MOInterpreter:
         for graph_input, buffer in zip(graph.inputs, inputs, strict=True):
             slots[graph_input._mlir_value] = buffer
 
-        # Walk ops in the graph body and dispatch
-        # use _core bindings for type-safe access
-        module: builtin.ModuleOp = _core.Operation._from_cmlir(
-            graph._module.operation
-        )  # type: ignore[assignment]
-        output_op = None
-        for op in self._walk_ops(module):
-            if isinstance(op, mo.OutputOp):
-                # Store the output op but don't dispatch it
-                output_op = op
-            else:
-                self._dispatch_op(op, slots)
+        # Stash the weights registry for ConstantExternalOp handlers
+        prev_registry = _handlers_module._weights_registry
+        _handlers_module._weights_registry = weights
+        try:
+            # Walk ops in the graph body and dispatch
+            module: builtin.ModuleOp = _core.Operation._from_cmlir(
+                graph._module.operation
+            )  # type: ignore[assignment]
+            output_op = None
+            for op in self._walk_ops(module):
+                if isinstance(op, mo.OutputOp):
+                    output_op = op
+                else:
+                    self._dispatch_op(op, slots)
 
-        # Collect outputs from the mo.output terminator
-        if output_op is None:
-            raise RuntimeError("Graph has no output terminator")
-        outputs = []
-        # mo.OutputOp.operands returns Value directly (not OpOperand)
-        for operand in output_op.operands:
-            try:
-                outputs.append(slots[operand])
-            except RuntimeError as e:
-                raise RuntimeError(
-                    f"Output value not computed: {operand}"
-                ) from e
-        return outputs
+            # Collect outputs from the mo.output terminator
+            if output_op is None:
+                raise RuntimeError("Graph has no output terminator")
+            outputs = []
+            for operand in output_op.operands:
+                try:
+                    outputs.append(slots[operand])
+                except RuntimeError as e:
+                    raise RuntimeError(
+                        f"Output value not computed: {operand}"
+                    ) from e
+            return outputs
+        finally:
+            _handlers_module._weights_registry = prev_registry
 
     def _walk_ops(self, module: builtin.ModuleOp) -> Iterator[_core.Operation]:
         """Walk operations in a valid execution order.

@@ -168,7 +168,7 @@ struct ROCSHMEMInitAttr(ImplicitlyCopyable):
     var rank: Int32
     var nranks: Int32
     var uid: SHMEMUniqueID
-    var mpi_comm: UnsafePointer[NoneType, ImmutAnyOrigin]
+    var mpi_comm: Optional[UnsafePointer[NoneType, ImmutAnyOrigin]]
 
     def __init__(out self):
         comptime assert (
@@ -177,14 +177,14 @@ struct ROCSHMEMInitAttr(ImplicitlyCopyable):
         self.rank = 0
         self.nranks = 0
         self.uid = SHMEMUniqueID()
-        self.mpi_comm = {_unsafe_null = ()}
+        self.mpi_comm = None
 
     def __init__(out self, rank: Int32, nranks: Int32, uid: SHMEMUniqueID):
         self.rank = rank
         self.nranks = nranks
         self.uid = uid
         # Null pointer, we're not using MPI
-        self.mpi_comm = {_unsafe_null = ()}
+        self.mpi_comm = None
 
 
 def _dtype_to_rocshmem_type[
