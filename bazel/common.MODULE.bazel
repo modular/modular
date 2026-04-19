@@ -44,16 +44,21 @@ single_version_override(
     ],
 )
 
-bazel_dep(name = "rules_mypy", version = "0.39.0", dev_dependency = True)
-single_version_override(
+bazel_dep(name = "rules_mypy", version = "0.41.0", dev_dependency = True)
+
+# TODO: Move back to BCR dep when 0.41.0 is published
+archive_override(
     module_name = "rules_mypy",
+    integrity = "sha256-UhLUFPdE95imwr1z1JnvbIml08t8rxyQlw/jKlu2H2Y=",
     patch_strip = 1,
     patches = [
         # TODO: Should we submit this upstream or force our deps to directly
         # depend on the things that provide their pyi files?
         "//bazel/public-patches:rules_mypy_pyi_files.patch",
-        # https://github.com/bazel-contrib/rules_mypy/pull/118
-        "//bazel/public-patches:rules_mypy_pyinfo.patch",
+    ],
+    strip_prefix = "rules_mypy-0.41.0",
+    urls = [
+        "https://github.com/bazel-contrib/rules_mypy/releases/download/v0.41.0/rules_mypy-0.41.0.tar.gz",
     ],
 )
 
@@ -815,6 +820,11 @@ LOGIT_VERIFICATION_GOLDENS = [
         "name": "torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz",
         "sha256": "4a5da181a0bbbd1434ca8b02f51e68200c27535b8c0ed0941d77f0bc2e530f5a",
         "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/4a5da181a0bbbd1434ca8b02f51e68200c27535b8c0ed0941d77f0bc2e530f5a/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz",
+    },
+    {
+        "name": "black-forest-labs_FLUX.2-dev-i2i_golden.tar.gz",
+        "sha256": "11acb0fdf1fa04b468454bf887affaf04868a324a6d327c926e1818afd1749bd",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/black-forest-labs_FLUX.2-dev-i2i_golden/1/11acb0fdf1fa04b468454bf887affaf04868a324a6d327c926e1818afd1749bd/black-forest-labs_FLUX.2-dev-i2i_golden.tar.gz",
     },
 ]
 

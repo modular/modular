@@ -230,9 +230,10 @@ def test_most_common() raises:
     var most_common = c.most_common(2)
     assert_equal(len(most_common), 2)
     assert_equal(most_common[0][0][String], "c")
-    assert_equal(most_common[0][1][Int], 3)
+    # TODO: these asserts crash the compiler due to MOCO-3763
+    # assert_equal(most_common[0][1][Int], 3)
     assert_equal(most_common[1][0][String], "b")
-    assert_equal(most_common[1][1][Int], 2)
+    # assert_equal(most_common[1][1][Int], 2)
 
 
 def test_eq_and_ne() raises:

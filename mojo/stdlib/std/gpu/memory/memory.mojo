@@ -882,7 +882,7 @@ def external_memory[
                 address_space=address_space,
             ]._mlir_type,
             name=_get_kgen_string[name](),
-            alignment=alignment._mlir_value,
+            alignment=alignment._int_mlir_index(),
         ]()
     )
     return extern_ptr_symbol.bitcast[dtype]()
@@ -2857,11 +2857,11 @@ def multimem_st[
 
     Example:
 
-    ```mojo
+    ```text
     from std.gpu.memory.memory import *
 
     # Store 2 float32 values to multimem address.
-    multimem_st[DType.float32, count=2, scope=Scope.CTA, consistency=Consistency.RELAXED](
+    multimem_st[DType.float32, count=2, scope=Scope.BLOCK, consistency=Consistency.RELAXED](
         addr, StaticTuple[DType.float32, 2](val1, val2)
     )
 

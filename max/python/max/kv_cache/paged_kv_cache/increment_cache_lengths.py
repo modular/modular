@@ -165,7 +165,8 @@ def _build_ragged_increment_cache_lengths_graph(
 ) -> Graph:
     input_symbols = params.get_symbolic_inputs()
     cache_lengths_types = [
-        input_symbols[i].cache_lengths for i in range(len(params.devices))
+        input_symbols.inputs[i].cache_lengths
+        for i in range(len(params.devices))
     ]
     dp = params.data_parallel_degree
 
@@ -227,9 +228,9 @@ def _execute_ragged_increment_cache_lengths_graph(
     model: Model,
     params: KVCacheParams,
     use_comm_kernel: bool,
-    kv_cache_inputs: KVCacheInputs,
+    kv_cache_inputs: KVCacheInputs[Buffer, Buffer],
     prev_model_inputs: Any,
-) -> KVCacheInputs:
+) -> KVCacheInputs[Buffer, Buffer]:
     """Prepares cache inputs for the next token in multistep execution.
 
     Updates the cache lengths for the next inference step without requiring device
@@ -249,7 +250,9 @@ def _execute_ragged_increment_cache_lengths_graph(
     """
     devices = params.devices
     device0 = devices[0].to_device()
-    blocks = [kv_cache_inputs.inputs[i].blocks for i in range(len(devices))]
+    kv_blocks = [
+        kv_cache_inputs.inputs[i].kv_blocks for i in range(len(devices))
+    ]
     cache_lengths = [
         kv_cache_inputs.inputs[i].cache_lengths for i in range(len(devices))
     ]
@@ -328,7 +331,7 @@ def _execute_ragged_increment_cache_lengths_graph(
             updated_cache_length = updated_cache_lengths[start_idx + i]
             assert isinstance(updated_cache_length, Buffer)
             inputs[start_idx + i] = KVCacheInputsPerDevice(
-                blocks=blocks[start_idx + i],
+                kv_blocks=kv_blocks[start_idx + i],
                 cache_lengths=updated_cache_length,
                 lookup_table=lookup_table[start_idx + i],
                 max_lengths=updated_max_lengths,
@@ -367,9 +370,9 @@ class IncrementCacheLengthsProcessor:
 
     def execute(
         self,
-        kv_cache_inputs: KVCacheInputs,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer],
         prev_model_inputs: Any,
-    ) -> KVCacheInputs:
+    ) -> KVCacheInputs[Buffer, Buffer]:
         """Runs the increment cache lengths graph and returns updated cache inputs."""
         return _execute_ragged_increment_cache_lengths_graph(
             self._model,

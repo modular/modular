@@ -18,10 +18,12 @@ from std.memory import bitcast
 from std.sys import size_of
 from std.sys.intrinsics import _type_is_eq, readfirstlane
 from std.sys._assembly import inlined_assembly
-from std.gpu import block_idx, lane_id, thread_idx
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from std.gpu import barrier, block_idx, lane_id, thread_idx
+from layout import Layout, LayoutTensor, TileTensor, UNKNOWN_VALUE
+from layout import row_major as tt_row_major
 from layout._utils import idx2crd
-from layout.layout_tensor import ThreadScope, copy_local_to_dram
+from structured_kernels.amd_tile_io import RegTileWriter
+from layout.layout_tensor import copy_local_to_dram, ThreadScope
 from nn.attention.mha_mask import CausalMask
 from layout.tensor_core import TiledTensorCore, num_matrix_reg
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
@@ -38,17 +40,43 @@ from .buffers import (
     PRegisterBuffer,
     QRegisterBuffer,
 )
-from .mma import mma
+from .mma import TiledMmaOp
 from .utils import (
     GlobalMemoryManager,
-    SharedLayoutTensor,
     SharedMemoryManager,
-    copy_local_to_dram2,
     get_fragment_layout,
     get_nested_fragment_layout,
     get_warp_coords,
     get_warp_layout,
 )
+
+
+@always_inline
+def _b_mma[
+    T: KVBuffer
+](b: T) -> TileTensor[
+    T._dtype,
+    type_of(
+        tt_row_major[
+            T.mma_tile_layout.shape[0].value(),
+            T.mma_tile_layout.shape[1].value(),
+        ]()
+    ),
+    MutAnyOrigin,
+    address_space=AddressSpace.LOCAL,
+]:
+    """Convert a KVBuffer's MMA LayoutTensor to TileTensor."""
+    comptime rows = T.mma_tile_layout.shape[0].value()
+    comptime cols = T.mma_tile_layout.shape[1].value()
+    comptime TTType = TileTensor[
+        T._dtype,
+        type_of(tt_row_major[rows, cols]()),
+        MutAnyOrigin,
+        address_space=AddressSpace.LOCAL,
+    ]
+    return rebind[TTType](
+        TileTensor(b.get_mma_tile().ptr, tt_row_major[rows, cols]())
+    )
 
 
 trait AttentionConfig(ImplicitlyCopyable):
@@ -83,12 +111,12 @@ trait AttentionConfig(ImplicitlyCopyable):
 
     @staticmethod
     @always_inline
-    def get_q_offset[q_depth: UInt]() -> UInt32:
+    def get_q_offset[q_depth: Int]() -> UInt32:
         ...
 
     @staticmethod
     @always_inline
-    def get_output_offset[output_depth: UInt]() -> UInt32:
+    def get_output_offset[output_depth: Int]() -> UInt32:
         ...
 
 
@@ -117,11 +145,14 @@ def _mask_apply[
     mask_warp_col: UInt32,
     scale: Scalar[accum_type],
     mask: mask_t,
-    p_reg_vectorized: LayoutTensor[mut=True, accum_type, ...],
+    p_reg_tile: TileTensor[mut=True, accum_type, ...],
     not_last_iter: Bool,
     cache_start_pos: UInt32 = 0,
 ):
     comptime output_frag_size = fragment_layout.size()
+    var p_reg_vectorized = p_reg_tile.to_layout_tensor().vectorize[
+        1, output_frag_size
+    ]()
 
     comptime rowwise_stride = fragment_layout.shape[0].value()
     comptime colwise_stride = fragment_layout.shape[1].value()
@@ -283,11 +314,20 @@ struct Attention[
 
     comptime swap_a_b = True
     comptime use_exp2 = True
-    # we want to load 16B of data for each fragment so k_group_size is set such that
-    # k_group_size * num_matrix_fragments * size_of[Self.q_type]() = 16B
-    comptime k_group_size: Int = 16 // (
-        num_matrix_reg[Self.mma_shape[0], Self.mma_shape[2]]()
-        * size_of[Self.q_type]()
+    # We want to load 16B of data for each fragment so k_group_size is set
+    # such that k_group_size * num_matrix_fragments * size_of[q_type]() = 16B.
+    # Capped at 1 minimum and BK//MMA_K maximum to avoid exceeding tile bounds.
+    # On gfx950 this evaluates to 1; on gfx942 it can be 2.
+    comptime k_group_size: Int = max(
+        1,
+        min(
+            16
+            // (
+                num_matrix_reg[Self.mma_shape[0], Self.mma_shape[2]]()
+                * size_of[Self.q_type]()
+            ),
+            Self.BK // Self.mma_shape[2],
+        ),
     )
 
     comptime num_k_mmas2: Int = ceildiv(
@@ -399,9 +439,14 @@ struct Attention[
         Self.use_exp2,
     ]
 
-    var warp_scratch_tensor: SharedLayoutTensor[
+    comptime _warp_scratch_layout = tt_row_major[
+        2 * Int(Self.num_warps_n), Int(Self.BM)
+    ]()
+    var warp_scratch_tensor: TileTensor[
         Self.accum_type,
-        Layout.row_major(2 * Int(Self.num_warps_n), Int(Self.BM)),
+        type_of(Self._warp_scratch_layout),
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     @staticmethod
@@ -439,12 +484,21 @@ struct Attention[
 
     @always_inline
     def scale_p_reg[stage: Int = 0](self):
-        var p_reg_vectorized = self.p_reg_buffer.vectorize[stage]()
+        var p_vec = self.p_reg_buffer.stage_tile[stage]().vectorize[
+            1, Self.output_frag_size
+        ]()
 
         comptime for m_mma in range(Self.num_m_mmas):
             comptime for n_mma in range(Self.num_n_mmas):
                 comptime mma_id = n_mma * Self.num_m_mmas + m_mma
-                p_reg_vectorized[mma_id, 0] *= self.scale
+                p_vec[mma_id, 0] = p_vec[mma_id, 0] * self.scale
+
+    comptime MmaOp = TiledMmaOp[
+        get_accum_type[Self.q_type](),
+        Self.q_type,
+        Self.mma_shape,
+        group_size=Self.k_group_size,
+    ]
 
     @staticmethod
     @always_inline
@@ -481,19 +535,27 @@ struct Attention[
         num_iters: Int = Self.depth // Self.BK,
         prefetched_b_tile: Bool = False,
     ](mut self, mut k_buffer: k_buffer_type):
-        mma[
-            tensor_core_mma=Self.get_tensor_core_mma_qk(),
-            BK=Int(Self.BK),
+        comptime num_k_mmas = ceildiv(
+            Int(Self.BK), Self.mma_shape[2] * Self.k_group_size
+        )
+
+        @parameter
+        @always_inline
+        def do_mma[i: Int, k_mma: Int]():
+            Self.MmaOp.mma[swap_a_b=Self.swap_a_b](
+                self.q_buffer.mma_tile[i, k_mma](),
+                _b_mma(k_buffer),
+                self.p_reg_buffer.reg_tile,
+            )
+
+        Self._dma_loop[
+            num_k_mmas=num_k_mmas,
+            mma_fn=do_mma,
             prefetch_function=prefetch_function,
-            swap_a_b=Self.swap_a_b,
             beg_iter=beg_iter,
             num_iters=num_iters,
             prefetched_b_tile=prefetched_b_tile,
-        ](
-            self.p_reg_buffer,
-            self.q_buffer,
-            k_buffer,
-        )
+        ](k_buffer)
 
     @always_inline
     def mma_pv[
@@ -502,18 +564,97 @@ struct Attention[
         prefetch_function: OptionalReg[def() capturing -> None] = None,
         prefetched_b_tile: Bool = True,
     ](mut self, mut v_buffer: v_buffer_type):
-        mma[
-            tensor_core_mma=Self.get_tensor_core_mma_pv(),
-            BK=Int(Self.BK),
+        comptime num_k_mmas = ceildiv(
+            Int(Self.BK), Self.mma_shape[2] * Self.k_group_size
+        )
+
+        @parameter
+        @always_inline
+        def do_mma[i: Int, k_mma: Int]():
+            Self.MmaOp.mma[swap_a_b=Self.swap_a_b](
+                self.p_reg_buffer.mma_tile[i, k_mma](),
+                _b_mma(v_buffer),
+                self.out_reg_buffer.reg_tile,
+            )
+
+        Self._dma_loop[
+            num_k_mmas=num_k_mmas,
+            mma_fn=do_mma,
             prefetch_function=prefetch_function,
-            swap_a_b=Self.swap_a_b,
             num_iters=Int(Self.BN // Self.BK),
             prefetched_b_tile=prefetched_b_tile,
-        ](
-            self.out_reg_buffer,
-            self.p_reg_buffer,
-            v_buffer,
-        )
+        ](v_buffer)
+
+    @staticmethod
+    @always_inline
+    def _dma_loop[
+        b_buffer_type: KVBuffer,
+        //,
+        num_k_mmas: Int,
+        mma_fn: def[i: Int, k_mma: Int]() capturing -> None,
+        prefetch_function: OptionalReg[def() capturing -> None] = None,
+        beg_iter: Int = 0,
+        num_iters: Int = 1,
+        prefetched_b_tile: Bool = False,
+    ](mut b_tile: b_buffer_type,):
+        """Orchestrate DMA pipeline: DRAM->SMEM->registers, then call mma_fn.
+
+        Parameters:
+            b_buffer_type: KV buffer type for DMA orchestration.
+            num_k_mmas: Number of MMA tiles along the K dimension.
+            mma_fn: Comptime callback invoked per (iter, k_mma) after
+                B registers are loaded.
+            prefetch_function: Optional function to prefetch the next tile.
+            beg_iter: Starting iteration index.
+            num_iters: Number of iterations over tiles.
+            prefetched_b_tile: Whether B tile is already prefetched.
+
+        Args:
+            b_tile: KV buffer for DMA orchestration.
+        """
+        comptime assert (
+            b_buffer_type._num_stages == 1 or b_buffer_type._num_stages == 2
+        ), "b_tile.num_stages must be 1 or 2"
+
+        comptime if b_buffer_type._num_stages == 1:
+            comptime for i in range(beg_iter, beg_iter + num_iters):
+                b_tile.load_from_dram()
+                b_tile.copy_to_shared[0]()
+
+                barrier()
+
+                comptime for k_mma in range(num_k_mmas):
+                    b_tile.load_from_shared[k_mma,]()
+                    mma_fn[i, k_mma]()
+
+                comptime if i == beg_iter + num_iters - 2:
+                    comptime if prefetch_function:
+                        comptime prefetch_func = prefetch_function.value()
+                        prefetch_func()
+
+                barrier()
+        else:
+            comptime if not prefetched_b_tile:
+                b_tile.load_from_dram()
+
+            comptime for i in range(beg_iter, beg_iter + num_iters):
+                comptime if i < beg_iter + num_iters - 1:
+                    b_tile.load_from_dram()
+
+                    comptime if i == beg_iter + num_iters - 2:
+                        comptime if prefetch_function:
+                            comptime prefetch_func = prefetch_function.value()
+                            prefetch_func()
+
+                b_tile.copy_to_shared[i % 2]()
+
+                barrier()
+
+                comptime for k_mma in range(num_k_mmas):
+                    b_tile.load_from_shared[k_mma,]()
+                    mma_fn[i, k_mma]()
+
+                barrier()
 
     @always_inline
     def mask_status(
@@ -598,7 +739,7 @@ struct Attention[
                 self.mask_warp_col,
                 self.scale,
                 self.mask,
-                self.p_reg_buffer.vectorize[stage](),
+                self.p_reg_buffer.stage_tile[stage](),
                 not_last_iter,
                 UInt32(self.cache_start_pos),
             )
@@ -643,22 +784,26 @@ struct Attention[
             UInt32(Self.q_tile_idx()),
             UInt32(Self.kv_head_idx()),
             seq_len,
-            Self.attention_config_t.get_q_offset[UInt(Self.q_depth)](),
-            Self.attention_config_t.get_output_offset[
-                UInt(Self.output_depth)
-            ](),
+            Self.attention_config_t.get_q_offset[Self.q_depth](),
+            Self.attention_config_t.get_output_offset[Self.output_depth](),
         )
         self.smem_manager = Self.SharedMemoryManagerType()
 
-        self.warp_scratch_tensor = type_of(self.warp_scratch_tensor)(
-            self.smem_manager.get_warp_scratch_ptr[Self.accum_type]()
+        self.warp_scratch_tensor = TileTensor[
+            Self.accum_type,
+            type_of(Self._warp_scratch_layout),
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ](
+            self.smem_manager.get_warp_scratch_ptr[Self.accum_type](),
+            Self._warp_scratch_layout,
         )
 
         self.p_reg_buffer = Self.PRegisterBufferType(
             self.smem_manager.get_p_ptr[Self.q_type]()
         )
 
-        var q_tile = self.gmem_manager.get_q_tensor(q)
+        var q_tile = self.gmem_manager.get_q_tile(q)
         self.q_buffer = Self.QRegisterBufferType(q_tile)
 
         self.output_ptr = output_ptr
@@ -687,9 +832,9 @@ struct Attention[
         comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()
 
         comptime if is_causal_mask and Self.attention_config_t.double_buffer:
-            self.scale = bitcast[DType.float32](
-                readfirstlane(bitcast[DType.int32](scale_log2e))
-            ).cast[Self.accum_type]()
+            self.scale = readfirstlane(scale_log2e.cast[DType.float32]()).cast[
+                Self.accum_type
+            ]()
         else:
             self.scale = scale_log2e
         self.seq_len = seq_len
@@ -718,39 +863,34 @@ struct Attention[
 
     @always_inline
     def online_softmax[stage: Int = 0](mut self):
-        var warp_scratch = self.warp_scratch_tensor
         var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
+        var warp_scratch = self.warp_scratch_tensor.tile[
+            2 * Int(Self.num_warps_n), Int(Self.WM)
+        ](0, warp_row)
 
         self.softmax.full(
-            self.out_reg_buffer.vectorize(),
-            self.p_reg_buffer.vectorize[stage](),
-            warp_scratch.tile[2 * Int(Self.num_warps_n), Int(Self.WM)](
-                0, warp_row
-            ),
+            self.out_reg_buffer.reg_tile,
+            self.p_reg_buffer.stage_tile[stage](),
+            warp_scratch,
         )
 
     @always_inline
     def store_output(self):
         var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
         var warp_col = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[1]
-        var output_tile = self.gmem_manager.get_output_tensor(self.output_ptr)
-        var output_warp_tile = output_tile.tile[
-            Self.WM, Self.output_depth // Self.num_warps_n
-        ](warp_row, warp_col)
 
-        comptime if Self.mma_shape[0] == 32:
-            copy_local_to_dram2[
-                dst_thread_layout=Self.warp_layout,
-                thread_scope=ThreadScope.WARP,
-            ](
-                output_warp_tile.vectorize[
-                    1,
-                    4,
-                ](),
-                self.out_reg_buffer.reg_tile.vectorize[1, 4](),
-                output_tile,
+        comptime if Self.token_gen and Self.mma_shape[0] != 32:
+            # Token-gen 16x16 MMA: use LayoutTensor copy_local_to_dram to
+            # match the LayoutTensor load_from_shared workaround in
+            # KVBufferImpl. RegTileWriter.store uses TileTensor
+            # distribute_with_offset which produces wrong output positions
+            # when group == mma_shape[0] (all MMA rows active).
+            var output_tensor = self.gmem_manager.get_output_tensor(
+                self.output_ptr
             )
-        else:
+            var output_warp_tile = output_tensor.tile[
+                Self.WM, Self.output_depth // Self.num_warps_n
+            ](warp_row, warp_col)
             copy_local_to_dram[
                 dst_thread_layout=Self.warp_layout,
                 thread_scope=ThreadScope.WARP,
@@ -759,9 +899,36 @@ struct Attention[
                     Self.fragment_layout.shape[0].value(),
                     Self.fragment_layout.shape[1].value(),
                 ](),
-                self.out_reg_buffer.vectorize(),
-                output_tile,
+                self.out_reg_buffer.reg_tile.to_layout_tensor().vectorize[
+                    1, Self.output_frag_size
+                ](),
+                output_tensor,
             )
+        else:
+            var output_tile = self.gmem_manager.get_output_tile[
+                Self.output_type
+            ](self.output_ptr)
+            var output_warp_tile = output_tile.tile[
+                Self.WM, Self.output_depth // Self.num_warps_n
+            ](warp_row, warp_col)
+            var writer = RegTileWriter[
+                Self.output_type,
+                Self.warp_layout.shape[0].value(),
+                Self.warp_layout.shape[1].value(),
+            ](output_tile)
+            comptime if Self.mma_shape[0] == 32:
+                writer.store_mfma32(
+                    output_warp_tile.vectorize[1, 4](),
+                    self.out_reg_buffer.reg_tile,
+                )
+            else:
+                writer.store(
+                    output_warp_tile.vectorize[
+                        Self.fragment_layout.shape[0].value(),
+                        Self.fragment_layout.shape[1].value(),
+                    ](),
+                    self.out_reg_buffer.reg_tile,
+                )
 
     @always_inline
     def copy_fragment_to_smem(self):
