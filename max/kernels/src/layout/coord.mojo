@@ -1582,16 +1582,14 @@ comptime _IntToComptimeInt[*values: Int] = values.map_to_type[
     _IntToComptimeIntMapper
 ]()
 
-comptime _IntTupleToCoordLikeMapper[
+comptime _IntTupleToCoordLikeTabulator[
     dtype: DType,
     tuple: IntTuple,
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[T=CoordLike, ComptimeInt[Int(tuple[idx])]] if Int(tuple[idx])
-    != layout.UNKNOWN_VALUE else Variadic.types[T=CoordLike, RuntimeInt[dtype]],
+]: CoordLike = ComptimeInt[Int(tuple[idx])] if Int(
+    tuple[idx]
+) != layout.UNKNOWN_VALUE else RuntimeInt[
+    dtype
 ]
 """Maps a single IntTuple element to a CoordLike type.
 
@@ -1599,15 +1597,11 @@ If the value is known, produces ComptimeInt[value].
 If UNKNOWN_VALUE, produces RuntimeInt.
 """
 
-comptime _IntTupleToCoordLike[dtype: DType, tuple: IntTuple] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=Variadic.types[
-            T=CoordLike,
-            *TypeList.splat[Trait=CoordLike, len(tuple), RuntimeInt[dtype]](),
-        ],
-        Reducer=_IntTupleToCoordLikeMapper[dtype, tuple, ...],
-    ]
+comptime _IntTupleToCoordLike[
+    dtype: DType, tuple: IntTuple
+] = TypeList.tabulate[
+    len(tuple),
+    _IntTupleToCoordLikeTabulator[dtype, tuple, _],
 ]()
 """Converts an IntTuple to a variadic of CoordLike types.
 
