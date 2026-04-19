@@ -353,63 +353,6 @@ def test_map_types_to_types() raises:
     assert_true(_type_is_eq[types[1], String]())
 
 
-def test_filter_types_exclude_one() raises:
-    comptime IsNotInt[Type: Movable] = not _type_is_eq[Type, Int]()
-    comptime without_int = Variadic.filter_types[
-        *Tuple[Int, String, Float64, Bool].element_types, predicate=IsNotInt
-    ]()
-    assert_equal(without_int.size, 3)
-    assert_true(_type_is_eq[without_int[0], String]())
-    assert_true(_type_is_eq[without_int[1], Float64]())
-    assert_true(_type_is_eq[without_int[2], Bool]())
-
-
-def test_filter_types_keep_only() raises:
-    comptime IsStringOrFloat[Type: Movable] = (
-        _type_is_eq[Type, String]() or _type_is_eq[Type, Float64]()
-    )
-    comptime kept = Variadic.filter_types[
-        *Tuple[Int, String, Float64, Bool].element_types,
-        predicate=IsStringOrFloat,
-    ]()
-    assert_equal(kept.size, 2)
-    assert_true(_type_is_eq[kept[0], String]())
-    assert_true(_type_is_eq[kept[1], Float64]())
-
-
-def test_filter_types_exclude_many() raises:
-    comptime NotIntOrBool[Type: Movable] = (
-        not _type_is_eq[Type, Int]() and not _type_is_eq[Type, Bool]()
-    )
-    comptime filtered = Variadic.filter_types[
-        *Tuple[Int, String, Float64, Bool].element_types,
-        predicate=NotIntOrBool,
-    ]()
-    assert_equal(filtered.size, 2)
-    assert_true(_type_is_eq[filtered[0], String]())
-    assert_true(_type_is_eq[filtered[1], Float64]())
-
-
-def test_filter_types_chained() raises:
-    comptime IsNotBool[Type: Movable] = not _type_is_eq[Type, Bool]()
-    comptime IsNotInt[Type: Movable] = not _type_is_eq[Type, Int]()
-    comptime step1 = Variadic.filter_types[
-        *Tuple[Int, String, Float64, Bool].element_types, predicate=IsNotBool
-    ]()
-    comptime step2 = Variadic.filter_types[*step1, predicate=IsNotInt]()
-    assert_equal(step2.size, 2)
-    assert_true(_type_is_eq[step2[0], String]())
-    assert_true(_type_is_eq[step2[1], Float64]())
-
-
-def test_filter_types_empty_result() raises:
-    comptime AlwaysFalse[Type: Movable] = False
-    comptime empty = Variadic.filter_types[
-        *Tuple[Int, String, Float64, Bool].element_types, predicate=AlwaysFalse
-    ]()
-    assert_equal(empty.size, 0)
-
-
 def test_variadic_list_linear_type() raises:
     """Test owned variadics with a linear type (ExplicitDelOnly)."""
 
@@ -665,25 +608,6 @@ def test_typelist_slice() raises:
     # Full slice (defaults)
     comptime full = TL.slice[]
     assert_equal(full.size, 4)
-
-
-def test_typelist_filter() raises:
-    comptime TL = TypeList.of[Trait=AnyType, Int, String, Float64, Bool]()
-
-    comptime IsNotInt[Type: AnyType] = not _type_is_eq[Type, Int]()
-    comptime filtered = TL.filter[IsNotInt]()
-    assert_equal(filtered.size, 3)
-    assert_true(_type_is_eq[filtered[0], String]())
-    assert_true(_type_is_eq[filtered[1], Float64]())
-    assert_true(_type_is_eq[filtered[2], Bool]())
-
-
-def test_typelist_filter_empty_result() raises:
-    comptime TL = TypeList.of[Trait=AnyType, Int, String]
-
-    comptime AlwaysFalse[Type: AnyType] = False
-    comptime empty = TL.filter[AlwaysFalse]
-    assert_equal(empty.size, 0)
 
 
 def test_typelist_map() raises:

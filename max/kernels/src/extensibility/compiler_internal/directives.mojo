@@ -14,7 +14,6 @@
 from std.sys import align_of
 from std.sys.intrinsics import _type_is_eq
 
-from std.builtin.variadics import Variadic, _ReduceVariadicAndIdxToVariadic
 from layout import IntTuple, Layout
 from layout.coord import (
     ComptimeInt,
@@ -53,30 +52,21 @@ comptime _RowMajorTileLayout[
 ]
 """A TileLayout with row-major strides derived from the given shape types."""
 
+comptime _AsCoordLike[T: CoordLike] = T
 
-comptime _IndexListToCoordLikeMapper[
+comptime _IndexListToCoordLikeTabulator[
     list: IndexList,
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[T=CoordLike, ComptimeInt[list[idx]]] if list[idx]
-    >= 0 else Variadic.types[T=CoordLike, RuntimeInt[]],
+]: CoordLike = ComptimeInt[list[idx]] if list[idx] >= 0 else _AsCoordLike[
+    RuntimeInt[]
 ]
+
 """Maps a single IndexList element to a CoordLike type.
 Negative values (-1 = dynamic) become RuntimeInt, others become ComptimeInt."""
 
 
-comptime _IndexListToCoordLike[list: IndexList] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=Variadic.types[
-            T=CoordLike,
-            *TypeList.splat[Trait=CoordLike, list.size, RuntimeInt[]](),
-        ],
-        Reducer=_IndexListToCoordLikeMapper[list, ...],
-    ]
+comptime _IndexListToCoordLike[list: IndexList] = TypeList.tabulate[
+    list.size, _IndexListToCoordLikeTabulator[list, _]
 ]()
 """Converts a compile-time IndexList to a variadic of CoordLike types.
 Negative values become RuntimeInt, non-negative become ComptimeInt."""

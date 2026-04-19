@@ -1398,14 +1398,14 @@ comptime StaticCoord[value: Int, size: Int] = Coord[
     *TypeList.splat[Trait=CoordLike, size, ComptimeInt[value]]()
 ]
 """
-Create a Coord full of `size` static elements with `dtype`.
+Create a Coord full of `size` static elements.
 
 Parameters:
     value: The value of each element.
     size: The number of output elements.
 
 Returns:
-    A Coord full of `size` static elements with `dtype`.
+    A Coord full of `size` static elements.
 """
 
 comptime _FlattenReducer[

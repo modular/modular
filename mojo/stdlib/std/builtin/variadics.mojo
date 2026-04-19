@@ -191,103 +191,6 @@ struct Variadic:
         values: The values to zip.
     """
 
-    comptime filter_types[
-        T: type_of(AnyType),
-        //,
-        *element_types: T,
-        predicate: _TypePredicateGenerator[T],
-    ] = TypeList[
-        _ReduceVariadicAndIdxToVariadic[
-            BaseVal=Variadic.empty_of_trait[T],
-            ParamListType=element_types.values,
-            Reducer=_FilterReducer[T, predicate, ...],
-        ]
-    ]
-    """Filter types from a variadic sequence based on a predicate function.
-
-    Returns a new variadic containing only the types for which the predicate
-    returns True.
-
-    Parameters:
-        T: The trait that the types conform to.
-        element_types: The input variadic sequence.
-        predicate: A generator function that takes a type and returns Bool.
-
-    Examples:
-
-    ```text
-    from std.builtin.variadics import Variadic
-    from std.utils import Variant
-    from std.sys.intrinsics import _type_is_eq
-
-    comptime FullVariant = Variant[Int, String, Float64, Bool]
-
-    # Exclude a single type
-    comptime IsNotInt[Type: AnyType] = not _type_is_eq[Type, Int]()
-    comptime WithoutInt = Variadic.filter_types[*FullVariant.Ts, predicate=IsNotInt]
-    comptime FilteredVariant = Variant[*WithoutInt]
-    # FilteredVariant is Variant[String, Float64, Bool]
-
-    # Keep only specific types
-    comptime IsNumeric[Type: AnyType] = (
-        _type_is_eq[Type, Int]() or _type_is_eq[Type, Float64]()
-    )
-    comptime OnlyNumeric = Variadic.filter_types[*FullVariant.Ts, predicate=IsNumeric]
-    # OnlyNumeric is Variadic.types[T=AnyType, Int, Float64]
-
-    # Exclude multiple types using a variadic check
-    comptime ExcludeList = Variadic.types[T=AnyType, Int, Bool]
-    comptime NotInList[Type: AnyType] = not Variadic.contains[
-        type=Type, element_types=ExcludeList
-    ]
-    comptime Filtered = Variadic.filter_types[*FullVariant.Ts, predicate=NotInList]
-    # Filtered is Variadic.types[T=AnyType, String, Float64]
-    ```
-
-    Filter operations can be chained for complex transformations:
-
-    ```text
-    from std.builtin.variadics import Variadic
-    from std.utils import Variant
-    from std.sys.intrinsics import _type_is_eq
-
-    comptime FullVariant = Variant[Int, String, Float64, Bool]
-    comptime IsNotBool[Type: AnyType] = not _type_is_eq[Type, Bool]()
-    comptime IsNotInt[Type: AnyType] = not _type_is_eq[Type, Int]()
-    comptime Step1 = Variadic.filter_types[*FullVariant.Ts, predicate=IsNotBool]
-    comptime Step2 = Variadic.filter_types[*Step1, predicate=IsNotInt]
-    comptime ChainedVariant = Variant[*Step2]
-    ```
-    """
-
-    comptime _ValueIdxToValueGeneratorType[
-        From: AnyType, To: AnyType
-    ] = __mlir_type[
-        `!lit.generator<<"From": `,
-        +From,
-        `, "Idx":`,
-        Int,
-        `>`,
-        +To,
-        `>`,
-    ]
-    """This specifies a generator to generate a generator type for the reducer of
-    values. The result generator type is [From, idx: SIMDSize] -> To,
-    """
-
-    comptime _ValueToValueMapper[
-        FromType: AnyType,
-        ToType: AnyType,
-        //,
-        Mapper: Variadic._ValueIdxToValueGeneratorType[FromType, ToType],
-        Prev: Variadic.ValuesOfType[ToType],
-        From: Variadic.ValuesOfType[FromType],
-        idx: SIMDSize,
-    ] = Variadic.concat_values[
-        Prev,
-        Variadic.values[Mapper[From[idx], idx]],
-    ]
-
 
 # ===-----------------------------------------------------------------------===#
 # ParameterList and TypeList Utilities
@@ -322,6 +225,21 @@ comptime _TypeToValueGeneratorType[
 ]
 """Maps a conforming element type to a compile-time value."""
 
+comptime _TypePredicateGenerator[T: type_of(AnyType)] = __mlir_type[
+    `!lit.generator<<"Type": `,
+    T,
+    `>`,
+    Bool,
+    `>`,
+]
+"""Generator type for type predicates.
+
+A predicate takes a type and returns a boolean indicating whether to keep it.
+
+Parameters:
+    T: The trait that the types conform to.
+"""
+
 # ===-----------------------------------------------------------------------===#
 # TypeList
 # ===-----------------------------------------------------------------------===#
@@ -333,7 +251,7 @@ struct TypeList[
     """A compile-time list of types conforming to a common trait.
 
     `TypeList` provides type-level operations on variadic sequences of types,
-    such as reversing, filtering, slicing, mapping, and membership testing.
+    such as reversing, slicing, mapping, and membership testing.
 
     Parameters:
         Trait: The trait that all types in the list must conform to.
@@ -478,13 +396,10 @@ struct TypeList[
         type: The type to splat.
     """
 
-    comptime reverse = TypeList[
-        _MapVariadicAndIdxToType[
-            To=Self.Trait,
-            ParamListType=Self.values,
-            Mapper=_ReversedVariadic[Self.Trait, ...],
-        ]
+    comptime _ReverseTabulator[idx: Int]: Self.Trait = Self.values[
+        Self.size - 1 - idx
     ]
+    comptime reverse = TypeList.tabulate[Self.size, Self._ReverseTabulator[_]]
     """Returns this type list in reverse order."""
 
     # ===-------------------------------------------------------------------===#
@@ -702,24 +617,6 @@ struct TypeList[
 
     Constraints:
         0 <= start <= end <= size.
-    """
-
-    comptime filter[
-        predicate: _TypePredicateGenerator[Self.Trait],
-    ] = TypeList[
-        _ReduceVariadicAndIdxToVariadic[
-            BaseVal=Variadic.empty_of_trait[Self.Trait],
-            ParamListType=Self.values,
-            Reducer=_FilterReducer[Self.Trait, predicate, ...],
-        ]
-    ]
-    """Filters types based on a predicate.
-
-    Returns a new variadic containing only the types for which the predicate
-    returns True.
-
-    Parameters:
-        predicate: A generator that takes a type and returns Bool.
     """
 
     @always_inline
@@ -1027,7 +924,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         predicate: Self._ElementToBoolGeneratorType,
         last_value: Bool,
         this_element: Self.type,
-    ] = last_value or predicate[this_element]
+    ]: Bool = last_value or predicate[this_element]
 
     @always_inline("builtin")
     @staticmethod
@@ -1050,7 +947,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         predicate: Self._ElementToBoolGeneratorType,
         last_value: Bool,
         this_element: Self.type,
-    ] = last_value and predicate[this_element]
+    ]: Bool = last_value and predicate[this_element]
 
     @always_inline("builtin")
     @staticmethod
@@ -1885,116 +1782,6 @@ Parameters:
 # VariadicMap
 # ===-----------------------------------------------------------------------===#
 
-comptime _TypeToTypeGenerator[
-    From: type_of(AnyType), To: type_of(AnyType)
-] = __mlir_type[`!lit.generator<<"From":`, From, `>`, To, `>`]
-"""A generator of type [T: From] -> To, which maps a type to another type."""
-
-comptime _VariadicIdxToTypeGeneratorTypeGenerator[
-    From: type_of(AnyType), To: type_of(AnyType)
-] = __mlir_type[
-    `!lit.generator<<"From": `,
-    _MLIR.KGENTypeListType[From],
-    `, "Idx":`,
-    Int,
-    `>`,
-    To,
-    `>`,
-]
-"""This specifies a generator to generate a generator type for the mapper.
-The generated generator type is [Ts: Variadic.TypesOfTrait[AnyType], idx: Int] -> AnyType,
-which maps the input variadic + index of the current element to another type.
-"""
-
-
-comptime _WrapVariadicIdxToTypeMapperToReducer[
-    F: type_of(AnyType),
-    T: type_of(AnyType),
-    Mapper: _VariadicIdxToTypeGeneratorTypeGenerator[F, T],
-    Prev: Variadic.TypesOfTrait[T],
-    From: Variadic.TypesOfTrait[F],
-    Idx: Int,
-] = Variadic.concat_types[Prev, Variadic.types[Mapper[From, Idx]]]
-
-
-comptime _MapVariadicAndIdxToType[
-    From: type_of(AnyType),
-    //,
-    *,
-    To: type_of(AnyType),
-    ParamListType: Variadic.TypesOfTrait[From],
-    Mapper: _VariadicIdxToTypeGeneratorTypeGenerator[From, To],
-] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal=Variadic.empty_of_trait[To],  # reduce from a empty variadic
-    ParamListType=ParamListType,
-    Reducer=_WrapVariadicIdxToTypeMapperToReducer[From, To, Mapper, ...],
-]
-"""Construct a new variadic of types using a type-to-type mapper.
-
-Parameters:
-    From: The common trait bound for the input variadic types.
-    To: A common trait bound for the mapped type.
-    ParamListType: The variadic to be mapped.
-    Mapper: A `[Ts: *From, idx: index] -> To` that does the transform.
-"""
-
-
-comptime _VariadicValuesIdxToTypeGeneratorTypeGenerator[
-    From: AnyType, To: type_of(AnyType)
-] = __mlir_type[
-    `!lit.generator<<"From": `,
-    _MLIR.KGENParamListType[From],
-    `, "Idx":`,
-    Int,
-    `>`,
-    To,
-    `>`,
-]
-"""This specifies a generator to generate a generator type for the mapper.
-The generated generator type is [Ts: Variadic.TypesOfTrait[AnyType], idx: Int] -> AnyType,
-which maps the input variadic + index of the current element to another type.
-"""
-
-comptime _WrapVariadicValuesIdxToTypeMapperToReducer[
-    F: AnyType,
-    T: type_of(AnyType),
-    Mapper: _VariadicValuesIdxToTypeGeneratorTypeGenerator[F, T],
-    Prev: Variadic.TypesOfTrait[T],
-    From: Variadic.ValuesOfType[F],
-    Idx: Int,
-] = Variadic.concat_types[Prev, Variadic.types[Mapper[From, Idx]]]
-
-comptime _ReversedVariadic[
-    T: type_of(AnyType),
-    element_types: Variadic.TypesOfTrait[T],
-    idx: Int,
-] = element_types[TypeList[element_types].size - 1 - idx]
-"""A generator that reverses a variadic sequence of types.
-
-Parameters:
-    T: The common trait bound for the variadic types.
-    element_types: The variadic sequence of types to reverse.
-    idx: The index of the type to generate in the reversed sequence.
-"""
-
-
-comptime _ContainsReducer[
-    Trait: type_of(AnyType),
-    Type: Trait,
-    Prev: Bool,
-    From: Variadic.TypesOfTrait[Trait],
-    idx: Int,
-] = _type_is_eq_parse_time[From[idx], Type]() or Prev
-
-comptime _MapTypeToTypeReducer[
-    FromTrait: type_of(AnyType),
-    ToTrait: type_of(AnyType),
-    Mapper: _TypeToTypeGenerator[FromTrait, ToTrait],
-    Prev: Variadic.TypesOfTrait[ToTrait],
-    From: Variadic.TypesOfTrait[FromTrait],
-    idx: Int,
-] = Variadic.concat_types[Prev, Variadic.types[T=ToTrait, Mapper[From[idx]]]]
-
 comptime _SliceReducer[
     Trait: type_of(AnyType),
     start: Int,
@@ -2012,42 +1799,6 @@ Parameters:
     Trait: The trait that the types conform to.
     start: The starting index (inclusive).
     end: The ending index (exclusive).
-    Prev: The accumulated result variadic so far.
-    From: The input variadic sequence.
-    idx: The current index being processed.
-"""
-
-comptime _TypePredicateGenerator[T: type_of(AnyType)] = __mlir_type[
-    `!lit.generator<<"Type": `,
-    T,
-    `>`,
-    Bool,
-    `>`,
-]
-"""Generator type for type predicates.
-
-A predicate takes a type and returns a boolean indicating whether to keep it.
-
-Parameters:
-    T: The trait that the types conform to.
-"""
-
-comptime _FilterReducer[
-    Trait: type_of(AnyType),
-    Predicate: _TypePredicateGenerator[Trait],
-    Prev: Variadic.TypesOfTrait[Trait],
-    From: Variadic.TypesOfTrait[Trait],
-    idx: Int,
-] = (
-    Variadic.concat_types[
-        Prev, Variadic.types[T=Trait, From[idx]]
-    ] if Predicate[From[idx]] else Prev
-)
-"""A reducer that filters types based on a predicate function.
-
-Parameters:
-    Trait: The trait that the types conform to.
-    Predicate: A generator that takes a type and returns Bool.
     Prev: The accumulated result variadic so far.
     From: The input variadic sequence.
     idx: The current index being processed.

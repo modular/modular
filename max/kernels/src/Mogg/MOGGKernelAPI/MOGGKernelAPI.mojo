@@ -53,7 +53,6 @@ from std.algorithm import min as reduce_min
 from std.algorithm import elementwise, product, sum
 from std.algorithm.reduction import _reduce_generator
 from std.builtin.simd import _pow
-from std.builtin.variadics import _ReduceVariadicAndIdxToVariadic
 from comm.allgather import allgather
 from comm.allreduce import allreduce
 
@@ -1977,37 +1976,26 @@ struct Reshape:
         )
 
 
-# Type-level transpose stride computation.  Uses _ReduceVariadicAndIdxToVariadic
-# (MLIR attribute evaluation) to permute input stride CoordLike types according
-# to a permutation IntTuple.  This avoids the interpreter heap limit that
-# prevents direct IntTuple element access in comptime-for loops.
-comptime _TransposeStrideMapper[
+# Type-level transpose stride computation.  Permute input stride CoordLike types
+# according to a permutation IntTuple.  This avoids the interpreter heap limit
+# that prevents direct IntTuple element access in comptime-for loops.
+comptime _TransposeStrideTypesTabulator[
     permutations: IntTuple,
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: TypeList[Trait=CoordLike, ...],
     idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[T=CoordLike, RuntimeInt[]] if Int(permutations[idx])
-    == UNKNOWN_VALUE else Variadic.types[
-        T=CoordLike, input_stride_types[Int(permutations[idx])]
-    ],
+]: CoordLike = RuntimeInt[] if Int(
+    permutations[idx]
+) == UNKNOWN_VALUE else input_stride_types[
+    Int(permutations[idx])
 ]
+
 
 comptime _TransposeStrideTypes[
     permutations: IntTuple,
     rank: Int,
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
-] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=Variadic.types[
-            T=CoordLike,
-            *TypeList.splat[Trait=CoordLike, rank, RuntimeInt[]](),
-        ],
-        Reducer=_TransposeStrideMapper[permutations, input_stride_types, ...],
-    ]
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+] = TypeList.tabulate[
+    rank, _TransposeStrideTypesTabulator[permutations, input_stride_types, _]
 ]()
 
 
@@ -2051,7 +2039,7 @@ struct Transpose:
                     stride_types=_TransposeStrideTypes[
                         static_permutations,
                         rank,
-                        input.static_spec.static_layout._stride_types.values,
+                        input.static_spec.static_layout._stride_types,
                     ],
                 ],
             ]()
@@ -2116,41 +2104,30 @@ struct Transpose:
         return Self.shape_impl(input, permutations)
 
 
+comptime _AsCoordLike[T: CoordLike] = T
+
 # Type-level slice stride computation: multiplies input stride types by step
-# types element-wise.  Uses _ReduceVariadicAndIdxToVariadic (MLIR attribute
-# evaluation) to avoid the interpreter heap limit.
-comptime _SliceStrideMapper[
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
-    step_types: Variadic.TypesOfTrait[CoordLike],
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
+# types element-wise.
+comptime _SliceStrideTypesTabulator[
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+    step_types: TypeList[Trait=CoordLike, ...],
     idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[
-        T=CoordLike,
-        ComptimeInt[
-            input_stride_types[idx].static_value * step_types[idx].static_value
-        ],
-    ] if input_stride_types[idx].is_static_value
-    and step_types[idx].is_static_value else Variadic.types[
-        T=CoordLike, RuntimeInt[]
-    ],
+]: CoordLike = ComptimeInt[
+    input_stride_types[idx].static_value * step_types[idx].static_value
+] if input_stride_types[
+    idx
+].is_static_value and step_types[
+    idx
+].is_static_value else _AsCoordLike[
+    RuntimeInt[]
 ]
 
 comptime _SliceStrideTypes[
     rank: Int,
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
-    step_types: Variadic.TypesOfTrait[CoordLike],
-] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=Variadic.types[
-            T=CoordLike,
-            *TypeList.splat[Trait=CoordLike, rank, RuntimeInt[]](),
-        ],
-        Reducer=_SliceStrideMapper[input_stride_types, step_types, ...],
-    ]
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+    step_types: TypeList[Trait=CoordLike, ...],
+] = TypeList.tabulate[
+    rank, _SliceStrideTypesTabulator[input_stride_types, step_types, _]
 ]()
 
 
@@ -2220,8 +2197,8 @@ struct Slice:
                     ],
                     stride_types=_SliceStrideTypes[
                         rank,
-                        input.static_spec.static_layout._stride_types.values,
-                        _IntTupleToCoordLike[DType.int, static_steps].values,
+                        input.static_spec.static_layout._stride_types,
+                        _IntTupleToCoordLike[DType.int, static_steps],
                     ],
                 ],
             ](

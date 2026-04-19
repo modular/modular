@@ -18,11 +18,7 @@ from std.os import abort
 
 from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.device_passable import DevicePassable
-from std.builtin.variadics import (
-    Variadic,
-    _MapVariadicAndIdxToType,
-    _ReduceVariadicAndIdxToVariadic,
-)
+from std.builtin.variadics import _ReduceVariadicAndIdxToVariadic
 from std.builtin.int import index as _index
 from std.collections import OptionalReg
 from std.collections._conditional import _ComptimeConditional
@@ -63,7 +59,6 @@ from .coord import (
     _CeilDiv,
     _Flattened,
     DynamicCoord,
-    StaticCoord,
 )
 
 
@@ -1405,7 +1400,7 @@ struct TileTensor[
     ](self) -> TileTensor[
         Self.dtype,
         Layout[
-            shape_types=_Slice[slices.values, Self.LayoutType._shape_types],
+            shape_types=_Slice[slices, Self.LayoutType._shape_types](),
             stride_types=Self.LayoutType._stride_types,
         ],
         Self.origin,
@@ -1476,9 +1471,7 @@ struct TileTensor[
         # Build new shape tuple with runtime types
         # Even though slice bounds are compile-time known, we use RuntimeInt
         # because we can't change ComptimeInt[4] to ComptimeInt[2] in the type system
-        comptime NewShapeTypes = _Slice[
-            slices.values, Self.LayoutType._shape_types
-        ]
+        comptime NewShapeTypes = _Slice[slices, Self.LayoutType._shape_types]()
         var new_shape = Coord[*NewShapeTypes]()
 
         comptime for i in range(Self.rank):
@@ -3087,41 +3080,21 @@ Parameters:
     idx: The current index being processed.
 """
 
-
-comptime _ToRuntimeInts[
-    element_types: Variadic.TypesOfTrait[CoordLike], dtype: DType
-] = _MapVariadicAndIdxToType[
-    To=CoordLike,
-    ParamListType=element_types,
-    Mapper=_ToRuntimeMapper[dtype, ...],
-]
-"""Convert all shape types to RuntimeInt for slicing operations.
-
-Parameters:
-    element_types: The original shape types (may include ComptimeInt).
-    dtype: The data type to use for RuntimeInt conversions.
-"""
-
-comptime _SliceMapper[
-    slices: Variadic.ValuesOfType[ContiguousSlice],
-    From: Variadic.TypesOfTrait[CoordLike],
+comptime _SliceTabulator[
+    slices: ParameterList[type=ContiguousSlice, ...],
+    element_types: TypeList[Trait=CoordLike, ...],
     idx: Int,
-] = ComptimeInt[
-    slices[idx].end.or_else(From[idx].static_value)
+]: CoordLike = ComptimeInt[
+    slices[idx].end.or_else(element_types[idx].static_value)
     - slices[idx].start.or_else(0)
 ]
 
 comptime _Slice[
-    slices: Variadic.ValuesOfType[ContiguousSlice],
+    slices: ParameterList[type=ContiguousSlice, ...],
     element_types: TypeList[Trait=CoordLike, ...],
-] = TypeList[
-    _MapVariadicAndIdxToType[
-        To=CoordLike,
-        ParamListType=element_types.values,
-        Mapper=_SliceMapper[slices=slices, ...],
-    ]
-]()
-
+] = TypeList.tabulate[
+    element_types.size, _SliceTabulator[slices, element_types, _]
+]
 
 # ===-----------------------------------------------------------------------===#
 # Select helpers — filter dimensions by All / non-All index types
@@ -3198,41 +3171,24 @@ comptime _SelectKeptStride[
 """Filters stride_types to only dimensions where the corresponding index is _All."""
 
 
-comptime _IsRowMajorMapper[
-    expected_strides: Variadic.TypesOfTrait[CoordLike],
-    element_types: Variadic.TypesOfTrait[CoordLike],
+comptime _IsRowMajorTabulator[
+    expected_strides: TypeList[Trait=CoordLike, ...],
+    element_types: TypeList[Trait=CoordLike, ...],
     idx: Int,
-] = ComptimeInt[
-    1 if element_types[idx].static_value
-    == expected_strides[idx].static_value else 0
-]
+]: Bool = expected_strides[idx].static_value == element_types[idx].static_value
 """Check if stride at index matches expected row-major stride."""
 
-
-comptime _IsRowMajorHelper[
-    shape_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
-] = TypeList[
-    _MapVariadicAndIdxToType[
-        To=CoordLike,
-        ParamListType=stride_types,
-        Mapper=_IsRowMajorMapper[
-            expected_strides=_RowMajor[*TypeList[shape_types]()].values, ...
-        ],
-    ]
-]()
-"""Returns variadic of ComptimeInt[1] if strides match, ComptimeInt[0] if not."""
-
+comptime _ReturnBool[value: Bool]: Bool = value
 
 comptime _IsRowMajor[
     shape_types: TypeList[Trait=CoordLike, ...],
     stride_types: TypeList[Trait=CoordLike, ...],
-] = Coord[
-    *_IsRowMajorHelper[shape_types.values, stride_types.values]
-].static_product == (
-    1 if shape_types.size
-    == 0 else StaticCoord[1, shape_types.size].static_product
-)
+]: Bool = ParameterList.tabulate[
+    stride_types.size,
+    _IsRowMajorTabulator[_RowMajor[*shape_types], stride_types, _],
+]().all_satisfies[
+    _ReturnBool
+]()
 """Check if stride_types match row-major strides for shape_types.
 
 Returns True if all strides match the expected row-major pattern,
