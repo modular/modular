@@ -45,7 +45,7 @@ from std.gpu.primitives.cluster import cluster_sync, elect_one_sync
 from std.gpu.sync import syncwarp
 from std.gpu.host.nvidia.tma import TMADescriptor, TensorMapSwizzle
 from std.sys import inlined_assembly
-from layout import ComptimeInt, RowMajorLayout, TileTensor
+from layout import ComptimeInt, RowMajorLayout, TileTensor, CoordLike
 from layout.tile_layout import _IntToComptimeInt
 from structured_kernels.tile_types import (
     TmaOpType,
@@ -109,13 +109,13 @@ from .grouped_tile_scheduler import (
 
 
 comptime _GroupPtrLayout[max_groups: Int] = RowMajorLayout[
-    ComptimeInt[max_groups], ComptimeInt[1]
+    *Coord[ComptimeInt[max_groups], ComptimeInt[1]].element_types
 ]
 comptime _GroupPtrTile[max_groups: Int] = TileTensor[
     DType.uint64, _GroupPtrLayout[max_groups], MutAnyOrigin
 ]
 comptime _ProblemSizesLayout[max_groups: Int] = RowMajorLayout[
-    ComptimeInt[max_groups], ComptimeInt[4]
+    *Coord[ComptimeInt[max_groups], ComptimeInt[4]].element_types
 ]
 comptime _ProblemSizesTile[max_groups: Int] = TileTensor[
     DType.int32, _ProblemSizesLayout[max_groups], MutAnyOrigin
@@ -1180,6 +1180,14 @@ struct GroupedBlockScaledMatmulKernel[
     @__llvm_arg_metadata(c_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_template, `nvvm.grid_constant`)
+    @__name(
+        StaticString(Self.config.get_kernal_name())
+        + StaticString(
+            "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
+            is not None else ""
+        ),
+        mangle=True,
+    )
     def run(
         # Template tensormaps for SMEM initialization
         a_tma_template: Self.ATmaOp,
@@ -1675,6 +1683,14 @@ struct GroupedBlockScaledMatmulKernel[
     @__llvm_arg_metadata(c_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_template, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_template, `nvvm.grid_constant`)
+    @__name(
+        StaticString(
+            Self.config.get_kernal_name()
+            + "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
+            is not None else ""
+        ),
+        mangle=True,
+    )
     def run_2sm(
         # Template tensormaps for SMEM initialization
         a_tma_template: Self.ATmaOp,

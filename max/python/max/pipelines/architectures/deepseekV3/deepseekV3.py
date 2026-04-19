@@ -43,14 +43,11 @@ from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import (
-    AttentionDispatchMetadata,
-    KVCacheParamInterface,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear
 from max.nn.moe import MoE, MoEQuantized
+from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -322,7 +319,9 @@ class DeepseekV3DecoderLayer(Module):
         nvfp4_enabled = (
             config.quant_config is not None and config.quant_config.is_nvfp4
         )
-        use_fp8_mla = config.quant_config is not None and not nvfp4_enabled
+        use_fp8_mla = (
+            config.quant_config is not None and not config.quant_config.is_fp4
+        )
 
         if (
             nvfp4_enabled
@@ -488,9 +487,7 @@ class DeepseekV3DecoderLayer(Module):
                 kv_lookup_table[i],
                 kv_max_lengths[i],
                 kv_scales=kv_scales[i] if kv_scales else None,
-                dispatch_metadata=AttentionDispatchMetadata(
-                    mla_decode_scalar_args[i]
-                )
+                attention_dispatch_metadata=mla_decode_scalar_args[i]
                 if mla_decode_scalar_args is not None
                 else None,
             )
@@ -545,11 +542,7 @@ class DeepseekV3DecoderLayer(Module):
             if self.ep_manager is not None:
                 self.ep_manager.fetch_buffers(ep_inputs)
 
-            mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
-
-        else:
-            # Single-GPU non-EP path
-            mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
+        mlp_outs = forward_moe_sharded_layers(self.mlp_shards, norm_outs)
 
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
@@ -767,11 +760,11 @@ class DeepseekV3(Module):
         # Extract dispatch metadata from KV collections (already on GPU
         # for MLA, on CPU for MHA — placed by the KV cache manager).
         mla_decode_scalar_args: list[TensorValue] | None = None
-        if kv_collections[0].dispatch_metadata is not None:
+        if kv_collections[0].attention_dispatch_metadata is not None:
             mla_decode_scalar_args = [
-                kv.dispatch_metadata.tensor
+                kv.attention_dispatch_metadata
                 for kv in kv_collections
-                if kv.dispatch_metadata is not None
+                if kv.attention_dispatch_metadata is not None
             ]
 
         subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [

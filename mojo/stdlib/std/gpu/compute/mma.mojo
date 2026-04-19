@@ -162,11 +162,11 @@ def _dtype_to_nvvm_wgmma_type[
 def _get_shape[m: Int, n: Int, k: Int]() -> __mlir_type.`!kgen.deferred`:
     return __mlir_deferred_attr[
         `#nvvm.shape<m =`,
-        +m._mlir_value,
+        +m._int_mlir_index(),
         `, n =`,
-        +n._mlir_value,
+        +n._int_mlir_index(),
         `, k =`,
-        +k._mlir_value,
+        +k._int_mlir_index(),
         `>`,
     ]
 
@@ -271,12 +271,17 @@ def ld_matrix[
 
         ```mojo
         from std.gpu.compute.mma import ld_matrix
+        from std.memory import UnsafePointer, alloc
+
+        var ptr = alloc[Scalar[DType.float16]](8)
 
         # Load 8x8 matrix of float16 values
-        var data = ld_matrix[DType.float16, 8](ptr)
+        var data = ld_matrix[simd_width=8](ptr)
 
         # Load transposed matrix
-        var transposed = ld_matrix[DType.float16, 8, transpose=True](ptr)
+        var transposed = ld_matrix[simd_width=8, transpose=True](ptr)
+
+        ptr.free()
         ```
     """
 
@@ -741,7 +746,7 @@ def wgmma_async[
                 `!kgen.param_list_splat<`,
                 dtype_to_llvm_type[c_dtype],
                 `, `,
-                width._mlir_value,
+                width._int_mlir_index(),
                 `>`,
             ],
             `)>`,
@@ -757,7 +762,7 @@ def wgmma_async[
     n: Int,
     k: Int,
     c_dtype: DType,
-    width: Int,
+    width: SIMDSize,
     /,
     *,
     a_type: DType,
@@ -885,8 +890,8 @@ def wgmma_async[
     k: Int,
     a_dtype: DType,
     c_dtype: DType,
-    frag_a_width: Int,
-    frag_c_width: Int,
+    frag_a_width: SIMDSize,
+    frag_c_width: SIMDSize,
     /,
     *,
     a_type: DType,

@@ -54,7 +54,7 @@ async def test_kv_cache_multi_gpu() -> None:
         kv_inputs = kv_manager.runtime_inputs([batch])
         for i in range(num_devices):
             kv_inputs_per_device = kv_inputs.inputs[i]
-            assert len(kv_inputs_per_device.as_list()) == 5
+            assert len(kv_inputs_per_device.flatten()) == 5
             assert kv_inputs_per_device.attention_dispatch_metadata is not None
 
 
@@ -97,7 +97,7 @@ async def test_mla_runtime_inputs_keep_dispatch_metadata_on_shard_device() -> (
             == devices[shard_idx]
         )
         assert kv_inputs_per_device.attention_dispatch_metadata.device == (
-            kv_inputs_per_device.blocks.device
+            kv_inputs_per_device.kv_blocks.device
         )
 
 

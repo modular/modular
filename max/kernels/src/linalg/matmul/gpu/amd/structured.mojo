@@ -21,9 +21,11 @@ from layout.int_tuple import product as prod
 from layout.swizzle import Swizzle
 from layout.tensor_core import num_matrix_reg, TensorCore
 from linalg.structuring import SMemTile, RegTile
+from std.atomic import Atomic, Ordering
 from std.sys._assembly import inlined_assembly
 from std.utils import IndexList, StaticTuple
-from std.gpu.intrinsics import load_acquire, store_release
+
+comptime _workgroup_atomic = Atomic[DType.int32, scope="workgroup"]
 
 
 trait Enum(TrivialRegisterPassable):
@@ -134,7 +136,7 @@ struct AMDSharedMemoryBarrier(TrivialRegisterPassable):
         var bar = UnsafePointer(to=self.__repr).address_space_cast[
             AddressSpace.SHARED
         ]()
-        return load_acquire(bar)
+        return _workgroup_atomic.load[ordering=Ordering.ACQUIRE](bar)
 
     @always_inline
     def increment[
@@ -143,7 +145,9 @@ struct AMDSharedMemoryBarrier(TrivialRegisterPassable):
         var bar = UnsafePointer(to=self.__repr).address_space_cast[
             AddressSpace.SHARED
         ]()
-        store_release(bar, load_acquire(bar) + 1)
+        _workgroup_atomic.store[ordering=Ordering.RELEASE](
+            bar, _workgroup_atomic.load[ordering=Ordering.ACQUIRE](bar) + 1
+        )
 
     @always_inline
     def wait_until_greater_or_equal_to[
@@ -409,7 +413,7 @@ struct AmdTileOperator[
                 self._a_reg_tile.tile[Self.num_m_mmas, Self.simd_width](
                     group_idx, 0
                 ).vectorize[1, Self.simd_width](),
-                UInt(group_idx),
+                group_idx,
             )
 
             Self.tensor_core.load_b[swizzle=Self.swizzle](
@@ -417,7 +421,7 @@ struct AmdTileOperator[
                 self._b_reg_tile.tile[Self.num_n_mmas, Self.simd_width](
                     group_idx, 0
                 ).vectorize[1, Self.simd_width](),
-                UInt(group_idx),
+                group_idx,
             )
 
     @always_inline

@@ -328,7 +328,7 @@ class SpeculativeDecodingPipelineBase(
             [[] for _ in range(multi_kv_params.data_parallel_degree)]
         )
         self._draft_kv_buffers = [
-            replica_input.blocks for replica_input in draft_kv_inputs.inputs
+            replica_input.kv_blocks for replica_input in draft_kv_inputs.inputs
         ]
 
     @property

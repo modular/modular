@@ -354,27 +354,21 @@ def grouped_block_scaled_matmul[
     # Copy template descriptor bytes to each block's slot
     for blk in range(num_blocks):
         for j in range(TMA_DESC_SIZE):
-            host_buf_a.unsafe_ptr()[
-                blk * TMA_DESC_SIZE + j
-            ] = a_tma_op.descriptor.data[j]
-            host_buf_b.unsafe_ptr()[
-                blk * TMA_DESC_SIZE + j
-            ] = b_tma_op.descriptor.data[j]
-            host_buf_sfa.unsafe_ptr()[
-                blk * TMA_DESC_SIZE + j
-            ] = sfa_tma_op.descriptor.data[j]
-            host_buf_sfb.unsafe_ptr()[
-                blk * TMA_DESC_SIZE + j
-            ] = sfb_tma_op.descriptor.data[j]
-            host_buf_c.unsafe_ptr()[
-                blk * TMA_DESC_SIZE + j
-            ] = c_tma_op.descriptor.data[j]
+            host_buf_a[blk * TMA_DESC_SIZE + j] = a_tma_op.descriptor.data[j]
+            host_buf_b[blk * TMA_DESC_SIZE + j] = b_tma_op.descriptor.data[j]
+            host_buf_sfa[blk * TMA_DESC_SIZE + j] = sfa_tma_op.descriptor.data[
+                j
+            ]
+            host_buf_sfb[blk * TMA_DESC_SIZE + j] = sfb_tma_op.descriptor.data[
+                j
+            ]
+            host_buf_c[blk * TMA_DESC_SIZE + j] = c_tma_op.descriptor.data[j]
 
-    ctx.enqueue_copy(device_tensormaps_a, host_buf_a.unsafe_ptr())
-    ctx.enqueue_copy(device_tensormaps_b, host_buf_b.unsafe_ptr())
-    ctx.enqueue_copy(device_tensormaps_sfa, host_buf_sfa.unsafe_ptr())
-    ctx.enqueue_copy(device_tensormaps_sfb, host_buf_sfb.unsafe_ptr())
-    ctx.enqueue_copy(device_tensormaps_c, host_buf_c.unsafe_ptr())
+    ctx.enqueue_copy(device_tensormaps_a, host_buf_a)
+    ctx.enqueue_copy(device_tensormaps_b, host_buf_b)
+    ctx.enqueue_copy(device_tensormaps_sfa, host_buf_sfa)
+    ctx.enqueue_copy(device_tensormaps_sfb, host_buf_sfb)
+    ctx.enqueue_copy(device_tensormaps_c, host_buf_c)
     ctx.synchronize()
 
     # ===== Shared Memory Size =====

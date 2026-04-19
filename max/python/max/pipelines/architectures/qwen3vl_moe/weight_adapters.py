@@ -27,6 +27,12 @@ QWEN3_VL_MODEL_MAPPING = {
     "weight_scale_inv": "weight_scale",
     "gate_up_proj_scale_inv": "gate_up_proj_scale",
     "down_proj_scale_inv": "down_proj_scale",
+    # Remap unfused Q/K/V projections into StackedLinear namespace (decoder).
+    "self_attn.q_proj.": "self_attn.qkv_proj.q.",
+    "self_attn.k_proj.": "self_attn.qkv_proj.k.",
+    "self_attn.v_proj.": "self_attn.qkv_proj.v.",
+    # Remap stacked QKV in vision attention to StackedLinear namespace.
+    "attn.qkv.": "attn.qkv_proj.",
 }
 
 
@@ -40,6 +46,7 @@ def convert_qwen3vl_model_state_dict(
     naming without this prefix.
 
     This adapter:
+
     1. Filters to only include language model weights (those with
        `language_model.` prefix).
     2. Strips the `language_model.model.` prefix to match Qwen3VLLanguageModel

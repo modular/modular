@@ -419,5 +419,22 @@ def test_unicode_escape_byte_layout() raises:
     assert_equal(Int(bi[7]), 0x63)  # 'c' at end
 
 
+struct TakesStringLiteral[a: StringLiteral](TrivialRegisterPassable):
+    def __init__(out self):
+        pass
+
+
+def concat[
+    xa: StringLiteral
+](x: TakesStringLiteral[xa]) -> TakesStringLiteral[xa + xa]:
+    return {}
+
+
+def test_concat_with_string_literal() raises:
+    var a = TakesStringLiteral["hello"]()
+    # This requires folding of the string append to know that "hello"+"hello" = "hellohello"
+    _: TakesStringLiteral["hellohello"] = concat(a)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
