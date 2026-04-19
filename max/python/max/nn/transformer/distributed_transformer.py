@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from itertools import islice
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
 from max.dtype import DType
 from max.graph import (
@@ -32,12 +32,7 @@ from max.graph import (
 from max.nn.comm.allreduce import Allreduce
 
 from ..embedding import VocabParallelEmbedding
-from ..kv_cache import (
-    AttentionDispatchMetadata,
-    KVCacheParams,
-    PagedCacheValues,
-    attention_dispatch_metadata_list,
-)
+from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import LayerList, Module, Shardable
 from ..linear import ColumnParallelLinear
 from ..rotary_embedding import RotaryEmbedding
@@ -270,7 +265,7 @@ class DistributedTransformerBlock(Module):
                 cache_lengths=cache_lengths,
                 lookup_table=lookup_table,
                 max_lengths=max_lengths,
-                dispatch_metadata=AttentionDispatchMetadata(dispatch_metadata),
+                attention_dispatch_metadata=dispatch_metadata,
             )
             for kv_block, cache_lengths, lookup_table, max_lengths, dispatch_metadata in zip(
                 kv_blocks,
@@ -363,10 +358,12 @@ class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
             input_row_offsets.to(self.devices[0]), signal_buffers
         )
 
-        dispatch_metadata_tensors = [
-            cast(TensorValue, metadata.tensor)
-            for metadata in attention_dispatch_metadata_list(kv_collections)
-        ]
+        dispatch_metadata_tensors: list[TensorValue] = []
+        for kv_collection in kv_collections:
+            assert kv_collection.attention_dispatch_metadata is not None
+            dispatch_metadata_tensors.append(
+                kv_collection.attention_dispatch_metadata
+            )
 
         kv_blocks = [
             kv_collection.kv_blocks for kv_collection in kv_collections
@@ -394,10 +391,22 @@ class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
                 TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
                 [hidden.type for hidden in h],
                 [signal_buffer.type for signal_buffer in signal_buffers],
-                [kv_collection[0].type for kv_collection in kv_collections],
-                [kv_collection[1].type for kv_collection in kv_collections],
-                [kv_collection[2].type for kv_collection in kv_collections],
-                [kv_collection[3].type for kv_collection in kv_collections],
+                [
+                    kv_collection.kv_blocks.type
+                    for kv_collection in kv_collections
+                ],
+                [
+                    kv_collection.cache_lengths.type
+                    for kv_collection in kv_collections
+                ],
+                [
+                    kv_collection.lookup_table.type
+                    for kv_collection in kv_collections
+                ],
+                [
+                    kv_collection.max_lengths.type
+                    for kv_collection in kv_collections
+                ],
                 [metadata.type for metadata in dispatch_metadata_tensors],
                 [freq.type for freq in freqs_cis],
                 [offset.type for offset in input_row_offsets_per_device],

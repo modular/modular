@@ -85,7 +85,7 @@ struct MoveOnlyList[T: Movable & ImplicitlyDestructible]:
     var _capacity: Int
 
     def __init__(out self):
-        self._data = UnsafePointer[Self.T, MutExternalOrigin](_unsafe_null=())
+        self._data = UnsafePointer[Self.T, MutExternalOrigin].unsafe_dangling()
         self._len = 0
         self._capacity = 0
 
@@ -106,7 +106,8 @@ struct MoveOnlyList[T: Movable & ImplicitlyDestructible]:
                 (new_data + i).init_pointee_move(
                     (self._data + i).take_pointee()
                 )
-            self._data.free()
+            if self._capacity > 0:
+                self._data.free()
             self._data = new_data
             self._capacity = new_cap
         (self._data + self._len).init_pointee_move(value^)

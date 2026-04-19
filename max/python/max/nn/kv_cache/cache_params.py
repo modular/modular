@@ -29,13 +29,7 @@ from max.graph import BufferType, DeviceRef, TensorType
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .data_parallelism_utils import split_into_groups
-from .input_types import (
-    AttentionDispatchMetadata,
-    FlattenableInputSymbols,
-    MultiKVCacheInputSymbols,
-    PagedCacheInputSymbols,
-    PagedCacheInputSymbolsByReplica,
-)
+from .input_types import KVCacheInputs, KVCacheInputsPerDevice
 
 logger = logging.getLogger("max.pipelines")
 
@@ -171,7 +165,9 @@ class KVCacheParamInterface(Protocol):
         """Number of bytes per cache block."""
         ...
 
-    def get_symbolic_inputs(self, prefix: str = "") -> FlattenableInputSymbols:
+    def get_symbolic_inputs(
+        self, prefix: str = ""
+    ) -> KVCacheInputs[TensorType, BufferType]:
         """Returns the symbolic inputs for the KV cache."""
         ...
 
@@ -505,7 +501,7 @@ class KVCacheParams(KVCacheParamInterface):
 
     def _get_symbolic_inputs_for_replica(
         self, devices: Sequence[DeviceRef], replica_idx: int, prefix: str = ""
-    ) -> list[PagedCacheInputSymbols]:
+    ) -> list[KVCacheInputsPerDevice[TensorType, BufferType]]:
         """Computes the symbolic inputs for a single replica.
 
         Returns:
@@ -517,7 +513,7 @@ class KVCacheParams(KVCacheParamInterface):
         if self.quantized_kv_cache and self.kvcache_quant_config is not None:
             kv_cache_scale_dtype = self.kvcache_quant_config.scale_dtype
         return [
-            PagedCacheInputSymbols(
+            KVCacheInputsPerDevice(
                 kv_blocks=BufferType(
                     self.dtype,
                     shape=[
@@ -551,14 +547,12 @@ class KVCacheParams(KVCacheParamInterface):
                 )
                 if self.quantized_kv_cache
                 else None,
-                dispatch_metadata=AttentionDispatchMetadata(
-                    TensorType(
-                        DType.int64,
-                        shape=[3] if self.is_mla else [4],
-                        # MLA kernels consume 3-value dispatch metadata on GPU;
-                        # MHA reads 4-value metadata on CPU.
-                        device=device if self.is_mla else DeviceRef.CPU(),
-                    )
+                attention_dispatch_metadata=TensorType(
+                    DType.int64,
+                    shape=[3] if self.is_mla else [4],
+                    # MLA kernels consume 3-value dispatch metadata on GPU;
+                    # MHA reads 4-value metadata on CPU.
+                    device=device if self.is_mla else DeviceRef.CPU(),
                 ),
             )
             for device in devices
@@ -566,10 +560,10 @@ class KVCacheParams(KVCacheParamInterface):
 
     def get_symbolic_inputs(
         self, prefix: str = ""
-    ) -> PagedCacheInputSymbolsByReplica:
+    ) -> KVCacheInputs[TensorType, BufferType]:
         """Computes the symbolic inputs for the KV cache.
 
-        This method returns a list of PagedCacheInputSymbols for each replica.
+        This method returns a list of KVCacheInputs for each replica.
         This is used when constructing the model graph.
 
         Returns:
@@ -578,7 +572,7 @@ class KVCacheParams(KVCacheParamInterface):
         devices_per_replica = split_into_groups(
             self.devices, self.data_parallel_degree
         )
-        input_symbols: list[PagedCacheInputSymbols] = []
+        input_symbols: list[KVCacheInputsPerDevice[TensorType, BufferType]] = []
         for replica_idx, devices in enumerate(devices_per_replica):
             symbols = self._get_symbolic_inputs_for_replica(
                 devices,
@@ -586,7 +580,7 @@ class KVCacheParams(KVCacheParamInterface):
                 prefix,
             )
             input_symbols.extend(symbols)
-        return PagedCacheInputSymbolsByReplica(values=input_symbols)
+        return KVCacheInputs(inputs=input_symbols)
 
     def allocate_buffers(self, total_num_pages: int) -> list[KVCacheBuffer]:
         """Allocates the buffers for the KV cache."""
@@ -719,14 +713,14 @@ class MultiKVCacheParams(KVCacheParamInterface):
         """
         return sum(p.bytes_per_block for p in self.params)
 
-    def get_symbolic_inputs(self, prefix: str = "") -> MultiKVCacheInputSymbols:
+    def get_symbolic_inputs(
+        self, prefix: str = ""
+    ) -> KVCacheInputs[TensorType, BufferType]:
         """Returns the symbolic inputs for the KV cache."""
-        return MultiKVCacheInputSymbols(
-            [
-                p.get_symbolic_inputs(f"{prefix}cache{i}_")
-                for i, p in enumerate(self.params)
-            ]
-        )
+        inputs: list[KVCacheInputsPerDevice[TensorType, BufferType]] = []
+        for i, p in enumerate(self.params):
+            inputs.extend(p.get_symbolic_inputs(f"{prefix}cache{i}_").inputs)
+        return KVCacheInputs(inputs=inputs)
 
 
 def compute_num_device_blocks(

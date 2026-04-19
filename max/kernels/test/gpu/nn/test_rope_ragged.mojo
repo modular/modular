@@ -245,27 +245,37 @@ def _test_rope_ragged_gpu_impl[
                 comptime if rope_dim == head_dim:
                     # Full RoPE case - compare entire output against golden
                     assert_almost_equal(
-                        q_out_host_buffer.unsafe_ptr() + base_offset,
-                        expected_q_out_host_buffer.unsafe_ptr() + base_offset,
-                        head_dim,
+                        q_out_host_buffer.as_span()[
+                            base_offset : base_offset + head_dim
+                        ],
+                        expected_q_out_host_buffer.as_span()[
+                            base_offset : base_offset + head_dim
+                        ],
                         atol=1e-4,
                     )
                 else:
                     # Partial RoPE case - use same logic as original test
                     # Verify unroped region: Should remain unchanged from input
+                    var unroped_len = head_dim - rope_dim
                     assert_almost_equal(
-                        q_out_host_buffer.unsafe_ptr() + base_offset,
-                        q_host_buffer.unsafe_ptr() + base_offset,
-                        head_dim - rope_dim,
+                        q_out_host_buffer.as_span()[
+                            base_offset : base_offset + unroped_len
+                        ],
+                        q_host_buffer.as_span()[
+                            base_offset : base_offset + unroped_len
+                        ],
                         atol=1e-4,
                     )
 
                     # Verify roped region: Should match expected output
-                    roped_offset = base_offset + (head_dim - rope_dim)
+                    var roped_offset = base_offset + (head_dim - rope_dim)
                     assert_almost_equal(
-                        q_out_host_buffer.unsafe_ptr() + roped_offset,
-                        expected_q_out_host_buffer.unsafe_ptr() + roped_offset,
-                        rope_dim,
+                        q_out_host_buffer.as_span()[
+                            roped_offset : roped_offset + rope_dim
+                        ],
+                        expected_q_out_host_buffer.as_span()[
+                            roped_offset : roped_offset + rope_dim
+                        ],
                         atol=1e-4,
                     )
 

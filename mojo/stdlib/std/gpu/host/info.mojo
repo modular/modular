@@ -387,7 +387,7 @@ Add a new function that returns the MLIR target configuration.
 
 Example for NVIDIA GPU:
 
-```mojo
+```text
 def _get_your_gpu_target() -> _TargetType:
     \"\"\"Creates an MLIR target configuration for Your GPU.
 
@@ -413,7 +413,7 @@ Place this function with other GPU target functions in this file (search for
 
 Define the GPU characteristics using the appropriate architecture family:
 
-```mojo
+```text
 comptime YourGPU = GPUInfo.from_family(
     family=NvidiaHopperFamily,  # Choose the appropriate family
     name="Your GPU",
@@ -433,7 +433,7 @@ Place this alias with other GPU aliases in this file.
 Add your architecture to the constraint list in the `_get_info_from_target`
 function:
 
-```mojo
+```text
 comptime assert StaticString(target_arch)
     in (
         # NVIDIA
@@ -448,7 +448,7 @@ comptime assert StaticString(target_arch)
 
 Then add the mapping in the `comptime` block:
 
-```mojo
+```text
 comptime if target_arch == "52":
     return materialize[GTX970]()
 elif target_arch == "90a":  # Add your mapping here
@@ -466,7 +466,7 @@ changed to support multiple GPUs per target_arch in the future.
 
 Add the target mapping in the `target()` method of the `GPUInfo` struct:
 
-```mojo
+```text
 def target(self) -> _TargetType:
     \"\"\"Gets the MLIR target configuration for this GPU.
 

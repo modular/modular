@@ -80,7 +80,7 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
             self.return_n_logits,
             self.data_parallel_splits,
             *self.signal_buffers,
-            *(self.kv_cache_inputs or ()),
+            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
             *self.batch_context_lengths,
             *self.ep_inputs,
         )
@@ -603,8 +603,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 ]
 
                 # Unmarshal the KV cache arguments.
-                fetch_types = self.kv_params.get_symbolic_inputs()[0]
-                len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
+                fetch_types = (
+                    self.kv_params.get_symbolic_inputs().inputs[0].flatten()
+                )
+                len_of_kv_inputs = len(fetch_types) * len(self.devices)
                 kv_caches_per_dev = self._unflatten_kv_inputs(
                     [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
                 )
@@ -690,7 +692,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV3Inputs:
         dp = self.pipeline_config.model.data_parallel_degree

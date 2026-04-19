@@ -39,7 +39,7 @@ indicate whether the argument should be formatted using `repr()` or `String()`,
 respectively:
 
 ```mojo
-var s = "{!r}".format(myComplicatedObject)
+var s = "{!r}".format("test")
 ```
 
 Note that the following features from Python's `str.format()` are
@@ -367,7 +367,7 @@ struct _FormatUtils:
         var raised_manual_index = Optional[Int](None)
         var raised_automatic_index = Optional[Int](None)
         var raised_kwarg_field = Optional[StringSlice[FormatOrigin]](None)
-        comptime n_args = TypeList[*Ts].size
+        comptime n_args = Ts.size
         comptime `}` = UInt8(ord("}"))
         comptime `{` = UInt8(ord("{"))
         comptime l_err = "there is a single curly { left unclosed or unescaped"
@@ -639,7 +639,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         # alias a_value = UInt8(ord("a")) # TODO
 
         def _format(idx: Int) unified {read self, read args, mut writer}:
-            comptime for i in range(TypeList[*Ts].size):
+            comptime for i in range(Ts.size):
                 if i == idx:
                     var flag = self.conversion_flag
                     var empty = flag == 0

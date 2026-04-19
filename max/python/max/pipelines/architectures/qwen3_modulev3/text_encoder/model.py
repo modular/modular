@@ -27,9 +27,6 @@ from max.driver import Buffer, Device
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
-from max.pipelines.architectures.llama3.weight_adapters import (
-    LLAMA_SAFETENSOR_MAPPING as QWEN_SAFETENSOR_MAP,
-)
 from max.pipelines.dataprocessing.causal_attention_mask import (
     causal_attention_mask_with_token_mask,
 )
@@ -38,6 +35,7 @@ from max.pipelines.lib.interfaces.component_model import ComponentModel
 
 from .model_config import Qwen3TextEncoderConfig
 from .qwen3 import Qwen3TextEncoderTransformer
+from .weight_adapters import QWEN3_TEXT_ENCODER_SAFETENSOR_MAP
 
 
 class Qwen3TextEncoderModel(ComponentModel):
@@ -122,11 +120,13 @@ class Qwen3TextEncoderModel(ComponentModel):
         state_dict = {}
         for key, value in self.weights.items():
             adapted_key = key
-            for before, after in QWEN_SAFETENSOR_MAP.items():
+            for before, after in QWEN3_TEXT_ENCODER_SAFETENSOR_MAP.items():
                 adapted_key = adapted_key.replace(before, after)
             # The text-encoder module uses local names without language_model prefix.
             adapted_key = adapted_key.removeprefix("language_model.")
-
+            # Skip checkpoint keys the encoder-only module doesn't use.
+            if adapted_key in ("norm.weight", "lm_head.weight"):
+                continue
             state_dict[adapted_key] = value.data()
         return state_dict
 

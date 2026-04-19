@@ -763,6 +763,68 @@ def main() raises:
             ctx,
         )
 
+        # ============================================================
+        # 7. cp.async SFB path: group_size < 128 (SF_MN_GROUP_SIZE)
+        #    When tokens_per_expert < 128 for an expert, the SfbTMALoad
+        #    warp uses cp.async instead of TMA to avoid wasting BW on
+        #    OOB zero-fill in full 128-row SF atoms.
+        # ============================================================
+        print("\n=== cp.async SFB: small group_size < 128 ===")
+
+        # 7a: All experts have very small groups (cp.async for all)
+        print("  7a: N=4096, K=7168, all tiny groups")
+        _test_dispatch[6, 4096, 7168](
+            4,
+            [1, 2, 3, 4],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
+        # 7b: Mixed cp.async and TMA within one launch
+        print("  7b: N=4096, K=7168, mixed cp.async(4,1) + TMA(256,200)")
+        _test_dispatch[6, 4096, 7168](
+            4,
+            [4, 256, 1, 200],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
+        # 7c: Boundary: gs=127 (cp.async) and gs=128 (TMA)
+        print("  7c: N=4096, K=7168, boundary 127/128")
+        _test_dispatch[6, 4096, 7168](
+            4,
+            [127, 128, 64, 256],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
+        # 7d: Same tests on down-proj shape
+        print("  7d: N=7168, K=2048, mixed small/large")
+        _test_dispatch[6, 7168, 2048](
+            4,
+            [8, 512, 16, 300],
+            [0, 3, 2, 4],
+            ctx,
+        )
+
+        # 7e: Single expert, single token
+        print("  7e: N=4096, K=7168, 1 expert, 1 token")
+        _test_dispatch[6, 4096, 7168](
+            1,
+            [1],
+            [3],
+            ctx,
+        )
+
+        # 7f: Many experts, all small (Kimi K2.5 decode-like)
+        print("  7f: N=4096, K=7168, 8 experts, 1 tok each")
+        _test_dispatch[8, 4096, 7168](
+            8,
+            [1, 1, 1, 1, 1, 1, 1, 1],
+            [0, 1, 2, 3, 4, 5, 6, 7],
+            ctx,
+        )
+
         print("\n========================================")
         print("ALL DISPATCH TESTS PASSED!")
         print("========================================")
