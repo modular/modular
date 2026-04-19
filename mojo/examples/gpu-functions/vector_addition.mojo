@@ -16,12 +16,12 @@ from std.sys import has_accelerator
 
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor
+from layout import TileTensor, row_major
 
 comptime float_dtype = DType.float32
 comptime VECTOR_WIDTH = 10
 comptime BLOCK_SIZE = 5
-comptime layout = Layout.row_major(VECTOR_WIDTH)
+comptime layout = row_major[VECTOR_WIDTH]()
 
 
 def main() raises:
@@ -40,9 +40,9 @@ def main() raises:
     rhs_buffer.enqueue_fill(2.5)
 
     # Wrap the device buffers in tensors
-    var lhs_tensor = LayoutTensor[float_dtype, layout](lhs_buffer)
-    var rhs_tensor = LayoutTensor[float_dtype, layout](rhs_buffer)
-    var out_tensor = LayoutTensor[float_dtype, layout](out_buffer)
+    var lhs_tensor = TileTensor(lhs_buffer, layout)
+    var rhs_tensor = TileTensor(rhs_buffer, layout)
+    var out_tensor = TileTensor(out_buffer, layout)
 
     # Calculate the number of blocks needed to cover the vector
     var grid_dim = ceildiv(VECTOR_WIDTH, BLOCK_SIZE)
@@ -59,14 +59,14 @@ def main() raises:
 
     # Map to host so that values can be printed from the CPU
     with out_buffer.map_to_host() as host_buffer:
-        var host_tensor = LayoutTensor[float_dtype, layout](host_buffer)
+        var host_tensor = TileTensor(host_buffer, layout)
         print("Resulting vector:", host_tensor)
 
 
 def vector_addition(
-    lhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
-    rhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
-    out_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    lhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+    rhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+    out_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
     size: Int,
 ):
     """The calculation to perform across the vector on the GPU."""

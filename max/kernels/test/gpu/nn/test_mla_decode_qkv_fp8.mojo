@@ -219,8 +219,8 @@ def test[
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[v_depth]())
         ),
     )
-    var null_valid_length_tt = TileTensor(
-        UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
+    var null_valid_length_tt = TileTensor[DType.uint32, _, MutAnyOrigin](
+        None,
         row_major(Idx(0)),
     )
 
@@ -267,9 +267,11 @@ def test[
 
     # Valid length (empty -- not using ragged) for mha_gpu_naive
     var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        DType.uint32,
+        Layout.row_major(UNKNOWN_VALUE),
+        MutAnyOrigin,
     ](
-        UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
+        None,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 
@@ -554,8 +556,8 @@ def bench[
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[v_depth]())
         ),
     )
-    var null_valid_length_tt = TileTensor(
-        UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
+    var null_valid_length_tt = TileTensor[DType.uint32, _, MutAnyOrigin](
+        None,
         row_major(Idx(0)),
     )
 

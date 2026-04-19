@@ -88,7 +88,7 @@ struct MMA_Vec(TiledOp):
         for var m in range(M):
             for var n in range(N):
 
-                def dot[width: Int](k: Int) unified {mut}:
+                def dot[width: Int](k: Int) unified {read}:
                     dst.store[width](
                         m,
                         n,

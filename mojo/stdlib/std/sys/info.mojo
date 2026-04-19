@@ -45,6 +45,10 @@ struct CompilationTarget[value: _TargetType = _current_target()](
         value: The target architecture to query. Defaults to the current target.
     """
 
+    def __init__(out self):
+        """Initialize a `CompilationTarget` with the default target."""
+        pass
+
     @always_inline("nodebug")
     @staticmethod
     def unsupported_target_error[
@@ -385,7 +389,9 @@ def platform_map[
     Example:
 
     ```mojo
-    comptime EDEADLK = platform_alias["EDEADLK", linux=35, macos=11]()
+    from std.sys.info import platform_map
+
+    comptime EDEADLK = platform_map["EDEADLK", linux=35, macos=11]()
     ```
     """
 
@@ -1128,7 +1134,7 @@ def _macos_version() raises -> Tuple[Int, Int, Int]:
         "kern.osproductversion".as_c_string_slice().unsafe_ptr(),
         osver.unsafe_ptr(),
         Pointer(to=buf_len),
-        OpaquePointer[origin=MutAnyOrigin](_unsafe_null=()),
+        Optional[UnsafePointer[NoneType, MutAnyOrigin]](),
         Int(0),
     )
     if err:

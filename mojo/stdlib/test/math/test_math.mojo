@@ -211,10 +211,10 @@ def _test_isclose_numerics[*, symm: Bool]() raises:
         none_close += [(v, v + atol + rtol)]
     else:
         none_close += [
-            (T(0), edge_val[symm](0, 2 * atol, 0)),
-            (T(1), edge_val[symm](1, 2 * atol, rtol)),
-            (T(1), edge_val[symm](1, atol, 2 * rtol)),
-            (v, edge_val[symm](v, atol, 2 * rtol)),
+            (T(0), edge_val[symm](0, 2.0 * atol, 0)),
+            (T(1), edge_val[symm](1, 2.0 * atol, rtol)),
+            (T(1), edge_val[symm](1, atol, 2.0 * rtol)),
+            (v, edge_val[symm](v, atol, 2.0 * rtol)),
             (v, edge_val[symm](v, 1.1 * atol, 1.1 * rtol)),
         ]
 
@@ -600,7 +600,7 @@ def test_log1p_accuracy() raises:
         )
 
     # Moderate values.
-    comptime n = 1_000
+    comptime n = 1_000.0
     for i in range(n):
         var val = Float64(i) / (n / 10.5) - 0.5
         assert_almost_equal(

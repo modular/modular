@@ -77,7 +77,7 @@ def avg_pool2d_op[
     pad_h_before: Int,
     pad_w_before: Int,
     count_boundary_flag: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Compute 2D average pooling over NHWC input.
 
@@ -160,7 +160,7 @@ def avg_pool2d_op[
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx)
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )
@@ -194,7 +194,7 @@ struct _AvgPool2dBody(Dispatchable):
     var pad_h_before: Int
     var pad_w_before: Int
     var count_boundary_flag: Int
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def call[t: DType](self) raises -> None:
         comptime if t.is_numeric():

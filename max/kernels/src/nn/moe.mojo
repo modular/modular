@@ -17,7 +17,7 @@ from std.math import align_up, ceildiv
 from std.math.uutils import umod
 from std.memory import stack_allocation
 
-from std.os.atomic import Atomic
+from std.atomic import Atomic
 from std.sys.info import simd_width_of
 
 import std.gpu.primitives.warp as warp
@@ -461,12 +461,12 @@ def _copy_tokens_smem_to_gmem[
                     g_offset_copy + UInt32(smem_idx) + UInt32(i)
                 )
 
-    var start_idx = UInt((smem_writes // UInt64(width)) * UInt64(width))
+    var start_idx: UInt64 = (smem_writes // UInt64(width)) * UInt64(width)
 
     g_offset_copy += UInt32(start_idx)
 
-    if UInt64(thread_idx.x) < smem_writes - UInt64(start_idx):
-        var smem_val = smem[0, start_idx + UInt(thread_idx.x)]
+    if UInt64(thread_idx.x) < smem_writes - start_idx:
+        var smem_val = smem[0, start_idx + UInt64(thread_idx.x)]
         token_expert_order.store(
             Coord(Idx(Int(g_offset_copy + UInt32(thread_idx.x)))),
             smem_val,
@@ -571,6 +571,9 @@ def _copy_tokens_to_gmem[
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(
+    t"moe_create_indices_bucket_group_{input_type}_t{num_threads}", mangle=True
 )
 def moe_create_indices_bucket_group_kernel[
     input_type: DType,
@@ -851,6 +854,10 @@ def _warp_bitonic_sort[
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(
+    t"group_limited_router_{scores_type}_{bias_type}_t{num_threads}",
+    mangle=True,
 )
 def group_limited_router_kernel[
     scores_type: DType,
@@ -1136,6 +1143,9 @@ def router_group_limited[
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(
+    t"single_group_router_{scores_type}_{bias_type}_t{num_threads}", mangle=True
 )
 def single_group_router_kernel[
     scores_type: DType,

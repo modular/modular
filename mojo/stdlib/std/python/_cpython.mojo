@@ -19,7 +19,7 @@ Documentation for these functions can be found online at:
 
 from std.collections import InlineArray
 from std.memory import OpaquePointer, alloc
-from std.memory._nonnull import NonNullUnsafePointer, address_of, bitcast
+from std.memory.unsafe_pointer import unsafe_cast
 from std.os import abort, getenv, setenv
 from std.os.path import dirname
 from std.pathlib import Path
@@ -171,7 +171,7 @@ struct PyObjectPtr(
     def __init__[
         T: AnyType, //
     ](out self, *, upcast_from: _CPointer[T, MutAnyOrigin]):
-        self._unsized_obj_ptr = bitcast[PyObject](upcast_from)
+        self._unsized_obj_ptr = unsafe_cast[Type=PyObject](upcast_from)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -199,7 +199,10 @@ struct PyObjectPtr(
 
     @always_inline
     def __int__(self) -> Int:
-        return address_of(self._unsized_obj_ptr)
+        if self._unsized_obj_ptr:
+            return Int(self._unsized_obj_ptr.unsafe_value())
+        else:
+            return 0
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -214,7 +217,7 @@ struct PyObjectPtr(
         Returns:
             A pointer to the underlying object as type `T`.
         """
-        return bitcast[T](self._unsized_obj_ptr)
+        return unsafe_cast[Type=T](self._unsized_obj_ptr)
 
     def write_to(self, mut writer: Some[Writer]):
         """Formats to the provided Writer.
@@ -469,7 +472,7 @@ struct PyType_Slot(ImplicitlyCopyable, RegisterPassable):
     def tp_methods(methods: _CPointer[PyMethodDef, MutAnyOrigin]) -> Self:
         return PyType_Slot(
             Py_tp_methods,
-            bitcast[NoneType](methods),
+            unsafe_cast[Type=NoneType](methods),
         )
 
     @staticmethod
@@ -484,7 +487,7 @@ struct PyType_Slot(ImplicitlyCopyable, RegisterPassable):
 
     @staticmethod
     def null() -> Self:
-        return PyType_Slot(0, OpaquePointer[MutAnyOrigin](_unsafe_null=()))
+        return PyType_Slot(0, None)
 
 
 @fieldwise_init
@@ -1214,10 +1217,13 @@ struct GILAcquired(Movable):
 
     Example:
         ```mojo
+        from std.python import Python
+        from std.python._cpython import GILAcquired
+
         var python = Python()
-        with GILAcquired(Python(python)):
+        with GILAcquired(python):
             # Python objects can be safely accessed here
-            var py_obj = python.cpython().Py_None()
+            pass
         # GIL is automatically released here
         ```
     """
@@ -1256,11 +1262,16 @@ struct GILReleased(Movable):
 
     Example:
         ```mojo
+        from std.python import Python
+        from std.python._cpython import GILReleased
+
         var python = Python()
         with GILReleased(python):
             # GIL is released here, other threads can run
             # Perform CPU-intensive work without Python object access
-            perform_heavy_computation()
+            var total = 0
+            for i in range(1000):
+                total += i
         # Thread state is automatically restored here
         ```
     """
@@ -1730,17 +1741,9 @@ struct CPython(Defaultable, Movable):
 
         if not maybe_ptr:
             abort(t"error: symbol `{global_name}` not found in CPython library")
-
-        var ptr = maybe_ptr.value()
-
-        if not ptr._is_not_null():
-            abort(
-                "error: pointer to CPython `"
-                + String(global_name)
-                + "` global is null"
-            )
-
-        return ptr[]
+        else:
+            # SAFETY: maybe_ptr is checked above
+            return maybe_ptr.unsafe_value()[]
 
     # ===-------------------------------------------------------------------===#
     # Python/C API

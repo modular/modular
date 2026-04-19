@@ -115,7 +115,7 @@ _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "Gemma4ForConditionalGeneration",
     "UnifiedEagleLlama3ForCausalLM",
     "UnifiedMTPDeepseekV3ForCausalLM",
-    "UnifiedEagleKimik25ForCausalLM",
+    "Eagle3DeepseekV2ForCausalLM",
 )
 
 _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
@@ -128,6 +128,7 @@ _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
     "Gemma4ForConditionalGeneration",
     "UnifiedEagleLlama3ForCausalLM",
     "UnifiedMTPDeepseekV3ForCausalLM",
+    "Eagle3DeepseekV2ForCausalLM",
 )
 
 
@@ -876,6 +877,8 @@ class PipelineConfig(ConfigFileModel):
                 and max_batch_size is not None
                 and accelerator_api() == "cuda"
                 and self._is_eligible_for_overlap_serve_optimizations()
+                # Device graph capture is not supported for prefill-only workers.
+                and self.runtime.pipeline_role != "prefill_only"
                 # TODO: Support device graph capture for num_speculative_tokens > 1
                 and (
                     self.speculative is None
@@ -946,8 +949,7 @@ class PipelineConfig(ConfigFileModel):
 
     def _is_eligible_for_overlap_serve_optimizations(self) -> bool:
         return (
-            self.runtime.pipeline_role == "prefill_and_decode"
-            and not self.sampling.enable_structured_output
+            not self.sampling.enable_structured_output
             and not self.sampling.enable_variable_logits
             and not self.lora
             and self.model.device_specs[0].device_type != "cpu"
@@ -1090,15 +1092,6 @@ class PipelineConfig(ConfigFileModel):
             raise ValueError(
                 "structured outputs not currently supported with speculative decoding enabled"
             )
-
-        if self.model.kv_cache.enable_prefix_caching and not self.runtime.force:
-            logging.warning(
-                "Prefix caching is not supported with speculative decoding. "
-                "Overriding user setting to False. Pass --force to bypass this "
-                "validation, though this may result in unexpected behavior or errors."
-            )
-            self.model.kv_cache.enable_prefix_caching = False
-            self.draft_model.kv_cache.enable_prefix_caching = False
 
     def _validate_and_resolve_architecture(
         self, model_config: MAXModelConfig

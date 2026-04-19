@@ -57,6 +57,7 @@ from .sync import (
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
+@__name(t"scatter_pull_{dtype}", mangle=True)
 def scatter_pull_kernel[
     dtype: DType,
     BLOCK_SIZE: Int,
@@ -161,7 +162,7 @@ def scatter[
     # Extract raw pointers and sizes from TileTensors for the kernel.
     var input_ptrs = InlineArray[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], dp_size
-    ](fill={_unsafe_null = ()})
+    ](uninitialized=True)
     var chunk_num_elems = InlineArray[Int, dp_size](fill=0)
     for i in range(dp_size):
         input_ptrs[i] = rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
