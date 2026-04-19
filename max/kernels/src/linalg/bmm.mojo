@@ -60,12 +60,12 @@ from .matmul.cpu.apple_accelerate import (
 from .matmul.cpu.impl import _submatmul_sequential_sync
 from .matmul.gpu import _matmul_gpu
 from .matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
-from .matmul.gpu.amd import gemm_kernel_amd
+from .matmul.gpu.amd import AMDMatmul
 from .matmul.gpu.sm100.blockwise_fp8 import (
     matmul_sm100_blockwise_scaled_fp8_1d2d_kernel,
 )
 from .matmul.gpu.sm100_structured.default.dispatch import (
-    batched_matmul_dispatch_sm100_bf16,
+    dispatch_sm100_batched_matmul,
 )
 from .utils import GemmShape
 from .utils import elementwise_epilogue_type as matmul_elementwise_epilogue_type
@@ -113,32 +113,37 @@ def _get_batch_dims[
 
 @always_inline
 def _slice_types[
-    stride_types: Variadic.TypesOfTrait[CoordLike], n_dims: Int
+    stride_types: TypeList[Trait=CoordLike, ...], n_dims: Int
 ]() -> Variadic.TypesOfTrait[CoordLike]:
     """
     Slice the last n_dims dimensions of the Coord element types.
     """
-    comptime rank = TypeList[*stride_types].size
-    comptime assert 0 <= rank - n_dims <= TypeList[*stride_types].size
-    comptime assert rank <= TypeList[*stride_types].size
+    comptime rank = stride_types.size
+    comptime assert 0 <= rank - n_dims <= stride_types.size
+    comptime assert rank <= stride_types.size
 
-    return Variadic.slice_types[stride_types, rank - n_dims]
+    return Variadic.slice_types[stride_types.values, rank - n_dims]().values
+
+
+@always_inline
+def _slice_types_tl[
+    stride_types: TypeList[Trait=CoordLike, ...], n_dims: Int
+]() -> TypeList[Trait=CoordLike, _slice_types[stride_types, n_dims]()]:
+    return {}
 
 
 @always_inline
 def _shape_types_to_3d[
-    shape_types: Variadic.TypesOfTrait[CoordLike]
+    shape_types: TypeList[Trait=CoordLike, ...]
 ]() -> Variadic.TypesOfTrait[CoordLike]:
     """
     Reshape the shape types to 3D. The last two dimensions stay the same. The
     first dimension will be the product of the batch dimensions if all the batch
     dimensions are static, otherwise it's a runtime dimension.
     """
-    comptime rank = TypeList[*shape_types].size
+    comptime rank = shape_types.size
     comptime last_two_dims = _slice_types[shape_types, 2]()
-    comptime batch_dims = _slice_types[
-        Variadic.reverse[*shape_types], rank - 2
-    ]()
+    comptime batch_dims = _slice_types[shape_types.reverse(), rank - 2]()
 
     comptime _get_first_dim[dtype: DType, *coords: CoordLike] = Variadic.types[
         T=CoordLike, ComptimeInt[Coord[*coords].static_product]
@@ -147,7 +152,7 @@ def _shape_types_to_3d[
     ]
 
     return Variadic.concat_types[
-        _get_first_dim[DType.int64, *batch_dims], last_two_dims
+        _get_first_dim[DType.int64, *TypeList[batch_dims]()], last_two_dims
     ]
 
 
@@ -157,8 +162,8 @@ def _reshape_tile_tensor_with_batch_to_3d(
     out result: TileTensor[
         mut=tensor.mut,
         LayoutType=TileLayout[
-            _shape_types_to_3d[tensor.LayoutType._shape_types](),
-            _slice_types[tensor.LayoutType._stride_types, 3](),
+            TypeList[_shape_types_to_3d[tensor.LayoutType._shape_types]()](),
+            _slice_types_tl[tensor.LayoutType._stride_types, 3](),
         ],
         dtype=tensor.dtype,
         origin=tensor.origin,
@@ -175,8 +180,8 @@ def _reshape_tile_tensor_with_batch_to_3d(
     comptime out_stride_types = type_of(result).LayoutType._stride_types
     comptime rank = tensor.rank
     comptime assert rank >= 3, "expecting at least rank-3 TileTensor"
-    var shape = Tuple[*out_shape_types]()
-    var strides = Tuple[*out_stride_types]()
+    var shape = Tuple[*out_shape_types.upcast[Movable]()]()
+    var strides = Tuple[*out_stride_types.upcast[Movable]()]()
 
     comptime for i in range(3):
         comptime idx = rank - 3 + i
@@ -225,7 +230,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
     return type_of(result)(
         tensor.ptr,
         TileLayout[out_shape_types, out_stride_types](
-            Coord(shape^), Coord(strides^)
+            Coord[*out_shape_types](shape^), Coord[*out_stride_types](strides^)
         ),
     )
 
@@ -472,6 +477,10 @@ def _batched_matmul_cpu[
     sync_parallelize[task_func](num_tasks)
 
 
+@__name(
+    t"naive_batched_matmul_kernel_{c_type}_{a_type}_{b_type}_{transpose_b}",
+    mangle=True,
+)
 def naive_batched_matmul_kernel[
     rank: Int,
     c_type: DType,
@@ -498,16 +507,16 @@ def naive_batched_matmul_kernel[
         and a_tensor.flat_rank == 3
         and b_tensor.flat_rank == 3
     )
-    var batch_size = UInt(c_tensor.dim(0))
-    var m = UInt(c_tensor.dim(1))
-    var n = UInt(c_tensor.dim(2))
-    var k = UInt(a_tensor.dim(2))
+    var batch_size = Int(c_tensor.dim(0))
+    var m = Int(c_tensor.dim(1))
+    var n = Int(c_tensor.dim(2))
+    var k = Int(a_tensor.dim(2))
 
     var x = global_idx.x
     var y = global_idx.y
     var z = block_idx.z
 
-    if UInt(z) >= batch_size or UInt(x) >= n or UInt(y) >= m:
+    if z >= batch_size or x >= n or y >= m:
         return
     var val = Scalar[accum_type](0)
 
@@ -528,6 +537,10 @@ def naive_batched_matmul_kernel[
         c_tensor[z, y, x] = val.cast[c_type]()
 
 
+@__name(
+    t"batched_matmul_kernel_gpu_{c_type}_{a_type}_{b_type}_{transpose_b}",
+    mangle=True,
+)
 def batched_matmul_kernel_gpu[
     c_type: DType,
     a_type: DType,
@@ -558,21 +571,21 @@ def batched_matmul_kernel_gpu[
         a_ptr,
         TileLayout(
             (Idx(m), Idx[a_tensor.static_shape[2]]()),
-            Coord[*_slice_types[ATensorType._stride_types, 2]()](),
+            Coord[*_slice_types_tl[ATensorType._stride_types, 2]()](),
         ),
     )
     var b = TileTensor(
         b_ptr,
         TileLayout(
-            Coord[*_slice_types[BTensorType._shape_types, 2]()](),
-            Coord[*_slice_types[BTensorType._stride_types, 2]()](),
+            Coord[*_slice_types_tl[BTensorType._shape_types, 2]()](),
+            Coord[*_slice_types_tl[BTensorType._stride_types, 2]()](),
         ),
     )
     var c = TileTensor(
         c_ptr,
         TileLayout(
             (Idx(m), Idx[c_tensor.static_shape[2]]()),
-            Coord[*_slice_types[CTensorType._stride_types, 2]()](),
+            Coord[*_slice_types_tl[CTensorType._stride_types, 2]()](),
         ),
     )
 
@@ -595,12 +608,16 @@ def batched_matmul_kernel_gpu[
             ) if elementwise_lambda_fn else None,
         ](c, a, b)
     elif is_amd_gpu() and not _is_amd_rdna():
-        gemm_kernel_amd[
-            config=config,
-            elementwise_lambda_fn=Optional[matmul_elementwise_epilogue_type](
+        AMDMatmul[
+            a_type,
+            b_type,
+            c_type,
+            transpose_b,
+            config,
+            Optional[matmul_elementwise_epilogue_type](
                 elementwise_epilogue_fn_wrapper
             ) if elementwise_lambda_fn else None,
-        ](c, a, b)
+        ].run(c, a, b)
 
 
 @always_inline
@@ -646,6 +663,7 @@ def _batched_matmul_gpu[
     ].is_static_value
 
     if batch_size == 1:
+        logger.info("Dispatching Batched Matmul via Normal Matmul Kernels")
         with Trace[TraceLevel.OP]("batched_matmul_via_matmul"):
             # If the batch size is 1, then this is just a matmul and we can use the
             # matmul kernel directly.
@@ -705,15 +723,21 @@ def _batched_matmul_gpu[
         has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05()
     )
     comptime if use_SM100_kernels and has_static_NK and transpose_b:
-        comptime bf16_ok = (a_type == b_type == c_type == DType.bfloat16)
-        comptime align_ok = (
-            c_n * size_of[c_type]() % 16 == 0
-            and a_k * size_of[a_type]() % 16 == 0
+        logger.info(
+            "Dispatching Batched Matmul via SM100",
+            a_type,
+            b_type,
+            c_type,
+            a_k,
+            c_n,
         )
-        comptime if bf16_ok and align_ok:
-            batched_matmul_dispatch_sm100_bf16[
-                c_type, a_type, b_type, transpose_b
-            ](
+        comptime if (
+            c_type in (DType.bfloat16, DType.float8_e4m3fn)
+            and c_n * size_of[c_type]() % 16 == 0
+            and a_k * size_of[a_type]() % 16 == 0
+            and transpose_b
+        ):
+            dispatch_sm100_batched_matmul[c_type, a_type, b_type, transpose_b](
                 c_tensor_reshaped,
                 a_tensor_reshaped,
                 b_tensor_reshaped,
@@ -755,6 +779,7 @@ def _batched_matmul_gpu[
     )
 
     comptime if has_static_NK and use_A100_kernels and multistage_gemm_cond:
+        logger.info("Dispatching Batched Matmul via A100 Kernels")
         comptime kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
 
         comptime batched_matmul_type = batched_matmul_kernel_gpu[
@@ -769,7 +794,7 @@ def _batched_matmul_gpu[
             elementwise_epilogue_fn,
         ]
 
-        var grid_dim = kernels.ampere_128x128_4.grid_dim(UInt(m), UInt(n))
+        var grid_dim = kernels.ampere_128x128_4.grid_dim(m, n)
 
         ctx.enqueue_function[batched_matmul_type, batched_matmul_type](
             c_tensor_reshaped,
@@ -844,6 +869,7 @@ def _batched_matmul_gpu[
             kernel_helper[128, 128]()
 
     else:
+        logger.info("Dispatching Batched Matmul via Naive Kernels")
         c_shape = coord_to_index_list(c_buf.layout.shape_coord())
 
         comptime BLOCK_DIM = 16
@@ -1017,6 +1043,9 @@ comptime _2D_layout[layout: Layout] = Layout(
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
+@__name(
+    t"bmm_sm100_blockwise_scaled_fp8_{a_type}_{b_type}_{c_type}", mangle=True
+)
 def _bmm_sm100_blockwise_scaled_fp8_kernel[
     a_type: DType,
     b_type: DType,
@@ -1042,7 +1071,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    num_threads: UInt = 128,
+    num_threads: Int = 128,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
@@ -1057,7 +1086,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     b_scales_tensor: LayoutTensor[
         b_scales_type, b_scales_layout, ImmutAnyOrigin
     ],
-    num_iters: UInt,
+    num_iters: Int,
 ):
     comptime c_2d_layout: Layout = _2D_layout[c_layout]
     comptime b_scales_2d_layout: Layout = _2D_layout[b_scales_layout]
@@ -1119,7 +1148,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         transpose_b=True,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
-        num_threads=Int(num_threads),
+        num_threads=num_threads,
         elementwise_lambda_fn=Optional[matmul_elementwise_epilogue_type](
             elementwise_epilogue_fn_wrapper
         ) if elementwise_lambda_fn else None,
@@ -1129,7 +1158,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         c,
         a_scales_tma_op,
         b_scales,
-        Int(num_iters),
+        num_iters,
     )
 
 
@@ -1302,7 +1331,7 @@ def bmm_sm100_blockwise_scaled_fp8[
         c,
         a_scales_tma_op,
         b_scales,
-        UInt(ceildiv(K, BK)),
+        ceildiv(K, BK),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM), batch_size),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,

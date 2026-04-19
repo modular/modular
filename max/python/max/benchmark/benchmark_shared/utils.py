@@ -16,7 +16,10 @@
 from __future__ import annotations
 
 import resource
+from collections.abc import Callable
+from typing import TypeVar
 
+import numpy as np
 from transformers import (
     AutoTokenizer,
     PreTrainedTokenizer,
@@ -57,3 +60,47 @@ def set_ulimit(target_soft_limit: int = 65535) -> None:
 def print_section(title: str, char: str = "-") -> None:
     """Print a formatted section header for benchmark output."""
     print("{s:{c}^{n}}".format(s=title, n=50, c=char))
+
+
+def is_castable_to_int(x: str) -> bool:
+    """Return True if *x* can be converted to an ``int`` without error."""
+    try:
+        int(x)
+        return True
+    except ValueError:
+        return False
+
+
+def int_or_none(x: str) -> int | None:
+    """Parse *x* as an ``int``, returning ``None`` for the literal ``'none'``."""
+    if x.lower() == "none":
+        return None
+    return int(x)
+
+
+def argmedian(x: np.ndarray) -> int:
+    """Return the index of the median value in *x*."""
+    return int(np.flatnonzero(x == np.percentile(x, 50, method="nearest"))[0])
+
+
+_T = TypeVar("_T")
+
+
+def parse_comma_separated(
+    value: str | None,
+    convert: Callable[[str], _T],
+    *,
+    default: _T | None = None,
+) -> list[_T]:
+    """Split a comma-separated string and convert each element.
+
+    Args:
+        value: Comma-separated string (e.g. ``"1,2,4"``), or ``None``.
+        convert: Callable applied to each stripped token.
+        default: If *value* is ``None``, return ``[default]``.
+            When both *value* and *default* are ``None`` the result is
+            ``[None]`` (useful for optional concurrency).
+    """
+    if value is None:
+        return [default]  # type: ignore[list-item]
+    return [convert(x.strip()) for x in value.split(",")]

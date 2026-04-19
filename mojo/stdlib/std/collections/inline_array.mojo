@@ -33,11 +33,10 @@ var filled = InlineArray[Int, 5](fill=42)
 """
 
 import std.math
-from std.collections._index_normalization import normalize_index
-
 from std.builtin.device_passable import DevicePassable
 from std.builtin.rebind import downcast
 from std.builtin.constrained import _constrained_conforms_to
+from std.collections import check_bounds
 from std.compile import get_type_name
 import std.format._utils as fmt
 from std.hashlib.hasher import Hasher
@@ -254,7 +253,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
     # Fields
     comptime type = __mlir_type[
-        `!pop.array<`, Self.size._mlir_value, `, `, Self.ElementType, `>`
+        `!pop.array<`, Self.size._int_mlir_index(), `, `, Self.ElementType, `>`
     ]
     """The underlying MLIR array type."""
 
@@ -375,7 +374,9 @@ struct InlineArray[ElementType: Copyable, size: Int](
             )
 
     @always_inline
-    def __init__[batch_size: Int = 64](out self, *, fill: Self.ElementType):
+    def __init__[
+        batch_size: SIMDSize = 64
+    ](out self, *, fill: Self.ElementType):
         """Constructs an array where each element is initialized to the supplied
         value.
 
@@ -538,8 +539,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         """Gets a reference to the element at the given index.
 
         Args:
-            idx: The index to access. Can be positive (0 to len-1) or negative
-                (-len to -1).
+            idx: The index to access (0 to len-1).
 
         Returns:
             A reference to the element at the specified index.
@@ -548,20 +548,17 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
         ```mojo
         var arr: InlineArray[Int, 3] = [1, 2, 3]
-        print(arr[0])   # Prints 1 - first element
-        print(arr[1])   # Prints 2 - second element
-        print(arr[-1])  # Prints 3 - last element
-        print(arr[-2])  # Prints 2 - second to last element
+        print(arr[0])            # Prints 1 - first element
+        print(arr[1])            # Prints 2 - second element
+        print(arr[len(arr) - 1]) # Prints 3 - last element
         ```
 
         Notes:
             This method provides array-style indexing access to elements in the
-            InlineArray. It supports both positive indices starting from 0 and
-            negative indices counting backwards from the end of the array. The
-            index is bounds-checked at runtime.
+            InlineArray. The index is bounds-checked at runtime.
         """
-        var normalized_index = normalize_index["InlineArray"](idx, len(self))
-        return self.unsafe_get(normalized_index)
+        check_bounds(idx, len(self))
+        return self._unchecked_get(idx)
 
     @always_inline
     def __getitem_param__[
@@ -571,8 +568,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         bounds checking.
 
         Parameters:
-            idx: The compile-time constant index to access. Can be positive
-                (0 to len-1) or negative (-len to -1).
+            idx: The compile-time constant index to access (0 to len-1).
 
         Returns:
             A reference to the element at the specified index.
@@ -581,23 +577,32 @@ struct InlineArray[ElementType: Copyable, size: Int](
 
         ```mojo
         var arr: InlineArray[Int, 3] = [1, 2, 3]
-        print(arr[0])   # Prints 1 - first element
-        print(arr[-1])  # Prints 3 - last element
+        print(arr[0])            # Prints 1 - first element
+        print(arr[1])            # Prints 2 - second element
+        print(arr[len(arr) - 1]) # Prints 3 - last element
         ```
 
         Notes:
             This overload provides array-style indexing with compile-time bounds
-            checking. The index must be a compile-time constant value. It
-            supports both positive indices starting from 0 and negative indices
-            counting backwards from the end of the array.
+            checking. The index must be a compile-time constant value.
         """
+        # Can't construct a String here with the index for the error message, as
+        # it causes infinite cycles in gpu compilation tests
         comptime assert (
-            -Self.size <= index(idx) < Self.size
-        ), "Index must be within bounds."
-        comptime normalized_index = normalize_index["InlineArray"](
-            idx, Self.size
+            index(idx) >= 0
+        ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
+        comptime assert index(idx) < Self.size, "index is out of bounds"
+        return self._unchecked_get(materialize[idx]())
+
+    @always_inline
+    def _unchecked_get(
+        ref self, idx: Some[Indexer]
+    ) -> ref[self] Self.ElementType:
+        var ptr = __mlir_op.`pop.array.gep`(
+            UnsafePointer(to=self._array).address,
+            index(idx)._mlir_value,
         )
-        return self.unsafe_get(normalized_index)
+        return UnsafePointer[_, origin_of(self)](ptr)[]
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations
@@ -706,19 +711,8 @@ struct InlineArray[ElementType: Copyable, size: Int](
             This is an unsafe method that skips bounds checking for performance.
             Users should prefer `__getitem__` instead for safety.
         """
-        var i = index(idx)
-        debug_assert(
-            0 <= i < Self.size,
-            " InlineArray.unsafe_get() index out of bounds: ",
-            i,
-            " should be greater than or equal to 0 and less than ",
-            Self.size,
-        )
-        var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self._array).address,
-            i._mlir_value,
-        )
-        return UnsafePointer[_, origin_of(self)](ptr)[]
+        check_bounds[cpu_default=False](idx, len(self))
+        return self._unchecked_get(idx)
 
     @always_inline
     def unsafe_ptr[

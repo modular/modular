@@ -38,8 +38,10 @@ genrule(
   mkdir -p mojosite/docs
   mv docs_tmp/* mojosite/docs/
   rm -rf docs_tmp
+  rm -f mojosite/docs/redirects.js
   cp -r internal_tmp/* mojosite/
   rm -rf internal_tmp
+  mv mojosite/redirects.js mojosite/docs/redirects.js
 
   # Generate final output
   cd mojosite
@@ -52,7 +54,9 @@ genrule(
 pkg_tar(
     name = "mojosite",
     srcs = [
+        ":internal-docs",
         ":mojo",
+        ":mojo-layout-public-docs",
         ":mojo-std-public-docs",
     ],
     allow_duplicates_with_different_content = False,
@@ -69,11 +73,23 @@ pkg_files(
             "README.md",
             "BUILD.bazel",
             "code/**",
+            "internal/**",
             "post-process-mojodocs.py",
         ],
     ),
     prefix = "mojo",
     strip_prefix = strip_prefix.from_pkg(""),
+)
+
+pkg_files(
+    name = "internal-docs",
+    srcs = glob(
+        ["internal/**"],
+        allow_empty = True,
+    ),
+    prefix = "mojo",
+    strip_prefix = strip_prefix.from_pkg(""),
+    tags = ["manual"],
 )
 
 mojo_commands = [
@@ -109,6 +125,22 @@ pkg_filegroup(
     srcs = [
         "//oss/modular/mojo/stdlib/std:docs",
     ],
+    prefix = "mojo",
+    tags = ["manual"],
+)
+
+pkg_files(
+    name = "layout-docs-files",
+    srcs = ["//max/kernels/src/layout:layout.docs"],
+    renames = {
+        "//max/kernels/src/layout:layout.docs": "layout",
+    },
+    tags = ["manual"],
+)
+
+pkg_filegroup(
+    name = "mojo-layout-public-docs",
+    srcs = [":layout-docs-files"],
     prefix = "mojo",
     tags = ["manual"],
 )

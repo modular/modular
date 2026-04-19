@@ -320,7 +320,7 @@ struct MMATileBuffers[
     ].TiledIteratorType[Self.block_rows, Self.mma_type.BK, axis=1]
     var gmem_iter: Self.iter_type
 
-    var global_offset: UInt
+    var global_offset: Int
 
     var tensor: Pointer[Self.tensor_type, Self.tensor_origin]
 
@@ -351,7 +351,7 @@ struct MMATileBuffers[
         self.gmem_iter = tensor.tile[Self.block_rows, Self.stride](
             block_idx, 0
         ).tiled_iterator[Self.block_rows, Self.mma_type.BK, axis=1](0, 0)
-        self.global_offset = UInt(Self.stride * (Self.block_rows * block_idx))
+        self.global_offset = Self.stride * Self.block_rows * block_idx
         # TODO: remove rebind once MOCO-1905 is fixed
         self.tensor = rebind[Pointer[Self.tensor_type, Self.tensor_origin]](
             Pointer(to=tensor)
@@ -386,7 +386,7 @@ struct MMATileBuffers[
             self.global_offset,
         )
 
-        self.global_offset += UInt(Self.mma_type.BK)
+        self.global_offset += Self.mma_type.BK
         self.gmem_iter._incr()
 
     @always_inline
@@ -413,7 +413,7 @@ struct MMATileBuffers[
                 self.mma_reg_tile[k_tile_idx]
                 .tile[Self.num_mmas, Self.mma_type.simd_width](k_tile_idx, 0)
                 .vectorize[1, Self.mma_type.simd_width](),
-                UInt(k_tile_idx),
+                k_tile_idx,
             )
         else:
             Self.mma_type.tensor_core_mma.mma_op.load_b[
@@ -423,7 +423,7 @@ struct MMATileBuffers[
                 self.mma_reg_tile[k_tile_idx]
                 .tile[Self.num_mmas, Self.mma_type.simd_width](k_tile_idx, 0)
                 .vectorize[1, Self.mma_type.simd_width](),
-                UInt(k_tile_idx),
+                k_tile_idx,
             )
 
 
@@ -621,7 +621,7 @@ def compare_equal[
     gpu_ctx.synchronize()
 
     # Access the result from the host buffer
-    var host_max_relative_error = host_buffer.unsafe_ptr()[0]
+    var host_max_relative_error = host_buffer[0]
     print("Maximum relative error:", host_max_relative_error)
 
     # Print the two tensors if print_results is True

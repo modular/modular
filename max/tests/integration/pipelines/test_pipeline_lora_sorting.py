@@ -76,7 +76,7 @@ class MockModelInputs(ModelInputs):
     def __init__(
         self,
         batch_size: int,
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
     ) -> None:
         self._batch_size = batch_size
         self.kv_cache_inputs = MagicMock()
@@ -152,7 +152,7 @@ class MockPipelineModel(PipelineModelWithKVCache[ContextT]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[ContextT]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         if len(replica_batches) > 1:
@@ -306,6 +306,7 @@ def create_pipeline_with_lora(
             self._sampler_without_bitmask = MagicMock()
             self._sampler_with_bitmask = None
             self._kv_manager = MagicMock()
+            self._pinned_new_tokens = None
 
         with patch.object(TextGenerationPipeline, "__init__", mock_text_init):
             return TextGenerationPipeline(
@@ -335,6 +336,7 @@ def create_pipeline_with_lora(
             self._sampler_with_bitmask = None
             self.d2h_stream = MagicMock()
             self._kv_manager = MagicMock()
+            self._pinned_new_tokens = None
 
         with patch.object(
             SpeechTokenGenerationPipeline, "__init__", mock_speech_init

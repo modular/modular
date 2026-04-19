@@ -37,6 +37,11 @@ _SEPARATE_TARGET_TESTS = [
     "test_runtime_source_notes.py",
 ]
 
+# Temporarily disabled tests (MAXPLAT-477: causes H100 timeouts)
+_DISABLED_TESTS = [
+    "test_advanced_indexing.py",
+]
+
 modular_py_library(
     name = "modular_graph_test",
     testonly = True,
@@ -59,7 +64,7 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["*.py"],
-        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + [
+        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + _DISABLED_TESTS + [
             "modular_graph_test.py",
             "test_nan_check.py",
         ],
@@ -110,6 +115,34 @@ modular_py_test(
         requirement("numpy"),
         requirement("torch"),
         requirement("torchvision"),
+    ],
+)
+
+# MAXPLAT-477: Temporarily disabled from CI due to H100 timeouts.
+# Run locally on demand: ./bazelw test //max/tests/integration/graph:test_advanced_indexing
+modular_py_test(
+    name = "test_advanced_indexing",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_advanced_indexing.py",
+    ],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
 

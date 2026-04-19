@@ -567,4 +567,7 @@ def test_inline_array_fill():
 
 
 def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+    var suite = TestSuite.discover_tests[__functions_in_module()]()
+    # TODO: skipped to work around MOCO-3749
+    suite.skip[test_inline_array_copy_and_move_llvm_ir]()
+    suite^.run()

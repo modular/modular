@@ -11,15 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Distributed KV cache connector via dKV service.
+"""Distributed KV cache connector via dKV service."""
 
-Includes the vendored dKV Python client (protocol, ZMQ transport)
-and the MAX KVConnector implementation.
-"""
+from dkv import BlockDescriptor, DKVClient
 
-from .client import DKVClient
 from .connector import DKVConnector, DKVExternalBlockMetadata
-from .protocol import BlockDescriptor
 
 __all__ = [
     "BlockDescriptor",
