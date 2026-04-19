@@ -86,8 +86,8 @@ from std.memory import stack_allocation
 from .amd.mha_gfx942 import MHAAttentionConfig
 from .amd.mha_gfx950 import Attention
 from .amd.mha_structured import Attention
-from .amd.mha_rdna import MHAAttentionConfigRDNA
-from .amd.attention_rdna import AttentionRDNA
+from .amd_rdna.mha_rdna import MHAAttentionConfigRDNA
+from .amd_rdna.attention_rdna import AttentionRDNA
 from nn.attention.mha_mask import (
     CausalMask,
     MaterializedMask,
@@ -268,7 +268,8 @@ struct MHADecodeDispatchMetadata(TrivialRegisterPassable):
 
 def flash_attention_hw_supported[qkv_type: DType]() -> Bool:
     return has_nvidia_gpu_accelerator() or (
-        qkv_type == DType.bfloat16 and has_amd_gpu_accelerator()
+        (qkv_type == DType.bfloat16 or qkv_type.is_float8())
+        and has_amd_gpu_accelerator()
     )
 
 
@@ -374,8 +375,10 @@ def flash_attention[
         q.dtype == cache_t.dtype == output.dtype
     ), "Q, K, V, output should have same type."
     comptime assert (
-        q.dtype == DType.float32 or q.dtype.is_half_float()
-    ), "Only support single and half precision."
+        q.dtype == DType.float32
+        or q.dtype.is_half_float()
+        or (q.dtype.is_float8() and has_amd_gpu_accelerator())
+    ), "Only support single, half, and float8 (AMD only) precision."
 
     # TODO docstring
     @always_inline
@@ -422,7 +425,7 @@ def flash_attention[
         comptime head_depth_supported = depth_supported_by_gpu[depth, mask_t, config, gpu_info]()
         comptime flash_attention_applicable = flash_attention_hw_supported[dtype]() and head_depth_known and head_depth_supported and not naive_kernel
         # fmt: on
-        comptime kv_num_heads = Int(cache_t.kv_params.num_heads)
+        comptime kv_num_heads = cache_t.kv_params.num_heads
 
         var k_operand = KVCacheMHAOperand(k)
         var v_operand = KVCacheMHAOperand(v)
@@ -654,12 +657,20 @@ def flash_attention_dispatch[
                             _optional_lt_to_tt(sink_weights),
                         )
                     else:
+                        comptime use_pair_cta = (
+                            depth > 64
+                            and depth <= 128
+                            and get_defined_bool[
+                                "ENABLE_MHA_PREFILL_PAIR_CTA", False
+                            ]()
+                        )
                         mha_sm100_2q_dispatch[
                             config=config,
                             group=group,
                             ragged=ragged,
                             sink=sink,
                             _is_cache_length_accurate=_is_cache_length_accurate,
+                            pair_cta=use_pair_cta,
                         ](
                             output.to_device_buffer(ctx),
                             q.to_device_buffer(ctx).unsafe_ptr(),
@@ -914,12 +925,8 @@ def flash_attention_dispatch[
                                     _optional_lt_to_tt(sink_weights),
                                 )
                         else:
-                            comptime nullptr = UnsafePointer[
-                                Scalar[accum_type], MutAnyOrigin
-                            ](_unsafe_null=())
-
-                            var nullptr_device = DeviceBuffer[accum_type](
-                                ctx, nullptr, 0, owning=False
+                            var nullptr_device = DeviceBuffer[accum_type].empty(
+                                ctx
                             )
                             ctx.enqueue_function[kernel, kernel](
                                 q_device,
@@ -1345,6 +1352,7 @@ def flash_attention[
 def flash_attention[
     mask_t: MHAMask,
     dtype: DType,
+    output_type: DType,
     q_tt_layout: TensorLayout,
     k_tt_layout: TensorLayout,
     v_tt_layout: TensorLayout,
@@ -1362,7 +1370,7 @@ def flash_attention[
 ](
     output: TileTensor[
         mut=True,
-        dtype,
+        output_type,
         output_tt_layout,
         address_space=AddressSpace.GENERIC,
         ...,
@@ -1451,8 +1459,10 @@ def flash_attention_ragged[
     ), "Q, K, V, output should have same type."
 
     comptime assert (
-        q.dtype == DType.float32 or q.dtype.is_half_float()
-    ), "Only support single and half precision."
+        q.dtype == DType.float32
+        or q.dtype.is_half_float()
+        or (q.dtype.is_float8() and has_amd_gpu_accelerator())
+    ), "Only support single, half, and float8 (AMD only) precision."
 
     # Runtime dimensions.
     # For ragged inputs: [total_seq_len, num_heads, head_dim]
@@ -1532,6 +1542,10 @@ def get_waves_per_eu(depth: Int) -> Int:
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(config.num_threads())
     )
+)
+@__name(
+    t"mha_depth{config.depth}_{q_type}_{output_type}_{ragged}_{is_shared_kv}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
+    mangle=True,
 )
 def mha[
     q_type: DType,
@@ -1725,8 +1739,10 @@ def mha[
             # ranges (no FULL_MASK gaps in the middle).  This holds for
             # CausalMask but NOT for OrMask-based masks like
             # ChunkedCausalMask, which can have interior FULL_MASK tiles.
+            # FP8 does not yet support the structured path.
             comptime use_structured = (
                 config.depth <= 256
+                and not config.dtype.is_float8()
                 and not get_defined_bool["MHA_NO_STRUCTURED", False]()
                 and _type_is_eq[mask_t, CausalMask]()
             )
@@ -1748,6 +1764,10 @@ def mha[
     )
 )
 @always_inline
+@__name(
+    t"mha_single_batch_depth{config.depth}_{q_type}_{output_type}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
+    mangle=True,
+)
 def mha_single_batch[
     q_type: DType,
     k_t: MHAOperand,
@@ -2156,7 +2176,7 @@ def mha_single_batch[
             swizzle_a=True,
             prefetch_init=False,
             static_num_iters=ufloordiv(depth, BK),
-            k_group_size=UInt(config.k_group_size),
+            k_group_size=config.k_group_size,
         ](
             p_reg_tile,
             q_smem_iter,
@@ -2334,7 +2354,7 @@ def mha_single_batch[
                 swizzle_a=True,
                 prefetch_init=False,
                 static_num_iters=ufloordiv(BN, BK),
-                k_group_size=UInt(config.k_group_size),
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_smem_iter,
@@ -2366,7 +2386,7 @@ def mha_single_batch[
                 swizzle_a=False,
                 prefetch_init=False,
                 static_num_iters=ufloordiv(BN, BK),
-                k_group_size=UInt(config.k_group_size),
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_reg_iter,
@@ -2465,6 +2485,10 @@ def mha_single_batch[
     )
 )
 @always_inline
+@__name(
+    t"mha_single_batch_pipelined_depth{config.depth}_{q_type}_{output_type}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
+    mangle=True,
+)
 def mha_single_batch_pipelined[
     q_type: DType,
     k_t: MHAOperand,
@@ -2811,7 +2835,7 @@ def mha_single_batch_pipelined[
                 next_op_b_iter_masked=type_of(v_gmem_iter).masked,
                 next_op_b_layout_int_type=type_of(v_gmem_iter).layout_int_type,
                 next_op_b_linear_idx_type=type_of(v_gmem_iter).linear_idx_type,
-                k_group_size=UInt(config.k_group_size),
+                k_group_size=config.k_group_size,
             ](
                 p_reg_tile,
                 q_gmem_iter,
@@ -2842,7 +2866,7 @@ def mha_single_batch_pipelined[
                 next_op_b_iter_masked=type_of(v_gmem_iter).masked,
                 next_op_b_layout_int_type=type_of(v_gmem_iter).layout_int_type,
                 next_op_b_linear_idx_type=type_of(v_gmem_iter).linear_idx_type,
-                k_group_size=UInt(config.k_group_size),
+                k_group_size=config.k_group_size,
             ](
                 p_reg_tile,
                 # Pass shared memory iterator to hint not loading from global memory.
@@ -3005,7 +3029,7 @@ def mha_single_batch_pipelined[
                 False,  # transpose_b
                 swizzle_a=True,
                 prefetch_init=False,
-                k_group_size=UInt(config.k_group_size),
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_smem_iter,
@@ -3034,7 +3058,7 @@ def mha_single_batch_pipelined[
                 swizzle_a=True,
                 static_num_iters=ufloordiv(BN, BK),
                 prefetch_init=False,
-                k_group_size=UInt(config.k_group_size),
+                k_group_size=config.k_group_size,
             ](
                 output_reg_tile,
                 p_reg_iter,
@@ -3141,6 +3165,10 @@ def mha_single_batch_pipelined[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
+@__name(
+    t"mha_decoding_depth{depth}_{q_type}_{output_type}_{BM}x{BN}x{BK}_{ragged}_nqh{num_heads}_nkvh{num_heads // group}",
+    mangle=True,
+)
 def mha_decoding[
     q_type: DType,
     k_t: MHAOperand,
@@ -3198,13 +3226,13 @@ def mha_decoding[
     )
     var exp_sum_offset = qk_max_offset
 
-    # split-k intermediate buffers
-    var qk_max_batch_ptr = type_of(qk_max_ptr)(_unsafe_null=())
-    if qk_max_ptr._is_not_null():
+    # split-k intermediate buffers — only used when num_partitions > 1
+    var qk_max_batch_ptr = qk_max_ptr
+    if num_partitions > 1:
         qk_max_batch_ptr = qk_max_ptr + qk_max_offset
 
-    var exp_sum_batch_ptr = type_of(exp_sum_ptr)(_unsafe_null=())
-    if exp_sum_ptr._is_not_null():
+    var exp_sum_batch_ptr = exp_sum_ptr
+    if num_partitions > 1:
         exp_sum_batch_ptr = exp_sum_ptr + exp_sum_offset
 
     var seq_len: Int
@@ -4618,6 +4646,7 @@ def mha_decoding_single_batch_pipelined[
     )
 
 
+@__name(t"mha_splitk_reduce_{intermediate_type}_{output_type}", mangle=True)
 def mha_splitk_reduce[
     intermediate_type: DType,
     output_type: DType,
@@ -4730,7 +4759,9 @@ def mha_splitk_reduce[
     var base_ptr = intermediate_output.ptr + base_offset
 
     @parameter
-    def accum_fn[simd_width: Int](partition_idx: Int) unified {mut}:
+    def accum_fn[
+        simd_width: Int
+    ](partition_idx: Int) unified {exp_sums, base_ptr, partition_stride, mut}:
         var partition_exp_sum = exp_sums.vectorize[simd_width]()[
             partition_idx // simd_width
         ]
@@ -4925,6 +4956,7 @@ def mha_gpu_naive[
 
 @always_inline
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=_NAIVE_BMM_BLOCK_TUPLE)
+@__name(t"mha_bmm0_{q_type}_{p_type}_{ragged}", mangle=True)
 def _bmm0_bs[
     q_type: DType,
     k_t: MHAOperand,
@@ -5017,7 +5049,9 @@ def _bmm0_bs[
         )
         var accum_vec = SIMD[p_type, accum_width](0)
 
-        def accum_fn[width: Int](offset: Int) unified {mut}:
+        def accum_fn[
+            width: Int
+        ](offset: Int) unified {q, y, num_heads, depth, k_ptr, mut}:
             comptime alignment = align_of[SIMD[k_type, width]]()
             var q_val = q.load[
                 width=width, alignment=align_of[SIMD[q_type, width]]()
@@ -5056,6 +5090,7 @@ def _bmm0_bs[
 
 @always_inline
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=_NAIVE_BMM_BLOCK_TUPLE)
+@__name(t"mha_bmm1_{output_type}_{p_type}_{ragged}", mangle=True)
 def _bmm1_bs[
     output_type: DType,
     p_type: DType,
@@ -5255,7 +5290,7 @@ def mha_gpu_naive[
     var null_valid_length = LayoutTensor[
         DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
     ](
-        UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
+        None,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 

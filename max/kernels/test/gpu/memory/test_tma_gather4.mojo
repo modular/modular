@@ -264,8 +264,8 @@ def _run_paged_gather4_test[
     comptime assert topk % 4 == 0, "topk must be divisible by 4"
     comptime assert kv_dim == 1 or kv_dim == 2, "kv_dim must be 1 or 2"
     comptime kv_params = KVCacheStaticParams(
-        num_heads=UInt(num_heads),
-        head_size=UInt(head_size),
+        num_heads=num_heads,
+        head_size=head_size,
     )
     comptime row_width = num_heads * head_size
 
@@ -464,7 +464,7 @@ def test_continuous_kv_cache[
     """Tests gather4 with a real ContinuousBatchingKVCacheCollection."""
     comptime assert topk % 4 == 0, "topk must be divisible by 4"
     comptime kv_params = KVCacheStaticParams(
-        num_heads=UInt(num_heads), head_size=UInt(head_size)
+        num_heads=num_heads, head_size=head_size
     )
     comptime row_width = num_heads * head_size
 
@@ -890,8 +890,8 @@ def test_wide_gather4_paged_kv[
     comptime assert topk % 4 == 0, "topk must be divisible by 4"
     comptime assert kv_dim == 1 or kv_dim == 2, "kv_dim must be 1 or 2"
     comptime kv_params = KVCacheStaticParams(
-        num_heads=UInt(num_heads),
-        head_size=UInt(head_size),
+        num_heads=num_heads,
+        head_size=head_size,
     )
     comptime tile_width = num_heads * head_size
 
@@ -1038,8 +1038,8 @@ def test_wide_gather4_continuous_kv[
     """
     comptime assert topk % 4 == 0, "topk must be divisible by 4"
     comptime kv_params = KVCacheStaticParams(
-        num_heads=UInt(num_heads),
-        head_size=UInt(head_size),
+        num_heads=num_heads,
+        head_size=head_size,
     )
     comptime tile_width = num_heads * head_size
 
@@ -1180,8 +1180,8 @@ def test_wide_gather4_mha_operand[
     comptime assert topk % 4 == 0, "topk must be divisible by 4"
     comptime assert kv_dim == 1 or kv_dim == 2, "kv_dim must be 1 or 2"
     comptime kv_params = KVCacheStaticParams(
-        num_heads=UInt(num_heads),
-        head_size=UInt(head_size),
+        num_heads=num_heads,
+        head_size=head_size,
     )
     comptime tile_width = num_heads * head_size
 
@@ -1722,8 +1722,8 @@ def test_gather4_tile_api_paged[
 
     # ---- Construct PagedKVCacheCollection ----
     comptime kv_params = KVCacheStaticParams(
-        num_heads=UInt(num_heads),
-        head_size=UInt(head_size),
+        num_heads=num_heads,
+        head_size=head_size,
     )
     var collection = PagedKVCacheCollection[dtype, kv_params, page_size](
         blocks.device_tensor(),

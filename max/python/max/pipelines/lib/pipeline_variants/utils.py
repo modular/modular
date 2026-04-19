@@ -192,16 +192,35 @@ def update_spec_decode_context_and_prepare_responses(
         for num_accept in num_accepted_draft_tokens
     )
 
+    # Handle chunked prefill case where there are no future tokens.
     for batch_idx, ctx in enumerate(context_batch):
-        for token_idx in range(num_accepted_draft_tokens[batch_idx]):
-            if not ctx.is_done:
-                ctx.update(draft_tokens[batch_idx, token_idx])
+        if not ctx.tokens.generated_length:
+            continue
+
+        maybe_accepted_draft_tokens: list[int] = draft_tokens[
+            batch_idx
+        ].tolist()
+        num_accept = num_accepted_draft_tokens[batch_idx]
+        tokens = maybe_accepted_draft_tokens[:num_accept]
+        tokens += [next_tokens[batch_idx]]
+        for i, token in enumerate(tokens):
+            # The overlap scheduler leaves a FUTURE_TOKEN placeholder as the last
+            # generated token; realize_future_token overwrites it in place. Calling
+            # update() for that same index would append a duplicate (see
+            # update_context_and_prepare_responses with overwrite_future).
+            if i == 0:
+                ctx.realize_future_token(token)
+            elif ctx.is_done:
+                break
+            else:
+                ctx.update(token)
+
+        ctx.spec_decoding_state.maybe_accepted_draft_tokens = []
         if not ctx.is_done:
-            ctx.update(next_tokens[batch_idx])
             # Save the generated draft tokens for verification in next iteration.
-            ctx.spec_decoding_state.saved_draft_tokens = next_draft_tokens[
+            ctx.spec_decoding_state.draft_tokens_to_verify = next_draft_tokens[
                 batch_idx
-            ].copy()
+            ].tolist()
 
     return build_response(
         context_batch=context_batch,

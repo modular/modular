@@ -24,10 +24,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
 from max.nn.kv_cache import KVCacheInputs
-from max.pipelines.architectures.llama3.model import (
-    Llama3Inputs,
-    Llama3Model,
-)
+from max.pipelines.architectures.llama3.model import Llama3Inputs, Llama3Model
 from max.pipelines.lib import ModelOutputs
 from test_common.mocks import DummyPipelineConfig
 from transformers import LlamaForCausalLM
@@ -46,10 +43,20 @@ def weights_from_hf_config_dp(hf_config: LlamaConfig) -> SafetensorWeights:
     set would otherwise be empty).  Values are stored as MAX Buffers so that
     dtype comparisons in ``load_state_dict(strict=True)`` succeed.
     """
+    # Remap HuggingFace weight names to MAX StackedLinear names.
+    _HF_TO_MAX = {
+        "q_proj.": "qkv_proj.q.",
+        "k_proj.": "qkv_proj.k.",
+        "v_proj.": "qkv_proj.v.",
+    }
     hf_model = LlamaForCausalLM(hf_config)
     weight_map = {}
     for name, param in hf_model.named_parameters():
         key = name.removeprefix("model.")
+        for hf, mx in _HF_TO_MAX.items():
+            if hf in key:
+                key = key.replace(hf, mx, 1)
+                break
         weight_map[key] = Buffer.from_dlpack(
             param.detach().zero_().to(torch.bfloat16)
         )
@@ -64,7 +71,7 @@ def weights_from_hf_config_dp(hf_config: LlamaConfig) -> SafetensorWeights:
 def test_build_compile_and_execute_dp_llama3_graph(
     hf_config: LlamaConfig,
     make_pipeline_config: Callable[..., DummyPipelineConfig],
-    make_kv_inputs: Callable[..., KVCacheInputs],
+    make_kv_inputs: Callable[..., KVCacheInputs[Buffer, Buffer]],
     make_inputs: Callable[..., Llama3Inputs],
     assert_model_outputs: Callable[
         [ModelOutputs, Llama3Inputs, list[Device]], None

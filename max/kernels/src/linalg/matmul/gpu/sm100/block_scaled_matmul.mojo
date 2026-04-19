@@ -46,7 +46,7 @@ from std.gpu.sync import (
     syncwarp,
 )
 from std.gpu.compute.arch.tcgen05 import *
-from layout import TileTensor
+from layout import CoordLike, TileTensor
 from layout.coord import ComptimeInt, Coord, Idx, RuntimeInt
 from layout.tile_layout import row_major as tt_row_major
 from layout.tma_async import (
@@ -224,7 +224,7 @@ def load_AB_SFA_SFB[
     mma_shape: IndexList[3],
     num_sf_k_tiles: Int,
     cta_group: Int = 1,
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](
     a_tma_op: TMATensorTile[a_type, a_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_rank, b_tile_shape, b_desc_shape],
@@ -275,7 +275,7 @@ def load_AB_SFA_SFB[
             + sfa_expected_bytes
             + sfb_expected_bytes
         )
-    ) * Int(k_group_size)
+    ) * k_group_size
 
     comptime a_tma_load_size = _idx_product[a_rank, a_desc_shape]()
     comptime b_tma_load_size = _idx_product[b_rank, b_desc_shape]()
@@ -423,7 +423,7 @@ def consumer_main_loop[
     SFB_NUM_COLS: Int,
     cta_group: Int = 1,
     cluster_shape: IndexList[3] = Index(1, 1, 1),
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](
     tmem_addr: UInt32,
     sfa_tmem: UInt32,
@@ -510,6 +510,15 @@ def consumer_main_loop[
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
+@__name(
+    StaticString(config.get_kernal_name())
+    + StaticString(
+        "_fused_compute_epi" if elementwise_compute_lambda_fn
+        is not None else ""
+    )
+    + StaticString("_fused_epi" if elementwise_lambda_fn is not None else ""),
+    mangle=True,
+)
 def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     a_type: DType,
     b_type: DType,
@@ -616,8 +625,8 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     ), "Only support MXF8F6F4 (k=1), MXF4 (k=2), or MXF4NVF4 (k=4)"
 
     comptime assert (
-        UInt(config.num_accum_pipeline_stages) * UInt(MMA_N)
-        + UInt(SFA_NUM_COLS + SFB_NUM_COLS) * UInt(config.num_pipeline_stages)
+        config.num_accum_pipeline_stages * MMA_N
+        + (SFA_NUM_COLS + SFB_NUM_COLS) * config.num_pipeline_stages
         <= NUM_TMEM_COLS
     ), "sfa_tmem and sfb_tmem exceed tmem_cols"
 
@@ -919,7 +928,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                         mma_shape=config.mma_shape,
                         num_sf_k_tiles=config.num_sf_k_tiles,
                         cta_group=config.cta_group,
-                        k_group_size=UInt(config.k_group_size),
+                        k_group_size=config.k_group_size,
                     ](
                         a_tma_op,
                         b_tma_op,
@@ -1009,7 +1018,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
 
             tmem_addr = ptr_tmem_addr[0]
             var sfa_tmem = tmem_addr + UInt32(
-                UInt(config.num_accum_pipeline_stages) * UInt(MMA_N)
+                config.num_accum_pipeline_stages * MMA_N
             )
             var sfb_tmem = sfa_tmem + UInt32(SFA_NUM_COLS) * UInt32(
                 config.num_pipeline_stages
@@ -1039,7 +1048,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
                             SFB_NUM_COLS=SFB_NUM_COLS,
                             cta_group=config.cta_group,
                             cluster_shape=config.cluster_shape,
-                            k_group_size=UInt(config.k_group_size),
+                            k_group_size=config.k_group_size,
                         ](
                             tmem_offset,
                             sfa_tmem,
@@ -1398,7 +1407,7 @@ def _create_tma_and_launch[
         workspace = {}
 
     # Launch kernel
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel, dump_asm=False](
         a_tma_op,
         b_tma_op,
         c_tma_op,

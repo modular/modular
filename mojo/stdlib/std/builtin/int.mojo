@@ -95,6 +95,7 @@ trait Intable(ImplicitlyDestructible):
     example:
 
     ```mojo
+    @fieldwise_init
     struct Foo(Intable):
         var i: Int
 
@@ -106,6 +107,13 @@ trait Intable(ImplicitlyDestructible):
 
     ```mojo
     %# from testing import assert_equal
+    @fieldwise_init
+    struct Foo(Intable):
+        var i: Int
+
+        def __int__(self) -> Int:
+            return self.i
+
     foo = Foo(42)
     assert_equal(Int(foo), 42)
     ```
@@ -136,6 +144,7 @@ trait IntableRaising:
     raise an error. For example:
 
     ```mojo
+    @fieldwise_init
     struct Foo(IntableRaising):
         var i: Int
 
@@ -147,6 +156,13 @@ trait IntableRaising:
 
     ```mojo
     %# from testing import assert_equal
+    @fieldwise_init
+    struct Foo(IntableRaising):
+        var i: Int
+
+        def __int__(self) raises -> Int:
+            return self.i
+
     foo = Foo(42)
     assert_equal(Int(foo), 42)
     ```
@@ -167,6 +183,13 @@ trait IntableRaising:
 trait _FromInt:
     def __init__(out self, *, from_int: Int):
         ...
+
+
+comptime SIMDSize = Int
+"""The size of a SIMD type. This will be distinct from the
+   Int type in the future and should be used as parameter types
+   when inferring parameter values from the width of a simd
+   argument."""
 
 
 @lldb_formatter_wrapping_type
@@ -924,6 +947,11 @@ struct Int(
         Returns:
             The corresponding __mlir_type.index value.
         """
+        return self._mlir_value
+
+    @doc_hidden
+    @always_inline("builtin")
+    def _int_mlir_index(self) -> __mlir_type.index:
         return self._mlir_value
 
     @always_inline("builtin")

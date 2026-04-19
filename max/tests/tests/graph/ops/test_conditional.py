@@ -96,7 +96,7 @@ def test_conditional_with_raising() -> None:
             raise Exception("else")
 
         try:
-            result = ops.cond(cond, None, then_fn, else_fn)
+            ops.cond(cond, None, then_fn, else_fn)
         except Exception as e:
             assert "else" in str(e)
 

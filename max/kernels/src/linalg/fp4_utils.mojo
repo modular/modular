@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.sys._assembly import inlined_assembly
-from std.sys import is_nvidia_gpu, bit_width_of
-from std.sys.info import _is_sm_100x_or_newer, align_of
+from std.sys import is_nvidia_gpu, bit_width_of, llvm_intrinsic
+from std.sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer, align_of
 from std.utils.index import IndexList
 from std.memory import bitcast
 from layout import CoordLike, Idx, Layout, LayoutTensor, TileTensor
@@ -178,6 +178,36 @@ cvt.rn.f16x2.e2m1x2 $0, byte0;
     return bitcast[DType.float16, 2](result)
 
 
+@always_inline
+def cast_float_to_fp4e2m1_amd[
+    dtype: DType, width: Int, //
+](input: SIMD[dtype, width], scale: Float32) -> UInt32:
+    comptime assert (
+        _cdna_4_or_newer()
+    ), "only supported on AMD CDNA4 or newer (MI355X)"
+    comptime assert (
+        width % 2 == 0 and width <= 8
+    ), "width must be even and at most 8"
+
+    var packed = UInt32(0)
+
+    comptime for i in range(width // 2):
+        comptime if dtype == DType.bfloat16:
+            packed = llvm_intrinsic[
+                "llvm.amdgcn.cvt.scalef32.pk.fp4.bf16",
+                UInt32,
+            ](packed, input.slice[2, offset=i * 2](), scale, Int32(i))
+        elif dtype == DType.float32:
+            packed = llvm_intrinsic[
+                "llvm.amdgcn.cvt.scalef32.pk.fp4.f32",
+                UInt32,
+            ](packed, input[i * 2], input[i * 2 + 1], scale, Int32(i))
+        else:
+            comptime assert False, "Unsupported dtype"
+
+    return packed
+
+
 def set_scale_factor[
     scales_dtype: DType,
     scales_layout: Layout,
@@ -327,7 +357,7 @@ def set_batched_scale_factor[
     scale_value: Scalar[scales_dtype],
 ):
     comptime assert (
-        scales_tensor.flat_rank >= 6
+        scales_tensor.flat_rank == 6
     ), "scales_tensor must be 6D for batched scales tensor"
 
     scales_tensor.store(
@@ -366,6 +396,34 @@ def get_batched_scale_factor[
             row_idx % SF_ATOM_M[0],
             (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
             (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
+        ]
+    )
+
+
+def get_batched_scale_factor[
+    scales_dtype: DType,
+    //,
+    SF_VECTOR_SIZE: Int,
+](
+    scales_tensor: TileTensor[mut=True, scales_dtype, ...],
+    batch_idx: Int,
+    row_idx: Int,
+    col_idx: Int,
+) -> Scalar[scales_dtype]:
+    comptime assert (
+        scales_tensor.flat_rank == 6
+    ), "scales_tensor must be 6D for batched scales tensor"
+
+    return rebind[Scalar[scales_dtype]](
+        scales_tensor[
+            (
+                Idx(batch_idx),
+                Idx(row_idx // SF_MN_GROUP_SIZE),
+                Idx(col_idx // (SF_VECTOR_SIZE * SF_ATOM_K)),
+                Idx(row_idx % SF_ATOM_M[0]),
+                Idx((row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0]),
+                Idx((col_idx // SF_VECTOR_SIZE) % SF_ATOM_K),
+            )
         ]
     )
 

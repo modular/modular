@@ -52,7 +52,7 @@ def test_exp_float64() raises:
 
 @always_inline
 def exp_libm[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](arg: SIMD[dtype, simd_width]) raises -> SIMD[dtype, simd_width]:
     return libm_call["expf", "exp"](arg)
 
