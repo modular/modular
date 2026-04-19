@@ -24,6 +24,7 @@ from std.sys import (
     simd_width_of,
     size_of,
 )
+from std.memory.unsafe_pointer import unsafe_cast
 from std.sys.intrinsics import PrefetchOptions, readfirstlane
 
 import std.gpu.memory as gpu_memory
@@ -311,27 +312,21 @@ struct LayoutTensor[
     @staticmethod
     def _is_convertible_to_device_type[T: AnyType]() -> Bool:
         comptime if Self.mut:
-            return Variadic.contains[
-                T,
-                Variadic.types[
-                    T=AnyType,
-                    Self,
-                    Self.OriginCastType[MutAnyOrigin],
-                    Self.OriginCastType[MutExternalOrigin],
-                    Self.OriginCastType[ImmutAnyOrigin],
-                    Self.OriginCastType[ImmutExternalOrigin],
-                ],
-            ]
+            return TypeList.of[
+                Trait=AnyType,
+                Self,
+                Self.OriginCastType[MutAnyOrigin],
+                Self.OriginCastType[MutExternalOrigin],
+                Self.OriginCastType[ImmutAnyOrigin],
+                Self.OriginCastType[ImmutExternalOrigin],
+            ]().contains[T]()
         else:
-            return Variadic.contains[
-                T,
-                Variadic.types[
-                    T=AnyType,
-                    Self,
-                    Self.OriginCastType[ImmutAnyOrigin],
-                    Self.OriginCastType[ImmutExternalOrigin],
-                ],
-            ]
+            return TypeList.of[
+                Trait=AnyType,
+                Self,
+                Self.OriginCastType[ImmutAnyOrigin],
+                Self.OriginCastType[ImmutExternalOrigin],
+            ]().contains[T]()
 
     def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
@@ -517,13 +512,24 @@ struct LayoutTensor[
         )
 
     @always_inline
+    @doc_hidden
+    def __init__(
+        out self,
+        unsafe_ptr: OptionalUnsafePointer[
+            Scalar[Self.dtype],
+            Self.origin,
+            address_space=Self.address_space,
+        ],
+    ):
+        self = Self(unsafe_ptr._unsafe_nullable())
+
+    @always_inline
     def __init__(
         out self,
         unsafe_ptr: UnsafePointer[
             Scalar[Self.dtype],
+            Self.origin,
             address_space=Self.address_space,
-            origin=Self.origin,
-            ...,
         ],
     ):
         """Create a `LayoutTensor` with an `UnsafePointer`.
@@ -549,13 +555,25 @@ struct LayoutTensor[
         self.runtime_element_layout = {}
 
     @always_inline
+    @doc_hidden
+    def __init__(
+        out self,
+        unsafe_ptr: OptionalUnsafePointer[
+            Scalar[Self.dtype],
+            Self.origin,
+            address_space=Self.address_space,
+        ],
+        runtime_layout: RuntimeLayout[Self.layout, ...],
+    ):
+        self = Self(unsafe_ptr._unsafe_nullable(), runtime_layout)
+
+    @always_inline
     def __init__(
         out self,
         unsafe_ptr: UnsafePointer[
             Scalar[Self.dtype],
+            Self.origin,
             address_space=Self.address_space,
-            origin=Self.origin,
-            ...,
         ],
         runtime_layout: RuntimeLayout[Self.layout, ...],
     ):
@@ -582,13 +600,30 @@ struct LayoutTensor[
         self.runtime_element_layout = {}
 
     @always_inline
+    @doc_hidden
+    def __init__(
+        out self,
+        unsafe_ptr: OptionalUnsafePointer[
+            Scalar[Self.dtype],
+            Self.origin,
+            address_space=Self.address_space,
+        ],
+        runtime_layout: RuntimeLayout[Self.layout, ...],
+        element_runtime_layout: RuntimeLayout[Self.element_layout, ...],
+    ):
+        self = Self(
+            unsafe_ptr._unsafe_nullable(),
+            runtime_layout,
+            element_runtime_layout,
+        )
+
+    @always_inline
     def __init__(
         out self,
         unsafe_ptr: UnsafePointer[
             Scalar[Self.dtype],
-            address_space=Self.address_space,
             origin=Self.origin,
-            ...,
+            address_space=Self.address_space,
         ],
         runtime_layout: RuntimeLayout[Self.layout, ...],
         element_runtime_layout: RuntimeLayout[Self.element_layout, ...],
@@ -708,9 +743,7 @@ struct LayoutTensor[
             host_buffer: Contains the underlying data to point to.
         """
         self = Self.GenericLayoutTensorType(
-            host_buffer.unsafe_ptr()
-            .mut_cast[Self.mut]()
-            .unsafe_origin_cast[Self.origin]()
+            unsafe_cast[origin=Self.origin](host_buffer.unsafe_ptr()),
         )
 
     @always_inline
@@ -759,9 +792,7 @@ struct LayoutTensor[
             runtime_layout: The runtime layout of the `LayoutTensor`.
         """
         self = Self.GenericLayoutTensorType(
-            host_buffer.unsafe_ptr()
-            .mut_cast[Self.mut]()
-            .unsafe_origin_cast[Self.origin](),
+            unsafe_cast[origin=Self.origin](host_buffer.unsafe_ptr()),
             runtime_layout,
         )
 
@@ -810,9 +841,7 @@ struct LayoutTensor[
             element_runtime_layout: The runtime layout of each element.
         """
         self = Self.GenericLayoutTensorType(
-            host_buffer.unsafe_ptr()
-            .mut_cast[Self.mut]()
-            .unsafe_origin_cast[Self.origin](),
+            unsafe_cast[origin=Self.origin](host_buffer.unsafe_ptr()),
             runtime_layout,
             element_runtime_layout,
         )
@@ -860,7 +889,6 @@ struct LayoutTensor[
     ](
         self,
         out result: LayoutTensor[
-            mut=Self.mut & other_type.origin.mut,
             Self.dtype,
             Self.layout,
             origin_of(Self.origin, other_type.origin),
@@ -2628,13 +2656,7 @@ struct LayoutTensor[
         Returns:
             A null `LayoutTensor` object.
         """
-        return Self.StackTensorType(
-            UnsafePointer[
-                Scalar[Self.dtype],
-                address_space=Self.address_space,
-                origin=MutExternalOrigin,
-            ](_unsafe_null=())
-        )
+        return Self.StackTensorType(None)
 
     comptime StackTensorType = LayoutTensor[
         Self.dtype,
@@ -7385,7 +7407,7 @@ def _copy_dram_to_local[
     dst: LayoutTensor[mut=True, ...],
     src: LayoutTensor[mut=False, ...],
     buffer: AMDBufferResource,
-    offset: Optional[UInt] = None,
+    offset: Optional[Int] = None,
 ):
     comptime assert is_amd_gpu(), "This function is only supported on AMD GPUs."
     comptime simd_width = src.element_layout.size()
@@ -7413,7 +7435,7 @@ def _copy_dram_to_local[
 
     @always_inline
     @parameter
-    def offset_helper(offset_val: UInt):
+    def offset_helper(offset_val: Int):
         var src_frag_offset = Int32(
             src_fragments.distance(src.ptr)
             + Scalar[src.linear_idx_type](offset_val)
@@ -7437,9 +7459,7 @@ def _copy_dram_to_local[
         offset_helper(offset.value())
     else:
         var base_ptr = buffer.get_base_ptr()
-        offset_helper(
-            UInt(Int(src.ptr) - base_ptr) // UInt(size_of[src.dtype]())
-        )
+        offset_helper(ufloordiv(Int(src.ptr) - base_ptr, size_of[src.dtype]()))
 
 
 @always_inline("nodebug")
@@ -7453,7 +7473,7 @@ def copy_dram_to_local[
     dst: LayoutTensor[mut=True, ...],
     src: LayoutTensor[mut=False, ...],
     src_base: LayoutTensor[mut=False, ...],
-    offset: Optional[UInt] = None,
+    offset: Optional[Int] = None,
 ):
     """Efficiently copy data from global memory (DRAM) to registers for AMD GPUs.
 
@@ -7533,7 +7553,7 @@ def _copy_dram_to_local[
         thread_scope,
         block_dim_count,
         cache_policy,
-    ](dst, src_tensor, buffer, UInt(src_iter.offset))
+    ](dst, src_tensor, buffer, Int(src_iter.offset))
 
 
 @always_inline("nodebug")

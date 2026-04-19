@@ -132,9 +132,9 @@ def test_mxfp4_dequant[
     )
 
     for i in range(in_size):
-        in_host_buf.unsafe_ptr()[i] = in_host[i]
+        in_host_buf[i] = in_host[i]
     for i in range(scales_size):
-        scales_host_buf.unsafe_ptr()[i] = rebind[Scalar[DType.float8_e8m0fnu]](
+        scales_host_buf[i] = rebind[Scalar[DType.float8_e8m0fnu]](
             scales_host[i]
         )
 
@@ -167,7 +167,7 @@ def test_mxfp4_dequant[
     var max_err = Float32(0.0)
     var num_mismatches = 0
     for i in range(out_size):
-        var got = out_host_buf.unsafe_ptr()[i].cast[DType.float32]()
+        var got = out_host_buf[i].cast[DType.float32]()
         var exp = expected_host[i].cast[DType.float32]()
         var err = abs(got - exp)
         max_err = max(max_err, err)

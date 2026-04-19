@@ -33,10 +33,8 @@ Cache inputs
    :toctree: generated
    :template: autosummary/class.rst
 
-   AttentionDispatchMetadata
    KVCacheInputs
    KVCacheInputsPerDevice
-   NestedIterableDataclass
    PagedCacheValues
 
 Attention dispatch
@@ -67,11 +65,8 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
-   attention_dispatch_metadata
-   attention_dispatch_metadata_list
    build_max_lengths_tensor
    compute_max_seq_len_fitting_in_cache
    compute_num_device_blocks
    compute_num_host_blocks
    estimated_memory_size
-   unflatten_ragged_attention_inputs

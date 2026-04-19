@@ -67,7 +67,7 @@ def split_copy_op[
     dim2: Int,
     axis_offset: Int,
     in_dim1: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Copy one split chunk from input to output along the normalized axis.
 
@@ -102,7 +102,7 @@ def split_copy_op[
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx)
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )
@@ -126,7 +126,7 @@ struct _SplitCopyBody(Dispatchable):
     var dim2: Int
     var axis_offset: Int
     var in_dim1: Int
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def call[t: DType](self) raises -> None:
         split_copy_op(

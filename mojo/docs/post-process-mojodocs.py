@@ -182,7 +182,7 @@ def remove_docs_domain(file_path) -> None:  # noqa: ANN001
 
 
 def rewrite_mojo_path_prefix(docs_path: str) -> None:
-    """Rewrite '/mojo/' to '/docs/' in hyperlinks across all doc files."""
+    """Rewrite '/mojo/' to '/docs/' in hyperlinks and JSX props across all doc files."""
     for root, _, files in os.walk(docs_path):
         for filename in files:
             if not filename.endswith((".md", ".mdx")):
@@ -191,7 +191,7 @@ def rewrite_mojo_path_prefix(docs_path: str) -> None:
             with open(file_path, "r+") as f:
                 content = f.read()
                 updated = re.sub(
-                    r"(\]\(|href=[\"'])/mojo/", r"\1/docs/", content
+                    r"(\]\(|href=[\"']|url=[\"'])/mojo/", r"\1/docs/", content
                 )
                 if updated != content:
                     f.seek(0)

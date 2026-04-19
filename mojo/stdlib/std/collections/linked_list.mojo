@@ -19,10 +19,10 @@ traversal. The implementation includes iterator support for forward and reverse
 traversal.
 """
 
-from std.collections._index_normalization import normalize_index
+from std.collections import check_bounds
+from std.reflection import call_location
 import std.format._utils as fmt
 from std.hashlib.hasher import Hasher
-from std.memory._nonnull import NonNullUnsafePointer
 from std.os import abort
 
 from std.sys import align_of, size_of
@@ -38,7 +38,7 @@ struct Node[
     """
 
     comptime _OpaquePointer = Optional[
-        NonNullUnsafePointer[NoneType, MutExternalOrigin]
+        UnsafePointer[NoneType, MutExternalOrigin]
     ]
 
     var value: Self.ElementType
@@ -51,21 +51,17 @@ struct Node[
     @doc_hidden
     def prev(
         ref self,
-    ) -> ref[self._prev] Optional[
-        NonNullUnsafePointer[Self, MutExternalOrigin]
-    ]:
-        return NonNullUnsafePointer(to=self._prev).bitcast[
-            Optional[NonNullUnsafePointer[Self, MutExternalOrigin]]
+    ) -> ref[self._prev] Optional[UnsafePointer[Self, MutExternalOrigin]]:
+        return UnsafePointer(to=self._prev).bitcast[
+            Optional[UnsafePointer[Self, MutExternalOrigin]]
         ]()[]
 
     @doc_hidden
     def next(
         ref self,
-    ) -> ref[self._next] Optional[
-        NonNullUnsafePointer[Self, MutExternalOrigin]
-    ]:
-        return NonNullUnsafePointer(to=self._next).bitcast[
-            Optional[NonNullUnsafePointer[Self, MutExternalOrigin]]
+    ) -> ref[self._next] Optional[UnsafePointer[Self, MutExternalOrigin]]:
+        return UnsafePointer(to=self._next).bitcast[
+            Optional[UnsafePointer[Self, MutExternalOrigin]]
         ]()[]
 
     def __init__(
@@ -106,8 +102,8 @@ def _make_node[
 ](
     out node: Node[T],
     var value: T,
-    prev: Optional[NonNullUnsafePointer[Node[T], MutExternalOrigin]],
-    next: Optional[NonNullUnsafePointer[Node[T], MutExternalOrigin]],
+    prev: Optional[UnsafePointer[Node[T], MutExternalOrigin]],
+    next: Optional[UnsafePointer[Node[T], MutExternalOrigin]],
 ):
     """Initialize a new Node with the given value and optional prev/next
     pointers.
@@ -133,9 +129,7 @@ struct _LinkedListIter[
     forward: Bool = True,
 ](ImplicitlyCopyable, Iterable, Iterator):
     var src: Pointer[LinkedList[Self.ElementType], Self.origin]
-    var curr: Optional[
-        NonNullUnsafePointer[Node[Self.ElementType], MutExternalOrigin]
-    ]
+    var curr: Optional[UnsafePointer[Node[Self.ElementType], MutExternalOrigin]]
 
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
@@ -241,7 +235,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
     """
 
     comptime _NodePointer = Optional[
-        NonNullUnsafePointer[Node[Self.ElementType], MutExternalOrigin]
+        UnsafePointer[Node[Self.ElementType], MutExternalOrigin]
     ]
 
     comptime IteratorType[
@@ -335,8 +329,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         Notes:
             Time Complexity: O(1).
         """
-        var raw = alloc[Node[Self.ElementType]](1)
-        var addr = NonNullUnsafePointer(unsafe_from_nullable=raw)
+        var addr = alloc[Node[Self.ElementType]](1)
         var value_ptr = UnsafePointer(to=addr[].value)
         value_ptr.init_pointee_move(value^)
         addr[].prev() = self._tail
@@ -358,8 +351,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             Time Complexity: O(1).
         """
         var node = _make_node[Self.ElementType](value^, None, self._head)
-        var raw = alloc[Node[Self.ElementType]](1)
-        var addr = NonNullUnsafePointer(unsafe_from_nullable=raw)
+        var addr = alloc[Node[Self.ElementType]](1)
         addr.init_pointee_move(node^)
         if self:
             self._head.value()[].prev() = addr
@@ -412,6 +404,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         nn.free()
         return node^._into_value()
 
+    @always_inline
     def pop[I: Indexer, //](mut self, var i: I) raises -> Self.ElementType:
         """Remove the ith element of the list, counting from the tail if
         given a negative index.
@@ -474,6 +467,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         nn.free()
         return node^._into_value()
 
+    @always_inline
     def maybe_pop[
         I: Indexer, //
     ](mut self, var i: I) -> Optional[Self.ElementType]:
@@ -529,6 +523,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         self._tail = Self._NodePointer()
         self._size = 0
 
+    @always_inline
     def insert[I: Indexer](mut self, idx: I, var elem: Self.ElementType) raises:
         """Insert an element `elem` into the list at index `idx`.
 
@@ -548,13 +543,12 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         # `insert` follows Python's list.insert() semantics: out-of-range
         # negative indices clamp to 0 (head) rather than raising, so
-        # normalize_index (which asserts bounds) cannot be used here.
+        # we don't use `check_bounds` here.
         var i = index(idx)
         i = max(i if i >= 0 else i + len(self), 0)
 
         if i == 0:
-            var raw = alloc[Node[Self.ElementType]](1)
-            var node = NonNullUnsafePointer(unsafe_from_nullable=raw)
+            var node = alloc[Node[Self.ElementType]](1)
             node.init_pointee_move(
                 _make_node[Self.ElementType](
                     elem^, Self._NodePointer(), Self._NodePointer()
@@ -579,8 +573,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         if current:
             var curr_nn = current.value()
             var next = curr_nn[].next()
-            var raw = alloc[Node[Self.ElementType]](1)
-            var node = NonNullUnsafePointer(unsafe_from_nullable=raw)
+            var node = alloc[Node[Self.ElementType]](1)
             var data = UnsafePointer(to=node[].value)
             data[] = elem^
             node[].next() = next
@@ -717,6 +710,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             elt.__hash__(hasher)
             curr = curr.value()[].next()
 
+    @always_inline
     def _get_node_ptr[I: Indexer, //](ref self, idx: I) -> Self._NodePointer:
         """Get an optional pointer to the node at the specified index.
 
@@ -735,9 +729,9 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
             Time Complexity: O(n) in len(self).
         """
+        var i = index(idx)
         var l = len(self)
-        var i = normalize_index["LinkedList"](idx, l)
-        assert 0 <= i < l, "index out of bounds"
+        check_bounds(i, l, call_location[inline_count=2]())
         var mid = l // 2
         if i <= mid:
             var curr = self._head
@@ -750,6 +744,8 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
                 curr = curr.value()[].prev()
             return curr
 
+    # TODO(MSTDL-2576): remove this method to avoid accidentally quadratic for-loops
+    @always_inline
     def __getitem__[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
         """Get the element at the specified index.
 
@@ -765,7 +761,6 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         Notes:
             Time Complexity: O(n) in len(self).
         """
-        assert len(self) > 0, "unable to get item from empty list"
         return self._get_node_ptr(idx).value()[].value
 
     def __len__(self) -> Int:

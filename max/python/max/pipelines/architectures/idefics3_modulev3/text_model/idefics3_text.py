@@ -32,11 +32,7 @@ from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
 from max.nn.kernels import scatter_nd_skip_oob_indices as _scatter_nd
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-    PagedCacheValues,
-    unflatten_ragged_attention_inputs,
-)
+from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.nn.transformer import ReturnLogits
 
 from ...llama3_modulev3.layers.mlp import LlamaStackedMLP
@@ -286,8 +282,10 @@ class Idefics3Language(Module[..., tuple[Tensor, ...]]):
         image_token_indices: Tensor,
         *variadic_args,
     ) -> tuple[Tensor, ...]:
-        kv_collections = unflatten_ragged_attention_inputs(
-            variadic_args, n_devices=self.kv_params.n_devices
+        kv_collections = (
+            self.kv_params.get_symbolic_inputs()
+            .unflatten(iter(variadic_args))
+            .inputs
         )
 
         return self.language_model(
