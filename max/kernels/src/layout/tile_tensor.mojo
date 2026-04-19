@@ -18,7 +18,6 @@ from std.os import abort
 
 from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.device_passable import DevicePassable
-from std.builtin.variadics import _ReduceVariadicAndIdxToVariadic
 from std.builtin.int import index as _index
 from std.collections import OptionalReg
 from std.collections._conditional import _ComptimeConditional
@@ -473,12 +472,12 @@ struct TileTensor[
     ](self, *indices: *IndexTypes) -> TileTensor[
         Self.dtype,
         Layout[
-            shape_types=_SelectKeptShape[
-                IndexTypes, Self.LayoutType._shape_types
-            ],
-            stride_types=_SelectKeptStride[
-                IndexTypes, Self.LayoutType._stride_types
-            ],
+            shape_types=Self.LayoutType._shape_types.filter_idx[
+                _KeepCoordWhereIndexIsAll[IndexTypes, ...]
+            ](),
+            stride_types=Self.LayoutType._stride_types.filter_idx[
+                _KeepCoordWhereIndexIsAll[IndexTypes, ...]
+            ](),
         ],
         Self.origin,
         address_space=Self.address_space,
@@ -537,12 +536,13 @@ struct TileTensor[
                 offset += indices[i].value() * self.layout.stride[i]().value()
 
         # Build kept shape and stride coords.
-        comptime KeptShapeTypes = _SelectKeptShape[
-            IndexTypes, Self.LayoutType._shape_types
-        ]
-        comptime KeptStrideTypes = _SelectKeptStride[
-            IndexTypes, Self.LayoutType._stride_types
-        ]
+        comptime KeptShapeTypes = Self.LayoutType._shape_types.filter_idx[
+            _KeepCoordWhereIndexIsAll[IndexTypes, ...]
+        ]()
+        comptime KeptStrideTypes = Self.LayoutType._stride_types.filter_idx[
+            _KeepCoordWhereIndexIsAll[IndexTypes, ...]
+        ]()
+
         var new_shape = Coord[*KeptShapeTypes]()
         var new_stride = Coord[*KeptStrideTypes]()
 
@@ -3111,65 +3111,12 @@ def _count_all_before[up_to: Int, *index_types: CoordLike]() -> Int:
     return count
 
 
-comptime _SelectKeptShapeReducer[
-    index_types: Variadic.TypesOfTrait[CoordLike],
-    shape_types: Variadic.TypesOfTrait[CoordLike],
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[T=CoordLike, shape_types[idx]],
-] if _type_is_eq_parse_time[
-    index_types[idx], _All
-]() else Prev
-"""Keeps shape[idx] when index_types[idx] is _All (static_value == -2)."""
-
-
-comptime _SelectKeptShape[
+comptime _KeepCoordWhereIndexIsAll[
     index_types: TypeList[Trait=CoordLike, ...],
-    shape_types: TypeList[Trait=CoordLike, ...],
-] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=shape_types.values,
-        Reducer=_SelectKeptShapeReducer[
-            index_types.values, shape_types.values, ...
-        ],
-    ]
-]()
-"""Filters shape_types to only dimensions where the corresponding index is _All."""
-
-
-comptime _SelectKeptStrideReducer[
-    index_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
+    element: CoordLike,
     idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[T=CoordLike, stride_types[idx]],
-] if _type_is_eq_parse_time[
-    index_types[idx], _All
-]() else Prev
-"""Keeps stride[idx] when index_types[idx] is _All (static_value == -2)."""
-
-
-comptime _SelectKeptStride[
-    index_types: TypeList[Trait=CoordLike, ...],
-    stride_types: TypeList[Trait=CoordLike, ...],
-] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=stride_types.values,
-        Reducer=_SelectKeptStrideReducer[
-            index_types.values, stride_types.values, ...
-        ],
-    ]
-]()
-"""Filters stride_types to only dimensions where the corresponding index is _All."""
-
+] = _type_is_eq_parse_time[index_types[idx], _All]()
+"""Compile-time predicate: keep a shape/stride dimension when the slice index is `_All`."""
 
 comptime _IsRowMajorTabulator[
     expected_strides: TypeList[Trait=CoordLike, ...],
