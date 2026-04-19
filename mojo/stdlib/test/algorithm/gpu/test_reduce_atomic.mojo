@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.os.atomic import Atomic, Consistency
+from std.atomic import Atomic
 
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext

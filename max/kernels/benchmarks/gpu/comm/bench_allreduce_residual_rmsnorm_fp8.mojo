@@ -574,7 +574,7 @@ def bench_allreduce_rmsnorm_fp8[
     # Signal buffers.
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
+        uninitialized=True
     )
     var temp_bytes = ngpus * size_of[in_dtype]() * length
 

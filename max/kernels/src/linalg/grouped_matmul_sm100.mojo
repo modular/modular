@@ -591,12 +591,6 @@ def multi_stage_store_C[
 
     var warp_id = get_warp_id()
 
-    # lets keep track of the of the starting row and column in GMEM
-    # var c_row = work_tile_coord[0] * BM
-    # var c_col = work_tile_coord[1] * MMA_N
-    var c_row = UInt(work_tile_coord[0])
-    var c_col = UInt(work_tile_coord[1])
-
     # before i start the process of transferring over num_stages * stageN= MMA_N from tensor memory to global, i should wait
     # on the accum_full_mbar barrier
     var index = accum_pipeline_consumer_state.index()
@@ -699,14 +693,12 @@ def multi_stage_store_C[
         # var coord_n_mma_m128 = (
         #     work_tile_coord[1] * MMA_N + stage * stageN + BN * (warp_id // 2)
         # )
-        var coord_n_mma_m256 = UInt(work_tile_coord[1]) + UInt(stage * stageN)
+        var coord_n_mma_m256 = work_tile_coord[1] + stage * stageN
         var coord_n_mma_m128 = (
-            UInt(work_tile_coord[1])
-            + UInt(stage * stageN)
-            + UInt(BN * ufloordiv(warp_id, 2))
+            work_tile_coord[1] + stage * stageN + BN * ufloordiv(warp_id, 2)
         )
 
-        var coord_n = Int(
+        var coord_n = (
             coord_n_mma_m256 if MMA_M == 256
             or cta_group == 1 else coord_n_mma_m128
         )
@@ -745,7 +737,7 @@ def multi_stage_store_C[
                         c_smem_split,
                         (
                             coord_n,
-                            # UInt(work_tile_coord[0] * BM),
+                            # work_tile_coord[0] * BM,
                             work_tile_coord[0],
                         ),
                     )
@@ -868,6 +860,9 @@ def zero_output[
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
+@__name(
+    t"grouped_matmul_sm100_{a_type}_{b_type}_{c_type}_em{expert_m}", mangle=True
+)
 def blackwell_tma_umma_warp_specialized_kernel[
     a_type: DType,
     b_type: DType,

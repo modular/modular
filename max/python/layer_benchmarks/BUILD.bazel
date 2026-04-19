@@ -44,12 +44,14 @@ modular_py_library(
         "//max/python/max/interfaces",
         "//max/python/max/kv_cache",
         "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/core",
         "//max/python/max/profiler",
         requirement("cyclopts"),
         requirement("torch"),
         requirement("numpy"),
         requirement("tabulate"),
+        requirement("transformers"),
         requirement("typing-extensions"),
     ],
 )
@@ -65,20 +67,84 @@ modular_py_binary(
     ],
 )
 
+# kbench YAML configs — referenced by kbench at runtime.
+exports_files([
+    "bench_attention_with_rope.yaml",
+    "bench_attention_fp4.yaml",
+    "bench_attention_fp8.yaml",
+    "bench_gemma4_attention.yaml",
+    "bench_gemma3_attention.yaml",
+    "bench_gpt_oss_attention.yaml",
+    "bench_olmo2_attention.yaml",
+    "bench_qwen3_attention.yaml",
+])
+
 # -- Harness tests --
 
-_HARNESS_TEST_DEPS = [":testbed"]
+_HARNESS_TEST_DEPS = [
+    ":testbed",
+    "//max/python/max/interfaces",
+]
 
 _GPU_CONSTRAINTS = ["//:has_gpu"] + select({
     "//:apple_gpu": ["@platforms//:incompatible"],
     "//conditions:default": [],
 })
 
+_NVIDIA_ONLY = ["//:has_gpu"] + select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//:amd_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
+# Harness tests: {name: gpu_constraints}.
+# Each generates a modular_py_test from test_<name>.py.
+_HARNESS_TESTS = {
+    "harness_attention_with_rope_bf16": _GPU_CONSTRAINTS,
+    "harness_attention_with_rope_fp4": ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:amd_gpu": ["@platforms//:incompatible"],
+        "//:b200_gpu": [],  # NVFP4 requires SM100+
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "harness_attention_with_rope_fp8": ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:amd_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],  # FP8 works on H100+ and B200+
+    }),
+    # TODO(KERN-2749): Re-enable on AMD once graph compiler supports
+    # sliding window attention and QK norm on MI355.
+    "harness_gemma4_attention": _NVIDIA_ONLY,
+    # TODO(KERN-2751): Re-enable on AMD once flash_attention[sink=True]
+    # produces correct results on MI355.
+    "harness_gpt_oss_attention": _NVIDIA_ONLY,
+    "harness_olmo2_attention": _GPU_CONSTRAINTS,
+    "harness_qwen2_5vl_attention": _GPU_CONSTRAINTS,
+    "harness_qwen3_attention": _GPU_CONSTRAINTS,
+    # TODO(KERN-2749): Re-enable on AMD once graph compiler supports
+    # sliding window attention and QK norm on MI355.
+    "harness_gemma3_attention": _NVIDIA_ONLY,
+}
+
+[
+    modular_py_test(
+        name = name,
+        srcs = ["test_{}.py".format(name)],
+        exec_properties = {"test.resources:gpu-memory": "10"},
+        gpu_constraints = constraints,
+        imports = ["."],
+        tags = ["gpu"],
+        deps = _HARNESS_TEST_DEPS,
+    )
+    for name, constraints in _HARNESS_TESTS.items()
+]
+
 modular_py_test(
     name = "harness_rms_norm",
     srcs = ["test_harness_rms_norm.py"],
     exec_properties = {"test.resources:gpu-memory": "10"},
     gpu_constraints = _GPU_CONSTRAINTS,
+    ignore_extra_deps = ["//max/python/max/interfaces"],
     imports = ["."],
     tags = ["gpu"],
     deps = _HARNESS_TEST_DEPS,
@@ -89,6 +155,7 @@ modular_py_test(
     srcs = ["test_testbed_validation.py"],
     exec_properties = {"test.resources:gpu-memory": "10"},
     gpu_constraints = _GPU_CONSTRAINTS,
+    ignore_extra_deps = ["//max/python/max/interfaces"],
     imports = ["."],
     tags = ["gpu"],
     deps = _HARNESS_TEST_DEPS + [

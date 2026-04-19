@@ -21,14 +21,15 @@ not a dispatch logic bug — tracked for a proper fix.
 """
 
 import numpy as np
-from _test_helpers import from_np, shard, to_np
 from max.driver import Accelerator
-from max.experimental.distributed_functional.shape import (
+from max.experimental.distributed_functional import (
     permute,
     reshape,
+    transfer_to,
     transpose,
 )
-from max.experimental.sharding import DeviceMesh, Sharded
+from max.experimental.sharding import DeviceMesh, PlacementMapping, Sharded
+from max.experimental.tensor import Tensor
 
 MESH = DeviceMesh(
     devices=(Accelerator(0), Accelerator(1), Accelerator(2), Accelerator(3)),
@@ -42,23 +43,28 @@ class TestShapeMultiGPU:
 
     def test_transpose(self) -> None:
         t_np = np.arange(32, dtype=np.float32).reshape(4, 8)
-        t = shard(from_np(t_np), MESH, [Sharded(0)])
+        t = transfer_to(Tensor(t_np), PlacementMapping(MESH, (Sharded(0),)))
         out = transpose(t, 0, 1)
+        assert isinstance(out, Tensor)
         assert out.placements == (Sharded(1),)
-        np.testing.assert_allclose(to_np(out), t_np.T, rtol=1e-5)
+        np.testing.assert_allclose(out.to_numpy(), t_np.T, rtol=1e-5)
 
     def test_reshape(self) -> None:
         t_np = np.arange(32, dtype=np.float32).reshape(8, 4)
-        t = shard(from_np(t_np), MESH, [Sharded(0)])
+        t = transfer_to(Tensor(t_np), PlacementMapping(MESH, (Sharded(0),)))
         out = reshape(t, (8, 2, 2))
+        assert isinstance(out, Tensor)
         assert out.placements == (Sharded(0),)
-        np.testing.assert_allclose(to_np(out), t_np.reshape(8, 2, 2), rtol=1e-5)
+        np.testing.assert_allclose(
+            out.to_numpy(), t_np.reshape(8, 2, 2), rtol=1e-5
+        )
 
     def test_permute(self) -> None:
         t_np = np.arange(96, dtype=np.float32).reshape(4, 8, 3)
-        t = shard(from_np(t_np), MESH, [Sharded(0)])
+        t = transfer_to(Tensor(t_np), PlacementMapping(MESH, (Sharded(0),)))
         out = permute(t, [2, 0, 1])
+        assert isinstance(out, Tensor)
         assert out.placements == (Sharded(1),)
         np.testing.assert_allclose(
-            to_np(out), t_np.transpose(2, 0, 1), rtol=1e-5
+            out.to_numpy(), t_np.transpose(2, 0, 1), rtol=1e-5
         )

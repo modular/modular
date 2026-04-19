@@ -68,19 +68,17 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
 
     Example:
         ```mojo
-        import std.os
-        from std.ffi import get_errno, set_errno, ErrNo
+        from std.os import abort
+        from std.sys._libc_errno import get_errno, set_errno, ErrNo
 
-        try:
-            _ = os.path.realpath("non-existent-file")
-        except:
+        def main():
             var err = get_errno()
             if err == ErrNo.ENOENT:
                 # Handle missing path, clear errno, and continue
                 set_errno(ErrNo.SUCCESS)
-            else:
-                # Else raise error
-                raise Error(err)
+            elif err != ErrNo.SUCCESS:
+                # Else abort on error
+                abort("unexpected errno")
         ```
     """
 

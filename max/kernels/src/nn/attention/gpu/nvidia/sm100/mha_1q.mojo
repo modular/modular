@@ -254,11 +254,7 @@ def local_tensor_type[
         element_layout=element_layout,
     ]
 ):
-    dummy_arg = {
-        UnsafePointer[
-            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.LOCAL
-        ](_unsafe_null=())
-    }
+    dummy_arg = {None}
 
 
 trait AccumulatorTile(TrivialRegisterPassable):
@@ -1324,8 +1320,8 @@ def mha_sm100_dispatch[
         BK=config.BK,
         num_pipeline_stages=2 if config.padded_depth >= 512 else 4,
     )
-    comptime BM = UInt(new_config.block_m())
-    comptime BK = UInt(new_config.padded_depth)
+    comptime BM = new_config.block_m()
+    comptime BK = new_config.padded_depth
     comptime assert BM % 64 == 0, "SM90 requires BM%64==0, but BM==" + String(
         BM
     )
@@ -1334,7 +1330,7 @@ def mha_sm100_dispatch[
     ), "B200 requires BK%64 as it uses 128B swizzles, but BK==" + String(BK)
     comptime BN = new_config.block_n()
     # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)
-    comptime num_threads = UInt(new_config.num_threads[True]())
+    comptime num_threads = new_config.num_threads[True]()
     comptime assert num_threads % 128 == 0, "num_threads = " + String(
         num_threads
     )
@@ -1368,7 +1364,7 @@ def mha_sm100_dispatch[
     ](
         q_tma[
             swizzle_mode,
-            BM=Int(BM),
+            BM=BM,
             depth=new_config.depth,
             q_num_heads=new_config.num_heads,
             group=group,
@@ -1802,20 +1798,20 @@ def _mha_sm100_enqueue[
     var block_x: UInt32 = partition.num_partitions()
 
     comptime max_tmem_cols = 512
-    comptime BN = UInt(config.block_n())
-    comptime BM_enq = UInt(config.block_m())
+    comptime BN = config.block_n()
+    comptime BM_enq = config.block_m()
     # When P must go to SMEM (depth too large for P+O in one TMEM bank),
     # S and O go in separate TMEM banks, giving full 512 cols for S.
-    comptime use_p_smem = config.padded_depth + Int(BN) // 2 > max_tmem_cols
+    comptime use_p_smem = config.padded_depth + BN // 2 > max_tmem_cols
     comptime num_s = (
         max_tmem_cols
-        // Int(BN) if use_p_smem else (
-            max_tmem_cols - (Int(BN) // 2) - config.padded_depth
+        // BN if use_p_smem else (
+            max_tmem_cols - (BN // 2) - config.padded_depth
         )
-        // Int(BN)
+        // BN
     )
     # P buffer in SMEM for depth=512 decoding (BM * BN * sizeof(bf16))
-    comptime p_smem_bytes = Int(BM_enq) * Int(BN) * size_of[
+    comptime p_smem_bytes = BM_enq * BN * size_of[
         config.dtype
     ]() if use_p_smem else 0
     # we add smem use for SharedMemBarrier synchronization
@@ -1824,7 +1820,7 @@ def _mha_sm100_enqueue[
     comptime smem_use = config.shared_mem_bytes[
         True, sm_90=True
     ]() + extra_B200_smem
-    comptime num_threads = UInt(config.num_threads[True]())
+    comptime num_threads = config.num_threads[True]()
     logger.info("------ Dispatching to SM100 FMHA-1Q ------")
     logger.info(
         "QKV Type: ",
@@ -1851,7 +1847,7 @@ def _mha_sm100_enqueue[
         num_keys_arg,
         pack,
         grid_dim=SchedulerType.grid_dim(batch_size, block_x),
-        block_dim=(Int(num_threads), 1, 1),
+        block_dim=(num_threads, 1, 1),
         shared_mem_bytes=smem_use,
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_use)
@@ -1868,6 +1864,10 @@ def _mha_sm100_enqueue[
     )
 )
 @__llvm_metadata(`nvvm.minctasm`=Int(1))
+@__name(
+    t"sm100_mha_1q_depth{config.depth}_{KVLUTType.dtype}_{output_type}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
+    mangle=True,
+)
 def _mha_sm100[
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -2204,9 +2204,11 @@ def _mha_sm100[
     comptime ragged = not ValidLengthType.is_null
 
     # Handle sink_weights
-    var sink_weights_ptr = UnsafePointer[Scalar[kv_type], ImmutAnyOrigin](
-        _unsafe_null=()
-    )
+    # SAFETY: Only dereferenced when SinkType is non-null (comptime guard
+    # below), at which point it's overwritten with the real pointer.
+    var sink_weights_ptr = UnsafePointer[
+        Scalar[kv_type], ImmutAnyOrigin
+    ].unsafe_dangling()
 
     comptime if not SinkType.is_null:
         sink_weights_ptr = rebind[
@@ -2326,8 +2328,8 @@ def _mha_sm100[
                 kv_smem,
                 produced_mbar_kv,
                 producer_mbar_kv,
-                {_unsafe_null = ()},
-                {_unsafe_null = ()},
+                None,
+                None,
                 kv_lut,
                 position,
                 partition,

@@ -13,16 +13,21 @@
 
 from std.sys import align_of, simd_width_of, size_of
 
-from std.gpu import lane_id, thread_idx
+from std.gpu import lane_id
 from std.gpu import WARP_SIZE, warp_id as get_warp_id
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, TileTensor
-from std.gpu.intrinsics import AMDBufferResource
 from layout._utils import idx2crd, make_amd_buffer_resource
-from layout.element import Element
-from layout.layout_tensor import ThreadScope
+from layout.tile_layout import (
+    Layout as TileLayout,
+    ComptimeInt,
+    RuntimeInt,
+    Idx,
+)
+from layout.coord import Coord, CoordLike
+from std.builtin.variadics import Variadic
 from layout.tensor_core import num_matrix_reg
 from std.memory import AddressSpace as BaseAddressSpace
-from std.memory import stack_allocation
+from std.memory import stack_allocation, bitcast
 from std.math.uutils import umod, ufloordiv, udivmod
 
 from std.utils import IndexList
@@ -82,67 +87,6 @@ comptime SharedLayoutTensor[dtype: DType, layout: Layout] = LayoutTensor[
     MutAnyOrigin,
     address_space=AddressSpace.SHARED,
 ]
-
-
-@always_inline("nodebug")
-def copy_local_to_dram2[
-    dst_thread_layout: Layout,
-    thread_scope: ThreadScope = ThreadScope.BLOCK,
-](dst: LayoutTensor, src: LayoutTensor, dst_base: LayoutTensor):
-    # TODO: use copy_local_to_dram instead. This is a hack for hackathon :|.
-
-    var worker_idx = (
-        thread_idx.x if thread_scope == ThreadScope.BLOCK else lane_id()
-    )
-    var dst_fragments = dst.distribute[dst_thread_layout](worker_idx)
-
-    var offset = (Int(dst.ptr) - Int(dst_base.ptr)) // size_of[dst.dtype]()
-    var buffer = make_amd_buffer_resource(dst_base)
-    var dst_frag_offset = dst_fragments.distance(dst.ptr) + Scalar[
-        dst.linear_idx_type
-    ](offset)
-
-    comptime M = src.layout.shape[0].value()
-    comptime N = src.layout.shape[1].value()
-
-    comptime for n in range(N):
-        comptime for m in range(M):
-            comptime src_idx = 4 * n + 16 * m
-            comptime i = 4 * m + n
-
-            comptime dst_static_idx = dst_fragments.layout(i)
-            var dst_idx = dst_frag_offset
-
-            comptime if dst_fragments.layout.all_dims_known():
-                dst_idx += Scalar[dst.linear_idx_type](dst_static_idx)
-            else:
-                dst_idx += dst_fragments.runtime_layout(i)
-
-            var src_element = Element[index_type=src.linear_idx_type].load(
-                src.ptr + src_idx,
-                src.runtime_element_layout,
-            )
-
-            comptime element_stride = dst_fragments.element_layout.stride[
-                1
-            ].value()
-
-            comptime if element_stride == 1:
-                buffer.store(
-                    Int32(dst_idx),
-                    src_element.element_data.cast[dst.dtype](),
-                )
-            else:
-                comptime for i in range(dst_fragments.element_layout.size()):
-                    comptime element_offset = dst_fragments.element_layout(i)
-                    var src = src_element.element_data[i].cast[dst.dtype]()
-                    buffer.store(
-                        Int32(
-                            dst_idx
-                            + Scalar[dst.linear_idx_type](element_offset)
-                        ),
-                        src,
-                    )
 
 
 struct SharedMemoryManager[
@@ -261,13 +205,13 @@ struct SharedMemoryManager[
         MutAnyOrigin,
         address_space=AddressSpace.SHARED,
     ]:
+        # SAFETY: Placeholder dangling pointer guarded by
+        # Self.token_gen.
         return self.k_smem.bitcast[
             Scalar[_dtype]
         ]() if Self.token_gen else UnsafePointer[
             Scalar[_dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
-        ](
-            _unsafe_null=()
-        )
+        ].unsafe_dangling()
 
 
 struct GlobalMemoryManager[
@@ -298,24 +242,41 @@ struct GlobalMemoryManager[
         Int(Self.BM), Int(Self.output_depth)
     )
 
+    # TileTensor output layout with RuntimeInt for valid_rows (OOB clamping).
+    comptime _output_stride0 = (
+        Int(Self.num_heads)
+        * Int(Self.output_depth) if not Self.token_gen else Int(
+            Self.output_depth
+        )
+    )
+    comptime OutputTileLayout = TileLayout[
+        Coord[
+            RuntimeInt[DType.int64], ComptimeInt[Int(Self.output_depth)]
+        ].element_types,
+        Coord[ComptimeInt[Self._output_stride0], ComptimeInt[1]].element_types,
+    ]
+
     comptime kv_gmem_layout = Layout(
         IntTuple(Int(Self.BN), Int(Self.depth)),
         IntTuple(Int(Self.kv_num_heads * Self.depth), 1),
     )
 
-    var q_offset: UInt32
-    var q_runtime_layout: RuntimeLayout[
-        Self.q_gmem_layout,
-        element_type=DType.int32,
-        linear_idx_type=DType.int32,
+    # TileTensor KV layout with RuntimeInt for valid_rows (OOB clamping).
+    comptime _kv_stride0 = Int(Self.kv_num_heads) * Int(Self.depth)
+    comptime KvTileLayout = TileLayout[
+        Coord[
+            RuntimeInt[DType.int64], ComptimeInt[Int(Self.depth)]
+        ].element_types,
+        Coord[ComptimeInt[Self._kv_stride0], ComptimeInt[1]].element_types,
     ]
 
+    var q_offset: UInt32
     var output_offset: UInt32
-    var output_runtime_layout: RuntimeLayout[
-        Self.output_gmem_layout,
-        element_type=DType.int32,
-        linear_idx_type=DType.int32,
-    ]
+    # The only truly runtime dimension: number of valid rows in the Q/output
+    # tile.  Everything else (depth, stride) is comptime-known.  Replacing
+    # two full RuntimeLayout fields (6 wasted registers) with this single
+    # UInt32.
+    var valid_rows: UInt32
 
     @always_inline
     def __init__(
@@ -326,34 +287,11 @@ struct GlobalMemoryManager[
         q_offset: UInt32,
         output_offset: UInt32,
     ):
-        var q_tile_num_rows = min(
-            Self.BM, UInt32(seq_len) - q_tile_idx * Self.BM
-        ) if not Self.token_gen else Self.group
-
         self.q_offset = q_offset
         self.output_offset = output_offset
-
-        self.q_runtime_layout = type_of(self.q_runtime_layout)(
-            {Int(q_tile_num_rows), Int(Self.q_depth)},
-            {
-                Int(
-                    Self.num_heads
-                    * Self.q_depth if not Self.token_gen else Self.q_depth
-                ),
-                1,
-            },
-        )
-
-        self.output_runtime_layout = type_of(self.output_runtime_layout)(
-            {Int(q_tile_num_rows), Int(Self.output_depth)},
-            {
-                Int(
-                    Self.num_heads
-                    * Self.output_depth if not Self.token_gen else Self.output_depth
-                ),
-                1,
-            },
-        )
+        self.valid_rows = min(
+            Self.BM, UInt32(seq_len) - q_tile_idx * Self.BM
+        ) if not Self.token_gen else Self.group
 
     @always_inline
     def get_q_tensor[
@@ -370,7 +308,62 @@ struct GlobalMemoryManager[
             masked=True,
         ],
     ):
-        return {ptr + Int(self.q_offset), self.q_runtime_layout}
+        # Construct RuntimeLayout on-the-fly from the single runtime value.
+        var q_rt = RuntimeLayout[
+            Self.q_gmem_layout,
+            element_type=DType.int32,
+            linear_idx_type=DType.int32,
+        ](
+            {Int(self.valid_rows), Int(Self.q_depth)},
+            {
+                Int(
+                    Self.num_heads
+                    * Self.q_depth if not Self.token_gen else Self.q_depth
+                ),
+                1,
+            },
+        )
+        return {ptr + Int(self.q_offset), q_rt}
+
+    # TileTensor Q layout with RuntimeInt for valid_rows (OOB clamping).
+    comptime _q_stride0 = (
+        Int(Self.num_heads)
+        * Int(Self.q_depth) if not Self.token_gen else Int(Self.q_depth)
+    )
+    comptime QTileLayout = TileLayout[
+        Coord[
+            RuntimeInt[DType.int64], ComptimeInt[Int(Self.q_depth)]
+        ].element_types,
+        Coord[ComptimeInt[Self._q_stride0], ComptimeInt[1]].element_types,
+    ]
+
+    @always_inline
+    def get_q_tile[
+        qtype: DType,
+    ](
+        self,
+        ptr: UnsafePointer[Scalar[qtype], ImmutAnyOrigin],
+    ) -> TileTensor[
+        qtype, Self.QTileLayout, ImmutAnyOrigin
+    ]:
+        """Return the Q DRAM tile as a TileTensor with RuntimeInt valid_rows.
+
+        Args:
+            ptr: Base pointer to the Q buffer.
+
+        Returns:
+            A TileTensor with RuntimeInt rows and ComptimeInt strides.
+        """
+        return TileTensor[qtype, Self.QTileLayout, ImmutAnyOrigin](
+            ptr=ptr + Int(self.q_offset),
+            layout=Self.QTileLayout(
+                Coord(
+                    RuntimeInt[DType.int64](Int64(self.valid_rows)),
+                    Idx[Int(Self.q_depth)](),
+                ),
+                Coord(Idx[Self._q_stride0](), Idx[1]()),
+            ),
+        )
 
     @always_inline
     def get_output_tensor[
@@ -387,7 +380,53 @@ struct GlobalMemoryManager[
             masked=True,
         ],
     ):
-        return {ptr + Int(self.output_offset), self.output_runtime_layout}
+        # Construct RuntimeLayout on-the-fly from the single runtime value.
+        var output_rt = RuntimeLayout[
+            Self.output_gmem_layout,
+            element_type=DType.int32,
+            linear_idx_type=DType.int32,
+        ](
+            {Int(self.valid_rows), Int(Self.output_depth)},
+            {
+                Int(
+                    Self.num_heads
+                    * Self.output_depth if not Self.token_gen else Self.output_depth
+                ),
+                1,
+            },
+        )
+        return {ptr + Int(self.output_offset), output_rt}
+
+    @always_inline
+    def get_output_tile[
+        out_type: DType,
+    ](
+        self,
+        ptr: UnsafePointer[Scalar[out_type], MutAnyOrigin],
+    ) -> TileTensor[
+        out_type, Self.OutputTileLayout, MutAnyOrigin
+    ]:
+        """Return the output DRAM tile as a TileTensor with RuntimeInt valid_rows.
+
+        The RuntimeInt dim[0] ensures make_amd_buffer_resource computes
+        correct OOB clamping bounds when the tile exceeds valid data.
+
+        Args:
+            ptr: Base pointer to the output buffer.
+
+        Returns:
+            A TileTensor with RuntimeInt rows and ComptimeInt strides.
+        """
+        return TileTensor[out_type, Self.OutputTileLayout, MutAnyOrigin](
+            ptr=ptr + Int(self.output_offset),
+            layout=Self.OutputTileLayout(
+                Coord(
+                    RuntimeInt[DType.int64](Int64(self.valid_rows)),
+                    Idx[Int(Self.output_depth)](),
+                ),
+                Coord(Idx[Self._output_stride0](), Idx[1]()),
+            ),
+        )
 
     @always_inline
     def get_kv_tensor[
@@ -416,6 +455,38 @@ struct GlobalMemoryManager[
         )
 
         return {ptr, kv_runtime_layout}
+
+    @always_inline
+    def get_kv_tile[
+        kvtype: DType,
+        //,
+    ](
+        self,
+        ptr: UnsafePointer[Scalar[kvtype], ImmutAnyOrigin],
+        kv_tile_num_rows: UInt32,
+    ) -> TileTensor[kvtype, Self.KvTileLayout, ImmutAnyOrigin]:
+        """Return the KV DRAM tile as a TileTensor with RuntimeInt valid_rows.
+
+        The RuntimeInt dim[0] ensures make_amd_buffer_resource computes
+        correct OOB clamping bounds when the tile exceeds valid data.
+
+        Args:
+            ptr: Base pointer to the KV cache buffer.
+            kv_tile_num_rows: Number of valid rows in this tile.
+
+        Returns:
+            A TileTensor with RuntimeInt rows and ComptimeInt strides.
+        """
+        return TileTensor[kvtype, Self.KvTileLayout, ImmutAnyOrigin](
+            ptr=ptr,
+            layout=Self.KvTileLayout(
+                Coord(
+                    RuntimeInt[DType.int64](Int64(kv_tile_num_rows)),
+                    Idx[Int(Self.depth)](),
+                ),
+                Coord(Idx[Self._kv_stride0](), Idx[1]()),
+            ),
+        )
 
 
 comptime _alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
@@ -581,12 +652,14 @@ def copy_dram_to_sram_lds[
 
     comptime M = src.shape[0]()
     comptime N = src.shape[1]()
-    # we use 16x4 thread layout to load 16x32 tile from dram to sram
-    # but we need to load 32x16 tiles from sram for mma, so swizzle need to be applied to
-    # the whole 32x32 tile.
+    # We use 16×4 thread layout to load sub-tiles from DRAM to SRAM.
+    # BN matches the source column count so fp8 (BK=64) and bf16 (BK=32)
+    # both load full rows in one iteration.
     comptime BM = 32
-    comptime BN = 32
+    comptime BN = N
     comptime BM_SUB = thread_layout.shape[0].value()
+    # Each thread loads BN/4 elements (4 columns in thread layout).
+    comptime load_width = BN // thread_layout.shape[1].value()
 
     comptime aux = 0  # _cache_operation_to_amd_aux[cache_policy]()
 
@@ -604,11 +677,11 @@ def copy_dram_to_sram_lds[
         comptime dst_layout = dst_partitions.layout
         # dst need to be contiguous
         comptime assert dst_layout.stride[1].value() == 1, String(dst_layout)
-        comptime assert dst_layout.stride[0].value() == 32, String(dst_layout)
+        comptime assert dst_layout.stride[0].value() == BN, String(dst_layout)
         var worker_idx_with_offset = worker_idx + m_sub_tile * WARP_SIZE
-        var src_dist = src_partitions.vectorize[
-            1, simd_width_of[src.dtype]()
-        ]().distribute[thread_layout](
+        var src_dist = src_partitions.vectorize[1, load_width]().distribute[
+            thread_layout
+        ](
             umod(
                 swizzle.value()(
                     worker_idx_with_offset
@@ -629,7 +702,7 @@ def copy_dram_to_sram_lds[
             Scalar[DType.bfloat16],
             MutAnyOrigin,
             address_space=AddressSpace.BUFFER_RESOURCE,
-        ](_unsafe_null=())
+        ].unsafe_dangling()
 
         var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
         var ptr_to_simd = UnsafePointer(to=bc.desc)
@@ -648,7 +721,7 @@ def copy_dram_to_sram_lds[
             _type=__mlir_type.`!llvm.ptr<3>`
         ](dst_ptr)
 
-        comptime num_bytes_per_lane = size_of[dtype]() * simd_width_of[dtype]()
+        comptime num_bytes_per_lane = size_of[dtype]() * load_width
         var vector_offset_bytes = Int(src_dist.ptr) - Int(src_partitions.ptr)
         var scalar_offset_bytes = Int(src_partitions.ptr) - Int(src.ptr)
 
@@ -671,111 +744,10 @@ def copy_dram_to_sram_lds[
 
 
 @always_inline
-def copy_dram_to_sram_lds[
-    swizzle: Optional[Swizzle] = Optional[Swizzle](),
-](
-    dst: LayoutTensor,
-    src: TileTensor,
-    lds_base_ptr: UInt32,
-    bc: AMDBufferResource,
-):
-    """DMA from DRAM to LDS with TileTensor src and pre-computed buffer resource.
-
-    Scalar offsets are relative to bc's base pointer, so src may be a
-    sub-tile whose pointer differs from bc's base.
-    """
-    from layout.tile_layout import row_major as tt_row_major
-
-    comptime thread_layout = tt_row_major[16, 4]()
-    var worker_idx = lane_id()
-
-    var dram_base = bc.get_base_ptr()
-
-    comptime M = type_of(src).static_shape[0]
-    comptime N = type_of(src).static_shape[1]
-    comptime BM = 32
-    comptime BN = 32
-    comptime BM_SUB = 16
-
-    comptime aux = 0
-
-    var lds_ptr = lds_base_ptr
-
-    comptime for n_tile, m_tile, m_sub_tile in product(
-        range(N // BN), range(M // BM), range(BM // BM_SUB)
-    ):
-        var dst_partitions = dst.tile[BM, BN](m_tile, n_tile).tile[BM_SUB, BN](
-            m_sub_tile, 0
-        )
-        var src_partitions = src.tile[BM, BN](m_tile, n_tile).tile[BM_SUB, BN](
-            m_sub_tile, 0
-        )
-        comptime dst_layout = dst_partitions.layout
-        comptime assert dst_layout.stride[1].value() == 1, String(dst_layout)
-        comptime assert dst_layout.stride[0].value() == 32, String(dst_layout)
-        var worker_idx_with_offset = worker_idx + m_sub_tile * WARP_SIZE
-        var src_dist = src_partitions.vectorize[
-            1, simd_width_of[src.dtype]()
-        ]().distribute[thread_layout](
-            umod(
-                swizzle.value()(
-                    worker_idx_with_offset
-                ) if swizzle else worker_idx_with_offset,
-                WARP_SIZE,
-            )
-        )
-        comptime dtype = src.dtype
-        var ptr = dst_partitions.ptr
-        var dst_ptr = ptr.address_space_cast[AddressSpace.SHARED]()
-
-        var desc_ptr_ = UnsafePointer[
-            Scalar[DType.bfloat16],
-            MutAnyOrigin,
-            address_space=AddressSpace.BUFFER_RESOURCE,
-        ](_unsafe_null=())
-
-        var ptr_to_ptr = UnsafePointer(to=desc_ptr_)
-        var ptr_to_simd = UnsafePointer(to=bc.desc)
-        ptr_to_ptr[0] = ptr_to_simd.bitcast[
-            UnsafePointer[
-                Scalar[DType.bfloat16],
-                MutAnyOrigin,
-                address_space=AddressSpace.BUFFER_RESOURCE,
-            ]
-        ]()[0]
-        var desc_ptr_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
-            _type=__mlir_type.`!llvm.ptr<8>`
-        ](desc_ptr_)
-
-        var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
-            _type=__mlir_type.`!llvm.ptr<3>`
-        ](dst_ptr)
-
-        comptime num_bytes_per_lane = size_of[dtype]() * simd_width_of[dtype]()
-        var vector_offset_bytes = Int(src_dist.ptr) - Int(src_partitions.ptr)
-        var scalar_offset_bytes = Int(src_partitions.ptr) - dram_base
-
-        __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
-            alias_scopes=_alias_scope_attr,
-            _type=None,
-        ](
-            desc_ptr_llvm,
-            shared_ptr3,
-            to_i32(Int32(num_bytes_per_lane)),
-            to_i32(Int32(vector_offset_bytes)),
-            to_i32(Int32(scalar_offset_bytes)),
-            to_i32(0),
-            to_i32(aux),
-        )
-        comptime num_bytes_per_warp = UInt32(
-            thread_layout.size() * num_bytes_per_lane
-        )
-        lds_ptr += num_bytes_per_warp
-
-
-@always_inline
 def load_b_tile[
-    mma_shape: IndexList[3], swizzle: Optional[Swizzle], k_tile_idx: Int
+    mma_shape: IndexList[3],
+    swizzle: Optional[Swizzle],
+    k_tile_idx: Int,
 ](src: LayoutTensor) -> SIMD[src.dtype, simd_width_of[src.dtype]()]:
     comptime MMA_M = mma_shape[0]
     comptime MMA_K = mma_shape[2]
@@ -807,11 +779,11 @@ def load_b_tile[
     ](
         shared_ptr3,
     )
-
-    return rebind[SIMD[src.dtype, simd_width]](
-        __mlir_op.`pop.cast_from_builtin`[
-            _type=SIMD[src.dtype, simd_width]._mlir_type
-        ](llvm_res)
+    var as_bf16 = __mlir_op.`pop.cast_from_builtin`[
+        _type=SIMD[DType.bfloat16, 8]._mlir_type
+    ](llvm_res)
+    return bitcast[src.dtype, simd_width](
+        rebind[SIMD[DType.bfloat16, 8]](as_bf16)
     )
 
 
@@ -822,7 +794,11 @@ def load_b[
     src: LayoutTensor,
     out res: LayoutTensor[
         src.dtype,
-        Layout.row_major(src.layout.size() // (WARP_SIZE * 8), 8),
+        Layout.row_major(
+            src.layout.size()
+            // (WARP_SIZE * ((mma_shape[0] * mma_shape[2]) // WARP_SIZE)),
+            (mma_shape[0] * mma_shape[2]) // WARP_SIZE,
+        ),
         MutAnyOrigin,
         address_space=AddressSpace.LOCAL,
     ],
@@ -830,15 +806,36 @@ def load_b[
     var output = type_of(res).stack_allocation()
     comptime MMA_M = mma_shape[0]
     comptime MMA_K = mma_shape[2]
+    comptime frag_width = (MMA_M * MMA_K) // WARP_SIZE
+    comptime load_width = simd_width_of[src.dtype]()
+    comptime num_packs = frag_width // load_width
     comptime M = src.shape[0]() // MMA_M
     comptime N = src.shape[1]() // MMA_K
-    var output_vectorized = output.vectorize[1, 8]()
+    var output_vectorized = output.vectorize[1, frag_width]()
 
     comptime for i, j in product(range(M), range(N)):
-        var out_reg = load_b_tile[mma_shape, swizzle, j](
-            src.tile[MMA_M, src.shape[1]()](i, 0)
-        )
-        output_vectorized[i + j * M, 0] = rebind[
-            type_of(output_vectorized[i + j * M, 0])
-        ](out_reg)
+        comptime if num_packs == 1:
+            # bf16: single load covers the full fragment.
+            var out_reg = load_b_tile[mma_shape, swizzle, j](
+                src.tile[MMA_M, src.shape[1]()](i, 0)
+            )
+            output_vectorized[i + j * M, 0] = rebind[
+                type_of(output_vectorized[i + j * M, 0])
+            ](out_reg)
+        elif num_packs == 2:
+            # fp8: MMA fragment (32) = 2 × SMEM load width (16).
+            # Load two [MMA_M, MMA_K/2] halves and join so the
+            # K-dimension permutation matches Q loading (which also
+            # does two 16-element loads per lane).
+            comptime half_k_shape = IndexList[3](
+                MMA_M, mma_shape[1], MMA_K // 2
+            )
+            var src_row = src.tile[MMA_M, src.shape[1]()](i, 0)
+            var lo = load_b_tile[half_k_shape, swizzle, j * 2](src_row)
+            var hi = load_b_tile[half_k_shape, swizzle, j * 2 + 1](src_row)
+            output_vectorized[i + j * M, 0] = rebind[
+                type_of(output_vectorized[i + j * M, 0])
+            ](lo.join(hi))
+        else:
+            comptime assert False, "Unsupported num_packs"
     return output

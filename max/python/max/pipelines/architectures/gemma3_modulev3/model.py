@@ -202,13 +202,14 @@ class Gemma3Model(
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Executes the Gemma3 model with the prepared inputs."""
         assert isinstance(model_inputs, Gemma3Inputs)
-        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
+        curr_kv_cache_inputs = model_inputs.kv_cache_inputs
+        assert curr_kv_cache_inputs is not None
 
         model_outputs = self.model(
             model_inputs.tokens,
             model_inputs.return_n_logits,
             model_inputs.input_row_offsets,
-            *curr_kv_cache_inputs,
+            *curr_kv_cache_inputs.flatten(),
         )
         if len(model_outputs) == 3:
             return ModelOutputs(
@@ -225,7 +226,7 @@ class Gemma3Model(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         if len(replica_batches) > 1:

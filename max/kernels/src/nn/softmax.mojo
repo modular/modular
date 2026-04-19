@@ -45,6 +45,7 @@ from std.gpu.primitives import block
 from layout._utils import idx2crd
 from layout import (
     Coord,
+    CoordLike,
     Idx,
     Layout,
     LayoutTensor,
@@ -208,7 +209,9 @@ def _softmax_2_pass_step2[
     #   end for
 
     @always_inline
-    def _step_2[simd_width: Int](idx: Int) unified {mut}:
+    def _step_2[
+        simd_width: Int
+    ](idx: Int) unified {running_max, running_sum, input, output, mut}:
         var running_max_simd = SIMD[dtype, simd_width](running_max)
         var running_sum_simd = SIMD[dtype, simd_width](running_sum)
         var input_val = input.load_linear[width=simd_width, alignment=1](
@@ -309,7 +312,7 @@ def _softmax_3_pass_step_2[
     var accum_simd: SIMD[dtype, outer_simd_width] = 0
 
     @always_inline
-    def step_2[simd_width: Int](idx: Int) unified {mut}:
+    def step_2[simd_width: Int](idx: Int) unified {max_val, output, mut}:
         var vin = input_fn_1d[simd_width](idx)
         var elem = vin - SIMD[dtype, simd_width](max_val)
 
@@ -349,7 +352,7 @@ def _softmax_3_pass_step_3[
     var accum_proc = accum_proc_func[dtype, 1](accum)
 
     @always_inline
-    def step_3[simd_width: Int](idx: Int) unified {var accum_proc, mut output}:
+    def step_3[simd_width: Int](idx: Int) unified {var accum_proc, output}:
         var accum_simd = SIMD[dtype, simd_width](accum_proc)
         var elem = output.load_linear[width=simd_width, alignment=1](
             IndexList[1](idx)
@@ -678,6 +681,7 @@ def softmax[
     )
 
 
+@__name(t"softmax_kernel_{dtype}_{sink}_{logsoftmax}", mangle=True)
 def softmax_kernel[
     BLOCK_SIZE: Int,
     input_fn: def[_dtype: DType, _simd_width: Int, _rank: Int](
@@ -784,12 +788,12 @@ def softmax_kernel[
 
             var block_exp_sum = block_reduce[BLOCK_SIZE, _sum](exp_sum, 0)
 
+            comptime if sink:
+                block_exp_sum += exp(sink_val - row_max)
+
             if tid == 0:
                 exp_sum_buf[0] = block_exp_sum
             barrier()
-
-            comptime if sink:
-                block_exp_sum += exp(sink_val - row_max)
 
             # Step 3: Normalize output (and apply log for logsoftmax)
             var block_exp_sum_recip = 1 / exp_sum_buf[0]
@@ -861,7 +865,10 @@ def _softmax_gpu[
     ctx.enqueue_function[kernel, kernel](
         shape,
         output,
-        sink_weights.value(),
+        # TODO: This should be fixed. When sink == False, we should not
+        # be unwrapping the optional but instead passing the entire
+        # optional through to `softmax_kernel`.
+        sink_weights.unsafe_value(),
         grid_dim=num_blocks,
         block_dim=BLOCK_SIZE,
         attributes=pdl_launch_attributes(PDLLevel(1)),
@@ -925,6 +932,7 @@ def softmax[
 # ===----------------------------------------------------------------------=== #
 
 
+@__name(t"softmax_temperature_{dtype}_{temp_dtype}", mangle=True)
 def _softmax_temperature_kernel[
     BLOCK_SIZE: Int,
     dtype: DType,
@@ -940,8 +948,9 @@ def _softmax_temperature_kernel[
     batch_size: Int,
     d: Int,
     temperature: Scalar[temp_dtype],
-    # using UnsafePointer here because cant pass optional TileTensor
-    temperature_arr: UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin],
+    temperature_arr: Optional[
+        UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin]
+    ],
 ):
     """GPU kernel for softmax with per-row temperature scaling.
 
@@ -973,8 +982,10 @@ def _softmax_temperature_kernel[
         for row_idx in range(bid, num_rows, gid):
             # Resolve per-row temperature, clamping to prevent division by zero.
             var temp = temperature.cast[accum_type]()
-            if temperature_arr._is_not_null():
-                temp = temperature_arr[row_idx].cast[accum_type]()
+            if temperature_arr:
+                temp = temperature_arr.unsafe_value()[row_idx].cast[
+                    accum_type
+                ]()
             temp = max(temp, Scalar[accum_type](1e-6))
             var inv_temp = Scalar[accum_type](1) / temp
 
@@ -992,7 +1003,7 @@ def _softmax_temperature_kernel[
                         @always_inline
                         def online_max_sum[
                             width: Int
-                        ](offset: Int) unified {mut}:
+                        ](offset: Int) unified {input, mut}:
                             var v = input.load_linear[width=width](
                                 IndexList[2](row_idx, Int(lane_base) + offset)
                             ).cast[accum_type]()
@@ -1034,7 +1045,9 @@ def _softmax_temperature_kernel[
                         var lane_count = min(row_size - lane_base, VEC_WIDTH)
 
                         @always_inline
-                        def normalize[width: Int](offset: Int) unified {mut}:
+                        def normalize[
+                            width: Int
+                        ](offset: Int) unified {input, output, mut}:
                             var logit = input.load_linear[width=width](
                                 IndexList[2](row_idx, Int(lane_base) + offset)
                             ).cast[accum_type]()
@@ -1097,9 +1110,7 @@ def softmax_with_temperature[
     var d = shape[1]
 
     # Extract raw pointer for the kernel (null if not provided).
-    var temp_ptr = UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin](
-        _unsafe_null=()
-    )
+    var temp_ptr = Optional[UnsafePointer[Scalar[temp_dtype], ImmutAnyOrigin]]()
     if temperature_arr:
         temp_ptr = temperature_arr.value().ptr
 
