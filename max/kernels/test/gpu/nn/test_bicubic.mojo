@@ -11,16 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isclose
+from std.math import isclose
 
-from gpu.host import DeviceContext
-from layout._coord import Coord, CoordLike, coord
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceContext
+from layout import Coord, TileTensor, coord, row_major
 
 from nn.bicubic import cpu_bicubic_kernel, gpu_bicubic_kernel, resize_bicubic
-from testing import assert_almost_equal
-from utils import Index, IndexList
+from std.testing import assert_almost_equal
 
 comptime num_elements = 20
 
@@ -36,13 +33,13 @@ test assertions.
 """
 
 
-fn test_bicubic_kernel[
+def test_bicubic_kernel[
     dtype: DType,
 ](input_dim: Coord, output_dim: Coord, ctx: DeviceContext) raises where (
     input_dim.all_dims_known
     and output_dim.all_dims_known
-    and input_dim.rank == 4
-    and output_dim.rank == 4
+    and input_dim.flat_rank == 4
+    and output_dim.flat_rank == 4
 ):
     var input_dim_flattened = input_dim.static_product
     var output_dim_flattened = output_dim.static_product
@@ -590,10 +587,8 @@ fn test_bicubic_kernel[
     var input_dev = ctx.enqueue_create_buffer[dtype](input_dim_flattened)
     var output_dev = ctx.enqueue_create_buffer[dtype](output_dim_flattened)
 
-    var input_dev_nd = TileTensor(input_dev.unsafe_ptr(), row_major(input_dim))
-    var output_dev_nd = TileTensor(
-        output_dev.unsafe_ptr(), row_major(output_dim)
-    )
+    var input_dev_nd = TileTensor(input_dev, row_major(input_dim))
+    var output_dev_nd = TileTensor(output_dev, row_major(output_dim))
 
     ctx.enqueue_copy(input_dev, input_host_ptr)
 
@@ -638,7 +633,7 @@ fn test_bicubic_kernel[
     output_ref_host_ptr.free()
 
 
-fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
+def test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     """Test that GPU kernel can handle large images without exceeding thread limits.
     """
     # Test with 64x64 output which would exceed 1024 threads/block limit.
@@ -678,10 +673,10 @@ fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
 
     comptime kernel = gpu_bicubic_kernel[
         dtype,
-        output_origin = output_dev_nd.origin,
-        OutputLayoutType = output_dev_nd.LayoutType,
-        input_origin = ImmutOrigin(input_dev_nd.origin),
-        InputLayoutType = input_dev_nd.LayoutType,
+        output_origin=output_dev_nd.origin,
+        OutputLayoutType=output_dev_nd.LayoutType,
+        input_origin=ImmutOrigin(input_dev_nd.origin),
+        InputLayoutType=input_dev_nd.LayoutType,
     ]
 
     # This would fail with block_dim=(64, 64) = 4096 threads.
@@ -720,7 +715,7 @@ fn test_large_image_gpu_launch[dtype: DType](ctx: DeviceContext) raises:
     _ = output_dev^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_bicubic_kernel[DType.float32,](  # data_type
             coord[1, 3, 5, 5](),  # input  (NCHW)

@@ -20,9 +20,10 @@ import torch
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.attention import MHAMaskVariant
+from max.nn.kernels import flash_attention_gpu
 from modular_graph_test import are_all_tensor_values
 from torch.nn.functional import scaled_dot_product_attention
 
@@ -30,7 +31,7 @@ from torch.nn.functional import scaled_dot_product_attention
 def null_mask_max_flash_attn(
     q: torch.Tensor, k: torch.Tensor, v: torch.Tensor
 ) -> torch.Tensor:
-    dtype = DType.from_torch(q.dtype)
+    dtype = torch_dtype_to_max(q.dtype)
     _batch, _q_seq_len, nheads, head_dim = q.shape
 
     # Graph types.
@@ -121,7 +122,7 @@ def padded_max_flash_attn(
     v: torch.Tensor,
     valid_length: torch.Tensor,
 ) -> torch.Tensor:
-    dtype = DType.from_torch(q.dtype)
+    dtype = torch_dtype_to_max(q.dtype)
     _batch, _q_seq_len, nheads, head_dim = q.shape
 
     # Graph types.

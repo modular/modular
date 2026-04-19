@@ -27,6 +27,8 @@ from typing_extensions import override
 # Ideally these can be determined from bazel, but some of them cannot be, specifically
 # ones that share a top-level namespace, like the google and otel ones.
 _THIRD_PARTY_IMPORTS = {
+    "apache_tvm_ffi": ["tvm_ffi"],
+    "flashinfer_python": ["flashinfer"],
     "google_auth": ["google.auth"],
     "google_cloud_bigquery": ["google.cloud.bigquery"],
     "grpcio": ["grpc"],
@@ -58,6 +60,7 @@ _THIRD_PARTY_IMPORTS = {
     "ruamel_yaml": ["ruamel.yaml"],
     "pytest": ["pytest", "_pytest"],
     "pyyaml": ["yaml"],
+    "pygithub": ["github"],
     "pyzmq": ["zmq"],
 }
 
@@ -97,7 +100,7 @@ def _process_third_party_deps(
 
 
 # Adapted from https://github.com/bazel-contrib/rules_pydeps/blob/1c3eae19c4cd4b854e91a6ea48e21666b08d7ecc/pydeps/private/py/source_files.py
-class _ImportFinder(cst.BatchableMetadataProvider[str]):
+class _ImportFinder(cst.BatchableMetadataProvider[list[str]]):
     METADATA_DEPENDENCIES = (cst_metadata.PositionProvider,)
 
     def __init__(self) -> None:
@@ -107,39 +110,42 @@ class _ImportFinder(cst.BatchableMetadataProvider[str]):
     def visit_Import(self, node: cst.Import) -> None:
         for name in node.names:
             self.set_metadata(
-                node, f"{cst_help.get_full_name_for_node_or_raise(name.name)}"
+                node, [f"{cst_help.get_full_name_for_node_or_raise(name.name)}"]
             )
 
     @override
     def visit_ImportFrom(self, node: cst.ImportFrom) -> None:
         if not isinstance(node.names, cst.ImportStar):
+            # We are importing multiple things from one module,
+            # _most likely_ we only need to worry about one, since they
+            # should all come from the same target.
+            # But it is possible we can do `from max import dtype, graph, mlir, ...`,
+            # which is rare but in that case each one is a different target.
+            metadata = []
             for name in node.names:
-                # We are importing multiple things from one module,
-                # _most likely_ we only need to worry about one, since they
-                # should all come from the same target.
-                # In theory we can do `from max import dtype, graph, mlir, ...`,
-                # but we never do this so don't worry about it.
                 if node.module:
-                    self.set_metadata(
-                        node,
+                    metadata.append(
                         "." * len(node.relative)
                         + f"{cst_help.get_full_name_for_node_or_raise(node.module)}.{name.name.value}",
                     )
+            self.set_metadata(node, metadata)
 
     @override
     def visit_Decorator(self, node: cst.Decorator) -> None:
         name = cst_help.get_full_name_for_node_or_raise(node.decorator)
         if name == "pytest.mark.asyncio":
-            self.set_metadata(node, name)
+            self.set_metadata(node, [name])
 
 
 def _get_imports_from_file(path: Path) -> set[PythonModule]:
     with open(path) as file:
         content = file.read()
     wrapper = cst.MetadataWrapper(cst.parse_module(content))
-    return set(
-        PythonModule(imp) for imp in wrapper.resolve(_ImportFinder).values()
-    )
+    results = wrapper.resolve(_ImportFinder).values()
+    imports = set()
+    for result in results:
+        imports.update(result)
+    return set(PythonModule(imp) for imp in imports)
 
 
 def _is_third_party_import(

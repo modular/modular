@@ -11,13 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.interval import Interval, IntervalElement, IntervalTree
+from std.collections.interval import Interval, IntervalElement, IntervalTree
 
-from testing import assert_equal, assert_false, assert_not_equal, assert_true
-from testing import TestSuite
+from test_utils import check_write_to
+from std.testing import (
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
+)
+from std.testing import TestSuite
 
 
-def test_interval():
+def test_interval() raises:
     # Create an interval from 1 to 10 (exclusive)
     var interval = Interval(1, 10)
 
@@ -29,7 +35,7 @@ def test_interval():
 
     # Test string representations
     assert_equal(String(interval), "(1, 10)")
-    assert_equal(repr(interval), "Interval(1, 10)")
+    assert_equal(repr(interval), "Interval[Int](start=Int(1), end=Int(10))")
 
     # Test equality comparisons
     assert_equal(interval, Interval(1, 10))
@@ -118,39 +124,36 @@ struct MyType(
     Floatable,
     ImplicitlyCopyable,
     IntervalElement,
-    Stringable,
+    Writable,
 ):
     var value: Float64
 
-    fn __init__(out self):
+    def __init__(out self):
         self.value = 0.0
 
-    fn __init__(out self, value: Float64, /):
+    def __init__(out self, value: Float64, /):
         self.value = value
 
-    fn __lt__(self, other: Self) -> Bool:
+    def __lt__(self, other: Self) -> Bool:
         return self.value < other.value
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self.value == other.value
 
-    fn __sub__(self, other: Self) -> Self:
+    def __sub__(self, other: Self) -> Self:
         return Self(self.value - other.value)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self.value)
 
-    fn __float__(self) -> Float64:
+    def __float__(self) -> Float64:
         return self.value
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(self.value)
 
-    fn __str__(self) -> String:
-        return String.write(self)
 
-
-def test_interval_floating():
+def test_interval_floating() raises:
     # Create an interval with floating point values using MyType wrapper.
     var interval = Interval(MyType(2.4), MyType(3.5))
 
@@ -168,7 +171,7 @@ def test_interval_floating():
     assert_equal(len(union), 2)
 
 
-def test_interval_tree():
+def test_interval_tree() raises:
     var tree = IntervalTree[Int, MyType]()
     tree.insert((15, 20), MyType(33.0))
     tree.insert((10, 30), MyType(34.0))
@@ -185,5 +188,35 @@ def test_interval_tree():
     assert_equal(Float64(elems[2]), 36.0)
 
 
-def main():
+def test_interval_write_to() raises:
+    check_write_to(Interval(1, 10), expected="(1, 10)", is_repr=False)
+    check_write_to(Interval(0, 0), expected="(0, 0)", is_repr=False)
+
+
+def test_interval_write_repr_to() raises:
+    check_write_to(
+        Interval(1, 10),
+        expected="Interval[Int](start=Int(1), end=Int(10))",
+        is_repr=True,
+    )
+
+
+def test_interval_tree_write_to() raises:
+    var tree = IntervalTree[Int, MyType]()
+    tree.insert((1, 5), MyType(1.0))
+    # write_to produces the ASCII tree drawing
+    check_write_to(tree, contains="(1, 5)", is_repr=False)
+
+
+def test_interval_tree_write_repr_to() raises:
+    var tree = IntervalTree[Int, MyType]()
+    tree.insert((1, 5), MyType(1.0))
+    check_write_to(tree, contains="IntervalTree[Int, MyType](", is_repr=True)
+
+    var output = String()
+    tree.write_repr_to(output)
+    assert_true(output.endswith(")"))
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

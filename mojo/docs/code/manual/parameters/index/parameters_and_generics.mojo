@@ -12,9 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn repeat[MsgType: Stringable, //, count: Int](msg: MsgType):
-    @parameter
-    for i in range(count):
+def repeat[MsgType: Writable, //, count: Int](msg: MsgType):
+    comptime for i in range(count):
         print(String(msg))
 
 

@@ -11,23 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import simd_width_of
-from sys.info import _current_target
+from std.math import ceildiv
+from std.sys import simd_width_of
+from std.sys.info import _current_target
 
-from algorithm import elementwise, sync_parallelize
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu
-from layout._coord import Coord, Idx, coord_to_index_list
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
-from runtime.asyncrt import DeviceContextPtr, parallelism_level
+from std.algorithm import elementwise, sync_parallelize
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu
+from layout import Coord, Idx, TileTensor, coord_to_index_list
+from std.runtime.asyncrt import DeviceContextPtr, parallelism_level
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline
-fn index_tensor_shape[
+def index_tensor_shape[
     output_rank: Int,
     input_type: DType,
     indices_type: DType,
@@ -71,12 +69,10 @@ fn index_tensor_shape[
     comptime combined_indices_rank = batch_dims + indices_buf.rank
     var indices_shape = IndexList[combined_indices_rank]()
 
-    @parameter
-    for i in range(batch_dims):
+    comptime for i in range(batch_dims):
         indices_shape[i] = input_buf.layout.shape[i]().value()
 
-    @parameter
-    for i in range(indices_buf.rank):
+    comptime for i in range(indices_buf.rank):
         indices_shape[batch_dims + i] = indices_buf.layout.shape[i]().value()
 
     var index_size = indices_shape[combined_indices_rank - 1]
@@ -98,13 +94,11 @@ fn index_tensor_shape[
 
     var input_shape = coord_to_index_list(input_buf.layout.shape_coord())
 
-    @parameter
-    for i in range(batch_dims):
+    comptime for i in range(batch_dims):
         output_shape[next_out_dim] = indices_shape[i]
         next_out_dim += 1
 
-    @parameter
-    for i in range(batch_dims, combined_indices_rank - 1):
+    comptime for i in range(batch_dims, combined_indices_rank - 1):
         output_shape[next_out_dim] = indices_shape[i]
         next_out_dim += 1
 
@@ -144,7 +138,7 @@ fn index_tensor_shape[
 # We intend to merge `index_tensor` with the `gather_nd` operations in the future.
 
 
-fn index_tensor[
+def index_tensor[
     dtype: DType,
     indices_type: DType,
     batch_dims: Int,
@@ -178,8 +172,7 @@ fn index_tensor[
 
     """
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         return _index_tensor_1d[
             batch_dims,
             target=target,
@@ -196,7 +189,7 @@ fn index_tensor[
 # Note: this is an extremely specialized version of the kernel that only handles
 # the [:, :, x, y] case where x and y are 1D tensors.
 # Batch dims refer to the number of sliced dimensions at the beginning
-fn _index_tensor_1d[
+def _index_tensor_1d[
     dtype: DType,
     indices_type: DType,
     //,
@@ -210,21 +203,21 @@ fn _index_tensor_1d[
     ctx: Optional[DeviceContext] = None,
 ):
     comptime assert (
-        data.rank >= 2 and indices.rank == 2
+        data.flat_rank >= 2 and indices.flat_rank == 2
     ), "Constraint: data_rank >= 2 and indices_rank == 2"
+    # Provide evidence that flat_rank >= 2 for the Coord(Idx(...), Idx(...)) loads below.
+    comptime assert indices.flat_rank >= 2
 
     var last_index_dim = Int(indices.dim(indices.rank - 1))
 
-    debug_assert(
-        last_index_dim + batch_dims == data.rank,
-        "kernel doesn't support slicing after specified dims",
-    )
+    assert (
+        last_index_dim + batch_dims == data.rank
+    ), "kernel doesn't support slicing after specified dims"
 
     var data_shape = coord_to_index_list(data.layout.shape_coord())
     var batch_volume: Int = 1
 
-    @parameter
-    for i in range(batch_dims):
+    comptime for i in range(batch_dims):
         batch_volume *= data_shape[i]
 
     # Flatten data to array of shape (batch_dim_size, data.shape[batch_dims:])
@@ -257,7 +250,7 @@ fn _index_tensor_1d[
 
     @__copy_capture(work_per_thread, batch_volume, last_index_dim)
     @parameter
-    fn calc_batch_dim(task_id: Int):
+    def calc_batch_dim(task_id: Int):
         # each thread gets a chunk of output embedding vectors to avoid inter-thread reduction
         var work_start = task_id * work_per_thread
         var work_end = min((task_id + 1) * work_per_thread, batch_volume)
@@ -271,14 +264,15 @@ fn _index_tensor_1d[
                         indices.load[width=1](Coord(Idx(j), Idx(k)))
                     )
 
+                var rd_coord = Coord(data_coord)
                 output.ptr[i * Int(indices.dim(0)) + j] = reshaped_data.load[
                     width=1
-                ](Coord(data_coord))
+                ](rd_coord)
 
     sync_parallelize[calc_batch_dim](num_tasks)
 
 
-fn _index_tensor_impl[
+def _index_tensor_impl[
     dtype: DType,
     indices_type: DType,
     //,
@@ -292,13 +286,13 @@ fn _index_tensor_impl[
     ctx: Optional[DeviceContext] = None,
 ) raises:
     comptime assert (
-        data.rank >= 2 and indices.rank >= 2
+        data.flat_rank >= 2 and indices.flat_rank >= 2
     ), "Constraint: data_rank >= 2 and indices_rank >= 2"
 
     # This is modeled as an elementwise function mapping an index in the
     # output to an index in the input
     @parameter
-    fn index_tensor_elementwise_fn[
+    def index_tensor_elementwise_fn[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](output_idx_arg: IndexList[rank]) capturing -> None:
         var output_idx = rebind[IndexList[output.rank]](output_idx_arg)
@@ -307,20 +301,17 @@ fn _index_tensor_impl[
         var indices_last_dim = Int(indices.dim[indices.rank - 1]())
 
         # Fill in the known dimensions in our batch_dim
-        @parameter
-        for i in range(batch_dims):
+        comptime for i in range(batch_dims):
             data_idx[i] = output_idx[i]
 
         # Start filling in the index into the indices buffer
-        @parameter
-        for i in range(0, indices.rank - 1):
+        comptime for i in range(0, indices.rank - 1):
             indices_idx[i] = output_idx[batch_dims + i]
 
         # walk the last dimensions, which are the slices we're gathering
         for i in range(indices_last_dim):
             indices_idx[indices.rank - 1] = i
             var coord = Coord(indices_idx)
-            comptime assert coord.rank == indices.rank
             data_idx[batch_dims + i] = Int(indices.load[width=1](coord))
 
         # fill in the last slices in the input
@@ -331,11 +322,9 @@ fn _index_tensor_impl[
             data_idx[src_start + i] = output_idx[output_start + i]
 
         var data_coord = Coord(data_idx)
-        comptime assert data_coord.rank == data.rank
         var out_coord = Coord(output_idx)
-        comptime assert out_coord.rank == output.rank
-        output.store[width=simd_width](
-            out_coord, data.load[width=simd_width](data_coord)
+        output.store[width=simd_width, alignment=1](
+            out_coord, data.load[width=simd_width, alignment=1](data_coord)
         )
 
     comptime compile_target = _current_target() if is_cpu[
@@ -360,8 +349,7 @@ fn _index_tensor_impl[
         == 0
     )
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         if use_simd:
             elementwise[
                 index_tensor_elementwise_fn,
@@ -377,9 +365,7 @@ fn _index_tensor_impl[
                 target=target,
             ](coord_to_index_list(output.layout.shape_coord()))
     else:
-        debug_assert(
-            Bool(ctx), "Must provide DeviceContext if executing on GPU."
-        )
+        assert Bool(ctx), "Must provide DeviceContext if executing on GPU."
         var cuda_ctx = ctx.value()
         if use_simd:
             elementwise[
@@ -401,7 +387,7 @@ fn _index_tensor_impl[
 # Advanced Indexing
 # ===-----------------------------------------------------------------------===#
 @always_inline
-fn _advanced_indexing_use_simd[
+def _advanced_indexing_use_simd[
     start_axis: Int, num_index_tensors: Int, input_rank: Int
 ](read_strides: IndexList, write_strides: IndexList) -> Bool:
     """Return whether we can use vectorized loads/stores for advanced indexing
@@ -431,7 +417,7 @@ fn _advanced_indexing_use_simd[
 
 
 @always_inline
-fn advanced_indexing_getitem[
+def advanced_indexing_getitem[
     input_rank: Int,
     index_rank: Int,
     input_type: DType,
@@ -442,10 +428,10 @@ fn advanced_indexing_getitem[
     target: StaticString,
     single_thread_blocking_override: Bool,
     trace_description: StaticString,
-    input_tensor_fn: fn[width: Int](IndexList[input_rank]) capturing -> SIMD[
+    input_tensor_fn: def[width: Int](IndexList[input_rank]) capturing -> SIMD[
         input_type, width
     ],
-    indices_fn: fn[indices_index: Int](
+    indices_fn: def[indices_index: Int](
         IndexList[index_rank]
     ) capturing -> Scalar[index_type],
 ](
@@ -514,7 +500,7 @@ fn advanced_indexing_getitem[
 
     @parameter
     @always_inline
-    fn elementwise_fn_wrapper[
+    def elementwise_fn_wrapper[
         width: Int,
         out_tensor_rank: Int,
         alignment: Int = 1,
@@ -522,11 +508,8 @@ fn advanced_indexing_getitem[
         input_index = IndexList[input_rank]()
 
         # Find the associated output index from input index
-        @parameter
-        for input_dim in range(input_rank):
-
-            @parameter
-            if input_dim < start_axis:
+        comptime for input_dim in range(input_rank):
+            comptime if input_dim < start_axis:
                 input_index[input_dim] = output_index[input_dim]
             elif input_dim >= start_axis + num_index_tensors:
                 input_index[input_dim] = output_index[
@@ -536,8 +519,7 @@ fn advanced_indexing_getitem[
                 comptime index_tensor_offset = input_dim - start_axis
                 var index_tensor_indices = IndexList[index_rank]()
 
-                @parameter
-                for offset in range(index_rank):
+                comptime for offset in range(index_rank):
                     index_tensor_indices[offset] = output_index[
                         offset + start_axis
                     ]
@@ -546,8 +528,7 @@ fn advanced_indexing_getitem[
                 )
 
         var out_coord = Coord(output_index)
-        comptime assert out_coord.rank == out_tensor.rank
-        out_tensor.store[width=width](
+        out_tensor.store[width=width, alignment=1](
             out_coord,
             input_tensor_fn[width=width](input_index),
         )
@@ -583,7 +564,7 @@ fn advanced_indexing_getitem[
 
 
 @always_inline
-fn advanced_indexing_getitem_shape[
+def advanced_indexing_getitem_shape[
     input_rank: Int,
     index_rank: Int,
     //,
@@ -610,8 +591,7 @@ fn advanced_indexing_getitem_shape[
     comptime output_rank = input_rank + index_rank - num_index_tensors
     var answer = IndexList[output_rank]()
 
-    @parameter
-    for i in range(output_rank):
+    comptime for i in range(output_rank):
         if i < start_axis:
             answer[i] = input_shape[i]
         elif i >= start_axis + index_rank:
@@ -623,7 +603,7 @@ fn advanced_indexing_getitem_shape[
 
 
 @always_inline
-fn advanced_indexing_setitem_inplace[
+def advanced_indexing_setitem_inplace[
     index_rank: Int,
     updates_rank: Int,
     input_type: DType,
@@ -634,10 +614,10 @@ fn advanced_indexing_setitem_inplace[
     target: StaticString,
     single_thread_blocking_override: Bool,
     trace_description: StaticString,
-    updates_tensor_fn: fn[width: Int](
+    updates_tensor_fn: def[width: Int](
         IndexList[updates_rank]
     ) capturing -> SIMD[input_type, width],
-    indices_fn: fn[indices_index: Int](
+    indices_fn: def[indices_index: Int](
         IndexList[index_rank]
     ) capturing -> Scalar[index_type],
 ](
@@ -728,11 +708,8 @@ fn advanced_indexing_setitem_inplace[
     var iteration_shape = IndexList[iteration_rank]()
 
     # Find the common iteration space
-    @parameter
-    for i in range(iteration_rank):
-
-        @parameter
-        if i < start_axis:
+    comptime for i in range(iteration_rank):
+        comptime if i < start_axis:
             iteration_shape[i] = input_tensor.layout.shape[i]().value()
         elif i >= start_axis + index_rank:
             iteration_shape[i] = input_tensor.layout.shape[
@@ -743,24 +720,20 @@ fn advanced_indexing_setitem_inplace[
 
     @parameter
     @always_inline
-    fn elementwise_fn_wrapper[
+    def elementwise_fn_wrapper[
         width: Int, iteration_rank: Int, alignment: Int = 1
     ](iteration_indices: IndexList[iteration_rank]) capturing:
         var index_tensor_indices = IndexList[index_rank]()
 
         # Find the index into the indexing tensors from the common index
-        @parameter
-        for i in range(index_rank):
+        comptime for i in range(index_rank):
             index_tensor_indices[i] = iteration_indices[i + start_axis]
 
         # Find the index into the inputs from the common index
         var input_tensor_indices = IndexList[input_tensor.rank]()
 
-        @parameter
-        for i in range(input_tensor.rank):
-
-            @parameter
-            if i < start_axis:
+        comptime for i in range(input_tensor.rank):
+            comptime if i < start_axis:
                 input_tensor_indices[i] = iteration_indices[i]
             elif i >= start_axis + num_index_tensors:
                 input_tensor_indices[i] = iteration_indices[
@@ -773,8 +746,7 @@ fn advanced_indexing_setitem_inplace[
                 )
 
         var input_tensor_coord = Coord(input_tensor_indices)
-        comptime assert input_tensor_coord.rank == input_tensor.rank
-        input_tensor.store[width=width](
+        input_tensor.store[width=width, alignment=1](
             input_tensor_coord,
             updates_tensor_fn[width=width](
                 rebind[IndexList[updates_rank]](iteration_indices)

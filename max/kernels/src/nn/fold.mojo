@@ -13,14 +13,14 @@
 """Implements the fold operation."""
 
 
-from algorithm import elementwise
-from layout._tile_tensor import TileTensor
-from runtime.asyncrt import DeviceContextPtr
+from std.algorithm import elementwise
+from layout import TileTensor
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
-fn fold[
+def fold[
     dtype: DType,
     stride: Tuple[Int, Int],
     dilation: Tuple[Int, Int],
@@ -32,7 +32,7 @@ fn fold[
     output_size: IndexList[2],
     kernel_size: IndexList[2],
     ctx: DeviceContextPtr,
-) raises where (output.rank == 4 and input.rank == 3):
+) raises:
     """Folds array of sliding local blocks into a single output tensor.
 
     Parameters:
@@ -57,6 +57,8 @@ fn fold[
     comptime assert (
         padding[0] >= 0 and padding[1] >= 0
     ), "Padding must be non-negative"
+    comptime assert output.flat_rank == 4
+    comptime assert input.flat_rank == 3
 
     var N = Int(output.dim(0))
     var C = Int(output.dim(1))
@@ -108,7 +110,7 @@ fn fold[
         height_col,
         width_col,
     )
-    fn fold_fn[
+    def fold_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank_]):
         comptime assert rank_ == 4, "fold_fn: rank must be 4"
@@ -165,7 +167,7 @@ fn fold[
     ](dispatch_shape, ctx)
 
 
-fn fold_shape[
+def fold_shape[
     dtype: DType
 ](
     input: TileTensor[dtype, ...],

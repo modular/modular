@@ -21,7 +21,7 @@ from huggingface_hub import hf_hub_download
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from .huggingface import HuggingFaceBenchmarkDataset
-from .types import SampledRequest
+from .types import RequestSamples, SampledRequest
 
 
 class ShareGPTBenchmarkDataset(HuggingFaceBenchmarkDataset):
@@ -39,7 +39,7 @@ class ShareGPTBenchmarkDataset(HuggingFaceBenchmarkDataset):
         output_lengths: Sequence[int] | None = None,
         shuffle: bool = True,
         **kwargs,
-    ) -> Sequence[SampledRequest]:
+    ) -> RequestSamples:
         """Sample requests from ShareGPT dataset."""
         assert self.dataset_path is not None, (
             "dataset_path must be provided for ShareGPTBenchmarkDataset"
@@ -104,4 +104,4 @@ class ShareGPTBenchmarkDataset(HuggingFaceBenchmarkDataset):
                 )
             )
 
-        return filtered_dataset
+        return RequestSamples(requests=filtered_dataset)

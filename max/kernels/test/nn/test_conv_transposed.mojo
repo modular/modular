@@ -11,22 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from random import rand
-from sys.info import simd_width_of
+from std.math import isclose
+from std.random import rand
+from std.sys.info import simd_width_of
 
-from algorithm.functional import vectorize
-from layout._coord import Coord
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
-from nn.conv_transpose import (
+from std.algorithm.functional import vectorize
+from layout import Coord, TileTensor, row_major
+from nn.conv.conv_transpose import (
     ConvTransposedPacked,
     conv_transpose_naive,
     conv_transpose_shape,
     pack_filter,
     pack_filter_shape,
 )
-from nn.conv_utils import (
+from nn.conv.conv_utils import (
     ConvInfoStatic,
     ConvShape,
     append_shape,
@@ -35,24 +33,23 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from testing import assert_equal, assert_raises, TestSuite
+from std.testing import assert_equal, TestSuite
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime simd_size: Int = simd_width_of[DType.float32]()
 comptime dtype = DType.float32
 
 
 @always_inline
-fn extend_shape_5d[
+def extend_shape_5d[
     rank: Int
 ](in_shape: IndexList[rank], first: Int, last: Int) -> IndexList[5]:
     var out_shape = IndexList[5](1)
     out_shape[0] = first
     out_shape[4] = last
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         out_shape[3] = in_shape[0]
     elif rank == 2:
         out_shape[2] = in_shape[0]
@@ -66,26 +63,24 @@ fn extend_shape_5d[
 
 
 @always_inline
-fn extend_shape_3d[rank: Int](in_shape: IndexList[rank]) -> IndexList[3]:
+def extend_shape_3d[rank: Int](in_shape: IndexList[rank]) -> IndexList[3]:
     var out_shape = IndexList[3](1)
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         out_shape[2 - i] = in_shape[rank - i - 1]
 
     return out_shape
 
 
 @always_inline
-fn append_shape_5d[
+def append_shape_5d[
     rank: Int
 ](in_shape: IndexList[rank], last2nd: Int, last: Int) -> IndexList[5]:
     var out_shape = IndexList[5](1)
     out_shape[3] = last2nd
     out_shape[4] = last
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         out_shape[2] = in_shape[0]
     elif rank == 2:
         out_shape[1] = in_shape[0]
@@ -98,7 +93,7 @@ fn append_shape_5d[
     return out_shape
 
 
-fn test_conv_transposed[
+def test_conv_transposed[
     dtype: DType, rank: Int
 ](
     N: Int,
@@ -115,8 +110,7 @@ fn test_conv_transposed[
 
     var output_dims = IndexList[rank](1)
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         output_dims[i] = (
             (input_dims[i] - 1) * stride[i]
             - pad[2 * i]
@@ -129,8 +123,7 @@ fn test_conv_transposed[
     var pad_h = IndexList[2](0)
     var pad_w = IndexList[2](0)
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         pad_w = Index(pad[0], pad[1])
     elif rank == 2:
         pad_h = Index(pad[0], pad[1])
@@ -236,7 +229,7 @@ fn test_conv_transposed[
             )
 
             @always_inline
-            fn body0[
+            def body0[
                 width: Int
             ](offset: Int) unified {var output_ref_ptr, var bias_ptr}:
                 output_ref_ptr.store(
@@ -257,9 +250,9 @@ fn test_conv_transposed[
     @always_inline
     @__copy_capture(output, bias_ptr)
     @parameter
-    fn epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
+    def epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
         @always_inline
-        fn body1[width: Int](idx: Int) unified {var}:
+        def body1[width: Int](idx: Int) unified {var}:
             var curr_coords = rebind[IndexList[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 
@@ -323,7 +316,7 @@ fn test_conv_transposed[
     print("Succeed")
 
 
-fn test_conv_transpose_shape_basic() raises:
+def test_conv_transpose_shape_basic() raises:
     """Test conv_transpose_shape function with basic cases."""
     # Test 4D: Basic 2D conv transpose (N=1, H=3, W=3, C=1) x (R=3, S=3, F=2, C=1)
     # With stride=1, dilation=1, no padding
@@ -352,7 +345,7 @@ fn test_conv_transpose_shape_basic() raises:
     var output_pads = TileTensor(output_pads_ptr, row_major(Coord(Index(2))))
 
     var shape = conv_transpose_shape[
-        DType.float32, DType.int32, DType.int32, DType.int32, DType.int32, False
+        DType.float32, DType.int32, DType.int32, DType.int32, DType.int32
     ](input, kernel, strides, dilations, pads, output_pads)
 
     assert_equal(shape[0], 1)
@@ -368,7 +361,7 @@ fn test_conv_transpose_shape_basic() raises:
     output_pads_ptr.free()
 
 
-fn test_2d_stride_3_2_pad_1_1_2_2() raises:
+def test_2d_stride_3_2_pad_1_1_2_2() raises:
     test_conv_transposed[DType.float32, 2](
         1,  # N
         Index(3, 3),
@@ -382,7 +375,7 @@ fn test_2d_stride_3_2_pad_1_1_2_2() raises:
     )
 
 
-fn test_2d_basic_no_pad() raises:
+def test_2d_basic_no_pad() raises:
     test_conv_transposed[DType.float32, 2](
         1,  # N
         Index(3, 3),
@@ -396,7 +389,7 @@ fn test_2d_basic_no_pad() raises:
     )
 
 
-fn test_2d_dilation_2_2() raises:
+def test_2d_dilation_2_2() raises:
     test_conv_transposed[DType.float32, 2](
         1,  # N
         Index(3, 3),
@@ -410,7 +403,7 @@ fn test_2d_dilation_2_2() raises:
     )
 
 
-fn test_2d_stride_3_2_kernel_2_2() raises:
+def test_2d_stride_3_2_kernel_2_2() raises:
     test_conv_transposed[DType.float32, 2](
         1,  # N
         Index(3, 3),
@@ -424,7 +417,7 @@ fn test_2d_stride_3_2_kernel_2_2() raises:
     )
 
 
-fn test_3d_stride_1_3_2() raises:
+def test_3d_stride_1_3_2() raises:
     test_conv_transposed[DType.float32, 3](
         1,  # N
         Index(2, 3, 3),
@@ -438,7 +431,7 @@ fn test_3d_stride_1_3_2() raises:
     )
 
 
-fn test_3d_stride_2_1_2_dilation_1_1_2() raises:
+def test_3d_stride_2_1_2_dilation_1_1_2() raises:
     test_conv_transposed[DType.float32, 3](
         1,  # N
         Index(3, 4, 7),
@@ -452,7 +445,7 @@ fn test_3d_stride_2_1_2_dilation_1_1_2() raises:
     )
 
 
-fn test_3d_with_padding() raises:
+def test_3d_with_padding() raises:
     test_conv_transposed[DType.float32, 3](
         1,  # N
         Index(4, 3, 3),
@@ -466,7 +459,7 @@ fn test_3d_with_padding() raises:
     )
 
 
-fn test_3d_complex_padding_dilation() raises:
+def test_3d_complex_padding_dilation() raises:
     test_conv_transposed[DType.float32, 3](
         1,  # N
         Index(4, 5, 7),
@@ -480,7 +473,7 @@ fn test_3d_complex_padding_dilation() raises:
     )
 
 
-fn test_3d_multi_channel() raises:
+def test_3d_multi_channel() raises:
     test_conv_transposed[DType.float32, 3](
         1,  # N
         Index(5, 5, 5),
@@ -494,7 +487,7 @@ fn test_3d_multi_channel() raises:
     )
 
 
-def main():
+def main() raises:
     var suite = TestSuite()
 
     # Test conv_transpose_shape function

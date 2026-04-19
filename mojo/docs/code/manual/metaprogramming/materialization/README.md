@@ -1,5 +1,7 @@
-This directory contains code examples for the
-[Life of a value](../../../../../docs/manual/metaprogramming/materialization.mdx)
+# Code examples and tests for Materialization
+
+This directory contains Code examples and tests for the
+[Materialization](../../../../../docs/manual/metaprogramming/materialization.mdx)
 section of the Mojo Manual.
 
 Contents:

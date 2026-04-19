@@ -11,23 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
 
 
-fn outer[y: Int]():
+def outer[y: Int]():
     @parameter
-    fn param[x: Int](y: SIMD[DType.float32, y], /):
+    def param[x: Int](y: SIMD[DType.float32, y], /):
         pass
 
     print(
         _compile_code[
             param[y],
-            target = get_gpu_target["sm_90a"](),
+            target=get_gpu_target["sm_90a"](),
         ]()
     )
 
 
-fn main():
+def main():
     # CHECK: .debug_
     outer[2]()

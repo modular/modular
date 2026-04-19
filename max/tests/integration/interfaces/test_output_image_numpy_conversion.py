@@ -26,10 +26,10 @@ from max.interfaces.request.open_responses import (
 from max.interfaces.status import GenerationStatus
 
 
-def test_output_image_from_numpy_rgb_float32() -> None:
-    """Test converting RGB float32 numpy array to OutputImageContent."""
-    # Create a simple RGB image with values in [0, 1]
-    rgb_array = np.random.rand(100, 100, 3).astype(np.float32)
+def test_output_image_from_numpy_rgb_uint8() -> None:
+    """Test converting RGB uint8 numpy array to OutputImageContent."""
+    # Create a simple RGB image with values in [0, 255]
+    rgb_array = (np.random.rand(100, 100, 3) * 255).astype(np.uint8)
 
     output = OutputImageContent.from_numpy(rgb_array, format="png")
 
@@ -46,7 +46,7 @@ def test_output_image_from_numpy_rgb_float32() -> None:
 def test_output_image_from_numpy_grayscale() -> None:
     """Test converting grayscale numpy array to OutputImageContent."""
     # Create a grayscale image
-    gray_array = np.random.rand(100, 100).astype(np.float32)
+    gray_array = (np.random.rand(100, 100) * 255).astype(np.uint8)
 
     output = OutputImageContent.from_numpy(gray_array, format="png")
 
@@ -59,7 +59,7 @@ def test_output_image_from_numpy_grayscale() -> None:
 def test_output_image_from_numpy_rgba() -> None:
     """Test converting RGBA numpy array to OutputImageContent."""
     # Create an RGBA image with alpha channel
-    rgba_array = np.random.rand(100, 100, 4).astype(np.float32)
+    rgba_array = (np.random.rand(100, 100, 4) * 255).astype(np.uint8)
 
     output = OutputImageContent.from_numpy(rgba_array, format="png")
 
@@ -70,7 +70,7 @@ def test_output_image_from_numpy_rgba() -> None:
 
 def test_output_image_from_numpy_with_detail() -> None:
     """Test creating OutputImageContent with detail level."""
-    rgb_array = np.random.rand(50, 50, 3).astype(np.float32)
+    rgb_array = (np.random.rand(50, 50, 3) * 255).astype(np.uint8)
 
     output = OutputImageContent.from_numpy(
         rgb_array, format="png", detail=ImageDetail.high
@@ -81,7 +81,7 @@ def test_output_image_from_numpy_with_detail() -> None:
 
 def test_output_image_from_numpy_different_formats() -> None:
     """Test creating OutputImageContent with different image formats."""
-    rgb_array = np.random.rand(50, 50, 3).astype(np.float32)
+    rgb_array = (np.random.rand(50, 50, 3) * 255).astype(np.uint8)
 
     for format_str in ["png", "jpeg", "webp"]:
         output = OutputImageContent.from_numpy(rgb_array, format=format_str)
@@ -91,13 +91,15 @@ def test_output_image_from_numpy_different_formats() -> None:
 def test_output_image_from_numpy_invalid_shape() -> None:
     """Test that invalid array shapes raise ValueError."""
     # 1D array should fail
-    invalid_array = np.random.rand(100).astype(np.float32)
+    invalid_array = np.random.randint(0, 255, size=100, dtype=np.uint8)
 
     with pytest.raises(ValueError, match="Expected 2D or 3D array"):
         OutputImageContent.from_numpy(invalid_array)
 
     # 4D array should fail
-    invalid_array_4d = np.random.rand(10, 10, 10, 3).astype(np.float32)
+    invalid_array_4d = np.random.randint(
+        0, 255, size=(10, 10, 10, 3), dtype=np.uint8
+    )
 
     with pytest.raises(ValueError, match="Expected 2D or 3D array"):
         OutputImageContent.from_numpy(invalid_array_4d)
@@ -106,7 +108,9 @@ def test_output_image_from_numpy_invalid_shape() -> None:
 def test_output_image_from_numpy_invalid_channels() -> None:
     """Test that invalid number of channels raises ValueError."""
     # 5 channels should fail
-    invalid_channels = np.random.rand(50, 50, 5).astype(np.float32)
+    invalid_channels = np.random.randint(
+        0, 255, size=(50, 50, 5), dtype=np.uint8
+    )
 
     with pytest.raises(ValueError, match="Unsupported number of channels"):
         OutputImageContent.from_numpy(invalid_channels)
@@ -115,8 +119,8 @@ def test_output_image_from_numpy_invalid_channels() -> None:
 def test_generation_output_with_numpy_images() -> None:
     """Test creating GenerationOutput with numpy-converted images."""
     # Create multiple images
-    img1 = np.random.rand(64, 64, 3).astype(np.float32)
-    img2 = np.random.rand(64, 64, 3).astype(np.float32)
+    img1 = (np.random.rand(64, 64, 3) * 255).astype(np.uint8)
+    img2 = (np.random.rand(64, 64, 3) * 255).astype(np.uint8)
 
     generation_output = GenerationOutput(
         request_id=RequestID(value="test-request-123"),
@@ -130,14 +134,21 @@ def test_generation_output_with_numpy_images() -> None:
     assert generation_output.request_id.value == "test-request-123"
     assert generation_output.final_status == GenerationStatus.END_OF_SEQUENCE
     assert len(generation_output.output) == 2
-    assert generation_output.output[0].format == "png"
-    assert generation_output.output[1].format == "jpeg"
+
+    # Narrow types for mypy
+    output_0 = generation_output.output[0]
+    output_1 = generation_output.output[1]
+    assert isinstance(output_0, OutputImageContent)
+    assert isinstance(output_1, OutputImageContent)
+
+    assert output_0.format == "png"
+    assert output_1.format == "jpeg"
     assert generation_output.is_done is True
 
 
 def test_generation_output_not_done() -> None:
     """Test GenerationOutput is_done property with ACTIVE status."""
-    img = np.random.rand(32, 32, 3).astype(np.float32)
+    img = (np.random.rand(32, 32, 3) * 255).astype(np.uint8)
 
     generation_output = GenerationOutput(
         request_id=RequestID(value="active-request"),
@@ -154,8 +165,8 @@ def test_output_image_base64_decode() -> None:
     from PIL import Image
 
     # Create a known pattern
-    rgb_array = np.zeros((50, 50, 3), dtype=np.float32)
-    rgb_array[:25, :, 0] = 1.0  # Red top half
+    rgb_array = np.zeros((50, 50, 3), dtype=np.uint8)
+    rgb_array[:25, :, 0] = 255  # Red top half
 
     output = OutputImageContent.from_numpy(rgb_array, format="png")
 

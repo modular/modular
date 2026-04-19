@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from reflection import get_linkage_name
-from testing import assert_equal
+from std.reflection import get_linkage_name
+from std.testing import assert_equal
 
 
-fn foo():
+def foo():
     pass
 
 
-fn bar(x: Int) -> Int:
+def bar(x: Int) -> Int:
     return 1
 
 
@@ -28,23 +28,25 @@ fn bar(x: Int) -> Int:
 comptime funcs = __functions_in_module()
 
 
-def main():
+def main() raises:
     var expected_names = [
         "test_functions_in_module::foo()",
         "test_functions_in_module::bar(::Int)",
         "test_functions_in_module::bar(::Int,::Int)",
-        "test_functions_in_module::foobar(::SIMD[::DType(float64), ::Int(1)])",
+        (
+            "test_functions_in_module::foobar(z:::SIMD[::DType(float64),"
+            " ::Int(1)])"
+        ),
     ]
 
-    @parameter
-    for i in range(len(funcs)):
+    comptime for i in range(len(funcs)):
         comptime name = get_linkage_name[funcs[i]]()
         assert_equal(name, expected_names[i])
 
 
-fn bar(y: Int, z: Int):
+def bar(y: Int, z: Int):
     pass
 
 
-def foobar(*, z: Float64 = 1.6):
+def foobar(*, z: Float64 = 1.6) raises:
     pass

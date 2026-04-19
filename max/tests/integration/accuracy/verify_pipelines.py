@@ -19,20 +19,31 @@ import enum
 import functools
 import json
 import os
+import shutil
 import sys
 import time
 import traceback
-from collections.abc import Callable, Generator, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Generator, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 import click
+import numpy as np
 from generate_llm_logits import Flake, generate_llm_logits
 from max.pipelines.lib.device_specs import (
     device_specs_from_normalized_device_handle,
     normalize_device_specs_input,
 )
+from max.tests.integration.accuracy.logit_verification.logit_verification_config import (
+    LOGIT_VERIFICATION_CONFIG,
+    DeviceKind,
+    LogitVerificationPipelineConfig,
+    PregeneratedTorchGoldens,
+    SupportedEncoding,
+)
+from PIL import Image
+from tag_filters import TagFilter, TagFilterParamType
 from test_common.evaluate import ModelOutput
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.process_isolation import run_in_isolated_process
@@ -47,22 +58,24 @@ from verify import ModelModality as Modality
 # likely caused by a network flake and could be resolved by a retry.
 EX_TEMPFAIL = 75
 
+# Encodings that cannot generate torch reference goldens locally.
+# These require pregenerated goldens from S3 (e.g. generated via vLLM).
+# When --no-aws is set, pipelines with these encodings are skipped.
+TORCH_INCOMPATIBLE_ENCODINGS = frozenset({"float8_e4m3fn", "float4_e2m1fnx2"})
+
 
 def validate_hf_token() -> None:
     """
     It's a regular occurrence that people are asked to run logit verification
     locally, and not everyone has an HF_TOKEN set. Let's help them out
     """
+    if os.getenv("HF_HUB_OFFLINE", "").lower() in ("1", "t", "true"):
+        return
     if os.getenv("HF_TOKEN") is None:
         raise ValueError(
             "Environment variable `HF_TOKEN` must be set. "
             "See https://www.notion.so/modularai/HuggingFace-Access-Token-29d1044d37bb809fbe70e37428faf9da"
         )
-
-
-class DeviceKind(enum.Enum):
-    CPU = "cpu"
-    GPU = "gpu"
 
 
 class VerificationStatus(str, enum.Enum):
@@ -95,6 +108,14 @@ class VerificationVerdict:
     @property
     def emoji(self) -> str:
         return self.status.emoji
+
+
+@dataclass
+class V2V3ComparisonResult:
+    """Result of comparing V2 and V3 outputs for a single pipeline."""
+
+    v2_verdict: VerificationVerdict
+    v3_verdict: VerificationVerdict
 
 
 def resolve_rlocation(rloc: str) -> Path:
@@ -154,6 +175,70 @@ def load_verdicts_from_json(filepath: Path) -> dict[str, VerificationVerdict]:
     except Exception as e:
         print(f"Error loading verdicts from JSON: {e}", file=sys.stderr)
         return {}
+
+
+def _to_uint8_image(image: np.ndarray) -> np.ndarray:
+    """Convert a normalized HWC image array to uint8 for preview output."""
+    image_array = np.asarray(image)
+    if image_array.ndim != 3:
+        raise ValueError(
+            f"Expected image with shape [height, width, channels], got {image_array.shape}"
+        )
+    if image_array.dtype == np.uint8:
+        return image_array
+    return (np.clip(image_array, 0.0, 1.0) * 255.0).astype(np.uint8)
+
+
+def _save_pixel_outputs(
+    *,
+    results: Sequence[ModelOutput],
+    output_root: Path,
+    pipeline: str,
+    encoding: SupportedEncoding,
+    framework_label: str,
+) -> Path:
+    """Write preview PNGs and a manifest for pixel-generation results."""
+    output_dir = (
+        output_root
+        / pipeline.replace("/", "__")
+        / str(encoding)
+        / framework_label
+    )
+    shutil.rmtree(output_dir, ignore_errors=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest: dict[str, Any] = {
+        "pipeline": pipeline,
+        "encoding": str(encoding),
+        "framework": framework_label,
+        "samples": [],
+    }
+
+    for index, result in enumerate(results):
+        image = result.get("images")
+        if image is None:
+            continue
+
+        prompt = str(result.get("prompt", f"sample_{index:03d}"))
+        image_path = output_dir / f"{index:03d}.png"
+        Image.fromarray(_to_uint8_image(image)).save(image_path)
+        manifest["samples"].append(
+            {
+                "index": index,
+                "image": image_path.name,
+                "prompt": prompt,
+            }
+        )
+
+    manifest_path = output_dir / "manifest.json"
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
+
+    print(
+        f"Saved {framework_label} pixel outputs to {output_dir}",
+        flush=True,
+    )
+    return output_dir
 
 
 def display_name(name: str) -> str:
@@ -230,7 +315,7 @@ def dump_results(
     # using grep/awk.
     # Please verify that this doesn't break before changing the output format
 
-    any_logit, any_embedding, any_failed = False, False, False
+    any_logit, any_embedding, any_image, any_failed = False, False, False, False
     for verdict in verdicts.values():
         if verdict.discrepancy_report is None:
             any_failed = True
@@ -238,6 +323,8 @@ def dump_results(
             any_logit = True
         elif verdict.discrepancy_report.model_modality == Modality.EMBEDDING:
             any_embedding = True
+        elif verdict.discrepancy_report.model_modality == Modality.IMAGE:
+            any_image = True
 
     if node := os.environ.get("NODE_NAME"):
         to.write(f"\n\nRan on node: {node}")
@@ -255,20 +342,17 @@ def dump_results(
     if any_logit:
         to.write("\n\n## LLMs\n")
         to.write(
-            "**KL Div (max)** = max KL Div over all prompts. This is the threshold used for pass/fail checks.\n"
-            "**KL Div (avg)** = average over all prompts (lower is better)\n"
-            "**Diff** = change of the average KL Div from previous run\n"
+            "**KL Div** = max KL Div across all tokens and prompts"
+            " (lower is better)\n"
+            "**Diff** = change in KL Div since previous successful run"
+            " of logit verification on main\n"
             "  • Negative = accuracy improved\n"
             "  • Positive = accuracy worsened\n"
             "  • N/A = no previous verdict\n"
             "  • --- = no change\n"
         )
-        to.write(
-            "| Status | Model | KL Div (max) | KL Div (avg) | Diff (avg) |\n"
-        )
-        to.write(
-            "| :----: | :---- | :----------: | :----------: | :--------: |\n"
-        )
+        to.write("| Status | Model | KL Div | Diff |\n")
+        to.write("| :----: | :---- | :----: | :--: |\n")
 
         for name, verdict in sorted(verdicts.items(), key=verdict_sorting_key):
             if verdict.discrepancy_report is None:
@@ -276,26 +360,13 @@ def dump_results(
             if verdict.discrepancy_report.model_modality != Modality.LOGIT:
                 continue
             kl_max = f"{verdict.discrepancy_report.max_kl_div:.2e}"
-            threshold_max = f"{verdict.kl_div_threshold:.2e}"
-            kl_avg = f"{verdict.discrepancy_report.avg_kl_div:.2e}"
-            if (
-                verdict.discrepancy_report.max_kl_div is None
-                or verdict.kl_div_threshold is None
-            ):
-                kl_max_str = f"{kl_max} (? {threshold_max})"
-            elif (
-                verdict.discrepancy_report.max_kl_div > verdict.kl_div_threshold
-            ):
-                kl_max_str = f"{kl_max} (>{threshold_max})"
-            else:
-                kl_max_str = f"{kl_max} (<={threshold_max})"
 
             diff_str = "N/A"
             if previous_verdicts and name in previous_verdicts:
                 diff_str = compute_diff(verdict, previous_verdicts[name])
 
             to.write(
-                f"| {verdict.emoji} | {display_name(name)} | {kl_max_str} | {kl_avg} | {diff_str} |\n"
+                f"| {verdict.emoji} | {display_name(name)} | {kl_max} | {diff_str} |\n"
             )
 
     if any_embedding:
@@ -318,60 +389,147 @@ def dump_results(
                 f"| {verdict.emoji} | {display_name(name)} | {mae} | {diff_str} |\n"
             )
 
-
-@dataclass
-class TagFilter:
-    """User-provided filters on a tag list."""
-
-    must_have: Sequence[str] = field(default_factory=list)
-    must_not_have: Sequence[str] = field(default_factory=list)
-
-    def satisfied_by(self, tags: Sequence[str]) -> bool:
-        """Determines if this filter is satisfied by a tag list."""
-        if not all(required_tag in tags for required_tag in self.must_have):
-            return False
-        return not any(
-            forbidden_tag in tags for forbidden_tag in self.must_not_have
+    if any_image:
+        to.write("\n\n## Image Models\n")
+        to.write(
+            "**SSIM (avg)** = average SSIM over all prompts (higher is better)\n"
+            "**LPIPS (avg)** = average LPIPS over all prompts (lower is better)\n"
+            "**Diff (LPIPS avg)** = change of average LPIPS from previous run\n"
+        )
+        to.write(
+            "| Status | Model | SSIM (avg) | LPIPS (avg) | MAE | Diff (LPIPS avg) |\n"
+        )
+        to.write(
+            "| :----: | :---  | :--------: | :---------: |:---:| :--------------: |\n"
         )
 
+        for name, verdict in sorted(verdicts.items(), key=verdict_sorting_key):
+            if verdict.discrepancy_report is None:
+                continue
+            if verdict.discrepancy_report.model_modality != Modality.IMAGE:
+                continue
 
-class TagFilterParamType(click.ParamType):
-    name = "tag filter"
+            ssim_avg = verdict.discrepancy_report.avg_ssim
+            lpips_avg = verdict.discrepancy_report.avg_lpips
+            ssim_str = "N/A" if ssim_avg is None else f"{ssim_avg:.2e}"
+            lpips_str = "N/A" if lpips_avg is None else f"{lpips_avg:.2e}"
+            mae = f"{verdict.discrepancy_report.avg_mae:.2e}"
 
-    def convert(
-        self,
-        value: str | TagFilter,
-        param: click.Parameter | None,
-        ctx: click.Context | None,
-    ) -> TagFilter:
-        # Unsure why click sometimes tries to re-convert an already-converted
-        # value, but it does.
-        if isinstance(value, TagFilter):
-            return value
-        assert isinstance(value, str), f"Value of unexpected type {type(value)}"
-        if not value:
-            return TagFilter()
-        parts = value.split(",")
-        required = []
-        forbidden = []
-        for part in parts:
-            if part.startswith("+"):
-                required.append(part[1:])
-            elif part.startswith("-"):
-                forbidden.append(part[1:])
-            else:
-                raise ValueError(
-                    f"Tag filter part {part!r} does not start with '+' or '-'"
-                )
-        return TagFilter(must_have=required, must_not_have=forbidden)
+            diff_str = "N/A"
+            if previous_verdicts and name in previous_verdicts:
+                diff_str = compute_diff(verdict, previous_verdicts[name])
+
+            to.write(
+                f"| {verdict.emoji} | {display_name(name)} | {ssim_str} | {lpips_str} | {mae} | {diff_str} |\n"
+            )
 
 
-@dataclass
-class PregeneratedTorchGoldens:
-    tar_file: str
-    """S3 path to the tar file containing the bundled golden json files."""
-    json_file: str
-    """Name of the json file containing the golden logits."""
+def _has_v2_v3_difference(result: V2V3ComparisonResult) -> bool:
+    """Check if V2 and V3 produced different verification results vs torch."""
+    v2 = result.v2_verdict.discrepancy_report
+    v3 = result.v3_verdict.discrepancy_report
+    if v2 is None or v3 is None:
+        # If either errored, we can't compare — flag it.
+        return v2 is not v3
+    if v2.model_modality == Modality.LOGIT:
+        if v2.avg_mae != v3.avg_mae:
+            return True
+        if v2.max_kl_div != v3.max_kl_div:
+            return True
+        if v2.avg_kl_div != v3.avg_kl_div:
+            return True
+    if v2.model_modality == Modality.EMBEDDING:
+        if v2.avg_mae != v3.avg_mae:
+            return True
+    return False
+
+
+def _fmt_v2_v3_diff(v2_val: float | None, v3_val: float | None) -> str:
+    """Format the signed difference V3 - V2, or 'ERR' if either is None."""
+    if v2_val is None or v3_val is None:
+        return "ERR"
+    diff = v3_val - v2_val
+    if diff == 0:
+        return "---"
+    return f"{diff:+.2e}"
+
+
+def dump_v2_v3_comparison(
+    results: Mapping[str, V2V3ComparisonResult],
+    *,
+    to: TextIO = sys.stdout,
+) -> None:
+    """Display V2 vs V3 comparison showing differences in their torch results."""
+
+    any_logit, any_embedding, any_failed = False, False, False
+
+    for r in results.values():
+        v2 = r.v2_verdict.discrepancy_report
+        v3 = r.v3_verdict.discrepancy_report
+        if v2 is None or v3 is None:
+            any_failed = True
+        elif v2.model_modality == Modality.LOGIT:
+            any_logit = True
+        elif v2.model_modality == Modality.EMBEDDING:
+            any_embedding = True
+
+    if any_failed:
+        to.write("\n\n## V2-vs-V3 Failed Models\n")
+        to.write("| Model | V2 | V3 |\n")
+        to.write("| :---  | :-: | :-: |\n")
+        for name, r in sorted(results.items()):
+            v2 = r.v2_verdict.discrepancy_report
+            v3 = r.v3_verdict.discrepancy_report
+            if v2 is not None and v3 is not None:
+                continue
+            to.write(
+                f"| {display_name(name)} | {r.v2_verdict.emoji} | {r.v3_verdict.emoji} |\n"
+            )
+
+    if any_logit:
+        to.write("## V2 vs V3 LLM Comparison\n")
+        to.write(
+            "ΔKL Div (avg) and ΔMAE = V3 minus V2 (positive = V3 further from torch).\n"
+        )
+        to.write("| Status | Model | ΔKL Div (avg) | ΔMAE |\n")
+        to.write("| :----: | :---- | :-----------: | :--: |\n")
+        for name, r in sorted(results.items(), key=lambda x: x[0].lower()):
+            v2 = r.v2_verdict.discrepancy_report
+            v3 = r.v3_verdict.discrepancy_report
+            if v2 is None or v3 is None:
+                continue
+            if v2.model_modality != Modality.LOGIT:
+                continue
+
+            has_diff = _has_v2_v3_difference(r)
+            emoji = "🟠" if has_diff else "✅"
+
+            to.write(
+                f"| {emoji} | {display_name(name)}"
+                f" | {_fmt_v2_v3_diff(v2.avg_kl_div, v3.avg_kl_div)}"
+                f" | {_fmt_v2_v3_diff(v2.avg_mae, v3.avg_mae)} |\n"
+            )
+
+    if any_embedding:
+        to.write("\n\n## V2 vs V3 Embedding Comparison\n")
+        to.write("ΔMAE = V3 minus V2 (positive = V3 further from torch).\n")
+        to.write("| Status | Model | ΔMAE |\n")
+        to.write("| :----: | :---- | :--: |\n")
+        for name, r in sorted(results.items(), key=lambda x: x[0].lower()):
+            v2 = r.v2_verdict.discrepancy_report
+            v3 = r.v3_verdict.discrepancy_report
+            if v2 is None or v3 is None:
+                continue
+            if v2.model_modality != Modality.EMBEDDING:
+                continue
+
+            has_diff = _has_v2_v3_difference(r)
+            emoji = "\U0001f7e0" if has_diff else "\u2705"
+
+            to.write(
+                f"| {emoji} | {display_name(name)}"
+                f" | {_fmt_v2_v3_diff(v2.avg_mae, v3.avg_mae)} |\n"
+            )
 
 
 class InfraError(Exception):
@@ -400,11 +558,12 @@ def generate_llm_logits_with_optional_retry(
     framework: str,
     device: str,
     pipeline: str,
-    encoding: str,
+    encoding: SupportedEncoding,
     output_path: Path,
     reference: list[ModelOutput] | None = None,
     retry_on_flake: bool = True,
     timeout: int | None = None,
+    config_params_override: dict[str, Any] | None = None,
 ) -> None:
     """Generate logits with optional retry capability.
 
@@ -425,6 +584,7 @@ def generate_llm_logits_with_optional_retry(
                 output_path=output_path,
                 print_output=False,
                 reference=reference,
+                config_params_override=config_params_override,
             ),
             timeout=timeout if timeout is not None else 1200,
         )
@@ -451,37 +611,28 @@ def generate_llm_logits_with_optional_retry(
             raise
 
 
-def run_llm_verification(
+def _run_llm_verification(
+    config: LogitVerificationPipelineConfig,
     *,
     device_type: DeviceKind,
     devices: str,
     find_tolerances: bool,
     print_suggested_tolerances: bool,
-    pipeline: str,
-    encoding: str,
-    pregenerated_torch_goldens: PregeneratedTorchGoldens | None = None,
-    absolute_tolerance: float | None = None,
-    relative_tolerance: float | None = None,
-    cos_dist_threshold: float | None = None,
-    kl_div_threshold: float | None = None,
-    timeout: int | None = None,
 ) -> VerificationVerdict:
-    """Run a Llama3 verification with the given model and weights encoding.
+    """Run verification with the given model and weights encoding."""
 
-    extra_verify_flags are passed to
-    max/tests/integration/architectures/llama3/verify.py -- check that script
-    for details on acceptable flags.
-    """
-
-    fssafe_pipeline = pipeline.replace("/", "_")
+    encoding = config.encoding
+    fssafe_pipeline = config.pipeline.replace("/", "_")
 
     # Run the torch baseline or load it from golden.
-    if pregenerated_torch_goldens is not None:
+    if config.pregenerated_torch_goldens is not None:
         # This workflow runs on an A10. The Torch reference runs out of memory
         # on an A10, so it was run manually on an A100 and the result goldens
         # uploaded. Use these pre-generated goldens in this case.
-        tar_file = load_from_tar(pregenerated_torch_goldens.tar_file)
-        torch_golden_path = Path(tar_file, pregenerated_torch_goldens.json_file)
+        tar_file = load_from_tar(config.pregenerated_torch_goldens.tar_file)
+        torch_golden_path = Path(
+            tar_file, config.pregenerated_torch_goldens.json_file
+        )
     else:
         torch_golden_path = Path(
             f"/tmp/goldens_torch_{device_type.value}_{fssafe_pipeline}_{encoding}.json"
@@ -489,15 +640,20 @@ def run_llm_verification(
         generate_llm_logits_with_optional_retry(
             framework="torch",
             device=devices,
-            pipeline=pipeline,
+            pipeline=config.pipeline,
             encoding=encoding,
             output_path=torch_golden_path,
-            timeout=timeout,
+            timeout=config.timeout,
         )
 
     torch_results: list[ModelOutput] = NumpyDecoder().decode(
         torch_golden_path.read_text()
     )
+
+    absolute_tolerance = config.absolute_tolerance
+    relative_tolerance = config.relative_tolerance
+    cos_dist_threshold = config.cos_dist_threshold
+    kl_div_threshold = config.kl_div_threshold
 
     # When find_tolerances is enabled, we set all tolerances to a lower bound and enable print_suggested_tolerances.
     # This ensures we find the suggested lower bound tolerances for a model.
@@ -514,11 +670,12 @@ def run_llm_verification(
     generate_llm_logits_with_optional_retry(
         framework="max",
         device=devices,
-        pipeline=pipeline,
+        pipeline=config.pipeline,
         encoding=encoding,
         output_path=max_golden_path,
         reference=torch_results,
-        timeout=timeout,
+        timeout=config.timeout,
+        config_params_override=config.config_params_override,
     )
 
     eval_metrics = []
@@ -561,821 +718,393 @@ def run_llm_verification(
         return VerificationVerdict(status=VerificationStatus.ERROR)
 
 
-@dataclass
-class PipelineDef:
-    """Definition of the requirements and method of running a pipeline.
-
-    'compatible_with' lists all device types this pipeline is compatible with.
-    'run' should run and verify the pipeline results, returning a
-    VerificationVerdict with the result of the verification, or alternatively
-    raising an exception (same as returning VerificationVerdict.ERROR).
-    """
-
-    compatible_with: Sequence[DeviceKind]
-    run: Callable[[DeviceKind, str, bool, bool], VerificationVerdict]
-    tags: Sequence[str] = field(default_factory=list)
-
-    def run_protected(
-        self,
-        device_type: DeviceKind,
-        devices: str,
-        find_tolerances: bool,
-        print_suggested_tolerances: bool,
-    ) -> VerificationVerdict:
-        try:
-            with detect_infra_errors():
-                return self.run(
-                    device_type,
-                    devices,
-                    find_tolerances,
-                    print_suggested_tolerances,
-                )
-        except Flake:
-            return VerificationVerdict(status=VerificationStatus.FLAKE)
-        except InfraError:
-            traceback.print_exc()
-            return VerificationVerdict(status=VerificationStatus.INFRA)
-        except Exception:
-            traceback.print_exc()
-            return VerificationVerdict(status=VerificationStatus.ERROR)
-
-
-# Helper function to create pipeline runner
-def _make_pipeline_runner(
+def run_llm_verification(
+    config: LogitVerificationPipelineConfig,
     *,
+    device_type: DeviceKind,
+    devices: str,
+    find_tolerances: bool,
+    print_suggested_tolerances: bool,
+) -> VerificationVerdict:
+    """Run LLM verification with error handling for flakes and infra issues."""
+    try:
+        with detect_infra_errors():
+            return _run_llm_verification(
+                config,
+                device_type=device_type,
+                devices=devices,
+                find_tolerances=find_tolerances,
+                print_suggested_tolerances=print_suggested_tolerances,
+            )
+    except Flake:
+        return VerificationVerdict(status=VerificationStatus.FLAKE)
+    except InfraError:
+        traceback.print_exc()
+        return VerificationVerdict(status=VerificationStatus.INFRA)
+    except Exception:
+        traceback.print_exc()
+        return VerificationVerdict(status=VerificationStatus.ERROR)
+
+
+def run_v2_v3_comparison(
+    *,
+    device_type: DeviceKind,
+    devices: str,
+    find_tolerances: bool,
+    print_suggested_tolerances: bool,
     pipeline: str,
-    encoding: str,
+    encoding: SupportedEncoding,
     pregenerated_torch_goldens: PregeneratedTorchGoldens | None = None,
     absolute_tolerance: float | None = None,
     relative_tolerance: float | None = None,
     cos_dist_threshold: float | None = None,
     kl_div_threshold: float | None = None,
     timeout: int | None = None,
-) -> Callable[[DeviceKind, str, bool, bool], VerificationVerdict]:
-    """
-    Build and return a small closure that executes `run_llm_verification`
-    for a single model configuration.
+) -> V2V3ComparisonResult:
+    """Run both V2 and V3, verify each against torch, and compare them directly."""
 
-    Args:
-        pipeline: Name of the model / pipeline to verify.
-        encoding: Weight / activation dtype (e.g. "float32", "bfloat16").
-        pregenerated_torch_goldens: Paths to the pregenerated torch golden
-            logits. If provided, the torch golden values are read from the file.
-            Otherwise, Torch outputs are generated on the fly.
-        absolute_tolerance: Per-token element-wise absolute tolerance (atol).
-        relative_tolerance: Per-token element-wise relative tolerance (rtol).
-        cos_dist_threshold: Per-token cosine-distance threshold
-            (not element-wise).
-        kl_div_threshold: Per-token KL-divergence threshold
-            (not element-wise).
-        timeout: Timeout in seconds for the verification.
+    fssafe_pipeline = pipeline.replace("/", "_")
 
-    Returns:
-        A callable that runs the verification and yields a `VerificationVerdict`.
-    """
-    return (
-        lambda device_type,
-        devices,
-        find_tolerances,
-        print_suggested_tolerances: run_llm_verification(
-            device_type=device_type,
-            devices=devices,
-            find_tolerances=find_tolerances,
-            print_suggested_tolerances=print_suggested_tolerances,
+    # 1. Get torch baseline (shared between V2 and V3).
+    if pregenerated_torch_goldens is not None:
+        tar_file = load_from_tar(pregenerated_torch_goldens.tar_file)
+        torch_golden_path = Path(tar_file, pregenerated_torch_goldens.json_file)
+    else:
+        torch_golden_path = Path(
+            f"/tmp/goldens_torch_{device_type.value}_{fssafe_pipeline}_{encoding}.json"
+        )
+        generate_llm_logits_with_optional_retry(
+            framework="torch",
+            device=devices,
             pipeline=pipeline,
             encoding=encoding,
-            pregenerated_torch_goldens=pregenerated_torch_goldens,
-            absolute_tolerance=absolute_tolerance,
-            relative_tolerance=relative_tolerance,
-            cos_dist_threshold=cos_dist_threshold,
-            kl_div_threshold=kl_div_threshold,
+            output_path=torch_golden_path,
             timeout=timeout,
         )
+
+    torch_results: list[ModelOutput] = NumpyDecoder().decode(
+        torch_golden_path.read_text()
+    )
+
+    if find_tolerances:
+        print_suggested_tolerances = True
+        kl_div_threshold = 1e-10
+        cos_dist_threshold = 1e-10
+        absolute_tolerance = 1e-4
+        relative_tolerance = 1e-4
+
+    eval_metrics = []
+    if absolute_tolerance is not None and relative_tolerance is not None:
+        eval_metrics.append("tol")
+    if cos_dist_threshold is not None:
+        eval_metrics.append("cos")
+    if kl_div_threshold is not None:
+        eval_metrics.append("kl")
+    if not eval_metrics:
+        # Default to kl and cos for comparison mode.
+        eval_metrics = ["kl", "cos"]
+
+    # 2. Generate and verify V2 outputs.
+    v2_golden_path = Path(
+        f"/tmp/goldens_max_v2_{device_type.value}_{fssafe_pipeline}_{encoding}.json"
+    )
+    print("\n--- Generating V2 (Graph API) outputs ---", flush=True)
+    generate_llm_logits_with_optional_retry(
+        framework="max",
+        device=devices,
+        pipeline=pipeline,
+        encoding=encoding,
+        output_path=v2_golden_path,
+        reference=torch_results,
+        timeout=timeout,
+        config_params_override={"prefer_module_v3": False},
+    )
+
+    print("\n--- Verifying V2 vs Torch ---", flush=True)
+    try:
+        v2_result = verify(
+            pipeline_outputs=v2_golden_path,
+            torch_outputs=torch_golden_path,
+            eval_metric=eval_metrics,
+            relative_tolerance=relative_tolerance,
+            absolute_tolerance=absolute_tolerance,
+            cos_dist_threshold=cos_dist_threshold,
+            kl_div_threshold=kl_div_threshold,
+            print_suggested_tolerances=print_suggested_tolerances,
+        )
+        v2_status = (
+            VerificationStatus.OK
+            if v2_result.passed
+            else VerificationStatus.INVALID
+        )
+        v2_verdict = VerificationVerdict(
+            status=v2_status,
+            discrepancy_report=v2_result.discrepancy_report,
+            kl_div_threshold=kl_div_threshold,
+        )
+    except Exception:
+        traceback.print_exc()
+        v2_verdict = VerificationVerdict(status=VerificationStatus.ERROR)
+
+    # 3. Generate and verify V3 outputs.
+    v3_golden_path = Path(
+        f"/tmp/goldens_max_v3_{device_type.value}_{fssafe_pipeline}_{encoding}.json"
+    )
+    print("\n--- Generating V3 (Eager API) outputs ---", flush=True)
+    generate_llm_logits_with_optional_retry(
+        framework="max",
+        device=devices,
+        pipeline=pipeline,
+        encoding=encoding,
+        output_path=v3_golden_path,
+        reference=torch_results,
+        timeout=timeout,
+        config_params_override={"prefer_module_v3": True},
+    )
+
+    print("\n--- Verifying V3 vs Torch ---", flush=True)
+    try:
+        v3_result = verify(
+            pipeline_outputs=v3_golden_path,
+            torch_outputs=torch_golden_path,
+            eval_metric=eval_metrics,
+            relative_tolerance=relative_tolerance,
+            absolute_tolerance=absolute_tolerance,
+            cos_dist_threshold=cos_dist_threshold,
+            kl_div_threshold=kl_div_threshold,
+            print_suggested_tolerances=print_suggested_tolerances,
+        )
+        v3_status = (
+            VerificationStatus.OK
+            if v3_result.passed
+            else VerificationStatus.INVALID
+        )
+        v3_verdict = VerificationVerdict(
+            status=v3_status,
+            discrepancy_report=v3_result.discrepancy_report,
+            kl_div_threshold=kl_div_threshold,
+        )
+    except Exception:
+        traceback.print_exc()
+        v3_verdict = VerificationVerdict(status=VerificationStatus.ERROR)
+
+    return V2V3ComparisonResult(
+        v2_verdict=v2_verdict,
+        v3_verdict=v3_verdict,
     )
 
 
-PIPELINES = {
-    # ========== Robust Pipelines ==========
-    # The models here are considered robust. They are tested with all metrics.
-    # Other models avoid absolute and relative tolerance because they are quite
-    # noisy for inaccurate models.
-    # Generally speaking, these models should have absolute and relative
-    # tolerances below ~5e-2.
-    "meta-llama/Meta-Llama-3-8B-Instruct-float32": PipelineDef(
-        compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        tags=["big"],
-        run=_make_pipeline_runner(
-            pipeline="meta-llama/Meta-Llama-3-8B-Instruct",
-            encoding="float32",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
-                json_file="torch_llama3-8b_float32_golden.json",
-            ),
-            absolute_tolerance=2.9e-2,
-            relative_tolerance=9.4e-2,
-            cos_dist_threshold=2.6e-6,
-            kl_div_threshold=8.6e-07,
-        ),
-    ),
-    "meta-llama/Llama-3.1-8B-Instruct-float32": PipelineDef(
-        compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        tags=["big"],
-        run=_make_pipeline_runner(
-            pipeline="meta-llama/Llama-3.1-8B-Instruct",
-            encoding="float32",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
-                json_file="torch_llama3_1_float32_golden.json",
-            ),
-            absolute_tolerance=2.4e-2,
-            relative_tolerance=7.8e-3,
-            cos_dist_threshold=3.3e-6,
-            kl_div_threshold=1.0e-10,
-        ),
-    ),
-    "sentence-transformers/all-mpnet-base-v2-float32": PipelineDef(
-        compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        run=_make_pipeline_runner(
-            pipeline="sentence-transformers/all-mpnet-base-v2",
-            encoding="float32",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_mpnet_golden/1/d93f10114938b5102f529f436170e2eb33a3d2c76889acf3406b54603cc1be97/torch_mpnet_golden.tar.gz",
-                json_file="torch_mpnet_float32_golden.json",
-            ),
-            # On CPU, mpnet passes with all values set to `1e-4`
-            # GPU specifically requires these higher tolerances (30x worse).
-            absolute_tolerance=2.3e-3,
-            relative_tolerance=2.7e-2,
-            cos_dist_threshold=2.1e-5,
-            kl_div_threshold=1.0e-10,
-        ),
-    ),
-    "unsloth/gpt-oss-20b-BF16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-multi", "no-b200-multi"],
-        run=_make_pipeline_runner(
-            pipeline="unsloth/gpt-oss-20b-BF16",
-            encoding="bfloat16",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_gpt-oss_golden/3/808b22644ad4c499e44408f2e80a14367f8c7cc16a16c7df60c0b2227a1812c3/torch_gpt-oss_golden.tar.gz",
-                json_file="torch_gpt-oss_bfloat16_golden.json",
-            ),
-            cos_dist_threshold=5.0e-03,
-            kl_div_threshold=8.0e-02,
-        ),
-    ),
-    "allenai/OLMo-1B-hf-float32": PipelineDef(
-        compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        run=_make_pipeline_runner(
-            pipeline="allenai/OLMo-1B-hf",
-            encoding="float32",
-            # On CPU, olmo passes with atol set to `5e-4`
-            # GPU specifically requires these higher tolerances (160x worse).
-            absolute_tolerance=3.7e-2,
-            relative_tolerance=4.2e-2,
-            cos_dist_threshold=8.2e-6,
-            kl_div_threshold=6.6e-5,
-        ),
-    ),
-    # ========== Brittle Pipelines ==========
-    # The models here are considered brittle. They have never reached high
-    # accuracy. They tend to be more sensitive to noise as code changes.
-    # These models are only tested with aggregate metrics of cosine distance
-    # and kl divergence.
-    # Likely as cosine distance and kl divergence drop below ~1e-5, they should
-    # be migrated to being a robust pipelines.
-    "bartowski/Meta-Llama-3-8B-Instruct-GGUF-q4_k": PipelineDef(
-        compatible_with=[DeviceKind.CPU],
-        run=_make_pipeline_runner(
-            pipeline="meta-llama/Meta-Llama-3-8B-Instruct",
-            encoding="q4_k",
-            # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
-            # pipeline.  We only pass with these sky-high tolerances --
-            # something is very wrong but at least we will be able to detect
-            # further regressions with this.
-            cos_dist_threshold=0.39,
-            kl_div_threshold=6.5,
-        ),
-    ),
-    "meta-llama/Meta-Llama-3-8B-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        run=_make_pipeline_runner(
-            pipeline="meta-llama/Meta-Llama-3-8B-Instruct",
-            encoding="bfloat16",
-            cos_dist_threshold=3.7e-2,
-            kl_div_threshold=1.3e-1,
-        ),
-    ),
-    "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF-q4_k": PipelineDef(
-        compatible_with=[DeviceKind.CPU],
-        run=_make_pipeline_runner(
-            pipeline="meta-llama/Llama-3.1-8B-Instruct",
-            encoding="q4_k",
-            # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
-            # pipeline.  We only pass with these sky-high tolerances --
-            # something is very wrong but at least we will be able to detect
-            # further regressions with this.
-            cos_dist_threshold=0.62,
-            kl_div_threshold=6.8,
-        ),
-    ),
-    "meta-llama/Llama-3.1-8B-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        run=_make_pipeline_runner(
-            pipeline="meta-llama/Llama-3.1-8B-Instruct",
-            encoding="bfloat16",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
-                json_file="torch_llama3_1_bfloat16_golden.json",
-            ),
-            cos_dist_threshold=2.0e-2,
-            kl_div_threshold=4.0e-2,
-        ),
-    ),
-    "meta-llama/Llama-3.1-8B-Instruct-data-parallel-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=[
-            "nvidia-multi",
-            "no-h100",
-        ],  # TODO(MODEL-779): Accuracy issues on H100.
-        run=_make_pipeline_runner(
-            pipeline="meta-llama/Llama-3.1-8B-Instruct-data-parallel",
-            encoding="bfloat16",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
-                json_file="torch_llama3_1_bfloat16_golden.json",
-            ),
-            cos_dist_threshold=3.0e-4,
-            kl_div_threshold=7.4e-3,
-            timeout=1200,
-        ),
-    ),
-    "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-float8-static": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["float8-support"],
-        run=_make_pipeline_runner(
-            pipeline="RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-float8-static",
-            encoding="float8_e4m3fn",
-            # This model does not run with torch and transformers.
-            # It only runs with vllm.
-            # For now compare to the bfloat16 goldens cause we have them.
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
-                json_file="torch_llama3_1_bfloat16_golden.json",
-            ),
-            cos_dist_threshold=9.7e-03,
-            kl_div_threshold=8.6e-2,
-        ),
-    ),
-    "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic-float8-dynamic": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["float8-support"],
-        run=_make_pipeline_runner(
-            pipeline="RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic",
-            encoding="float8_e4m3fn",
-            # This model does not run with torch and transformers.
-            # It only runs with vllm.
-            # For now compare to the bfloat16 goldens cause we have them.
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
-                json_file="torch_llama3_1_bfloat16_golden.json",
-            ),
-            cos_dist_threshold=1.4e-02,
-            kl_div_threshold=4.1e-02,
-        ),
-    ),
-    "nvidia/Llama-3.1-8B-Instruct-NVFP4": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-only", "no-h100"],
-        run=_make_pipeline_runner(
-            pipeline="nvidia/Llama-3.1-8B-Instruct-NVFP4",
-            encoding="float4_e2m1fnx2",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_llama_3_1_8B_nvfp4/20260205_180241_nvidia-Llama-3.1-8B-Instruct-NVFP4_vllm.json.tar.gz",
-                json_file="tmp/20260205_180241_nvidia-Llama-3.1-8B-Instruct-NVFP4_vllm.json",
-            ),
-            cos_dist_threshold=5.8e-04,
-            kl_div_threshold=2.0e-01,
-        ),
-    ),
-    "meta-llama/Llama-3.2-1B-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-only"],
-        run=_make_pipeline_runner(
-            pipeline="meta-llama/Llama-3.2-1B",
-            encoding="bfloat16",
-            cos_dist_threshold=2.1e-03,
-            kl_div_threshold=8.0e-03,
-        ),
-    ),
-    "meta-llama/Llama-3.3-70B-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-multi"],
-        run=_make_pipeline_runner(
-            pipeline="meta-llama/Llama-3.3-70B-Instruct",
-            encoding="bfloat16",
-            # TODO(AITLIB-194): Reduce thresholds after fixing correctness.
-            cos_dist_threshold=5.9e-04,
-            kl_div_threshold=5.0e-03,
-        ),
-    ),
-    "meta-llama/Llama-4-Scout-17B-16E-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-multi"],
-        run=_make_pipeline_runner(
-            pipeline="meta-llama/Llama-4-Scout-17B-16E-Instruct",
-            encoding="bfloat16",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama4_golden/2/fbb8ae9654ca68a7066e05944eda991b5365821adabbe9bf210f5cbfaad6512f/torch_llama4_golden.tar.gz",
-                json_file="torch_llama4_scout_bfloat16_golden.json",
-            ),
-            cos_dist_threshold=0.7,
-            kl_div_threshold=8.0,
-            timeout=900,
-        ),
-    ),
-    "mistralai/Mistral-Nemo-Instruct-2407-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["big"],
-        run=_make_pipeline_runner(
-            pipeline="mistralai/Mistral-Nemo-Instruct-2407",
-            encoding="bfloat16",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_mistral_golden/1/6f4718625a01e6e8b9f002a0bfdad8098cfe78ce50b9cd4175f27b1f020b405a/torch_mistral_golden.tar.gz",
-                json_file="torch_nemo-instruct-2407_bfloat16_golden.json",
-            ),
-            # TODO(AIPIPE-230): These tolerances are very high due to an accuracy regression.
-            cos_dist_threshold=2.1e-2,
-            kl_div_threshold=3.0e-2,
-        ),
-    ),
-    "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["big"],
-        run=_make_pipeline_runner(
-            pipeline="mistralai/Mistral-Small-3.1-24B-Instruct-2503",
-            encoding="bfloat16",
-            cos_dist_threshold=3.0e-03,
-            kl_div_threshold=5.2e-3,
-        ),
-    ),
-    "OpenGVLab/InternVL3-1B-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        # TODO(KERN-1861): MI300x: Memory access fault by GPU node-2.
-        tags=["nvidia-only"],
-        run=_make_pipeline_runner(
-            pipeline="OpenGVLab/InternVL3-1B-Instruct",
-            encoding="bfloat16",
-            # TODO(MODELS-565): Fix InternVL correctness.
-            cos_dist_threshold=4.0e-03,
-            kl_div_threshold=1.5e-02,
-        ),
-    ),
-    "OpenGVLab/InternVL3-8B-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-multi"],
-        run=_make_pipeline_runner(
-            pipeline="OpenGVLab/InternVL3-8B-Instruct",
-            encoding="bfloat16",
-            # TODO(MODELS-565): Fix InternVL correctness.
-            cos_dist_threshold=3.0e-1,
-            kl_div_threshold=6.3e-01,
-        ),
-    ),
-    "OpenGVLab/InternVL3-14B-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-multi"],
-        run=_make_pipeline_runner(
-            pipeline="OpenGVLab/InternVL3-14B-Instruct",
-            encoding="bfloat16",
-            absolute_tolerance=1.0e-04,
-            relative_tolerance=2.0e00,
-            cos_dist_threshold=6.3e-04,
-            kl_div_threshold=5.0e-02,
-        ),
-    ),
-    "OpenGVLab/InternVL3-38B-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-multi"],
-        run=_make_pipeline_runner(
-            pipeline="OpenGVLab/InternVL3-38B-Instruct",
-            encoding="bfloat16",
-            cos_dist_threshold=5.5e-03,
-            kl_div_threshold=4.8e-02,
-            timeout=900,
-        ),
-    ),
-    "OpenGVLab/InternVL3_5-8B-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-multi"],
-        run=_make_pipeline_runner(
-            pipeline="OpenGVLab/InternVL3_5-8B-Instruct",
-            encoding="bfloat16",
-            cos_dist_threshold=1.2e-2,
-            kl_div_threshold=1.6e-02,
-            timeout=1200,
-        ),
-    ),
-    "mistral-community/pixtral-12b-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["big"],
-        run=_make_pipeline_runner(
-            pipeline="mistral-community/pixtral-12b",
-            encoding="bfloat16",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_pixtral_golden/1/e2ec8c3693bf758df21d5673a35847df88307fb6568a851be531c53e6b18f710/torch_pixtral_golden.tar.gz",
-                json_file="torch_pixtral_bfloat16_golden.json",
-            ),
-            cos_dist_threshold=7.2e-3,
-            kl_div_threshold=2.0e-2,
-        ),
-    ),
-    "Qwen/Qwen2.5-7B-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-only"],  # TODO: Has much worse accuracy on AMD GPUs.
-        run=_make_pipeline_runner(
-            pipeline="Qwen/Qwen2.5-7B-Instruct",
-            encoding="bfloat16",
-            cos_dist_threshold=2.7e-3,
-            kl_div_threshold=1.7e-1,
-        ),
-    ),
-    "Qwen/Qwen2.5VL-3B-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=[],  # TODO(MODELS-803) Errors on 4x GPU
-        run=_make_pipeline_runner(
-            pipeline="Qwen/Qwen2.5-VL-3B-Instruct",
-            encoding="bfloat16",
-            cos_dist_threshold=1.9e00,
-            kl_div_threshold=1.5e01,
-        ),
-    ),
-    "Qwen/Qwen2.5VL-7B-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-multi"],
-        run=_make_pipeline_runner(
-            pipeline="Qwen/Qwen2.5-VL-7B-Instruct",
-            encoding="bfloat16",
-            cos_dist_threshold=7.0e-2,
-            kl_div_threshold=2.5e-1,
-        ),
-    ),
-    "Qwen/Qwen2.5VL-32B-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-multi"],
-        run=_make_pipeline_runner(
-            pipeline="Qwen/Qwen2.5-VL-32B-Instruct",
-            encoding="bfloat16",
-            cos_dist_threshold=7.0e-2,
-            kl_div_threshold=2.6e-1,
-            timeout=900,
-        ),
-    ),
-    "Qwen/Qwen3-VL-30B-A3B-Instruct": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-multi"],
-        run=_make_pipeline_runner(
-            pipeline="Qwen/Qwen3-VL-30B-A3B-Instruct",
-            encoding="bfloat16",
-            cos_dist_threshold=1.7e00,
-            kl_div_threshold=2.1e01,
-        ),
-    ),
-    "Qwen/Qwen3-VL-4B-Instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=[],
-        run=_make_pipeline_runner(
-            pipeline="Qwen/Qwen3-VL-4B-Instruct",
-            encoding="bfloat16",
-            cos_dist_threshold=1.7e00,
-            kl_div_threshold=4.4e-01,
-        ),
-    ),
-    "Qwen/Qwen3-VL-4B-Instruct-FP8": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=[],
-        run=_make_pipeline_runner(
-            pipeline="Qwen/Qwen3-VL-4B-Instruct-FP8",
-            encoding="float8_e4m3fn",
-            cos_dist_threshold=1.7e00,
-            kl_div_threshold=3.6e-01,
-        ),
-    ),
-    "Qwen/Qwen3-8B-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["big", "nvidia-only"],  # TODO: Attention is broken on AMD.
-        run=_make_pipeline_runner(
-            pipeline="Qwen/Qwen3-8B",
-            encoding="bfloat16",
-            cos_dist_threshold=1.1e-3,
-            kl_div_threshold=7.1e-3,
-        ),
-    ),
-    "Qwen/Qwen3-30B-A3B-Instruct-2507-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["big", "nvidia-only", "no-h100"],
-        run=_make_pipeline_runner(
-            pipeline="Qwen/Qwen3-30B-A3B-Instruct-2507",
-            encoding="bfloat16",
-            cos_dist_threshold=7.0e-02,
-            kl_div_threshold=8.0e-01,
-        ),
-    ),
-    "Qwen/Qwen3-Embedding-0.6B-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        run=_make_pipeline_runner(
-            pipeline="Qwen/Qwen3-Embedding-0.6B",
-            encoding="bfloat16",
-            relative_tolerance=1.0e-04,
-            absolute_tolerance=4.2e-01,
-            cos_dist_threshold=2.4e-1,
-            kl_div_threshold=2.6e-04,
-        ),
-    ),
-    # Qwen2.VL-FP8
-    "allenai/olmOCR-2-7B-1025-FP8": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-only"],  # TODO(KERN-2196)
-        run=_make_pipeline_runner(
-            pipeline="allenai/olmOCR-2-7B-1025-FP8",
-            encoding="float8_e4m3fn",
-            cos_dist_threshold=2.4e-01,
-            kl_div_threshold=8.8e-01,
-        ),
-    ),
-    "allenai/OLMo-2-1124-7B-float32": PipelineDef(
-        compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        tags=["big"],
-        run=_make_pipeline_runner(
-            pipeline="allenai/OLMo-2-1124-7B",
-            encoding="float32",
-            cos_dist_threshold=2.1e-5,
-            kl_div_threshold=4.6e-7,
-        ),
-    ),
-    "HuggingFaceM4/Idefics3-8B-Llama3": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["big", "nvidia-only"],
-        run=_make_pipeline_runner(
-            pipeline="HuggingFaceM4/Idefics3-8B-Llama3",
-            encoding="bfloat16",
-            # TODO: Accuracy is much worse on AMD.
-            # so we might have an AMD kernel bug here
-            # TODO(MODELS-730): With the update to transformers=4.55, the
-            # kl_div_threshold went from 8.7e-02 to 6.6e-01.
-            # This is likely due to changes in the reference implementation.
-            cos_dist_threshold=5.0e-02,
-            kl_div_threshold=6.8e-01,
-        ),
-    ),
-    "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct-float32": PipelineDef(
-        compatible_with=[DeviceKind.CPU, DeviceKind.GPU],
-        tags=["big"],
-        run=_make_pipeline_runner(
-            pipeline="LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct",
-            encoding="float32",
-            # TODO: Accuracy is much better on AMD.
-            # so we might have an nvidia kernel bug here
-            cos_dist_threshold=2.5e-2,
-            kl_div_threshold=1.3e-2,
-        ),
-    ),
-    "microsoft/Phi-3.5-mini-instruct-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        run=_make_pipeline_runner(
-            pipeline="microsoft/Phi-3.5-mini-instruct",
-            encoding="bfloat16",
-            # TODO(MODELS-458): This model seems broken based on the thresholds
-            cos_dist_threshold=1.6e-2,
-            kl_div_threshold=4.0e-1,
-        ),
-    ),
-    "microsoft/phi-4-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["big"],
-        run=_make_pipeline_runner(
-            pipeline="microsoft/phi-4",
-            encoding="bfloat16",
-            absolute_tolerance=1.0e-04,
-            relative_tolerance=2.0e00,
-            cos_dist_threshold=1.0e-3,
-            kl_div_threshold=1.3e-02,
-        ),
-    ),
-    "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4-gptq": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-only"],
-        run=_make_pipeline_runner(
-            pipeline="hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
-            encoding="gptq",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama-gptq_golden/0/7e5b7b4d1764033be69e85e0badc9dca82c94c8d2def1216d317b149a621daef/torch_llama-gptq_golden.tar.gz",
-                json_file="torch_llama-gptq_golden.json",
-            ),
-            cos_dist_threshold=1e-3,
-            kl_div_threshold=2.7e-3,
-        ),
-    ),
-    "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4-gptq-no-perm-idx": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-only"],
-        run=_make_pipeline_runner(
-            pipeline="kaitchup/DeepSeek-R1-Distill-Llama-8B-AutoRound-GPTQ-4bit",
-            encoding="gptq",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_llama-gptq_golden/0/7e5b7b4d1764033be69e85e0badc9dca82c94c8d2def1216d317b149a621daef/torch_llama-gptq_golden.tar.gz",
-                json_file="torch_llama-gptq-no-perm-idx_golden.json",
-            ),
-            absolute_tolerance=1.0e-04,
-            relative_tolerance=2.0e00,
-            cos_dist_threshold=6.4e-04,
-            kl_div_threshold=5.5e-03,
-        ),
-    ),
-    # TODO(AITLIB-372): investigate why accuracy tanked when switching to explicit weight dtype casting.
-    # TODO(SERVOPT-571): Re-enable after fixing.
-    # "deepseek-ai/DeepSeek-V2-Lite-Chat-bfloat16": PipelineDef(
-    #     compatible_with=[DeviceKind.GPU],
-    #     tags=["big", "nvidia-only"],
-    #     run=_make_pipeline_runner(
-    #         pipeline="deepseek-ai/DeepSeek-V2-Lite-Chat",
-    #         encoding="bfloat16",
-    #         # TODO(MODELS-516): Investigate need for high tolerances here.
-    #         # TODO(GENAI-216): Investigate non-deterministic output.
-    #         cos_dist_threshold=4.1e-03,
-    #         kl_div_threshold=2.6e-01,
-    #     ),
-    # ),
-    # TODO(MODELS-812): Investigate deepseek timeout
-    "kathywu95/deepseek-v3-small-random-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-only", "no-b200"],  # Times out on B200
-        run=_make_pipeline_runner(
-            pipeline="kathywu95/deepseek-v3-small-random",
-            encoding="bfloat16",
-            cos_dist_threshold=2.9e-02,
-            kl_div_threshold=8.0e-2,  # TODO(MODELS-998)
-        ),
-    ),
-    "kathywu95/deepseek-v3-small-random-fp8": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-only", "no-h100"],  # B200 only
-        run=_make_pipeline_runner(
-            pipeline="kathywu95/deepseek-v3-small-random-fp8",
-            encoding="float8_e4m3fn",
-            # Goldens generated using VLLM.
-            # Script: https://gist.github.com/k-w-w/420b2d64283e83c1121f89d35027a1d6
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_deepseek-v3-small-random-fp8_golden/1/29b77d635f3e2cb5f3b8df155174ce5a77f5d6d1a074a4283fddcaf090906cc8/torch_deepseek-v3-small-random-fp8_golden.tar.gz",
-                json_file="torch_deepseek-v3-small-random_bfloat16_golden.json",
-            ),
-            cos_dist_threshold=2.7e-03,
-            kl_div_threshold=1.1e-2,
-        ),
-    ),
-    "deepseek-ai/DeepSeek-R1": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-multi", "8xb200"],  # Requires 8 B200s to run
-        run=_make_pipeline_runner(
-            pipeline="deepseek-ai/DeepSeek-R1",
-            encoding="float8_e4m3fn",
-            # Goldens generated using VLLM.
-            # Script: https://gist.github.com/k-w-w/1dc387dc41f11789e464d4a9267a8d20
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_deepseek-r1_golden/1/f4b3ce07362060a857724d8721aa008880b2f1da3a9f90aec667672c92f7e5e9/vllm_deepseek-r1_golden.tar.gz",
-                json_file="vllm_deepseek-r1_float8_golden.json",
-            ),
-            cos_dist_threshold=8.8e-03,
-            kl_div_threshold=1.6e-1,
-            timeout=1200,
-        ),
-    ),
-    "nvidia/DeepSeek-R1-0528-NVFP4-v2": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-multi", "8xb200"],  # Requires 8 B200s to run
-        run=_make_pipeline_runner(
-            pipeline="nvidia/DeepSeek-R1-0528-NVFP4-v2",
-            encoding="float4_e2m1fnx2",
-            # Goldens generated using vLLM with NVFP4 support
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_deepseek-r1-nvfp4_golden/9/9b19a48a9bba02fe76bda80402950c1ae13c5e0f93444b08c2c6499f4b3247e7/vllm_deepseek-r1-nvfp4_golden.tar.gz",
-                json_file="vllm_deepseek-r1-nvfp4_float4_golden.json",
-            ),
-            # Tolerances from running --find-tolerances against vLLM goldens
-            cos_dist_threshold=2.7e-02,
-            kl_div_threshold=2.1e-01,
-            timeout=1200,
-        ),
-    ),
-    "google/gemma-3-1b-it-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        run=_make_pipeline_runner(
-            pipeline="google/gemma-3-1b-it",
-            encoding="bfloat16",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_gemma3-1b_golden/1/31d4f0ff8f50b9ab0f877d8765114f6bc4ae73677d2cd2d6ce658866fabf15d4/torch_gemma3-1b_golden.tar.gz",
-                json_file="torch_gemma3-1b_bfloat16_golden.json",
-            ),
-            cos_dist_threshold=1.3e-3,
-            kl_div_threshold=6.0e-02,
-        ),
-    ),
-    "google/gemma-3-12b-it-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["big"],
-        run=_make_pipeline_runner(
-            pipeline="google/gemma-3-12b-it",
-            encoding="bfloat16",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_gemma3-multimodal_golden/1/06d0fa8ed540ae7141a42c432af1661c85d31f8584d017345992df7a52c21ccb/torch_gemma3-multimodal_golden.tar.gz",
-                json_file="torch_gemma3-multimodal_bfloat16_golden.json",
-            ),
-            absolute_tolerance=1.0e-04,
-            relative_tolerance=2.0,
-            cos_dist_threshold=3.0e-02,
-            kl_div_threshold=0.35,
-        ),
-    ),
-    "google/gemma-3-27b-it-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-multi"],
-        run=_make_pipeline_runner(
-            pipeline="google/gemma-3-27b-it",
-            encoding="bfloat16",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/torch_gemma3-27b_golden/0/d4747c90804cbfb6ee4ee06ec15c042dd436558354cfae819e0203d1c3610b38/torch_gemma3-27b_golden.tar.gz",
-                json_file="torch_gemma3-27b_bfloat16_golden.json",
-            ),
-            cos_dist_threshold=1.9e-02,
-            kl_div_threshold=6.9e-01,
-        ),
-    ),
-    "RedHatAI/gemma-3-27b-it-FP8-dynamic": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["big", "float8-support"],
-        run=_make_pipeline_runner(
-            pipeline="RedHatAI/gemma-3-27b-it-FP8-dynamic",
-            encoding="float8_e4m3fn",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_gemma3-27b_golden/1/1a619d49187cdce335f4492acab40fd950922748e6631c0478572344ff295efc/vllm_gemma3-27b_golden.tar.gz",
-                json_file="vllm_gemma3-27b_float8-dynamic_golden.json",
-            ),
-            cos_dist_threshold=3.6e-2,
-            kl_div_threshold=1.4e0,
-        ),
-    ),
-    # Multi-GPU variant
-    "RedHatAI/gemma-3-27b-it-FP8-dynamic-multi": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["big", "float8-support", "nvidia-multi"],
-        run=_make_pipeline_runner(
-            pipeline="RedHatAI/gemma-3-27b-it-FP8-dynamic",
-            encoding="float8_e4m3fn",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_gemma3-27b_golden/1/1a619d49187cdce335f4492acab40fd950922748e6631c0478572344ff295efc/vllm_gemma3-27b_golden.tar.gz",
-                json_file="vllm_gemma3-27b_float8-dynamic_golden.json",
-            ),
-            cos_dist_threshold=2.3e-2,
-            kl_div_threshold=6.8e-1,
-        ),
-    ),
-    "HKUSTAudio/Llasa-8B-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["big", "tts"],  # TTS tag to identify text-to-speech models
-        run=_make_pipeline_runner(
-            pipeline="HKUSTAudio/Llasa-8B",
-            encoding="bfloat16",
-            cos_dist_threshold=1.5e-02,
-            kl_div_threshold=7.7e-01,
-        ),
-    ),
-    "HuggingFaceTB/SmolLM2-360M-Instruct-LoRA-bfloat16": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        # TODO(E2EOPT-698)
-        # TODO(MODELS-885): Thresholds are 'inf', and/or non-determinism
-        tags=["nvidia-only"],  # Small model (<8B params)
-        run=_make_pipeline_runner(
-            pipeline="HuggingFaceTB/SmolLM2-360M-Instruct",
-            encoding="bfloat16",
-            cos_dist_threshold=1e3,
-            kl_div_threshold=1e3,
-        ),
-    ),
-    "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic-BF16-LoRA": PipelineDef(
-        compatible_with=[DeviceKind.GPU],
-        tags=["nvidia-only", "no-h100", "float8-support"],
-        run=_make_pipeline_runner(
-            pipeline="RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic-BF16-LoRA",
-            encoding="float8_e4m3fn",
-            pregenerated_torch_goldens=PregeneratedTorchGoldens(
-                tar_file="s3://modular-bazel-artifacts-public/artifacts/vllm_llama_3_1_8B_fp8_bf16_lora/1/6db6cad8339db70f2975e9a610d79a8a57ba9b8c43a949d8008b95a0faf22f28/vllm_llama_3_1_8B_fp8_bf16_lora.tar.gz",
-                json_file="vllm_llama3_1_8B_float8_dyanmic_bf16_lora_golden.json",
-            ),
-            cos_dist_threshold=1.41e-01,
-            kl_div_threshold=7.1e-01,
-        ),
-    ),
-}
+def _run_pixel_generation_verification(
+    config: LogitVerificationPipelineConfig,
+    *,
+    device_type: DeviceKind,
+    devices: str,
+    find_tolerances: bool,
+    print_suggested_tolerances: bool,
+    pixel_results_dir: Path | None = None,
+) -> VerificationVerdict:
+    """Run pixel generation verification with the given model and weights encoding.
+
+    This verification uses multiple metrics for comprehensive image quality assessment:
+    - MAE/RMSE for pixel-level accuracy
+    - SSIM for structural similarity
+    - LPIPS for learned perceptual similarity
+    """
+
+    encoding = config.encoding
+    fssafe_pipeline = config.pipeline.replace("/", "_")
+
+    # Run the torch baseline or load it from golden
+    if config.pregenerated_torch_goldens is not None:
+        tar_file = load_from_tar(config.pregenerated_torch_goldens.tar_file)
+        torch_golden_path = Path(
+            tar_file, config.pregenerated_torch_goldens.json_file
+        )
+    else:
+        torch_golden_path = Path(
+            f"/tmp/goldens_torch_{device_type.value}_{fssafe_pipeline}_{encoding}.json"
+        )
+        generate_llm_logits_with_optional_retry(
+            framework="torch",
+            device=devices,
+            pipeline=config.pipeline,
+            encoding=encoding,
+            output_path=torch_golden_path,
+            timeout=config.timeout,
+        )
+
+    torch_results: list[ModelOutput] = NumpyDecoder().decode(
+        torch_golden_path.read_text()
+    )
+    if pixel_results_dir is not None:
+        _save_pixel_outputs(
+            results=torch_results,
+            output_root=pixel_results_dir,
+            pipeline=config.pipeline,
+            encoding=encoding,
+            framework_label="diffusers",
+        )
+
+    absolute_tolerance = config.absolute_tolerance
+    relative_tolerance = config.relative_tolerance
+    ssim_threshold = config.ssim_threshold
+    lpips_threshold = config.lpips_threshold
+
+    # When find_tolerances is enabled, we set all tolerances to a lower bound and enable print_suggested_tolerances
+    if find_tolerances:
+        print_suggested_tolerances = True
+        ssim_threshold = 0.999  # Very high SSIM threshold to find minimum
+        absolute_tolerance = 1e-4
+        relative_tolerance = 1e-4
+
+    max_golden_path = Path(
+        f"/tmp/goldens_max_{device_type.value}_{fssafe_pipeline}_{encoding}.json"
+    )
+    generate_llm_logits_with_optional_retry(
+        framework="max",
+        device=devices,
+        pipeline=config.pipeline,
+        encoding=encoding,
+        output_path=max_golden_path,
+        reference=torch_results,
+        timeout=config.timeout,
+        config_params_override=config.config_params_override,
+    )
+    if pixel_results_dir is not None:
+        _save_pixel_outputs(
+            results=NumpyDecoder().decode(max_golden_path.read_text()),
+            output_root=pixel_results_dir,
+            pipeline=config.pipeline,
+            encoding=encoding,
+            framework_label="max",
+        )
+
+    eval_metrics = []
+    if absolute_tolerance is not None and relative_tolerance is not None:
+        eval_metrics.append("tol")
+    if ssim_threshold is not None:
+        eval_metrics.append("ssim")
+    if lpips_threshold is not None:
+        eval_metrics.append("lpips")
+    if not eval_metrics:
+        raise ValueError(
+            "Please provide absolute, relative, SSIM or LPIPS thresholds."
+            " Otherwise no metrics will be computed."
+        )
+
+    try:
+        result = verify(
+            pipeline_outputs=max_golden_path,
+            torch_outputs=torch_golden_path,
+            eval_metric=eval_metrics,
+            relative_tolerance=relative_tolerance,
+            absolute_tolerance=absolute_tolerance,
+            ssim_threshold=ssim_threshold,
+            lpips_threshold=lpips_threshold,
+            print_suggested_tolerances=print_suggested_tolerances,
+        )
+        status = (
+            VerificationStatus.OK
+            if result.passed
+            else VerificationStatus.INVALID
+        )
+        return VerificationVerdict(
+            status=status,
+            discrepancy_report=result.discrepancy_report,
+            kl_div_threshold=None,  # Not applicable for images
+        )
+    except Exception:
+        traceback.print_exc()
+        return VerificationVerdict(status=VerificationStatus.ERROR)
+
+
+def run_pixel_generation_verification(
+    config: LogitVerificationPipelineConfig,
+    *,
+    device_type: DeviceKind,
+    devices: str,
+    find_tolerances: bool,
+    print_suggested_tolerances: bool,
+    pixel_results_dir: Path | None = None,
+) -> VerificationVerdict:
+    """Run pixel generation verification with error handling for flakes and infra issues."""
+    try:
+        with detect_infra_errors():
+            return _run_pixel_generation_verification(
+                config,
+                device_type=device_type,
+                devices=devices,
+                find_tolerances=find_tolerances,
+                print_suggested_tolerances=print_suggested_tolerances,
+                pixel_results_dir=pixel_results_dir,
+            )
+    except Flake:
+        return VerificationVerdict(status=VerificationStatus.FLAKE)
+    except InfraError:
+        traceback.print_exc()
+        return VerificationVerdict(status=VerificationStatus.INFRA)
+    except Exception:
+        traceback.print_exc()
+        return VerificationVerdict(status=VerificationStatus.ERROR)
+
+
+def run_compare_v2_v3(
+    config: LogitVerificationPipelineConfig,
+    device_type: DeviceKind,
+    devices: str,
+    find_tolerances: bool,
+    print_suggested_tolerances: bool,
+) -> V2V3ComparisonResult:
+    return run_v2_v3_comparison(
+        device_type=device_type,
+        devices=devices,
+        find_tolerances=find_tolerances,
+        print_suggested_tolerances=print_suggested_tolerances,
+        pipeline=config.pipeline,
+        encoding=config.encoding,
+        pregenerated_torch_goldens=config.pregenerated_torch_goldens,
+        absolute_tolerance=config.absolute_tolerance,
+        relative_tolerance=config.relative_tolerance,
+        cos_dist_threshold=config.cos_dist_threshold,
+        kl_div_threshold=config.kl_div_threshold,
+        timeout=config.timeout,
+    )
+
+
+def run_compare_v2_v3_protected(
+    config: LogitVerificationPipelineConfig,
+    device_type: DeviceKind,
+    devices: str,
+    find_tolerances: bool,
+    print_suggested_tolerances: bool,
+) -> V2V3ComparisonResult:
+    try:
+        with detect_infra_errors():
+            return run_compare_v2_v3(
+                config,
+                device_type,
+                devices,
+                find_tolerances,
+                print_suggested_tolerances,
+            )
+    except Flake:
+        flake = VerificationVerdict(status=VerificationStatus.FLAKE)
+        return V2V3ComparisonResult(v2_verdict=flake, v3_verdict=flake)
+    except InfraError:
+        traceback.print_exc()
+        infra = VerificationVerdict(status=VerificationStatus.INFRA)
+        return V2V3ComparisonResult(v2_verdict=infra, v3_verdict=infra)
+    except Exception:
+        traceback.print_exc()
+        error = VerificationVerdict(status=VerificationStatus.ERROR)
+        return V2V3ComparisonResult(v2_verdict=error, v3_verdict=error)
+
+
+def _is_pixel_generation(config: LogitVerificationPipelineConfig) -> bool:
+    """Determines if a pipeline config is for pixel/image generation."""
+    return (
+        config.ssim_threshold is not None or config.lpips_threshold is not None
+    )
 
 
 @click.command()
@@ -1394,8 +1123,24 @@ PIPELINES = {
     type=click.Path(path_type=Path),
     help="Load previous verdicts from JSON file to compare changes",
 )
+@click.option(
+    "--pixel-results-dir",
+    type=click.Path(path_type=Path, file_okay=False),
+    help=(
+        "Save generated image outputs for pixel pipelines under this"
+        " directory. Disabled if omitted."
+    ),
+)
 @click.option("--devices", "devices_str", help="Devices to run pipeline on")
-@click.option("--pipeline", help="Run only a specified pipeline")
+@click.option(
+    "--pipeline",
+    "pipelines",
+    type=click.Choice(list(LOGIT_VERIFICATION_CONFIG.pipelines.keys())),
+    multiple=True,
+    default=list(LOGIT_VERIFICATION_CONFIG.pipelines.keys()),
+    show_default=False,
+    help="Pipelines to run (repeatable). Defaults to all.",
+)
 @click.option(
     "--tags",
     "tag_filter",
@@ -1421,15 +1166,54 @@ PIPELINES = {
         " frontier of passing absolute and relative tolerance combinations."
     ),
 )
+@click.option(
+    "--filter",
+    "name_filter",
+    type=str,
+    default=None,
+    help="Only run pipelines whose name matches the filter. Comma-separated for multiple filters (OR logic).",
+)
+@click.option(
+    "--no-aws",
+    is_flag=True,
+    default=False,
+    help=(
+        "Run without AWS access. Ignores pregenerated torch goldens and"
+        " generates reference outputs locally using torch instead."
+        " Works for bf16/f32 models but will fail for FP8 models that"
+        " require vLLM-generated goldens."
+    ),
+)
+@click.option(
+    "--compare-v2-v3",
+    "compare_v2_v3",
+    is_flag=True,
+    default=False,
+    help=(
+        "Run both V2 (graph API) and V3 (eager API) and compare their outputs"
+        " against the torch baseline."
+    ),
+)
+@click.option(
+    "--override-pipeline-golden-location",
+    "override_pipeline_golden_location",
+    default=None,
+    help="Override pregenerated_golden_path for a pipeline. Format: PIPELINE_NAME:/path/to/golden.tar.gz",
+)
 def main(
     report: TextIO | None,
     store_verdicts_json: Path | None,
     load_verdicts_json: Path | None,
+    pixel_results_dir: Path | None,
     devices_str: str | None,
-    pipeline: str | None,
+    pipelines: tuple[str, ...],
     tag_filter: TagFilter,
     find_tolerances: bool,
     print_suggested_tolerances: bool,
+    name_filter: str | None,
+    no_aws: bool,
+    compare_v2_v3: bool,
+    override_pipeline_golden_location: str,
 ) -> None:
     """Run logit-level comparisons of a Modular pipeline against a reference."""
 
@@ -1442,51 +1226,122 @@ def main(
     )
     devices_str = "cpu" if devices_str is None else devices_str
 
-    verdicts: dict[str, VerificationVerdict] = {}
-    if pipeline is None:
-        for pipeline_name, pipeline_def in PIPELINES.items():
-            if device_type not in pipeline_def.compatible_with:
+    golden_path_override: tuple[str, str] | None = None
+    if override_pipeline_golden_location is not None:
+        if ":" not in override_pipeline_golden_location:
+            raise click.BadParameter(
+                f"Expected format PIPELINE_NAME:/path, got: {override_pipeline_golden_location!r}",
+                param_hint="'try --override-pipeline-golden-location allenai/OLMo-1B-hf-float32:/path/to/golden.tar.gz'",
+            )
+        override_pipeline_name, golden_path_replacement = (
+            override_pipeline_golden_location.split(":", 1)
+        )
+        golden_path_override = (override_pipeline_name, golden_path_replacement)
+
+    if compare_v2_v3:
+        # V2 vs V3 comparison mode: run both V2 and V3 and compare their outputs.
+        comparison_results: dict[str, V2V3ComparisonResult] = {}
+        for pipeline_name in pipelines:
+            pipeline_config = LOGIT_VERIFICATION_CONFIG.pipelines[pipeline_name]
+            if device_type not in pipeline_config.compatible_with:
                 continue
-            if not tag_filter.satisfied_by(pipeline_def.tags):
+            if not tag_filter.satisfied_by(pipeline_config.tags):
+                continue
+            if name_filter and not any(
+                f.strip().casefold() in pipeline_name.casefold()
+                for f in name_filter.split(",")
+                if f.strip()
+            ):
                 continue
             start_time = time.time()
             print(f"\n===== Running {pipeline_name} =====", flush=True)
-            verdicts[pipeline_name] = pipeline_def.run_protected(
+            result = run_compare_v2_v3_protected(
+                pipeline_config,
                 device_type,
                 devices_str,
                 find_tolerances,
                 print_suggested_tolerances,
             )
+            comparison_results[pipeline_name] = result
             duration = f"{time.time() - start_time:.0f}s"
             print(
                 f"\n===== Finished {pipeline_name} ({duration}) =====",
                 flush=True,
             )
-    else:
-        # TODO: Temporarily allow to not specify the org name when running a
-        # pipeline by name. This is because the bisection script does not
-        # currently have access to the org name. Fix this by making the
-        # bisection use the existing json status report.
-        for pipeline_name, pipeline_def in PIPELINES.items():  # noqa: B007
-            if display_name(pipeline_name) == pipeline:
-                pipeline = pipeline_name
-                break
-        if pipeline not in PIPELINES:
-            raise click.ClickException(f"Unknown pipeline {pipeline!r}")
-        pipeline_def = PIPELINES[pipeline]
-        if device_type not in pipeline_def.compatible_with:
-            raise click.ClickException(
-                f"Pipeline {pipeline!r} not compatible with {device_type!r}"
+            dump_results({f"{pipeline_name} [V2]": result.v2_verdict})
+            dump_results({f"{pipeline_name} [V3]": result.v3_verdict})
+
+        print()
+        print("-" * 40)
+        print()
+        dump_v2_v3_comparison(comparison_results)
+        if report:
+            dump_v2_v3_comparison(comparison_results, to=report)
+        return
+
+    verdicts: dict[str, VerificationVerdict] = {}
+    for pipeline_name in pipelines:
+        pipeline_config = LOGIT_VERIFICATION_CONFIG.pipelines[pipeline_name]
+        if device_type not in pipeline_config.compatible_with:
+            continue
+        if not tag_filter.satisfied_by(pipeline_config.tags):
+            continue
+        if name_filter and not any(
+            f.strip().casefold() in pipeline_name.casefold()
+            for f in name_filter.split(",")
+            if f.strip()
+        ):
+            continue
+
+        if golden_path_override is not None:
+            (override_pipeline_name, golden_path_replacement) = (
+                golden_path_override
             )
-        if not tag_filter.satisfied_by(pipeline_def.tags):
+            if pipeline_name == override_pipeline_name:
+                # then replace the golden_path for this pipeline with the user specified tar path
+                if pipeline_config.pregenerated_torch_goldens is not None:
+                    pipeline_config = pipeline_config.model_copy(
+                        update={
+                            "pregenerated_torch_goldens": pipeline_config.pregenerated_torch_goldens.model_copy(
+                                update={"tar_file": golden_path_replacement}
+                            )
+                        }
+                    )
+
+        if no_aws and pipeline_config.encoding in TORCH_INCOMPATIBLE_ENCODINGS:
             raise click.ClickException(
-                f"Pipeline {pipeline!r} doesn't match tag filter {tag_filter}"
+                f"Pipeline {pipeline_name!r} uses encoding"
+                f" {pipeline_config.encoding!r}, which cannot generate torch"
+                " goldens locally. Remove --no-aws or choose a different"
+                " pipeline."
             )
-        verdicts[pipeline] = pipeline_def.run_protected(
-            device_type,
-            devices_str,
-            find_tolerances,
-            print_suggested_tolerances,
+        if no_aws:
+            pipeline_config = pipeline_config.model_copy(
+                update={"pregenerated_torch_goldens": None}
+            )
+        start_time = time.time()
+        print(f"\n===== Running {pipeline_name} =====", flush=True)
+        if _is_pixel_generation(pipeline_config):
+            verdicts[pipeline_name] = run_pixel_generation_verification(
+                pipeline_config,
+                device_type=device_type,
+                devices=devices_str,
+                find_tolerances=find_tolerances,
+                print_suggested_tolerances=print_suggested_tolerances,
+                pixel_results_dir=pixel_results_dir,
+            )
+        else:
+            verdicts[pipeline_name] = run_llm_verification(
+                pipeline_config,
+                device_type=device_type,
+                devices=devices_str,
+                find_tolerances=find_tolerances,
+                print_suggested_tolerances=print_suggested_tolerances,
+            )
+        duration = f"{time.time() - start_time:.0f}s"
+        print(
+            f"\n===== Finished {pipeline_name} ({duration}) =====",
+            flush=True,
         )
 
     # Load previous verdicts if provided

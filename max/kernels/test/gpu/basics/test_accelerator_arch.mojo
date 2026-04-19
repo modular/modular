@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch
 
-from testing import *
+from std.testing import *
 
 
-def main():
+def main() raises:
     var accelerator_arch = _accelerator_arch()
 
     assert_true(

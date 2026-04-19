@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout.int_tuple import IntTuple, size
+from layout import IntTuple, Layout
+from layout.int_tuple import size
 from layout.layout import (
-    Layout,
     MakeTileLayoutList,
     coalesce,
     right_inverse,
@@ -22,12 +22,12 @@ from layout.layout import (
 )
 from layout.layout_tensor import _compute_distribute_layout
 from layout.swizzle import Swizzle, make_swizzle
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 
-fn print_swizzle(thread_layout: Layout, swizzle: Swizzle):
+def print_swizzle(thread_layout: Layout, swizzle: Swizzle):
     for tid in range(thread_layout.size()):
         print(swizzle(tid), end=" ")
         if (tid + 1) % (2**swizzle.shift) == 0:
@@ -35,7 +35,7 @@ fn print_swizzle(thread_layout: Layout, swizzle: Swizzle):
 
 
 # CHECK-LABEL: test_swizzle_basic
-fn test_swizzle_basic():
+def test_swizzle_basic():
     print("== test_swizzle_basic")
 
     comptime thread_layout = Layout.row_major(8, 8)
@@ -81,7 +81,7 @@ fn test_swizzle_basic():
             print()
 
 
-fn cat_layout(layout_a: Layout, layout_b: Layout) -> Layout:
+def cat_layout(layout_a: Layout, layout_b: Layout) -> Layout:
     var shape = IntTuple()
     var stride = IntTuple()
     for i in range(len(layout_a.shape)):
@@ -93,7 +93,7 @@ fn cat_layout(layout_a: Layout, layout_b: Layout) -> Layout:
     return Layout(shape, stride)
 
 
-fn append_layout(layout_a: Layout, layout_b: Layout) -> Layout:
+def append_layout(layout_a: Layout, layout_b: Layout) -> Layout:
     var shape = IntTuple()
     var stride = IntTuple()
     shape.append(layout_a.shape)
@@ -104,13 +104,13 @@ fn append_layout(layout_a: Layout, layout_b: Layout) -> Layout:
     return Layout(shape, stride)
 
 
-fn vectorize_layout[layout: Layout, *tile_sizes: Int]() -> Layout:
+def vectorize_layout[layout: Layout, *tile_sizes: Int]() -> Layout:
     return zipped_divide(
         materialize[layout](), MakeTileLayoutList[*tile_sizes]()
     )
 
 
-fn vectorize_distribute_layout[
+def vectorize_distribute_layout[
     *element_tile_sizes: Int, data_layout: Layout, thread_layout: Layout
 ]() -> Layout:
     comptime vlayout = vectorize_layout[data_layout, *element_tile_sizes]()
@@ -118,19 +118,21 @@ fn vectorize_distribute_layout[
     return append_layout(materialize[vlayout[0]](), materialize[dlayout]())
 
 
-struct WaveFrontSummary(Defaultable, ImplicitlyCopyable, RegisterPassable):
+struct WaveFrontSummary(
+    Defaultable, ImplicitlyCopyable, RegisterPassable, Writable
+):
     var total_wavefronts: Int
     var expected_wavefronts: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.total_wavefronts = 0
         self.expected_wavefronts = 0
 
-    fn excess_wavefronts(self) -> Int:
+    def excess_wavefronts(self) -> Int:
         return self.total_wavefronts - self.expected_wavefronts
 
-    fn __str__(self) -> String:
-        return String(
+    def write_to(self, mut writer: Some[Writer]):
+        writer.write(
             "WaveFrontSummary(total_wavefronts=",
             self.total_wavefronts,
             ", expected_wavefronts=",
@@ -141,7 +143,7 @@ struct WaveFrontSummary(Defaultable, ImplicitlyCopyable, RegisterPassable):
         )
 
 
-fn count_wavefronts[
+def count_wavefronts[
     *element_tile_sizes: Int,
     thread_layout: Layout,
     data_layout: Layout,
@@ -221,20 +223,20 @@ fn count_wavefronts[
     return wavefronts
 
 
-fn test_swizzle_gemm_store() raises:
+def test_swizzle_gemm_store() raises:
     comptime WM = 64
     comptime WN = 64
     comptime MMA_M = 16
     comptime MMA_N = 8
     comptime noswizzle = Swizzle(0, 0, 1)
     comptime swizzle = make_swizzle[
-        num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
+        num_rows=MMA_M // 2, row_size=WN, access_size=MMA_N
     ]()
     var wfs_noswizzle_reg_to_smem_fp32 = count_wavefronts[
         1,
         2,
-        thread_layout = Layout.row_major(8, 4),
-        data_layout = Layout.row_major(WM, WN),
+        thread_layout=Layout.row_major(8, 4),
+        data_layout=Layout.row_major(WM, WN),
         type_bytes=4,
         swizzle=noswizzle,
     ]()
@@ -242,8 +244,8 @@ fn test_swizzle_gemm_store() raises:
     var wfs_noswizzle_smem_to_gmem_fp32 = count_wavefronts[
         1,
         4,
-        thread_layout = Layout.row_major(32 * 8 // WN, WN // 8),
-        data_layout = Layout.row_major(WM, WN),
+        thread_layout=Layout.row_major(32 * 8 // WN, WN // 8),
+        data_layout=Layout.row_major(WM, WN),
         type_bytes=4,
         swizzle=noswizzle,
     ]()
@@ -251,8 +253,8 @@ fn test_swizzle_gemm_store() raises:
     var wfs_swizzle_reg_to_smem_fp32 = count_wavefronts[
         1,
         2,
-        thread_layout = Layout.row_major(8, 4),
-        data_layout = Layout.row_major(WM, WN),
+        thread_layout=Layout.row_major(8, 4),
+        data_layout=Layout.row_major(WM, WN),
         type_bytes=4,
         swizzle=swizzle,
     ]()
@@ -260,8 +262,8 @@ fn test_swizzle_gemm_store() raises:
     var wfs_swizzle_smem_to_gmem_fp32 = count_wavefronts[
         1,
         8,
-        thread_layout = Layout.row_major(32 * 8 // WN, WN // 8),
-        data_layout = Layout.row_major(WM, WN),
+        thread_layout=Layout.row_major(32 * 8 // WN, WN // 8),
+        data_layout=Layout.row_major(WM, WN),
         type_bytes=4,
         swizzle=swizzle,
     ]()
@@ -269,8 +271,8 @@ fn test_swizzle_gemm_store() raises:
     var wfs_swizzle_reg_to_smem_bf16 = count_wavefronts[
         1,
         2,
-        thread_layout = Layout.row_major(8, 4),
-        data_layout = Layout.row_major(WM, WN),
+        thread_layout=Layout.row_major(8, 4),
+        data_layout=Layout.row_major(WM, WN),
         type_bytes=2,
         swizzle=swizzle,
     ]()
@@ -278,14 +280,14 @@ fn test_swizzle_gemm_store() raises:
     var wfs_swizzle_smem_to_gmem_bf16 = count_wavefronts[
         1,
         8,
-        thread_layout = Layout.row_major(32 * 8 // WN, WN // 8),
-        data_layout = Layout.row_major(WM, WN),
+        thread_layout=Layout.row_major(32 * 8 // WN, WN // 8),
+        data_layout=Layout.row_major(WM, WN),
         type_bytes=2,
         swizzle=swizzle,
     ]()
     assert_equal(wfs_swizzle_smem_to_gmem_bf16.excess_wavefronts(), 0)
 
 
-def main():
+def main() raises:
     test_swizzle_basic()
     test_swizzle_gemm_store()

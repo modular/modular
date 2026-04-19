@@ -10,9 +10,10 @@ _APPLE_GPU_INCOMPATIBLE = select({
 _EXTRA_MOJO_TEST_CONSTRAINTS = {
     "test_dump_sass.mojo": ["//:nvidia_gpu"],
     "test_function_attributes.mojo": _APPLE_GPU_INCOMPATIBLE,
+    "test_external_stream.mojo": _APPLE_GPU_INCOMPATIBLE,  # Metal does not support external streams
     "test_device_stream.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2554
     "test_device_event.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2555
-    "test_external_shared_mem.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2397
+    "test_occupancy_max_active_blocks.mojo": _APPLE_GPU_INCOMPATIBLE,  # occupancy query not implemented for Metal
     "test_device_context_sub_buffer.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2562
 }
 

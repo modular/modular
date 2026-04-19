@@ -14,6 +14,7 @@ modular_py_test(
         ["*.py"],
         exclude = [
             "*_gpu.py",
+            "test_print_kv_cache.py",
             "test_rotary_embedding.py",
         ],
     ),
@@ -25,6 +26,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/experimental/torch",
         "//max/python/max/graph",
         "//max/python/max/interfaces",
         "//max/python/max/kv_cache",
@@ -39,6 +41,28 @@ modular_py_test(
         requirement("numpy"),
         requirement("pytest-asyncio"),
         requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_print_kv_cache",
+    srcs = [
+        "conftest.py",
+        "test_print_kv_cache.py",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        # Test takes too long on ASAN to run in presubmit
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("hypothesis"),
     ],
 )
 
@@ -83,6 +107,7 @@ modular_py_test(
         exclude = [
             "*_distributed_gpu.py",
             "test_lora_*.py",
+            "test_lmcache_*.py",  # Requires external lmcache package
         ],
     ) + ["conftest.py"],
     exec_properties = {
@@ -111,6 +136,9 @@ modular_py_test(
 modular_py_test(
     name = "kvcache_distributed_gpu_tests",
     srcs = glob(["*_distributed_gpu.py"]) + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
     gpu_constraints = ["//:has_4_gpus"],
     tags = [
         "gpu",
@@ -134,6 +162,7 @@ _LORA_TEST_DEPS = [
     "//max/python/max/driver",
     "//max/python/max/dtype",
     "//max/python/max/engine",
+    "//max/python/max/experimental/torch",
     "//max/python/max/graph",
     "//max/python/max/kv_cache",
     "//max/python/max/nn",

@@ -24,24 +24,22 @@ Usage:
         max/kernels/benchmarks/autotune/bench_grouped_block_scaled_gemm.yaml
 """
 
-from math import ceildiv
-from memory import LegacyUnsafePointer
-from sys import env_get_int, size_of
-from time import perf_counter_ns
+from std.math import ceildiv
+from std.sys import get_defined_int
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList, Dim
-from gpu.host import DeviceContext
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
-from random import rand, seed
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.gpu.host import DeviceContext
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.random import rand, seed
+from std.utils import Index
 from internal_utils import arg_parse
-from internal_utils._utils import ValOrDim, dynamic, static
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from layout import CoordLike, Coord, Idx, TileTensor, row_major
 
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
@@ -54,12 +52,11 @@ from linalg.fp4_utils import (
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
+    GEMMKind,
 )
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
 )
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 # =============================================================================
@@ -67,7 +64,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 # =============================================================================
 
 
-fn _get_run_name[
+def _get_run_name[
     in_type: DType,
     out_type: DType,
 ](num_groups: Int, m_per_group: Int, n: Int, k: Int, cta_group: Int,) -> String:
@@ -96,14 +93,15 @@ fn _get_run_name[
 # =============================================================================
 
 
-fn bench_grouped_block_scaled_gemm[
+def bench_grouped_block_scaled_gemm[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
     a_type: DType,
     b_type: DType,
     c_type: DType,
     scales_dtype: DType,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
     num_groups: Int,
     transpose_b: Bool,
     cta_group: Int = 1,
@@ -111,13 +109,23 @@ fn bench_grouped_block_scaled_gemm[
     block_swizzle_size: Int = 8,
     scaling_kind: UMMAKind = UMMAKind.KIND_MXF8F6F4,
     sf_vector_size: Int = MXFP8_SF_VECTOR_SIZE,
-](ctx: DeviceContext, mut bench: Bench, m_override: Int = 0) raises:
+](
+    ctx: DeviceContext,
+    mut bench: Bench,
+    m: MType,
+    n: NType,
+    k: KType,
+    m_override: Int = 0,
+) raises:
     """Benchmark grouped block-scaled GEMM with production-style configuration.
 
     Args:
         ctx: Device context.
         bench: Benchmark instance.
-        m_override: Runtime M value. When > 0, overrides m.value for
+        m: M dimension.
+        n: N dimension.
+        k: K dimension.
+        m_override: Runtime M value. When > 0, overrides m.value() for
             allocations and problem sizes. Used by kbench with dynamic M.
     """
     comptime SF_VECTOR_SIZE = sf_vector_size
@@ -133,82 +141,43 @@ fn bench_grouped_block_scaled_gemm[
         1, 1, 1
     )
 
-    # Use m_override if provided, otherwise m.value (compile-time)
-    var M = m_override if m_override > 0 else m.value
+    # Use m_override if provided, otherwise m.value() (compile-time)
+    var M = m_override if m_override > 0 else m.value()
 
     # For FP4, K dimension in arrays is halved (2 values packed per byte)
     comptime k_pack = 2 if is_fp4 else 1
-    comptime k_array_dim = k.dim // k_pack
-    var k_array_val = k.value // k_pack
+    comptime K_ARRAY = KType.static_value // k_pack
+    var k_array_val = k.value() // k_pack
 
     # Compute sizes (using packed K for FP4)
     var a_size = M * k_array_val
-    var b_size = n.value * k_array_val if transpose_b else k_array_val * n.value
-    var c_size = M * n.value
+    var b_size = (
+        n.value() * k_array_val if transpose_b else k_array_val * n.value()
+    )
+    var c_size = M * n.value()
 
     # Scale factors always use logical K
     var a_scales_total = (
         ceildiv(M, SF_MN_GROUP_SIZE)
-        * ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K)
+        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        ceildiv(n.value, SF_MN_GROUP_SIZE)
-        * ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(n.value(), SF_MN_GROUP_SIZE)
+        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
 
-    # Static shapes (using packed K for A/B arrays)
-    comptime static_a_shape = DimList(m.dim, k_array_dim)
-    comptime static_b_shape = DimList(
-        n.dim, k_array_dim
-    ) if transpose_b else DimList(k_array_dim, n.dim)
-    comptime static_c_shape = DimList(m.dim, n.dim)
-    comptime static_a_scales_shape = DimList(
-        ceildiv(m.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
-    )
-    comptime static_b_scales_shape = DimList(
-        ceildiv(n.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
-    )
-
-    var dynamic_a_shape = DimList(M, k_array_val)
-    var dynamic_b_shape = DimList(
-        n.value, k_array_val
-    ) if transpose_b else DimList(k_array_val, n.value)
-    var dynamic_c_shape = DimList(M, n.value)
-    var dynamic_a_scales_shape = DimList(
-        ceildiv(M, SF_MN_GROUP_SIZE),
-        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-    var dynamic_b_scales_shape = DimList(
-        ceildiv(n.value, SF_MN_GROUP_SIZE),
-        ceildiv(k.value, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-
     # Allocate tensors
-    var a_host = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var b_host = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var c_host = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var sfa_host = UnsafePointer[Scalar[scales_dtype]].alloc(a_scales_total)
-    var sfb_host = UnsafePointer[Scalar[scales_dtype]].alloc(b_scales_total)
+    var a_host = alloc[Scalar[a_type]](a_size)
+    var b_host = alloc[Scalar[b_type]](b_size)
+    var c_host = alloc[Scalar[c_type]](c_size)
+    var sfa_host = alloc[Scalar[scales_dtype]](a_scales_total)
+    var sfb_host = alloc[Scalar[scales_dtype]](b_scales_total)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -235,35 +204,58 @@ fn bench_grouped_block_scaled_gemm[
     ctx.enqueue_copy(sfb_device, sfb_host)
     ctx.synchronize()
 
-    # Create NDBuffers and LayoutTensors
-    var a_nd = NDBuffer[a_type, 2, _, static_a_shape](
-        a_device.unsafe_ptr(), dynamic_a_shape
+    # Create TileTensors - 3D with batch=1
+    var a_template = TileTensor(
+        a_device,
+        row_major(Coord(Idx[1](), Idx(M), Idx[K_ARRAY]())),
     )
-    var b_nd = NDBuffer[b_type, 2, _, static_b_shape](
-        b_device.unsafe_ptr(), dynamic_b_shape
+    var b_template = TileTensor(
+        b_device,
+        row_major(
+            Coord(
+                Idx[1](),
+                Idx[NType.static_value if transpose_b else K_ARRAY](),
+                Idx[K_ARRAY if transpose_b else NType.static_value](),
+            )
+        ),
     )
-    var c_nd = NDBuffer[c_type, 2, _, static_c_shape](
-        c_device.unsafe_ptr(), dynamic_c_shape
-    )
-    var sfa_nd = NDBuffer[scales_dtype, 5, _, static_a_scales_shape](
-        sfa_device.unsafe_ptr(), dynamic_a_scales_shape
-    )
-    var sfb_nd = NDBuffer[scales_dtype, 5, _, static_b_scales_shape](
-        sfb_device.unsafe_ptr(), dynamic_b_scales_shape
+    var c_template = TileTensor(
+        c_device,
+        row_major(Coord(Idx[1](), Idx(M), n)),
     )
 
-    var a_tensor = from_ndbuffer_row_major(a_nd)
-    var b_tensor = from_ndbuffer_row_major(b_nd)
-    var c_tensor = from_ndbuffer_row_major(c_nd)
-    var sfa_tensor = from_ndbuffer_row_major(sfa_nd)
-    var sfb_tensor = from_ndbuffer_row_major(sfb_nd)
+    # Scale factor template tensors - 5D with batch=1 and merged last dims
+    var sfa_template = TileTensor(
+        sfa_device,
+        row_major(
+            Coord(
+                Idx[1](),
+                Idx(ceildiv(M, SF_MN_GROUP_SIZE)),
+                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
+                Idx[SF_ATOM_M[0]](),
+                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+            )
+        ),
+    )
+    var sfb_template = TileTensor(
+        sfb_device,
+        row_major(
+            Coord(
+                Idx[1](),
+                Idx(ceildiv(n.value(), SF_MN_GROUP_SIZE)),
+                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
+                Idx[SF_ATOM_M[0]](),
+                Idx[SF_ATOM_M[1] * SF_ATOM_K](),
+            )
+        ),
+    )
 
     # Setup pointer arrays
-    var problem_sizes_host = UnsafePointer[Int32].alloc(max_groups * 4)
+    var problem_sizes_host = alloc[Int32](max_groups * 4)
     for g in range(max_groups):
-        problem_sizes_host[g * 4 + 0] = M
-        problem_sizes_host[g * 4 + 1] = n.value
-        problem_sizes_host[g * 4 + 2] = k.value
+        problem_sizes_host[g * 4 + 0] = Int32(M)
+        problem_sizes_host[g * 4 + 1] = Int32(n.value())
+        problem_sizes_host[g * 4 + 2] = Int32(k.value())
         problem_sizes_host[g * 4 + 3] = 1
 
     var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
@@ -271,11 +263,11 @@ fn bench_grouped_block_scaled_gemm[
     )
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
 
-    var a_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var b_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var c_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var sfa_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
-    var sfb_ptrs_host = UnsafePointer[UInt64].alloc(max_groups)
+    var a_ptrs_host = alloc[UInt64](max_groups)
+    var b_ptrs_host = alloc[UInt64](max_groups)
+    var c_ptrs_host = alloc[UInt64](max_groups)
+    var sfa_ptrs_host = alloc[UInt64](max_groups)
+    var sfb_ptrs_host = alloc[UInt64](max_groups)
 
     for g in range(max_groups):
         a_ptrs_host[g] = UInt64(Int(a_device.unsafe_ptr()))
@@ -297,41 +289,35 @@ fn bench_grouped_block_scaled_gemm[
     ctx.enqueue_copy(sfb_ptrs_device, sfb_ptrs_host)
     ctx.synchronize()
 
-    comptime problem_sizes_layout = Layout.row_major(max_groups, 4)
-    var problem_sizes_tensor_host = LayoutTensor[
-        DType.int32, problem_sizes_layout, MutAnyOrigin
-    ](
+    var problem_sizes_tensor_host = TileTensor(
         problem_sizes_host,
-        RuntimeLayout[problem_sizes_layout].row_major(
-            IndexList[2](max_groups, 4)
-        ),
+        row_major(Coord(Idx[max_groups](), Idx[4]())),
     )
 
-    comptime ptr_layout = Layout.row_major(max_groups, 1)
-    var a_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        a_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var a_ptrs_tensor = TileTensor(
+        a_ptrs_device,
+        row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
-    var b_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        b_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var b_ptrs_tensor = TileTensor(
+        b_ptrs_device,
+        row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
-    var c_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        c_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var c_ptrs_tensor = TileTensor(
+        c_ptrs_device,
+        row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
-    var sfa_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        sfa_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var sfa_ptrs_tensor = TileTensor(
+        sfa_ptrs_device,
+        row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
-    var sfb_ptrs_tensor = LayoutTensor[DType.uint64, ptr_layout, MutAnyOrigin](
-        sfb_ptrs_device.unsafe_ptr(),
-        RuntimeLayout[ptr_layout].row_major(IndexList[2](max_groups, 1)),
+    var sfb_ptrs_tensor = TileTensor(
+        sfb_ptrs_device,
+        row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
 
     comptime BM = mma_shape[0] // cta_group
     comptime BN = mma_shape[1] // cta_group
-    var tiles_per_group = ceildiv(M, BM) * ceildiv(n.value, BN)
+    var tiles_per_group = ceildiv(M, BM) * ceildiv(n.value(), BN)
     var total_tiles = tiles_per_group * num_groups
 
     # Configuration matching production benchmark
@@ -345,10 +331,11 @@ fn bench_grouped_block_scaled_gemm[
         cta_group=cta_group,
         k_group_size=k_group_size,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     # Total FLOPs for all groups
-    var total_flops = 2 * M * n.value * k.value * num_groups
+    var total_flops = 2 * M * n.value() * k.value() * num_groups
 
     @parameter
     @__copy_capture(
@@ -358,18 +345,18 @@ fn bench_grouped_block_scaled_gemm[
         sfa_ptrs_tensor,
         sfb_ptrs_tensor,
         problem_sizes_tensor_host,
-        a_tensor,
-        b_tensor,
-        c_tensor,
-        sfa_tensor,
-        sfb_tensor,
+        a_template,
+        b_template,
+        c_template,
+        sfa_template,
+        sfb_template,
         total_tiles,
     )
     @always_inline
-    fn bench_func(mut bencher: Bencher):
+    def bench_func(mut bencher: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             grouped_block_scaled_matmul[
                 transpose_b=transpose_b,
                 max_groups=max_groups,
@@ -383,11 +370,11 @@ fn bench_grouped_block_scaled_gemm[
                 problem_sizes_tensor_host,
                 num_groups,
                 total_tiles,
-                a_tensor,
-                b_tensor,
-                c_tensor,
-                sfa_tensor,
-                sfb_tensor,
+                a_template,
+                b_template,
+                c_template,
+                sfa_template,
+                sfb_template,
                 ctx,
             )
 
@@ -396,7 +383,7 @@ fn bench_grouped_block_scaled_gemm[
     bench.bench_function[bench_func](
         BenchId(
             _get_run_name[a_type, c_type](
-                num_groups, M, n.value, k.value, cta_group
+                num_groups, M, n.value(), k.value(), cta_group
             )
         ),
         [ThroughputMeasure(BenchMetric.flops, total_flops)],
@@ -421,14 +408,14 @@ fn bench_grouped_block_scaled_gemm[
 # =============================================================================
 
 
-def main():
+def main() raises:
     # Compile-time parameters (from kbench YAML or defaults)
-    comptime N = env_get_int["N", 0]()
-    comptime K = env_get_int["K", 0]()
-    comptime num_groups = env_get_int["num_groups", 0]()
-    comptime cta_group = env_get_int["cta_group", 1]()
-    comptime k_group_size = env_get_int["k_group_size", 1]()
-    comptime block_swizzle_size = env_get_int["block_swizzle_size", 8]()
+    comptime N = get_defined_int["N", 0]()
+    comptime K = get_defined_int["K", 0]()
+    comptime num_groups = get_defined_int["num_groups", 0]()
+    comptime cta_group = get_defined_int["cta_group", 1]()
+    comptime k_group_size = get_defined_int["k_group_size", 1]()
+    comptime block_swizzle_size = get_defined_int["block_swizzle_size", 8]()
 
     # Runtime parameters (from kbench YAML $-prefixed or defaults)
     var M = Int(arg_parse("M", 0))
@@ -442,24 +429,19 @@ def main():
     var b = Bench()
 
     with DeviceContext() as ctx:
-
-        @parameter
-        if N > 0 and K > 0 and num_groups > 0:
+        comptime if N > 0 and K > 0 and num_groups > 0:
             # kbench mode: use env parameters
             bench_grouped_block_scaled_gemm[
                 a_type,
                 b_type,
                 c_type,
                 scales_dtype,
-                m = dynamic(0),
-                n = static[N](),
-                k = static[K](),
                 num_groups=num_groups,
                 transpose_b=transpose_b,
                 cta_group=cta_group,
                 k_group_size=k_group_size,
                 block_swizzle_size=block_swizzle_size,
-            ](ctx, b, M)
+            ](ctx, b, Idx(0), Idx[N](), Idx[K](), M)
         else:
             # Standalone mode: run default shapes
             print("=" * 70)
@@ -473,30 +455,24 @@ def main():
                 b_type,
                 c_type,
                 scales_dtype,
-                m = static[128](),
-                n = static[4096](),
-                k = static[7168](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-            ](ctx, b)
+            ](ctx, b, Idx[128](), Idx[4096](), Idx[7168]())
 
             bench_grouped_block_scaled_gemm[
                 a_type,
                 b_type,
                 c_type,
                 scales_dtype,
-                m = static[128](),
-                n = static[7168](),
-                k = static[2048](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-            ](ctx, b)
+            ](ctx, b, Idx[128](), Idx[7168](), Idx[2048]())
 
             print("\n=== DeepSeek-V2 MoE Prefill Shapes (large M) ===")
 
@@ -505,30 +481,24 @@ def main():
                 b_type,
                 c_type,
                 scales_dtype,
-                m = static[4096](),
-                n = static[4096](),
-                k = static[7168](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-            ](ctx, b)
+            ](ctx, b, Idx[4096](), Idx[4096](), Idx[7168]())
 
             bench_grouped_block_scaled_gemm[
                 a_type,
                 b_type,
                 c_type,
                 scales_dtype,
-                m = static[4096](),
-                n = static[7168](),
-                k = static[2048](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-            ](ctx, b)
+            ](ctx, b, Idx[4096](), Idx[7168](), Idx[2048]())
 
             # === NVFP4 Benchmarks ===
             comptime fp4_a_type = DType.uint8
@@ -543,34 +513,28 @@ def main():
                 fp4_b_type,
                 fp4_c_type,
                 fp4_scales_dtype,
-                m = static[128](),
-                n = static[4096](),
-                k = static[7168](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-                scaling_kind = UMMAKind.KIND_MXF4NVF4,
+                scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
-            ](ctx, b)
+            ](ctx, b, Idx[128](), Idx[4096](), Idx[7168]())
 
             bench_grouped_block_scaled_gemm[
                 fp4_a_type,
                 fp4_b_type,
                 fp4_c_type,
                 fp4_scales_dtype,
-                m = static[128](),
-                n = static[7168](),
-                k = static[2048](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-                scaling_kind = UMMAKind.KIND_MXF4NVF4,
+                scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
-            ](ctx, b)
+            ](ctx, b, Idx[128](), Idx[7168](), Idx[2048]())
 
             print("\n=== NVFP4 DeepSeek-V2 MoE Prefill Shapes (large M) ===")
 
@@ -579,34 +543,28 @@ def main():
                 fp4_b_type,
                 fp4_c_type,
                 fp4_scales_dtype,
-                m = static[4096](),
-                n = static[4096](),
-                k = static[7168](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-                scaling_kind = UMMAKind.KIND_MXF4NVF4,
+                scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
-            ](ctx, b)
+            ](ctx, b, Idx[4096](), Idx[4096](), Idx[7168]())
 
             bench_grouped_block_scaled_gemm[
                 fp4_a_type,
                 fp4_b_type,
                 fp4_c_type,
                 fp4_scales_dtype,
-                m = static[4096](),
-                n = static[7168](),
-                k = static[2048](),
                 num_groups=32,
                 transpose_b=transpose_b,
                 cta_group=1,
                 k_group_size=1,
                 block_swizzle_size=8,
-                scaling_kind = UMMAKind.KIND_MXF4NVF4,
+                scaling_kind=UMMAKind.KIND_MXF4NVF4,
                 sf_vector_size=NVFP4_SF_VECTOR_SIZE,
-            ](ctx, b)
+            ](ctx, b, Idx[4096](), Idx[7168](), Idx[2048]())
 
     b.dump_report()
     print("\n" + "=" * 70)

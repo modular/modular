@@ -27,12 +27,13 @@ from max.interfaces import (
     RequestID,
     SamplingParams,
     SamplingParamsInput,
+    TextGenerationOutput,
     TextGenerationRequest,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
-from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
+from max.serve.pipelines.llm import TokenGeneratorPipeline
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
 from max.serve.worker_interface.lora_queue import LoRAQueue
@@ -73,7 +74,7 @@ class LLM:
     _pending_requests: dict[RequestID, queue.Queue[_Response]]
 
     def __init__(self, pipeline_config: PipelineConfig) -> None:
-        settings = Settings(MAX_SERVE_OFFLINE_INFERENCE=True)
+        settings = Settings(offline_inference=True)
         self._pc = ThreadControl()
         self._request_queue = queue.Queue()
         self._pending_requests = {}
@@ -195,10 +196,12 @@ async def _async_worker(
     # Start the model worker process.
     # Create dynamic and continuous batching workers and associated queues
     # to feed the model worker process.
-    pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(pipeline_config)
+    pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(
+        pipeline_config.models.main_architecture_name,
+    )
     lora_queue: LoRAQueue | None = (
         LoRAQueue(
-            pipeline_config.zmq_endpoint_base,
+            pipeline_config.runtime.zmq_endpoint_base,
             pipeline_config.lora.lora_paths,
         )
         if pipeline_config.lora
@@ -206,7 +209,7 @@ async def _async_worker(
     )
     # Create Queues
     model_worker_interface = ZmqModelWorkerInterface[
-        TextAndVisionContext | TextContext, TokenGeneratorOutput
+        TextAndVisionContext | TextContext, TextGenerationOutput
     ](
         pipeline_task,
         context_type=PIPELINE_REGISTRY.retrieve_context_type(pipeline_config),
@@ -254,6 +257,7 @@ async def _async_worker(
 
                 # Generate this request until complete
                 chunks = await pipeline.all_tokens(gen_request)
+                # TODO: (MODELS-1120) determine whether to include reasoning tokens
                 return "".join(
                     chunk.decoded_tokens
                     if chunk.decoded_tokens is not None

@@ -22,25 +22,26 @@ To use these features import the `Path` type from this module.
 Example:
 
 ```mojo
-from pathlib import Path
+from std.pathlib import Path
 var p = Path("a") / "b" / "c.txt"
 print(p)  # a/b/c.txt
 ```
 """
 
-import os
-from hashlib.hasher import Hasher
-from os import PathLike, listdir, stat_result
-from ffi import c_char, external_call
-from sys import CompilationTarget
+import std.os
+import std.format._utils as fmt
+from std.hashlib.hasher import Hasher
+from std.os import PathLike, listdir, stat_result
+from std.ffi import c_char, external_call, _CPointer
+from std.sys import CompilationTarget
 
-from reflection import call_location
+from std.reflection import call_location
 
 comptime DIR_SEPARATOR = "/"
 """The directory separator character for path operations."""
 
 
-fn cwd() raises -> Path:
+def cwd() raises -> Path:
     """Gets the current directory.
 
     Returns:
@@ -52,7 +53,7 @@ fn cwd() raises -> Path:
     Example:
 
     ```mojo
-    from pathlib import cwd
+    from std.pathlib import cwd
 
     var string_path = cwd()
     print(string_path)
@@ -62,7 +63,7 @@ fn cwd() raises -> Path:
     var buf = InlineArray[c_char, MAX_CWD_BUFFER_SIZE](uninitialized=True)
 
     var ptr = buf.unsafe_ptr()
-    var res = external_call["getcwd", type_of(ptr)](
+    var res = external_call["getcwd", _CPointer[c_char, origin_of(buf)]](
         ptr, Int(MAX_CWD_BUFFER_SIZE)
     )
 
@@ -74,29 +75,28 @@ fn cwd() raises -> Path:
 
 
 @always_inline
-fn _dir_of_current_file() raises -> Path:
+def _dir_of_current_file() raises -> Path:
     """Gets the directory the file is at.
 
     Returns:
       The directory the file calling is at.
     """
-    return _dir_of_current_file_impl(call_location().file_name)
+    return _dir_of_current_file_impl(call_location().file_name())
 
 
 @no_inline
-fn _dir_of_current_file_impl(file_name: StaticString) raises -> Path:
+def _dir_of_current_file_impl(file_name: StaticString) raises -> Path:
     var i = String(file_name).rfind(DIR_SEPARATOR)
-    return Path(file_name[0:i])
+    return Path(file_name[byte=0:i])
 
 
 struct Path(
     Boolable,
-    Equatable,
+    Comparable,
     Hashable,
     ImplicitlyCopyable,
     KeyElement,
     PathLike,
-    Stringable,
     Writable,
 ):
     """The Path object."""
@@ -104,7 +104,7 @@ struct Path(
     var path: String
     """The underlying path string representation."""
 
-    fn __init__(out self) raises:
+    def __init__(out self) raises:
         """Initializes a path with the current directory.
 
         Raises:
@@ -113,7 +113,7 @@ struct Path(
         self = cwd()
 
     # Note: Not @implicit so that allocation is not implicit.
-    fn __init__(out self, path: StringSlice):
+    def __init__(out self, path: StringSlice):
         """Initializes a path with the provided path.
 
         Args:
@@ -122,7 +122,7 @@ struct Path(
         self.path = String(path)
 
     @implicit
-    fn __init__(out self, var path: String):
+    def __init__(out self, var path: String):
         """Initializes a path with the provided path.
 
         Args:
@@ -131,7 +131,7 @@ struct Path(
         self.path = path^
 
     @implicit
-    fn __init__(out self, path: StringLiteral):
+    def __init__(out self, path: StringLiteral):
         """Initializes a path with the provided path.
 
         Args:
@@ -139,7 +139,7 @@ struct Path(
         """
         self.path = path
 
-    fn __truediv__(self, suffix: Self) -> Self:
+    def __truediv__(self, suffix: Self) -> Self:
         """Joins two paths using the system-defined path separator.
 
         Args:
@@ -150,7 +150,7 @@ struct Path(
         """
         return self.__truediv__(StringSlice(suffix.path))
 
-    fn __truediv__(self, suffix: StringSlice) -> Self:
+    def __truediv__(self, suffix: StringSlice) -> Self:
         """Joins two paths using the system-defined path separator.
 
         Args:
@@ -163,7 +163,7 @@ struct Path(
         res /= suffix
         return res
 
-    fn __itruediv__(mut self, suffix: StringSlice):
+    def __itruediv__(mut self, suffix: StringSlice):
         """Joins two paths using the system-defined path separator.
 
         Args:
@@ -175,17 +175,8 @@ struct Path(
             self.path += DIR_SEPARATOR
             self.path += suffix
 
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the path.
-
-        Returns:
-          A string representation of the path.
-        """
-        return self.path
-
     @always_inline
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Checks if the path is not empty.
 
         Returns:
@@ -193,7 +184,7 @@ struct Path(
         """
         return self.path.byte_length() > 0
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """
         Formats this path to the provided Writer.
 
@@ -203,24 +194,27 @@ struct Path(
 
         writer.write(self.path)
 
+    @no_inline
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this `Path` to a writer.
+
+        Writes the path in the format `Path('...')`.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "Path").fields(fmt.Repr(self.path))
+
     @always_inline
-    fn __fspath__(self) -> String:
+    def __fspath__(self) -> String:
         """Returns a string representation of the path.
 
         Returns:
           A string representation of the path.
         """
-        return String(self)
+        return self.path
 
-    fn __repr__(self) -> String:
-        """Returns a printable representation of the path.
-
-        Returns:
-          A printable representation of the path.
-        """
-        return String(self)
-
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Returns True if the two paths are equal.
 
         Args:
@@ -231,7 +225,7 @@ struct Path(
         """
         return String(self) == String(other)
 
-    fn __eq__(self, other: StringSlice) -> Bool:
+    def __eq__(self, other: StringSlice) -> Bool:
         """Returns True if the two paths are equal.
 
         Args:
@@ -242,7 +236,21 @@ struct Path(
         """
         return StringSlice(self.path) == other
 
-    fn stat(self) raises -> stat_result:
+    @always_inline
+    def __lt__(self, other: Self) -> Bool:
+        """Returns True if this path is less than the other path.
+
+        Comparison uses lexicographic ordering of the underlying path strings.
+
+        Args:
+          other: The other path to compare against.
+
+        Returns:
+          True if this path is less than the other path, and False otherwise.
+        """
+        return self.path < other.path
+
+    def stat(self) raises -> stat_result:
         """Returns the stat information on the path.
 
         Returns:
@@ -254,14 +262,14 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
         var p = Path()       # Path to cwd
         print(p.stat())      # os.stat_result(...)
         ```
         """
-        return os.stat(self)
+        return std.os.stat(self)
 
-    fn lstat(self) raises -> stat_result:
+    def lstat(self) raises -> stat_result:
         """Returns the lstat information on the path. This is similar to stat,
         but if the file is a symlink then it gives you information about the
         symlink rather than the target.
@@ -272,10 +280,10 @@ struct Path(
         Raises:
             If the operation fails.
         """
-        return os.lstat(self)
+        return std.os.lstat(self)
 
     @always_inline
-    fn exists(self) -> Bool:
+    def exists(self) -> Bool:
         """Returns True if the path exists and False otherwise.
 
         Returns:
@@ -284,15 +292,15 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
 
         var p = Path("./path/to/nowhere/does-not-exist")
         print("Exists" if p.exists() else "Does not exist") # Does not exist
         ```
         """
-        return os.path.exists(self)
+        return std.os.path.exists(self)
 
-    fn expanduser(self) raises -> Path:
+    def expanduser(self) raises -> Path:
         """Expands a prefixed `~` with `$HOME` on posix
         If environment variables are not set or the `path` is not
         prefixed with `~`, returns the `path` unmodified.
@@ -306,17 +314,17 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.testing import assert_true
 
         var p = Path("~")
         assert_true(p.expanduser() == Path.home())
         ```
         """
-        return os.path.expanduser(self)
+        return std.os.path.expanduser(self)
 
     @staticmethod
-    fn home() raises -> Path:
+    def home() raises -> Path:
         """Returns `$HOME` on posix.
         If environment variables are not set it returns `~`.
 
@@ -329,16 +337,16 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.testing import assert_true
 
         var p = Path("~")
         assert_true(p.expanduser() == Path.home())
         ```
         """
-        return os.path.expanduser("~")
+        return std.os.path.expanduser("~")
 
-    fn is_dir(self) -> Bool:
+    def is_dir(self) -> Bool:
         """Returns True if the path is a directory and False otherwise.
 
         Returns:
@@ -348,16 +356,16 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_false
+        from std.pathlib import Path
+        from std.testing import assert_true
 
         var p = Path.home()
         assert_true(p.is_dir())
         ```
         """
-        return os.path.isdir(self)
+        return std.os.path.isdir(self)
 
-    fn is_file(self) -> Bool:
+    def is_file(self) -> Bool:
         """Returns True if the path is a file and False otherwise.
 
         Returns:
@@ -367,16 +375,16 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_false
+        from std.pathlib import Path
+        from std.testing import assert_false
 
         var p = Path.home()
         assert_false(p.is_file())
         ```
         """
-        return os.path.isfile(self)
+        return std.os.path.isfile(self)
 
-    fn read_text(self) raises -> String:
+    def read_text(self) raises -> String:
         """Returns content of the file.
 
         Returns:
@@ -388,7 +396,7 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
 
         var p = Path("testfile.txt")
         p.write_text("Hello Mojo")
@@ -400,7 +408,7 @@ struct Path(
         with open(self, "r") as f:
             return f.read()
 
-    fn read_bytes(self) raises -> List[Byte]:
+    def read_bytes(self) raises -> List[Byte]:
         """Returns content of the file as bytes.
 
         Returns:
@@ -412,8 +420,8 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.testing import assert_true
 
         var p = Path("testfile.txt")
         p.write_text("test")
@@ -425,7 +433,7 @@ struct Path(
         with open(self, "r") as f:
             return f.read_bytes()
 
-    fn write_text[T: Writable](self, value: T) raises:
+    def write_text[T: Writable](self, value: T) raises:
         """Writes the value to the file as text.
 
         Parameters:
@@ -440,7 +448,7 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
 
         var p = Path("testfile")
         p.write_text("Hello")
@@ -452,7 +460,7 @@ struct Path(
         with open(self, "w") as f:
             f.write(value)
 
-    fn write_bytes(self, bytes: Span[Byte]) raises:
+    def write_bytes(self, bytes: Span[Byte, _]) raises:
         """Writes bytes to the file.
 
         Args:
@@ -464,7 +472,7 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
 
         var p = Path("testfile")
         var s = "Hello"
@@ -477,7 +485,7 @@ struct Path(
         with open(self, "w") as f:
             f.write_bytes(bytes)
 
-    fn suffix(self) -> String:
+    def suffix(self) -> String:
         """The path's extension, if any.
         This includes the leading period. For example: '.txt'.
         If no extension is found, returns the empty string.
@@ -488,8 +496,8 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.testing import assert_true
 
         var p = Path("testfile.txt")
         print(p.suffix())
@@ -503,15 +511,15 @@ struct Path(
         # For example /a/.foo's suffix is "" but /a/b.foo's suffix is .foo.
         var start = self.path.rfind(DIR_SEPARATOR) + 2
         var i = self.path.rfind(".", start)
-        if 0 < i < (len(self.path) - 1):
-            return String(self.path[i:])
+        if 0 < i < (self.path.byte_length() - 1):
+            return String(self.path[byte=i:])
 
         return ""
 
     # TODO(MOCO-1532):
     #   Use StringSlice here once param inference bug for empty variadic
     #   list of parameterized types is fixed.
-    fn joinpath(self, *pathsegments: String) -> Path:
+    def joinpath(self, *pathsegments: String) -> Path:
         """Joins the Path using the pathsegments.
 
         Args:
@@ -524,9 +532,9 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from tempfile import gettempdir
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.tempfile import gettempdir
+        from std.testing import assert_true
 
         # gettmpdir() has no guarantee of trailing /
         # Use joinpath to ensure path construction
@@ -551,7 +559,7 @@ struct Path(
 
         return result
 
-    fn listdir(self) raises -> List[Path]:
+    def listdir(self) raises -> List[Path]:
         """Gets the list of entries contained in the path provided.
 
         Returns:
@@ -563,7 +571,7 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path, cwd
+        from std.pathlib import Path, cwd
 
         for item in cwd().listdir():
             print(item) # each item name in working directory
@@ -577,7 +585,7 @@ struct Path(
 
         return res^
 
-    fn name(self) -> String:
+    def name(self) -> String:
         """Returns the name of the path.
 
         Returns:
@@ -586,14 +594,14 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
+        from std.pathlib import Path
 
         Path("a/path/foo.txt").name()  # returns "foo.txt"
         ```
         """
-        return os.path.basename(self)
+        return std.os.path.basename(self)
 
-    fn parts(self) -> List[StringSlice[origin_of(self.path)]]:
+    def parts(self) -> List[StringSlice[origin_of(self.path)]]:
         """Returns the parts of the path separated by `DIR_SEPARATOR`.
 
         Returns:
@@ -602,8 +610,8 @@ struct Path(
         Example:
 
         ```mojo
-        from pathlib import Path
-        from testing import assert_true
+        from std.pathlib import Path
+        from std.testing import assert_true
 
         for p, q in zip(Path("a/path/foo.txt").parts(), ["a", "path", "foo.txt"]):
             assert_true(p == q)

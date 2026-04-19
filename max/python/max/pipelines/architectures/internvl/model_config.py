@@ -20,13 +20,13 @@ from typing import Literal
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheParams
+from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import (
     Llama3Config as Qwen2Config,
 )
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
-from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
@@ -212,7 +212,11 @@ class InternVLConfig(ArchConfigWithKVCache):
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         """Initializes an InternVLConfig instance from pipeline configuration.
 
         Args:
@@ -221,8 +225,9 @@ class InternVLConfig(ArchConfigWithKVCache):
         Returns:
             An InternVLConfig instance with fields initialized from config.
         """
+        model_config = model_config or pipeline_config.model
         return cls.initialize_from_config(
-            pipeline_config, pipeline_config.model.huggingface_config
+            pipeline_config, model_config.huggingface_config
         )
 
     @classmethod

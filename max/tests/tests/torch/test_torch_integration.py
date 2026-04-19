@@ -14,9 +14,7 @@
 from __future__ import annotations
 
 import concurrent.futures
-import sys
 import threading
-from importlib import reload
 from unittest import mock
 
 import numpy as np
@@ -24,9 +22,9 @@ import pytest
 import torch
 from max.driver import accelerator_count
 from max.dtype import DType
+from max.experimental.torch import CustomOpLibrary, graph_op
+from max.experimental.torch.torch import max_device_ref
 from max.graph import TensorType, TensorValue, ops
-from max.torch import CustomOpLibrary, graph_op
-from max.torch.torch import max_device_ref
 
 # Select device based on hardware availability
 device = torch.device(
@@ -183,6 +181,32 @@ def test_binary_add(op_library: CustomOpLibrary, backend: str) -> None:
 
 
 @pytest.mark.parametrize("backend", ["eager", "inductor"])
+def test_binary_add_inline_getattr(
+    op_library: CustomOpLibrary, backend: str
+) -> None:
+    """Test that accessing a custom op via __getattr__ inside a
+    torch.compile(fullgraph=True) function works correctly (GEX-3359)."""
+
+    @torch.compile(backend=backend, fullgraph=True)
+    def myadd(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+        C = torch.zeros_like(A)
+        op_library.myadd(C, A, B)
+        return C
+
+    A = torch.rand(64, 64, dtype=torch.float32, device=device)
+    B = torch.rand(64, 64, dtype=torch.float32, device=device)
+    C = myadd(A, B)
+
+    np.testing.assert_allclose(
+        C.cpu(),
+        (A + B).cpu(),
+        equal_nan=True,
+        rtol=1e-4,
+        atol=1e-4,
+    )
+
+
+@pytest.mark.parametrize("backend", ["eager", "inductor"])
 def test_binary_add_multiple_sizes(
     op_library: CustomOpLibrary, backend: str
 ) -> None:
@@ -325,36 +349,3 @@ def test_model_compilation_race(op_library: CustomOpLibrary) -> None:
             event.set()
         torch.testing.assert_close(f1.result(), f2.result())
         assert load_count == 1  # only one thread should have compiled the graph
-
-
-def test_dtype_torch_import_exception_handling() -> None:
-    """Tests that non-import exceptions just disable torch, don't fail outright.
-
-    This can happen for example when having an invalid torch package that is
-    importable but not usable.
-    """
-    # Temporarily mock torch to raise a non-ImportError exception.
-    original_torch = sys.modules.get("torch")
-
-    class MockTorchModule:
-        def __getattr__(self, name: str):
-            raise RuntimeError("Simulated torch initialization error")
-
-    # Replace torch with our mock.
-    sys.modules["torch"] = MockTorchModule()  # type: ignore[assignment]
-
-    # Force reload of max.dtype to trigger the exception handling.
-    import max.dtype.dtype as dtype_module
-
-    reload(dtype_module)
-
-    # Verify that _to_torch and _from_torch are defined but raise the caught
-    # exception.
-    assert hasattr(dtype_module, "_to_torch")
-    assert hasattr(dtype_module, "_from_torch")
-
-    # Calling these should raise the caught exception.
-    with pytest.raises(
-        RuntimeError, match="Simulated torch initialization error"
-    ):
-        dtype_module._to_torch(DType.float32)

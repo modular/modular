@@ -18,11 +18,12 @@ import sys
 
 # Standard library
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, get_args
 
 # 3rd-party
 import click
 import torch
+from max import pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.pipelines.lib.device_specs import (
     device_specs_from_normalized_device_handle,
@@ -68,6 +69,7 @@ EX_TEMPFAIL = 75
 @click.option(
     "--encoding",
     "encoding_name",
+    type=click.Choice(get_args(pipelines.SupportedEncoding)),
     required=False,
     help="Quantization encoding to run pipeline with.",
 )
@@ -129,11 +131,22 @@ EX_TEMPFAIL = 75
     default="1",
     help="Number of hidden layers to use (default: 1). Pass 'all' to use all layers.",
 )
+@click.option(
+    "--prefer-module-v3",
+    "prefer_module_v3",
+    is_flag=True,
+    default=False,
+    help=(
+        "Use the ModuleV3 (eager-API) architecture variant when available. "
+        "Instructs the pipeline registry to look up '<arch>_ModuleV3' instead "
+        "of '<arch>'. Has no effect on non-MAX frameworks."
+    ),
+)
 def main(
     device_type: str | list[int],
     framework_name: str,
     pipeline_name: str,
-    encoding_name: str | None,
+    encoding_name: pipelines.SupportedEncoding | None,
     output_path: Path,
     max_batch_size: int | None,
     log_hf_downloads: bool,
@@ -142,6 +155,7 @@ def main(
     images: tuple[str, ...] | None,
     hf_config_overrides: str | None,
     num_hidden_layers: str,
+    prefer_module_v3: bool,
 ) -> None:
     if "gemma3" in pipeline_name:
         # Running into dynamo error:
@@ -189,6 +203,7 @@ def main(
             prompt=prompt,
             images=images,
             hf_config_overrides=final_overrides,
+            prefer_module_v3=prefer_module_v3,
         )
     except Flake:
         sys.exit(EX_TEMPFAIL)

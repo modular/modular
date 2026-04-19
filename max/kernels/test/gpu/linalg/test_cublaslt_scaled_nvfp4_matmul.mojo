@@ -11,25 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
-from random import rand
-from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from linalg.matmul.vendor.blas import Backend, Handle, matmul
-from internal_utils._utils import ValOrDim, dynamic, static
-from _cublas.cublaslt import cublasLtGetVersion, cublasLtMatmulMatrixScale_t
-from collections import OptionalReg
-from builtin.simd import _convert_f32_to_float8_ue8m0
-from layout import Layout, LayoutTensor, IntTuple
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from sys import argv
-from utils import Index
+from std.random import rand
+from linalg.matmul.vendor.blas import matmul
+from _cublas.cublaslt import cublasLtGetVersion
+from layout import TileTensor, Coord, CoordLike, Idx, row_major
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
@@ -38,18 +27,22 @@ from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
 )
 from linalg.fp4_quantization import naive_block_scaled_matmul
-from gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
-fn test_block_scaled_nvfp4_cublaslt[
+def test_block_scaled_nvfp4_cublaslt[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
     out_dtype: DType,
     in_dtype: DType,
     transpose_b: Bool,
 ](
     ctx: DeviceContext,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
+    m: MType,
+    n: NType,
+    k: KType,
     tensor_sf: Float32 = 1.0,
 ) raises:
     comptime assert (
@@ -64,9 +57,9 @@ fn test_block_scaled_nvfp4_cublaslt[
         " are supported for NVFP4."
     )
 
-    var M = m.value
-    var N = n.value
-    var K = k.value
+    var M = m.value()
+    var N = n.value()
+    var K = k.value()
 
     var cublaslt_version = cublasLtGetVersion()
 
@@ -82,123 +75,86 @@ fn test_block_scaled_nvfp4_cublaslt[
     # Replace this with float4-e2m1fn when GENAI-337 is fixed.
     comptime input_dtype = DType.uint8
 
-    comptime static_a_shape = DimList(m.dim, k.dim // 2)
-    comptime static_b_shape = DimList(n.dim, k.dim // 2)
-    comptime static_c_shape = DimList(m.dim, n.dim)
-    var dynamic_a_shape = DimList(m.value, k.value // 2)
-    var dynamic_b_shape = DimList(n.value, k.value // 2)
-    var dynamic_c_shape = DimList(m.value, n.value)
-
-    comptime static_a_scales_shape = DimList(
-        ceildiv(m.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+    var a_shape = row_major(Coord(m, Idx[KType.static_value // 2]()))
+    var b_shape = row_major(
+        Coord(Idx[NType.static_value](), Idx[KType.static_value // 2]())
     )
-    comptime static_b_scales_shape = DimList(
-        ceildiv(n.dim, SF_MN_GROUP_SIZE),
-        ceildiv(k.dim, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+    var c_shape = row_major(Coord(m, n))
+    var a_scales_shape = row_major(
+        Coord(
+            Idx(Int(ceildiv(M, SF_MN_GROUP_SIZE))),
+            Idx[
+                ceildiv(KType.static_value, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
+            ](),
+            Idx[SF_ATOM_M[0]](),
+            Idx[SF_ATOM_M[1]](),
+            Idx[SF_ATOM_K](),
+        )
     )
-
-    var dynamic_a_scales_shape = DimList(
-        ceildiv(m.value, SF_MN_GROUP_SIZE),
-        ceildiv(k.value, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
-    )
-    var dynamic_b_scales_shape = DimList(
-        ceildiv(n.value, SF_MN_GROUP_SIZE),
-        ceildiv(k.value, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K),
-        Dim(SF_ATOM_M[0]),
-        Dim(SF_ATOM_M[1]),
-        Dim(SF_ATOM_K),
+    var b_scales_shape = row_major(
+        Coord(
+            Idx[ceildiv(NType.static_value, SF_MN_GROUP_SIZE)](),
+            Idx[
+                ceildiv(KType.static_value, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
+            ](),
+            Idx[SF_ATOM_M[0]](),
+            Idx[SF_ATOM_M[1]](),
+            Idx[SF_ATOM_K](),
+        )
     )
 
     var a_scales_size = (
-        ceildiv(m.value, SF_MN_GROUP_SIZE)
-        * ceildiv(k.value, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(M, SF_MN_GROUP_SIZE)
+        * ceildiv(K, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_size = (
-        ceildiv(n.value, SF_MN_GROUP_SIZE)
-        * ceildiv(k.value, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(N, SF_MN_GROUP_SIZE)
+        * ceildiv(K, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        a_scales_size
-    )
-    var a_scales_host = NDBuffer[scales_dtype, 5, _, static_a_scales_shape](
-        a_scales_host_ptr, dynamic_a_scales_shape
-    )
-    var b_scales_host_ptr = UnsafePointer[Scalar[scales_dtype]].alloc(
-        b_scales_size
-    )
-    var b_scales_host = NDBuffer[scales_dtype, 5, _, static_b_scales_shape](
-        b_scales_host_ptr, dynamic_b_scales_shape
-    )
+    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_size)
+    var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
+    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_size)
+    var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
-    rand(a_scales_host.data, a_scales_host.num_elements())
-    rand(b_scales_host.data, b_scales_host.num_elements())
+    rand(a_scales_host.ptr, a_scales_host.num_elements())
+    rand(b_scales_host.ptr, b_scales_host.num_elements())
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](a_scales_size)
-    var a_scales_device_nd = NDBuffer[
-        scales_dtype, 5, _, static_a_scales_shape
-    ](a_scales_device.unsafe_ptr(), dynamic_a_scales_shape)
+    var a_scales_device_nd = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](b_scales_size)
-    var b_scales_device_nd = NDBuffer[
-        scales_dtype, 5, _, static_b_scales_shape
-    ](b_scales_device.unsafe_ptr(), dynamic_b_scales_shape)
+    var b_scales_device_nd = TileTensor(b_scales_device, b_scales_shape)
 
-    var a_size = m.value * (k.value // 2)
-    var b_size = n.value * (k.value // 2)
-    var c_size = m.value * n.value
+    var a_size = M * (K // 2)
+    var b_size = N * (K // 2)
+    var c_size = M * N
 
-    var a_host_ptr = UnsafePointer[Scalar[input_dtype]].alloc(a_size)
-    var a_host = NDBuffer[input_dtype, 2, _, static_a_shape](
-        a_host_ptr, dynamic_a_shape
-    )
-    var b_host_ptr = UnsafePointer[Scalar[input_dtype]].alloc(b_size)
-    var b_host = NDBuffer[input_dtype, 2, _, static_b_shape](
-        b_host_ptr, dynamic_b_shape
-    )
-    var c_host_ptr = UnsafePointer[Scalar[out_dtype]].alloc(c_size)
-    var c_host = NDBuffer[out_dtype, 2, _, static_c_shape](
-        c_host_ptr, dynamic_c_shape
-    )
-    var c_host_ref_ptr = UnsafePointer[Scalar[out_dtype]].alloc(c_size)
-    var c_host_ref = NDBuffer[out_dtype, 2, _, static_c_shape](
-        c_host_ref_ptr, dynamic_c_shape
-    )
+    var a_host_ptr = alloc[Scalar[input_dtype]](a_size)
+    var a_host = TileTensor(a_host_ptr, a_shape)
+    var b_host_ptr = alloc[Scalar[input_dtype]](b_size)
+    var b_host = TileTensor(b_host_ptr, b_shape)
+    var c_host_ptr = alloc[Scalar[out_dtype]](c_size)
+    var c_host = TileTensor(c_host_ptr, c_shape)
+    var c_host_ref_ptr = alloc[Scalar[out_dtype]](c_size)
+    var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[input_dtype](a_size)
-    var a_device_nd = NDBuffer[input_dtype, 2, _, static_a_shape](
-        a_device.unsafe_ptr(), dynamic_a_shape
-    )
+    var a_device_nd = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[input_dtype](b_size)
-    var b_device_nd = NDBuffer[input_dtype, 2, _, static_b_shape](
-        b_device.unsafe_ptr(), dynamic_b_shape
-    )
+    var b_device_nd = TileTensor(b_device, b_shape)
     var c_device = ctx.enqueue_create_buffer[out_dtype](c_size)
-    var c_device_nd = NDBuffer[out_dtype, 2, _, static_c_shape](
-        c_device.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_device_nd = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[out_dtype](c_size)
-    var c_device_ref_nd = NDBuffer[out_dtype, 2, _, static_c_shape](
-        c_device_ref.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_device_ref_nd = TileTensor(c_device_ref, c_shape)
 
-    rand(a_host.data, a_host.num_elements(), min=0, max=255)
-    rand(b_host.data, b_host.num_elements(), min=0, max=255)
+    rand(a_host.ptr, a_host.num_elements(), min=0, max=255)
+    rand(b_host.ptr, b_host.num_elements(), min=0, max=255)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -206,45 +162,43 @@ fn test_block_scaled_nvfp4_cublaslt[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    var a = from_ndbuffer_row_major(a_device_nd)
-    var b = from_ndbuffer_row_major(b_device_nd)
-    var c = from_ndbuffer_row_major(c_device_nd)
-    var a_scales = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales = from_ndbuffer_row_major(b_scales_device_nd)
-
-    matmul(
+    matmul[scales_type=scales_dtype,](
         ctx,
-        c,
-        a,
-        b,
-        a_scales=a_scales,
-        b_scales=b_scales,
+        c_device_nd,
+        a_device_nd,
+        b_device_nd,
+        a_scales=a_scales_device_nd,
+        b_scales=b_scales_device_nd,
         transpose_b=True,
         c_row_major=True,
     )
 
-    var c_ref = from_ndbuffer_row_major(c_device_ref_nd)
+    var c_ref = c_device_ref_nd.to_layout_tensor()
+    var a_lt = a_device_nd.to_layout_tensor()
+    var b_lt = b_device_nd.to_layout_tensor()
+    var a_scales_lt = a_scales_device_nd.to_layout_tensor()
+    var b_scales_lt = b_scales_device_nd.to_layout_tensor()
     naive_block_scaled_matmul[
-        scaling_kind = UMMAKind.KIND_MXF4NVF4,
+        scaling_kind=UMMAKind.KIND_MXF4NVF4,
         SF_VECTOR_SIZE=NVFP4_SF_VECTOR_SIZE,
         transpose_b=transpose_b,
     ](
         c_ref,
-        a,
-        b,
-        a_scales,
-        b_scales,
+        a_lt,
+        b_lt,
+        a_scales_lt,
+        b_scales_lt,
         ctx,
     )
 
-    ctx.enqueue_copy(c_host_ptr, c_device)
-    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+    ctx.enqueue_copy(c_host.ptr, c_device)
+    ctx.enqueue_copy(c_host_ref.ptr, c_device_ref)
 
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.data,
-        c_host_ref.data,
+        c_host.ptr,
+        c_host_ref.ptr,
         c_host.num_elements(),
         atol=0.01,
         rtol=0.01,
@@ -257,63 +211,54 @@ fn test_block_scaled_nvfp4_cublaslt[
     c_host_ref_ptr.free()
     a_scales_host_ptr.free()
     b_scales_host_ptr.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
-    _ = a_scales_device^
-    _ = b_scales_device^
-
-    _ = a_scales
-    _ = b_scales
 
 
-fn main() raises:
+def main() raises:
     with DeviceContext() as ctx:
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,
             DType.float4_e2m1fn,
             True,
-        ](ctx, dynamic(128), static[128](), static[64]())
+        ](ctx, Idx(Int(128)), Idx[128](), Idx[64]())
 
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,
             DType.float4_e2m1fn,
             True,
-        ](ctx, dynamic(256), static[256](), static[64 - 32]())
+        ](ctx, Idx(Int(256)), Idx[256](), Idx[64 - 32]())
 
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,
             DType.float4_e2m1fn,
             True,
-        ](ctx, dynamic(128), static[3 * 128](), static[256 + 32]())
+        ](ctx, Idx(Int(128)), Idx[3 * 128](), Idx[256 + 32]())
 
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,
             DType.float4_e2m1fn,
             True,
-        ](ctx, dynamic(3 * 128), static[128](), static[3 * 64]())
+        ](ctx, Idx(Int(3 * 128)), Idx[128](), Idx[3 * 64]())
 
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,
             DType.float4_e2m1fn,
             True,
-        ](ctx, dynamic(2560), static[4096](), static[1024]())
+        ](ctx, Idx(Int(2560)), Idx[4096](), Idx[1024]())
 
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,
             DType.float4_e2m1fn,
             True,
-        ](ctx, dynamic(1000), static[4096](), static[1024]())
+        ](ctx, Idx(Int(1000)), Idx[4096](), Idx[1024]())
 
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,
             DType.float4_e2m1fn,
             True,
-        ](ctx, dynamic(1000), static[4096 + 64](), static[1024]())
+        ](ctx, Idx(Int(1000)), Idx[4096 + 64](), Idx[1024]())
 
         test_block_scaled_nvfp4_cublaslt[
             DType.bfloat16,
             DType.float4_e2m1fn,
             True,
-        ](ctx, dynamic(1000), static[4096 + 64](), static[1024 + 64]())
+        ](ctx, Idx(Int(1000)), Idx[4096 + 64](), Idx[1024 + 64]())

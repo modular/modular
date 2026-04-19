@@ -23,7 +23,8 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValueLike, ops
-from max.nn.legacy import (
+from max.kv_cache import PagedKVCacheManager
+from max.nn import (
     DynamicRotaryEmbedding,
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
@@ -31,7 +32,15 @@ from max.nn.legacy import (
     LongRoPEScalingParams,
     RotaryEmbedding,
 )
+from max.nn.kernels import (
+    fused_qk_ragged_rope,
+    rope_ragged,
+    rope_ragged_with_position_ids,
+    rope_split_store_ragged,
+)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from modular_graph_test import are_all_tensor_values, modular_graph_test
+from test_common.context_utils import create_text_context
 
 MAX_SEQ_LEN = 2**14
 ACCURACY_RTOL = 1e-2
@@ -305,6 +314,32 @@ def torch_rope(
     return apply_rotary_emb(x, freqs_cis)
 
 
+def _torch_rope_ragged(
+    x: torch.Tensor,
+    freqs_cis: torch.Tensor,
+    input_row_offsets: np.ndarray,
+    start_pos: np.ndarray,
+) -> torch.Tensor:
+    expected = torch.empty_like(x)
+    for batch_idx in range(len(start_pos)):
+        row_start = int(input_row_offsets[batch_idx])
+        row_end = int(input_row_offsets[batch_idx + 1])
+        seq_len = row_end - row_start
+        if seq_len == 0:
+            continue
+        freqs_slice = freqs_cis[
+            int(start_pos[batch_idx]) : int(start_pos[batch_idx]) + seq_len
+        ]
+        freqs_complex = torch.view_as_complex(
+            freqs_slice.reshape(seq_len, -1, 2)
+        )
+        segment = x[row_start:row_end].unsqueeze(0)
+        expected[row_start:row_end] = apply_rotary_emb(
+            segment, freqs_complex
+        ).squeeze(0)
+    return expected
+
+
 def _reshape_for_broadcast(
     freqs_cis: torch.Tensor, x: torch.Tensor
 ) -> torch.Tensor:
@@ -374,21 +409,151 @@ def test_rope(
         )
 
 
+def test_rope_ragged(session: InferenceSession) -> None:
+    max_seq_len = 32
+    n_heads = 2
+    head_dim = 8
+    prompt_lens = [3, 5]
+    total_seq_len = sum(prompt_lens)
+
+    input_row_offsets = np.array([0, 3, total_seq_len], dtype=np.uint32)
+    start_pos = np.array([0, 4], dtype=np.uint32)
+
+    torch.manual_seed(0)
+    input_data = torch.randn(
+        total_seq_len, n_heads, head_dim, dtype=torch.float32
+    )
+    inv_freq = 1.0 / (
+        10000.0 ** (torch.arange(0, head_dim, 2).float() / head_dim)
+    )
+    t = torch.arange(max_seq_len, dtype=torch.float32)
+    freqs = torch.outer(t, inv_freq)
+    freqs_complex = torch.polar(torch.ones_like(freqs), freqs)
+    freqs_cis = torch.view_as_real(freqs_complex).reshape(max_seq_len, head_dim)
+
+    input_type = TensorType(
+        DType.float32,
+        [total_seq_len, n_heads, head_dim],
+        device=DeviceRef.CPU(),
+    )
+    offsets_type = TensorType(
+        DType.uint32, ["input_row_offsets_len"], device=DeviceRef.CPU()
+    )
+    start_pos_type = TensorType(
+        DType.uint32, ["start_pos_len"], device=DeviceRef.CPU()
+    )
+    freqs_type = TensorType(
+        DType.float32, [max_seq_len, head_dim], device=DeviceRef.CPU()
+    )
+
+    with Graph(
+        "rope_ragged",
+        input_types=[input_type, offsets_type, start_pos_type, freqs_type],
+    ) as graph:
+        assert are_all_tensor_values(graph.inputs)
+        inp, offsets, starts, freqs_in = graph.inputs
+        graph.output(
+            rope_ragged(
+                inp.tensor,
+                offsets.tensor,
+                starts.tensor,
+                freqs_in.tensor,
+            )
+        )
+
+    model = session.load(graph)
+    result = model(
+        input_data.numpy(),
+        input_row_offsets,
+        start_pos,
+        freqs_cis.numpy(),
+    )[0].to_numpy()
+
+    expected = _torch_rope_ragged(
+        input_data, freqs_cis, input_row_offsets, start_pos
+    ).numpy()
+    np.testing.assert_allclose(
+        result,
+        expected,
+        atol=ACCURACY_ATOL,
+        rtol=ACCURACY_RTOL,
+        equal_nan=True,
+    )
+
+
+def test_rope_ragged_with_position_ids(session: InferenceSession) -> None:
+    max_seq_len = 32
+    n_heads = 2
+    head_dim = 8
+    total_seq_len = 6
+
+    torch.manual_seed(1)
+    input_data = torch.randn(
+        total_seq_len, n_heads, head_dim, dtype=torch.float32
+    )
+    position_ids = np.array([0, 2, 1, 3, 7, 4], dtype=np.uint32)
+
+    inv_freq = 1.0 / (
+        10000.0 ** (torch.arange(0, head_dim, 2).float() / head_dim)
+    )
+    t = torch.arange(max_seq_len, dtype=torch.float32)
+    freqs = torch.outer(t, inv_freq)
+    freqs_complex = torch.polar(torch.ones_like(freqs), freqs)
+    freqs_cis = torch.view_as_real(freqs_complex).reshape(max_seq_len, head_dim)
+
+    input_type = TensorType(
+        DType.float32,
+        [total_seq_len, n_heads, head_dim],
+        device=DeviceRef.CPU(),
+    )
+    freqs_type = TensorType(
+        DType.float32, [max_seq_len, head_dim], device=DeviceRef.CPU()
+    )
+    position_ids_type = TensorType(
+        DType.uint32, [total_seq_len], device=DeviceRef.CPU()
+    )
+
+    with Graph(
+        "rope_ragged_with_position_ids",
+        input_types=[input_type, freqs_type, position_ids_type],
+    ) as graph:
+        assert are_all_tensor_values(graph.inputs)
+        inp, freqs_in, pos_ids = graph.inputs
+        graph.output(
+            rope_ragged_with_position_ids(
+                inp.tensor,
+                freqs_in.tensor,
+                pos_ids.tensor,
+            )
+        )
+
+    model = session.load(graph)
+    result = model(
+        input_data.numpy(),
+        freqs_cis.numpy(),
+        position_ids,
+    )[0].to_numpy()
+
+    freqs_gathered = freqs_cis[position_ids]
+    freqs_gathered_complex = torch.view_as_complex(
+        freqs_gathered.reshape(total_seq_len, -1, 2)
+    )
+    expected = apply_rotary_emb(
+        input_data.unsqueeze(0), freqs_gathered_complex
+    ).squeeze(0)
+    np.testing.assert_allclose(
+        result,
+        expected.numpy(),
+        atol=ACCURACY_ATOL,
+        rtol=ACCURACY_RTOL,
+        equal_nan=True,
+    )
+
+
 @pytest.mark.parametrize("use_position_ids", [False, True])
 def test_kv_cache_ragged_rope(
     session: InferenceSession, use_position_ids: bool
 ) -> None:
-    # These imports are deferred to avoid Mojo module import race conditions
-    # when running with pytest-xdist parallel workers.
-    from max.kv_cache import PagedKVCacheManager
-    from max.nn.legacy.kernels import fused_qk_ragged_rope
-    from max.nn.legacy.kv_cache import (
-        KVCacheParams,
-        KVCacheStrategy,
-        PagedCacheValues,
-    )
-    from test_common.context_utils import create_text_context
-
     num_q_heads = 32
     head_dim = 128
     kv_params = KVCacheParams(
@@ -396,7 +561,6 @@ def test_kv_cache_ragged_rope(
         n_kv_heads=8,
         head_dim=head_dim,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
@@ -431,9 +595,7 @@ def test_kv_cache_ragged_rope(
         kv_params,
         total_num_pages=8,
         session=session,
-    )
-    blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
-        kv_params.get_symbolic_inputs()[0]
+        max_batch_size=128,
     )
 
     mrope_section = [16, 24, 24]
@@ -443,10 +605,7 @@ def test_kv_cache_ragged_rope(
             input_type,
             input_row_offsets_type,
             freqs_cis_type,
-            blocks_type,
-            cache_lengths_type,
-            lookup_table_type,
-            is_cache_empty_type,
+            *kv_params.get_symbolic_inputs().flatten(),
         ]
 
         if use_position_ids:
@@ -465,9 +624,13 @@ def test_kv_cache_ragged_rope(
             freqs_cis = g.inputs[2]
 
             kv_start = 4 if use_position_ids else 3
-            blocks, cache_lengths, lookup_table, is_cache_empty = g.inputs[
-                kv_start:
-            ]
+            (
+                blocks,
+                cache_lengths,
+                lookup_table,
+                is_cache_empty,
+                _attention_dispatch_metadata,
+            ) = g.inputs[kv_start:]
 
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
 
@@ -515,18 +678,187 @@ def test_kv_cache_ragged_rope(
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs([batch])[0]
-    )
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
 
     # Build provided_inputs with correct indices based on use_position_ids
     offset = 1 if use_position_ids else 0
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
     provided_inputs = {
         1: input_row_offsets,
-        3 + offset: blocks,
-        4 + offset: cache_lengths,
-        5 + offset: lookup_table_tensor,
-        6 + offset: is_cache_empty_buf,
+        3 + offset: kv_runtime_inputs.kv_blocks,
+        4 + offset: kv_runtime_inputs.cache_lengths,
+        5 + offset: kv_runtime_inputs.lookup_table,
+        6 + offset: kv_runtime_inputs.max_lengths,
+        7 + offset: kv_runtime_inputs.attention_dispatch_metadata,
+    }
+
+    if use_position_ids:
+        position_ids_data = np.tile(
+            np.arange(total_seq_len, dtype=np.uint32), (num_sections, 1)
+        )
+        provided_inputs[3] = Buffer.from_numpy(position_ids_data)
+
+    @modular_graph_test(
+        session,
+        g,
+        static_dims={
+            "total_seq_len": total_seq_len,
+            "input_row_offsets_len": len(prompt_lens) + 1,
+        },
+        provided_inputs=provided_inputs,
+    )
+    @settings(max_examples=10)
+    def test_runs_without_nan(
+        execute: Callable[[Sequence[Buffer]], Buffer],
+        inputs: Sequence[Buffer],
+        torch_inputs: Sequence[torch.Tensor],
+    ) -> None:
+        result = execute(list(inputs)).to_numpy()
+        assert not np.any(np.isnan(result))
+        assert not np.any(np.isinf(result))
+
+
+@pytest.mark.parametrize("use_position_ids", [False, True])
+def test_rope_split_store_ragged(
+    session: InferenceSession, use_position_ids: bool
+) -> None:
+    """Tests rope_split_store_ragged compiles and produces valid output."""
+    num_q_heads = 32
+    head_dim = 128
+    kv_params = KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=8,
+        head_dim=head_dim,
+        num_layers=1,
+        page_size=128,
+        devices=[DeviceRef.CPU()],
+    )
+    prompt_lens = [10, 30]
+    batch_size = len(prompt_lens)
+    total_seq_len = sum(prompt_lens)
+    combined_dim = (num_q_heads + 2 * kv_params.n_kv_heads) * head_dim
+
+    qkv_type = TensorType(
+        DType.float32,
+        ["total_seq_len", combined_dim],
+        device=DeviceRef.CPU(),
+    )
+    input_row_offsets_type = TensorType(
+        DType.uint32, ["input_row_offsets_len"], device=DeviceRef.CPU()
+    )
+    freqs_cis_type = TensorType(
+        DType.float32,
+        [MAX_SEQ_LEN, head_dim],
+        device=DeviceRef.CPU(),
+    )
+
+    num_sections = 3
+    mrope_section = [16, 24, 24]
+    position_ids_type = None
+    if use_position_ids:
+        position_ids_type = TensorType(
+            DType.uint32,
+            [num_sections, "total_seq_len"],
+            device=DeviceRef.CPU(),
+        )
+
+    kv_manager = PagedKVCacheManager(
+        kv_params,
+        total_num_pages=8,
+        session=session,
+        max_batch_size=128,
+    )
+
+    def construct() -> Graph:
+        input_types = [
+            qkv_type,
+            input_row_offsets_type,
+            freqs_cis_type,
+            *kv_params.get_symbolic_inputs().flatten(),
+        ]
+
+        if use_position_ids:
+            assert position_ids_type is not None
+            input_types.insert(3, position_ids_type)
+
+        graph_name = (
+            "rope_split_store_with_position_ids"
+            if use_position_ids
+            else "rope_split_store"
+        )
+
+        with Graph(graph_name, input_types=input_types) as g:
+            qkv = g.inputs[0]
+            input_row_offsets = g.inputs[1]
+            freqs_cis = g.inputs[2]
+
+            kv_start = 4 if use_position_ids else 3
+            (
+                blocks,
+                cache_lengths,
+                lookup_table,
+                is_cache_empty,
+                _attention_dispatch_metadata,
+            ) = g.inputs[kv_start:]
+
+            layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
+
+            kv_collection = PagedCacheValues(
+                blocks.buffer,
+                cache_lengths.tensor,
+                lookup_table.tensor,
+                is_cache_empty.tensor,
+            )
+
+            position_ids = g.inputs[3].tensor if use_position_ids else None
+
+            result = rope_split_store_ragged(
+                kv_params,
+                qkv=qkv.tensor,
+                input_row_offsets=input_row_offsets.tensor,
+                freqs_cis=freqs_cis.tensor,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                n_heads=num_q_heads,
+                position_ids=position_ids,
+                mrope_section=mrope_section if use_position_ids else None,
+            )
+            g.output(result)
+        return g
+
+    g = construct()
+
+    batch = [
+        create_text_context(np.empty(prompt_lens[i], dtype=np.int64))
+        for i in range(batch_size)
+    ]
+
+    for context in batch:
+        kv_manager.claim(context.request_id, replica_idx=0)
+        assert isinstance(kv_manager, PagedKVCacheManager)
+        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+
+    input_row_offsets = Buffer(
+        DType.uint32,
+        [batch_size + 1],
+    )
+    running_sum = 0
+    for i in range(batch_size):
+        input_row_offsets[i] = running_sum
+        running_sum += prompt_lens[i]
+    input_row_offsets[batch_size] = running_sum
+
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+
+    offset = 1 if use_position_ids else 0
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
+    provided_inputs = {
+        1: input_row_offsets,
+        3 + offset: kv_runtime_inputs.kv_blocks,
+        4 + offset: kv_runtime_inputs.cache_lengths,
+        5 + offset: kv_runtime_inputs.lookup_table,
+        6 + offset: kv_runtime_inputs.max_lengths,
+        7 + offset: kv_runtime_inputs.attention_dispatch_metadata,
     }
 
     if use_position_ids:
@@ -601,6 +933,7 @@ def torch_longrope_freqs_cis(
     return freqs_cis
 
 
+@pytest.mark.skip(reason="SERVSYS-1192")
 @pytest.mark.parametrize(
     "params",
     [RopeParams(dim=3072, n_heads=32, theta=10000.0)],

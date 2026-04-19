@@ -13,21 +13,15 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    RopeType,
-    SupportedArchitecture,
-    SupportedEncoding,
-    TextTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 
 from . import weight_adapters
 from .model import Llama3Model
 from .model_config import Llama3Config
 
 llama_arch = SupportedArchitecture(
-    name="LlamaForCausalLM_Legacy",
+    name="LlamaForCausalLM",
     example_repo_ids=[
         "meta-llama/Llama-3.1-8B-Instruct",
         "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
@@ -37,21 +31,21 @@ llama_arch = SupportedArchitecture(
         "deepseek-ai/deepseek-coder-6.7b-instruct",
         "modularai/Llama-3.1-8B-Instruct-GGUF",
     ],
-    default_encoding=SupportedEncoding.q4_k,
+    default_encoding="q4_k",
     supported_encodings={
-        SupportedEncoding.gptq: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q4_k: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q4_0: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q6_k: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float4_e2m1fnx2: [KVCacheStrategy.PAGED],
+        "gptq",
+        "q4_k",
+        "q4_0",
+        "q6_k",
+        "float32",
+        "bfloat16",
+        "float8_e4m3fn",
+        "float4_e2m1fnx2",
     },
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type=RopeType.normal,
+    rope_type="normal",
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     weight_adapters={

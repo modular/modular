@@ -30,11 +30,24 @@ struct IO(TrivialRegisterPassable):
     comptime _FusedComputeOutput = IO(31)
 
     @always_inline("builtin")
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = value
 
-    fn __eq__(self, other: IO) -> Bool:
+    def __eq__(self, other: IO) -> Bool:
         return self.value == other.value
+
+    def __ne__(self, other: IO) -> Bool:
+        return self.value != other.value
+
+    @always_inline("nodebug")
+    def is_fused(self) -> Bool:
+        """True when this IO represents any fused variant (input, output, or
+        compute-output)."""
+        return (
+            self == IO.FusedInput
+            or self == IO.FusedOutput
+            or self == IO._FusedComputeOutput
+        )
 
 
 @fieldwise_init

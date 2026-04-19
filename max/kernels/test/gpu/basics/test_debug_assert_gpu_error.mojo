@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import global_idx
-from gpu.host import DeviceContext
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: test_fail
-def main():
+def main() raises:
     print("== test_fail")
     # CHECK: block: [0,0,0] thread: [0,0,0] Assert Error: forcing failure on thread: 0 with multiple args: 2.0 True
     with DeviceContext() as ctx:
 
-        fn fail_assert():
+        def fail_assert():
             debug_assert(
                 False,
                 "forcing failure on thread: ",

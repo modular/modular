@@ -11,22 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, iota
-from sys.info import simd_width_of
+from std.math import ceildiv, iota
+from std.sys.info import simd_width_of
 
-import gpu.primitives.block as block
-from algorithm.functional import elementwise
-from gpu import block_idx, thread_idx
-from gpu.host.info import is_gpu
-from layout._layout import TensorLayout
-from layout._tile_tensor import TileTensor
+import std.gpu.primitives.block as block
+from std.algorithm.functional import elementwise
+from std.gpu import block_idx, thread_idx
+from std.gpu.host.info import is_gpu
+from layout import TensorLayout, TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils import IndexList
+from std.utils import IndexList
 
 
-fn apply_penalties_to_logits[
+def apply_penalties_to_logits[
     logit_type: DType,
     penalty_type: DType,
     //,
@@ -50,12 +49,12 @@ fn apply_penalties_to_logits[
     - frequency_data[i, 1] is the frequency of the token in the sequence
     """
 
-    comptime assert frequency_offsets.rank == 1
-    comptime assert compressed_frequency_data.rank == 2
-    comptime assert repetition_penalty.rank == 1
-    comptime assert presence_penalty.rank == 1
-    comptime assert frequency_penalty.rank == 1
-    comptime assert logits.rank == 2
+    comptime assert frequency_offsets.flat_rank == 1
+    comptime assert compressed_frequency_data.flat_rank == 2
+    comptime assert repetition_penalty.flat_rank == 1
+    comptime assert presence_penalty.flat_rank == 1
+    comptime assert frequency_penalty.flat_rank == 1
+    comptime assert logits.flat_rank == 2
 
     # all scalars
     comptime assert frequency_offsets.element_size == 1
@@ -67,7 +66,7 @@ fn apply_penalties_to_logits[
 
     @always_inline
     @parameter
-    fn apply_penalties_fn[
+    def apply_penalties_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx: IndexList[rank_]):
         comptime assert rank_ == 1, "apply_penalties_fn: rank must be 1"
@@ -107,7 +106,8 @@ fn apply_penalties_to_logits[
     ](dispatch_shape, ctx)
 
 
-fn update_frequency_data_kernel[
+@__name(t"update_frequency_data_{token_type}", mangle=True)
+def update_frequency_data_kernel[
     freq_data_origin: MutOrigin,
     FreqDataLayoutType: TensorLayout,
     freq_offsets_origin: ImmutOrigin,
@@ -132,9 +132,9 @@ fn update_frequency_data_kernel[
     their count or adds them to the first available padding slot.
     """
 
-    comptime assert frequency_offsets.rank == 1
-    comptime assert compressed_frequency_data.rank == 2
-    comptime assert new_tokens.rank == 1
+    comptime assert frequency_offsets.flat_rank == 1
+    comptime assert compressed_frequency_data.flat_rank == 2
+    comptime assert new_tokens.flat_rank == 1
 
     comptime simd_width = simd_width_of[DType.int32]()
     comptime PADDING_TOKEN = -1
@@ -150,14 +150,11 @@ fn update_frequency_data_kernel[
 
     # search if the new token is already in the frequency data
     for scan_idx in range(num_scans):
-        var tok_idx = tok_start + Int(
-            (tid + UInt(scan_idx * block_size)) * UInt(simd_width)
-        )
+        var tok_idx = tok_start + ((tid + scan_idx * block_size) * simd_width)
 
         var val = SIMD[DType.int32, simd_width](0)
 
-        @parameter
-        for i in range(simd_width):
+        comptime for i in range(simd_width):
             if tok_idx + i < tok_end:
                 val[i] = compressed_frequency_data[tok_idx + i, 0]
             else:
@@ -192,20 +189,18 @@ fn update_frequency_data_kernel[
             return
 
 
-fn update_frequency_data[
+def update_frequency_data[
     token_type: DType,
     //,
     target: StaticString,
 ](
     compressed_frequency_data: TileTensor[
-        mut=True, DType.int32, address_space = AddressSpace.GENERIC, ...
+        mut=True, DType.int32, address_space=AddressSpace.GENERIC, ...
     ],
     frequency_offsets: TileTensor[
-        DType.uint32, address_space = AddressSpace.GENERIC, ...
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
-    new_tokens: TileTensor[
-        token_type, address_space = AddressSpace.GENERIC, ...
-    ],
+    new_tokens: TileTensor[token_type, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContextPtr,
 ) raises:
     """
@@ -214,28 +209,27 @@ fn update_frequency_data[
     The frequency data is stored in a CSR format. This kernel expects there will be
     enough padding for each sequence to store the new tokens.
     """
-    comptime assert frequency_offsets.rank == 1
-    comptime assert compressed_frequency_data.rank == 2
-    comptime assert new_tokens.rank == 1
+    comptime assert frequency_offsets.flat_rank == 1
+    comptime assert compressed_frequency_data.flat_rank == 2
+    comptime assert new_tokens.flat_rank == 1
     comptime assert compressed_frequency_data.element_size == 1
     comptime assert new_tokens.element_size == 1
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         comptime block_size = 128
 
         dev_ctx = ctx.get_device_context()
         comptime kernel = update_frequency_data_kernel[
-            freq_data_origin = compressed_frequency_data.origin,
-            FreqDataLayoutType = compressed_frequency_data.LayoutType,
-            freq_offsets_origin = ImmutOrigin(frequency_offsets.origin),
-            FreqOffsetsLayoutType = frequency_offsets.LayoutType,
-            new_tokens_origin = ImmutOrigin(new_tokens.origin),
-            NewTokensLayoutType = new_tokens.LayoutType,
+            freq_data_origin=compressed_frequency_data.origin,
+            FreqDataLayoutType=compressed_frequency_data.LayoutType,
+            freq_offsets_origin=ImmutOrigin(frequency_offsets.origin),
+            FreqOffsetsLayoutType=frequency_offsets.LayoutType,
+            new_tokens_origin=ImmutOrigin(new_tokens.origin),
+            NewTokensLayoutType=new_tokens.LayoutType,
             token_type=token_type,
             block_size=block_size,
         ]
-        dev_ctx.enqueue_function_experimental[kernel](
+        dev_ctx.enqueue_function[kernel, kernel](
             compressed_frequency_data,
             frequency_offsets.as_immut(),
             new_tokens.as_immut(),
@@ -247,7 +241,7 @@ fn update_frequency_data[
 
         @always_inline
         @parameter
-        fn update_frequency_data_fn[
+        def update_frequency_data_fn[
             width: Int, rank_: Int, alignment: Int = 1
         ](idx: IndexList[rank_]):
             comptime assert (
@@ -271,7 +265,7 @@ fn update_frequency_data[
                     compressed_frequency_data[tok_id, 1] = 1
                     break
 
-        var dispatch_shape = IndexList[1](new_tokens.numel())
+        var dispatch_shape = IndexList[1](new_tokens.num_elements())
         elementwise[
             func=update_frequency_data_fn,
             simd_width=1,

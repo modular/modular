@@ -26,7 +26,13 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Buffer, Device, DLPackArray
+from max.driver import (
+    CPU,
+    Buffer,
+    Device,
+    DLPackArray,
+    is_virtual_device_mode,
+)
 from max.dtype import DType
 from max.graph.buffer_utils import cast_dlpack_to, cast_tensor_to
 from max.graph.quantization import QuantizationEncoding
@@ -43,9 +49,9 @@ from max.interfaces.pipeline import (
     PipelineInputsType,
     PipelineOutputType,
 )
-from max.nn.legacy.layer.layer import Module, recursive_named_layers
-from max.nn.legacy.lora import SupportsLoRA
-from max.pipelines.lib.config import LoRAConfig
+from max.nn.layer.layer import Module, recursive_named_layers
+from max.nn.lora import SupportsLoRA
+from max.pipelines.lib.config.lora_config import LoRAConfig
 
 from .hf_utils import HuggingFaceRepo
 from .lora_request_processor import LoRARequestProcessor
@@ -393,7 +399,14 @@ class LoRAModel:
 
         Called after _combine_qkv_weights() so that all weights (including
         the concatenated QKV weights) are cast in one place.
+
+        In virtual device mode (warm-cache/cross-compilation), casting is skipped
+        since weights won't be used for inference - only compilation matters.
         """
+        # Skip casting in virtual device mode since weights aren't needed
+        if is_virtual_device_mode():
+            return
+
         for data in self._lora_A.values():
             if isinstance(data.data, np.ndarray):
                 weight_tensor = Buffer.from_numpy(data.data)
@@ -668,9 +681,11 @@ class LoRAModel:
                 self._lora_B[key] = data
 
             elif LoRAType.BIAS.value in key:
-                data.data = cast_dlpack_to(
-                    data.data, data.dtype, base_dtype, CPU()
-                )
+                # Skip casting in virtual device mode (warm-cache)
+                if not is_virtual_device_mode():
+                    data.data = cast_dlpack_to(
+                        data.data, data.dtype, base_dtype, CPU()
+                    )
                 self._lora_bias[key] = data
 
             else:
@@ -707,13 +722,13 @@ class LoRAManager:
         """Initializes the LoRAManager with a given base weight structure and maximum number of LoRA models.
 
         Args:
-            config (LoRAConfig): The LoRA config.
-            base_model_path (str): The name/path of the base model.
-            base_dtype (DType): The base model dtype.
-            n_heads (int): Number of attention heads in the base model.
-            n_kv_heads (int): Number of key-value heads in the base model.
-            head_dim (int): Dimension of each attention head.
-            zmq_endpoint_base (str): The ZMQ endpoint base used to construct ZMQ lora request and response endpoints.
+            config: The LoRA config.
+            base_model_path: The name/path of the base model.
+            base_dtype: The base model dtype.
+            n_heads: The number of attention heads in the base model.
+            n_kv_heads: The number of key-value heads in the base model.
+            head_dim: The dimension of each attention head.
+            zmq_endpoint_base: The ZMQ endpoint base used to construct ZMQ lora request and response endpoints.
         """
         self.base_model_path = base_model_path
         self.base_dtype = base_dtype
@@ -736,7 +751,7 @@ class LoRAManager:
         self._alias_buffers: dict[str, DLPackArray] = {}
 
     def process_lora_requests(self) -> None:
-        """Check for new LoRA requests and processes them."""
+        """Checks for new LoRA requests and processes them."""
         self._request_processor.process_lora_requests()
 
     @property
@@ -1152,7 +1167,9 @@ class LoRAManager:
                 state_key = f"{key}.{weight_key}"
                 weight = Buffer.zeros(
                     base_weight.shape.static_dims, base_weight.dtype
-                ).copy(base_weight.device.to_device())
+                )
+                if not is_virtual_device_mode():
+                    weight = weight.copy(base_weight.device.to_device())
                 state_dict[state_key] = WeightData(
                     weight,
                     key,

@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.globals import global_constant
-from testing import assert_equal
+from std.builtin.globals import global_constant
+from std.testing import assert_equal
 
 
-fn use_lookup(idx: Int) -> Int64:
+def use_lookup(idx: Int) -> Int64:
     comptime numbers: InlineArray[Int64, 10] = [
         1,
         3,
@@ -35,6 +35,6 @@ fn use_lookup(idx: Int) -> Int64:
         return 0
 
 
-def main():
+def main() raises:
     var x = use_lookup(3)
     assert_equal(x, 34)

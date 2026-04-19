@@ -11,44 +11,41 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 
-from buffer.buffer import NDBuffer
-from buffer.dimlist import Dim, DimList, _make_tuple
-from gpu.host import DeviceContext
-from random import rand
-from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
-from linalg.utils import elementwise_epilogue_type
-from linalg.utils_gpu import MatmulConfig
-from testing import assert_almost_equal
-from gpu.host.info import B200
+from layout import UNKNOWN_VALUE
+from std.gpu.host import DeviceContext
+from linalg.grouped_matmul import grouped_matmul
 
-from utils import IndexList
-from utils.index import Index
-import itertools
-from layout import IntTuple, Layout, LayoutTensor
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
+from std.utils import IndexList
+import std.itertools
+from layout import (
+    Coord,
+    Idx,
+    IntTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 
 
-fn shrink_qkv_permute_3mn_sm100[
-    c_type: DType,
-    c_shape: DimList,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-](
-    c_lora: NDBuffer[mut=True, c_type, 3, MutAnyOrigin, c_shape],
-    a: NDBuffer[a_type, 2, MutAnyOrigin, a_shape],
-    b: NDBuffer[b_type, 3, MutAnyOrigin, b_shape],
-    a_offsets: NDBuffer[DType.uint32, 1, MutAnyOrigin],
-    expert_ids: NDBuffer[DType.int32, 1, MutAnyOrigin],
+@always_inline
+def shrink_qkv_permute_3mn_sm100(
+    c_lora: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    a_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    expert_ids: TileTensor[
+        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
+    ],
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    """LoRA shrink GMM with planar Q/K/V output on SM100.
+    """TileTensor primary implementation of `shrink_qkv_permute_3mn_sm100`.
+
+    LoRA shrink GMM with planar Q/K/V output on SM100.
 
     Performs the LoRA 'shrink' grouped matmul for routed tokens:
     computes `[M, K] @ [G, 3N, K]^T` per active expert, then **permutes**
@@ -63,7 +60,7 @@ fn shrink_qkv_permute_3mn_sm100[
         b:      Shrink weights per expert, shape (G, 3N, K).
         a_offsets: Inclusive prefix sums of tokens per (active) expert,
                 length (num_experts + 1). Defines per-expert [start, end) in A/C.
-        expert_ids: Expert indices for the active groups, length ≥ num_active_experts.
+        expert_ids: Expert indices for the active groups, length >= num_active_experts.
         max_num_tokens_per_expert: Upper bound on tokens for any active expert.
         num_active_experts: Number of experts participating in this call.
         ctx:    DeviceContext used for enqueues and synchronization.
@@ -76,38 +73,38 @@ fn shrink_qkv_permute_3mn_sm100[
         **aliases the same storage** as c_lora.
         - a_offsets is non-decreasing with a_offsets[0] == 0 and
         a_offsets[num_active_experts] == M.
-        - expert_ids[i] ∈ [0, G) for valid experts; kernel may treat -1 as inactive.
+        - expert_ids[i] in [0, G) for valid experts; kernel may treat -1 as inactive.
         - The epilogue assumes `N % vector_width == 0` for aligned vector stores.
     """
-    var M = c_lora.dim[1]()
-    var c_tensor_lora = from_ndbuffer_row_major(c_lora)  # LayoutTensor[3]
-    comptime N = c_shape.get[2]()
-    comptime B = c_shape.get[0]()
-    comptime assert (
-        c_shape.has_value[2]() and c_shape.get[0]() == 3
-    ), "the outer dimension of c_shape must be known and equal to 3"
-    comptime N_Total = B * N
-    # Create an empty (null-backed) 2D NDBuffer for C with only shape/stride set.
-    # This ensures GroupGEMM does NOT write into C directly; any changes to the
-    # final C output must happen exclusively via the epilogue function.
-    var c = NDBuffer[
-        mut=True,
-        c_type,
-        2,
-        MutAnyOrigin,
-        shape = DimList(Dim(), Dim(N_Total)),
-        strides = DimList.create_unknown[2](),
-    ]()  # data=null, shape/stride zeroed
+    comptime assert c_lora.rank == 3 and c_lora.flat_rank == 3
+    comptime assert a.rank == 2 and a.flat_rank == 2
+    comptime assert b.rank == 3 and b.flat_rank == 3
+    comptime assert a_offsets.rank == 1 and a_offsets.flat_rank == 1
+    comptime assert expert_ids.rank == 1 and expert_ids.flat_rank == 1
 
-    # Populate the dynamic shape (row-major strides will be set later if needed).
-    c.dynamic_shape = _make_tuple[2, element_type = DType.uint64](
-        DimList(M, N_Total)
+    comptime c_type = c_lora.dtype
+
+    comptime N = c_lora.static_shape[2]
+    comptime B = c_lora.static_shape[0]
+    comptime assert N != UNKNOWN_VALUE and B == 3, String(
+        "the outer dimension of c_shape must be known and equal to 3",
+    )
+
+    var M = Int(c_lora.dim(1))
+    var c_tensor_lora = c_lora.to_layout_tensor()
+    comptime N_Total = B * N
+    # Create a null-backed TileTensor for C. This ensures GroupGEMM does NOT
+    # write into C directly; any changes to the final C output must happen
+    # exclusively via the epilogue function.
+    var c = TileTensor[c_type, _, MutExternalOrigin](
+        None,
+        row_major(Coord(Idx(M), Idx(N_Total))),
     )
 
     @always_inline
     @__copy_capture(c_tensor_lora, M)
     @parameter
-    fn permute_dim_lora_bmn[
+    def permute_dim_lora_bmn[
         dtype: DType, width: Int, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         """Epilogue: permute flat (M, 3N) columns to planar (3, M, N) tiles.
@@ -131,7 +128,7 @@ fn shrink_qkv_permute_3mn_sm100[
                 * Input view is row-major (M, 3N).
                 * Output view is row-major (3, M, N) with head-major tiles.
         """
-        comptime N = c_shape.get[2]()
+        comptime N = c_lora.static_shape[2]
         var i = idx[0]
         var j = idx[1]
         var new_j, new_k = divmod(j, N)

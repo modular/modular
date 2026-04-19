@@ -11,21 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.math import ceildiv
+from std.random import rand
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import ceildiv
-from random import rand
+from layout import Layout, LayoutTensor
+from std.gpu.host import DeviceContext
+from nn.conv.conv import Naive2dConvolution, conv3d_gpu_naive_ndhwc_qrscf
+from std.testing import assert_almost_equal
 
-from layout import LayoutTensor, Layout
-from gpu.host import DeviceContext
-from nn.conv import Naive2dConvolution, conv3d_gpu_naive_ndhwc_qrscf
-from testing import assert_almost_equal
-
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
-fn test_conv3d_gpu[
+def test_conv3d_gpu[
     input_layout: Layout,
     filter_layout: Layout,
     dtype: DType,
@@ -68,10 +65,10 @@ fn test_conv3d_gpu[
     var output_size = comptime (output_layout.size())
 
     # allocate host memory and initialize with random data
-    var input_host = UnsafePointer[Scalar[dtype]].alloc(input_size)
-    var filter_host = UnsafePointer[Scalar[dtype]].alloc(filter_size)
-    var output_gpu_host = UnsafePointer[Scalar[dtype]].alloc(output_size)
-    var output_ref_host = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var input_host = alloc[Scalar[dtype]](input_size)
+    var filter_host = alloc[Scalar[dtype]](filter_size)
+    var output_gpu_host = alloc[Scalar[dtype]](output_size)
+    var output_ref_host = alloc[Scalar[dtype]](output_size)
 
     # initialize with random data
     rand[dtype](input_host, input_size)
@@ -133,6 +130,7 @@ fn test_conv3d_gpu[
         stride,
         dilation,
         pad,
+        Int(1),  # num_groups
         grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
         block_dim=(block_size, block_size, 1),
     )
@@ -157,7 +155,7 @@ fn test_conv3d_gpu[
         output_ref_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # test case 1: small dimensions, starting simple
         test_conv3d_gpu[

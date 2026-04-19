@@ -3,6 +3,7 @@ title: Mojo quickstart
 description: Get up and running fast with the Mojo programming language
 sidebar_label: Quickstart
 ---
+
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
@@ -11,6 +12,13 @@ This page quickly teaches you Mojo's syntax by focusing on code.
 For more explanation of the language features, see the [Mojo get
 started tutorial](/mojo/manual/get-started) or [Mojo language
 basics](/mojo/manual/basics).
+
+:::note System requirements
+
+You can use Mac, Linux, or Windows with WSL. For details, see the
+[system requirements](/mojo/requirements).
+
+:::
 
 ## Project setup
 
@@ -53,6 +61,7 @@ but we recommend either `pixi` or `uv`.
     pixi add mojo
     pixi shell
     ```
+
 </TabItem>
 
 <TabItem value="pip" label="pip">
@@ -117,6 +126,15 @@ pip install mojo --extra-index-url https://modular.gateway.scarf.sh/simple/
 
 </Tabs>
 
+## Try Mojo agent skills
+
+Use [Mojo agent skills](/mojo/tools/skills) with your AI tools
+to generate more accurate Mojo code while learning Mojo:
+
+```bash
+npx skills add modular/skills
+```
+
 ## Hello Mojo
 
 Create `analyzer.mojo` in your favorite IDE or editor.
@@ -124,11 +142,12 @@ Create `analyzer.mojo` in your favorite IDE or editor.
 Add this to `analyzer.mojo`:
 
 ```mojo
-fn main():
+def main():
     print("Temperature Analyzer")
 ```
 
 Run it:
+
 ```bash
 mojo analyzer.mojo
 ```
@@ -143,7 +162,7 @@ Insights:
 Update your file to add temperature data:
 
 ```mojo
-fn main():
+def main():
     print("Temperature Analyzer")
 
     # Square brackets tell Mojo the `List` type at compile time
@@ -157,7 +176,7 @@ fn main():
 Print each temperature. Add to `main()` under the print statement:
 
 ```mojo
-fn main():
+def main():
     # ... existing code ...
 
     for index in range(len(temps)):  # The range is [0, len(temps))
@@ -173,13 +192,13 @@ Insights:
 Add this function above `main()` to calculate the average temperature:
 
 ```mojo
-fn calculate_average(temps: List[Float64]) -> Float64:
+def calculate_average(temps: List[Float64]) -> Float64:
     var total: Float64 = 0.0
     for index in range(len(temps)):
         total += temps[index]
     return total / Float64(len(temps))
 
-fn main():
+def main():
     # ... existing code ...
 ```
 
@@ -209,7 +228,7 @@ Handle empty data by updating `calculate_average`. Now the function
 can raise an error.
 
 ```mojo
-fn calculate_average(temps: List[Float64]) raises -> Float64:
+def calculate_average(temps: List[Float64]) raises -> Float64:
     if len(temps) == 0:  # Empty list of temperatures
         raise Error("No temperature data")
 
@@ -220,6 +239,7 @@ fn calculate_average(temps: List[Float64]) raises -> Float64:
 ```
 
 What changed:
+
 - You add `raises` before the return arrow.
 - You add the check for an empty list.
 - You raise an `Error` if it's empty.
@@ -281,7 +301,7 @@ conda install numpy
 Then, add the following imports at the top of your file:
 
 ```mojo
-from python import Python, PythonObject
+from std.python import Python, PythonObject
 ```
 
 Now, calculate Python stats at the end of the `try` block in `main()`:
@@ -297,9 +317,9 @@ Now, calculate Python stats at the end of the `try` block in `main()`:
 Your complete `analyzer.mojo`:
 
 ```mojo
-from python import Python, PythonObject
+from std.python import Python, PythonObject
 
-fn calculate_average(temps: List[Float64]) raises -> Float64:
+def calculate_average(temps: List[Float64]) raises -> Float64:
     if len(temps) == 0:
         raise Error("No temperature data")
 
@@ -308,7 +328,7 @@ fn calculate_average(temps: List[Float64]) raises -> Float64:
         total += temps[index]
     return total / Float64(len(temps))
 
-fn main():
+def main():
     print("Temperature Analyzer")
     var temps: List[Float64] = [20.5, 22.3, 19.8, 25.1]
     print("Recorded", len(temps), "temperatures")
@@ -337,8 +357,11 @@ fn main():
 
 ## What you touched
 
-Mojo variables, lists, loops, functions, conditionals, error handling, and Python integration, all in one working program.
+Mojo variables, lists, loops, functions, conditionals, error handling, and
+Python integration, all in one working program.
 
 **Build something bigger:** [Tutorial: Game of Life](/mojo/manual/get-started)
 **Language guide:** [Mojo Manual](/mojo/manual)
 **API docs:** [Standard Library](/mojo/lib)
+
+Read about [learning Mojo with AI Agent skills](/mojo/manual/tools/skills).

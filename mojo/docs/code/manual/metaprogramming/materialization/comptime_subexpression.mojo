@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+from std.testing import assert_equal
 from layout import Layout
 
 
-fn lookup_fn[idx: Int](value: Int) -> Int:
+def lookup_fn[idx: Int](value: Int) -> Int:
     comptime my_constants = [3, 6, 9]
     return comptime (my_constants[idx]) * value
 
 
-fn layout_size() -> Int:
+def layout_size() -> Int:
     comptime layout = Layout.row_major(16, 8)
     var size = comptime (layout.size())
     return size
 
 
-def main():
+def main() raises:
     var x = lookup_fn[1](4)
     assert_equal(x, 24)
 

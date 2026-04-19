@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import (
+from std.algorithm import (
     cumsum,
     mean,
     product,
     sum,
     variance,
 )
-from algorithm.reduction import _reduce_generator, max, min
-from math.math import max as _max, min as _min
-from testing import TestSuite
+from std.algorithm.reduction import _reduce_generator, max, min
+from std.math.math import max as _max, min as _min
+from std.testing import TestSuite
 
-from utils.index import Index, IndexList, StaticTuple
+from std.utils.index import Index, IndexList, StaticTuple
 
 
 # CHECK-LABEL: test_reductions
-def test_reductions():
+def test_reductions() raises:
     print("== test_reductions")
 
     comptime simd_width = 4
@@ -48,7 +48,7 @@ def test_reductions():
     print(sum(vector))
 
 
-def test_reductions_zero_size():
+def test_reductions_zero_size() raises:
     print("== test_reductions_zero_size")
 
     comptime size = 0
@@ -60,7 +60,7 @@ def test_reductions_zero_size():
 
 
 # CHECK-LABEL: test_fused_reductions_inner
-def test_fused_reductions_inner():
+def test_fused_reductions_inner() raises:
     print("== test_fused_redtest_fused_reductions_inneructions")
 
     comptime size = 100
@@ -75,7 +75,7 @@ def test_fused_reductions_inner():
     @always_inline
     @__copy_capture(vector)
     @parameter
-    fn input_fn[
+    def input_fn[
         dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank]) -> SIMD[dtype, width]:
         var loaded_val = vector.unsafe_ptr().load[width=width](indices[0])
@@ -85,8 +85,8 @@ def test_fused_reductions_inner():
 
     @always_inline
     @parameter
-    fn output_fn[
-        dtype: DType, width: Int, rank: Int
+    def output_fn[
+        dtype: DType, width: SIMDSize, rank: Int
     ](
         indices: IndexList[rank],
         val: StaticTuple[SIMD[dtype, width], num_reductions],
@@ -99,15 +99,14 @@ def test_fused_reductions_inner():
 
     @always_inline
     @parameter
-    fn reduce_fn[
+    def reduce_fn[
         ty: DType,
-        width: Int,
+        width: SIMDSize,
         reduction_idx: Int,
     ](left: SIMD[ty, width], right: SIMD[ty, width],) -> SIMD[ty, width]:
         comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
 
-        @parameter
-        if reduction_idx == 0:
+        comptime if reduction_idx == 0:
             return _min(left, right)
         elif reduction_idx == 1:
             return _max(left, right)
@@ -140,7 +139,7 @@ def test_fused_reductions_inner():
 
 
 # CHECK-LABEL: test_fused_reductions_outer
-def test_fused_reductions_outer():
+def test_fused_reductions_outer() raises:
     print("== test_fused_reductions_outer")
 
     comptime size = 100
@@ -159,7 +158,7 @@ def test_fused_reductions_outer():
     @always_inline
     @__copy_capture(vector)
     @parameter
-    fn input_fn[
+    def input_fn[
         dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank]) -> SIMD[dtype, width]:
         var loaded_val = vector.unsafe_ptr().load[width=width](
@@ -169,15 +168,14 @@ def test_fused_reductions_outer():
 
     @always_inline
     @parameter
-    fn reduce_fn[
+    def reduce_fn[
         ty: DType,
-        width: Int,
+        width: SIMDSize,
         reduction_idx: Int,
     ](left: SIMD[ty, width], right: SIMD[ty, width],) -> SIMD[ty, width]:
         comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
 
-        @parameter
-        if reduction_idx == 0:
+        comptime if reduction_idx == 0:
             return _min(left, right)
         elif reduction_idx == 1:
             return _max(left, right)
@@ -193,8 +191,8 @@ def test_fused_reductions_outer():
 
     @always_inline
     @parameter
-    fn output_fn[
-        dtype: DType, width: Int, rank: Int
+    def output_fn[
+        dtype: DType, width: SIMDSize, rank: Int
     ](
         indices: IndexList[rank],
         val: StaticTuple[SIMD[dtype, width], num_reductions],
@@ -223,7 +221,7 @@ def test_fused_reductions_outer():
 
 # We use a smaller vector so that we do not overflow
 # CHECK-LABEL: test_product
-def test_product():
+def test_product() raises:
     print("== test_product")
 
     comptime simd_width = 4
@@ -240,7 +238,7 @@ def test_product():
 
 
 # CHECK-LABEL: test_mean_variance
-def test_mean_variance():
+def test_mean_variance() raises:
     print("== test_mean_variance")
 
     comptime simd_width = 4
@@ -260,7 +258,7 @@ def test_mean_variance():
 
 
 # CHECK-LABEL: test_cumsum
-def test_cumsum():
+def test_cumsum() raises:
     print("== test_cumsum")
 
     var vector = InlineArray[Float32, 150](fill=0)
@@ -315,5 +313,5 @@ def test_cumsum():
         print(cumsum_out2[i], ",", end="")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Defines quantization encodings and configuration types for MAX graph weights."""
+
 import enum
 from dataclasses import dataclass
 
@@ -25,7 +27,10 @@ class BlockParameters:
     """
 
     elements_per_block: int
+    """The number of original tensor elements grouped into one quantization block."""
+
     block_size: int
+    """The size in bytes of the encoded representation of one quantization block."""
 
 
 # TODO: BlockParameters should be integrated into this class
@@ -39,10 +44,19 @@ class QuantizationConfig:
     """
 
     quant_method: str
+    """The quantization method name (for example, ``gptq`` or ``awq``)."""
+
     bits: int
+    """The number of bits used to represent each quantized weight element."""
+
     group_size: int
+    """The number of weight elements that share a single set of quantization parameters."""
+
     desc_act: bool = False
+    """Whether to use activation ordering (descending activation order). Defaults to ``False``."""
+
     sym: bool = False
+    """Whether to use symmetric quantization. Defaults to ``False``."""
 
 
 class QuantizationEncoding(enum.Enum):

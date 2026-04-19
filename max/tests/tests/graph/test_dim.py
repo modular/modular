@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for Dim algebra operations."""
 
+from collections.abc import Callable
+
 import pytest
-from max._core.dialects import kgen
+from max._core.dialects import builtin, kgen
 from max.graph import AlgebraicDim, Dim, Graph, StaticDim, SymbolicDim
 
 
@@ -251,7 +253,7 @@ class TestDimTypes:
         """Constructing a SymbolicDim from an invalid type raises."""
         with pytest.raises(
             TypeError,
-            match=r"SymbolicDim.__init__ only accepts str or SymbolicDim, got StaticDim",
+            match=r"SymbolicDim.__init__ only accepts str, kgen.ParamDeclRefAttr, or SymbolicDim, got StaticDim",
         ):
             SymbolicDim(StaticDim(5))  # type: ignore
 
@@ -259,7 +261,7 @@ class TestDimTypes:
         """Constructing a StaticDim from an invalid type raises."""
         with pytest.raises(
             TypeError,
-            match=r"StaticDim.__init__ only accepts int or StaticDim, got SymbolicDim",
+            match=r"StaticDim.__init__ only accepts int, builtin.IntegerAttr, or StaticDim, got SymbolicDim",
         ):
             StaticDim(SymbolicDim("batch"))  # type: ignore
 
@@ -267,7 +269,7 @@ class TestDimTypes:
         """Constructing a StaticDim from a str raises rather than creating a SymbolicDim."""
         with pytest.raises(
             TypeError,
-            match=r"StaticDim.__init__ only accepts int or StaticDim, got str",
+            match=r"StaticDim.__init__ only accepts int, builtin.IntegerAttr, or StaticDim, got str",
         ):
             StaticDim("5")  # type: ignore
 
@@ -275,7 +277,7 @@ class TestDimTypes:
         """Constructing a SymbolicDim from an int raises rather than creating a StaticDim."""
         with pytest.raises(
             TypeError,
-            match=r"SymbolicDim.__init__ only accepts str or SymbolicDim, got int",
+            match=r"SymbolicDim.__init__ only accepts str, kgen.ParamDeclRefAttr, or SymbolicDim, got int",
         ):
             SymbolicDim(5)  # type: ignore
 
@@ -286,3 +288,175 @@ class TestDimTypes:
             match=r"AlgebraicDim.__init__ only accepts kgen.ParamOperatorAttr or AlgebraicDim, got int",
         ):
             AlgebraicDim(5)  # type: ignore
+
+    @pytest.mark.parametrize(
+        "creator,attr,expected_type,check",
+        [
+            (
+                Dim,
+                builtin.IntegerAttr(
+                    builtin.IntegerType(64, builtin.SignednessSemantics.signed),
+                    5,
+                ),
+                StaticDim,
+                lambda r: int(r) == 5,
+            ),
+            (
+                Dim,
+                kgen.ParamDeclRefAttr(
+                    "batch",
+                    builtin.IntegerType(64, builtin.SignednessSemantics.signed),
+                ),
+                SymbolicDim,
+                lambda r: r.name == "batch",
+            ),
+            (
+                Dim,
+                kgen.ParamOperatorAttr(
+                    kgen.POC.add, [Dim("batch").to_mlir(), Dim(10).to_mlir()]
+                ),
+                AlgebraicDim,
+                lambda r: (
+                    r.attr.opcode == kgen.POC.add
+                    and r.attr.operands[0] == Dim("batch").to_mlir()
+                    and r.attr.operands[1] == Dim(10).to_mlir()
+                ),
+            ),
+            (
+                StaticDim,
+                builtin.IntegerAttr(
+                    builtin.IntegerType(64, builtin.SignednessSemantics.signed),
+                    5,
+                ),
+                StaticDim,
+                lambda r: int(r) == 5,
+            ),
+            (
+                SymbolicDim,
+                kgen.ParamDeclRefAttr(
+                    "batch",
+                    builtin.IntegerType(64, builtin.SignednessSemantics.signed),
+                ),
+                SymbolicDim,
+                lambda r: r.name == "batch",
+            ),
+            (
+                AlgebraicDim,
+                kgen.ParamOperatorAttr(
+                    kgen.POC.add,
+                    [Dim("batch").to_mlir(), Dim(10).to_mlir()],
+                ),
+                AlgebraicDim,
+                lambda r: (
+                    r.attr.opcode == kgen.POC.add
+                    and r.attr.operands[0] == Dim("batch").to_mlir()
+                    and r.attr.operands[1] == Dim(10).to_mlir()
+                ),
+            ),
+            (
+                StaticDim.from_mlir,
+                builtin.IntegerAttr(
+                    builtin.IntegerType(64, builtin.SignednessSemantics.signed),
+                    5,
+                ),
+                StaticDim,
+                lambda r: int(r) == 5,
+            ),
+            (
+                SymbolicDim.from_mlir,
+                kgen.ParamDeclRefAttr(
+                    "batch",
+                    builtin.IntegerType(64, builtin.SignednessSemantics.signed),
+                ),
+                SymbolicDim,
+                lambda r: r.name == "batch",
+            ),
+            (
+                AlgebraicDim.from_mlir,
+                kgen.ParamOperatorAttr(
+                    kgen.POC.add,
+                    [Dim("batch").to_mlir(), Dim(10).to_mlir()],
+                ),
+                AlgebraicDim,
+                lambda r: (
+                    r.attr.opcode == kgen.POC.add
+                    and r.attr.operands[0] == Dim("batch").to_mlir()
+                    and r.attr.operands[1] == Dim(10).to_mlir()
+                ),
+            ),
+        ],
+    )
+    def test_creating_dim_from_attr_returns_correct_type(
+        self,
+        creator: Callable[[builtin.TypedAttr], Dim],
+        attr: builtin.TypedAttr,
+        expected_type: type,
+        check: Callable[[Dim], bool],
+    ) -> None:
+        """Creating dim from valid attr returns correct Dim subclass."""
+        result = creator(attr)
+        assert isinstance(result, expected_type)
+        assert check(result)
+
+    @pytest.mark.parametrize(
+        "creator,attr,match",
+        [
+            (
+                AlgebraicDim,
+                builtin.IntegerAttr(
+                    builtin.IntegerType(64, builtin.SignednessSemantics.signed),
+                    5,
+                ),
+                r"AlgebraicDim.__init__ only accepts kgen.ParamOperatorAttr or AlgebraicDim, got IntegerAttr",
+            ),
+            (
+                StaticDim,
+                kgen.ParamDeclRefAttr(
+                    "batch",
+                    builtin.IntegerType(64, builtin.SignednessSemantics.signed),
+                ),
+                r"StaticDim.__init__ only accepts int, builtin.IntegerAttr, or StaticDim, got ParamDeclRefAttr",
+            ),
+            (
+                SymbolicDim,
+                kgen.ParamOperatorAttr(
+                    kgen.POC.add,
+                    [Dim("batch").to_mlir(), Dim(10).to_mlir()],
+                ),
+                r"SymbolicDim.__init__ only accepts str, kgen.ParamDeclRefAttr, or SymbolicDim, got ParamOperatorAttr",
+            ),
+            (
+                AlgebraicDim.from_mlir,
+                builtin.IntegerAttr(
+                    builtin.IntegerType(64, builtin.SignednessSemantics.signed),
+                    5,
+                ),
+                r"AlgebraicDim.from_mlir only accepts kgen.ParamOperatorAttr, got IntegerAttr",
+            ),
+            (
+                StaticDim.from_mlir,
+                kgen.ParamDeclRefAttr(
+                    "batch",
+                    builtin.IntegerType(64, builtin.SignednessSemantics.signed),
+                ),
+                r"StaticDim.from_mlir only accepts builtin.IntegerAttr, got ParamDeclRefAttr",
+            ),
+            (
+                SymbolicDim.from_mlir,
+                kgen.ParamOperatorAttr(
+                    kgen.POC.add,
+                    [Dim("batch").to_mlir(), Dim(10).to_mlir()],
+                ),
+                r"SymbolicDim.from_mlir only accepts kgen.ParamDeclRefAttr, got ParamOperatorAttr",
+            ),
+        ],
+    )
+    def test_creating_dim_with_invalid_attr_raises(
+        self,
+        creator: type,
+        attr: object,
+        match: str,
+    ) -> None:
+        """Creating dim from invalid attr raises TypeError."""
+        with pytest.raises(TypeError, match=match):
+            creator(attr)

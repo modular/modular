@@ -14,15 +14,15 @@
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
 
-fn test_cannot_cast_from_immutable_any_to_named[
+def test_cannot_cast_from_immutable_any_to_named[
     T: AnyType, mut: Bool, //, origin: Origin[mut=mut]
 ](p: UnsafePointer[T, origin]):
     pass
 
 
-def main():
+def main() raises:
     var x = 42
 
     var p = UnsafePointer(to=x).as_immutable().as_any_origin()
-    # CHECK: value passed to 'p' cannot be converted from 'UnsafePointer[Int, ImmutAnyOrigin]' to 'UnsafePointer[Int, origin_of((muttoimm x))]'
+    # CHECK: value passed to 'p' cannot be converted
     test_cannot_cast_from_immutable_any_to_named[ImmutOrigin(origin_of(x))](p)

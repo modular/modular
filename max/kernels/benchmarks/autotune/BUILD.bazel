@@ -40,6 +40,11 @@ modular_py_binary(
         "@mojo//:std",
     ],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    target_compatible_with = select({
+        # FIXME: PAQ-2245
+        "//:ubsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         requirement("click"),
         requirement("numpy"),
@@ -53,8 +58,10 @@ modular_py_binary(
         requirement("torch"),
         requirement("packaging"),
         "//max/kernels/benchmarks/autotune:bencher_utils",
-        "//max/kernels/benchmarks/misc/comparison:bench_baseline_lib",
-    ],
+    ] + select({
+        "//:nvidia_gpu": ["//max/kernels/benchmarks/misc/comparison:bench_baseline_lib"],
+        "//conditions:default": [],
+    }),
 )
 
 modular_py_binary(
@@ -130,12 +137,23 @@ modular_py_library(
 
 modular_py_test(
     name = "autotune_tests",
+    # test_kbench compiles multiple Mojo binaries which can be slow on CI.
+    size = "large",
     srcs = glob(["tests/*.py"]),
+    args = [
+        "-n",
+        "auto",
+        "--dist",
+        "loadgroup",
+    ],
     data = glob(["tests/*.csv"]) + [
         "sample.mojo",
         "sample.py",
         "test.yaml",
         "test_python.yaml",
+        "tests/sample_failure.mojo",
+        "tests/test_crash.yaml",
+        "tests/test_timeout.yaml",
     ],
     env = {"KERNEL_BENCHMARKS_ROOT": "max/kernels/benchmarks/"},
     mojo_deps = [
@@ -160,6 +178,8 @@ modular_py_test(
         ":kbench",
         ":kplot",
         ":kprofile",
+        requirement("pytest-mock"),
+        requirement("pytest-xdist"),
     ],
 )
 

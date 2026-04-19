@@ -13,22 +13,19 @@
 
 # DOC: mojo/docs/manual/python/mojo-from-python.mdx
 
-from os import abort
+from std.os import abort
 
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
 
 
 @fieldwise_init
-struct Person(Movable, Representable):
+struct Person(Movable, Writable):
     var name: String
     var age: Int
 
-    fn __repr__(self) -> String:
-        return String("Person(", self.name, ", ", self.age, ")")
-
     @staticmethod
-    fn py_init(
+    def py_init(
         out self: Person, args: PythonObject, kwargs: PythonObject
     ) raises:
         # Validate argument count
@@ -43,7 +40,7 @@ struct Person(Movable, Representable):
 
 
 @export
-fn PyInit_person_module() -> PythonObject:
+def PyInit_person_module() -> PythonObject:
     try:
         var mb = PythonModuleBuilder("person_module")
 

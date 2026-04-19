@@ -135,7 +135,7 @@ class SchedulerLogger:
 
             self.logs.append(batch_info)
 
-        dp = kv_cache.num_replicas
+        dp = kv_cache.params.data_parallel_degree
 
         total_blocks = sum(
             kv_cache.get_num_pages(replica_idx) for replica_idx in range(dp)

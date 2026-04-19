@@ -74,7 +74,6 @@ def create_encoder_layer_weights(
     """Create shared encoder layer weights for both PyTorch and MAX models."""
     torch.manual_seed(42)
     std = IDEFICS3_VISION_CONFIG["initializer_range"]  # 0.02
-    head_dim = hidden_size // num_attention_heads
 
     weights = {}
 
@@ -182,8 +181,20 @@ def generate_max_outputs(
         device=DeviceRef.GPU(),
     )
 
-    # Convert weights to CPU before loading (MAX expects CPU weights)
-    cpu_weights = {key: weight.cpu() for key, weight in encoder_weights.items()}
+    # Remap HuggingFace weight names to MAX StackedLinear names.
+    _HF_TO_MAX = {
+        "q_proj.": "qkv_proj.q.",
+        "k_proj.": "qkv_proj.k.",
+        "v_proj.": "qkv_proj.v.",
+    }
+    cpu_weights = {}
+    for key, weight in encoder_weights.items():
+        max_key = key
+        for hf, mx in _HF_TO_MAX.items():
+            if hf in max_key:
+                max_key = max_key.replace(hf, mx, 1)
+                break
+        cpu_weights[max_key] = weight.cpu()
     max_encoder.load_state_dict(cpu_weights)
 
     # Get input dimensions

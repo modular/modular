@@ -11,20 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
-from layout import Layout, LayoutTensor, RuntimeLayout
-from nn.gather_scatter import scatter_nd_generator, ScatterOobIndexStrategy
-from testing import assert_equal
-
-from utils.index import Index
+from layout import TileTensor, row_major
+from nn.gather_scatter import scatter_nd_generator
+from std.testing import assert_equal
 
 
 @always_inline
 @parameter
-fn use_update[
+def use_update[
     dtype: DType, width: Int, //
 ](input_val: SIMD[dtype, width], update_val: SIMD[dtype, width]) -> SIMD[
     dtype, width
@@ -32,11 +26,11 @@ fn use_update[
     return update_val
 
 
-def main():
-    fn test_scatternd() raises:
+def main() raises:
+    def test_scatternd() raises:
         print("== test_scatternd")
         # data: 4x4x4 = 64 elements
-        var data_ptr = UnsafePointer[Float32].alloc(64)
+        var data_ptr = alloc[Float32](64)
         var data_vals: InlineArray[Float32, 64] = [
             Float32(1),
             2,
@@ -106,19 +100,17 @@ def main():
         for i in range(64):
             data_ptr[i] = data_vals[i]
 
-        comptime data_layout = Layout.row_major(4, 4, 4)
-        var data = LayoutTensor[DType.float32, data_layout](data_ptr)
+        var data = TileTensor(data_ptr, row_major[4, 4, 4]())
 
         # indices: 2x1 = 2 elements
-        var indices_ptr = UnsafePointer[Int64].alloc(2)
+        var indices_ptr = alloc[Int64](2)
         indices_ptr[0] = 0
         indices_ptr[1] = 2
 
-        comptime indices_layout = Layout.row_major(2, 1)
-        var indices = LayoutTensor[DType.int64, indices_layout](indices_ptr)
+        var indices = TileTensor(indices_ptr, row_major[2, 1]())
 
         # updates: 2x4x4 = 32 elements
-        var updates_ptr = UnsafePointer[Float32].alloc(32)
+        var updates_ptr = alloc[Float32](32)
         var updates_vals: InlineArray[Float32, 32] = [
             Float32(5),
             5,
@@ -156,13 +148,11 @@ def main():
         for i in range(32):
             updates_ptr[i] = updates_vals[i]
 
-        comptime updates_layout = Layout.row_major(2, 4, 4)
-        var updates = LayoutTensor[DType.float32, updates_layout](updates_ptr)
+        var updates = TileTensor(updates_ptr, row_major[2, 4, 4]())
 
         # output: 4x4x4 = 64 elements
-        var output_ptr = UnsafePointer[Float32].alloc(64)
-        comptime output_layout = Layout.row_major(4, 4, 4)
-        var output = LayoutTensor[DType.float32, output_layout](output_ptr)
+        var output_ptr = alloc[Float32](64)
+        var output = TileTensor(output_ptr, row_major[4, 4, 4]())
 
         # expected output
         var expected: InlineArray[Float32, 64] = [
@@ -232,13 +222,9 @@ def main():
             8,
         ]
 
-        scatter_nd_generator[
-            DType.float32,
-            DType.int64,
-            False,
-            ScatterOobIndexStrategy.UNDEFINED,
-            reduce_fn=use_update,
-        ](data, indices, updates, output)
+        scatter_nd_generator[reduce_fn=use_update](
+            data, indices, updates, output
+        )
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])
@@ -250,10 +236,10 @@ def main():
 
     test_scatternd()
 
-    fn test_scatternd_add() raises:
+    def test_scatternd_add() raises:
         print("== test_scatternd_add")
         # data: 4x4x4 = 64 elements
-        var data_ptr = UnsafePointer[Float32].alloc(64)
+        var data_ptr = alloc[Float32](64)
         var data_vals: InlineArray[Float32, 64] = [
             Float32(1),
             2,
@@ -323,19 +309,17 @@ def main():
         for i in range(64):
             data_ptr[i] = data_vals[i]
 
-        comptime data_layout = Layout.row_major(4, 4, 4)
-        var data = LayoutTensor[DType.float32, data_layout](data_ptr)
+        var data = TileTensor(data_ptr, row_major[4, 4, 4]())
 
         # indices: 2x1 = 2 elements (both pointing to index 0)
-        var indices_ptr = UnsafePointer[Int64].alloc(2)
+        var indices_ptr = alloc[Int64](2)
         indices_ptr[0] = 0
         indices_ptr[1] = 0
 
-        comptime indices_layout = Layout.row_major(2, 1)
-        var indices = LayoutTensor[DType.int64, indices_layout](indices_ptr)
+        var indices = TileTensor(indices_ptr, row_major[2, 1]())
 
         # updates: 2x4x4 = 32 elements
-        var updates_ptr = UnsafePointer[Float32].alloc(32)
+        var updates_ptr = alloc[Float32](32)
         var updates_vals: InlineArray[Float32, 32] = [
             Float32(5),
             5,
@@ -373,13 +357,11 @@ def main():
         for i in range(32):
             updates_ptr[i] = updates_vals[i]
 
-        comptime updates_layout = Layout.row_major(2, 4, 4)
-        var updates = LayoutTensor[DType.float32, updates_layout](updates_ptr)
+        var updates = TileTensor(updates_ptr, row_major[2, 4, 4]())
 
         # output: 4x4x4 = 64 elements
-        var output_ptr = UnsafePointer[Float32].alloc(64)
-        comptime output_layout = Layout.row_major(4, 4, 4)
-        var output = LayoutTensor[DType.float32, output_layout](output_ptr)
+        var output_ptr = alloc[Float32](64)
+        var output = TileTensor(output_ptr, row_major[4, 4, 4]())
 
         # expected output (add reduction)
         var expected: InlineArray[Float32, 64] = [
@@ -451,18 +433,12 @@ def main():
 
         @always_inline
         @parameter
-        fn _add[
+        def _add[
             ty: DType, width: Int
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 + v2
 
-        scatter_nd_generator[
-            DType.float32,
-            DType.int64,
-            False,
-            ScatterOobIndexStrategy.UNDEFINED,
-            reduce_fn=_add,
-        ](data, indices, updates, output)
+        scatter_nd_generator[reduce_fn=_add](data, indices, updates, output)
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])
@@ -474,10 +450,10 @@ def main():
 
     test_scatternd_add()
 
-    fn test_scatternd_max() raises:
+    def test_scatternd_max() raises:
         print("== test_scatternd_max")
         # data: 4x4x4 = 64 elements
-        var data_ptr = UnsafePointer[Float32].alloc(64)
+        var data_ptr = alloc[Float32](64)
         var data_vals: InlineArray[Float32, 64] = [
             Float32(1),
             2,
@@ -547,19 +523,17 @@ def main():
         for i in range(64):
             data_ptr[i] = data_vals[i]
 
-        comptime data_layout = Layout.row_major(4, 4, 4)
-        var data = LayoutTensor[DType.float32, data_layout](data_ptr)
+        var data = TileTensor(data_ptr, row_major[4, 4, 4]())
 
         # indices: 2x1 = 2 elements (both pointing to index 0)
-        var indices_ptr = UnsafePointer[Int64].alloc(2)
+        var indices_ptr = alloc[Int64](2)
         indices_ptr[0] = 0
         indices_ptr[1] = 0
 
-        comptime indices_layout = Layout.row_major(2, 1)
-        var indices = LayoutTensor[DType.int64, indices_layout](indices_ptr)
+        var indices = TileTensor(indices_ptr, row_major[2, 1]())
 
         # updates: 2x4x4 = 32 elements
-        var updates_ptr = UnsafePointer[Float32].alloc(32)
+        var updates_ptr = alloc[Float32](32)
         var updates_vals: InlineArray[Float32, 32] = [
             Float32(5),
             5,
@@ -597,13 +571,11 @@ def main():
         for i in range(32):
             updates_ptr[i] = updates_vals[i]
 
-        comptime updates_layout = Layout.row_major(2, 4, 4)
-        var updates = LayoutTensor[DType.float32, updates_layout](updates_ptr)
+        var updates = TileTensor(updates_ptr, row_major[2, 4, 4]())
 
         # output: 4x4x4 = 64 elements
-        var output_ptr = UnsafePointer[Float32].alloc(64)
-        comptime output_layout = Layout.row_major(4, 4, 4)
-        var output = LayoutTensor[DType.float32, output_layout](output_ptr)
+        var output_ptr = alloc[Float32](64)
+        var output = TileTensor(output_ptr, row_major[4, 4, 4]())
 
         # expected output (max reduction)
         var expected: InlineArray[Float32, 64] = [
@@ -675,18 +647,12 @@ def main():
 
         @always_inline
         @parameter
-        fn _max[
+        def _max[
             ty: DType, width: Int
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return max(v1, v2)
 
-        scatter_nd_generator[
-            DType.float32,
-            DType.int64,
-            False,
-            ScatterOobIndexStrategy.UNDEFINED,
-            reduce_fn=_max,
-        ](data, indices, updates, output)
+        scatter_nd_generator[reduce_fn=_max](data, indices, updates, output)
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])
@@ -698,10 +664,10 @@ def main():
 
     test_scatternd_max()
 
-    fn test_scatternd_min() raises:
+    def test_scatternd_min() raises:
         print("== test_scatternd_min")
         # data: 4x4x4 = 64 elements
-        var data_ptr = UnsafePointer[Float32].alloc(64)
+        var data_ptr = alloc[Float32](64)
         var data_vals: InlineArray[Float32, 64] = [
             Float32(1),
             2,
@@ -771,19 +737,17 @@ def main():
         for i in range(64):
             data_ptr[i] = data_vals[i]
 
-        comptime data_layout = Layout.row_major(4, 4, 4)
-        var data = LayoutTensor[DType.float32, data_layout](data_ptr)
+        var data = TileTensor(data_ptr, row_major[4, 4, 4]())
 
         # indices: 2x1 = 2 elements (both pointing to index 0)
-        var indices_ptr = UnsafePointer[Int64].alloc(2)
+        var indices_ptr = alloc[Int64](2)
         indices_ptr[0] = 0
         indices_ptr[1] = 0
 
-        comptime indices_layout = Layout.row_major(2, 1)
-        var indices = LayoutTensor[DType.int64, indices_layout](indices_ptr)
+        var indices = TileTensor(indices_ptr, row_major[2, 1]())
 
         # updates: 2x4x4 = 32 elements
-        var updates_ptr = UnsafePointer[Float32].alloc(32)
+        var updates_ptr = alloc[Float32](32)
         var updates_vals: InlineArray[Float32, 32] = [
             Float32(5),
             5,
@@ -821,13 +785,11 @@ def main():
         for i in range(32):
             updates_ptr[i] = updates_vals[i]
 
-        comptime updates_layout = Layout.row_major(2, 4, 4)
-        var updates = LayoutTensor[DType.float32, updates_layout](updates_ptr)
+        var updates = TileTensor(updates_ptr, row_major[2, 4, 4]())
 
         # output: 4x4x4 = 64 elements
-        var output_ptr = UnsafePointer[Float32].alloc(64)
-        comptime output_layout = Layout.row_major(4, 4, 4)
-        var output = LayoutTensor[DType.float32, output_layout](output_ptr)
+        var output_ptr = alloc[Float32](64)
+        var output = TileTensor(output_ptr, row_major[4, 4, 4]())
 
         # expected output (min reduction)
         var expected: InlineArray[Float32, 64] = [
@@ -899,18 +861,12 @@ def main():
 
         @always_inline
         @parameter
-        fn _min[
+        def _min[
             ty: DType, width: Int
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return min(v1, v2)
 
-        scatter_nd_generator[
-            DType.float32,
-            DType.int64,
-            False,
-            ScatterOobIndexStrategy.UNDEFINED,
-            reduce_fn=_min,
-        ](data, indices, updates, output)
+        scatter_nd_generator[reduce_fn=_min](data, indices, updates, output)
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])
@@ -922,10 +878,10 @@ def main():
 
     test_scatternd_min()
 
-    fn test_scatternd_multiply() raises:
+    def test_scatternd_multiply() raises:
         print("== test_scatternd_multiply")
         # data: 4x4x4 = 64 elements
-        var data_ptr = UnsafePointer[Float32].alloc(64)
+        var data_ptr = alloc[Float32](64)
         var data_vals: InlineArray[Float32, 64] = [
             Float32(1),
             2,
@@ -995,19 +951,17 @@ def main():
         for i in range(64):
             data_ptr[i] = data_vals[i]
 
-        comptime data_layout = Layout.row_major(4, 4, 4)
-        var data = LayoutTensor[DType.float32, data_layout](data_ptr)
+        var data = TileTensor(data_ptr, row_major[4, 4, 4]())
 
         # indices: 2x1 = 2 elements (both pointing to index 0)
-        var indices_ptr = UnsafePointer[Int64].alloc(2)
+        var indices_ptr = alloc[Int64](2)
         indices_ptr[0] = 0
         indices_ptr[1] = 0
 
-        comptime indices_layout = Layout.row_major(2, 1)
-        var indices = LayoutTensor[DType.int64, indices_layout](indices_ptr)
+        var indices = TileTensor(indices_ptr, row_major[2, 1]())
 
         # updates: 2x4x4 = 32 elements
-        var updates_ptr = UnsafePointer[Float32].alloc(32)
+        var updates_ptr = alloc[Float32](32)
         var updates_vals: InlineArray[Float32, 32] = [
             Float32(5),
             5,
@@ -1045,13 +999,11 @@ def main():
         for i in range(32):
             updates_ptr[i] = updates_vals[i]
 
-        comptime updates_layout = Layout.row_major(2, 4, 4)
-        var updates = LayoutTensor[DType.float32, updates_layout](updates_ptr)
+        var updates = TileTensor(updates_ptr, row_major[2, 4, 4]())
 
         # output: 4x4x4 = 64 elements
-        var output_ptr = UnsafePointer[Float32].alloc(64)
-        comptime output_layout = Layout.row_major(4, 4, 4)
-        var output = LayoutTensor[DType.float32, output_layout](output_ptr)
+        var output_ptr = alloc[Float32](64)
+        var output = TileTensor(output_ptr, row_major[4, 4, 4]())
 
         # expected output (multiply reduction)
         var expected: InlineArray[Float32, 64] = [
@@ -1123,18 +1075,12 @@ def main():
 
         @always_inline
         @parameter
-        fn _mul[
+        def _mul[
             ty: DType, width: Int
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 * v2
 
-        scatter_nd_generator[
-            DType.float32,
-            DType.int64,
-            False,
-            ScatterOobIndexStrategy.UNDEFINED,
-            reduce_fn=_mul,
-        ](data, indices, updates, output)
+        scatter_nd_generator[reduce_fn=_mul](data, indices, updates, output)
 
         for i in range(64):
             assert_equal(output_ptr[i], expected[i])

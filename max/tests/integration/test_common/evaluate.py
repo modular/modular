@@ -14,8 +14,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from typing import Any, TypedDict, TypeVar
+import asyncio
+import base64
+from collections.abc import Sequence
+from dataclasses import replace
+from io import BytesIO
+from typing import Any, TypeVar
 
 import numpy as np
 from max import pipelines
@@ -34,89 +38,45 @@ from max.graph import (
 from max.interfaces import (
     LogitsProcessor,
     PipelineTokenizer,
+    PixelGenerationInputs,
     ProcessorInputs,
     RequestID,
     SamplingParams,
     TextGenerationRequest,
 )
+from max.pipelines.lib import PixelGenerationTokenizer
+from max.support import fetch_bytes_from_s3
+from PIL import Image
 from transformers import PreTrainedTokenizerBase
-from typing_extensions import NotRequired
 
+from .model_output import (
+    ModelOutput,
+    TokenInfo,
+)
 from .numerics import log_softmax
-from .test_data import MockTextGenerationRequest
+from .test_data import MockPixelGenerationRequest, MockTextGenerationRequest
 
 
-class TokenInfo(TypedDict, total=False):
-    """Information about a token in the output."""
+def _decode_base64_image_to_numpy(image_data: str) -> np.ndarray:
+    """Decode base64-encoded image to numpy array (H, W, C) float32 [0, 1].
 
-    next_token: int
-    """The next token in the output."""
-    next_token_logits: float
-    """The logits for the next token (always present)."""
-    logits: np.ndarray
-    """The logits for the token (always present)."""
-    next_token_logprobs: float
-    """The logprobs for the next token (when generate_logprobs=True)."""
-    logprobs: np.ndarray
-    """The logprobs for the token (when generate_logprobs=True)."""
-
-
-class ModelOutput(TypedDict):
-    """The prompt and the output of a model run."""
-
-    prompt: str
-    """The prompt that was used to generate the output."""
-    values: NotRequired[list[TokenInfo]]
-    """Outputs from a text generation model."""
-    embeddings: NotRequired[np.ndarray]
-    """Outputs from a text embedding model."""
+    Mirrors the decode logic used in simple_offline_generation.save_image,
+    but returns numpy for evaluation/comparison instead of saving to file.
+    """
+    image_bytes = base64.b64decode(image_data)
+    pil_image = Image.open(BytesIO(image_bytes))
+    img_array = np.array(pil_image, dtype=np.float32) / 255.0
+    if img_array.ndim == 2:
+        img_array = np.stack([img_array] * 3, axis=-1)
+    return img_array
 
 
-class ModelOutputView:
-    """Convenience accessors for ModelOutput values."""
-
-    def __init__(self, output: ModelOutput) -> None:
-        self._output = output
-
-    @property
-    def prompt(self) -> str:
-        return self._output["prompt"]
-
-    @property
-    def values(self) -> list[TokenInfo]:
-        values = self._output.get("values")
-        if values is None:
-            raise ValueError("ModelOutput has no token values")
-        return values
-
-    @property
-    def mode(self) -> str:
-        if not self.values:
-            return "logits"
-        token_info = self.values[0]
-        if "logits" in token_info:
-            return "logits"
-        if "logprobs" in token_info:
-            return "logprobs"
-        raise ValueError("ModelOutput values missing logits/logprobs")
-
-    @property
-    def logits(self) -> list[np.ndarray]:
-        if self.mode == "logprobs":
-            raise ValueError(
-                "ModelOutput stores logprobs; logits are unavailable"
-            )
-        return [token["logits"] for token in self.values]
-
-    @property
-    def logprobs(self) -> list[np.ndarray]:
-        if not self.values:
-            return []
-        if "logprobs" in self.values[0]:
-            return [token["logprobs"] for token in self.values]
-        if "logits" not in self.values[0]:
-            raise ValueError("ModelOutput has no logits or logprobs")
-        return [log_softmax(token["logits"]) for token in self.values]
+def _load_input_image(image_uri: str) -> Image.Image:
+    """Load an input image for image-to-image requests."""
+    if image_uri.startswith("s3://"):
+        image_bytes = fetch_bytes_from_s3(image_uri)
+        return Image.open(BytesIO(image_bytes)).convert("RGB")
+    return Image.open(image_uri).convert("RGB")
 
 
 NUM_STEPS = 10
@@ -177,8 +137,8 @@ def _create_requests(
 
 
 def run_model(
-    pipeline: pipelines.TextGenerationPipeline,
-    tokenizer: PipelineTokenizer,
+    pipeline: pipelines.TextGenerationPipelineInterface,  # type: ignore[type-arg]
+    tokenizer: PipelineTokenizer,  # type: ignore[type-arg]
     requests: Sequence[MockTextGenerationRequest],
     num_steps: int = NUM_STEPS,
     print_outputs: bool = False,
@@ -253,7 +213,7 @@ class StoreLogits:
     def __init__(
         self,
         ids: Sequence[RequestID],
-        tokenizer: PipelineTokenizer,
+        tokenizer: PipelineTokenizer,  # type: ignore[type-arg]
         generate_logprobs: bool = False,
     ) -> None:
         self.values: dict[RequestID, list[TokenInfo]] = {id: [] for id in ids}
@@ -263,6 +223,11 @@ class StoreLogits:
     def __call__(self, inputs: ProcessorInputs) -> None:
         logits = inputs.logits
         context = inputs.context
+        # Don't do anything if the context is already finished.
+        # This code path is possible due to overlap scheduling possibly executing
+        # one more forward pass than needed.
+        if context.is_done:
+            return
         next_token_logits = logits[-1, :].to_numpy().copy()
         next_token = next_token_logits.argmax(axis=-1)
 
@@ -317,6 +282,11 @@ class ReplaceLogitsWithReference:
     def __call__(self, inputs: ProcessorInputs) -> None:
         logits = inputs.logits
         context = inputs.context
+        # Don't do anything if the context is already finished.
+        # This code path is possible due to overlap scheduling possibly executing
+        # one more forward pass than needed.
+        if context.is_done:
+            return
         # Assign the argmax of the reference to the logits.
         reference = self.reference_by_id[context.request_id]
         step = self.step_by_id[context.request_id]
@@ -325,166 +295,99 @@ class ReplaceLogitsWithReference:
         self.step_by_id[context.request_id] += 1
 
 
-def compare_values(
-    actual: Sequence[Mapping[str, Any]],
-    expected: Sequence[Mapping[str, Any]],
-    *,
-    rtol: float = 1e-2,
-    atol: float = 1e-5,
-    compare_fn: Callable[[Any, Any, str], None] | None = None,
-) -> None:
-    """Compares two dictionaries of values."""
-    keys = expected[0].keys()
-    if keys == {"prompt", "values"}:
-        compare_text_generation(
-            actual, expected, rtol=rtol, atol=atol, compare_fn=compare_fn
-        )
-    elif keys == {"prompt", "embeddings"}:
-        compare_embeddings(
-            actual, expected, rtol=rtol, atol=atol, compare_fn=compare_fn
-        )
-    else:
-        raise ValueError(
-            f"Unable to compare dictionaries with keys {keys}, does not match "
-            "the expected keys of a text generation or embedding pipeline."
-        )
-
-
-def compare_text_generation(
-    actual: Sequence[Mapping[str, Any]],
-    expected: Sequence[Mapping[str, Any]],
-    *,
-    rtol: float = 1e-2,
-    atol: float = 1e-5,
-    compare_fn: Callable[[Any, Any, str], None] | None = None,
-) -> None:
-    """Compares the values between two computed logits.
-
-    The data structure of the actual/expected logits should be:
-    [
-        {"prompt": "prompt 1", "values": [{"key": value, ...}],
-        {"prompt": "prompt 2", "values": [{"key": value, ...}],
-        ...
-    ]
-
-    The "values" list contains the logits at each step for the prompt.
-
-    The `actual` logits structure must be a subset of the expected logits.
-    E.g. if the `expected` values contains logits for 10 steps, the `actual`
-    values can contain any number of steps between 1-10.
+def run_pixel_generation(
+    pipeline: pipelines.PixelGenerationPipeline,  # type: ignore[type-arg]
+    tokenizer: PixelGenerationTokenizer,
+    requests: list[MockPixelGenerationRequest],
+    num_steps: int,
+    print_outputs: bool = False,
+) -> list[dict[str, Any]]:
+    """Run pixel generation using MAX PixelGenerationPipeline.
 
     Args:
-        actual: Data structure containing computed values.
-        expected: Data structure containing reference values.
-        rtol: The relative tolerance (used if `compare_fn` is not provided).
-        atol: The absolute tolerance (used if `compare_fn` is not provided).
-        compare_fn: A callable that takes the arguments
-            (actual, expected, description) and raises an assertion error
-            if the check fails.
+        pipeline: MAX PixelGenerationPipeline instance
+        tokenizer: MAX PixelGenerationTokenizer instance
+        requests: List of MockPixelGenerationRequest objects
+        num_steps: Number of inference steps (denoising steps)
+        print_outputs: Whether to print outputs
+
+    Returns:
+        List of dicts with prompt and generated images
     """
-    expected_prompts = {x["prompt"]: x["values"] for x in expected}
-    actual_prompts = {x["prompt"]: x["values"] for x in actual}
 
-    diff = actual_prompts.keys() - expected_prompts.keys()
-    if diff:
-        raise ValueError(
-            f"Golden values for prompts {diff} not found. Please re-run"
-            " `gen_golden_values`."
-        )
+    results = []
 
-    for prompt, values in actual_prompts.items():
-        expected_values = expected_prompts[prompt]
-        actual_steps = len(values)
-        expected_steps = len(expected_values)
+    for mock_request in requests:
+        prompt = mock_request.prompt
+        # Override num_steps if explicitly provided (for verification with different step counts)
+        if num_steps != mock_request.num_inference_steps:
+            mock_request = replace(mock_request, num_inference_steps=num_steps)
 
-        assert actual_steps <= expected_steps
-        short = f"{prompt[:15]}..." if len(prompt) > 15 else prompt
-
-        for step in range(actual_steps):
-            inference_results = values[step]
-            expected_results = expected_values[step]
-
-            inference_next_token = inference_results["next_token"]
-            expected_next_token = expected_results["next_token"]
-            if inference_next_token != expected_next_token:
-                # Always use logits for comparison (logits are always present)
-                inference_logits = inference_results["logits"]
-                expected_logits = expected_results["logits"]
-                print(
-                    f"⚠️ Got mismatching next_token: {inference_next_token} !="
-                    f" {expected_next_token} on step={step} for the prompt='{short}'"
-                )
-                print(
-                    f"Logits for generated token {inference_next_token}: {inference_logits[inference_next_token]} (inference) vs {expected_logits[inference_next_token]} (reference)"
-                )
-                print(
-                    f"Logits for expected token {expected_next_token}: {inference_logits[expected_next_token]} (inference) vs {expected_logits[expected_next_token]} (reference)"
-                )
-
-            for key, value in inference_results.items():
-                expected_value = expected_results[key]
-                description = f"'{key}' on step={step} for the prompt='{short}'"
-                if compare_fn:
-                    compare_fn(value, expected_value, description)
-                else:
-                    np.testing.assert_allclose(
-                        value,
-                        expected_value,
-                        rtol=rtol,
-                        atol=atol,
-                        err_msg=f"Got different values for {description}.",
-                        verbose=True,
-                    )
-
-
-def compare_embeddings(
-    actual: Sequence[Mapping[str, Any]],
-    expected: Sequence[Mapping[str, Any]],
-    *,
-    rtol: float = 1e-2,
-    atol: float = 1e-5,
-    compare_fn: Callable[[Any, Any, str], None] | None = None,
-) -> None:
-    """Compares the values between two computed embeddings.
-
-    The data structure of the actual/expected dictionaries should be:
-    [
-        {"prompt": "prompt 1", "embeddings": embeddings,
-        {"prompt": "prompt 2", "embeddings": embeddings,
-        ...
-    ]
-
-    Args:
-        actual: Data structure containing computed values.
-        expected: Data structure containing reference values.
-        rtol: The relative tolerance (used if `compare_fn` is not provided).
-        atol: The absolute tolerance (used if `compare_fn` is not provided).
-        compare_fn: A callable that takes the arguments
-            (actual, expected, description) and raises an assertion error
-            if the check fails.
-    """
-    expected_prompts = {x["prompt"]: x["embeddings"] for x in expected}
-    actual_prompts = {x["prompt"]: x["embeddings"] for x in actual}
-
-    if expected_prompts.keys() < actual_prompts.keys():
-        diff = actual_prompts.keys() - expected_prompts.keys()
-        raise ValueError(
-            f"Golden values for prompts {diff} not found. Please re-run"
-            " `gen_golden_values`."
-        )
-
-    for prompt, embeddings in actual_prompts.items():
-        expected_embeddings = expected_prompts[prompt]
-        short = f"{prompt[:15]}..." if len(prompt) > 15 else prompt
-        description = f"embeddings for prompt '{short}'"
-        if compare_fn:
-            compare_fn(embeddings, expected_embeddings, description)
-        else:
-            np.testing.assert_allclose(
-                embeddings,
-                expected_embeddings,
-                rtol=rtol,
-                atol=atol,
-                err_msg=f"Got different {description}.",
-                verbose=True,
+        if print_outputs:
+            print(
+                f'Generating image for prompt (steps={num_steps}): "{prompt}"'
             )
+
+        # Convert MockPixelGenerationRequest to OpenResponsesRequest
+        request_id = RequestID()
+        request = mock_request.to_open_responses_request(
+            request_id=request_id,
+            model_name=tokenizer.model_path,
+        )
+
+        # Create context from request using tokenizer
+        input_image = (
+            _load_input_image(mock_request.input_image)
+            if mock_request.input_image is not None
+            else None
+        )
+        context = asyncio.run(tokenizer.new_context(request, input_image))
+
+        if print_outputs:
+            print(
+                f"Context created: {context.height}x{context.width}, "
+                f"{context.num_inference_steps} steps, guidance={context.guidance_scale}"
+            )
+
+        # Prepare inputs for the pipeline
+        inputs = PixelGenerationInputs(batch={context.request_id: context})
+
+        # Execute the pipeline
+        outputs = pipeline.execute(inputs)
+
+        # Get the output for our request
+        output = outputs[context.request_id]
+
+        pixel_data_list: list[np.ndarray] = []
+        for image_content in output.output:
+            if image_content.type != "output_image":
+                raise ValueError(
+                    f"Unexpected output content type '{image_content.type}'"
+                )
+
+            if image_content.image_data:
+                pixel_data_list.append(
+                    _decode_base64_image_to_numpy(image_content.image_data)
+                )
+            elif image_content.image_url:
+                raise ValueError("image_url not supported")
+            else:
+                raise ValueError("No image data or URL in output")
+
+        if not pixel_data_list:
+            raise ValueError("No pixel data in output")
+
+        pixel_data = np.stack(pixel_data_list, axis=0)
+
+        if print_outputs:
+            print(
+                f"Generated image shape: {pixel_data.shape}, "
+                f"dtype: {pixel_data.dtype}, range: [{pixel_data.min():.3f}, {pixel_data.max():.3f}]"
+            )
+
+        # Take first image from batch dimension
+        image_np = pixel_data[0]  # Shape: (H, W, C)
+
+        results.append({"prompt": prompt, "images": image_np})
+
+    return results

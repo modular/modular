@@ -51,7 +51,7 @@ HERE = Path(__file__).resolve().parent
 # Script is at Kernels/benchmarks/comparison/, so REPO_ROOT is 3 levels up
 REPO_ROOT = HERE.parent.parent.parent
 DEFAULT_FI_BASE = Path.home() / ".cache/flashinfer_bench"
-DEFAULT_FI_CACHE = DEFAULT_FI_BASE / ".cache" / "flashinfer"
+DEFAULT_FI_CACHE = DEFAULT_FI_BASE / ".cache/flashinfer"
 DEFAULT_MAX_JOBS = 64
 DEFAULT_WHEEL_DIR = REPO_ROOT / "sm100_wheels"
 DEFAULT_SRC_CACHE = Path.home() / ".cache/blackwell_bench"
@@ -94,7 +94,7 @@ def sh(
 def ensure_venv(venv: Path, py: str) -> Path:
     if not venv.exists():
         sh([py, "-m", "venv", str(venv)])
-    return venv / "bin" / "python"
+    return venv / "bin/python"
 
 
 def build_env(python: Path) -> dict:
@@ -648,7 +648,7 @@ def ensure_max_venv() -> Path:
 
     target_venv = REPO_ROOT / ".max+python+max+entrypoints+pipelines.venv"
     if target_venv.exists():
-        return target_venv / "bin" / "python"
+        return target_venv / "bin/python"
 
     env = os.environ.copy()
     env.setdefault("MAX_JOBS", str(DEFAULT_MAX_JOBS))
@@ -657,7 +657,7 @@ def ensure_max_venv() -> Path:
         env=env,
         cwd=str(REPO_ROOT),
     )
-    return target_venv / "bin" / "python"
+    return target_venv / "bin/python"
 
 
 def smoke(python: Path, env: dict | None = None) -> None:

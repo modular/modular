@@ -11,36 +11,35 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import align_of
+from std.sys import align_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from gpu import barrier
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu import block_idx, thread_idx
-from gpu.memory import (
+from std.gpu import barrier
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import block_idx, thread_idx
+from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
     async_copy_wait_group,
 )
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import cp_async_k_major
-from layout.runtime_layout import RuntimeLayout
 from layout.tensor_core_async import (
     TensorCoreAsync,
     tile_layout_mn_major,
     warpgroup_fence,
     wgmma_c_layout,
 )
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 
-fn cpasync_wgmma_kernel[
+def cpasync_wgmma_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -69,7 +68,7 @@ fn cpasync_wgmma_kernel[
         a_type,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -80,7 +79,7 @@ fn cpasync_wgmma_kernel[
         b_type,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -98,17 +97,14 @@ fn cpasync_wgmma_kernel[
     comptime num_m_mmas = BM // wgmma_shape[0]
     comptime num_n_mmas = BN // wgmma_shape[1]
 
-    a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](Int(block_idx.y), 0)
+    a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](block_idx.y, 0)
 
     comptime b_dim0 = BN if transpose_b else BK
     comptime b_dim1 = BK if transpose_b else BN
     comptime b_tile_axis = 1 if transpose_b else 0
-    var b_tile_coords = (block_idx.x, UInt(0)) if transpose_b else (
-        UInt(0),
-        block_idx.y,
-    )
+    var b_tile_coords = (block_idx.x, 0) if transpose_b else (0, block_idx.y)
     var b_gmem_iter = b.tiled_iterator[b_dim0, b_dim1, axis=b_tile_axis](
-        Int(b_tile_coords[0]), Int(b_tile_coords[1])
+        b_tile_coords[0], b_tile_coords[1]
     )
 
     comptime c_frag_size = wgmma_shape[0] * wgmma_shape[1] // 128
@@ -116,7 +112,7 @@ fn cpasync_wgmma_kernel[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
 
     _ = c_reg_tile.fill(0.0)
@@ -142,7 +138,7 @@ fn cpasync_wgmma_kernel[
         a_gmem_iter._incr()
         b_gmem_iter._incr()
 
-    c_gmem_tile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
     comptime c_layouts = wgmma_c_layout[
         wgmma_shape[0], wgmma_shape[1], c_gmem_tile.layout
     ]()
@@ -152,23 +148,21 @@ fn cpasync_wgmma_kernel[
     comptime t_to_idx_const = tv_to_idx[0]
     comptime v_to_idx = tv_to_idx[1]
     t_to_idx = RuntimeLayout[t_to_idx_const]()
-    t_idx = t_to_idx(Int(thread_idx.x))
+    t_idx = t_to_idx(thread_idx.x)
 
     c_reg_tile_vec2 = c_reg_tile.vectorize[1, 2]()
     comptime T = c_reg_tile_vec2.element_type
     c_gmem_ptr = c_gmem_tile.ptr + t_idx
 
-    @parameter
-    for mma_id in range(tile_to_idx.size()):
+    comptime for mma_id in range(tile_to_idx.size()):
         comptime mma_idx = tile_to_idx(mma_id)
 
-        @parameter
-        for local_idx_v2 in range(c_reg_tile_vec2.layout[1].size()):
+        comptime for local_idx_v2 in range(c_reg_tile_vec2.layout[1].size()):
             comptime local_idx = local_idx_v2 * 2
             comptime v_idx = v_to_idx(local_idx)
             comptime c_idx = v_idx + mma_idx
             casted_vec = c_reg_tile_vec2[mma_id, local_idx_v2].cast[c_type]()
-            (c_gmem_ptr + c_idx).store[alignment = align_of[T]()](casted_vec)
+            (c_gmem_ptr + c_idx).store[alignment=align_of[T]()](casted_vec)
 
 
 def test_cpasync_wgmma[
@@ -181,7 +175,7 @@ def test_cpasync_wgmma[
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -273,13 +267,9 @@ def test_cpasync_wgmma[
             )
 
     # print(c.tensor())
-    _ = a^
-    _ = b^
-    _ = c^
-    _ = c_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_cpasync_wgmma[
             DType.bfloat16,
@@ -288,8 +278,8 @@ def main():
             Index(64, 64, 64),
             Index(64, 64, 64),
             Index(64, 64, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=False,
         ](ctx)
 
@@ -300,8 +290,8 @@ def main():
             Index(64, 128, 128),
             Index(64, 128, 128),
             Index(64, 128, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=False,
         ](ctx)
 
@@ -312,8 +302,8 @@ def main():
             Index(64, 64, 64),
             Index(64, 64, 64),
             Index(64, 64, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](ctx)
 
@@ -324,8 +314,8 @@ def main():
             Index(64, 128, 128),
             Index(64, 128, 128),
             Index(64, 128, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](ctx)
 
@@ -336,7 +326,7 @@ def main():
             Index(128, 64, 128),
             Index(128, 64, 128),
             Index(64, 64, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](ctx)

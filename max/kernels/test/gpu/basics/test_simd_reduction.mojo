@@ -14,23 +14,18 @@
 # on GPUs.
 
 
-from gpu import global_idx
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal
 
 comptime buffer_size = 1024
 comptime block_dim = 32
 comptime simd_width = 4
 
 
-def test_simd_reduction(ctx: DeviceContext):
-    var input_host = UnsafePointer[Scalar[DType.int]].alloc(buffer_size)
-    var output_host = UnsafePointer[Scalar[DType.int]].alloc(
-        buffer_size // simd_width
-    )
+def test_simd_reduction(ctx: DeviceContext) raises:
+    var input_host = alloc[Scalar[DType.int]](buffer_size)
+    var output_host = alloc[Scalar[DType.int]](buffer_size // simd_width)
 
     for i in range(0, buffer_size, simd_width):
         for j in range(simd_width):
@@ -50,12 +45,12 @@ def test_simd_reduction(ctx: DeviceContext):
 
     ctx.enqueue_copy(input_buffer, input_host)
 
-    fn kernel(
-        output: UnsafePointer[Scalar[DType.int]],
-        input: UnsafePointer[Scalar[DType.int]],
+    def kernel(
+        output: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
+        input: UnsafePointer[Scalar[DType.int], ImmutAnyOrigin],
     ):
         output[global_idx.x] = input.load[width=simd_width](
-            simd_width * Int(global_idx.x)
+            simd_width * global_idx.x
         ).reduce_add()
 
     ctx.enqueue_function_experimental[kernel](
@@ -81,6 +76,6 @@ def test_simd_reduction(ctx: DeviceContext):
     output_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_simd_reduction(ctx)

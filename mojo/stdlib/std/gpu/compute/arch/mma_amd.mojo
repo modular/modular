@@ -18,9 +18,9 @@ center GPUs using the MFMA (Matrix Fused Multiply-Add) instructions.
 Reference: https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-matrix-cores-readme/
 """
 
-from sys import llvm_intrinsic
-from sys.info import _cdna_4_or_newer, _is_amd_rdna
-from memory import bitcast
+from std.sys import llvm_intrinsic
+from std.sys.info import _cdna_4_or_newer, _is_amd_rdna
+from std.memory import bitcast
 
 # Import helper functions from parent module
 from ..mma import (
@@ -48,14 +48,13 @@ struct _AMD_F8F6F4_MATRIX_FORMAT(TrivialRegisterPassable):
     comptime float6_e3m2 = Self(3)
     comptime float4_e2m1 = Self(4)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
 
 @always_inline
-fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
-    @parameter
-    if _is_amd_rdna():
+def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+    comptime if _is_amd_rdna():
         # Use WMMA instructions for RDNA3+ consumer GPUs.
         _mma_wmma_rdna(d, a, b, c)
         return
@@ -68,7 +67,7 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     comptime bf8_dtype = get_amd_bf8_dtype()
 
     @parameter
-    fn _f8f6f4_intrinsic() -> SIMD[d.dtype, d.size]:
+    def _f8f6f4_intrinsic() -> SIMD[d.dtype, d.size]:
         comptime assert _cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"
 
         comptime intrinsic_name = "llvm.amdgcn.mfma.scale.f32.16x16x128.f8f6f4" if _has_shape[
@@ -78,7 +77,7 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         ) else "llvm.amdgcn.mfma.scale.f32.32x32x64.f8f6f4"
 
         @parameter
-        fn _matrix_format[dtype: DType]() -> _AMD_F8F6F4_MATRIX_FORMAT:
+        def _matrix_format[dtype: DType]() -> _AMD_F8F6F4_MATRIX_FORMAT:
             return (
                 _AMD_F8F6F4_MATRIX_FORMAT.float8_e4m3 if dtype
                 == fp8_dtype else _AMD_F8F6F4_MATRIX_FORMAT.float8_e5m2
@@ -99,23 +98,19 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#
-    @parameter
-    if _has_type[DType.float16](a.dtype, b.dtype, c.dtype, d.dtype):
-        constrained[
-            False, "Function mma F16 * F16 + F16 is unsupported by AMD GPUs."
-        ]()
+    comptime assert not _has_type[DType.float16](
+        a.dtype, b.dtype, c.dtype, d.dtype
+    ), "Function mma F16 * F16 + F16 is unsupported by AMD GPUs."
 
     # ===------------------------------------------------------------------===#
     # F32 = F16 * F16 + F32
     # ===------------------------------------------------------------------===#
-    elif _has_type[
+    comptime if _has_type[
         (DType.float16, DType.float16, DType.float32, DType.float32)
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[4](
         a.size, b.size, c.size, d.size
     ):
-
-        @parameter
-        if block_size == 16:
+        comptime if block_size == 16:
             # Note: 4x4x4_16B (i.e., 16 blocks).
             d = llvm_intrinsic[
                 "llvm.amdgcn.mfma.f32.4x4x4f16", SIMD[d.dtype, d.size]
@@ -159,9 +154,7 @@ fn _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[4](
         a.size, b.size, c.size, d.size
     ):
-
-        @parameter
-        if block_size == 16:
+        comptime if block_size == 16:
             # Note: 4x4x4_16B (i.e., 16 blocks)
             d = llvm_intrinsic[
                 "llvm.amdgcn.mfma.f32.4x4x4bf16.1k", SIMD[d.dtype, d.size]

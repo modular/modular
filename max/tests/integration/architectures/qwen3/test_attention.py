@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import math
+
 import max.driver as md
 import numpy as np
 import pytest
@@ -19,10 +21,12 @@ import torch
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.kernels import masked_flash_attention_gpu
+from max.nn.kv_cache import KVCacheParams
+from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen3.layers.attention import (
     Qwen3Attention as MaxQwen3Attention,
 )
@@ -115,9 +119,20 @@ def generate_max_outputs(
     device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
     input_seq_len = input_tensor.shape[1]
 
+    # Remap HuggingFace weight names to MAX StackedLinear names.
+    _HF_TO_MAX = {
+        "q_proj.": "qkv_proj.q.",
+        "k_proj.": "qkv_proj.k.",
+        "v_proj.": "qkv_proj.v.",
+    }
     state_dict = {}
     for weight_name, value in attention_weights.items():
-        state_dict[weight_name] = value.cpu()
+        max_name = weight_name
+        for hf, mx in _HF_TO_MAX.items():
+            if max_name.startswith(hf):
+                max_name = mx + max_name[len(hf) :]
+                break
+        state_dict[max_name] = value.cpu()
 
     kv_params = KVCacheParams(
         dtype=dtype,
@@ -154,6 +169,7 @@ def generate_max_outputs(
         params=kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
     assert isinstance(kv_manager, PagedKVCacheManager)
 
@@ -166,15 +182,7 @@ def generate_max_outputs(
     input_row_offsets_type = TensorType(
         DType.uint32, shape=["input_row_offsets_len"], device=device_ref
     )
-    cache_positions_type = TensorType(
-        DType.uint32,
-        ["total_seq_len"],
-        device=device_ref,
-    )
-    kv_cache_args = kv_params.get_symbolic_inputs()
-    flattened_kv_types = [
-        kv_type for sublist in kv_cache_args for kv_type in sublist
-    ]
+    flattened_kv_types = kv_params.get_symbolic_inputs().flatten()
 
     # Build graph.
     with Graph(
@@ -186,11 +194,8 @@ def generate_max_outputs(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = PagedCacheValues(
-            kv_blocks=kv_cache[0].buffer,
-            cache_lengths=kv_cache[1].tensor,
-            lookup_table=kv_cache[2].tensor,
-            max_lengths=kv_cache[3].tensor,
+        kv_collection = (
+            kv_params.get_symbolic_inputs().unflatten(iter(kv_cache)).inputs[0]
         )
 
         graph.output(
@@ -209,19 +214,19 @@ def generate_max_outputs(
     batch = [create_text_context(np.empty(input_seq_len))]
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     kv_manager.alloc(batch[0], replica_idx=0, num_steps=1)
-    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs([batch])[0]
-    )
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     output = compiled.execute(
         Buffer.from_dlpack(input_tensor[0]).to(device),
         Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
             device
         ),
-        blocks.to(device),
-        cache_lengths.to(device),
-        lookup_table_tensor.to(device),
-        is_cache_empty_buf,
+        kv_runtime_inputs.kv_blocks.to(device),
+        kv_runtime_inputs.cache_lengths.to(device),
+        kv_runtime_inputs.lookup_table.to(device),
+        kv_runtime_inputs.max_lengths,
+        kv_runtime_inputs.attention_dispatch_metadata,
     )[0]
 
     return output
@@ -253,4 +258,119 @@ def test_attention(
         from_dlpack(max_output).to(torch.bfloat16),
         rtol=2 * torch.finfo(torch.bfloat16).eps,
         atol=8 * torch.finfo(torch.bfloat16).eps,
+    )
+
+
+def _materialized_attention_mask(
+    token_mask: torch.Tensor,
+) -> torch.Tensor:
+    seq_len = token_mask.shape[0]
+    mask = torch.full(
+        (1, seq_len, seq_len),
+        -10000.0,
+        dtype=torch.float32,
+        device=token_mask.device,
+    )
+    for row in range(seq_len):
+        for col in range(seq_len):
+            if bool(token_mask[col]) and col <= row:
+                mask[0, row, col] = 0.0
+    return mask
+
+
+def _masked_flash_attention_max(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    mask: torch.Tensor,
+) -> torch.Tensor:
+    dtype = torch_dtype_to_max(q.dtype)
+    _batch, q_seq_len, nheads, head_dim = q.shape
+    kv_seq_len = k.shape[1]
+
+    q_type = TensorType(
+        dtype,
+        shape=["batch", q_seq_len, nheads, head_dim],
+        device=DeviceRef.GPU(),
+    )
+    kv_type = TensorType(
+        dtype,
+        shape=["batch", kv_seq_len, nheads, head_dim],
+        device=DeviceRef.GPU(),
+    )
+    mask_type = TensorType(
+        DType.float32,
+        shape=["batch", q_seq_len, kv_seq_len],
+        device=DeviceRef.GPU(),
+    )
+
+    session = InferenceSession(devices=[Accelerator()])
+    with Graph(
+        "masked_flash_attention_gpu",
+        input_types=[q_type, kv_type, kv_type, mask_type],
+    ) as graph:
+        q_in, k_in, v_in, mask_in = graph.inputs
+        graph.output(
+            masked_flash_attention_gpu(
+                q_in.tensor,
+                k_in.tensor,
+                v_in.tensor,
+                mask_in.tensor,
+                scale=math.sqrt(1.0 / head_dim),
+            )
+        )
+
+    model = session.load(graph)
+    output = model.execute(
+        q.detach(),
+        k.detach(),
+        v.detach(),
+        mask.detach(),
+    )[0]
+    assert isinstance(output, Buffer)
+    return torch.from_dlpack(output)
+
+
+def test_masked_flash_attention_gpu_matches_naive() -> None:
+    if md.accelerator_api() != "cuda":
+        pytest.skip("NVIDIA GPUs are required for this test.")
+
+    batch_size = 1
+    seq_len = 7
+    nheads = 4
+    head_dim = 32
+    scale = math.sqrt(1.0 / head_dim)
+    device = "cuda"
+    dtype = torch.bfloat16
+
+    q = torch.randn(
+        (batch_size, seq_len, nheads, head_dim), device=device, dtype=dtype
+    )
+    k = torch.randn(
+        (batch_size, seq_len, nheads, head_dim), device=device, dtype=dtype
+    )
+    v = torch.randn(
+        (batch_size, seq_len, nheads, head_dim), device=device, dtype=dtype
+    )
+    token_mask = torch.tensor(
+        [True, True, True, True, False, False, False],
+        device=device,
+    )
+    materialized_mask = _materialized_attention_mask(token_mask)
+
+    out_max = _masked_flash_attention_max(q, k, v, materialized_mask)
+
+    q_ref = q.permute(0, 2, 1, 3).to(torch.float32)
+    k_ref = k.permute(0, 2, 1, 3).to(torch.float32)
+    v_ref = v.permute(0, 2, 1, 3).to(torch.float32)
+    attn_scores = torch.matmul(q_ref, k_ref.transpose(-1, -2)) * scale
+    attn_scores = attn_scores + materialized_mask.unsqueeze(1)
+    attn_probs = torch.softmax(attn_scores, dim=-1)
+    out_ref = torch.matmul(attn_probs, v_ref).permute(0, 2, 1, 3)
+
+    torch.testing.assert_close(
+        out_max.to(torch.float32),
+        out_ref,
+        rtol=1e-2,
+        atol=2e-2,
     )

@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import PythonObject, Python
-from python.bindings import PythonModuleBuilder
-from python._cpython import GILAcquired, GILReleased
-from os import abort
-import math
-from algorithm.functional import parallelize
-from sys.info import num_physical_cores
+from std.python import PythonObject, Python
+from std.python.bindings import PythonModuleBuilder
+from std.python._cpython import GILAcquired, GILReleased
+from std.os import abort
+import std.math
+from std.algorithm.functional import parallelize
+from std.sys.info import num_physical_cores
 
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     try:
         var m = PythonModuleBuilder("mojo_module")
         m.def_function[plus_one]("plus_one")
@@ -30,21 +30,21 @@ fn PyInit_mojo_module() -> PythonObject:
         )
         return m.finalize()
     except e:
-        abort(String("failed to create Python module: ", e))
+        abort(t"failed to create Python module: {e}")
 
 
-fn plus_one(arg: PythonObject) raises -> PythonObject:
+def plus_one(arg: PythonObject) raises -> PythonObject:
     return arg + 1
 
 
-fn parallel_wrapper(array: PythonObject) raises -> PythonObject:
+def parallel_wrapper(array: PythonObject) raises -> PythonObject:
     comptime do_parallelize = True
     var array_len = len(array)
     var num_cores = num_physical_cores()
     var chunk_size, remainder = divmod(array_len, num_cores)
 
     @parameter
-    fn calc_max(i: Int) -> None:
+    def calc_max(i: Int) -> None:
         ref cpython = Python().cpython()
         # Each worker needs to hold the GIL to access python objects.
         # It is more efficient to only use Mojo native data structures in worker threads.
@@ -70,8 +70,7 @@ fn parallel_wrapper(array: PythonObject) raises -> PythonObject:
 
     ref cpython = Python().cpython()
 
-    @parameter
-    if do_parallelize:
+    comptime if do_parallelize:
         # Save the current thread state to avoid holding the GIL for the parallel loop.
         with GILReleased(Python(cpython)):
             parallelize[calc_max](num_cores)

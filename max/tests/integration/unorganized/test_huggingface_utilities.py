@@ -12,13 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
+from huggingface_hub import constants as hf_hub_constants
 from huggingface_hub import errors as hf_hub_errors
 from max.graph.weights import WeightsFormat
-from max.pipelines.lib import HuggingFaceRepo, SupportedEncoding
-from max.pipelines.lib.hf_utils import validate_hf_repo_access
+from max.pipelines.lib import HuggingFaceRepo
+from max.pipelines.lib.hf_utils import (
+    generate_local_model_path,
+    validate_hf_repo_access,
+)
 
 
 def test_huggingface_repo__local_path() -> None:
@@ -39,7 +43,7 @@ def test_huggingface_repo__file_exists(
 ) -> None:
     # Test a llama based gguf repo.
     hf_repo = HuggingFaceRepo(repo_id=llama_3_1_8b_instruct_local_path)
-    files = hf_repo.files_for_encoding(SupportedEncoding.bfloat16)
+    files = hf_repo.files_for_encoding("bfloat16")
     assert len(files[WeightsFormat.safetensors]) == 4
     assert sorted(files[WeightsFormat.safetensors]) == [
         Path("model-00001-of-00004.safetensors"),
@@ -74,13 +78,43 @@ def test_huggingface_repo__encodings_supported(
 ) -> None:
     # Test a llama based gguf repo.
     hf_repo = HuggingFaceRepo(repo_id=llama_3_1_8b_instruct_local_path)
-    assert SupportedEncoding.bfloat16 in hf_repo.supported_encodings
+    assert "bfloat16" in hf_repo.supported_encodings
 
     # Test a Safetensors repo.
     # Safetensors repo, should not have a valid gguf_architecture.
     hf_repo = HuggingFaceRepo(repo_id=tiny_llama_1_1b_chat_v1_0_local_path)
-    assert SupportedEncoding.q4_k not in hf_repo.supported_encodings
-    assert SupportedEncoding.bfloat16 in hf_repo.supported_encodings
+    assert "q4_k" not in hf_repo.supported_encodings
+    assert "bfloat16" in hf_repo.supported_encodings
+
+
+def test_huggingface_repo__encodings_supported_online_fp8_fallback() -> None:
+    with patch("max.pipelines.lib.hf_utils.validate_hf_repo_access"):
+        hf_repo = HuggingFaceRepo(
+            repo_id="RedHatAI/Llama-3.3-70B-Instruct-FP8-dynamic",
+            repo_type="online",
+        )
+
+    with (
+        patch.object(
+            HuggingFaceRepo, "weight_files", new_callable=PropertyMock
+        ) as mock_weight_files,
+        patch.object(
+            HuggingFaceRepo, "info", new_callable=PropertyMock
+        ) as mock_info,
+        patch.object(
+            HuggingFaceRepo,
+            "_detect_safetensors_encodings_from_files",
+            return_value={"bfloat16"},
+        ),
+    ):
+        mock_weight_files.return_value = {
+            WeightsFormat.safetensors: ["model-00001-of-00002.safetensors"]
+        }
+        mock_info.return_value = MagicMock(safetensors=None, config=None)
+        supported_encodings = hf_repo.supported_encodings
+
+    assert "bfloat16" in supported_encodings
+    assert "float8_e4m3fn" in supported_encodings
 
 
 def test_huggingface_repo__get_files_for_encoding(
@@ -91,7 +125,7 @@ def test_huggingface_repo__get_files_for_encoding(
     # Test a Safetensors repo.
     # Safetensors repo, should not have a valid gguf_architecture.
     hf_repo = HuggingFaceRepo(repo_id=tiny_llama_1_1b_chat_v1_0_local_path)
-    files = hf_repo.files_for_encoding(SupportedEncoding.bfloat16)
+    files = hf_repo.files_for_encoding("bfloat16")
     assert WeightsFormat.safetensors in files
     assert len(files[WeightsFormat.safetensors]) == 1
     assert files[WeightsFormat.safetensors][0] == Path("model.safetensors")
@@ -99,7 +133,7 @@ def test_huggingface_repo__get_files_for_encoding(
     # Test a Safetensors repo.
     # Safetensors repo, should not have a valid gguf_architecture.
     hf_repo = HuggingFaceRepo(repo_id=qwen_32b_preview_local_path)
-    files = hf_repo.files_for_encoding(SupportedEncoding.bfloat16)
+    files = hf_repo.files_for_encoding("bfloat16")
     assert WeightsFormat.safetensors in files
     assert len(files[WeightsFormat.safetensors]) == 17
     assert sorted(files[WeightsFormat.safetensors]) == [
@@ -124,13 +158,13 @@ def test_huggingface_repo__get_files_for_encoding(
 
     # Test a Safetensors repo, with both shared files and consolidated safetensors
     hf_repo = HuggingFaceRepo(repo_id=mistral_nemo_instruct_2407_local_path)
-    files = hf_repo.files_for_encoding(SupportedEncoding.bfloat16)
+    files = hf_repo.files_for_encoding("bfloat16")
     assert len(files[WeightsFormat.safetensors]) == 5
     assert Path("consolidated.safetensors") not in files
 
     # Test a Safetensors repo, with the wrong encoding requested.
     hf_repo = HuggingFaceRepo(repo_id=qwen_32b_preview_local_path)
-    files = hf_repo.files_for_encoding(SupportedEncoding.float32)
+    files = hf_repo.files_for_encoding("float32")
     assert len(files) == 0
 
 
@@ -142,24 +176,24 @@ def test_huggingface_repo__encoding_for_file(
     # This repo, has one safetensors file, and its a bf16 file.
     hf_repo = HuggingFaceRepo(repo_id=tiny_llama_1_1b_chat_v1_0_local_path)
     model_encoding = hf_repo.encoding_for_file("model.safetensors")
-    assert model_encoding == SupportedEncoding.bfloat16
+    assert model_encoding == "bfloat16"
 
     # This repo, has many safetensors file, and they are bf16.
     hf_repo = HuggingFaceRepo(repo_id=qwen_32b_preview_local_path)
     model_encoding = hf_repo.encoding_for_file(
         "model-00014-of-00017.safetensors"
     )
-    assert model_encoding == SupportedEncoding.bfloat16
+    assert model_encoding == "bfloat16"
 
     # This repo, has a few GGUF files, and they are a variety of encodings.
     hf_repo = HuggingFaceRepo(repo_id=llama_3_1_8b_instruct_local_path)
     model_encoding = hf_repo.encoding_for_file("llama-3.1-8b-instruct-f32.gguf")
-    assert model_encoding == SupportedEncoding.float32
+    assert model_encoding == "float32"
 
     model_encoding = hf_repo.encoding_for_file(
         "llama-3.1-8b-instruct-q4_k_m.gguf"
     )
-    assert model_encoding == SupportedEncoding.q4_k
+    assert model_encoding == "q4_k"
 
 
 class TestValidateHfRepoAccess:
@@ -206,7 +240,9 @@ class TestValidateHfRepoAccess:
         with patch(
             "max.pipelines.lib.hf_utils._repo_exists_with_retry"
         ) as mock_exists:
-            original_error = hf_hub_errors.GatedRepoError("Repository is gated")
+            original_error = hf_hub_errors.GatedRepoError(
+                "Repository is gated", response=MagicMock()
+            )
             mock_exists.side_effect = original_error
 
             with pytest.raises(ValueError) as exc_info:
@@ -238,7 +274,7 @@ class TestValidateHfRepoAccess:
             "max.pipelines.lib.hf_utils._repo_exists_with_retry"
         ) as mock_exists:
             original_error = hf_hub_errors.RepositoryNotFoundError(
-                "Repository not found"
+                "Repository not found", response=MagicMock()
             )
             mock_exists.side_effect = original_error
 
@@ -261,7 +297,7 @@ class TestValidateHfRepoAccess:
             "max.pipelines.lib.hf_utils._repo_exists_with_retry"
         ) as mock_exists:
             original_error = hf_hub_errors.RevisionNotFoundError(
-                "Revision not found"
+                "Revision not found", response=MagicMock()
             )
             mock_exists.side_effect = original_error
 
@@ -353,3 +389,60 @@ class TestValidateHfRepoAccess:
                 error_msg = str(exc_info.value)
                 assert f"Repository '{repo_id}' not found" in error_msg
                 assert f"revision '{revision}' exists" in error_msg
+
+
+class TestGenerateLocalModelPath:
+    def test_uses_cached_snapshot_when_available(self) -> None:
+        with patch(
+            "max.pipelines.lib.hf_utils.huggingface_hub.snapshot_download",
+            return_value="/tmp/cached-model",
+        ) as mock_snapshot_download:
+            model_path = generate_local_model_path("org/model", "abc123")
+
+        assert model_path == "/tmp/cached-model"
+        mock_snapshot_download.assert_called_once_with(
+            repo_id="org/model",
+            revision="abc123",
+            local_files_only=True,
+        )
+
+    def test_raises_when_cache_is_missing(self) -> None:
+        with (
+            patch.object(hf_hub_constants, "HF_HUB_OFFLINE", False),
+            patch(
+                "max.pipelines.lib.hf_utils.huggingface_hub.snapshot_download",
+                side_effect=hf_hub_errors.LocalEntryNotFoundError("cache miss"),
+            ) as mock_snapshot_download,
+        ):
+            with pytest.raises(
+                FileNotFoundError,
+                match="pre-download the model",
+            ) as exc_info:
+                generate_local_model_path("org/model", "abc123")
+
+        assert "Configure HF_TOKEN for gated repos" in str(exc_info.value)
+        mock_snapshot_download.assert_called_once_with(
+            repo_id="org/model",
+            revision="abc123",
+            local_files_only=True,
+        )
+
+    def test_raises_when_cache_is_missing_in_offline_mode(self) -> None:
+        with (
+            patch.object(hf_hub_constants, "HF_HUB_OFFLINE", True),
+            patch(
+                "max.pipelines.lib.hf_utils.huggingface_hub.snapshot_download",
+                side_effect=hf_hub_errors.LocalEntryNotFoundError("cache miss"),
+            ) as mock_snapshot_download,
+        ):
+            with pytest.raises(
+                FileNotFoundError,
+                match="HF_HUB_OFFLINE is enabled",
+            ):
+                generate_local_model_path("org/model", "abc123")
+
+        mock_snapshot_download.assert_called_once_with(
+            repo_id="org/model",
+            revision="abc123",
+            local_files_only=True,
+        )

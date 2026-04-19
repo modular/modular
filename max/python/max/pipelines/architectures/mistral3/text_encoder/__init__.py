@@ -12,5 +12,3 @@
 # ===----------------------------------------------------------------------=== #
 
 """Mistral3 text encoder for diffusion pipelines."""
-
-from .model import Mistral3TextEncoderModel

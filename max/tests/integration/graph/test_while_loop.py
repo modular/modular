@@ -41,7 +41,7 @@ def test_while_loop(session: InferenceSession) -> None:
         x = graph.inputs[0]
 
         def pred_fn(x: TensorValue) -> TensorValue:
-            return x < 10
+            return ops.transfer_to(x < 10, DeviceRef.CPU())
 
         def body_fn(x: TensorValue) -> TensorValue:
             return x + 1
@@ -61,7 +61,11 @@ def test_while_loop_lambda(session: InferenceSession) -> None:
         input_types=[TensorType(DType.int32, [], device=device_ref)],
     ) as graph:
         x = graph.inputs[0]
-        results = ops.while_loop(x, lambda x: x < 10, lambda x: x + 1)
+        results = ops.while_loop(
+            x,
+            lambda x: ops.transfer_to(x < 10, DeviceRef.CPU()),
+            lambda x: x + 1,
+        )
         graph.output(results[0])
 
     compiled = session.load(graph)
@@ -81,7 +85,7 @@ def test_while_loop_body_with_multiple_args(session: InferenceSession) -> None:
         x, y = graph.inputs
         results = ops.while_loop(
             (x, y),
-            lambda x, y: x < 10 and y < 10,
+            lambda x, y: ops.transfer_to(x < 10 and y < 10, DeviceRef.CPU()),
             lambda x, y: [x + 1, y + 1],
         )
         graph.output(results[0], results[1])
@@ -92,6 +96,24 @@ def test_while_loop_body_with_multiple_args(session: InferenceSession) -> None:
     assert result[0].to_numpy() == 10
     assert isinstance(result[1], Buffer)
     assert result[1].to_numpy() == 10
+
+
+@pytest.mark.skipif(
+    accelerator_count() == 0, reason="requires a GPU to test device check"
+)
+def test_while_loop_raises_on_gpu_pred() -> None:
+    """ops.while_loop raises ValueError when the pred_fn returns a GPU tensor."""
+    with pytest.raises(ValueError, match=r"ops\.while_loop"):
+        with Graph(
+            "while_loop_gpu_pred",
+            input_types=[TensorType(DType.int32, [], device=DeviceRef.GPU())],
+        ):
+            x = Graph.current.inputs[0]
+            ops.while_loop(
+                x,
+                lambda x: x < 10,  # returns GPU tensor, no transfer_to
+                lambda x: x + 1,
+            )
 
 
 @pytest.fixture

@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
-from gpu.host import DeviceContext, Dim
-from gpu import cluster_dim
+from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
+from std.gpu.host import DeviceContext, Dim
+from std.gpu import cluster_dim
 
 
-fn test_cluster_sync_kernel():
+def test_cluster_sync_kernel():
     var block_rank = block_rank_in_cluster()
     var num_blocks_in_cluster = cluster_dim.x * cluster_dim.y * cluster_dim.z
 
@@ -35,7 +35,7 @@ fn test_cluster_sync_kernel():
 # CHECK: 5
 # CHECK: 6
 # CHECK: 7
-fn test_cluster_sync(ctx: DeviceContext) raises:
+def test_cluster_sync(ctx: DeviceContext) raises:
     print("== test_cluster_sync")
     comptime kernel = test_cluster_sync_kernel
     ctx.enqueue_function_experimental[kernel](
@@ -46,6 +46,6 @@ fn test_cluster_sync(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_cluster_sync(ctx)

@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 # start-python-to-mojo-conversions
-from python import Python, PythonObject
+from std.python import Python, PythonObject
 
 
-def main():
+def main() raises:
     var py_string = PythonObject("Hello, Mojo!")
     var py_bool = PythonObject(True)
     var py_int = PythonObject(123)

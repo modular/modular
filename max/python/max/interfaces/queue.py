@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Defines non-blocking queue protocols and utility functions for producer-consumer patterns in MAX."""
+
 from __future__ import annotations
 
 import logging
@@ -39,8 +42,7 @@ This allows the pull-side interface to correctly produce subtypes of items.
 
 @runtime_checkable
 class MAXPushQueue(Protocol, Generic[PushItemType]):
-    """
-    Protocol for a minimal, non-blocking push queue interface in MAX.
+    """Protocol for a minimal, non-blocking push queue interface in MAX.
 
     This protocol defines the contract for a queue that supports non-blocking
     put operations for adding items. It is generic over the item type and designed
@@ -52,26 +54,24 @@ class MAXPushQueue(Protocol, Generic[PushItemType]):
     """
 
     def put_nowait(self, item: PushItemType) -> None:
-        """
-        Attempt to put an item into the queue without blocking.
+        """Attempt to put an item into the queue without blocking.
 
         This method is designed to immediately fail (typically by raising an exception)
         if the item cannot be added to the queue at the time of the call. Unlike the
-        traditional 'put' method in many queue implementations—which may block until
-        space becomes available or the transfer is completed—this method never waits.
+        traditional 'put' method in many queue implementations, which may block until
+        space becomes available or the transfer is completed - this method never waits.
         It is intended for use cases where the caller must be notified of failure to
         enqueue immediately, rather than waiting for space.
 
         Args:
-            item (PushItemType): The item to be added to the queue.
+            item: The item to be added to the queue.
         """
         ...
 
 
 @runtime_checkable
 class MAXPullQueue(Protocol, Generic[PullItemType]):
-    """
-    Protocol for a minimal, non-blocking pull queue interface in MAX.
+    """Protocol for a minimal, non-blocking pull queue interface in MAX.
 
     This protocol defines the contract for a queue that supports non-blocking
     get operations for retrieving items. It is generic over the item type and designed
@@ -83,14 +83,13 @@ class MAXPullQueue(Protocol, Generic[PullItemType]):
     """
 
     def get_nowait(self) -> PullItemType:
-        """
-        Remove and return an item from the queue without blocking.
+        """Remove and return an item from the queue without blocking.
 
         This method is expected to raise `queue.Empty` if no item is available
         to retrieve from the queue.
 
         Returns:
-            PullItemType: The item removed from the queue.
+            The item removed from the queue.
 
         Raises:
             queue.Empty: If the queue is empty and no item can be retrieved.
@@ -101,8 +100,7 @@ class MAXPullQueue(Protocol, Generic[PullItemType]):
 def drain_queue(
     pull_queue: MAXPullQueue[PullItemType], max_items: int | None = None
 ) -> list[PullItemType]:
-    """
-    Remove and return items from the queue without blocking.
+    """Remove and return items from the queue without blocking.
 
     This method is expected to return an empty list if the queue is empty.
     If max_items is specified, at most that many items will be returned.
@@ -114,7 +112,6 @@ def drain_queue(
     Returns:
         List of items removed from the queue, limited by max_items if specified.
     """
-
     output: list[PullItemType] = []
     while True:
         if max_items is not None and len(output) >= max_items:
@@ -128,8 +125,7 @@ def drain_queue(
 
 
 def get_blocking(pull_queue: MAXPullQueue[PullItemType]) -> PullItemType:
-    """
-    Get the next item from the queue.
+    """Get the next item from the queue.
 
     If no item is available, this method will spin until one is.
     """

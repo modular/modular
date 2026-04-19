@@ -15,12 +15,10 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.pipelines.architectures.internvl.embedding_utils import (
-    merge_multimodal_embeddings,
-)
+from max.nn.kv_cache import PagedCacheValues
 from max.pipelines.architectures.llama3.llama3 import Llama3
 from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 
 class Idefics3LanguageModel(Llama3):
@@ -92,7 +90,6 @@ class Idefics3LanguageModel(Llama3):
             multimodal_embeddings=image_embeddings,
             image_token_indices=image_token_indices,
         )
-        # h = distribute_value(h0_merged, self.config.text_config.devices)
 
         # Run through decoder layers using inherited layers
         for idx, layer in enumerate(self.layers):
@@ -104,7 +101,4 @@ class Idefics3LanguageModel(Llama3):
                 input_row_offsets=input_row_offsets,
             )
 
-        last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
-        last_logits = ops.cast(self.lm_head(self.norm(last_h)), DType.float32)
-
-        return (last_logits,)
+        return self._postprocess_logits(h, input_row_offsets, return_n_logits)

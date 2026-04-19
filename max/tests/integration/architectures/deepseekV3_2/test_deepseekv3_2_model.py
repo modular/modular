@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,7 +16,15 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.deepseekV3_2.deepseekV3_2 import DeepseekV3_2
 from max.pipelines.architectures.deepseekV3_2.model_config import (
     DeepseekV3_2Config,
@@ -87,19 +95,43 @@ def make_test_config() -> DeepseekV3_2Config:
     hf_config = make_test_huggingface_config()
     device = DeviceRef.CPU()
 
-    kv_params = KVCacheParams(
+    mla_kv_params = KVCacheParams(
         dtype=DType.bfloat16,
-        cache_strategy=KVCacheStrategy.PAGED,
         n_kv_heads=hf_config.num_key_value_heads,
         head_dim=hf_config.v_head_dim,
         num_layers=hf_config.num_hidden_layers,
         devices=[device],
     )
+    indexer_kv_params = KVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        n_kv_heads=1,
+        head_dim=hf_config.index_head_dim,
+        num_layers=hf_config.num_hidden_layers,
+        devices=[device],
+    )
+    kv_params = MultiKVCacheParams.from_params(mla_kv_params, indexer_kv_params)
 
     return DeepseekV3_2Config(
-        dtype=DType.bfloat16,
+        dtype=DType.float8_e4m3fn,
         kv_params=kv_params,
         devices=[device],
+        quant_config=QuantConfig(
+            weight_scale=WeightScaleSpec(
+                dtype=DType.float32,
+                granularity=ScaleGranularity.BLOCK,
+                block_size=(128, 128),
+            ),
+            input_scale=InputScaleSpec(
+                dtype=DType.float32,
+                granularity=ScaleGranularity.BLOCK,
+                origin=ScaleOrigin.DYNAMIC,
+                block_size=(1, 128),
+            ),
+            mlp_quantized_layers=set(),
+            attn_quantized_layers=set(),
+            format=QuantFormat.BLOCKSCALED_FP8,
+            embedding_output_dtype=None,
+        ),
         use_subgraphs=False,
         vocab_size=hf_config.vocab_size,
         hidden_size=hf_config.hidden_size,

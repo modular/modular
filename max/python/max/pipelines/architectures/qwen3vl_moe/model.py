@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any
 
@@ -23,7 +23,7 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type, Value
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type
 from max.graph.buffer_utils import cast_tensors_to
 from max.graph.weights import (
     SafetensorWeights,
@@ -31,29 +31,21 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-    PagedCacheValues,
-)
-from max.nn.legacy.layer import Module
-from max.nn.legacy.parallel import ParallelArrayOps
-from max.nn.legacy.transformer import ReturnLogits
-from max.pipelines.architectures.qwen2_5vl.util import (
-    compute_multimodal_merge_indices,
-)
+from max.nn.comm import Signals
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.layer import Module
+from max.nn.parallel import ParallelArrayOps
+from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
-    SupportedEncoding,
+    PipelineModelWithKVCache,
 )
+from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.profiler import Tracer
 from transformers import AutoConfig
 
@@ -65,7 +57,7 @@ from .weight_adapters import convert_qwen3vl_model_state_dict
 logger = logging.getLogger("max.pipelines")
 
 
-@dataclass(eq=False)
+@dataclass
 class Qwen3VLInputs(ModelInputs):
     """A class representing inputs for the Qwen3VL model.
 
@@ -74,7 +66,7 @@ class Qwen3VLInputs(ModelInputs):
     for text-only processing.
     """
 
-    input_ids: Buffer
+    tokens: Buffer
     """Tensor containing the input token IDs."""
 
     input_row_offsets: list[Buffer]
@@ -89,7 +81,7 @@ class Qwen3VLInputs(ModelInputs):
     return_n_logits: Buffer
     """Number of logits to return, used by speculative decoding for example."""
 
-    kv_cache_inputs: KVCacheInputs
+    kv_cache_inputs: KVCacheInputs[Buffer, Buffer] = field(kw_only=True)
     """KV cache inputs for the model."""
 
     image_token_indices: list[Buffer] | None = None
@@ -132,8 +124,7 @@ class Qwen3VLInputs(ModelInputs):
 
 class Qwen3VLModel(
     AlwaysSignalBuffersMixin,
-    PipelineModel[Qwen3VLTextAndVisionContext],
-    KVCacheMixin,
+    PipelineModelWithKVCache[Qwen3VLTextAndVisionContext],
 ):
     """A Qwen3VL pipeline model for multimodal text generation."""
 
@@ -156,8 +147,6 @@ class Qwen3VLModel(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -167,8 +156,6 @@ class Qwen3VLModel(
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -181,6 +168,20 @@ class Qwen3VLModel(
 
         self.vision_model, self.language_model = self.load_model(session)
         self._parallel_ops = ParallelArrayOps(max_workers=24)
+
+    @classmethod
+    def estimate_activation_memory(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
+        del pipeline_config, huggingface_config  # Unused.
+
+        # FIXME GEX-3248: This is a workaround for a MemoryManager fragmentation
+        # issue. In #77700 we swapped the order of model weight loading and kv
+        # cache loading. This affected memory fragmentation and led to CUDA OOM
+        # when running `br smoke-test -- qwen/qwen3-vl-30b-a3b-instruct` on 1xB200.
+        # We reduce the kv cache size slightly to avoid this.
+        # Update: Bumped to 10 GiB after #80736 removed MemoryManager fallthrough.
+        return 10 * 1024 * 1024 * 1024  # 10 GiB
 
     # TODO: Seems like a common pattern. Implement in a base class?
     @staticmethod
@@ -211,28 +212,6 @@ class Qwen3VLModel(
             cache_dtype,
         )
 
-    # TODO: Seems like a common pattern. Implement in a base class?
-    def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[Value[Any]]
-    ) -> list[PagedCacheValues]:
-        """Unflatten KV cache inputs from flat list to per-device structure."""
-        fetch_types = self.kv_params.get_symbolic_inputs()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
-        n_devices = len(self.devices)
-
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(n_devices):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
-
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled Qwen3VL models into the MAX Engine session.
 
@@ -241,11 +220,14 @@ class Qwen3VLModel(
         """
         # TODO: Pre-allocation Seems like a common pattern. Implement in a base class?
         # Pre-allocation for multi-step execution
-        assert self.pipeline_config.max_batch_size, (
+        assert self.pipeline_config.runtime.max_batch_size, (
             "Expected max_batch_size to be set"
         )
         input_row_offsets_prealloc_host = Buffer.from_numpy(
-            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+            np.arange(
+                self.pipeline_config.runtime.max_batch_size + 1,
+                dtype=np.uint32,
+            )
         )
         self._input_row_offsets_prealloc = [
             input_row_offsets_prealloc_host.to(dev) for dev in self.devices
@@ -301,26 +283,24 @@ class Qwen3VLModel(
         )
 
         # Build and compile vision model
-        timer = CompilationTimer("vision model")
-        vision_graph = self._build_vision_graph(
-            qwen3vl_config, vision_state_dict
-        )
-        timer.mark_build_complete()
-        vision_model = session.load(
-            vision_graph, weights_registry=vision_state_dict
-        )
-        timer.done()
+        with CompilationTimer("vision model") as timer:
+            vision_graph = self._build_vision_graph(
+                qwen3vl_config, vision_state_dict
+            )
+            timer.mark_build_complete()
+            vision_model = session.load(
+                vision_graph, weights_registry=vision_state_dict
+            )
 
         # Build and compile language model
-        timer = CompilationTimer("language model")
-        language_graph = self._build_language_graph(
-            qwen3vl_config, llm_state_dict
-        )
-        timer.mark_build_complete()
-        language_model = session.load(
-            language_graph, weights_registry=llm_state_dict
-        )
-        timer.done()
+        with CompilationTimer("language model") as timer:
+            language_graph = self._build_language_graph(
+                qwen3vl_config, llm_state_dict
+            )
+            timer.mark_build_complete()
+            language_model = session.load(
+                language_graph, weights_registry=llm_state_dict
+            )
 
         return vision_model, language_model
 
@@ -560,9 +540,7 @@ class Qwen3VLModel(
         )
 
         # Flatten kv types for each device
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
+        flattened_kv_types = kv_inputs.flatten()
 
         signals = Signals(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
@@ -648,9 +626,7 @@ class Qwen3VLModel(
 
             # Calculate how many KV cache inputs there are
             kv_inputs = self.kv_params.get_symbolic_inputs()
-            flattened_kv_types = [
-                kv_type for sublist in kv_inputs for kv_type in sublist
-            ]
+            flattened_kv_types = kv_inputs.flatten()
             num_kv_inputs = len(flattened_kv_types)
 
             # Extract KV cache inputs (they come after signal buffers in the graph)
@@ -830,13 +806,13 @@ class Qwen3VLModel(
 
         # Prepare KV cache inputs as list of tensors
         assert model_inputs.kv_cache_inputs
-        kv_cache_inputs_list = list(model_inputs.kv_cache_inputs)
+        kv_cache_inputs_list = list(model_inputs.kv_cache_inputs.flatten())
 
         # Execute language model with text and image embeddings and deepstack features
         # deepstack_image_embeddings Structure: [layer0_device0, layer0_device1, ..., layer1_device0, layer1_device1, ...]
 
         language_outputs = self.language_model.execute(
-            model_inputs.input_ids,
+            model_inputs.tokens,
             model_inputs.return_n_logits,
             *model_inputs.input_row_offsets,
             *image_embeddings,
@@ -867,7 +843,7 @@ class Qwen3VLModel(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[Qwen3VLTextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Qwen3VLInputs:
         """Prepares the initial inputs for the first execution pass of the Qwen3VL model."""
@@ -954,7 +930,7 @@ class Qwen3VLModel(
 
         if not any_needs_vision_encoding:
             return Qwen3VLInputs(
-                input_ids=input_ids,
+                tokens=input_ids,
                 input_row_offsets=input_row_offsets,
                 signal_buffers=self.signal_buffers,
                 decoder_position_ids=decoder_position_ids,
@@ -1051,7 +1027,7 @@ class Qwen3VLModel(
         ]
 
         return Qwen3VLInputs(
-            input_ids=input_ids,
+            tokens=input_ids,
             input_row_offsets=input_row_offsets,
             signal_buffers=self.signal_buffers,
             decoder_position_ids=decoder_position_ids,
@@ -1094,7 +1070,7 @@ class Qwen3VLModel(
 
         return Qwen3VLInputs(
             signal_buffers=self.signal_buffers,
-            input_ids=next_tokens,
+            tokens=next_tokens,
             input_row_offsets=next_row_offsets,
             decoder_position_ids=decoder_position_ids,
             kv_cache_inputs=prev_inputs.kv_cache_inputs,

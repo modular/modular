@@ -19,8 +19,9 @@ from dataclasses import dataclass, field
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.nn.comm.ep import EPConfig
+from max.nn.kv_cache import KVCacheParams
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
 
@@ -48,6 +49,9 @@ class Qwen3Config(Llama3Config):
     decoder_sparse_step: int = 1
     """Sparse step for the decoder. Controls which layers use MoE."""
 
+    ep_config: EPConfig | None = None
+    """Expert parallelism configuration. None means no EP."""
+
     @staticmethod
     def construct_kv_params(
         huggingface_config: AutoConfig,
@@ -72,20 +76,11 @@ class Qwen3Config(Llama3Config):
             KVCacheParams object with the correct head_dim from config.
         """
         data_parallel_degree = pipeline_config.model.data_parallel_degree
-        if data_parallel_degree > 1:
-            raise ValueError(
-                "Data parallelism is not supported for Qwen3 models"
-            )
-        return KVCacheParams(
+        return kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
             num_layers=Qwen3Config.get_num_layers(huggingface_config),
-            page_size=kv_cache_config.kv_cache_page_size,
-            cache_strategy=kv_cache_config.cache_strategy,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             devices=devices,
             data_parallel_degree=data_parallel_degree,
         )
@@ -110,7 +105,11 @@ class Qwen3Config(Llama3Config):
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         """Initializes a Qwen3Config instance from pipeline configuration.
 
         Args:
@@ -119,10 +118,11 @@ class Qwen3Config(Llama3Config):
         Returns:
             An initialized Qwen3Config instance.
         """
-        huggingface_config = pipeline_config.model.huggingface_config
+        model_config = model_config or pipeline_config.model
+        huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
@@ -131,7 +131,10 @@ class Qwen3Config(Llama3Config):
     @override
     @classmethod
     def initialize_from_config(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
     ) -> Self:
         """Initializes a Qwen3Config instance from pipeline and HuggingFace configs.
 
@@ -141,13 +144,14 @@ class Qwen3Config(Llama3Config):
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: The HuggingFace model configuration.
+            model_config: The MAX Engine model configuration.
 
         Returns:
             An initialized Qwen3Config instance.
         """
         # Get base config from Llama3Config
         base_config = Llama3Config.initialize_from_config(
-            pipeline_config, huggingface_config
+            pipeline_config, huggingface_config, model_config
         )
 
         kv_cache_config = pipeline_config.model.kv_cache
@@ -208,14 +212,14 @@ class Qwen3Config(Llama3Config):
             model_quantization_encoding=base_config.model_quantization_encoding,
             quantization_config=base_config.quantization_config,
             max_seq_len=base_config.max_seq_len,
-            kv_params=qwen3_kv_params,  # Use Qwen3-specific KV params
-            attention_multiplier=qwen3_attention_multiplier,  # Use Qwen3-specific attention multiplier
+            kv_params=qwen3_kv_params,
+            attention_multiplier=qwen3_attention_multiplier,
             embedding_multiplier=base_config.embedding_multiplier,
             residual_multiplier=base_config.residual_multiplier,
             devices=base_config.devices,
             clip_qkv=base_config.clip_qkv,
             use_subgraphs=base_config.use_subgraphs,
-            dist_gemm_config=base_config.dist_gemm_config,
+            data_parallel_degree=base_config.data_parallel_degree,
             # MoE parameters
             num_experts=num_experts,
             num_experts_per_tok=num_experts_per_tok,

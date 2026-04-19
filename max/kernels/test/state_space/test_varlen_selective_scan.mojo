@@ -11,24 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import exp, exp2, log
-from sys.info import simd_width_of
+from std.math import exp, log
 
 from layout import (
-    UNKNOWN_VALUE,
+    Idx,
     Layout,
     LayoutTensor,
     RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
 )
 from layout._fillers import random
-from memory import alloc
+from std.memory import alloc
 from state_space.varlen_selective_scan import (
     varlen_selective_scan_fwd_cpu,
     varlen_selective_state_update_cpu,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # LOG2E constant for converting exp to exp2
@@ -37,7 +39,7 @@ comptime MAX_DSTATE = 256
 
 
 @always_inline
-fn softplus_ref(val: Float32) -> Float32:
+def softplus_ref(val: Float32) -> Float32:
     """Reference softplus implementation: log(1 + exp(x))."""
     if val > 20.0:
         return val
@@ -47,7 +49,7 @@ fn softplus_ref(val: Float32) -> Float32:
 
 
 @always_inline
-fn sigmoid_ref(val: Float32) -> Float32:
+def sigmoid_ref(val: Float32) -> Float32:
     """Reference sigmoid implementation."""
     if val < -20.0:
         return 0.0
@@ -56,7 +58,7 @@ fn sigmoid_ref(val: Float32) -> Float32:
 
 
 @always_inline
-fn silu_ref(val: Float32) -> Float32:
+def silu_ref(val: Float32) -> Float32:
     """Reference SiLU implementation."""
     if val < -20.0:
         return 0.0
@@ -64,7 +66,7 @@ fn silu_ref(val: Float32) -> Float32:
     return val / (1.0 + exp_neg)
 
 
-fn run_varlen_selective_scan_fwd[
+def run_varlen_selective_scan_fwd[
     dtype: DType,
     DSTATE: Int,
     has_D: Bool = True,
@@ -227,6 +229,67 @@ fn run_varlen_selective_scan_fwd[
         var val = delta_h.ptr.load(i)
         delta_h.ptr.store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
 
+    # Create TileTensor versions for kernel call
+    var u_tt = TileTensor(u_heap, row_major(Idx(dim), Idx(total_length)))
+    var delta_tt = TileTensor(
+        delta_heap, row_major(Idx(dim), Idx(total_length))
+    )
+    var A_tt = TileTensor(A_heap, row_major(Idx(dim), Idx(dstate)))
+    var B_tt = TileTensor(
+        B_heap,
+        row_major(Idx(ngroups), Idx(dstate), Idx(total_length)),
+    )
+    var C_tt = TileTensor(
+        C_heap,
+        row_major(Idx(ngroups), Idx(dstate), Idx(total_length)),
+    )
+    var D_tt = TileTensor(
+        D_heap,
+        row_major(
+            Idx(D_size),
+        ),
+    )
+    var z_tt = TileTensor(
+        z_heap,
+        row_major(
+            (
+                Idx(dim if has_z else 0),
+                Idx(total_length if has_z else 0),
+            )
+        ),
+    )
+    var delta_bias_tt = TileTensor(
+        delta_bias_heap,
+        row_major(
+            Idx(delta_bias_size),
+        ),
+    )
+    var ssm_states_tt = TileTensor(
+        ssm_states_heap,
+        row_major(Idx(batch), Idx(dim), Idx(dstate)),
+    )
+    var output_tt = TileTensor(
+        output_heap, row_major(Idx(dim), Idx(total_length))
+    )
+    var query_start_loc_tt = TileTensor(
+        query_start_loc_heap,
+        row_major(
+            Idx(batch + 1),
+        ),
+    )
+    var cache_indices_tt = TileTensor(
+        cache_indices_heap,
+        row_major(
+            Idx(batch),
+        ),
+    )
+    var has_initial_state_tt = TileTensor(
+        has_initial_state_heap,
+        row_major(
+            Idx(batch),
+        ),
+    )
+
     var u_buf = u_h
     var delta_buf = delta_h
     var A_buf = A_h
@@ -257,38 +320,25 @@ fn run_varlen_selective_scan_fwd[
     varlen_selective_scan_fwd_cpu[
         dtype,
         DSTATE,
-        u_buf.layout,
-        delta_buf.layout,
-        A_buf.layout,
-        B_buf.layout,
-        C_buf.layout,
-        D_buf.layout,
-        z_buf.layout,
-        delta_bias_buf.layout,
-        ssm_states_buf.layout,
-        output_buf.layout,
-        query_start_loc_buf.layout,
-        cache_indices_buf.layout,
-        has_initial_state_buf.layout,
     ](
         dim,
         ngroups,
         batch,
         Int32(-1),  # pad_slot_id
         Int8(1) if delta_softplus else Int8(0),
-        u_buf,
-        delta_buf,
-        A_buf,
-        B_buf,
-        C_buf,
-        D_buf,
-        z_buf,
-        delta_bias_buf,
-        ssm_states_buf,
-        output_buf,
-        query_start_loc_buf,
-        cache_indices_buf,
-        has_initial_state_buf,
+        u_tt,
+        delta_tt,
+        A_tt,
+        B_tt,
+        C_tt,
+        D_tt,
+        z_tt,
+        delta_bias_tt,
+        ssm_states_tt,
+        output_tt,
+        query_start_loc_tt,
+        cache_indices_tt,
+        has_initial_state_tt,
         u_strides,
         delta_strides,
         A_strides,
@@ -331,7 +381,7 @@ fn run_varlen_selective_scan_fwd[
     has_initial_state_heap.free()
 
 
-fn run_varlen_selective_state_update[
+def run_varlen_selective_state_update[
     dtype: DType,
     DSTATE: Int,
     has_D: Bool = True,
@@ -473,6 +523,63 @@ fn run_varlen_selective_state_update[
         var val = dt_h.ptr.load(i)
         dt_h.ptr.store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
 
+    # Create TileTensor versions for kernel call
+    var state_tt = TileTensor(
+        state_heap,
+        row_major(Idx(batch), Idx(nheads), Idx(dim), Idx(dstate)),
+    )
+    var output_tt2 = TileTensor(
+        output_heap,
+        row_major(Idx(batch), Idx(nheads), Idx(dim)),
+    )
+    var x_tt2 = TileTensor(x_heap, row_major(Idx(batch), Idx(nheads), Idx(dim)))
+    var dt_tt2 = TileTensor(
+        dt_heap, row_major(Idx(batch), Idx(nheads), Idx(dim))
+    )
+    var A_tt2 = TileTensor(
+        A_heap, row_major(Idx(nheads), Idx(dim), Idx(dstate))
+    )
+    var B_tt2 = TileTensor(
+        B_heap, row_major(Idx(batch), Idx(ngroups), Idx(dstate))
+    )
+    var C_tt2 = TileTensor(
+        C_heap, row_major(Idx(batch), Idx(ngroups), Idx(dstate))
+    )
+    var D_tt2 = TileTensor(
+        D_heap,
+        row_major(
+            (
+                Idx(nheads if has_D else 0),
+                Idx(dim if has_D else 0),
+            )
+        ),
+    )
+    var z_tt2 = TileTensor(
+        z_heap,
+        row_major(
+            (
+                Idx(batch if has_z else 0),
+                Idx(nheads if has_z else 0),
+                Idx(dim if has_z else 0),
+            )
+        ),
+    )
+    var dt_bias_tt2 = TileTensor(
+        dt_bias_heap,
+        row_major(
+            (
+                Idx(nheads if has_dt_bias else 0),
+                Idx(dim if has_dt_bias else 0),
+            )
+        ),
+    )
+    var state_batch_indices_tt = TileTensor(
+        state_batch_indices_heap,
+        row_major(
+            Idx(batch),
+        ),
+    )
+
     var state_buf = state_h
     var output_buf = output_h
     var x_buf = x_h
@@ -503,17 +610,6 @@ fn run_varlen_selective_state_update[
     varlen_selective_state_update_cpu[
         dtype,
         DSTATE,
-        state_buf.layout,
-        x_buf.layout,
-        dt_buf.layout,
-        A_buf.layout,
-        B_buf.layout,
-        C_buf.layout,
-        D_buf.layout,
-        z_buf.layout,
-        output_buf.layout,
-        dt_bias_buf.layout,
-        state_batch_indices_buf.layout,
     ](
         batch,
         nheads,
@@ -522,17 +618,17 @@ fn run_varlen_selective_state_update[
         Int32(-1),  # pad_slot_id
         Int8(1) if dt_softplus else Int8(0),
         Int8(1),  # has_state_batch_indices
-        state_buf,
-        x_buf,
-        dt_buf,
-        A_buf,
-        B_buf,
-        C_buf,
-        D_buf,
-        z_buf,
-        output_buf,
-        dt_bias_buf,
-        state_batch_indices_buf,
+        state_tt,
+        x_tt2,
+        dt_tt2,
+        A_tt2,
+        B_tt2,
+        C_tt2,
+        D_tt2,
+        z_tt2,
+        output_tt2,
+        dt_bias_tt2,
+        state_batch_indices_tt,
         state_strides,
         x_strides,
         dt_strides,
@@ -576,7 +672,7 @@ fn run_varlen_selective_state_update[
 # =============================================================================
 
 
-fn test_varlen_selective_scan_fwd_equal_lengths() raises:
+def test_varlen_selective_scan_fwd_equal_lengths() raises:
     """Test varlen selective scan forward with equal-length sequences."""
     run_varlen_selective_scan_fwd[
         DType.float32,
@@ -588,7 +684,7 @@ fn test_varlen_selective_scan_fwd_equal_lengths() raises:
     ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8))
 
 
-fn test_varlen_selective_scan_fwd_variable_lengths() raises:
+def test_varlen_selective_scan_fwd_variable_lengths() raises:
     """Test varlen selective scan forward with variable-length sequences."""
     run_varlen_selective_scan_fwd[
         DType.float32,
@@ -600,7 +696,7 @@ fn test_varlen_selective_scan_fwd_variable_lengths() raises:
     ](batch=3, dim=4, ngroups=1, seq_lengths=Index(10, 6, 1))
 
 
-fn test_varlen_selective_scan_fwd_without_D() raises:
+def test_varlen_selective_scan_fwd_without_D() raises:
     """Test varlen selective scan forward without D tensor."""
     run_varlen_selective_scan_fwd[
         DType.float32,
@@ -612,7 +708,7 @@ fn test_varlen_selective_scan_fwd_without_D() raises:
     ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8))
 
 
-fn test_varlen_selective_scan_fwd_without_z() raises:
+def test_varlen_selective_scan_fwd_without_z() raises:
     """Test varlen selective scan forward without z tensor."""
     run_varlen_selective_scan_fwd[
         DType.float32,
@@ -624,7 +720,7 @@ fn test_varlen_selective_scan_fwd_without_z() raises:
     ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8))
 
 
-fn test_varlen_selective_scan_fwd_with_delta_softplus() raises:
+def test_varlen_selective_scan_fwd_with_delta_softplus() raises:
     """Test varlen selective scan forward with delta softplus activation."""
     run_varlen_selective_scan_fwd[
         DType.float32,
@@ -641,7 +737,7 @@ fn test_varlen_selective_scan_fwd_with_delta_softplus() raises:
 # =============================================================================
 
 
-fn test_varlen_selective_state_update_basic() raises:
+def test_varlen_selective_state_update_basic() raises:
     """Test basic varlen selective state update."""
     run_varlen_selective_state_update[
         DType.float32,
@@ -653,7 +749,7 @@ fn test_varlen_selective_state_update_basic() raises:
     ](batch=2, nheads=2, dim=4, ngroups=1)
 
 
-fn test_varlen_selective_state_update_without_D() raises:
+def test_varlen_selective_state_update_without_D() raises:
     """Test varlen selective state update without D tensor."""
     run_varlen_selective_state_update[
         DType.float32,
@@ -665,7 +761,7 @@ fn test_varlen_selective_state_update_without_D() raises:
     ](batch=2, nheads=2, dim=4, ngroups=1)
 
 
-fn test_varlen_selective_state_update_without_z() raises:
+def test_varlen_selective_state_update_without_z() raises:
     """Test varlen selective state update without z tensor."""
     run_varlen_selective_state_update[
         DType.float32,
@@ -677,7 +773,7 @@ fn test_varlen_selective_state_update_without_z() raises:
     ](batch=2, nheads=2, dim=4, ngroups=1)
 
 
-fn test_varlen_selective_state_update_with_dt_softplus() raises:
+def test_varlen_selective_state_update_with_dt_softplus() raises:
     """Test varlen selective state update with dt softplus activation."""
     run_varlen_selective_state_update[
         DType.float32,
@@ -689,5 +785,5 @@ fn test_varlen_selective_state_update_with_dt_softplus() raises:
     ](batch=2, nheads=2, dim=4, ngroups=1)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

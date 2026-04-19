@@ -11,12 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from os.atomic import Atomic
+from std.math import ceildiv
+from std.atomic import Atomic
 
-from gpu import *
-from gpu.host import DeviceContext
-from testing import assert_equal, TestSuite
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal, TestSuite
+from std.sys import is_apple_gpu, has_apple_gpu_accelerator
 
 
 @fieldwise_init
@@ -29,12 +30,24 @@ struct FillStrategy(Equatable, ImplicitlyCopyable):
     comptime ZEROS = Self(3)
     comptime ONES = Self(4)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self.value == other.value
 
 
-fn reduce(
+def reduce_add(
     res_add: UnsafePointer[Float32, MutAnyOrigin],
+    vec: UnsafePointer[Float32, MutAnyOrigin],
+    len: Int,
+):
+    var tid = global_idx.x
+
+    if tid >= len:
+        return
+
+    _ = Atomic.fetch_add(res_add, vec[tid])
+
+
+def reduce_min_max(
     res_min: UnsafePointer[Float32, MutAnyOrigin],
     res_max: UnsafePointer[Float32, MutAnyOrigin],
     vec: UnsafePointer[Float32, MutAnyOrigin],
@@ -42,16 +55,14 @@ fn reduce(
 ):
     var tid = global_idx.x
 
-    if tid >= UInt(len):
+    if tid >= len:
         return
-
-    _ = Atomic.fetch_add(res_add, vec[tid])
 
     Atomic.min(res_min, vec[tid])
     Atomic.max(res_max, vec[tid])
 
 
-fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
+def run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     comptime BLOCK_SIZE = 32
     comptime n = 1024
     comptime F32 = DType.float32
@@ -76,23 +87,13 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
             vec_host[i] = 1
 
     var vec_device = ctx.enqueue_create_buffer[F32](n)
-    vec_device.enqueue_copy_from(vec_host.unsafe_ptr())
+    vec_device.enqueue_copy_from(vec_host)
 
     var res_add_device = ctx.enqueue_create_buffer[F32](1)
     res_add_device.enqueue_fill(0)
 
-    var res_min_device = ctx.enqueue_create_buffer[F32](1)
-    res_min_device.enqueue_fill(0)
-
-    var res_max_device = ctx.enqueue_create_buffer[F32](1)
-    res_max_device.enqueue_fill(0)
-
-    comptime kernel = reduce
-
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function_experimental[reduce_add](
         res_add_device,
-        res_min_device,
-        res_max_device,
         vec_device,
         n,
         grid_dim=ceildiv(n, BLOCK_SIZE),
@@ -103,38 +104,58 @@ fn run_reduce(fill_strategy: FillStrategy, ctx: DeviceContext) raises:
     res_add_device.enqueue_copy_to(UnsafePointer(to=res))
 
     var res_min = Float32(0)
-    res_min_device.enqueue_copy_to(UnsafePointer(to=res_min))
-
     var res_max = Float32(0)
-    res_max_device.enqueue_copy_to(UnsafePointer(to=res_max))
+
+    comptime if not has_apple_gpu_accelerator():
+        var res_min_device = ctx.enqueue_create_buffer[F32](1)
+        res_min_device.enqueue_fill(0)
+
+        var res_max_device = ctx.enqueue_create_buffer[F32](1)
+        res_max_device.enqueue_fill(0)
+        ctx.enqueue_function_experimental[reduce_min_max](
+            res_min_device,
+            res_max_device,
+            vec_device,
+            n,
+            grid_dim=ceildiv(n, BLOCK_SIZE),
+            block_dim=BLOCK_SIZE,
+        )
+
+        res_min_device.enqueue_copy_to(UnsafePointer(to=res_min))
+        res_max_device.enqueue_copy_to(UnsafePointer(to=res_max))
 
     ctx.synchronize()
 
     if fill_strategy == FillStrategy.LINSPACE:
         assert_equal(res, n * (n - 1) // 2)
-        assert_equal(res_min, 0)
-        assert_equal(res_max, n - 1)
+        if not has_apple_gpu_accelerator():
+            assert_equal(res_min, 0)
+            assert_equal(res_max, n - 1)
     elif fill_strategy == FillStrategy.NEG_LINSPACE:
         assert_equal(res, -n * (n - 1) // 2)
-        assert_equal(res_min, -n + 1)
-        assert_equal(res_max, 0)
+        if not has_apple_gpu_accelerator():
+            assert_equal(res_min, -n + 1)
+            assert_equal(res_max, 0)
     elif fill_strategy == FillStrategy.SYMMETRIC_LINSPACE:
         assert_equal(res, -n // 2)
-        assert_equal(res_min, -n // 2)
-        assert_equal(res_max, (n - 1) // 2)
+        if not has_apple_gpu_accelerator():
+            assert_equal(res_min, -n // 2)
+            assert_equal(res_max, (n - 1) // 2)
     elif fill_strategy == FillStrategy.ZEROS:
         assert_equal(res, 0)
-        assert_equal(res_min, 0)
-        assert_equal(res_max, 0)
+        if not has_apple_gpu_accelerator():
+            assert_equal(res_min, 0)
+            assert_equal(res_max, 0)
     elif fill_strategy == FillStrategy.ONES:
         assert_equal(res, n)
-        assert_equal(res_min, 0)
-        assert_equal(res_max, 1)
+        if not has_apple_gpu_accelerator():
+            assert_equal(res_min, 0)
+            assert_equal(res_max, 1)
 
     _ = vec_device
 
 
-def test_reduce_atomic():
+def test_reduce_atomic() raises:
     with DeviceContext() as ctx:
         run_reduce(FillStrategy.LINSPACE, ctx)
         run_reduce(FillStrategy.NEG_LINSPACE, ctx)
@@ -143,7 +164,7 @@ def test_reduce_atomic():
         run_reduce(FillStrategy.ONES, ctx)
 
 
-def main():
+def main() raises:
     # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
     # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()

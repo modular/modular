@@ -18,11 +18,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 
 
 @dataclass(frozen=True)
@@ -61,7 +57,7 @@ class PrintKVCacheModel:
             device=valid_lengths.device,
             values=[
                 valid_lengths,
-                *kv_collection,
+                *kv_collection.flatten(),
                 ops.constant(
                     self.layer_idx, DType.uint32, device=DeviceRef.CPU()
                 ),
@@ -97,7 +93,6 @@ def test_print_kv_cache(dtype: DType) -> None:
         n_kv_heads=8,
         head_dim=128,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
         devices=[DeviceRef.CPU()],
     )
@@ -110,7 +105,7 @@ def test_print_kv_cache(dtype: DType) -> None:
             TensorType(
                 dtype=DType.uint32, shape=[batch_size], device=DeviceRef.CPU()
             ),
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs().flatten(),
         ],
     )
 

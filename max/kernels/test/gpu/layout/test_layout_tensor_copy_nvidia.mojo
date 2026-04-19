@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import simd_width_of
+from std.math import ceildiv
+from std.sys import simd_width_of
 
-from gpu import barrier
-from gpu.host import DeviceContext
-from gpu import block_idx, thread_idx
-from gpu.memory import (
+from std.gpu import barrier
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, thread_idx
+from std.gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
     async_copy_wait_all,
@@ -26,8 +26,6 @@ from layout import *
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import (
-    UNKNOWN_VALUE,
-    LayoutTensor,
     copy_dram_to_local,
     copy_dram_to_sram,
     copy_dram_to_sram_async,
@@ -35,14 +33,14 @@ from layout.layout_tensor import (
     copy_sram_to_dram,
 )
 
-from utils import IndexList
+from std.utils import IndexList
 
 # ----------------------------------------------------------------------
 # dynamic async copy tests
 # ----------------------------------------------------------------------
 
 
-fn async_dynamic_copy_kernel[
+def async_dynamic_copy_kernel[
     input_layout: Layout,
     output_layout: Layout,
     BM: Int,
@@ -65,16 +63,14 @@ fn async_dynamic_copy_kernel[
         ),
     )
 
-    var input_tile = masked_input.tile[BM, BN](
-        Int(block_idx.x), Int(block_idx.y)
-    )
-    var output_tile = output.tile[BM, BN](Int(block_idx.x), Int(block_idx.y))
+    var input_tile = masked_input.tile[BM, BN](block_idx.x, block_idx.y)
+    var output_tile = output.tile[BM, BN](block_idx.x, block_idx.y)
 
     var smem_tile = LayoutTensor[
         DType.float32,
         Layout(IntTuple(BM, BN)),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     smem_tile.copy_from_async[is_masked=True](input_tile)
@@ -83,7 +79,7 @@ fn async_dynamic_copy_kernel[
     output_tile.copy_from(smem_tile)
 
 
-fn test_dynamic_async_copy[
+def test_dynamic_async_copy[
     M: Int, N: Int, BM: Int, BN: Int, num_rows: Int
 ](ctx: DeviceContext) raises:
     print("=== test_dynamic_async_copy")
@@ -92,15 +88,15 @@ fn test_dynamic_async_copy[
 
     comptime input_runtime_layout = RuntimeLayout[
         unknown_layout,
-        element_type = DType.int64,
-        linear_idx_type = DType.int64,
-    ].row_major(IndexList[2, element_type = DType.int64](M, N))
+        element_type=DType.int64,
+        linear_idx_type=DType.int64,
+    ].row_major(IndexList[2, element_type=DType.int64](M, N))
 
     comptime output_runtime_layout = RuntimeLayout[
         unknown_layout,
-        element_type = DType.int64,
-        linear_idx_type = DType.int64,
-    ].row_major(IndexList[2, element_type = DType.int64](num_rows, N))
+        element_type=DType.int64,
+        linear_idx_type=DType.int64,
+    ].row_major(IndexList[2, element_type=DType.int64](num_rows, N))
 
     var input = ManagedLayoutTensor[
         DType.float32,
@@ -132,11 +128,8 @@ fn test_dynamic_async_copy[
 
     print(output.tensor())
 
-    _ = input^
-    _ = output^
 
-
-def run_dynamic_async_copy_tests(ctx: DeviceContext):
+def run_dynamic_async_copy_tests(ctx: DeviceContext) raises:
     # CHECK: === test_dynamic_async_copy
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0
     # CHECK: 6.0 7.0 8.0 9.0 10.0 11.0
@@ -157,7 +150,7 @@ def run_dynamic_async_copy_tests(ctx: DeviceContext):
 # ----------------------------------------------------------------------
 
 
-fn swizzle_copy[
+def swizzle_copy[
     dtype: DType,
     layout: Layout,
     BM: Int,
@@ -175,7 +168,7 @@ fn swizzle_copy[
             dtype,
             Layout.row_major(BM, BK),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ]
         .stack_allocation()
         .fill(0)
@@ -187,14 +180,14 @@ fn swizzle_copy[
 
     copy_dram_to_sram_async[thread_layout=thread_layout, swizzle=True](
         a_smem_tile.vectorize[1, simd_size](),
-        a.tile[BM, BK](Int(block_idx.x), 0).vectorize[1, simd_size](),
+        a.tile[BM, BK](block_idx.x, 0).vectorize[1, simd_size](),
     )
 
     async_copy_wait_all()
     barrier()
 
     # Write current stage to global memory.
-    var b_gmem_tile = b.tile[BM, BK](Int(block_idx.x), 0)
+    var b_gmem_tile = b.tile[BM, BK](block_idx.x, 0)
     var b_gmem_frag = b_gmem_tile.vectorize[1, simd_size]().distribute[
         thread_layout
     ](thread_idx.x)
@@ -204,7 +197,7 @@ fn swizzle_copy[
     b_gmem_frag.copy_from(a_smem_frag)
 
 
-fn test_swizzle_copy[
+def test_swizzle_copy[
     layout: Layout,
     M: Int,
     K: Int,
@@ -260,11 +253,8 @@ fn test_swizzle_copy[
     ctx.synchronize()
     print(b_tensor.tensor())
 
-    _ = a_tensor^
-    _ = b_tensor^
 
-
-def run_swizzle_copy_tests(ctx: DeviceContext):
+def run_swizzle_copy_tests(ctx: DeviceContext) raises:
     # CHECK: === test_swizzle_copy
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
     # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
@@ -291,7 +281,7 @@ def run_swizzle_copy_tests(ctx: DeviceContext):
 
 
 @always_inline
-fn masked_async_copy_kernel[
+def masked_async_copy_kernel[
     layout: Layout, num_rows: Int
 ](input: LayoutTensor[DType.float32, layout, MutAnyOrigin]):
     comptime thread_layout = Layout.row_major(4, 2)
@@ -314,7 +304,7 @@ fn masked_async_copy_kernel[
             DType.float32,
             layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ]
         .stack_allocation()
         .fill(-1.0)
@@ -333,7 +323,7 @@ fn masked_async_copy_kernel[
     )
 
 
-fn test_masked_async_copy[
+def test_masked_async_copy[
     layout: Layout, M: Int, N: Int, skew_rows: Int
 ](ctx: DeviceContext) raises:
     print("=== test_masked_async_copy")
@@ -377,10 +367,8 @@ fn test_masked_async_copy[
 
     print(input.tensor())
 
-    _ = input^
 
-
-def run_masked_async_copy_tests(ctx: DeviceContext):
+def run_masked_async_copy_tests(ctx: DeviceContext) raises:
     # CHECK: === test_masked_async_copy
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
@@ -420,7 +408,7 @@ def run_masked_async_copy_tests(ctx: DeviceContext):
 
 
 @always_inline
-fn masked_copy_kernel[
+def masked_copy_kernel[
     layout: Layout, num_rows: Int
 ](input: LayoutTensor[DType.float32, layout, MutAnyOrigin]):
     comptime thread_layout = Layout.row_major(4, 2)
@@ -443,7 +431,7 @@ fn masked_copy_kernel[
             DType.float32,
             layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ]
         .stack_allocation()
         .fill(0)
@@ -461,7 +449,7 @@ fn masked_copy_kernel[
     )
 
 
-fn test_masked_copy[
+def test_masked_copy[
     layout: Layout, M: Int, N: Int, skew_rows: Int
 ](ctx: DeviceContext) raises:
     print("=== test_masked_copy")
@@ -502,10 +490,8 @@ fn test_masked_copy[
 
     print(input.tensor())
 
-    _ = input^
 
-
-def run_masked_copy_tests(ctx: DeviceContext):
+def run_masked_copy_tests(ctx: DeviceContext) raises:
     # CHECK: === test_masked_copy
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
@@ -540,7 +526,7 @@ def run_masked_copy_tests(ctx: DeviceContext):
 
 
 @always_inline
-fn masked_copy_dram_to_local_kernel[
+def masked_copy_dram_to_local_kernel[
     layout: Layout, num_rows: Int
 ](
     input: LayoutTensor[DType.float32, layout, MutAnyOrigin],
@@ -570,7 +556,7 @@ fn masked_copy_dram_to_local_kernel[
                 layout.size() // num_threads // simd_width, simd_width
             ),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(-1.0)
@@ -589,7 +575,7 @@ fn masked_copy_dram_to_local_kernel[
     )
 
 
-fn test_masked_copy_dram_to_local[
+def test_masked_copy_dram_to_local[
     layout: Layout, skew_rows: Int
 ](ctx: DeviceContext) raises:
     print("=== test_masked_copy_dram_to_local")
@@ -622,11 +608,8 @@ fn test_masked_copy_dram_to_local[
 
     print(output.tensor())
 
-    _ = input^
-    _ = output^
 
-
-def run_copy_dram_to_local_tests(ctx: DeviceContext):
+def run_copy_dram_to_local_tests(ctx: DeviceContext) raises:
     # CHECK: === test_masked_copy_dram_to_local
     # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
     # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
@@ -639,7 +622,7 @@ def run_copy_dram_to_local_tests(ctx: DeviceContext):
     test_masked_copy_dram_to_local[Layout.row_major(8, 8), skew_rows=1](ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_dynamic_async_copy_tests(ctx)
         run_swizzle_copy_tests(ctx)

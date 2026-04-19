@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+import pickle
 from unittest.mock import MagicMock, NonCallableMock
 
 import hf_repo_lock
@@ -21,8 +22,11 @@ import pytest
 import requests
 from max.driver import DeviceSpec, accelerator_count
 from max.interfaces import (
+    ImageContentPart,
+    MessageContent,
     RequestID,
     SamplingParams,
+    TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestFunction,
     TextGenerationRequestMessage,
@@ -33,12 +37,17 @@ from max.interfaces import (
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
-    SupportedEncoding,
     TextAndVisionTokenizer,
     TextTokenizer,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import KVCacheConfig
+from max.pipelines.core import (
+    TextAndVisionContext,
+    TextContext,
+    validate_only_one_image,
+)
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, SamplingConfig
+from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from test_common.mocks import mock_estimate_memory_footprint
 from transformers import AutoConfig
 
@@ -95,9 +104,9 @@ def test_text_and_vision_tokenizer() -> None:
             model_path, pipeline_config=pipeline_config, trust_remote_code=True
         )
         for imgs_list in imgs:
-            content = [
-                {"type": "text", "text": "What is in this image?"},
-            ] + [{"type": "image"} for _ in imgs_list]
+            content: list[MessageContent] = []
+            content.append(TextContentPart(text="What is in this image?"))
+            content.extend([ImageContentPart() for _ in imgs_list])
             filtered_imgs_list = [img for img in imgs_list if img is not None]
             assert len(filtered_imgs_list) == len(imgs_list)
             request = TextGenerationRequest(
@@ -168,7 +177,7 @@ def test_text_tokenizer_with_tool_use(
         ],
     )
 
-    context: TextContext = asyncio.run(tokenizer.new_context(request))
+    asyncio.run(tokenizer.new_context(request))
 
 
 def test_tokenizer__truncates_to_max_length(
@@ -222,6 +231,8 @@ def test_tokenizer__with_prompt_as_list_of_int(
 def test_tokenizer__with_context_validation(
     llama_3_1_8b_instruct_local_path: str,
 ) -> None:
+    from max.pipelines.lib.registry import _apply_context_validators
+
     def raise_fn(context: TextContext | TextAndVisionContext) -> None:
         raise ValueError("test")
 
@@ -232,8 +243,8 @@ def test_tokenizer__with_context_validation(
         llama_3_1_8b_instruct_local_path,
         pipeline_config=pipeline_config,
         trust_remote_code=True,
-        context_validators=[raise_fn],
     )
+    _apply_context_validators(tokenizer, [raise_fn])
 
     request = TextGenerationRequest(
         request_id=RequestID("request_with_short_message"),
@@ -243,6 +254,35 @@ def test_tokenizer__with_context_validation(
 
     with pytest.raises(ValueError, match="test"):
         _ = asyncio.run(tokenizer.new_context(request))
+
+
+def test_tokenizer__with_context_validators_is_pickleable(
+    llama_3_1_8b_instruct_local_path: str,
+) -> None:
+    """Tokenizers must be pickleable because MAX Serve pickles them when
+    spawning model workers (multiprocessing with 'spawn' start method).
+    """
+    pipeline_config = _create_mock_pipeline_config(
+        llama_3_1_8b_instruct_local_path
+    )
+    tokenizer = TextTokenizer(
+        llama_3_1_8b_instruct_local_path,
+        pipeline_config=pipeline_config,
+        trust_remote_code=True,
+        context_validators=[validate_only_one_image],
+    )
+
+    # Round-trip through pickle: this is what multiprocessing 'spawn' does.
+    restored = pickle.loads(pickle.dumps(tokenizer))
+
+    # Verify the restored tokenizer still works.
+    request = TextGenerationRequest(
+        request_id=RequestID("pickle_roundtrip"),
+        model_name=llama_3_1_8b_instruct_local_path,
+        prompt="Short message",
+    )
+    context = asyncio.run(restored.new_context(request))
+    assert len(context.tokens) > 0
 
 
 def test_tokenizer_regression_MODELS_467() -> None:
@@ -311,10 +351,16 @@ def test_text_tokenizer_with_constrained_decoding(
     else:
         device_specs.append(DeviceSpec.cpu(id=0))
     pipeline_config = PipelineConfig(
-        model_path=modular_ai_llama_3_1_local_path,
-        quantization_encoding=SupportedEncoding.bfloat16,
-        device_specs=device_specs,
-        enable_structured_output=True,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=modular_ai_llama_3_1_local_path,
+                    quantization_encoding="bfloat16",
+                    device_specs=device_specs,
+                )
+            }
+        ),
+        sampling=SamplingConfig(enable_structured_output=True),
     )
 
     tokenizer = TextTokenizer(
@@ -389,9 +435,9 @@ def test_tokenizer_encode_stop_criteria(
 
     context = asyncio.run(tokenizer.new_context(request))
     # encoded stop criteria should equal [0]
-    assert len(context.eos_sequences) == 1
-    assert len(context.eos_sequences[0]) == 1
-    assert np.array_equal(context.eos_sequences[0], [0])
+    assert len(context.eos_tracker.eos_sequences) == 1
+    assert len(context.eos_tracker.eos_sequences[0]) == 1
+    assert np.array_equal(context.eos_tracker.eos_sequences[0], [0])
 
 
 @pytest.mark.skip("TODO: test fails on 4xH100 CI")
@@ -400,8 +446,14 @@ def test_text_and_vision_tokenizer_forwards_sampling_params() -> None:
     model_path = "OpenGVLab/InternVL3-1B-Instruct"
 
     pipeline_config = PipelineConfig(
-        model_path=model_path,
-        trust_remote_code=True,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=model_path,
+                    trust_remote_code=True,
+                )
+            }
+        ),
     )
 
     tokenizer = PIPELINE_REGISTRY.retrieve_tokenizer(pipeline_config)
@@ -444,9 +496,15 @@ def test_tokenizer_stores_eos_token_ids(
     else:
         device_specs.append(DeviceSpec.cpu(id=0))
     pipeline_config = PipelineConfig(
-        model_path=modular_ai_llama_3_1_local_path,
-        quantization_encoding=SupportedEncoding.bfloat16,
-        device_specs=device_specs,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=modular_ai_llama_3_1_local_path,
+                    quantization_encoding="bfloat16",
+                    device_specs=device_specs,
+                )
+            }
+        ),
     )
 
     # Test single eos token id
@@ -477,10 +535,16 @@ def test_text_and_vision_tokenizer_stores_eos_token_ids(
     model_path = google_gemma_3_4b_it_local_path
 
     pipeline_config = PipelineConfig(
-        model_path=model_path,
-        trust_remote_code=True,
-        max_batch_size=1,
-        max_length=100,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=model_path,
+                    trust_remote_code=True,
+                    max_length=100,
+                )
+            }
+        ),
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
 
     gemma_3_eos_token_ids = {1, 106}
@@ -507,8 +571,8 @@ async def test_tokenizer__apply_chat_template_dict_list_vs_str_content(
         TextGenerationRequestMessage(
             role="user",
             content=[
-                {"type": "text", "text": "Hello, how are you"},
-                {"type": "text", "text": "today?"},
+                TextContentPart(text="Hello, how are you"),
+                TextContentPart(text="today?"),
             ],
         ),
         TextGenerationRequestMessage(
@@ -526,6 +590,36 @@ async def test_tokenizer__apply_chat_template_dict_list_vs_str_content(
         "I'm doing well, thank you!<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
     )
     assert prompt_text == expected_prompt_text
+
+
+@pytest.mark.asyncio
+async def test_tokenizer__apply_chat_template_preserves_default_options(
+    llama_3_1_8b_instruct_local_path,  # noqa: ANN001
+) -> None:
+    """Caller-provided chat_template_options must not drop the implicit
+    add_generation_prompt=True default. Regression test: OpenRouter-style
+    callers send `chat_template_kwargs: {"thinking": true}` and expect the
+    assistant turn prefix to still be appended."""
+    pipeline_config = _create_mock_pipeline_config(
+        llama_3_1_8b_instruct_local_path
+    )
+    tokenizer = TextTokenizer(
+        model_path=llama_3_1_8b_instruct_local_path,
+        pipeline_config=pipeline_config,
+    )
+    messages = [
+        TextGenerationRequestMessage(role="user", content="Hi"),
+    ]
+
+    prompt_text = tokenizer.apply_chat_template(
+        messages,
+        tools=None,
+        chat_template_options={"date_string": "26 Jul 2024"},
+    )
+
+    assert prompt_text.endswith(
+        "<|start_header_id|>assistant<|end_header_id|>\n\n"
+    )
 
 
 @pytest.mark.asyncio

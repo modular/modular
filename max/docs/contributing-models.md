@@ -8,8 +8,8 @@ using the `max serve` command.
 This document walks through the process to create a new model architecture and
 register it with MAX for serving. It's focused on the project setup and
 developer workflow—for an API programming guide using the MAX Python API, see
-the [custom model architectures
-tutorial](https://docs.modular.com/max/tutorials/serve-custom-model-architectures/).
+the
+[custom model architectures tutorial](https://docs.modular.com/max/tutorials/serve-custom-model-architectures/).
 
 ## 1. Set up your development environment
 
@@ -56,9 +56,8 @@ exactly match the model class name in your Hugging Face model's configuration.
 4. **Include proper configuration**: Handle parameter mapping from Hugging Face
 config to your internal format.
 
-For more information about how to build your model see our [custom model
-architectures
-tutorial](https://docs.modular.com/max/tutorials/serve-custom-model-architectures/).
+For more information about how to build your model see our
+[custom model architectures tutorial](https://docs.modular.com/max/tutorials/serve-custom-model-architectures/).
 
 ### Test your architecture
 
@@ -104,8 +103,8 @@ Once registered, you can serve models using your architecture without the
   --model-path your-org/your-model-name
 ```
 
-For models that require custom code execution (such as custom tokenizers or model
-implementations on Hugging Face), add the `--trust-remote-code` flag:
+For models that require custom code execution (such as custom tokenizers or
+model implementations on Hugging Face), add the `--trust-remote-code` flag:
 
 ```bash
 ./bazelw run //max/python/max/entrypoints:pipelines -- serve \
@@ -124,7 +123,7 @@ verification workflow:
 
 ```bash
 # 1. Generate logits with MAX pipeline
-./bazelw run //max/tests/integration:generate_llm_logits -- \
+./bazelw run //max/tests/integration/tools:generate_llm_logits -- \
   --device gpu \
   --framework max \
   --pipeline gemma3-1b \
@@ -132,7 +131,7 @@ verification workflow:
   --output /tmp/max-logits.json
 
 # 2. Generate logits with PyTorch reference
-./bazelw run //max/tests/integration:generate_llm_logits -- \
+./bazelw run //max/tests/integration/tools:generate_llm_logits -- \
   --device gpu \
   --framework torch \
   --pipeline gemma3-1b \
@@ -140,7 +139,7 @@ verification workflow:
   --output /tmp/torch-logits.json
 
 # 3. Compare the logits
-./bazelw run //max/tests/integration:verify -- \
+./bazelw run //max/tests/integration/accuracy:verify -- \
   --eval-metric cos,kl,tol \
   --relative-tolerance 1e-2 \
   --absolute-tolerance 1e-5 \
@@ -149,7 +148,7 @@ verification workflow:
   /tmp/max-logits.json /tmp/torch-logits.json
 
 # Run verification pipeline directly (combines all steps)
-./bazelw run //max/tests/integration:verify_pipelines -- \
+./bazelw run //max/tests/integration/accuracy:verify_pipelines -- \
   --pipeline Gemma-3-1B-bfloat16 \
   --devices='gpu'
 ```
@@ -236,14 +235,15 @@ For help investigating inaccuracy issues, see the guide to
 ### Reference scores
 
 These scores were measured on NVIDIA B200 GPUs with MAX 25.7. The "vs Reference"
-column shows the percentage relative to the best of vLLM or SGLang for that model:
+column shows the percentage relative to the best of vLLM or SGLang for that
+model:
 
-| Model | Task | Accuracy | vs Reference |
-|-------|------|----------|--------------|
-| meta-llama/llama-3.1-8b-instruct | gsm8k_cot_llama | 0.878 | 101.4% |
-| unsloth/gpt-oss-20b-bf16 | gsm8k_cot_llama | 0.947 | 98.1% |
-| qwen/qwen2.5-vl-7b-instruct | gsm8k_cot_llama | 0.787 | 100.3% |
-| qwen/qwen2.5-vl-7b-instruct | chartqa | 0.812 | 100.3% |
+| Model                            | Task            | Accuracy | vs Reference |
+|----------------------------------|-----------------|----------|--------------|
+| meta-llama/llama-3.1-8b-instruct | gsm8k_cot_llama | 0.878    | 101.4%       |
+| unsloth/gpt-oss-20b-bf16         | gsm8k_cot_llama | 0.947    | 98.1%        |
+| qwen/qwen2.5-vl-7b-instruct      | gsm8k_cot_llama | 0.787    | 100.3%       |
+| qwen/qwen2.5-vl-7b-instruct      | chartqa         | 0.812    | 100.3%       |
 
 > [!NOTE]
 > Accuracy numbers may vary across GPU types. If your model scores
@@ -257,7 +257,8 @@ column shows the percentage relative to the best of vLLM or SGLang for that mode
 Before submitting your custom architecture to the repo:
 
 1. **Read the [MAX contributor guide](/max/CONTRIBUTING.md)**.
-2. **Test thoroughly**: Ensure your architecture works with the `max serve` command.
+2. **Test thoroughly**: Ensure your architecture works with the `max serve`
+   command.
 3. **Follow existing patterns**: Study similar architectures in this directory.
 4. **Document your code**: Include clear docstrings and comments.
 5. **Handle edge cases**: Ensure robust error handling and validation.

@@ -10,15 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides helper functions for comparing values in tests."""
 
 # ===----------------------------------------------------------------------=== #
 # utils
 # ===----------------------------------------------------------------------=== #
 
 
-fn _minmax[
+def _minmax[
     dtype: DType, //
-](x: UnsafePointer[Scalar[dtype]], N: Int) -> Tuple[
+](x: UnsafePointer[Scalar[dtype], _], N: Int) -> Tuple[
     Scalar[dtype], Scalar[dtype]
 ]:
     var max_val = x[0]
@@ -31,11 +32,11 @@ fn _minmax[
     return (min_val, max_val)
 
 
-fn compare[
+def compare[
     dtype: DType, verbose: Bool = True
 ](
-    x: UnsafePointer[Scalar[dtype]],
-    y: UnsafePointer[Scalar[dtype]],
+    x: UnsafePointer[Scalar[dtype], _],
+    y: UnsafePointer[Scalar[dtype], _],
     num_elements: Int,
     *,
     msg: String = "",

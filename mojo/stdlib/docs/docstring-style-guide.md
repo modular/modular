@@ -115,9 +115,9 @@ In the description for each parameter or argument:
 - Should usually begin with “The” or “A.”
 
 Note that the argument/parameter name that appears before the description does
-**not** require backticks—the name is automatically formatted in code font. But if
-you refer to an argument/parameter name, struct, etc., in the description, use
-backticks as usual.
+**not** require backticks—the name is automatically formatted in code font. But
+if you refer to an argument/parameter name, struct, etc., in the description,
+use backticks as usual.
 
 ### Return values
 
@@ -286,7 +286,7 @@ isn't enforced.
 Example:
 
 ```mojo
-fn noop():
+def noop():
     """Does nothing.
 
     Notes:
@@ -315,7 +315,7 @@ examples section aren't indented.
 Example:
 
 ```mojo
-fn select[
+def select[
     result_type: DType
 ](
     self,

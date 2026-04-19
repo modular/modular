@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceil
+from std.math import ceil
 
-from layout._tile_tensor import TileTensor
+from layout import TileTensor
 
-from utils.numerics import min_or_neg_inf
+from std.utils.numerics import min_or_neg_inf
 
 
 struct Weighted2DPoint[dtype: DType](TrivialRegisterPassable):
@@ -28,14 +28,14 @@ struct Weighted2DPoint[dtype: DType](TrivialRegisterPassable):
     var x: Int
     var w: Scalar[Self.dtype]
 
-    fn __init__(out self, y: Int, x: Int, weight: Scalar[Self.dtype]):
+    def __init__(out self, y: Int, x: Int, weight: Scalar[Self.dtype]):
         self.y = y
         self.x = x
         self.w = weight
 
 
 @always_inline
-fn _bilinear_interpolate[
+def _bilinear_interpolate[
     dtype: DType
 ](
     ph: Int,
@@ -109,7 +109,7 @@ fn _bilinear_interpolate[
 
 
 @always_inline
-fn roi_align_nhwc[
+def roi_align_nhwc[
     dtype: DType,
     //,
     aligned: Bool,
@@ -145,9 +145,9 @@ fn roi_align_nhwc[
           used to compute the output value of each pooled bin.
     """
     comptime assert (
-        output.rank == 4 and input.rank == 4
+        output.flat_rank == 4 and input.flat_rank == 4
     ), "expect rank 4 tensors for input and output"
-    comptime assert rois.rank == 2, "rois must be of rank 2"
+    comptime assert rois.flat_rank == 2, "rois must be of rank 2"
 
     comptime assert (
         dtype.is_floating_point()
@@ -159,7 +159,7 @@ fn roi_align_nhwc[
     comptime assert input.element_size == 1
     comptime assert output.element_size == 1
 
-    debug_assert(mode == "AVG" or mode == "MAX", "mode must be AVG or MAX")
+    assert mode == "AVG" or mode == "MAX", "mode must be AVG or MAX"
 
     var spatial_scale = in_spatial_scale.cast[DType.float32]()
     var sampling_ratio = in_sampling_ratio.cast[DType.float32]()
@@ -208,31 +208,28 @@ fn roi_align_nhwc[
         # Pooling init/update/finalize functions parameterized by mode
         @parameter
         @always_inline
-        fn init_fn[dtype: DType]() -> Scalar[dtype]:
-            @parameter
-            if mode == "AVG":
+        def init_fn[dtype: DType]() -> Scalar[dtype]:
+            comptime if mode == "AVG":
                 return 0
             else:
                 return min_or_neg_inf[dtype]()
 
         @parameter
         @always_inline
-        fn update_fn[
+        def update_fn[
             dtype: DType
         ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:
-            @parameter
-            if mode == "AVG":
+            comptime if mode == "AVG":
                 return a + b
             else:
                 return max(a, b)
 
         @parameter
         @always_inline
-        fn reduce_fn[
+        def reduce_fn[
             dtype: DType
         ](a: Scalar[dtype], b: Scalar[dtype]) -> Scalar[dtype]:
-            @parameter
-            if mode == "AVG":
+            comptime if mode == "AVG":
                 return a / b
             else:
                 return a

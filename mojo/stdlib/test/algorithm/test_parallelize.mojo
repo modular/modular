@@ -11,17 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys.info import num_physical_cores
+from std.math import ceildiv
+from std.sys.info import num_physical_cores
 
-from algorithm import map, parallelize, sync_parallelize
-from testing import TestSuite
+from std.algorithm import (
+    map,
+    parallelize,
+    sync_parallelize,
+    parallelize_over_rows,
+)
+from std.testing import assert_equal, assert_false, TestSuite
+from std.utils import IndexList
 
 
-# CHECK-LABEL: test_sync_parallelize
-def test_sync_parallelize():
-    print("== test_sync_parallelize")
-
+def test_sync_parallelize() raises:
     var num_work_items = 4
 
     var vector_stack = InlineArray[Scalar[DType.int], 20](uninitialized=True)
@@ -35,31 +38,25 @@ def test_sync_parallelize():
     @always_inline
     @__copy_capture(vector, chunk_size)
     @parameter
-    fn parallel_fn(thread_id: Int):
+    def parallel_fn(thread_id: Int):
         var start = thread_id * chunk_size
         var end = min(start + chunk_size, len(vector))
 
         @always_inline
         @__copy_capture(start)
         @parameter
-        fn add_two(idx: Int):
+        def add_two(idx: Int):
             vector[start + idx] = vector[start + idx] + 2
 
         map[add_two](end - start)
 
     sync_parallelize[parallel_fn](num_work_items)
 
-    # CHECK-NOT: ERROR
     for i in range(len(vector)):
-        var expected_val = i + 2
-        if vector[i] != Scalar[DType.int](expected_val):
-            print("ERROR: Expecting the result to be i + 2")
+        assert_equal(vector[i], Scalar[DType.int](i + 2))
 
 
-# CHECK-LABEL: test_parallelize
-def test_parallelize():
-    print("== test_parallelize")
-
+def test_parallelize() raises:
     var num_work_items = num_physical_cores()
 
     var vector_stack = InlineArray[Scalar[DType.int], 20](uninitialized=True)
@@ -73,14 +70,14 @@ def test_parallelize():
     @parameter
     @__copy_capture(vector, chunk_size)
     @always_inline
-    fn parallel_fn(thread_id: Int):
+    def parallel_fn(thread_id: Int):
         var start = thread_id * chunk_size
         var end = min(start + chunk_size, len(vector))
 
         @always_inline
         @__copy_capture(start)
         @parameter
-        fn add_two(idx: Int):
+        def add_two(idx: Int):
             vector[start + idx] = vector[start + idx] + 2
 
         map[add_two](end - start)
@@ -89,30 +86,139 @@ def test_parallelize():
 
 
 @parameter
-fn printme(i: Int):
+def printme(i: Int):
     print(i, end="")
 
 
-# CHECK-LABEL: test_parallelize_no_workers
-def test_parallelize_no_workers():
-    print("== test_parallelize_no_workers")
-    # CHECK: Number of workers must be positive
+def test_parallelize_no_workers() raises:
+    # With ASSERT=warn, this prints a warning but doesn't abort.
     parallelize[printme](10, 0)
 
 
-# CHECK-LABEL: test_parallelize_negative_workers
-def test_parallelize_negative_workers():
-    print("== test_parallelize_negative_workers")
-    # CHECK: Number of workers must be positive
+def test_parallelize_negative_workers() raises:
+    # With ASSERT=warn, this prints a warning but doesn't abort.
     parallelize[printme](10, -1)
 
 
-# CHECK-LABEL: test_parallelize_negative_work
-def test_parallelize_negative_work():
-    print("== test_parallelize_negative_work")
+def test_parallelize_negative_work() raises:
     # This should do nothing
     parallelize[printme](-1, 4)
 
 
-def main():
+def test_parallelize_over_rows_zero_work() raises:
+    # This should do nothing
+    @parameter
+    def noop(start: Int, end: Int):
+        pass
+
+    parallelize_over_rows[noop](IndexList[1](0), 0, 1)
+
+
+def test_parallelize_unified() raises:
+    var num_work_items = num_physical_cores()
+
+    var vector_stack = InlineArray[Scalar[DType.int], 20](uninitialized=True)
+    var vector = Span(vector_stack)
+
+    for i in range(len(vector)):
+        vector[i] = Scalar[DType.int](i)
+
+    var chunk_size = ceildiv(len(vector), num_work_items)
+
+    @always_inline
+    def parallel_fn(
+        thread_id: Int,
+    ) unified {read vector, read chunk_size,}:
+        var start = thread_id * chunk_size
+        var end = min(start + chunk_size, len(vector))
+
+        for idx in range(end - start):
+            vector[start + idx] = vector[start + idx] + 2
+
+    parallelize(parallel_fn, num_work_items)
+
+    for i in range(len(vector)):
+        assert_equal(vector[i], Scalar[DType.int](i + 2))
+
+
+def test_sync_parallelize_unified() raises:
+    var num_work_items = 4
+
+    var vector_stack = InlineArray[Scalar[DType.int], 20](uninitialized=True)
+    var vector = Span(vector_stack)
+
+    for i in range(len(vector)):
+        vector[i] = Scalar[DType.int](i)
+
+    var chunk_size = ceildiv(len(vector), num_work_items)
+
+    @always_inline
+    def add_two_parallel(
+        thread_id: Int,
+    ) unified {read vector, read chunk_size,}:
+        var start = thread_id * chunk_size
+        var end = min(start + chunk_size, len(vector))
+
+        for idx in range(end - start):
+            vector[start + idx] = vector[start + idx] + 2
+
+    sync_parallelize(add_two_parallel, num_work_items)
+
+    for i in range(len(vector)):
+        assert_equal(vector[i], Scalar[DType.int](i + 2))
+
+
+def test_sync_parallelize_unified_single_item() raises:
+    var result = 0
+
+    @always_inline
+    def set_result(
+        i: Int,
+    ) unified {mut result,}:
+        result = 42
+
+    sync_parallelize(set_result, 1)
+
+    assert_equal(result, 42)
+
+
+def test_sync_parallelize_unified_zero_items() raises:
+    var called = False
+
+    @always_inline
+    def should_not_run(
+        i: Int,
+    ) unified {mut called,}:
+        called = True
+
+    sync_parallelize(should_not_run, 0)
+
+    assert_false(called)
+
+
+def test_parallelize_over_rows() raises:
+    var shape = IndexList[2](4, 8)
+    var num_rows = shape[0]
+    var row_size = shape[1]
+
+    var data_stack = InlineArray[Scalar[DType.int], 32](uninitialized=True)
+    var data = Span(data_stack)
+
+    for i in range(num_rows * row_size):
+        data[i] = Scalar[DType.int](0)
+
+    @parameter
+    def process_rows(start_row: Int, end_row: Int):
+        for row in range(start_row, end_row):
+            for col in range(row_size):
+                data[row * row_size + col] = Scalar[DType.int](row + 1)
+
+    parallelize_over_rows[process_rows](shape, 1, 1)
+
+    for row in range(num_rows):
+        for col in range(row_size):
+            assert_equal(data[row * row_size + col], Scalar[DType.int](row + 1))
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

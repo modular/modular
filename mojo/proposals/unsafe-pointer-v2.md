@@ -12,7 +12,8 @@ however its current API has several flaws.
 ## Current Issues with `UnsafePointer`
 
 1. **Unsafe implicit conversions**
-   - `immutable` → `mutable` ([GitHub issue #4386](https://github.com/modular/modular/issues/4386))
+   - `immutable` → `mutable`
+     ([GitHub issue #4386](https://github.com/modular/modular/issues/4386))
    - `origin_of(a)` → `origin_of(b)`
    - `AnyOrigin` → `origin_of(a)`
 
@@ -108,10 +109,10 @@ alias ImmutUnsafePointer[...] = UnsafePointer[mut=False, ...]
 
 ### Cross-language Comparison
 
-| Mojo | C++ | Rust |
-| --- | --- | --- |
+| Mojo                    | C++        | Rust       |
+|-------------------------|------------|------------|
 | `ImmutUnsafePointer[T]` | `const T*` | `*const T` |
-| `MutUnsafePointer[T]` | `T*` | `*mut T` |
+| `MutUnsafePointer[T]`   | `T*`       | `*mut T`   |
 
 ---
 

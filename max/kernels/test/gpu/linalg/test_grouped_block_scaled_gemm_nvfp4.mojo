@@ -22,22 +22,15 @@ Test matrix covering NVIDIA CuTe DSL constraints:
 - Cluster shapes: 1x1, 2x2 (for initial tests)
 """
 
-from math import ceildiv
-from memory import UnsafePointer
-from sys import size_of
+from std.math import ceildiv
 
-from gpu.host import DeviceContext
-from gpu.host.info import B200
-from layout import Layout, LayoutTensor, RuntimeLayout
-from testing import testing
+from std.gpu.host import DeviceContext
+from std.testing import testing
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.static_tuple import StaticTuple
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_tile_scheduler import (
     GroupedTileScheduler,
-    GroupedWorkInfo,
-    GroupedWorkIterator,
 )
 
 
@@ -46,7 +39,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_tile_schedu
 # =============================================================================
 
 
-fn test_nvf4_format_constraints(ctx: DeviceContext) raises:
+def test_nvf4_format_constraints(ctx: DeviceContext) raises:
     """Validate NVF4 format constraints.
 
     NVF4 format:
@@ -74,7 +67,7 @@ fn test_nvf4_format_constraints(ctx: DeviceContext) raises:
 # =============================================================================
 
 
-fn test_tile_counts_nvf4_alignment(ctx: DeviceContext) raises:
+def test_tile_counts_nvf4_alignment(ctx: DeviceContext) raises:
     """Test tile counts with NVF4 alignment requirements.
 
     NVF4 format has stricter alignment due to 4-bit elements.
@@ -99,7 +92,7 @@ fn test_tile_counts_nvf4_alignment(ctx: DeviceContext) raises:
 # =============================================================================
 
 
-fn test_k_tile_counts_nvf4(ctx: DeviceContext) raises:
+def test_k_tile_counts_nvf4(ctx: DeviceContext) raises:
     """Test K-tile counts for NVF4 format.
 
     NVF4 has different K-tile sizes due to 4-bit packing.
@@ -128,7 +121,7 @@ fn test_k_tile_counts_nvf4(ctx: DeviceContext) raises:
 # =============================================================================
 
 
-fn test_16_byte_alignment(ctx: DeviceContext) raises:
+def test_16_byte_alignment(ctx: DeviceContext) raises:
     """Test 16-byte alignment constraint.
 
     From NVIDIA CuTe DSL: 16-byte alignment on contiguous dimensions.
@@ -140,7 +133,7 @@ fn test_16_byte_alignment(ctx: DeviceContext) raises:
     # For 16-bit elements (2 bytes), 16 bytes = 8 elements
     # For 32-bit elements (4 bytes), 16 bytes = 4 elements
 
-    fn min_aligned_elements(dtype_bytes: Int) -> Int:
+    def min_aligned_elements(dtype_bytes: Int) -> Int:
         """Minimum elements for 16-byte alignment."""
         return 16 // dtype_bytes
 
@@ -160,7 +153,7 @@ fn test_16_byte_alignment(ctx: DeviceContext) raises:
 # =============================================================================
 
 
-fn test_multiple_group_distribution(ctx: DeviceContext) raises:
+def test_multiple_group_distribution(ctx: DeviceContext) raises:
     """Test tile distribution across multiple groups.
 
     Validates that tiles are correctly assigned to groups.
@@ -207,7 +200,7 @@ fn test_multiple_group_distribution(ctx: DeviceContext) raises:
 # =============================================================================
 
 
-fn test_nvf4_vs_mxf8_comparison(ctx: DeviceContext) raises:
+def test_nvf4_vs_mxf8_comparison(ctx: DeviceContext) raises:
     """Compare NVF4 and MXF8 format parameters.
 
     Validates the key differences between the two formats.
@@ -244,7 +237,7 @@ fn test_nvf4_vs_mxf8_comparison(ctx: DeviceContext) raises:
 # =============================================================================
 
 
-def main():
+def main() raises:
     print("=" * 60)
     print("Test: Grouped Block-Scaled GEMM (NVF4)")
     print("=" * 60)

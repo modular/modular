@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import has_accelerator
+from std.math import ceildiv
+from std.sys import has_accelerator
 
-from gpu import global_idx
-from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
+from layout import TileTensor, row_major
 
 comptime float_dtype = DType.float32
 comptime VECTOR_WIDTH = 10
 comptime BLOCK_SIZE = 5
-comptime layout = Layout.row_major(VECTOR_WIDTH)
+comptime layout = row_major[VECTOR_WIDTH]()
 
 
-def main():
-    constrained[has_accelerator(), "This example requires a supported GPU"]()
+def main() raises:
+    comptime assert has_accelerator(), "This example requires a supported GPU"
 
     # Get context for the attached GPU
     var ctx = DeviceContext()
@@ -40,9 +40,9 @@ def main():
     rhs_buffer.enqueue_fill(2.5)
 
     # Wrap the device buffers in tensors
-    var lhs_tensor = LayoutTensor[float_dtype, layout](lhs_buffer)
-    var rhs_tensor = LayoutTensor[float_dtype, layout](rhs_buffer)
-    var out_tensor = LayoutTensor[float_dtype, layout](out_buffer)
+    var lhs_tensor = TileTensor(lhs_buffer, layout)
+    var rhs_tensor = TileTensor(rhs_buffer, layout)
+    var out_tensor = TileTensor(out_buffer, layout)
 
     # Calculate the number of blocks needed to cover the vector
     var grid_dim = ceildiv(VECTOR_WIDTH, BLOCK_SIZE)
@@ -59,17 +59,17 @@ def main():
 
     # Map to host so that values can be printed from the CPU
     with out_buffer.map_to_host() as host_buffer:
-        var host_tensor = LayoutTensor[float_dtype, layout](host_buffer)
+        var host_tensor = TileTensor(host_buffer, layout)
         print("Resulting vector:", host_tensor)
 
 
-fn vector_addition(
-    lhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
-    rhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
-    out_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+def vector_addition(
+    lhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+    rhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+    out_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
     size: Int,
 ):
     """The calculation to perform across the vector on the GPU."""
     var global_tid = global_idx.x
-    if global_tid < UInt(size):
+    if global_tid < size:
         out_tensor[global_tid] = lhs_tensor[global_tid] + rhs_tensor[global_tid]

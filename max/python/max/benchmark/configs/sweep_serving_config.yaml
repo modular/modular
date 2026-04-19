@@ -13,11 +13,11 @@
 
 # Sweep Serving Benchmark Configuration
 # This configuration inherits from serving_config.yaml and adds sweep-specific parameters.
-# Used by sweep-benchmark-serving.py.
+# Used by sweep_benchmark_serving.py.
 
 # Configuration metadata
 name: "Sweep Serving Benchmark Configuration"
-description: "Configuration for sweeping online serving benchmarks (sweep-benchmark-serving.py)"
+description: "Configuration for sweeping online serving benchmarks (sweep_benchmark_serving.py)"
 version: "0.0.1"
 
 # Inherit from serving configuration
@@ -45,3 +45,5 @@ benchmark_config:
 
   # Sweep configuration (sweep-specific)
   num_iters: 1  # Number of iterations to run per configuration
+  flush_prefix_cache: True # Flush the prefix cache in between iterations
+  num_prompts_multiplier: null  # When set, num_prompts = multiplier * max_concurrency per sweep level

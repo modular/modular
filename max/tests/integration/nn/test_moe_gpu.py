@@ -17,16 +17,15 @@ from collections.abc import Sequence
 
 import numpy as np
 import torch
-from max.driver import CPU, Accelerator, Buffer
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import moe_create_indices
+from max.nn.kernels import moe_create_indices
 from torch.utils.dlpack import from_dlpack
 
 
 def test_moe_create_indices() -> None:
-    host = CPU(0)
     device0 = Accelerator(0)
     devices = [device0]
     session = InferenceSession(devices=devices)

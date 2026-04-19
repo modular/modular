@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import random
-from collections import Optional
+from std import random
+from std.collections import Optional
 
-from memory import memcpy, memset_zero
+from std.memory import memcpy, memset_zero
 
 
-struct Grid[rows: Int, cols: Int](Copyable, Stringable):
+struct Grid[rows: Int, cols: Int](Copyable, Writable):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -29,16 +29,16 @@ struct Grid[rows: Int, cols: Int](Copyable, Stringable):
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__(out self):
+    def __init__(out self):
         self.data = alloc[Int8](self.num_cells)
         memset_zero(self.data, self.num_cells)
 
-    fn __copyinit__(out self, existing: Self):
+    def __init__(out self, *, copy: Self):
         self.data = alloc[Int8](self.num_cells)
-        memcpy(dest=self.data, src=existing.data, count=self.num_cells)
+        memcpy(dest=self.data, src=copy.data, count=self.num_cells)
         # The lifetime of `existing` continues unchanged
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         self.data.free()
 
     # ===-------------------------------------------------------------------===#
@@ -46,7 +46,7 @@ struct Grid[rows: Int, cols: Int](Copyable, Stringable):
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    fn random(seed: Optional[Int] = None) -> Self:
+    def random(seed: Optional[Int] = None) -> Self:
         if seed:
             random.seed(seed.value())
         else:
@@ -61,33 +61,31 @@ struct Grid[rows: Int, cols: Int](Copyable, Stringable):
     # Indexing
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__(self, row: Int, col: Int) -> Int8:
+    def __getitem__(self, row: Int, col: Int) -> Int8:
         return (self.data + row * Self.cols + col)[]
 
-    fn __setitem__(mut self, row: Int, col: Int, value: Int8) -> None:
+    def __setitem__(mut self, row: Int, col: Int, value: Int8) -> None:
         (self.data + row * Self.cols + col)[] = value
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __str__(self) -> String:
-        str = String()
+    def write_to(self, mut writer: Some[Writer]):
         for row in range(Self.rows):
             for col in range(Self.cols):
                 if self[row, col] == 1:
-                    str += "*"
+                    writer.write_string("*")
                 else:
-                    str += " "
+                    writer.write_string(" ")
             if row != Self.rows - 1:
-                str += "\n"
-        return str
+                writer.write_string("\n")
 
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn evolve(self) -> Self:
+    def evolve(self) -> Self:
         next_generation = Self()
 
         for row in range(Self.rows):

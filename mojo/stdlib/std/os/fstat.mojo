@@ -15,12 +15,12 @@
 You can import these APIs from the `os` package. For example:
 
 ```mojo
-from os import stat
+from std.os import stat
 ```
 """
 
-from sys import CompilationTarget
-from time.time import _CTimeSpec
+from std.sys import CompilationTarget
+from std.time.time import _CTimeSpec
 
 from . import PathLike
 from ._linux_aarch64 import _lstat as _lstat_linux_arm
@@ -41,7 +41,7 @@ from ._macos import _stat as _stat_macos
 # ===----------------------------------------------------------------------=== #
 
 
-struct stat_result(Copyable, Stringable, Writable):
+struct stat_result(Copyable, Writable):
     """Object whose fields correspond  to the members of the stat structure."""
 
     var st_mode: Int
@@ -90,7 +90,7 @@ struct stat_result(Copyable, Stringable, Writable):
     var st_flags: Int
     """User defined flags for file."""
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         st_mode: Int,
@@ -145,7 +145,7 @@ struct stat_result(Copyable, Stringable, Writable):
         self.st_flags = st_flags
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """
         Formats this path to the provided Writer.
 
@@ -160,32 +160,15 @@ struct stat_result(Copyable, Stringable, Writable):
         writer.write(", st_uid=", self.st_uid)
         writer.write(", st_gid=", self.st_gid)
         writer.write(", st_size=", self.st_size)
-        writer.write(", st_atime=", String(self.st_atimespec))
-        writer.write(", st_mtime=", String(self.st_mtimespec))
-        writer.write(", st_ctime=", String(self.st_ctimespec))
-        writer.write(", st_birthtime=", String(self.st_birthtimespec))
+        writer.write(", st_atime=", self.st_atimespec)
+        writer.write(", st_mtime=", self.st_mtimespec)
+        writer.write(", st_ctime=", self.st_ctimespec)
+        writer.write(", st_birthtime=", self.st_birthtimespec)
         writer.write(", st_blocks=", self.st_blocks)
         writer.write(", st_blksize=", self.st_blksize)
         writer.write(", st_rdev=", self.st_rdev)
         writer.write(", st_flags=", self.st_flags)
         writer.write(")")
-
-    @no_inline
-    fn __str__(self) -> String:
-        """Constructs a string representation of stat_result.
-
-        Returns:
-          A string representation of stat_result.
-        """
-        return String.write(self)
-
-    fn __repr__(self) -> String:
-        """Constructs a representation of stat_result.
-
-        Returns:
-          A representation of stat_result.
-        """
-        return String(self)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -193,7 +176,7 @@ struct stat_result(Copyable, Stringable, Writable):
 # ===----------------------------------------------------------------------=== #
 
 
-fn stat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
+def stat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
     """Get the status of a file or a file descriptor.
 
     Parameters:
@@ -210,8 +193,7 @@ fn stat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
     """
     var fspath = path.__fspath__()
 
-    @parameter
-    if CompilationTarget.is_macos():
+    comptime if CompilationTarget.is_macos():
         return _stat_macos(fspath^)._to_stat_result()
     elif CompilationTarget.has_neon():
         return _stat_linux_arm(fspath^)._to_stat_result()
@@ -222,7 +204,7 @@ fn stat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
 # ===----------------------------------------------------------------------=== #
 # lstat
 # ===----------------------------------------------------------------------=== #
-fn lstat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
+def lstat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
     """Get the status of a file or a file descriptor (similar to stat, but does
     not follow symlinks).
 
@@ -240,8 +222,7 @@ fn lstat[PathLike: os.PathLike](path: PathLike) raises -> stat_result:
     """
     var fspath = path.__fspath__()
 
-    @parameter
-    if CompilationTarget.is_macos():
+    comptime if CompilationTarget.is_macos():
         return _lstat_macos(fspath^)._to_stat_result()
     elif CompilationTarget.has_neon():
         return _lstat_linux_arm(fspath^)._to_stat_result()

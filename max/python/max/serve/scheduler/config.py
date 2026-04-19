@@ -35,7 +35,8 @@ class TokenGenerationSchedulerConfig:
     """The maximum sequence length of the model."""
 
     max_batch_total_tokens: int | None = None
-    """Ensures that the sum of the context length in a batch does not exceed max_batch_total_tokens."""
+    """Ensures the sum of page-aligned context lengths in a batch does not
+    exceed max_batch_total_tokens. Alignment uses the KV cache page size."""
 
     enable_chunked_prefill: bool = True
     """Enables chunked prefill, where the scheduler splits requests into chunks to ensure
@@ -47,6 +48,12 @@ class TokenGenerationSchedulerConfig:
     data_parallel_degree: int = 1
     """Data-parallelism parameter. The degree to which the model is replicated
     is dependent on the model type."""
+
+    num_speculative_tokens: int = 0
+    """The number of speculative tokens to generate per step.
+
+    If speculative decoding is disabled, this should be 0.
+    """
 
     kvcache_ce_watermark: float = 0.95
     """The maximum percentage of total KVCache memory that can be used after allocating a CE request. This parameter was found empirically."""
@@ -90,18 +97,22 @@ class TokenGenerationSchedulerConfig:
     ) -> TokenGenerationSchedulerConfig:
         # We know that the max_length and max_batch_size is not None since they
         # are required for memory estimation.
-        assert pipeline_config.max_batch_size is not None
+        assert pipeline_config.runtime.max_batch_size is not None
+        assert pipeline_config.model is not None
 
         return cls(
-            max_batch_size=pipeline_config.max_batch_size,
-            max_forward_steps_tg=pipeline_config.max_num_steps
-            if pipeline_config.max_num_steps != -1
+            max_batch_size=pipeline_config.runtime.max_batch_size,
+            max_forward_steps_tg=pipeline_config.runtime.max_num_steps
+            if pipeline_config.runtime.max_num_steps != -1
             else 1,
-            target_tokens_per_batch_ce=pipeline_config.max_batch_input_tokens,
-            max_seq_len=pipeline_config.max_length,
-            max_batch_total_tokens=pipeline_config.max_batch_total_tokens,
-            enable_chunked_prefill=pipeline_config.enable_chunked_prefill,
-            enable_in_flight_batching=pipeline_config.enable_in_flight_batching,
+            target_tokens_per_batch_ce=pipeline_config.runtime.max_batch_input_tokens,
+            max_seq_len=pipeline_config.model.max_length,
+            max_batch_total_tokens=pipeline_config.runtime.max_batch_total_tokens,
+            enable_chunked_prefill=pipeline_config.runtime.enable_chunked_prefill,
+            enable_in_flight_batching=pipeline_config.runtime.enable_in_flight_batching,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
-            kvcache_ce_watermark=pipeline_config.kvcache_ce_watermark,
+            kvcache_ce_watermark=pipeline_config.runtime.kvcache_ce_watermark,
+            num_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
+            if pipeline_config.speculative is not None
+            else 0,
         )

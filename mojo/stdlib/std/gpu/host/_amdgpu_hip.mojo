@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ffi import external_call
+from std.ffi import _CPointer, external_call
 
-from gpu.host import DeviceContext, DeviceFunction, DeviceStream
-from gpu.host.device_context import (
-    _ConstCharPtr,
+from std.gpu.host import DeviceContext, DeviceFunction, DeviceStream
+from std.gpu.host.device_context import (
+    _CString,
     _checked,
     _DeviceContextPtr,
     _DeviceFunctionPtr,
@@ -35,25 +35,20 @@ struct _ihipModule_t:
     pass
 
 
-comptime hipDevice_t = UnsafePointer[_ihipDevice_t, MutAnyOrigin]
-comptime hipStream_t = UnsafePointer[_ihipStream_t, MutAnyOrigin]
-comptime hipModule_t = UnsafePointer[_ihipModule_t, MutAnyOrigin]
+comptime hipDevice_t = _CPointer[_ihipDevice_t, ExternalOrigin[mut=True]]
+comptime hipStream_t = _CPointer[_ihipStream_t, ExternalOrigin[mut=True]]
+comptime hipModule_t = _CPointer[_ihipModule_t, ExternalOrigin[mut=True]]
 
 
 # Accessor function to get access to the underlying hipDevice_t from an abstract DeviceContext.
 # Use `var hip_dev: hipDevice_t = HIP(ctx)` where ctx is a `DeviceContext` to get access to the
 # underlying hipDevice_t.
 @always_inline
-fn HIP(ctx: DeviceContext) raises -> hipDevice_t:
+def HIP(ctx: DeviceContext) raises -> hipDevice_t:
     var result = hipDevice_t()
     # const char *AsyncRT_DeviceContext_hip_device(hipDevice_t *result, const DeviceContext *ctx)
     _checked(
-        external_call[
-            "AsyncRT_DeviceContext_hip_device",
-            _ConstCharPtr,
-            UnsafePointer[hipDevice_t, origin_of(result)],
-            _DeviceContextPtr,
-        ](
+        external_call["AsyncRT_DeviceContext_hip_device", _CString[]](
             UnsafePointer(to=result),
             ctx._handle,
         )
@@ -64,15 +59,13 @@ fn HIP(ctx: DeviceContext) raises -> hipDevice_t:
 # Accessor function to get access to the underlying hipStream_t from an abstract DeviceStream.
 # Use `var hip_stream: hipStream_t = HIP(ctx.stream())` where ctx is a `DeviceContext` to get access to the underlying hipStream_t.
 @always_inline
-fn HIP(stream: DeviceStream) raises -> hipStream_t:
+def HIP(stream: DeviceStream) raises -> hipStream_t:
     var result = hipStream_t()
     # const char *AsyncRT_DeviceStream_hip_stream(hipStream_t *result, const DeviceStream *stream)
     _checked(
         external_call[
             "AsyncRT_DeviceStream_hip_stream",
-            _ConstCharPtr,
-            UnsafePointer[hipStream_t, origin_of(result)],
-            _DeviceStreamPtr,
+            _CString[],
         ](
             UnsafePointer(to=result),
             stream._handle,
@@ -83,15 +76,13 @@ fn HIP(stream: DeviceStream) raises -> hipStream_t:
 
 # Accessor function to get access to the underlying hipModule_t from a DeviceFunction.
 @always_inline
-fn HIP_MODULE(func: DeviceFunction) raises -> hipModule_t:
+def HIP_MODULE(func: DeviceFunction) raises -> hipModule_t:
     var result = hipModule_t()
     # const char *AsyncRT_DeviceFunction_hip_module(hipModule_t *result, const DeviceFunction *func)
     _checked(
         external_call[
             "AsyncRT_DeviceFunction_hip_module",
-            _ConstCharPtr,
-            UnsafePointer[hipModule_t, origin_of(result)],
-            _DeviceFunctionPtr,
+            _CString[],
         ](
             UnsafePointer(to=result),
             func._handle,

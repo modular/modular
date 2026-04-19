@@ -10,18 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: NVIDIA-GPU
-# RUN: %mojo-build %s -o %t
-# RUN: %mpirun-gpu-per-thread %t
+# RUN: %mojo %s
+from std.math import iota
 
-from math import iota
-
-from shmem import SHMEMBuffer, SHMEMContext, shmem_launch
-from memory import alloc
-from testing import assert_equal
+from shmem import SHMEMContext, shmem_launch
+from std.memory import alloc
+from std.testing import assert_equal
 
 
-def test_buffer_copy(ctx: SHMEMContext):
+def test_buffer_copy(ctx: SHMEMContext) raises:
     comptime length = 1024
 
     var host_buffer = alloc[Float32](length)
@@ -39,5 +36,5 @@ def test_buffer_copy(ctx: SHMEMContext):
         assert_equal(host_buffer[i], host_buffer_2[i])
 
 
-def main():
+def main() raises:
     shmem_launch[test_buffer_copy]()

@@ -13,14 +13,8 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    RopeType,
-    SupportedArchitecture,
-    SupportedEncoding,
-    TextTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 
 from ..llama3 import weight_adapters
 from ..llama3.model import Llama3Model
@@ -28,14 +22,14 @@ from ..llama3.model_config import Llama3Config
 from .weight_adapters import convert_exaone_safetensor_state_dict
 
 exaone_arch = SupportedArchitecture(
-    name="ExaoneForCausalLM_Legacy",
-    default_encoding=SupportedEncoding.float32,
+    name="ExaoneForCausalLM",
+    default_encoding="float32",
     task=PipelineTask.TEXT_GENERATION,
     supported_encodings={
-        SupportedEncoding.q4_k: [KVCacheStrategy.PAGED],
-        SupportedEncoding.q6_k: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        "q4_k",
+        "q6_k",
+        "float32",
+        "bfloat16",
     },
     example_repo_ids=[
         "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct",
@@ -45,8 +39,9 @@ exaone_arch = SupportedArchitecture(
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type=RopeType.neox,
+    rope_type="neox",
     default_weights_format=WeightsFormat.gguf,
+    multi_gpu_supported=False,
     weight_adapters={
         WeightsFormat.safetensors: convert_exaone_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,

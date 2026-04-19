@@ -14,6 +14,7 @@ modular_py_test(
         exclude = ["*_gpu.py"],
     ),
     imports = ["."],
+    tags = ["skip-external-ci"],  # FIXME: SDLC-3032
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],

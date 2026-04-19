@@ -13,12 +13,12 @@
 
 """Implement UTF-8 utils."""
 
-from base64._b64encode import _sub_with_saturation
-from sys import is_compile_time, simd_width_of
-from sys.intrinsics import likely
+from std.base64._b64encode import _sub_with_saturation
+from std.sys import simd_width_of
+from std.sys.intrinsics import likely
 
-from bit import count_leading_zeros
-from memory import Span
+from std.bit import count_leading_zeros
+from std.memory import Span
 
 # ===-----------------------------------------------------------------------===#
 # Validate UTF-8
@@ -103,13 +103,13 @@ comptime UTF8_CHAR_WIDTHS: InlineArray[Byte, 256] = [
 
 
 @always_inline
-fn _utf8_char_width(b: Byte) -> Int:
+def _utf8_char_width(b: Byte) -> Int:
     return Int(materialize[UTF8_CHAR_WIDTHS]()[Int(b)])
 
 
 @always_inline
-fn _extract_vector[
-    width: Int, //, offset: Int
+def _extract_vector[
+    width: SIMDSize, //, offset: Int
 ](a: SIMD[DType.uint8, width], b: SIMD[DType.uint8, width]) -> SIMD[
     DType.uint8, width
 ]:
@@ -117,7 +117,7 @@ fn _extract_vector[
     return a.join(b).slice[width, offset=offset]()
 
 
-fn validate_chunk[
+def validate_chunk[
     simd_size: Int
 ](
     current_block: SIMD[DType.uint8, simd_size],
@@ -148,7 +148,7 @@ fn validate_chunk[
     return must23_as_80 ^ sc
 
 
-fn _is_valid_utf8_runtime(span: Span[mut=False, Byte, ...]) -> Bool:
+def _is_valid_utf8_runtime(span: Span[mut=False, Byte, ...]) -> Bool:
     """Fast utf-8 validation using SIMD instructions.
 
     References for this algorithm:
@@ -191,7 +191,7 @@ fn _is_valid_utf8_runtime(span: Span[mut=False, Byte, ...]) -> Bool:
     return all(has_error.eq(0))
 
 
-fn _is_valid_utf8_comptime(span: Span[mut=False, Byte, ...]) -> Bool:
+def _is_valid_utf8_comptime(span: Span[mut=False, Byte, ...]) -> Bool:
     var ptr = span.unsafe_ptr()
     var length = UInt(len(span))
     var offset = UInt(0)
@@ -207,7 +207,7 @@ fn _is_valid_utf8_comptime(span: Span[mut=False, Byte, ...]) -> Bool:
         elif byte_type == 1:
             return False
 
-        for i in range(1, byte_type):
+        for i in range(1, Int(byte_type)):
             var idx = offset + UInt(i)
             if idx >= length or not _is_utf8_continuation_byte(ptr[idx]):
                 return False
@@ -231,7 +231,7 @@ fn _is_valid_utf8_comptime(span: Span[mut=False, Byte, ...]) -> Bool:
 
 
 @always_inline("nodebug")
-fn _is_valid_utf8(span: Span[mut=False, Byte, ...]) -> Bool:
+def _is_valid_utf8(span: Span[mut=False, Byte, ...]) -> Bool:
     """Verify that the bytes are valid UTF-8.
 
     Args:
@@ -256,7 +256,7 @@ fn _is_valid_utf8(span: Span[mut=False, Byte, ...]) -> Bool:
     U+40000..U+FFFFF   | F1..F3     | 80..BF      | 80..BF     | 80..BF      |
     U+100000..U+10FFFF | F4         | 80..**8F**  | 80..BF     | 80..BF      |
     """
-    if is_compile_time():
+    if __is_run_in_comptime_interpreter:
         return _is_valid_utf8_comptime(span)
     else:
         return _is_valid_utf8_runtime(span)
@@ -269,14 +269,14 @@ fn _is_valid_utf8(span: Span[mut=False, Byte, ...]) -> Bool:
 
 @parameter
 @always_inline
-fn _is_utf8_continuation_byte[
-    w: Int
+def _is_utf8_continuation_byte[
+    w: SIMDSize
 ](vec: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
     return vec.cast[DType.int8]().lt(-(0b1000_0000 >> 1))
 
 
 @always_inline
-fn _is_utf8_start_byte(w: Byte) -> Bool:
+def _is_utf8_start_byte(w: Byte) -> Bool:
     """Determine if `w` is either an ASCII character or the start
     of a UTF-8 multibyte character. This does _not_ validate `w` in
     any other way, for example `_is_utf8_start_byte(0b1111_1000)`
@@ -286,26 +286,23 @@ fn _is_utf8_start_byte(w: Byte) -> Bool:
 
 
 @always_inline
-fn _count_utf8_continuation_bytes(span: Span[Byte]) -> Int:
-    return Int(span.count[func=_is_utf8_continuation_byte]())
+def _count_utf8_continuation_bytes(span: Span[Byte, _]) -> Int:
+    return Int(span.count(_is_utf8_continuation_byte))
 
 
 @always_inline
-fn _utf8_first_byte_sequence_length(b: Byte) -> Int:
+def _utf8_first_byte_sequence_length(b: Byte) -> Int:
     """Get the length of the sequence starting with given byte. Do note that
     this does not work correctly if given a continuation byte."""
 
-    debug_assert(
-        b <= BIGGEST_UTF8_FIRST_BYTE, "first byte is out of range for utf-8"
-    )
-    debug_assert(
-        not _is_utf8_continuation_byte(b),
-        "Function does not work correctly if given a continuation byte.",
-    )
+    assert b <= BIGGEST_UTF8_FIRST_BYTE, "first byte is out of range for utf-8"
+    assert not _is_utf8_continuation_byte(
+        b
+    ), "Function does not work correctly if given a continuation byte."
     return Int(count_leading_zeros(~b) | b.lt(0b1000_0000).cast[DType.uint8]())
 
 
-fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> type_of(b):
+def _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> type_of(b):
     """UTF-8 byte type.
 
     Returns:
@@ -319,14 +316,12 @@ fn _utf8_byte_type(b: SIMD[DType.uint8, _], /) -> type_of(b):
         - 3 -> start of 3 byte long sequence.
         - 4 -> start of 4 byte long sequence.
     """
-    debug_assert(
-        b <= BIGGEST_UTF8_FIRST_BYTE, "first byte is out of range for utf-8"
-    )
+    assert b <= BIGGEST_UTF8_FIRST_BYTE, "first byte is out of range for utf-8"
     return count_leading_zeros(~b)
 
 
 @always_inline
-fn _is_newline_char_utf8[
+def _is_newline_char_utf8[
     include_r_n: Bool = False
 ](
     p: UnsafePointer[mut=False, Byte, ...],
@@ -361,13 +356,12 @@ fn _is_newline_char_utf8[
     if char_len == 2:
         var is_next_line = b0 == 0xC2 and b1 == 0x85  # unicode next line \x85
 
-        @parameter
-        if include_r_n:
+        comptime if include_r_n:
             return is_next_line or (b0 == `\r` and b1 == `\n`)
         else:
             return is_next_line
     else:  # unicode line sep or paragraph sep: \u2028 , \u2029
-        debug_assert(char_len == 3, "invalid UTF-8 byte length")
+        assert char_len == 3, "invalid UTF-8 byte length"
         var b2 = p[eol_start + 2]
         return b0 == 0xE2 and b1 == 0x80 and (b2 == 0xA8 or b2 == 0xA9)
 
@@ -379,8 +373,8 @@ struct UTF8Chunk[origin: ImmutOrigin](ImplicitlyCopyable):
     var invalid: Span[Byte, Self.origin]
     """The invalid UTF-8 bytes."""
 
-    @doc_private
-    fn __init__(
+    @doc_hidden
+    def __init__(
         out self,
         *,
         valid: StringSlice[Self.origin],
@@ -403,26 +397,26 @@ struct UTF8Chunks[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
 
     var _bytes: Span[Byte, Self.origin]
 
-    fn __init__(out self, bytes: Span[Byte, Self.origin]):
+    def __init__(out self, bytes: Span[Byte, Self.origin]):
         self._bytes = bytes
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
-    fn __next__(mut self) raises StopIteration -> UTF8Chunk[Self.origin]:
+    def __next__(mut self) raises StopIteration -> UTF8Chunk[Self.origin]:
         if len(self._bytes) == 0:
             raise StopIteration()
 
         @always_inline
-        fn safe_get(i: Int) unified {read self} -> Byte:
+        def safe_get(i: Int) unified {read self} -> Byte:
             return self._bytes[i] if i < len(self._bytes) else Byte(0)
 
         @always_inline
-        fn in_range(byte: Byte, *, start: Byte, end: Byte) -> Bool:
+        def in_range(byte: Byte, *, start: Byte, end: Byte) -> Bool:
             return start <= byte <= end
 
         @always_inline
-        fn is_continuation_byte(byte: Byte) -> Bool:
+        def is_continuation_byte(byte: Byte) -> Bool:
             # Check if byte has the pattern 10xxxxxx (continuation byte).
             return byte & 192 == TWO_CONTS
 

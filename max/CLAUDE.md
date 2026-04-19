@@ -175,7 +175,7 @@ To verify that pipeline outputs match PyTorch reference implementations:
 
 ```bash
 # 1. Generate logits with MAX pipeline
-./bazelw run //max/tests/integration:generate_llm_logits -- \
+./bazelw run //max/tests/integration/tools:generate_llm_logits -- \
   --device gpu \
   --framework max \
   --pipeline gemma3-1b \
@@ -183,7 +183,7 @@ To verify that pipeline outputs match PyTorch reference implementations:
   --output /tmp/max-logits.json
 
 # 2. Generate logits with PyTorch reference
-./bazelw run //max/tests/integration:generate_llm_logits -- \
+./bazelw run //max/tests/integration/tools:generate_llm_logits -- \
   --device gpu \
   --framework torch \
   --pipeline gemma3-1b \
@@ -191,7 +191,7 @@ To verify that pipeline outputs match PyTorch reference implementations:
   --output /tmp/torch-logits.json
 
 # 3. Compare the logits
-./bazelw run //max/tests/integration:verify -- \
+./bazelw run //max/tests/integration/accuracy:verify -- \
   --eval-metric cos,kl,tol \
   --relative-tolerance 1e-2 \
   --absolute-tolerance 1e-5 \
@@ -200,7 +200,7 @@ To verify that pipeline outputs match PyTorch reference implementations:
   /tmp/max-logits.json /tmp/torch-logits.json
 
 # Run verification pipeline directly (combines all steps)
-./bazelw run //max/tests/integration:verify_pipelines -- \
+./bazelw run //max/tests/integration/accuracy:verify_pipelines -- \
   --pipeline Gemma-3-1B-bfloat16 \
   --devices='gpu'
 
@@ -231,6 +231,22 @@ Most neural network layers follow this structure:
 - Implement custom sharding strategies in model classes
 - Use collective operations for cross-device communication
 
+### Experimental Tensor API Style
+
+When writing model code that uses `max.experimental.tensor.Tensor` (modulev3
+architectures and `max.experimental.nn` layers), prefer Python operator syntax
+and instance methods over `F.*` functional calls. Before writing or modifying
+MAX model code, load the `/max-best-practices` skill for the full reference
+table.
+
+- Use `x @ w` not `F.matmul(x, w)`
+- Use `w.T` not `F.transpose(w)` (transposes last two dims)
+- Use `x.split(sizes, axis)` not `F.split(x, sizes, axis)`
+- Use `x.reshape(shape)`, `x.cast(dtype)`, `x.squeeze(axis)` over their
+  `F.*` equivalents
+- Arithmetic operators (`+`, `-`, `*`, `/`, `**`, `-x`) are preferred over
+  `F.add`, `F.sub`, `F.mul`, `F.div`, `F.pow`, `F.negate`
+
 ## Common Development Tasks
 
 ### Accessing HuggingFace Model Configurations
@@ -239,7 +255,8 @@ When investigating model issues or comparing configurations between models:
 
 1. **Model configurations are available on HuggingFace**:
    - Format: `https://huggingface.co/{org}/{model}/blob/main/config.json`
-   - Example: `https://huggingface.co/google/gemma-3-12b-it/blob/main/config.json`
+   - Example:
+     `https://huggingface.co/google/gemma-3-12b-it/blob/main/config.json`
 
 2. **For gated models requiring authentication**:
 
@@ -303,4 +320,5 @@ c profile
 - Write comprehensive tests for new features
 - Document new architectures in `architectures/README.md`
 - Performance improvements should include benchmarks
-- Refer to docs/internal/PythonDocstringStyleGuide.md for Python docstring style.
+- Refer to docs/internal/PythonDocstringStyleGuide.md for Python docstring
+  style.

@@ -16,8 +16,7 @@ The examples include the following:
 
 - **vector_addition.mojo**: A common "hello world" example for GPU programming,
   this adds two vectors together in the same way as seen in Chapter 2 of
-  [Programming Massively Parallel
-  Processors](https://www.sciencedirect.com/book/9780323912310/programming-massively-parallel-processors).
+  [Programming Massively Parallel Processors](https://www.sciencedirect.com/book/9780323912310/programming-massively-parallel-processors).
 
 - **grayscale.mojo**: The parallelized conversion of an RGB image to grayscale,
   as seen in Chapter 3 of "Programming Massively Parallel Processors".
@@ -82,15 +81,15 @@ mojo reduction.mojo
 
 ## Example walkthroughs
 
-Writing individual thread-based functions in Mojo is is powered by the [`gpu`
+Writing individual thread-based functions in Mojo is powered by the [`gpu`
 module](https://docs.modular.com/mojo/std/gpu/), which handles all the
 hardware-specific details of allocating and transferring memory between host
 and accelerator, as well as compilation and execution of accelerator-targeted
 functions.
 
-The first three examples that follow are common starting points for
-thread-based GPU programming. They follow the first three examples in the
-popular GPU programming textbook
+The first three examples that follow are common starting points for thread-based
+GPU programming. They follow the first three examples in the popular GPU
+programming textbook
 [*Programming Massively Parallel Processors*](https://www.sciencedirect.com/book/9780323912310/programming-massively-parallel-processors):
 
 - Parallel addition of two vectors
@@ -116,10 +115,10 @@ addition of each element in two vectors. Here's how it works in our
     storing the result in the output vector at the matching location.
 
     ```mojo
-    fn vector_addition(
-        lhs_tensor: LayoutTensor[mut=True, float_dtype, layout],
-        rhs_tensor: LayoutTensor[mut=True, float_dtype, layout],
-        out_tensor: LayoutTensor[mut=True, float_dtype, layout],
+    def vector_addition(
+        lhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+        rhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+        out_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
     ):
         tid = thread_idx.x
         out_tensor[tid] = lhs_tensor[tid] + rhs_tensor[tid]
@@ -182,7 +181,7 @@ addition of each element in two vectors. Here's how it works in our
 
     ```mojo
     with out_buffer.map_to_host() as host_buffer:
-        host_tensor = LayoutTensor[float_dtype, layout](host_buffer)
+        host_tensor = TileTensor(host_buffer, layout)
         print("Resulting vector:", host_tensor)
     ```
 
@@ -213,9 +212,9 @@ gray = 0.21 * red + 0.71 * green + 0.07 * blue
 And here is the per-thread function to perform this on the GPU:
 
 ```mojo
-fn color_to_grayscale(
-    rgb_tensor: LayoutTensor[mut=True, int_dtype, rgb_layout],
-    gray_tensor: LayoutTensor[mut=True, int_dtype, gray_layout],
+def color_to_grayscale(
+    rgb_tensor: TileTensor[int_dtype, type_of(rgb_layout), MutAnyOrigin],
+    gray_tensor: TileTensor[int_dtype, type_of(gray_layout), MutAnyOrigin],
 ):
     row = global_idx.y
     col = global_idx.x
@@ -264,17 +263,17 @@ multiplication, with no optimizations to take advantage of hardware resources.
 The GPU function for this looks like the following:
 
 ```mojo
-fn naive_matrix_multiplication(
-    m: LayoutTensor[mut=True, float_dtype, m_layout],
-    n: LayoutTensor[mut=True, float_dtype, n_layout],
-    p: LayoutTensor[mut=True, float_dtype, p_layout],
+def naive_matrix_multiplication(
+    m: TileTensor[float_dtype, type_of(m_layout), MutAnyOrigin],
+    n: TileTensor[float_dtype, type_of(n_layout), MutAnyOrigin],
+    p: TileTensor[float_dtype, type_of(p_layout), MutAnyOrigin],
 ):
     row = global_idx.y
     col = global_idx.x
 
-    m_dim = p.dim(0)
-    n_dim = p.dim(1)
-    k_dim = m.dim(1)
+    m_dim = Int(p.dim[0]())
+    n_dim = Int(p.dim[1]())
+    k_dim = Int(m.dim[1]())
 
     if row < m_dim and col < n_dim:
         for j_index in range(k_dim):
@@ -306,8 +305,8 @@ iterations it took to escape at that location in complex number space.
 The per-thread GPU function for this is as follows:
 
 ```mojo
-fn mandelbrot(
-    tensor: LayoutTensor[mut=True, int_dtype, layout],
+def mandelbrot(
+    tensor: TileTensor[int_dtype, type_of(layout), MutAnyOrigin],
 ):
     row = global_idx.y
     col = global_idx.x

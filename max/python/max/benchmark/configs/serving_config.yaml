@@ -30,7 +30,8 @@ benchmark_config:
   base_url: null  # Server or API base url if not using host/port
   host: "localhost"
   port: 8000
-  endpoint: "/v1/chat/completions"  # /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream
+  endpoint: "/v1/chat/completions"  # /v1/completions, /v1/chat/completions, /v1/responses, /v2/models/ensemble/generate_stream
+  benchmark_task: "text-generation"  # choices: text-generation, text-to-image, image-to-image
 
   num_prompts: 1000  # Number of prompts to process (serving-specific)
 
@@ -39,6 +40,7 @@ benchmark_config:
 
   # Request configuration (serving-specific)
   max_concurrency: null  # Maximum concurrent requests (optimized for serving benchmarks)
+  max_concurrent_conversations: null  # Max conversation workers for KV-cache stress mode; must be >= max_concurrency
   lora: null  # Optional LoRA name
 
   # Workload configuration (serving-specific)
@@ -49,25 +51,31 @@ benchmark_config:
   # Output control (serving-specific extensions)
   output_lengths: null  # Path to YAML file with output lengths or int
   max_output_len: null  # Maximum output length per request
-  temperature: 0.0  # Temperature for sampling
-  top_p: 1.0  # Top-p for sampling
+  temperature: null  # Temperature for sampling
+  top_p: null  # Top-p for sampling
   top_k: null  # Top-k for sampling
+  image_width: null  # Output image width in pixels
+  image_height: null  # Output image height in pixels
+  image_steps: null  # Denoising steps for pixel generation
+  image_guidance_scale: null  # Guidance scale for pixel generation
+  image_negative_prompt: null  # Optional negative prompt for pixel generation
+  image_seed: null  # Optional deterministic seed for pixel generation
 
   # Traffic control (serving-specific)
   request_rate: "inf"  # Requests per second (finite rate for realistic benchmarking)
   burstiness: 1.0  # Burstiness factor (1.0 = Poisson process)
-  skip_first_n_requests: 0  # Skip first N requests for measurements
+  skip_first_n_requests: null  # null = auto-set to max_concurrency; 0 = no skip
+  skip_last_n_requests: null  # null = auto-set to max_concurrency; 0 = no skip
   chat_warmup_delay_ms: 0.0  # Delay between starting chat sessions
   ignore_first_turn_stats: false # Ignore the first turn in a multi-turn chat.
+  randomize_starting_turn: true  # Start each session at a random turn offset (prefix runs densely)
+  randomize_session_start: true  # Random sleep before each session's first measured query
 
   # Dataset-specific parameters (serving workloads)
   arxiv_summarization_input_len: 15000
   obfuscated_conversations_average_output_len: 175
   obfuscated_conversations_coefficient_of_variation: 0.1
   obfuscated_conversations_shuffle: false
-  random_coefficient_of_variation: "0.3,0.7"
-  random_distribution_type: "normal"  # choices: uniform, normal
-  random_first_turn_ratio: 1.0
   random_image_count: 0
   random_image_size: ""
   random_input_len: 1024
@@ -75,10 +83,13 @@ benchmark_config:
   random_num_turns: 1
   random_output_len: 128
   random_sys_prompt_ratio: 0.0
+  fit_distributions: false
   sonnet_input_len: 550
   sonnet_prefix_len: 200
 
   # Control flags (serving-specific)
+  warm_shared_prefix: false  # Prime prefix-cache KV for each unique shared context before the benchmark
+  force_unique_runs: false  # Prepend a per-run UUID prefix to prevent cross-run KV-cache reuse
   skip_test_prompt: false
   collect_gpu_stats: false  # Enable GPU stats collection for serving benchmarks
   collect_cpu_stats: true  # Enable CPU stats collection for serving benchmarks

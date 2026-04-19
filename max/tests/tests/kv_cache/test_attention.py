@@ -21,16 +21,14 @@ from unittest import mock
 import pytest
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, Graph, ops
-from max.nn.legacy.attention import (
-    AttentionWithRope,
+from max.nn.attention import (
     TensorParallelAttentionWithRope,
 )
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
-    KVCacheStrategy,
     PagedCacheValues,
 )
-from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.rotary_embedding import RotaryEmbedding
 
 
 def create_kv_params(n_kv_heads: int = 8) -> KVCacheParams:
@@ -38,71 +36,10 @@ def create_kv_params(n_kv_heads: int = 8) -> KVCacheParams:
         n_kv_heads=n_kv_heads,
         head_dim=64,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
         dtype=DType.float32,
         devices=[DeviceRef.GPU()],
     )
-
-
-def test_attention_with_rope_stacked_qkv_bias_validation() -> None:
-    """Tests that AttentionWithRope raises ValueError for stacked_qkv with bias."""
-    rope = RotaryEmbedding(
-        dim=64,
-        n_heads=32,
-        theta=10000.0,
-        max_seq_len=2048,
-    )
-
-    kv_params = KVCacheParams(
-        n_kv_heads=8,
-        head_dim=64,
-        num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
-        page_size=128,
-        dtype=DType.float32,
-        devices=[DeviceRef.GPU()],
-    )
-
-    # Test that stacked_qkv=True with has_bias=True raises ValueError.
-    with pytest.raises(
-        ValueError, match="Bias is not supported with stacked_qkv"
-    ):
-        AttentionWithRope(
-            rope=rope,
-            num_attention_heads=32,
-            num_key_value_heads=8,
-            hidden_size=2048,
-            kv_params=kv_params,
-            stacked_qkv=True,
-            has_bias=True,
-        )
-
-
-def test_attention_with_rope_clip_qkv_validation() -> None:
-    """Tests that AttentionWithRope raises ValueError for stacked_qkv with clip_qkv."""
-    rope = RotaryEmbedding(
-        dim=64,
-        n_heads=32,
-        theta=10000.0,
-        max_seq_len=2048,
-    )
-
-    kv_params = create_kv_params()
-
-    # Test that stacked_qkv=True with clip_qkv raises ValueError.
-    with pytest.raises(
-        ValueError, match="`clip_qkv` not yet supported when `stacked_qkv=True`"
-    ):
-        AttentionWithRope(
-            rope=rope,
-            num_attention_heads=32,
-            num_key_value_heads=8,
-            hidden_size=2048,
-            kv_params=kv_params,
-            stacked_qkv=True,
-            clip_qkv=1.0,
-        )
 
 
 def test_distributed_attention_with_rope_device_validation() -> None:
@@ -130,7 +67,7 @@ def test_distributed_attention_with_rope_device_validation() -> None:
         )
 
 
-@mock.patch("max.nn.legacy.attention.attention_with_rope.Allreduce")
+@mock.patch("max.nn.attention.attention_with_rope.Allreduce")
 def test_distributed_attention_with_rope_call_validation(
     allreduce_mock: mock.Mock,
 ) -> None:
@@ -155,7 +92,7 @@ def test_distributed_attention_with_rope_call_validation(
     )
 
     # Dummy inputs for __call__
-    with Graph(name="test_graph") as g:
+    with Graph(name="test_graph"):
         layer_idx = ops.constant(0, dtype=DType.int32, device=DeviceRef.CPU())
         dummy_tensor = ops.constant(
             0.0, dtype=DType.float32, device=DeviceRef.CPU()
@@ -195,7 +132,7 @@ def test_distributed_attention_with_rope_call_validation(
             )
 
 
-@mock.patch("max.nn.legacy.attention.attention_with_rope.Allreduce")
+@mock.patch("max.nn.attention.attention_with_rope.Allreduce")
 def test_distributed_attention_with_rope_non_divisible_heads(
     allreduce_mock: mock.Mock,
 ) -> None:
@@ -230,7 +167,7 @@ def test_distributed_attention_with_rope_non_divisible_heads(
     assert dist_attn.list_of_attentions[3].n_heads == 7
 
 
-@mock.patch("max.nn.legacy.attention.attention_with_rope.Allreduce")
+@mock.patch("max.nn.attention.attention_with_rope.Allreduce")
 def test_distributed_attention_with_rope_stacked_qkv(
     allreduce_mock: mock.Mock,
 ) -> None:
@@ -264,7 +201,7 @@ def test_distributed_attention_with_rope_stacked_qkv(
     assert dist_attn.o_proj.sharding_strategy.is_head_aware_colwise
 
 
-@mock.patch("max.nn.legacy.attention.attention_with_rope.Allreduce")
+@mock.patch("max.nn.attention.attention_with_rope.Allreduce")
 def test_distributed_attention_with_rope_stacked_qkv_non_divisible(
     allreduce_mock: mock.Mock,
 ) -> None:
@@ -302,7 +239,7 @@ def test_distributed_attention_with_rope_stacked_qkv_non_divisible(
     assert total_heads == 30
 
 
-@mock.patch("max.nn.legacy.attention.attention_with_rope.Allreduce")
+@mock.patch("max.nn.attention.attention_with_rope.Allreduce")
 def test_distributed_attention_with_rope_separate_projections(
     allreduce_mock: mock.Mock,
 ) -> None:
@@ -330,11 +267,15 @@ def test_distributed_attention_with_rope_separate_projections(
     )
 
     # Verify sharding strategies for separate projections.
-    assert dist_attn.q_proj.sharding_strategy is not None
-    assert dist_attn.k_proj.sharding_strategy is not None
-    assert dist_attn.v_proj.sharding_strategy is not None
-    assert dist_attn.o_proj.sharding_strategy is not None
-    assert dist_attn.q_proj.sharding_strategy.is_rowwise
-    assert dist_attn.k_proj.sharding_strategy.is_rowwise
-    assert dist_attn.v_proj.sharding_strategy.is_rowwise
-    assert dist_attn.o_proj.sharding_strategy.is_head_aware_colwise
+    q_ss = dist_attn.qkv_proj._child("q").sharding_strategy
+    k_ss = dist_attn.qkv_proj._child("k").sharding_strategy
+    v_ss = dist_attn.qkv_proj._child("v").sharding_strategy
+    o_ss = dist_attn.o_proj.sharding_strategy
+    assert q_ss is not None
+    assert k_ss is not None
+    assert v_ss is not None
+    assert o_ss is not None
+    assert q_ss.is_rowwise
+    assert k_ss.is_rowwise
+    assert v_ss.is_rowwise
+    assert o_ss.is_head_aware_colwise

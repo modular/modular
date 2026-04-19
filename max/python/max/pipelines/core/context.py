@@ -17,8 +17,6 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -26,12 +24,14 @@ import llguidance
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
+    EOSTracker,
     GenerationStatus,
     ImageMetadata,
     LogProbabilities,
     PixelGenerationContext,
     RequestID,
     SamplingParams,
+    SpecDecodingState,
     TextGenerationContext,
     TextGenerationOutput,
     TokenBuffer,
@@ -55,7 +55,7 @@ class TextContext:
         request_id: A unique identifier for this sequence.
         max_length: Maximum allowed length of the generated sequence
         tokens: NumPy array containing the token IDs
-        eos_token_ids: Set of token IDs that indicate end of sequence
+        eos_tracker: holds EOS config and performs checks for EOS conditions
         log_probabilities: Whether to return token log probabilities
         log_probabilities_echo: Whether to return log probabilities for prompt tokens
         ignore_eos: Whether to ignore end of sequence tokens and continue generating
@@ -68,13 +68,13 @@ class TextContext:
         _log_probabilities_data: Token log probabilities data
         _is_initial_prompt: Whether this is the initial prompt encoding
         _draft_offset: Offset for draft decoding
+        _spec_decoding_state: Optional per-request speculative decoding state
     """
 
     max_length: int
     tokens: TokenBuffer
     request_id: RequestID = field(default_factory=RequestID)
-    eos_token_ids: set[int] = field(default_factory=set)
-    eos_sequences: list[list[int]] = field(default_factory=list)
+    eos_tracker: EOSTracker = field(default_factory=EOSTracker)
     log_probabilities: int = field(default=0)
     log_probabilities_echo: bool = field(default=False)
     ignore_eos: bool = field(default=False)
@@ -89,15 +89,22 @@ class TextContext:
 
     _is_initial_prompt: bool = field(default=True)
     _draft_offset: int = field(default=0)
+    _spec_decoding_state: SpecDecodingState | None = field(default=None)
 
     target_endpoint: str | None = field(default=None)
+
+    external_block_metadata: Any = field(default=None)
+    """Block metadata from the Orchestrator for distributed KV cache (dKV).
+
+    When set, the DKVConnector reads this during lookup() to determine
+    which blocks are available in the external BlockStore system.
+    """
 
     def __post_init__(self) -> None:
         """Initialize context state after deserialization.
 
         This method is called each time the model is deserialized from msgspec.
         """
-
         if self.min_tokens + self.tokens.prompt_length > self.max_length:
             raise ValueError(
                 f"min_tokens ({self.min_tokens}) + prompt_len ({self.tokens.prompt_length}) must be less than or equal to max_length ({self.max_length})"
@@ -118,6 +125,7 @@ class TextContext:
 
     @property
     def is_done(self) -> bool:
+        """Whether text generation has finished."""
         return self.status.is_done
 
     @property
@@ -125,22 +133,30 @@ class TextContext:
         """The minimum number of new tokens to generate."""
         return self.sampling_params.min_new_tokens
 
+    @property
+    def spec_decoding_state(self) -> SpecDecodingState:
+        """Gets or creates the per-request speculative decoding state."""
+        if self._spec_decoding_state is None:
+            self._spec_decoding_state = SpecDecodingState()
+        return self._spec_decoding_state
+
     def apply_processing_offset(self, offset: int) -> None:
+        """Applies a processing offset to the token buffer."""
         self.tokens.apply_processing_offset(offset)
 
     def get_min_token_logit_mask(
         self, num_steps: int
     ) -> list[npt.NDArray[np.int32]]:
-        """Returns a set of indices for the tokens in the output that should be masked.
+        """Returns per-step masks for logits that should be masked (e.g. EOS during ``min_tokens``).
 
-        This is primarily used for the min_tokens setting, where we mask
-        `eos` tokens in the logits to avoid generating them before we reach
-        min_tokens.
+        This is primarily used for the ``min_tokens`` setting, where we mask
+        EOS tokens in the logits to avoid generating them before we reach
+        ``min_tokens``.
 
         Returns:
-            A set of indices for the tokens in the output that should be masked.
+            A list of arrays, one per step; each array has shape ``(N, 2)`` with
+            (batch index, token ID) pairs for logits to mask.
         """
-
         ret_list: list[npt.NDArray[np.int32]] = []
         start_range = self.tokens.prompt_length
         end_range = self.tokens.prompt_length + self.min_tokens
@@ -154,7 +170,7 @@ class TextContext:
                 continue
 
             new_list = []
-            for eos_token_id in self.eos_token_ids:
+            for eos_token_id in self.eos_tracker.eos_token_ids:
                 new_list.append((0, eos_token_id))
 
             ret_list.append(np.asarray(new_list, dtype=np.int32))
@@ -162,10 +178,12 @@ class TextContext:
         return ret_list
 
     def set_matcher(self, matcher: llguidance.LLMatcher) -> None:
+        """Sets the grammar matcher for constrained decoding."""
         self._matcher = matcher
 
     @property
     def matcher(self) -> llguidance.LLMatcher | None:
+        """The optional grammar matcher for constrained decoding."""
         return self._matcher
 
     def to_generation_output(self) -> TextGenerationOutput:
@@ -178,7 +196,6 @@ class TextContext:
             TextGenerationOutput: The completion tokens and their associated
             log probabilities, if available.
         """
-
         # Return early, if we have no outstanding generated tokens
         if not self.tokens.has_outstanding_generated_tokens:
             return TextGenerationOutput(
@@ -222,45 +239,35 @@ class TextContext:
             final_status=self.status,
         )
 
-    def _is_eos(self, new_token: int) -> bool:
-        """
-        Checks for end-of-sequence conditions.
-
-        This function performs two checks:
-        1. Whether the newly generated token is in the set of `eos_token_ids`.
-        2. Whether appending the new token results in a sequence that matches any per-request `stop` sequence.
-        """
-        if new_token in self.eos_token_ids:
-            return True
-
-        if not self.eos_sequences:
-            return False
-
-        for eos in self.eos_sequences:
-            if len(self.tokens.generated) < len(eos):
-                continue
-
-            comp_tokens = self.tokens.generated
-            comp_tokens = comp_tokens[len(comp_tokens) - len(eos) :]
-
-            if np.array_equal(comp_tokens, eos):
-                return True
-
-        return False
-
-    def update(
+    def advance_token_buffer(
         self,
         new_token: int,
         log_probabilities: LogProbabilities | None = None,
+        mark_previous_as_processed: bool = True,
     ) -> None:
-        """Updates the next_tokens and extends existing tokens to include all generated tokens."""
+        """Advance the token buffer without touching FSM state.
 
-        # Update the token buffer
+        This method handles token buffer mutations including:
+        - Chunked prefill advancement
+        - Log probability storage
+        - Token buffer advancement
+        - EOS/max-length status updates
+
+        It does NOT advance the FSM matcher. Use ``advance_fsm()`` separately
+        if FSM advancement is needed, or use ``update()`` for the common case
+        of advancing both together.
+
+        Args:
+            new_token: The token to append to the buffer.
+            log_probabilities: Optional log probabilities for this token.
+            mark_previous_as_processed: If True, mark previous tokens as
+                processed (standard behavior). If False, keep them unprocessed
+                so they're returned to the user (used for jump-ahead tokens).
+        """
         if self.tokens.actively_chunked:
             self.tokens.advance_chunk()
             return
 
-        # Update the log probabilities data
         if log_probabilities:
             self._log_probabilities_data[self.tokens.current_position] = (
                 log_probabilities
@@ -269,25 +276,67 @@ class TextContext:
         if self.tokens.all[-1] == FUTURE_TOKEN:
             raise ValueError("Cannot append a token after a future token.")
 
-        self.tokens.advance_with_token(new_token)
+        self.tokens.advance_with_token(
+            new_token, mark_previous_as_processed=mark_previous_as_processed
+        )
 
-        if self._is_eos(new_token):
+        if self.eos_tracker.is_eos_from_tokens(self.tokens.generated):
             self.status = GenerationStatus.END_OF_SEQUENCE
         elif self.tokens.current_position >= self.max_length:
             self.status = GenerationStatus.MAXIMUM_LENGTH
 
-        # Accept the token, and move the FSM for constrained decoding forward.
-        if self.matcher:
-            assert self.matcher.consume_token(new_token)
-
         self._is_initial_prompt = False
+
+    def advance_fsm(self, token: int) -> bool:
+        """Advance the FSM matcher state by one token.
+
+        This method advances only the FSM state for constrained decoding.
+        It does NOT modify the token buffer. Use ``advance_token_buffer()``
+        separately if token buffer advancement is needed, or use ``update()``
+        for the common case of advancing both together.
+
+        Args:
+            token: The token to consume in the FSM.
+
+        Returns:
+            True if the token was accepted by the matcher, False if no
+            matcher is present.
+
+        Raises:
+            AssertionError: If the matcher rejects the token, indicating
+                a mismatch between the bitmask and FSM state.
+        """
+        if self.matcher:
+            assert self.matcher.consume_token(token)
+            return True
+        return False
+
+    def update(
+        self,
+        new_token: int,
+        log_probabilities: LogProbabilities | None = None,
+    ) -> None:
+        """Advance both token buffer and FSM state.
+
+        This is the standard single-step update that most callers should use.
+        It combines ``advance_token_buffer()`` and ``advance_fsm()`` for the
+        common case where both need to be advanced together.
+
+        For multi-step execution where FSM is advanced separately (e.g., to
+        compute bitmasks between steps), use the individual methods directly.
+
+        Args:
+            new_token: The token to append and consume.
+            log_probabilities: Optional log probabilities for this token.
+        """
+        self.advance_token_buffer(new_token, log_probabilities)
+        self.advance_fsm(new_token)
 
     def update_with_future_token(self) -> None:
         """Append a placeholder future token to the generated tokens.
 
         This is primarily used for overlap scheduling.
         """
-
         if self.matcher:
             raise ValueError(
                 "Cannot use future tokens when a matcher is present."
@@ -324,43 +373,44 @@ class TextContext:
 
         self.tokens.overwrite_last_token(new_token)
 
-        if self._is_eos(new_token):
+        if self.eos_tracker.is_eos_from_tokens(self.tokens.generated):
             self.status = GenerationStatus.END_OF_SEQUENCE
 
     def jump_ahead(self, new_token: int) -> None:
-        """Updates the token array, while ensuring the new token is returned to the user."""
+        """Advance both token buffer and FSM, keeping token visible to user.
 
-        # Update the token buffer
-        if self.tokens.actively_chunked:
-            self.tokens.advance_chunk()
-            return
+        Unlike ``update()``, this method does not mark previous tokens as
+        processed, so the new token will be included in the output returned
+        to the user. This is used for grammar-forced tokens that the model
+        didn't generate but need to be part of the response.
 
-        self.tokens.advance_with_token(
-            new_token, mark_previous_as_processed=False
+        Args:
+            new_token: The forced token to append and consume.
+        """
+        self.advance_token_buffer(
+            new_token,
+            log_probabilities=None,
+            mark_previous_as_processed=False,
         )
-
-        if self._is_eos(new_token):
-            self.status = GenerationStatus.END_OF_SEQUENCE
-        elif self.tokens.current_position >= self.max_length:
-            self.status = GenerationStatus.MAXIMUM_LENGTH
-
-        # Accept the token, and move the FSM for constrained decoding forward.
-        if self.matcher:
-            assert self.matcher.consume_token(new_token)
-
-        self._is_initial_prompt = False
+        self.advance_fsm(new_token)
 
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt."""
-        self.tokens.reset_as_new_prompt()
+        delete_last_generated_token = self.tokens.all[-1] == FUTURE_TOKEN
+        self.tokens.reset_as_new_prompt(
+            delete_last_generated_token=delete_last_generated_token
+        )
         self._is_initial_prompt = True
+        self._spec_decoding_state = None
 
     def compute_num_available_steps(
         self,
         max_seq_len: int,
     ) -> int:
-        """Compute the max number of steps we can execute for a given context
-        without exceeding the max_seq_len."""
+        """Computes the maximum number of steps without exceeding ``max_seq_len``.
+
+        Takes the current context length into account.
+        """
         return max_seq_len - (len(self.tokens) - self.tokens.active_length)
 
     @property
@@ -397,9 +447,11 @@ class TextAndVisionContext(TextContext):
     the first image that is not yet encoded. For example in the above diagram
     when start_idx=11, this implies that image_idx=1.
 
-    Currently we restrict start_idx and current_position from being in the middle of an image!
-    This is verified in `_validate_state` methods that are called before and after
-    mutating methods like `_bump_token_indices`.
+    When chunk prefill is **not** active, we restrict current_position from being in the
+    middle of an image.  This is verified in `_validate_state` which is called before and
+    after mutating methods like `_bump_token_indices`.  During chunked prefill the
+    restriction is relaxed because the vision encoder cache ensures images are encoded
+    once and reused across chunks.
     """
 
     vision_token_ids: list[int]
@@ -463,6 +515,23 @@ class TextAndVisionContext(TextContext):
         """Returns whether vision encoding is needed for this context."""
         return self.image_idx < len(self.images)
 
+    @property
+    def image_token_indices(self) -> npt.NDArray[np.int32]:
+        """Positions of image-placeholder tokens in the full token sequence.
+
+        Derived from ``images`` metadata.  Subclasses that precompute indices
+        at tokenization time (e.g. KimiK2.5, Qwen2.5VL) may override this
+        with a stored field for efficiency.
+        """
+        if not self.images:
+            return np.empty(0, dtype=np.int32)
+        return np.concatenate(
+            [
+                np.arange(img.start_idx, img.end_idx, dtype=np.int32)
+                for img in self.images
+            ]
+        )
+
     def compute_image_aligned_idx(self, idx: int) -> int:
         """Possibly aligns a index value downward if it lies in the middle of an image."""
         for img in self.images:
@@ -484,7 +553,11 @@ class TextAndVisionContext(TextContext):
 
     def _validate_state(self) -> None:
         """Validates the state of the context."""
-        if img := self._find_bisected_image(self.tokens.current_position):
+        # During chunked prefill, current_position may bisect an image
+        # because the vision encoder cache handles re-encoding.
+        if not self.tokens.actively_chunked and (
+            img := self._find_bisected_image(self.tokens.current_position)
+        ):
             raise ValueError(
                 f"It is invalid for the current_position ({self.tokens.current_position}) to bisect an image ({img})."
             )
@@ -494,6 +567,7 @@ class TextAndVisionContext(TextContext):
         new_token: int,
         log_probabilities: LogProbabilities | None = None,
     ) -> None:
+        """Updates the context with a new token and validates vision state."""
         super().update(new_token=new_token, log_probabilities=log_probabilities)
         self._validate_state()
 
@@ -563,20 +637,23 @@ class TTSContext(TextContext):
 
     @property
     def is_done(self) -> bool:
+        """Whether audio generation has finished."""
         return self.audio_generation_status.is_done
 
     @property
     def speech_tokens(self) -> npt.NDArray[np.integer[Any]]:
+        """The slice of generated speech tokens valid so far."""
         return self._speech_tokens[: self._speech_token_end_idx]
 
     @property
     def block_counter(self) -> int:
+        """The number of speech token blocks generated."""
         return self._block_counter
 
     def update_speech_tokens(
         self, new_tokens: npt.NDArray[np.integer[Any]]
     ) -> None:
-        """Updates the next_tokens"""
+        """Updates the buffer with new speech tokens."""
         self._upsize_speech_tokens(len(new_tokens))
         self._speech_tokens[
             self._speech_token_end_idx : self._speech_token_end_idx
@@ -650,6 +727,8 @@ class PixelContext:
         num_inference_steps: Number of denoising steps.
         guidance_scale: Guidance scale for classifier-free guidance.
         num_images_per_prompt: Number of images/videos to generate per prompt.
+        input_image: Optional HWC uint8 numpy array for image-to-image generation.
+        input_images: Optional list of input images for image-to-image generation.
         model_name: Name of the model being used.
     """
 
@@ -671,11 +750,14 @@ class PixelContext:
     negative_tokens: TokenBuffer | None = field(default=None)
     """Negative tokens for primary encoder."""
 
+    negative_mask: npt.NDArray[np.bool_] | None = field(default=None)
+    """Mask for the negative text encoder path."""
+
     negative_tokens_2: TokenBuffer | None = field(default=None)
     """Negative tokens for secondary encoder. None for single-encoder models."""
 
-    extra_params: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
-    """Model-specific numeric parameters (e.g., cfg_normalization values)."""
+    explicit_negative_prompt: bool = field(default=False)
+    """Whether the request explicitly supplied a negative prompt."""
 
     # Precomputed tensors
     timesteps: npt.NDArray[np.float32] = field(
@@ -698,15 +780,45 @@ class PixelContext:
     )
     """Precomputed latent image IDs for generation."""
 
+    text_ids: npt.NDArray[np.int64] = field(
+        default_factory=lambda: np.array([], dtype=np.int64)
+    )
+    """Precomputed text position IDs, shape ``(B, seq_len, 4)`` int64."""
+
+    negative_text_ids: npt.NDArray[np.int64] = field(
+        default_factory=lambda: np.array([], dtype=np.int64)
+    )
+    """Precomputed text position IDs for the negative prompt."""
+
     height: int = field(default=1024)
     width: int = field(default=1024)
     num_inference_steps: int = field(default=50)
     guidance_scale: float = field(default=3.5)
-    guidance: npt.NDArray[np.float32] | None = None
     true_cfg_scale: float = field(default=1.0)
+    strength: float = field(default=0.6)
+    cfg_normalization: bool = field(default=False)
+    cfg_truncation: float = field(default=1.0)
     num_warmup_steps: int = field(default=0)
     num_images_per_prompt: int = field(default=1)
+    input_image: npt.NDArray[np.uint8] | None = field(default=None)
+    """Input image as numpy array (H, W, C) in uint8 format for image-to-image generation."""
+    input_images: list[npt.NDArray[np.uint8]] | None = field(default=None)
+    """Input images as list of numpy arrays (H, W, C) in uint8 format for image-to-image generation."""
+    prompt_images: list[npt.NDArray[np.uint8]] | None = field(default=None)
+    """Optional prompt-conditioning images prepared by the tokenizer."""
+    vae_condition_images: list[npt.NDArray[np.uint8]] | None = field(
+        default=None
+    )
+    """Optional VAE-conditioning images prepared by the tokenizer.
 
+    Qwen image edit keeps prompt-conditioning images and VAE-conditioning
+    images separate because the multimodal prompt encoder and the VAE latent
+    conditioning path use different resize targets.
+    """
+    output_format: str = field(default="jpeg")
+    """Image encoding format for the output (e.g., 'jpeg', 'png', 'webp')."""
+    residual_threshold: float | None = field(default=None)
+    """Per-request residual threshold for FBCache. None uses pipeline default."""
     status: GenerationStatus = field(default=GenerationStatus.ACTIVE)
 
     @property
@@ -734,7 +846,11 @@ class PixelContext:
         return GenerationOutput(
             request_id=self.request_id,
             final_status=self.status,
-            output=[OutputImageContent.from_numpy(self.latents, format="png")],
+            output=[
+                OutputImageContent.from_numpy(
+                    self.latents.astype(np.uint8), format="png"
+                )
+            ],
         )
 
 
@@ -745,7 +861,7 @@ if TYPE_CHECKING:
             request_id=RequestID(),
             max_length=5,
             tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-            eos_token_ids=set(),
+            eos_tracker=EOSTracker(),
         )
 
     def _verify_vlm_context_protocol() -> VLMTextGenerationContext:
@@ -753,7 +869,7 @@ if TYPE_CHECKING:
             request_id=RequestID(),
             max_length=5,
             tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-            eos_token_ids=set(),
+            eos_tracker=EOSTracker(),
             vision_token_ids=[],
             images=[],
         )
@@ -763,47 +879,3 @@ if TYPE_CHECKING:
             request_id=RequestID(),
             tokens=TokenBuffer(np.array([0], dtype=np.int64)),
         )
-
-
-@contextmanager
-def reserve_token_space_for_batch(
-    batch: list[TextContext],
-    num_tokens: int,
-) -> Iterator[None]:
-    """
-    Temporarily reserves token space for each context in a batch by incrementing
-    the `_active_idx` and `_end_idx` attributes by `num_tokens` for the duration
-    of the context. These indices are restored to their original values upon exit.
-    Args:
-        batch: List of TextContext objects to reserve space for.
-        num_tokens: Number of tokens to reserve for each context.
-    Yields:
-        None
-    """
-    if num_tokens == 0:
-        yield
-
-    saved_state: dict[RequestID, tuple[int, int]] = {
-        ctx.request_id: (
-            ctx.tokens._processing_range.end,
-            ctx.tokens._current_length,
-        )
-        for ctx in batch
-    }
-
-    try:
-        for ctx in batch:
-            ctx.tokens._processing_range.bump_end(num_tokens)
-
-            new_length = ctx.tokens._current_length + num_tokens
-            if new_length < 0:
-                raise ValueError(
-                    f"Logical length {ctx.tokens._current_length} + num_tokens {num_tokens} must be >= 0"
-                )
-            ctx.tokens._current_length = new_length
-        yield
-    finally:
-        for ctx in batch:
-            proc_end, cur_len = saved_state[ctx.request_id]
-            ctx.tokens._processing_range.end = proc_end
-            ctx.tokens._current_length = cur_len

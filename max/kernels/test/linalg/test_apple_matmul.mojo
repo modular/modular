@@ -16,11 +16,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
+from std.collections import Optional
 
-import benchmark
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+import std.benchmark
+from layout import Coord, Idx, TileTensor, row_major
+from std.memory import alloc
 from linalg.bmm import batched_matmul
 from linalg.matmul import matmul
 from linalg.matmul.cpu import matmul as _matmul_cpu
@@ -32,12 +32,9 @@ from linalg.packing import (
     pack_transposed_b_ndbuffer,
 )
 from linalg.utils import elementwise_epilogue_type
-from memory import LegacyUnsafePointer
+from std.testing import assert_almost_equal, assert_true
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal, assert_true
-
-from utils.index import Index, IndexList
+from std.utils.index import IndexList
 
 comptime alignment = 64
 comptime some_constant = 20
@@ -45,47 +42,56 @@ comptime do_benchmarking = False
 
 
 @parameter
-fn bench_run[
-    func: fn() raises capturing[_] -> None
-]() raises -> benchmark.Report:
-    return benchmark.run[func3=func](2, 1_000_000, 1, 3)
+def bench_run[
+    func: def() raises capturing[_] -> None
+]() raises -> std.benchmark.Report:
+    return std.benchmark.run[func3=func](2, 1_000_000, 1, 3)
 
 
-fn gemm_naive[
-    transpose_b: Bool
-](a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, ...], m: Int, n: Int, k: Int):
+def gemm_naive[
+    transpose_b: Bool, element_size: Int
+](
+    a: TileTensor[element_size=element_size, ...],
+    b: TileTensor[element_size=element_size, ...],
+    c: TileTensor[mut=True, element_size=element_size, ...],
+    m: Int,
+    n: Int,
+    k: Int,
+):
+    comptime assert a.flat_rank == 2
+    comptime assert b.flat_rank == 2
+    comptime assert c.flat_rank == 2
     for i in range(m):
         for p in range(k):
             for j in range(n):
-                var a_val = a[i, p].cast[c.type]()
-                var b_val = b[
-                    IndexList[b.rank](j, p) if transpose_b else IndexList[
-                        b.rank
-                    ](p, j)
-                ].cast[c.type]()
+                var a_val = a[i, p].cast[c.dtype]()
+                var b_val = (b[j, p] if transpose_b else b[p, j]).cast[
+                    c.dtype
+                ]()
                 c[i, j] += a_val * b_val
 
 
-fn gemm_naive_elementwise[
-    transpose_b: Bool
+def gemm_naive_elementwise[
+    transpose_b: Bool, element_size: Int
 ](
-    a: NDBuffer,
-    b: NDBuffer,
-    c: NDBuffer[mut=True, ...],
+    a: TileTensor[element_size=element_size, ...],
+    b: TileTensor[element_size=element_size, ...],
+    c: TileTensor[mut=True, element_size=element_size, ...],
     m: Int,
     n: Int,
     k: Int,
     val: Int,
 ):
+    comptime assert a.flat_rank == 2
+    comptime assert b.flat_rank == 2
+    comptime assert c.flat_rank == 2
     for i in range(m):
         for p in range(k):
             for j in range(n):
-                var a_val = a[i, p].cast[c.type]()
-                var b_val = b[
-                    IndexList[b.rank](j, p) if transpose_b else IndexList[
-                        b.rank
-                    ](p, j)
-                ].cast[c.type]()
+                var a_val = a[i, p].cast[c.dtype]()
+                var b_val = (b[j, p] if transpose_b else b[p, j]).cast[
+                    c.dtype
+                ]()
                 c[i, j] += a_val * b_val
 
     for i in range(m):
@@ -94,77 +100,77 @@ fn gemm_naive_elementwise[
 
 
 def test_matmul[
+    element_size: Int,
+    //,
     a_type: DType,
-    a_shape: DimList,
     b_type: DType,
-    b_shape: DimList,
     c_type: DType,
-    c_shape: DimList,
     transpose_b: Bool,
     b_packed: Bool,
     epilogue_fn: Optional[elementwise_epilogue_type],
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, c_shape],
-    a: NDBuffer[a_type, 2, _, a_shape],
-    b: NDBuffer[b_type, 2, _, b_shape],
-    bp: NDBuffer[mut=True, b_type, 2, _, DimList.create_unknown[2]()],
+    c: TileTensor[
+        mut=True,
+        c_type,
+        element_size=element_size,
+        address_space=AddressSpace.GENERIC,
+        ...,
+    ],
+    a: TileTensor[
+        mut=False,
+        a_type,
+        element_size=element_size,
+        address_space=AddressSpace.GENERIC,
+        ...,
+    ],
+    b: TileTensor[
+        mut=False,
+        b_type,
+        element_size=element_size,
+        address_space=AddressSpace.GENERIC,
+        ...,
+    ],
+    bp: TileTensor[
+        mut=True,
+        b_type,
+        element_size=element_size,
+        address_space=AddressSpace.GENERIC,
+        ...,
+    ],
     m: Int,
     n: Int,
     k: Int,
     kernel_type_m: Int,
-) -> Int:
-    var c1_ptr = UnsafePointer[Scalar[c_type]].alloc(m * n, alignment=alignment)
-    var golden = NDBuffer[c_type, 2, _, c_shape](c1_ptr, Index(m, n))
+) raises -> Int:
+    var c1_ptr = alloc[Scalar[c_type]](m * n, alignment=alignment)
+    var golden_shape = row_major(Coord(Idx(m), Idx(n)))
+    var golden = TileTensor[element_size=element_size](c1_ptr, golden_shape)
     for i in range(m):
         for j in range(n):
-            golden[IndexList[2]((i, j))] = 0
+            golden[i, j] = 0
 
     if b_packed:
         if not transpose_b:
             if kernel_type_m != 0:
-                _pack_b_ndbuffer_impl[
-                    a_type,
-                    a_shape,
-                    b_type,
-                    b_shape,
-                    c_type,
-                    c_shape,
-                    transpose_b,
-                ](b, bp, kernel_type_m)
+                _pack_b_ndbuffer_impl[a_type, c_type, transpose_b](
+                    b, bp, kernel_type_m
+                )
             else:
-                pack_b_ndbuffer[
-                    a_type,
-                    a_shape,
-                    b_type,
-                    b_shape,
-                    c_type,
-                    c_shape,
-                ](b, bp)
+                pack_b_ndbuffer[a_type, c_type](b, bp)
         else:
             if kernel_type_m != 0:
                 _pack_b_ndbuffer_impl[
                     a_type,
-                    a_shape,
-                    b_type,
-                    b_shape,
                     c_type,
-                    c_shape,
                     transpose_b,
                 ](b, bp, kernel_type_m)
             else:
-                pack_transposed_b_ndbuffer[
-                    a_type,
-                    a_shape,
-                    b_type,
-                    b_shape,
-                    c_type,
-                    c_shape,
-                ](b, bp)
+                pack_transposed_b_ndbuffer[a_type, c_type](b, bp)
 
     @always_inline
     @__copy_capture(c, a, bp)
     @parameter
-    fn bench_fn_matmul() raises:
+    def bench_fn_matmul() raises:
         if kernel_type_m != 0:
             _matmul_cpu[
                 transpose_b=transpose_b,
@@ -173,7 +179,7 @@ def test_matmul[
             ](
                 c,
                 a,
-                rebind[NDBuffer[b_type, 2, bp.origin, b_shape]](bp),
+                bp,
                 kernel_type_m,
             )
         else:
@@ -181,14 +187,13 @@ def test_matmul[
                 transpose_b=transpose_b,
                 b_packed=b_packed,
                 elementwise_lambda_fn=epilogue_fn,
-            ](c, a, rebind[NDBuffer[b_type, 2, bp.origin, b_shape]](bp))
+            ](c, a, bp)
 
     bench_fn_matmul()
 
-    @parameter
-    if do_benchmarking:
+    comptime if do_benchmarking:
         var matmul_perf = bench_run[bench_fn_matmul]()
-        benchmark.keep(c[0, 0])
+        std.benchmark.keep(c[0, 0])
         print(
             "Apple Matmul GFLOP/s for (M, N, K) = (",
             m,
@@ -198,8 +203,7 @@ def test_matmul[
             1e-9 * (Float64((2 * m * k * n)) / matmul_perf.mean()),
         )
 
-    @parameter
-    if epilogue_fn:
+    comptime if epilogue_fn:
         gemm_naive_elementwise[transpose_b](
             a, b, golden, m, n, k, some_constant
         )
@@ -207,6 +211,7 @@ def test_matmul[
         gemm_naive[transpose_b](a, b, golden, m, n, k)
 
     var errors: Int = 0
+    comptime assert c.flat_rank == 2
     for i in range(m):
         for j in range(n):
             if c[i, j] != golden[i, j]:
@@ -242,43 +247,31 @@ def test_matmul[
     b_packed: Bool,
     mixed_kernels: Bool,
     transpose_b: Bool,
-](m: Int, n: Int, k: Int):
+](m: Int, n: Int, k: Int) raises:
     print("== test_matmul")
     var errors: Int
     var kernel_type_m = m if mixed_kernels else 0
-    comptime a_shape = DimList.create_unknown[2]()
-    comptime b_shape = DimList.create_unknown[2]()
-    comptime c_shape = DimList.create_unknown[2]()
 
-    var a_ptr = UnsafePointer[Scalar[a_type]].alloc(m * k, alignment=alignment)
-    var b_ptr = UnsafePointer[Scalar[b_type]].alloc(k * n, alignment=alignment)
-    var b = NDBuffer[b_type, 2, _, b_shape](
-        b_ptr, Index(n, k) if transpose_b else Index(k, n)
+    var a_ptr = alloc[Scalar[a_type]](m * k, alignment=alignment)
+    var b_ptr = alloc[Scalar[b_type]](k * n, alignment=alignment)
+    var b = TileTensor(
+        b_ptr,
+        row_major(
+            Coord(Idx(n), Idx(k)) if transpose_b else Coord(Idx(k), Idx(n))
+        ),
     )
 
     var padded_n_k: IndexList[2]
     if kernel_type_m != 0:
         padded_n_k = _pack_matmul_b_shape_func_impl[
             a_type,
-            a_shape,
-            b_type,
-            b_shape,
             c_type,
-            c_shape,
             transpose_b,
-            True,
         ](b, kernel_type_m)
     else:
-        padded_n_k = pack_matmul_b_shape_func[
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
-            transpose_b,
-            True,
-        ](b)
+        padded_n_k = pack_matmul_b_shape_func[a_type, c_type, transpose_b](
+            TileTensor(b)
+        )
 
     var padded_n = (
         padded_n_k[1] if b_packed or (not b_packed and transpose_b) else n
@@ -287,52 +280,43 @@ def test_matmul[
         padded_n_k[0] if b_packed or (not b_packed and transpose_b) else k
     )
 
-    var c0_ptr = UnsafePointer[Scalar[c_type]].alloc(m * n, alignment=alignment)
+    var c0_ptr = alloc[Scalar[c_type]](m * n, alignment=alignment)
 
-    var bp_ptr = UnsafePointer[Scalar[b_type]].alloc(
-        padded_k * padded_n, alignment=alignment
-    )
+    var bp_ptr = alloc[Scalar[b_type]](padded_k * padded_n, alignment=alignment)
 
-    var bp = NDBuffer[b_type, 2, _, DimList.create_unknown[2]()](
-        bp_ptr, Index(padded_k, padded_n)
-    )
-    var a = NDBuffer[a_type, 2, _, a_shape](a_ptr, Index(m, k))
-
-    var c = NDBuffer[c_type, 2, _, c_shape](c0_ptr, Index(m, n))
+    var bp = TileTensor(bp_ptr, row_major(Idx(padded_k), Idx(padded_n)))
+    var a = TileTensor(a_ptr, row_major(Idx(m), Idx(k)))
+    var c = TileTensor(c0_ptr, row_major(Idx(m), Idx(n)))
 
     for i in range(m):
         for p in range(k):
-            a[IndexList[2]((i, p))] = Scalar[a_type](0.001) * Scalar[a_type](i)
+            a[i, p] = Scalar[a_type](0.001) * Scalar[a_type](i)
 
     for p in range(n if transpose_b else k):
         for j in range(k if transpose_b else n):
-            b[IndexList[2]((p, j))] = Scalar[b_type](0.002) * Scalar[b_type](p)
+            b[p, j] = Scalar[b_type](0.002) * Scalar[b_type](p)
             if b_packed and not transpose_b:
-                bp[IndexList[2]((j, p))] = b[IndexList[2]((p, j))]
+                bp[j, p] = b[p, j]
             else:
-                bp[IndexList[2]((p, j))] = b[IndexList[2]((p, j))]
+                bp[p, j] = b[p, j]
 
     for i in range(m):
         for j in range(n):
-            c[IndexList[2]((i, j))] = 0
+            c[i, j] = 0
 
     @parameter
     @always_inline
     @__copy_capture(c)
-    fn epilogue_fn[
+    def epilogue_fn[
         _type: DType, width: Int, *, alignment: Int = 1
-    ](coords: IndexList[2], val: SIMD[_type, width]) -> None:
-        c.store(coords, rebind[SIMD[c_type, width]](val + some_constant))
+    ](idx: IndexList[2], val: SIMD[_type, width]) -> None:
+        c.store(Coord(idx), rebind[SIMD[c_type, width]](val + some_constant))
 
-    @parameter
-    if lambdas_have_fusion:
+    comptime if lambdas_have_fusion:
         errors = test_matmul[
             a_type,
-            a_shape,
             b_type,
-            b_shape,
             c_type,
-            c_shape,
             transpose_b,  # transpose_b
             b_packed,  # b_packed
             epilogue_fn,
@@ -349,11 +333,8 @@ def test_matmul[
     else:
         errors = test_matmul[
             a_type,
-            a_shape,
             b_type,
-            b_shape,
             c_type,
-            c_shape,
             transpose_b,  # transpose_b
             b_packed,  # b_packed
             None,
@@ -383,9 +364,11 @@ def test_shapes[
     c_type: DType,
     b_packed: Bool,
     mixed_kernels: Bool,
-]():
+]() raises:
     @parameter
-    def test_shapes_helper[transpose_b: Bool = False](m: Int, n: Int, k: Int):
+    def test_shapes_helper[
+        transpose_b: Bool = False
+    ](m: Int, n: Int, k: Int) raises:
         # Test without output fusion.
         test_matmul[
             False,
@@ -444,7 +427,7 @@ def test_shapes[
     test_shapes_helper[True](1, 32768, 3072)
 
 
-def test_types[b_packed: Bool, mixed_kernels: Bool]():
+def test_types[b_packed: Bool, mixed_kernels: Bool]() raises:
     test_shapes[
         DType.float32,
         DType.float32,
@@ -454,10 +437,10 @@ def test_types[b_packed: Bool, mixed_kernels: Bool]():
     ]()
 
 
-fn bmm_naive(
-    c: NDBuffer[mut=True, ...],
-    a: NDBuffer,
-    b: NDBuffer,
+def bmm_naive(
+    c: TileTensor[mut=True, element_size=1, ...],
+    a: TileTensor[element_size=1, ...],
+    b: TileTensor[element_size=1, ...],
     batches: Int,
     m: Int,
     n: Int,
@@ -465,16 +448,19 @@ fn bmm_naive(
     val: Int = 0,
     transpose_b: Bool = False,
 ):
+    comptime assert a.flat_rank == 3
+    comptime assert b.flat_rank == 3
+    comptime assert c.flat_rank == 3
     for batch in range(batches):
         for i in range(m):
             for p in range(k):
                 for j in range(n):
-                    var a_val = a[batch, i, p].cast[c.type]()
-                    var b_val = b[
-                        IndexList[b.rank](
-                            batch, j, p
-                        ) if transpose_b else IndexList[b.rank](batch, p, j)
-                    ].cast[c.type]()
+                    var a_val = a[batch, i, p].cast[c.dtype]()
+                    var b_val: Scalar[c.dtype]
+                    if transpose_b:
+                        b_val = b[batch, j, p].cast[c.dtype]()
+                    else:
+                        b_val = b[batch, p, j].cast[c.dtype]()
                     c[batch, i, j] += a_val * b_val
 
     for batch in range(batches):
@@ -486,28 +472,38 @@ fn bmm_naive(
 def test_batched_matmul[
     has_lambda: Bool
 ](
-    c: NDBuffer[mut=True, _, 3],
-    a: NDBuffer[mut=True, _, 3],
-    b: NDBuffer[mut=True, _, 3],
+    c: TileTensor[
+        mut=True, address_space=AddressSpace.GENERIC, element_size=1, ...
+    ],
+    a: TileTensor[
+        mut=True, address_space=AddressSpace.GENERIC, element_size=1, ...
+    ],
+    b: TileTensor[
+        mut=True, address_space=AddressSpace.GENERIC, element_size=1, ...
+    ],
     batches: Int,
     m: Int,
     n: Int,
     k: Int,
-):
-    var golden_ptr = UnsafePointer[Scalar[c.type]].alloc(
+) raises:
+    comptime assert a.flat_rank == 3
+    comptime assert b.flat_rank == 3
+    comptime assert c.flat_rank == 3
+    var golden_ptr = alloc[Scalar[c.dtype]](
         batches * m * n, alignment=alignment
     )
-    var golden = NDBuffer[c.type, 3](golden_ptr, Index(batches, m, n))
+    var golden_shape = row_major(Coord(Idx(batches), Idx(m), Idx(n)))
+    var golden = TileTensor(golden_ptr, golden_shape)
 
     for batch in range(batches):
         for i in range(m):
             for j in range(k):
-                a[batch, i, j] = Scalar[a.dtype](i + j) * Scalar[a.type](0.001)
+                a[batch, i, j] = Scalar[a.dtype](i + j) * Scalar[a.dtype](0.001)
 
     for batch in range(batches):
         for i in range(k):
             for j in range(n):
-                b[batch, i, j] = Scalar[b.dtype](i + k) * Scalar[b.type](0.001)
+                b[batch, i, j] = Scalar[b.dtype](i + k) * Scalar[b.dtype](0.001)
 
     for batch in range(batches):
         for i in range(m):
@@ -518,24 +514,23 @@ def test_batched_matmul[
     @parameter
     @always_inline
     @__copy_capture(c)
-    fn epilogue_fn[
+    def epilogue_fn[
         _type: DType,
         width: Int,
         rank: Int,
         *,
         alignment: Int = 1,
     ](coords: IndexList[rank], val: SIMD[_type, width],) -> None:
-        c.store(
+        c.store_linear(
             rebind[IndexList[3]](coords),
-            rebind[SIMD[c.type, width]](val + some_constant),
+            rebind[SIMD[c.dtype, width]](val + some_constant),
         )
 
     @always_inline
     @__copy_capture(c, a, b)
     @parameter
-    fn bench_fn_batched_matmul() raises:
-        @parameter
-        if has_lambda:
+    def bench_fn_batched_matmul() raises:
+        comptime if has_lambda:
             batched_matmul[
                 transpose_a=False,
                 transpose_b=False,
@@ -549,10 +544,9 @@ def test_batched_matmul[
 
     bench_fn_batched_matmul()
 
-    @parameter
-    if do_benchmarking:
+    comptime if do_benchmarking:
         var batched_matmul_perf = bench_run[bench_fn_batched_matmul]()
-        benchmark.keep(c[0, 0, 0])
+        std.benchmark.keep(c[0, 0, 0])
         print(
             "Apple Batched Matmul GFLOP/s for (BATCHES, M, N, K) = (",
             batches,
@@ -564,8 +558,7 @@ def test_batched_matmul[
             * (Float64((2 * batches * m * k * n)) / batched_matmul_perf.mean()),
         )
 
-    @parameter
-    if has_lambda:
+    comptime if has_lambda:
         bmm_naive(golden, a, b, batches, m, n, k, some_constant)
     else:
         bmm_naive(golden, a, b, batches, m, n, k)
@@ -606,24 +599,21 @@ def test_batched_matmul[
     golden_ptr.free()
 
 
-def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int):
+def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int) raises:
     comptime c_type = DType.float32
     comptime a_type = DType.float32
     comptime b_type = DType.float32
 
-    var c_ptr = UnsafePointer[Scalar[c_type]].alloc(
-        batch * m * n, alignment=alignment
-    )
-    var a_ptr = UnsafePointer[Scalar[a_type]].alloc(
-        batch * m * k, alignment=alignment
-    )
-    var b_ptr = UnsafePointer[Scalar[b_type]].alloc(
-        batch * k * n, alignment=alignment
-    )
+    var c_ptr = alloc[Scalar[c_type]](batch * m * n, alignment=alignment)
+    var a_ptr = alloc[Scalar[a_type]](batch * m * k, alignment=alignment)
+    var b_ptr = alloc[Scalar[b_type]](batch * k * n, alignment=alignment)
 
-    var c = NDBuffer[c_type, 3](c_ptr, Index(batch, m, n))
-    var a = NDBuffer[a_type, 3](a_ptr, Index(batch, m, k))
-    var b = NDBuffer[b_type, 3](b_ptr, Index(batch, k, n))
+    var c_shape = row_major(Coord(Idx(batch), Idx(m), Idx(n)))
+    var a_shape = row_major(Coord(Idx(batch), Idx(m), Idx(k)))
+    var b_shape = row_major(Coord(Idx(batch), Idx(k), Idx(n)))
+    var c = TileTensor(c_ptr, c_shape)
+    var a = TileTensor(a_ptr, a_shape)
+    var b = TileTensor(b_ptr, b_shape)
 
     test_batched_matmul[False](c, a, b, batch, m, n, k)
     test_batched_matmul[True](c, a, b, batch, m, n, k)
@@ -633,7 +623,7 @@ def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int):
     a_ptr.free()
 
 
-def test_batched_matmul():
+def test_batched_matmul() raises:
     for batch in [1, 2, 4, 9, 12]:
         test_batched_matmul(batch, 256, 1024, 4096)
         test_batched_matmul(batch, 4, 5, 6)
@@ -645,7 +635,7 @@ def test_batched_matmul():
         test_batched_matmul(batch, 2, 65, 1200)
 
 
-def main():
+def main() raises:
     test_types[b_packed=True, mixed_kernels=False]()
     test_types[b_packed=True, mixed_kernels=True]()
     test_types[b_packed=False, mixed_kernels=False]()

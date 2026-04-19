@@ -11,18 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor, row_major
 from nn.pad import pad_constant, pad_reflect, pad_repeat
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 # CHECK-LABEL: test_pad_1d
-fn test_pad_1d() raises:
+def test_pad_1d() raises:
     print("== test_pad_1d")
 
     # Create an input matrix of the form
@@ -61,7 +56,7 @@ fn test_pad_1d() raises:
 
 
 # CHECK-LABEL: test_pad_reflect_1d
-fn test_pad_reflect_1d() raises:
+def test_pad_reflect_1d() raises:
     print("== test_pad_reflect_1d")
 
     # Create an input matrix of the form
@@ -100,7 +95,7 @@ fn test_pad_reflect_1d() raises:
 
 
 # CHECK-LABEL: test_pad_repeat_1d
-fn test_pad_repeat_1d() raises:
+def test_pad_repeat_1d() raises:
     print("== test_pad_repeat_1d")
 
     # Create an input matrix of the form
@@ -139,7 +134,7 @@ fn test_pad_repeat_1d() raises:
 
 
 # CHECK-LABEL: test_pad_2d
-fn test_pad_2d() raises:
+def test_pad_2d() raises:
     print("== test_pad_2d")
 
     # Create an input matrix of the form
@@ -189,7 +184,7 @@ fn test_pad_2d() raises:
 
 
 # CHECK-LABEL: test_pad_reflect_2d
-fn test_pad_reflect_2d() raises:
+def test_pad_reflect_2d() raises:
     print("== test_pad_reflect_2d")
 
     # Create an input matrix of the form
@@ -249,7 +244,7 @@ fn test_pad_reflect_2d() raises:
 
 
 # CHECK-LABEL: test_pad_repeat_2d
-fn test_pad_repeat_2d() raises:
+def test_pad_repeat_2d() raises:
     print("== test_pad_repeat_2d")
 
     # Create an input matrix of the form
@@ -309,7 +304,7 @@ fn test_pad_repeat_2d() raises:
 
 
 # CHECK-LABEL: test_pad_3d
-fn test_pad_3d() raises:
+def test_pad_3d() raises:
     print("== test_pad_3d")
 
     # Create an input matrix of the form
@@ -371,7 +366,7 @@ fn test_pad_3d() raises:
 
 
 # CHECK-LABEL: test_pad_reflect_3d
-fn test_pad_reflect_3d() raises:
+def test_pad_reflect_3d() raises:
     print("== test_pad_reflect_3d")
 
     # Create an input matrix of the form
@@ -467,7 +462,7 @@ fn test_pad_reflect_3d() raises:
 
 
 # CHECK-LABEL: test_pad_reflect_3d_singleton
-fn test_pad_reflect_3d_singleton() raises:
+def test_pad_reflect_3d_singleton() raises:
     print("== test_pad_reflect_3d_singleton")
 
     # Create an input matrix of the form
@@ -528,14 +523,14 @@ fn test_pad_reflect_3d_singleton() raises:
 
 
 # CHECK-LABEL: test_pad_reflect_4d_big_input
-fn test_pad_reflect_4d_big_input() raises:
+def test_pad_reflect_4d_big_input() raises:
     print("== test_pad_reflect_4d_big_input")
 
     comptime in_size = 1 * 1 * 512 * 512
     comptime out_size = 2 * 3 * 1024 * 1024
 
     # create a big input matrix and fill it with ones
-    var input_ptr = UnsafePointer[Scalar[DType.int]].alloc(in_size)
+    var input_ptr = alloc[Scalar[DType.int]](in_size)
     var input = TileTensor(input_ptr, row_major[1, 1, 512, 512]()).fill(1)
 
     # create a padding array of the form
@@ -553,7 +548,7 @@ fn test_pad_reflect_4d_big_input() raises:
     var paddings = TileTensor(paddings_stack, row_major[8]())
 
     # create an even bigger output matrix and fill it with zeros
-    var output_ptr = UnsafePointer[Scalar[DType.int]].alloc(out_size)
+    var output_ptr = alloc[Scalar[DType.int]](out_size)
     var output = TileTensor(output_ptr, row_major[2, 3, 1024, 1024]()).fill(0)
 
     # pad
@@ -566,7 +561,7 @@ fn test_pad_reflect_4d_big_input() raises:
 
 
 # CHECK-LABEL: test_pad_repeat_3d
-fn test_pad_repeat_3d() raises:
+def test_pad_repeat_3d() raises:
     print("== test_pad_repeat_3d")
 
     # Create an input matrix of the form
@@ -685,7 +680,7 @@ fn test_pad_repeat_3d() raises:
     assert_equal(output[4, 3, 2], 4)
 
 
-def main():
+def main() raises:
     test_pad_1d()
     test_pad_reflect_1d()
     test_pad_repeat_1d()

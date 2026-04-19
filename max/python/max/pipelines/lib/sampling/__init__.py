@@ -13,17 +13,31 @@
 
 from .logits_processor import apply_logits_processors
 from .sampling import (
+    RejectionRunner,
+    build_greedy_acceptance_sampler_graph,
+    build_stochastic_acceptance_sampler_graph,
+    rejection_runner_registry,
     rejection_sampler,
     rejection_sampler_with_residuals,
     token_sampler,
 )
 from .sampling_config import SamplingConfig
-from .sampling_logits_processor import FusedSamplingProcessor
+from .sampling_logits_processor import (
+    FusedSamplingProcessor,
+    PenaltyInputs,
+    SamplerInputs,
+)
 
 __all__ = [
     "FusedSamplingProcessor",
+    "PenaltyInputs",
+    "RejectionRunner",
+    "SamplerInputs",
     "SamplingConfig",
     "apply_logits_processors",
+    "build_greedy_acceptance_sampler_graph",
+    "build_stochastic_acceptance_sampler_graph",
+    "rejection_runner_registry",
     "rejection_sampler",
     "rejection_sampler_with_residuals",
     "token_sampler",

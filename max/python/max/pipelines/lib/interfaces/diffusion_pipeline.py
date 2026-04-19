@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,25 +15,51 @@
 
 from __future__ import annotations
 
+import inspect
+import logging
 from abc import ABC, abstractmethod
-from dataclasses import MISSING, dataclass, field, fields
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeAlias, overload
 
 import numpy as np
 import numpy.typing as npt
 from max._core.driver import Device
+from max.driver import CPU, Accelerator, Buffer
+from max.dtype import DType
+from max.engine import InferenceSession, Model
+from max.experimental.nn import Module
+from max.experimental.tensor import Tensor
+from max.graph import Graph, TensorType
 from max.graph.weights import load_weights
 from max.interfaces import PixelGenerationContext
-from max.interfaces.tokens import TokenBuffer
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 from tqdm import tqdm
-from typing_extensions import Self
+
+from .first_block_cache import FirstBlockCache
+from .taylorseer import TaylorSeer, run_denoising_step
 
 if TYPE_CHECKING:
-    from max.engine import InferenceSession
-
     from ..config import PipelineConfig
+    from .cache_mixin import DenoisingCacheConfig, DenoisingCacheState
+
+logger = logging.getLogger("max.pipelines")
+
+CompileTarget: TypeAlias = Callable[..., Any] | Module[..., Any]
+CompileDecorator: TypeAlias = Callable[[CompileTarget], "CompileWrapper"]
+
+
+@dataclass
+class DiffusionPipelineOutput:
+    """Output of a diffusion pipeline.
+
+    Attributes:
+        images: NHWC uint8 NumPy array of shape (B, H, W, C) with values
+            in [0, 255].
+    """
+
+    images: npt.NDArray[np.uint8]
 
 
 class DiffusionPipeline(ABC):
@@ -44,14 +70,77 @@ class DiffusionPipeline(ABC):
 
     components: dict[str, type[ComponentModel]] | None = None
 
+    unprefixed_weight_component: str | None = None
+    """When set, weight files without a ``<component>/`` prefix are assigned to
+    this component.  This supports multi-repo layouts where quantized weights
+    for one component (e.g. the transformer) are shipped as flat files in a
+    separate repo while the remaining components use the base model repo."""
+
+    default_num_inference_steps: int = 50
+    """Default number of denoising steps when the user does not specify one.
+
+    Subclasses may override this to provide a model-appropriate default.
+    """
+
+    default_residual_threshold: float = 0.05
+    """Model-specific default for the FBCache relative difference threshold.
+
+    Subclasses may override this to provide a model-appropriate default.
+    Used when the request does not specify a ``residual_threshold``.
+    """
+
+    default_taylorseer_cache_interval: int = 5
+    """Model-specific default for the TaylorSeer cache interval.
+
+    Subclasses may override this to provide a model-appropriate default.
+    Used when ``DenoisingCacheConfig.taylorseer_cache_interval`` is ``None``.
+    """
+
+    default_taylorseer_warmup_steps: int = 9
+    """Model-specific default for the TaylorSeer warmup steps.
+
+    Subclasses may override this to provide a model-appropriate default.
+    Used when ``DenoisingCacheConfig.taylorseer_warmup_steps`` is ``None``.
+    """
+
+    default_taylorseer_max_order: int = 1
+    """Model-specific default for the TaylorSeer expansion order.
+
+    Subclasses may override this to provide a model-appropriate default.
+    Used when ``DenoisingCacheConfig.taylorseer_max_order`` is ``None``.
+    """
+
+    default_teacache_rel_l1_thresh: float = 0.4
+    """Model-specific default for the TeaCache relative-L1 threshold.
+
+    Subclasses may override this to provide a model-appropriate default.
+    Used when ``DenoisingCacheConfig.teacache_rel_l1_thresh`` is ``None``.
+    """
+
+    default_teacache_coefficients: tuple[float, ...] = (
+        4.98651651e02,
+        -2.83781631e02,
+        5.58554382e01,
+        -3.82021401e00,
+        2.64230861e-01,
+    )
+    """Default TeaCache polynomial coefficients for FLUX-style rescaling."""
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
         devices: list[Device],
         weight_paths: list[Path],
+        cache_config: DenoisingCacheConfig | None = None,
         **kwargs: Any,
     ) -> None:
+        from .cache_mixin import DenoisingCacheConfig
+
+        self.cache_config: DenoisingCacheConfig = (
+            cache_config or DenoisingCacheConfig()
+        )
+        self._resolve_cache_defaults()
         self.pipeline_config = pipeline_config
         self.session = session
         self.devices = devices
@@ -61,21 +150,43 @@ class DiffusionPipeline(ABC):
 
         self.init_remaining_components()
 
+    def _resolve_cache_defaults(self) -> None:
+        """Resolve nullable DenoisingCacheConfig fields using pipeline defaults.
+
+        Uses class-level ``default_*`` attributes so that subclasses can
+        override model-specific defaults.  Called before ``_load_sub_models()``
+        so that ComponentModels receive a fully-resolved cache config.
+        """
+        # Mutates in-place; DenoisingCacheConfig is unfrozen.
+        cc = self.cache_config
+        if cc.taylorseer_cache_interval is None:
+            cc.taylorseer_cache_interval = (
+                self.default_taylorseer_cache_interval
+            )
+        if cc.taylorseer_warmup_steps is None:
+            cc.taylorseer_warmup_steps = self.default_taylorseer_warmup_steps
+        if cc.taylorseer_max_order is None:
+            cc.taylorseer_max_order = self.default_taylorseer_max_order
+        if cc.teacache_rel_l1_thresh is None:
+            cc.teacache_rel_l1_thresh = self.default_teacache_rel_l1_thresh
+        if cc.teacache_coefficients is None:
+            cc.teacache_coefficients = list(self.default_teacache_coefficients)
+
     @abstractmethod
     def init_remaining_components(self) -> None:
         """Initialize non-ComponentModel components (e.g., image processors)."""
 
     @abstractmethod
-    def prepare_inputs(
-        self, context: PixelGenerationContext
-    ) -> PixelModelInputs:
+    def prepare_inputs(self, context: PixelGenerationContext) -> Any:
         """Prepare inputs for the pipeline."""
         raise NotImplementedError(
             f"prepare_inputs is not implemented for {self.__class__.__name__}"
         )
 
     @abstractmethod
-    def execute(self, model_inputs: PixelModelInputs, **kwargs: Any) -> Any:
+    def execute(
+        self, model_inputs: Any, **kwargs: Any
+    ) -> DiffusionPipelineOutput:
         """Execute the pipeline with the given model inputs.
 
         Args:
@@ -83,37 +194,27 @@ class DiffusionPipeline(ABC):
             **kwargs: Additional pipeline-specific execution parameters.
 
         Returns:
-            Pipeline-specific output (e.g., generated images).
+            A DiffusionPipelineOutput containing NHWC uint8 images.
         """
         raise NotImplementedError(
             f"execute is not implemented for {self.__class__.__name__}"
         )
 
-    @classmethod
-    def finalize_pipeline_config(cls, pipeline_config: PipelineConfig) -> None:
-        """Hook for finalizing pipeline configuration. Override if needed."""
-        del pipeline_config
-
     def _load_sub_models(
         self, weight_paths: list[Path]
     ) -> dict[str, ComponentModel]:
-        """Load all ComponentModel sub-components defined in `components`."""
+        """Load all ComponentModel sub-components defined in `components`.
+
+        Uses per-component ``MAXModelConfig`` instances from the
+        ``ModelManifest`` to obtain each component's config, encoding,
+        and weight paths.
+        """
         if not self.components:
             raise ValueError(
                 f"{self.__class__.__name__}.components is not set."
             )
 
-        diffusers_config = self.pipeline_config.model.diffusers_config
-        if not diffusers_config:
-            raise ValueError(
-                "diffusers_config is required for DiffusionPipeline."
-            )
-
-        components_config = diffusers_config.get("components")
-        if not components_config:
-            raise ValueError("diffusers_config['components'] is missing.")
-
-        relative_paths = self._resolve_relative_component_paths()
+        models = self.pipeline_config.models
         loaded_sub_models: dict[str, ComponentModel] = {}
 
         for name, component_cls in tqdm(
@@ -122,52 +223,207 @@ class DiffusionPipeline(ABC):
             if not issubclass(component_cls, ComponentModel):
                 continue
 
-            config_dict = self._get_component_config_dict(
-                components_config, name
-            )
-            abs_paths = self._resolve_absolute_paths(
-                weight_paths, relative_paths[name]
-            )
+            component_config = models.get(name)
+            if component_config is None:
+                raise ValueError(
+                    f"Missing model config for component '{name}' "
+                    f"in manifest. Available: {list(models.keys())}"
+                )
 
-            loaded_sub_models[name] = component_cls(
-                config=config_dict,
-                encoding=self.pipeline_config.model.quantization_encoding,
-                devices=self.devices,
-                weights=load_weights(abs_paths),
-            )
+            config_dict = component_config.huggingface_config.to_dict()
+            encoding = component_config.quantization_encoding or "bfloat16"
+            abs_paths = self._get_component_weight_paths(component_config)
+
+            init_params = inspect.signature(component_cls.__init__).parameters
+            init_kwargs: dict[str, Any] = {
+                "config": config_dict,
+                "encoding": encoding,
+                "devices": self.devices,
+                "weights": load_weights(abs_paths),
+            }
+            if "session" in init_params:
+                init_kwargs["session"] = self.session
+            if "cache_config" in init_params:
+                init_kwargs["cache_config"] = self.cache_config
+
+            loaded_sub_models[name] = component_cls(**init_kwargs)
 
         return loaded_sub_models
 
-    def _get_component_config_dict(
-        self, components_config: dict[str, Any], name: str
-    ) -> dict[str, Any]:
-        """Extract config_dict for a named component."""
-        component = components_config.get(name)
-        if not component:
-            raise ValueError(f"Missing config for component '{name}'.")
+    def _get_component_weight_paths(self, component_config: Any) -> list[Path]:
+        """Resolve absolute weight paths for a single component.
 
-        config_dict = component.get("config_dict")
-        if not config_dict:
-            raise ValueError(f"Missing config_dict for component '{name}'.")
+        Uses the component's own ``MAXModelConfig`` (which already has
+        ``weight_path`` and ``huggingface_weight_repo`` resolved after
+        ``ModelManifest.resolve()``).
+        """
+        return component_config.resolved_weight_paths()
 
-        return config_dict
+    # -----------------------------------------------------------------
+    # Denoising cache support (FBCache + TaylorSeer)
+    # -----------------------------------------------------------------
 
-    def _resolve_relative_component_paths(self) -> dict[str, list[str]]:
-        """Group weight paths by component name (first path segment)."""
-        result: dict[str, list[str]] = {}
+    _taylorseer: TaylorSeer | None = None
+    _fbc: FirstBlockCache | None = None
+    _cache_dtype: DType
+    _cache_device: Device
 
-        for path in self.pipeline_config.model.weight_path:
-            path_str = str(path)
-            parts = path_str.split("/")
-            if len(parts) >= 2:
-                component = parts[0]
-                result.setdefault(component, []).append(path_str)
+    def _init_cache_state(self, dtype: DType, device: Device) -> None:
+        """Initialize pipeline-level cache tensors and TaylorSeer graphs.
 
-        if not result:
-            raise ValueError(
-                "No component weights found. Expected format: <component>/<file>"
+        Call once during ``init_remaining_components()``, after the
+        transformer has been loaded and compiled.
+        """
+        self._taylorseer = None
+        if self.cache_config.taylorseer:
+            assert self.cache_config.taylorseer_max_order is not None
+            self._taylorseer = TaylorSeer(
+                max_order=self.cache_config.taylorseer_max_order,
+                dtype=dtype,
+                device=device,
             )
-        return result
+
+        self._fbc = None
+        if self.cache_config.first_block_caching:
+            self._fbc = FirstBlockCache(dtype=dtype, device=device)
+
+        self._cache_dtype = dtype
+        self._cache_device = device
+
+    def create_cache_state(
+        self,
+        batch_size: int,
+        seq_len: int,
+        transformer_config: Any,
+        text_seq_len: int = 0,
+    ) -> DenoisingCacheState:
+        """Create per-request cache state with fresh tensors.
+
+        Args:
+            batch_size: Batch dimension (from prompt_embeds).
+            seq_len: Sequence length (from latents).
+            transformer_config: Transformer config carrying dimension info.
+                Must have ``num_attention_heads``, ``attention_head_dim``,
+                ``patch_size``, ``out_channels``, and ``in_channels`` attributes.
+            text_seq_len: Text sequence length. Reserved for cache modes that
+                require text-aware allocations.
+        """
+        from .cache_mixin import DenoisingCacheState
+
+        for attr in (
+            "num_attention_heads",
+            "attention_head_dim",
+            "patch_size",
+            "out_channels",
+            "in_channels",
+        ):
+            assert hasattr(transformer_config, attr), (
+                f"transformer_config missing required attribute '{attr}'"
+            )
+
+        residual_dim = (
+            transformer_config.num_attention_heads
+            * transformer_config.attention_head_dim
+        )
+        output_dim = (
+            transformer_config.patch_size
+            * transformer_config.patch_size
+            * (
+                transformer_config.out_channels
+                or transformer_config.in_channels
+            )
+        )
+
+        state = DenoisingCacheState()
+
+        def _device_zeros(shape: tuple[int, ...]) -> Tensor:
+            return Tensor(
+                storage=Buffer.zeros(
+                    shape, self._cache_dtype, device=self._cache_device
+                )
+            )
+
+        if self.cache_config.first_block_caching:
+            assert self._fbc is not None
+            fbc_state = self._fbc.create_state(
+                batch_size, seq_len, residual_dim, output_dim
+            )
+            state.prev_residual = fbc_state.prev_residual
+            state.prev_output = fbc_state.prev_output
+
+        if self.cache_config.taylorseer:
+            assert self._taylorseer is not None
+            ts_state = self._taylorseer.create_state(
+                batch_size, seq_len, output_dim
+            )
+            state.taylor_factor_0 = ts_state.factor_0
+            state.taylor_factor_1 = ts_state.factor_1
+            state.taylor_factor_2 = ts_state.factor_2
+
+        if self.cache_config.teacache:
+            state.teacache_prev_modulated_input = _device_zeros(
+                (batch_size, seq_len, residual_dim)
+            )
+            state.teacache_cached_residual = _device_zeros(
+                (batch_size, seq_len, residual_dim)
+            )
+            state.teacache_accumulated_rel_l1 = Tensor(
+                storage=Buffer.from_dlpack(
+                    np.array([0.0], dtype=np.float32)
+                ).to(self._cache_device)
+            )
+
+        return state
+
+    def run_transformer(
+        self,
+        cache_state: DenoisingCacheState,
+        **kwargs: Any,
+    ) -> tuple[Tensor, ...]:
+        """Run the transformer for one denoising step.
+
+        Subclasses must override this to call their transformer with the
+        appropriate model-specific arguments.  The method should return
+        ``(noise_pred,)`` when first_block_caching is disabled, or
+        ``(new_residual, noise_pred)`` when first_block_caching is enabled.
+
+        Args:
+            cache_state: Per-request mutable cache state for this stream.
+            **kwargs: Model-specific arguments forwarded from
+                ``run_denoising_step``.
+        """
+        raise NotImplementedError
+
+    def run_denoising_step(
+        self,
+        step: int,
+        cache_state: DenoisingCacheState,
+        device: Device,
+        **kwargs: Any,
+    ) -> Tensor:
+        """Execute one denoising step with caching logic.
+
+        Delegates the actual transformer call to ``self.run_transformer()``,
+        which subclasses override with model-specific arguments.
+
+        Args:
+            step: Current step index.
+            cache_state: Per-request mutable cache state for this stream.
+            device: Target device.
+            **kwargs: Model-specific arguments forwarded to
+                ``run_transformer``.
+
+        Returns:
+            noise_pred tensor for this step.
+        """
+        return run_denoising_step(
+            step=step,
+            cache_state=cache_state,
+            cache_config=self.cache_config,
+            device=device,
+            compute_fn=lambda: self.run_transformer(cache_state, **kwargs),
+            taylorseer=self._taylorseer,
+        )
 
     def _resolve_absolute_paths(
         self, weight_paths: list[Path], relative_paths: list[str]
@@ -185,256 +441,123 @@ class DiffusionPipeline(ABC):
         return absolute_paths
 
 
-@dataclass(kw_only=True)
-class PixelModelInputs:
-    """Common input container for pixel-generation models.
+class CompileWrapper:
+    """Wraps a compile target with optional input type annotations."""
 
-    Provides a consistent set of fields used across multiple pixel
-    pipelines and models.
-    """
+    def __init__(
+        self,
+        compile_target: CompileTarget,
+        input_types: Iterable[TensorType] | None = None,
+    ) -> None:
+        """Initialize the CompileWrapper.
 
-    tokens: TokenBuffer
-    """
-    Primary encoder token buffer.
-    This is the main prompt representation consumed by the model's text encoder.
-    Required for all models.
-    """
+        Args:
+            compile_target: The function or module to be compiled.
+            input_types: A list of input types (TensorTypes) required for compilation.
 
-    tokens_2: TokenBuffer | None = None
-    """
-    Secondary encoder token buffer (for dual-encoder models).
-    Examples: architectures that have a second text encoder stream or pooled embeddings.
-    If the model is single-encoder, leave as None.
-    """
-
-    negative_tokens: TokenBuffer | None = None
-    """
-    Negative prompt tokens for the primary encoder.
-    Used for classifier-free guidance (CFG) or similar conditioning schemes.
-    If your pipeline does not use negative prompts, leave as None.
-    """
-
-    negative_tokens_2: TokenBuffer | None = None
-    """
-    Negative prompt tokens for the secondary encoder (for dual-encoder models).
-    If the model is single-encoder or you do not use negative prompts, leave as None.
-    """
-
-    extra_params: dict[str, npt.NDArray[Any]] = field(default_factory=dict)
-    """
-    A bag of model-specific numeric parameters not represented as explicit fields.
-
-    Typical uses:
-    - Architecture-specific knobs (e.g., cfg_normalization arrays, scaling vectors)
-    - Precomputed per-step values not worth standardizing across all models
-    - Small numeric tensors that are easier to carry as named extras than formal fields
-
-    Values are expected to be numpy arrays (ndarray) to keep the contract consistent,
-    but you can relax this if your codebase needs non-array values.
-    """
-
-    timesteps: npt.NDArray[np.float32] = field(
-        default_factory=lambda: np.array([], dtype=np.float32)
-    )
-    """
-    Precomputed denoising timestep schedule.
-
-    - Usually a 1D float32 numpy array of length `num_inference_steps`
-      (exact semantics depend on your scheduler).
-    - If your pipeline precomputes the scheduler trajectory, you pass it here.
-    - Some models may not require explicit timesteps; in that case it may remain empty.
-      (Model-specific subclasses can enforce non-empty via __post_init__.)
-    """
-
-    sigmas: npt.NDArray[np.float32] = field(
-        default_factory=lambda: np.array([], dtype=np.float32)
-    )
-    """
-    Precomputed sigma schedule for denoising.
-
-    - Usually a 1D float32 numpy array of length `num_inference_steps`
-      corresponding to the noise level per step.
-    - Some schedulers are sigma-based; others are timestep-based; some use both.
-    - If unused, it may remain empty unless your model subclass requires it.
-    """
-
-    latents: npt.NDArray[np.float32] = field(
-        default_factory=lambda: np.array([], dtype=np.float32)
-    )
-    """
-    Initial latent noise tensor (or initial latent state).
-
-    - For diffusion/flow models, this is typically random noise seeded per request.
-    - Shape depends on model: commonly [B, C, H/8, W/8] for image latents,
-      or [B, T, C, H/8, W/8] for video latents.
-    - If your pipeline generates latents internally, you may leave it empty.
-      (Model-specific subclasses can enforce non-empty via __post_init__.)
-    """
-
-    latent_image_ids: npt.NDArray[np.float32] = field(
-        default_factory=lambda: np.array([], dtype=np.float32)
-    )
-    """
-    Optional latent image IDs / positional identifiers for latents.
-
-    - Some pipelines attach per-latent identifiers for caching, routing, or conditioning.
-    - Often used to avoid recomputation of image-id embeddings across steps.
-    - If unused, it may remain empty.
-    """
-
-    height: int = 1024
-    """
-    Output height in pixels.
-
-    - This is a required scalar (not None).
-    - If a context provides `height=None`, `from_context()` treats that as "not provided"
-      and substitutes this default value (or a subclass override).
-    """
-
-    width: int = 1024
-    """
-    Output width in pixels.
-
-    - This is a required scalar (not None).
-    - If a context provides `width=None`, `from_context()` treats that as "not provided"
-      and substitutes this default value (or a subclass override).
-    """
-
-    num_inference_steps: int = 50
-    """
-    Number of denoising/inference steps.
-
-    - This is a required scalar (not None).
-    - If a context provides `num_inference_steps=None`, `from_context()` treats that as
-      "not provided" and substitutes this default value (or a subclass override).
-    """
-
-    guidance_scale: float = 3.5
-    """
-    Guidance scale for classifier-free guidance (CFG).
-
-    - A higher value typically increases adherence to the prompt but can reduce diversity.
-    - This is expected to be a real float (not None).
-    - If a context provides `guidance_scale=None`, `from_context()` substitutes the default.
-    """
-
-    guidance: npt.NDArray[np.float32] | None = None
-    """
-    Optional guidance tensor.
-
-    - Some pipelines precompute guidance weights/tensors (e.g., per-token weights, per-step weights).
-    - None is meaningful here: it means "no explicit guidance tensor supplied".
-    - Unlike scalar fields, None is preserved (not replaced).
-    """
-
-    true_cfg_scale: float = 1.0
-    """
-    "True CFG" scale used by certain pipelines/models.
-
-    - Some architectures distinguish between the user-facing guidance_scale and an internal
-      scale applied to a different normalization or conditioning pathway.
-    - Defaults to 1.0 for pipelines that do not use this feature.
-    """
-
-    num_warmup_steps: int = 0
-    """
-    Number of warmup steps.
-
-    - Used in some schedulers/pipelines to handle initial steps differently
-      (e.g., scheduler stabilization, cache warmup, etc.).
-    - Must be >= 0.
-    """
-
-    num_images_per_prompt: int = 1
-    """
-    Number of images/videos to generate per prompt.
-
-    - Commonly used for "same prompt, multiple samples" behavior.
-    - Must be > 0.
-    - For video generation, the naming may still be used for historical compatibility.
-    """
-
-    def __post_init__(self) -> None:
-        """Runs basic invariant checks for core scalar fields.
-
-        Model-specific subclasses may override and call ``super().__post_init__()``
-        to add stricter validations (e.g., requiring timesteps/sigmas/latents
-        to be non-empty).
+        Raises:
+            ValueError: If input_types is not provided.
         """
-        if not isinstance(self.height, int) or self.height <= 0:
+        target_name = getattr(
+            compile_target, "__name__", type(compile_target).__name__
+        )
+        if input_types is None:
             raise ValueError(
-                f"height must be a positive int. Got {self.height!r}"
-            )
-        if not isinstance(self.width, int) or self.width <= 0:
-            raise ValueError(
-                f"width must be a positive int. Got {self.width!r}"
-            )
-        if (
-            not isinstance(self.num_inference_steps, int)
-            or self.num_inference_steps <= 0
-        ):
-            raise ValueError(
-                f"num_inference_steps must be a positive int. Got {self.num_inference_steps!r}"
+                f"input_types must be provided for compilation of {target_name}."
             )
 
-        if (
-            not isinstance(self.num_warmup_steps, int)
-            or self.num_warmup_steps < 0
-        ):
-            raise ValueError(
-                f"num_warmup_steps must be >= 0. Got {self.num_warmup_steps!r}"
-            )
-        if (
-            not isinstance(self.num_images_per_prompt, int)
-            or self.num_images_per_prompt <= 0
-        ):
-            raise ValueError(
-                f"num_images_per_prompt must be > 0. Got {self.num_images_per_prompt!r}"
-            )
+        input_types_tuple = tuple(input_types)
+        self._compiled_model: Model | None = None
+        self._compiled_module = None
 
-        required_arrays = {
-            "timesteps": self.timesteps,
-            "latents": self.latents,
-        }
+        if isinstance(compile_target, Module):
+            self._compiled_module = compile_target.compile(*input_types_tuple)
+            return
 
-        missing = [
-            name
-            for name, arr in required_arrays.items()
-            if not isinstance(arr, np.ndarray) or arr.size == 0
-        ]
-        if missing:
-            raise ValueError(
-                f"{self.__class__.__name__} requires non-empty numpy arrays for: {', '.join(missing)}"
-            )
-
-    @classmethod
-    def from_context(cls, context: PixelGenerationContext) -> Self:
-        """Build an instance from a context-like dict.
-
-        Policy:
-
-        - If a key is missing: the dataclass default applies automatically.
-        - If a key is present with value None: treat as missing and substitute the class default
-          (including subclass overrides).
-        """
-        fmap = {f.name: f for f in fields(cls)}
-        kwargs: dict[str, Any] = {}
-
-        for dataclass_field in fields(cls):
-            name = dataclass_field.name
-            if not hasattr(context, name):
-                continue
-            v = getattr(context, name)
-
-            if v is None:
-                if dataclass_field.default is not MISSING:
-                    kwargs[name] = dataclass_field.default
-                elif dataclass_field.default_factory is not MISSING:
-                    kwargs[name] = dataclass_field.default_factory()
-                else:
-                    # No default -> keep None; for required fields this should fail downstream.
-                    kwargs[name] = None
+        with Graph(
+            compile_target.__name__, input_types=input_types_tuple
+        ) as graph:
+            output = compile_target(*graph.inputs)
+            if isinstance(output, Iterable):
+                graph.output(*output)
             else:
-                kwargs[name] = v
+                graph.output(output)
+            compiled_graph = graph
 
-        return cls(**kwargs)
+        device: CPU | Accelerator
+        if any(input_type.device.is_gpu() for input_type in input_types_tuple):
+            device = Accelerator()
+        else:
+            device = CPU()
+        session = InferenceSession([device])
+        self._compiled_model = session.load(compiled_graph)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Execute the compiled session with the given arguments.
+
+        Args:
+            *args: Positional arguments to pass to the session.
+            **kwargs: Keyword arguments to pass to the session.
+
+        Returns:
+            The result of the session execution.
+        """
+        if self._compiled_module is not None:
+            return self._compiled_module(*args, **kwargs)
+
+        if self._compiled_model is None:
+            raise RuntimeError("CompileWrapper has no compiled target.")
+
+        normalized_args = tuple(self._unwrap_tensor(arg) for arg in args)
+        normalized_kwargs = {
+            key: self._unwrap_tensor(val) for key, val in kwargs.items()
+        }
+        buffers = self._compiled_model(*normalized_args, **normalized_kwargs)
+        outputs = [Tensor.from_dlpack(buffer) for buffer in buffers]
+        return outputs[0] if len(outputs) == 1 else outputs
+
+    @staticmethod
+    def _unwrap_tensor(value: Any) -> Any:
+        try:
+            if hasattr(value, "driver_tensor"):
+                return value.driver_tensor
+            return value
+        except TypeError:
+            return value
+
+
+@overload
+def max_compile(
+    compile_target: CompileTarget,
+    input_types: Iterable[TensorType] | None = ...,
+) -> CompileWrapper: ...
+
+
+@overload
+def max_compile(
+    compile_target: None = ...,
+    input_types: Iterable[TensorType] | None = ...,
+) -> CompileDecorator: ...
+
+
+def max_compile(
+    compile_target: CompileTarget | None = None,
+    input_types: Iterable[TensorType] | None = None,
+) -> CompileDecorator | CompileWrapper:
+    """Decorator or function to compile a target with specified input types.
+
+    Args:
+        compile_target: The function or module to compile. If None, returns a decorator.
+        input_types: The input types for the compilation.
+
+    Returns:
+        A CompileWrapper instance if compile_target is provided, otherwise a decorator.
+    """
+    if compile_target is None:
+
+        def decorator(f: CompileTarget) -> CompileWrapper:
+            return CompileWrapper(f, input_types)
+
+        return decorator
+
+    return CompileWrapper(compile_target, input_types)

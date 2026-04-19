@@ -13,6 +13,11 @@
 
 from __future__ import annotations
 
+import dataclasses
+
+import numpy as np
+from max.dtype import DType
+from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
 
 GPT_OSS_SAFETENSOR_MAP: dict[str, str] = {
@@ -20,15 +25,49 @@ GPT_OSS_SAFETENSOR_MAP: dict[str, str] = {
     "model.norm.": "language_model.norm.",
     "lm_head.": "language_model.lm_head.",
     "model.layers.": "language_model.layers.",
+    # Remap unfused Q/K/V projections into StackedLinear namespace.
+    ".self_attn.q_proj.": ".self_attn.qkv_proj.q.",
+    ".self_attn.k_proj.": ".self_attn.qkv_proj.k.",
+    ".self_attn.v_proj.": ".self_attn.qkv_proj.v.",
     # MoE weight mappings
     ".mlp.router": ".mlp.gate.gate_score",
-    "experts.gate_up_proj_bias": "_experts_gate_up_proj_bias",
-    "experts.down_proj_bias": "_experts_down_proj_bias",
-    # The following weights must be listed after the bias weights, because
-    # they share the same prefix.
-    "experts.gate_up_proj": "_experts_gate_up_proj_weight",
-    "experts.down_proj": "_experts_down_proj_weight",
 }
+
+
+def _convert_mxfp4_weight(
+    name: str, data: WeightData
+) -> tuple[str, WeightData]:
+    """Converts an MXFP4 weight, handling both block and scale tensors.
+
+    Block weights (``*_blocks``) are flattened from 4D to 3D and the suffix
+    is stripped.  Scale weights (``*_scales``) are renamed to ``*_scale``
+    and reinterpreted as float8_e8m0fnu (safetensors stores them as uint8).
+    Non-MXFP4 weights are returned unchanged.
+    """
+    if name.endswith("_blocks"):
+        arr = np.from_dlpack(data)
+        if arr.ndim != 4:
+            raise ValueError(
+                f"Expected 4D MXFP4 block tensor, got {arr.ndim}D"
+                f" for '{data.name}'"
+            )
+        arr = arr.reshape(*arr.shape[:2], -1)
+        data = dataclasses.replace(data, data=arr, shape=Shape(arr.shape))
+        return name.removesuffix("_blocks"), data
+
+    if name.endswith("_scales"):
+        data = dataclasses.replace(data, dtype=DType.float8_e8m0fnu)
+        return name.removesuffix("_scales") + "_scale", data
+
+    return name, data
+
+
+# Native OpenAI-format keys to skip.  The HF-compatible shards
+# (model-0000X-of-*.safetensors) provide the same weights under
+# standard ``model.layers.*`` naming.
+_OPENAI_NATIVE_KEYS = frozenset(
+    {"embedding.weight", "unembedding.weight", "norm.scale"}
+)
 
 
 def convert_safetensor_state_dict(
@@ -42,14 +81,23 @@ def convert_safetensor_state_dict(
     Returns:
         Dictionary of converted weight data
     """
-
-    # Now remap all weight names from HuggingFace to MAX format
     new_state_dict: dict[str, WeightData] = {}
 
     for weight_name, value in state_dict.items():
-        max_name: str = weight_name
+        if (
+            weight_name.startswith("block.")
+            or weight_name in _OPENAI_NATIVE_KEYS
+        ):
+            continue
+
+        data = value.data()
+        max_name, data = _convert_mxfp4_weight(weight_name, data)
+
         for before, after in GPT_OSS_SAFETENSOR_MAP.items():
             max_name = max_name.replace(before, after)
-        new_state_dict[max_name] = value.data()
+
+        if max_name != data.name:
+            data = dataclasses.replace(data, name=max_name)
+        new_state_dict[max_name] = data
 
     return new_state_dict

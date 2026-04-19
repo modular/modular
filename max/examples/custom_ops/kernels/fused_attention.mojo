@@ -52,20 +52,20 @@ leading to the final output.
 """
 
 
-from math import exp
+from std.math import exp
 
 from compiler import register
-from gpu.host import DeviceContext
-from gpu import block_idx
-from gpu.memory import AddressSpace
-from gpu.sync import barrier
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx
+from std.gpu.memory import AddressSpace
+from std.gpu.sync import barrier
 from layout import Layout, LayoutTensor
 from layout.math import max, sum
 from layout.tensor_core import TensorCore
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
 
-from utils import Index
+from std.utils import Index
 
 
 @register("modular_ops::fused_attention_custom")
@@ -75,7 +75,7 @@ struct FusedAttention:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         //,  # Forces the previous two params to be inferred from the args
@@ -83,13 +83,13 @@ struct FusedAttention:
         BD: Int,  # Dimension of blocks to split K, V into
         target: StaticString,  # "cpu" or "gpu"
     ](
-        output: OutputTensor[dtype=dtype, rank=rank],
-        query: InputTensor[dtype=dtype, rank=rank],
-        key: InputTensor[dtype=dtype, rank=rank],
-        value: InputTensor[dtype=dtype, rank=rank],
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        query: InputTensor[dtype=dtype, rank=rank, ...],
+        key: InputTensor[dtype=dtype, rank=rank, ...],
+        value: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
-        constrained[rank == 2, "rank must be 2"]()
+        comptime assert rank == 2, "rank must be 2"
 
         # Query tensor
         Q = query.to_layout_tensor()
@@ -100,8 +100,7 @@ struct FusedAttention:
         # Attention output tensor
         O = output.to_layout_tensor()
 
-        @parameter
-        if target == "cpu":
+        comptime if target == "cpu":
             print("Running on CPU")
             fused_attention_cpu[BN, BD](Q, K, V, O)
         else:
@@ -115,7 +114,7 @@ struct FusedAttention:
 @register("fused_attention_custom")
 struct FusedAttentionAlias:
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         //,  # Forces the previous two params to be inferred from the args
@@ -123,10 +122,10 @@ struct FusedAttentionAlias:
         BD: Int,  # Dimension of blocks to split K, V into
         target: StaticString,  # "cpu" or "gpu"
     ](
-        output: OutputTensor[dtype=dtype, rank=rank],
-        query: InputTensor[dtype=dtype, rank=rank],
-        key: InputTensor[dtype=dtype, rank=rank],
-        value: InputTensor[dtype=dtype, rank=rank],
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        query: InputTensor[dtype=dtype, rank=rank, ...],
+        key: InputTensor[dtype=dtype, rank=rank, ...],
+        value: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         FusedAttention.execute[BN=BN, BD=BD, target=target](
@@ -135,7 +134,7 @@ struct FusedAttentionAlias:
 
 
 @always_inline
-fn matmul_b_transpose(
+def matmul_b_transpose(
     lhs: LayoutTensor,
     rhs: LayoutTensor,
     out res: LayoutTensor[
@@ -146,15 +145,11 @@ fn matmul_b_transpose(
 ):
     res = type_of(res).stack_allocation()
 
-    @parameter
-    for m in range(lhs.shape[0]()):
-
-        @parameter
-        for n in range(rhs.shape[0]()):
+    comptime for m in range(lhs.shape[0]()):
+        comptime for n in range(rhs.shape[0]()):
             res[m, n] = 0.0
 
-            @parameter
-            for k in range(lhs.shape[1]()):
+            comptime for k in range(lhs.shape[1]()):
                 res[m, n] += rebind[res.element_type](
                     lhs[m, k].cast[res.dtype]()
                 ) * rebind[res.element_type](rhs[n, k].cast[res.dtype]())
@@ -179,7 +174,7 @@ fn matmul_b_transpose(
 
 
 @always_inline
-fn fused_attention_cpu[
+def fused_attention_cpu[
     BN: Int, BD: Int
 ](
     Q: LayoutTensor,
@@ -190,12 +185,10 @@ fn fused_attention_cpu[
     comptime N = K.shape[0]()
     comptime D = K.shape[1]()
 
-    @parameter
-    for tile_n in range(N // BN):
+    comptime for tile_n in range(N // BN):
         Q_tile = Q.tile[BN, D](tile_n, 0)
 
-        @parameter
-        for tile_d in range(D // BD):
+        comptime for tile_d in range(D // BD):
             m_1 = (
                 LayoutTensor[Q_tile.dtype, Layout(BN, 1), MutAnyOrigin]
                 .stack_allocation()
@@ -216,8 +209,7 @@ fn fused_attention_cpu[
                 .fill(0)
             )
 
-            @parameter
-            for tile_n_idx in range(N // BN):
+            comptime for tile_n_idx in range(N // BN):
                 K_tile = K.tile[BN, D](tile_n_idx, 0)
                 V_tile = V.tile[BN, BD](tile_n_idx, tile_d)
 
@@ -236,7 +228,7 @@ fn fused_attention_cpu[
 
 
 @always_inline
-fn matmul[
+def matmul[
     target: StaticString,
     transpose_b: Bool = False,
 ](
@@ -246,26 +238,20 @@ fn matmul[
         lhs.dtype,
         Layout.row_major(lhs.shape[0](), rhs.shape[0]()),
         MutAnyOrigin,
-        address_space = lhs.address_space,
-        element_layout = lhs.element_layout,
-        layout_int_type = lhs.layout_int_type,
-        linear_idx_type = lhs.linear_idx_type,
+        address_space=lhs.address_space,
+        element_layout=lhs.element_layout,
+        layout_int_type=lhs.layout_int_type,
+        linear_idx_type=lhs.linear_idx_type,
     ],
 ):
     res = type_of(res).stack_allocation()
 
-    @parameter
-    if target == "cpu":
-
-        @parameter
-        for m in range(lhs.shape[0]()):
-
-            @parameter
-            for n in range(rhs.shape[1]()):
+    comptime if target == "cpu":
+        comptime for m in range(lhs.shape[0]()):
+            comptime for n in range(rhs.shape[1]()):
                 res[m, n] = 0.0
 
-                @parameter
-                for k in range(lhs.shape[1]()):
+                comptime for k in range(lhs.shape[1]()):
                     res[m, n] += rebind[res.element_type](
                         lhs[m, k].cast[res.dtype]()
                     ) * rebind[res.element_type](rhs[k, n].cast[res.dtype]())
@@ -278,12 +264,12 @@ fn matmul[
             res.dtype,
             Layout.row_major(M, N),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ].stack_allocation()
 
         comptime BK = 8
 
-        constrained[K % 8 == 0, "K needs to be a multiple of 8"]()
+        comptime assert K % 8 == 0, "K needs to be a multiple of 8"
 
         mma_b_t = TensorCore[
             lhs.dtype, res.dtype, Index(M, N, BK), transpose_b
@@ -291,14 +277,12 @@ fn matmul[
 
         c_reg = mma_b_t.c_reg_tile_type.stack_allocation().fill(0)
 
-        @parameter
-        for k_i in range(K // BK):
+        comptime for k_i in range(K // BK):
             a_reg = mma_b_t.load_a(lhs.tile[M, BK](0, k_i))
 
             b_reg = mma_b_t.load_b(rhs.tile[BK, N](k_i, 0))
 
-            @parameter
-            if transpose_b:
+            comptime if transpose_b:
                 b_reg = rebind[type_of(b_reg)](
                     mma_b_t.load_b(rhs.tile[N, BK](0, k_i))
                 )
@@ -311,7 +295,7 @@ fn matmul[
         res.copy_from(out_sram)
 
 
-fn fused_attention_kernel[
+def fused_attention_kernel[
     q_dtype: DType,
     q_layout: Layout,
     k_dtype: DType,
@@ -331,7 +315,7 @@ fn fused_attention_kernel[
     comptime N = Q.shape[0]()
     comptime D = Q.shape[1]()
 
-    Q_tile = Q.tile[BN, D](Int(block_idx.y), 0)
+    Q_tile = Q.tile[BN, D](block_idx.y, 0)
 
     m_1 = (
         LayoutTensor[q_dtype, Layout(BN, 1), MutAnyOrigin]
@@ -353,7 +337,7 @@ fn fused_attention_kernel[
 
     for tile_n_idx in range(N // BN_1):
         K_tile = K.tile[BN_1, D](tile_n_idx, 0)
-        V_tile = V.tile[BN_1, BD](tile_n_idx, Int(block_idx.x))
+        V_tile = V.tile[BN_1, BD](tile_n_idx, block_idx.x)
         S = matmul["gpu", transpose_b=True](Q_tile, K_tile)
         m_2 = max(m_1, rebind[type_of(m_1)](max[axis=1](S)))
         l_2 = exp(m_1 - m_2) * l_1 + sum[axis=1](exp(S - m_2))
@@ -362,7 +346,7 @@ fn fused_attention_kernel[
         m_1.copy_from(m_2)
         l_1.copy_from(rebind[type_of(l_1)](l_2))
         O_i.copy_from(O_j)
-    O.tile[BN, BD](Int(block_idx.y), Int(block_idx.x)).copy_from(O_i)
+    O.tile[BN, BD](block_idx.y, block_idx.x).copy_from(O_i)
 
 
 def fused_attention_gpu[
@@ -374,7 +358,7 @@ def fused_attention_gpu[
     K: LayoutTensor,
     V: LayoutTensor,
     O: LayoutTensor[mut=True, ...],
-):
+) raises:
     comptime kernel_func = fused_attention_kernel[
         Q.dtype,
         Q.layout,

@@ -12,38 +12,39 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import rsqrt
-from sys import simd_width_of
+import std.math as math
+from std.math import rsqrt
+from std.sys import simd_width_of
 
-from gpu.host import DeviceContext, get_gpu_target
-from layout._coord import Coord, Idx
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceContext, get_gpu_target
+from layout import Coord, Idx, TileTensor, row_major
 from nn.normalization import *
-from testing import assert_almost_equal, assert_true
+from std.testing import assert_almost_equal, assert_true
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 def compute_group_stats[
     t: DType
-](vec: TileTensor[t, ...], size: Int, eps: Scalar[t]) -> Tuple[
-    Scalar[t],
-    Scalar[t],
+](vec: TileTensor[t, ...], size: Int, eps: Scalar[t]) raises -> Tuple[
+    Float64,
+    Float64,
 ]:
-    comptime assert vec.rank == 1, "vec must be rank 1"
+    """Compute group mean and rsqrt(variance + eps) in float64 for accuracy."""
+    comptime assert vec.flat_rank == 1, "vec must be rank 1"
     comptime assert vec.element_size == 1
-    var sum_val = Scalar[t]()
-    var sum_sq = Scalar[t]()
+    var sum_val = Float64(0)
+    var sum_sq = Float64(0)
     for i in range(size):
-        sum_val += vec[i][0]
-        sum_sq += vec[i][0] * vec[i][0]
-    var mean = sum_val / Scalar[t](size)
-    var variance = max((sum_sq / Scalar[t](size)) - (mean * mean), 0.0)
-    return (mean, rsqrt(variance + eps))
+        var v = Float64(vec[i][0])
+        sum_val += v
+        sum_sq += v * v
+    var mean = sum_val / Float64(size)
+    var variance = max(sum_sq / Float64(size) - mean * mean, 0.0)
+    return (mean, 1.0 / math.sqrt(variance + Float64(eps)))
 
 
-fn run_group_norm_gpu[
+def run_group_norm_gpu[
     dtype: DType, rank: Int
 ](
     ctx: DeviceContext,
@@ -90,7 +91,7 @@ fn run_group_norm_gpu[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
@@ -100,14 +101,14 @@ fn run_group_norm_gpu[
     @__copy_capture(gamma)
     @always_inline
     @parameter
-    fn gamma_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+    def gamma_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Coord(coords))
         return gamma.ptr.load[width=width](idx)
 
     @__copy_capture(beta)
     @always_inline
     @parameter
-    fn beta_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+    def beta_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
         var idx = beta.layout(Coord(coords))
         return beta.ptr.load[width=width](idx)
 
@@ -131,9 +132,14 @@ fn run_group_norm_gpu[
             var offset = c // spatial
             var true_c = c_base + offset
             var idx = r * cols + c
-            var val = (
-                (vec[c] - mean_ref) * norm_factor * gamma_h[true_c]
-            ) + beta_h[true_c]
+            # Compute reference in float64 for accuracy, then cast to
+            # dtype for comparison (matches GPU's higher-precision accum).
+            var val = Scalar[dtype](
+                (Float64(vec[c][0]) - mean_ref)
+                * norm_factor
+                * Float64(gamma_h[true_c])
+                + Float64(beta_h[true_c])
+            )
             assert_almost_equal(val, res[idx], rtol=rtol, atol=atol)
 
     _ = data_d^
@@ -145,10 +151,10 @@ fn run_group_norm_gpu[
     beta_h.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime default_simd = simd_width_of[
-            DType.float32, target = get_gpu_target()
+            DType.float32, target=get_gpu_target()
         ]()
 
         # === Warp-Tiling Kernel Dispatch (SIMD-aligned, fits warp strategy) ===
@@ -237,6 +243,43 @@ def main():
         # Edge case from group norm layer tests
         run_group_norm_gpu[DType.float32](ctx, Index(2, 2, 4, 4), num_groups=1)
         run_group_norm_gpu[DType.float32](ctx, Index(2, 2, 16), num_groups=1)
+
+        # === Multi-Block Kernel Dispatch (large group_size, few groups) ===
+
+        # These shapes trigger the multi-block path because:
+        # - group_size > WARP_SIZE * simd_width * max_warps_per_block
+        #   (too large for warp tiling)
+        # - num_rows (= N * num_groups) < desired_min_grid (= 256)
+        # Tolerances are relaxed because the test reference uses a two-pass
+        # variance formula (E[X^2]-E[X]^2) while the GPU uses Welford,
+        # which diverge more at large group sizes.
+
+        # bfloat16 tests matching FLUX2 VAE decoder dtype
+        run_group_norm_gpu[DType.bfloat16](
+            ctx, Index(1, 128, 64, 64), num_groups=32, rtol=2e-3, atol=5e-4
+        )
+        run_group_norm_gpu[DType.bfloat16](
+            ctx, Index(1, 256, 64, 64), num_groups=32, rtol=2e-3, atol=5e-4
+        )
+        run_group_norm_gpu[DType.bfloat16](
+            ctx, Index(1, 512, 32, 32), num_groups=32, rtol=2e-3, atol=5e-4
+        )
+        # Batch > 1 with multi-block
+        run_group_norm_gpu[DType.bfloat16](
+            ctx, Index(2, 256, 32, 32), num_groups=32, rtol=2e-3, atol=5e-4
+        )
+        # 3D multi-block
+        run_group_norm_gpu[DType.bfloat16](
+            ctx, Index(1, 128, 16384), num_groups=32, rtol=2e-3, atol=5e-4
+        )
+
+        # float32 multi-block tests for coverage
+        run_group_norm_gpu[DType.float32](
+            ctx, Index(1, 128, 64, 64), num_groups=32, rtol=2e-3, atol=5e-4
+        )
+        run_group_norm_gpu[DType.float32](
+            ctx, Index(1, 512, 32, 32), num_groups=32, rtol=2e-3, atol=5e-4
+        )
 
         # Mismatched channels/groups → top-level init error
         try:

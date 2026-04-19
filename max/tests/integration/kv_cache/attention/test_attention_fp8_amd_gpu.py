@@ -20,20 +20,17 @@ from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
+from max.nn import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
 )
-from max.nn.legacy.attention.attention_with_rope import AttentionWithRope
-from max.nn.legacy.float8_config import Float8WeightScaleSpec
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
-from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.attention.attention_with_rope import AttentionWithRope
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.quant_config import WeightScaleSpec
+from max.nn.rotary_embedding import RotaryEmbedding
 from test_common.context_utils import create_text_context
 
 
@@ -92,7 +89,6 @@ def _create_kv_manager(
         n_kv_heads=num_kv_heads,
         head_dim=head_dim,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
         devices=[DeviceRef.GPU()],
     )
 
@@ -100,6 +96,7 @@ def _create_kv_manager(
         params=kv_params,
         total_num_pages=8,
         session=gpu_session,
+        max_batch_size=128,
     )
 
     return manager, kv_params
@@ -110,7 +107,7 @@ def _create_attention_state_dict(
     k_weight: torch.Tensor,
     v_weight: torch.Tensor,
     o_weight: torch.Tensor,
-    float8_config: Float8Config,
+    quant_config: QuantConfig,
     num_heads: int,
     num_kv_heads: int,
     hidden_size: int,
@@ -121,9 +118,9 @@ def _create_attention_state_dict(
 
     # Common weight entries for all projections
     weights_info = [
-        ("q_proj", q_weight, num_heads * head_dim),
-        ("k_proj", k_weight, num_kv_heads * head_dim),
-        ("v_proj", v_weight, num_kv_heads * head_dim),
+        ("qkv_proj.q", q_weight, num_heads * head_dim),
+        ("qkv_proj.k", k_weight, num_kv_heads * head_dim),
+        ("qkv_proj.v", v_weight, num_kv_heads * head_dim),
         ("o_proj", o_weight, hidden_size),
     ]
 
@@ -139,10 +136,7 @@ def _create_attention_state_dict(
         )
 
         # Add weight scale based on granularity
-        if (
-            float8_config.weight_scale.granularity
-            == Float8ScaleGranularity.TENSOR
-        ):
+        if quant_config.weight_scale.granularity == ScaleGranularity.TENSOR:
             # Static scaling - single scale value
             scale_tensor = torch.tensor([1.0], dtype=torch.float32)
             scale_shape = Shape([1])
@@ -159,7 +153,7 @@ def _create_attention_state_dict(
         )
 
         # Add input scale only for static scaling
-        if float8_config.input_scale.origin == Float8ScaleOrigin.STATIC:
+        if quant_config.input_scale.origin == ScaleOrigin.STATIC:
             input_scale_tensor = torch.tensor([1.0], dtype=torch.float32)
             state_dict[f"{proj_name}.input_scale"] = WeightData(
                 Buffer.from_dlpack(input_scale_tensor),
@@ -184,9 +178,9 @@ def _build_and_execute_attention_graph(
     graph_name: str,
 ) -> torch.Tensor:
     """Build graph, execute model, and return results."""
-    blocks_type, cache_lengths_type, lookup_table_type, max_lengths_type = (
-        kv_params.get_symbolic_inputs()[0]
-    )
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs().inputs[0]
+    dispatch_metadata_symbol = kv_symbolic_inputs.attention_dispatch_metadata
+    assert dispatch_metadata_symbol is not None
 
     # Prepare input data
     np.random.seed(42)
@@ -214,10 +208,7 @@ def _build_and_execute_attention_graph(
                 shape=["row_offsets_length"],
                 device=DeviceRef.GPU(),
             ),
-            blocks_type,
-            cache_lengths_type,
-            lookup_table_type,
-            max_lengths_type,
+            *kv_symbolic_inputs.flatten(),
         ],
     ) as graph:
         freqs_cis = rope.freqs_cis
@@ -230,6 +221,7 @@ def _build_and_execute_attention_graph(
             cache_lengths,
             lookup_table,
             max_lengths,
+            attention_dispatch_metadata,
         ) = graph.inputs
 
         kv_collection = PagedCacheValues(
@@ -237,6 +229,7 @@ def _build_and_execute_attention_graph(
             cache_lengths.tensor,
             lookup_table.tensor,
             max_lengths.tensor,
+            attention_dispatch_metadata=attention_dispatch_metadata.tensor,
         )
         output = attention(
             layer_idx=layer_idx.tensor,
@@ -265,19 +258,13 @@ def _build_and_execute_attention_graph(
         kv_manager.claim(context.request_id, replica_idx=0)
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
 
-    fetch_result = kv_manager.get_runtime_inputs([batch])[0]
-    blocks_tensor = fetch_result[0]
-    cache_lengths_tensor = fetch_result[1]
-    lookup_table_tensor = fetch_result[2]
-    max_lengths_tensor = fetch_result[3]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     result = model.execute(
         input_tensor,
         input_row_offsets_tensor,
-        blocks_tensor,
-        cache_lengths_tensor,
-        lookup_table_tensor,
-        max_lengths_tensor,
+        *kv_runtime_inputs.flatten(),
     )[0]
 
     return torch.from_dlpack(result)
@@ -289,18 +276,19 @@ def test_attention_with_rope_fp8_amd_static(
     """Test AttentionWithRope applies AMD FP8 conversion with static scaling."""
 
     # Configuration for static scaling
-    float8_config = Float8Config(
-        input_scale=Float8InputScaleSpec(
+    quant_config = QuantConfig(
+        format=QuantFormat.COMPRESSED_TENSORS_FP8,
+        input_scale=InputScaleSpec(
             dtype=DType.float32,
-            granularity=Float8ScaleGranularity.TENSOR,
-            origin=Float8ScaleOrigin.STATIC,
+            granularity=ScaleGranularity.TENSOR,
+            origin=ScaleOrigin.STATIC,
         ),
-        weight_scale=Float8WeightScaleSpec(
+        weight_scale=WeightScaleSpec(
             dtype=DType.float32,
-            granularity=Float8ScaleGranularity.TENSOR,
+            granularity=ScaleGranularity.TENSOR,
         ),
-        mlp_in_float8=set(),
-        attn_qkv_in_float8=set(),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
     )
 
     # Test parameters
@@ -326,7 +314,7 @@ def test_attention_with_rope_fp8_amd_static(
         batch_size, seq_len, num_kv_heads, head_dim, device, gpu_session
     )
 
-    # Create AttentionWithRope layer with float8_config
+    # Create AttentionWithRope layer with quant_config
     attention = AttentionWithRope(
         rope=rope,
         num_attention_heads=num_heads,
@@ -335,7 +323,7 @@ def test_attention_with_rope_fp8_amd_static(
         kv_params=kv_params,
         devices=[DeviceRef.GPU()],
         dtype=DType.float8_e4m3fn,
-        float8_config=float8_config,
+        quant_config=quant_config,
     )
 
     # Create weights with negative zeros
@@ -349,7 +337,7 @@ def test_attention_with_rope_fp8_amd_static(
         k_weight,
         v_weight,
         o_weight,
-        float8_config,
+        quant_config,
         num_heads,
         num_kv_heads,
         hidden_size,
@@ -382,18 +370,19 @@ def test_attention_with_rope_fp8_amd_dynamic(
     """Test AttentionWithRope applies AMD FP8 conversion with dynamic scaling."""
 
     # Configuration for dynamic scaling
-    float8_config = Float8Config(
-        input_scale=Float8InputScaleSpec(
+    quant_config = QuantConfig(
+        format=QuantFormat.FBGEMM_FP8,
+        input_scale=InputScaleSpec(
             dtype=DType.float32,
-            granularity=Float8ScaleGranularity.COLWISE,
-            origin=Float8ScaleOrigin.DYNAMIC,
+            granularity=ScaleGranularity.COLWISE,
+            origin=ScaleOrigin.DYNAMIC,
         ),
-        weight_scale=Float8WeightScaleSpec(
+        weight_scale=WeightScaleSpec(
             dtype=DType.float32,
-            granularity=Float8ScaleGranularity.ROWWISE,
+            granularity=ScaleGranularity.ROWWISE,
         ),
-        mlp_in_float8=set(),
-        attn_qkv_in_float8=set(),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
     )
 
     # Test parameters
@@ -418,7 +407,7 @@ def test_attention_with_rope_fp8_amd_dynamic(
         batch_size, seq_len, num_kv_heads, head_dim, device, gpu_session
     )
 
-    # Create AttentionWithRope layer with dynamic float8_config
+    # Create AttentionWithRope layer with dynamic quant_config
     attention = AttentionWithRope(
         rope=rope,
         num_attention_heads=num_heads,
@@ -427,7 +416,7 @@ def test_attention_with_rope_fp8_amd_dynamic(
         kv_params=kv_params,
         devices=[DeviceRef.GPU()],
         dtype=DType.float8_e4m3fn,
-        float8_config=float8_config,
+        quant_config=quant_config,
     )
 
     # Create weights with negative zeros
@@ -441,7 +430,7 @@ def test_attention_with_rope_fp8_amd_dynamic(
         k_weight,
         v_weight,
         o_weight,
-        float8_config,
+        quant_config,
         num_heads,
         num_kv_heads,
         hidden_size,

@@ -13,11 +13,11 @@
 """The utilities provided in this module help normalize the access
 to data elements in arrays."""
 
-from sys.intrinsics import _type_is_eq
+from std.sys.intrinsics import _type_is_eq
 
 
 @always_inline
-fn normalize_index[
+def normalize_index[
     I: Indexer, //, container_name: StaticString, assert_always: Bool = True
 ](idx: I, length: UInt) -> UInt:
     """Normalize the given index value to a valid index value for the given container length.
@@ -39,8 +39,7 @@ fn normalize_index[
 
     comptime assert_mode = "safe" if assert_always else "none"
 
-    @parameter
-    if (
+    comptime if (
         _type_is_eq[I, UInt]()
         or _type_is_eq[I, UInt8]()
         or _type_is_eq[I, UInt16]()
@@ -94,8 +93,9 @@ fn normalize_index[
         return i
 
 
+@deprecated("normalize_index is deprecated, use e.g. x[len(x) - 1]")
 @always_inline
-fn normalize_index[
+def normalize_index[
     I: Indexer, //, container_name: StaticString
 ](idx: I, length: Int) -> Int:
     """Normalize the given index value to a valid index value for the given container length.

@@ -18,8 +18,8 @@ automatic lock management. These primitives enable safe concurrent access to
 shared resources in multi-threaded code.
 """
 
-from os import Atomic
-from ffi import external_call
+from std.atomic import Atomic
+from std.ffi import external_call
 
 # ===-----------------------------------------------------------------------===#
 # SpinWaiter
@@ -32,20 +32,20 @@ struct SpinWaiter(Defaultable):
     var storage: OpaquePointer[MutExternalOrigin]
     """Pointer to the underlying SpinWaiter instance."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initializes a SpinWaiter instance."""
         self.storage = external_call[
             "KGEN_CompilerRT_AsyncRT_InitializeSpinWaiter",
             OpaquePointer[MutExternalOrigin],
         ]()
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Destroys the SpinWaiter instance."""
         external_call["KGEN_CompilerRT_AsyncRT_DestroySpinWaiter", NoneType](
             self.storage
         )
 
-    fn wait(self):
+    def wait(self):
         """Blocks the current task for a duration determined by the underlying
         policy."""
         external_call["KGEN_CompilerRT_AsyncRT_SpinWaiter_Wait", NoneType](
@@ -63,12 +63,12 @@ struct BlockingSpinLock(Defaultable):
     var counter: Atomic[DType.int64]
     """The atomic counter implementing the spin lock."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Default constructor."""
 
         self.counter = Atomic[DType.int64](Self.UNLOCKED)
 
-    fn lock(mut self, owner: Int):
+    def lock(mut self, owner: Int):
         """Acquires the lock.
 
         Args:
@@ -82,7 +82,7 @@ struct BlockingSpinLock(Defaultable):
             waiter.wait()
             expected = Self.UNLOCKED
 
-    fn unlock(mut self, owner: Int) -> Bool:
+    def unlock(mut self, owner: Int) -> Bool:
         """Releases the lock.
 
         Args:
@@ -110,7 +110,7 @@ struct BlockingScopedLock:
     var lock: UnsafePointer[Self.LockType, MutAnyOrigin]
     """The underlying lock instance."""
 
-    fn __init__(
+    def __init__(
         out self,
         lock: UnsafePointer[Self.LockType, MutAnyOrigin],
     ):
@@ -122,7 +122,7 @@ struct BlockingScopedLock:
 
         self.lock = lock
 
-    fn __init__(
+    def __init__(
         out self,
         mut lock: Self.LockType,
     ):
@@ -135,14 +135,14 @@ struct BlockingScopedLock:
         self.lock = UnsafePointer(to=lock).as_any_origin()
 
     @no_inline
-    fn __enter__(mut self):
+    def __enter__(mut self):
         """Acquire the lock on entry.
         This is done by setting the owner of the lock to own address."""
         var address = UnsafePointer(to=self)
         self.lock[].lock(Int(address))
 
     @no_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         """Release the lock on exit.
         Reset the address on the underlying lock."""
         var address = UnsafePointer(to=self)

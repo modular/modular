@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import has_accelerator
+from std.math import ceildiv
+from std.sys import has_accelerator
 
-from complex import ComplexSIMD, ComplexScalar
-from gpu import global_idx
-from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor
+from std.complex import ComplexSIMD, ComplexScalar
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
+from layout import TileTensor, row_major
 
 comptime GRID_WIDTH = 60
 comptime GRID_HEIGHT = 25
@@ -32,20 +32,20 @@ comptime MAX_Y: Scalar[float_dtype] = 1.12
 
 comptime MAX_ITERATIONS = 100
 
-comptime layout = Layout.row_major(GRID_HEIGHT, GRID_WIDTH)
+comptime layout = row_major[GRID_HEIGHT, GRID_WIDTH]()
 
 
-def main():
-    constrained[
-        has_accelerator(), "This example requires a supported accelerator"
-    ]()
+def main() raises:
+    comptime assert (
+        has_accelerator()
+    ), "This example requires a supported accelerator"
 
     # Get the context for the attached GPU
     var ctx = DeviceContext()
 
     # Allocate a tensor on the target device to hold the resulting set.
     var dev_buf = ctx.enqueue_create_buffer[int_dtype](comptime (layout.size()))
-    var out_tensor = LayoutTensor[int_dtype, layout](dev_buf)
+    var out_tensor = TileTensor(dev_buf, layout)
 
     # Compute how many blocks are needed in each dimension to fully cover the grid,
     # rounding up to ensure even partially filled blocks are launched.
@@ -63,12 +63,12 @@ def main():
 
     # Map the output tensor data to CPU so that we can read the results.
     with dev_buf.map_to_host() as host_buf:
-        var host_tensor = LayoutTensor[int_dtype, layout](host_buf)
+        var host_tensor = TileTensor(host_buf, layout)
         draw_mandelbrot(host_tensor)
 
 
-fn mandelbrot(
-    tensor: LayoutTensor[int_dtype, layout, MutAnyOrigin],
+def mandelbrot(
+    tensor: TileTensor[int_dtype, type_of(layout), MutAnyOrigin],
 ):
     """The per-element calculation of iterations to escape in the Mandelbrot set.
     """
@@ -100,14 +100,14 @@ fn mandelbrot(
     tensor[row, col] = iters
 
 
-def draw_mandelbrot(tensor: LayoutTensor[int_dtype, layout]):
+def draw_mandelbrot(tensor: TileTensor[int_dtype, type_of(layout), ...]) raises:
     """A helper function to visualize the Mandelbrot set in ASCII art."""
     comptime sr = StringSlice("....,c8M@jawrpogOQEPGJ")
     for row in range(GRID_HEIGHT):
         for col in range(GRID_WIDTH):
             var v = tensor[row, col]
             if v < MAX_ITERATIONS:
-                var idx = Int(v % Int32(len(sr)))
+                var idx = Int(v % Int32(sr.byte_length()))
                 var p = sr[byte=idx]
                 print(p, end="")
             else:

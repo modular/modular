@@ -26,11 +26,17 @@ automatic memory management.
 """
 
 from .arc_pointer import ArcPointer
-from .legacy_unsafe_pointer import (
-    LegacyOpaquePointer,
-    LegacyUnsafePointer,
+from .memory import (
+    memcmp,
+    memcpy,
+    memmove,
+    memset,
+    memset_zero,
+    destroy_n,
+    uninit_copy_n,
+    uninit_move_n,
 )
-from .memory import memcmp, memcpy, memset, memset_zero, stack_allocation
+from .stack_allocation import stack_allocation
 from .owned_pointer import OwnedPointer
 from .pointer import (
     AddressSpace,
@@ -47,8 +53,9 @@ from .unsafe_pointer import (
     ImmutOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,
+    OptionalUnsafePointer,
     ImmutUnsafePointer,
     MutUnsafePointer,
     UnsafePointer,
 )
-from .maybe_uninitialized import UnsafeMaybeUninitialized
+from .unsafe_maybe_uninit import UnsafeMaybeUninit

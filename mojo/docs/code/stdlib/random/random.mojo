@@ -13,22 +13,22 @@
 """Provides examples for random numbers."""
 
 from std.random import seed
-from testing import *
+from std.testing import *
 
 
-fn test_seed():
+def test_seed():
     from std.random import seed
 
     seed()
 
 
-fn test_constant_seed():
+def test_constant_seed():
     from std.random import seed
 
     seed(123456)
 
 
-fn test_random_float64() raises:
+def test_random_float64() raises:
     from std.random import random_float64, seed
 
     seed()
@@ -36,7 +36,7 @@ fn test_random_float64() raises:
     assert_true(10.0 <= rnd < 20.0)
 
 
-fn test_random_si64() raises:
+def test_random_si64() raises:
     from std.random import random_si64, seed
 
     seed()
@@ -44,7 +44,7 @@ fn test_random_si64() raises:
     assert_true(Int64(-100) <= rnd <= Int64(100))
 
 
-fn test_random_ui64() raises:
+def test_random_ui64() raises:
     from std.random import random_ui64, seed
 
     seed()
@@ -52,9 +52,9 @@ fn test_random_ui64() raises:
     assert_true(UInt64(0) <= rnd <= UInt64(100))
 
 
-fn test_rand_count_dtype() raises:
+def test_rand_count_dtype() raises:
     from std.random import randint, seed
-    from memory import alloc
+    from std.memory import alloc
 
     seed()
     var size: Int = 10
@@ -65,9 +65,9 @@ fn test_rand_count_dtype() raises:
     ptr.free()
 
 
-fn test_rand_count_dtype_scale() raises:
+def test_rand_count_dtype_scale() raises:
     from std.random import rand, seed
-    from memory import alloc
+    from std.memory import alloc
 
     seed()
     var size: Int = 10
@@ -80,7 +80,7 @@ fn test_rand_count_dtype_scale() raises:
     ptr.free()
 
 
-fn test_randn_float64() raises:
+def test_randn_float64():
     from std.random import randn_float64, seed
 
     seed()
@@ -88,18 +88,18 @@ fn test_randn_float64() raises:
         _ = randn_float64(0.0, 1.0)
 
 
-fn test_dtype_randn() raises:
+def test_dtype_randn():
     from std.random import randn, seed
-    from memory import alloc
+    from std.memory import alloc
 
     seed()
     var size: Int = 1000
     var ptr = alloc[Float64](size)
-    std.random.randn[DType.float64](ptr, size, mean=0.0, standard_deviation=1.0)
+    randn[DType.float64](ptr, size, mean=0.0, standard_deviation=1.0)
     ptr.free()
 
 
-fn test_shuffle() raises:
+def test_shuffle() raises:
     from std.random import shuffle, random_ui64
     from std.collections.list import List
 
@@ -109,7 +109,7 @@ fn test_shuffle() raises:
     assert_true(len(list) == 6)
 
 
-fn main() raises:
+def main() raises:
     test_seed()
     test_constant_seed()
     test_random_float64()

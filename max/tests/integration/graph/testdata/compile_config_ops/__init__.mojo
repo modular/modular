@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_int
+from std.sys import get_defined_int
 
 import compiler
-from logger import Logger
+from std.logger import Logger
 from tensor import foreach, OutputTensor, InputTensor
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 comptime logger = Logger()
 
@@ -26,10 +26,10 @@ comptime logger = Logger()
 @compiler.register("use_splitk_reduction_scheme")
 struct UseSplitkReductionScheme:
     @staticmethod
-    fn execute(
-        output: OutputTensor[dtype = DType.int32, rank=1],
+    def execute(
+        output: OutputTensor[dtype=DType.int32, rank=1, ...],
     ):
-        comptime split_k_reduction_scheme = env_get_int[
+        comptime split_k_reduction_scheme = get_defined_int[
             "SPLITK_REDUCTION_SCHEME", 2
         ]()
         output[0] = Int32(split_k_reduction_scheme)
@@ -38,8 +38,8 @@ struct UseSplitkReductionScheme:
 @compiler.register("use_logger")
 struct UseLogger:
     @staticmethod
-    fn execute(
-        output: OutputTensor[dtype = DType.int32, rank=1],
+    def execute(
+        output: OutputTensor[dtype=DType.int32, rank=1, ...],
     ):
         logger.error("I'm a custom Mojo function!")
         output[0] = Int32(logger.level._value)
@@ -48,21 +48,21 @@ struct UseLogger:
 @compiler.register("add_one_custom")
 struct AddOneCustom:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString
     ](
         output: OutputTensor,
-        x: InputTensor[dtype = output.dtype, rank = output.rank],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
-        fn add_one[width: Int](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
+        def add_one[width: Int](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + 1
 
         foreach[add_one, target=target](output, ctx)
 
     @staticmethod
-    fn shape(
+    def shape(
         x: InputTensor,
     ) raises -> IndexList[x.rank]:
         raise "NotImplemented"

@@ -12,19 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import iota, isclose
+from std.math import iota, isclose
 
-from layout._coord import Coord, Idx
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor, row_major
 from nn.cumsum import cumsum
-
-from utils.index import IndexList
 
 
 # CHECK-LABEL: test_cumsum_1d
 # CHECK: 1.0 ,3.0 ,6.0 ,10.0 ,15.0 ,
-fn test_cumsum_1d():
+def test_cumsum_1d():
     print("== test_cumsum_1d")
     comptime exclusive = False
     comptime reverse = False
@@ -47,7 +43,7 @@ fn test_cumsum_1d():
 
 # CHECK-LABEL: test_cumsum_1d_precision
 # CHECK: Passed
-fn test_cumsum_1d_precision():
+def test_cumsum_1d_precision():
     print("== test_cumsum_1d_precision")
     comptime exclusive = False
     comptime reverse = False
@@ -84,7 +80,7 @@ fn test_cumsum_1d_precision():
 
 # CHECK-LABEL: test_cumsum_1d_exclusive
 # CHECK: 0.0 ,1.0 ,3.0 ,6.0 ,10.0 ,
-fn test_cumsum_1d_exclusive():
+def test_cumsum_1d_exclusive():
     print("== test_cumsum_1d_exclusive")
     comptime exclusive = True
     comptime reverse = False
@@ -107,7 +103,7 @@ fn test_cumsum_1d_exclusive():
 
 # CHECK-LABEL: test_cumsum_1d_reverse
 # CHECK: 15.0 ,14.0 ,12.0 ,9.0 ,5.0 ,
-fn test_cumsum_1d_reverse():
+def test_cumsum_1d_reverse():
     print("== test_cumsum_1d_reverse")
     comptime exclusive = False
     comptime reverse = True
@@ -130,7 +126,7 @@ fn test_cumsum_1d_reverse():
 
 # CHECK-LABEL: test_cumsum_1d_reverse_exclusive
 # CHECK: 14.0 ,12.0 ,9.0 ,5.0 ,0.0 ,
-fn test_cumsum_1d_reverse_exclusive():
+def test_cumsum_1d_reverse_exclusive():
     print("== test_cumsum_1d_reverse_exclusive")
     comptime exclusive = True
     comptime reverse = True
@@ -153,7 +149,7 @@ fn test_cumsum_1d_reverse_exclusive():
 
 # CHECK-LABEL: test_cumsum_2d_axis_0
 # CHECK: 1.0 ,2.0 ,3.0 ,5.0 ,7.0 ,9.0 ,
-fn test_cumsum_2d_axis_0():
+def test_cumsum_2d_axis_0():
     print("== test_cumsum_2d_axis_0")
     comptime exclusive = False
     comptime reverse = False
@@ -177,7 +173,7 @@ fn test_cumsum_2d_axis_0():
 
 # CHECK-LABEL: test_cumsum_2d_axis_1
 # CHECK: 1.0 ,3.0 ,6.0 ,4.0 ,9.0 ,15.0 ,
-fn test_cumsum_2d_axis_1():
+def test_cumsum_2d_axis_1():
     print("== test_cumsum_2d_axis_1")
     comptime exclusive = False
     comptime reverse = False
@@ -201,7 +197,7 @@ fn test_cumsum_2d_axis_1():
 
 # CHECK-LABEL: test_cumsum_2d_negative_axis
 # CHECK: 1.0 ,3.0 ,6.0 ,4.0 ,9.0 ,15.0 ,
-fn test_cumsum_2d_negative_axis():
+def test_cumsum_2d_negative_axis():
     print("== test_cumsum_2d_negative_axis")
     comptime exclusive = False
     comptime reverse = False
@@ -223,7 +219,7 @@ fn test_cumsum_2d_negative_axis():
     print()
 
 
-fn main():
+def main():
     test_cumsum_1d()
     test_cumsum_1d_precision()
     test_cumsum_1d_exclusive()

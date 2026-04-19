@@ -14,26 +14,21 @@
 import json
 import os
 import typing
+from functools import partial
 from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
 from max._core.engine import PrintStyle
-from max.driver import Accelerator, Buffer
+from max.driver import Accelerator, Buffer, accelerator_architecture_name
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.attention.multi_latent_attention import (
-    LatentAttentionWithRope,
-)
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
-from max.nn.legacy.rotary_embedding import (
+from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
+from max.nn.kv_cache import KVCacheParams
+from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
@@ -46,6 +41,32 @@ Fixtures for DeepseekV2 tests, including config, generated input tensors, and du
 """
 
 WEIGHT_STDDEV = 0.001
+
+
+def _is_b200() -> bool:
+    """Check if running on B200 (sm_100) GPU."""
+    try:
+        return accelerator_architecture_name() == "sm_100"
+    except Exception:
+        return False
+
+
+@pytest.fixture(
+    params=[
+        pytest.param(DType.bfloat16, id="bf16"),
+        pytest.param(
+            DType.float8_e4m3fn,
+            id="fp8",
+            marks=pytest.mark.skipif(
+                not _is_b200(),
+                reason="FP8 KV cache only supported on B200 (sm_100)",
+            ),
+        ),
+    ]
+)
+def kv_dtype(request: pytest.FixtureRequest) -> DType:
+    """Fixture that provides KV cache dtype."""
+    return request.param
 
 
 @pytest.fixture
@@ -65,6 +86,7 @@ def _generate_latent_attention_max_outputs(
     attention_weights: dict[str, torch.Tensor],
     use_prefill: bool = True,
     prefill_buffer_size: int = 16384,
+    kv_dtype: DType = DType.bfloat16,
 ) -> torch.Tensor:
     attention_weights = {k: v for k, v in attention_weights.items()}
 
@@ -93,14 +115,14 @@ def _generate_latent_attention_max_outputs(
     )
 
     kv_params = KVCacheParams(
-        dtype=DType.bfloat16,
+        dtype=kv_dtype,
         n_kv_heads=1,
         head_dim=576,
         num_layers=config.num_hidden_layers,
-        cache_strategy=KVCacheStrategy.PAGED,
         devices=[DeviceRef.GPU()],
         page_size=128,
         is_mla=True,
+        num_q_heads=config.num_attention_heads,
     )
 
     latent_attention = LatentAttentionWithRope(
@@ -124,6 +146,7 @@ def _generate_latent_attention_max_outputs(
         params=kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     hidden_state_type = TensorType(
@@ -139,16 +162,15 @@ def _generate_latent_attention_max_outputs(
             input_types=(
                 hidden_state_type,
                 input_row_offsets_type,
-                *kv_params.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs().flatten(),
             ),
         ) as graph:
             hidden_states = graph.inputs[0].tensor
             input_row_offsets = graph.inputs[1].tensor
-            kv_collection = PagedCacheValues(
-                kv_blocks=graph.inputs[2].buffer,
-                cache_lengths=graph.inputs[3].tensor,
-                lookup_table=graph.inputs[4].tensor,
-                max_lengths=graph.inputs[5].tensor,
+            kv_collection = (
+                kv_params.get_symbolic_inputs()
+                .unflatten(iter(graph.inputs[2:]))
+                .inputs[0]
             )
 
             result = latent_attention(
@@ -185,7 +207,7 @@ def _generate_latent_attention_max_outputs(
         for tok_idx in range(total_tokens):
             for ctx in batch:
                 kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-            kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+            kv_inputs = kv_manager.runtime_inputs([batch])
             input_tensor_device = (
                 Buffer.from_numpy(
                     input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -194,7 +216,9 @@ def _generate_latent_attention_max_outputs(
                 .to(device0)
             )
             max_output = compiled.execute(
-                input_tensor_device, input_row_offsets.to(device0), *kv_inputs
+                input_tensor_device,
+                input_row_offsets.to(device0),
+                *kv_inputs.flatten(),
             )
 
             for ctx in batch:
@@ -207,24 +231,24 @@ def _generate_latent_attention_max_outputs(
 
     for ctx in batch:
         kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    kv_inputs = kv_manager.runtime_inputs([batch])
     input_tensor_device = (
         Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
         .view(DType.bfloat16)
         .to(device0)
     )
     max_output = compiled.execute(
-        input_tensor_device, input_row_offsets.to(device0), *kv_inputs
+        input_tensor_device, input_row_offsets.to(device0), *kv_inputs.flatten()
     )
     torch_output = from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
     return torch_output[None, :, :]
 
 
 @pytest.fixture
-def generate_latent_attention_max_outputs() -> typing.Callable[
-    ..., torch.Tensor
-]:
-    return _generate_latent_attention_max_outputs
+def generate_latent_attention_max_outputs(
+    kv_dtype: DType,
+) -> typing.Callable[..., torch.Tensor]:
+    return partial(_generate_latent_attention_max_outputs, kv_dtype=kv_dtype)
 
 
 @pytest.fixture

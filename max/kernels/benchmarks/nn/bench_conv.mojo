@@ -11,29 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.math import align_up, ceildiv
+from std.random import rand
+from std.sys import simd_width_of, size_of
+from std.sys.defines import get_defined_int, get_defined_string
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import align_up, ceildiv
-from random import rand
-from sys import simd_width_of, size_of
-from sys.param_env import env_get_int, env_get_string
-
-from benchmark import *
-from benchmark import keep
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from nn.conv import ConvDirectNHWC, ConvInfoStatic
-from nn.conv_utils import (
+from std.benchmark import *
+from std.benchmark import keep
+from layout import Layout, LayoutTensor, RuntimeLayout
+from nn.conv.conv import ConvDirectNHWC, ConvInfoStatic
+from nn.conv.conv_utils import (
     ConvShape,
     extend_shape,
     get_direct_conv_micro_kernel_width,
 )
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
-fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
+def bench_conv(mut m: Bench, spec: ConvSpec) raises:
     comptime input_type = spec.static_info.input_type
     comptime filter_type = spec.static_info.filter_type
     comptime output_type = spec.static_info.output_type
@@ -52,8 +49,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
     var output_dims = IndexList[spec.static_info.rank](1)
 
-    @parameter
-    for i in range(spec.static_info.rank):
+    comptime for i in range(spec.static_info.rank):
         output_dims[i] = (
             spec.input_dims[i]
             + spec.pad[2 * i]
@@ -64,8 +60,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
     var packed_filter_shape = IndexList[spec.static_info.rank + 3](1)
 
-    @parameter
-    for i in range(spec.static_info.rank):
+    comptime for i in range(spec.static_info.rank):
         packed_filter_shape[i + 1] = output_dims[i]
     packed_filter_shape[0] = spec.num_groups * ceildiv(
         f_per_group, micro_kernel_f_size
@@ -86,7 +81,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
     # Set the total buffer allocation to be 4x L3 cache.
     comptime MB = 1024 * 1024
-    comptime L3_cache = env_get_int["L3SIZE", 24]() * MB
+    comptime L3_cache = get_defined_int["L3SIZE", 24]() * MB
     var size_per_copy = (
         input_alloc_size * size_of[input_type]()
         + filter_alloc_size * size_of[filter_type]()
@@ -94,13 +89,13 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
     var num_copies = ceildiv(4 * L3_cache, size_per_copy)
 
     # Allocate input and output buffers.
-    var input_ptr = UnsafePointer[Scalar[input_type]].alloc(
+    var input_ptr = alloc[Scalar[input_type]](
         input_alloc_size * num_copies, alignment=alignment
     )
-    var filter_ptr = UnsafePointer[Scalar[filter_type]].alloc(
+    var filter_ptr = alloc[Scalar[filter_type]](
         num_copies * filter_alloc_size, alignment=alignment
     )
-    var output_ptr = UnsafePointer[Scalar[output_type]].alloc(
+    var output_ptr = alloc[Scalar[output_type]](
         num_copies * output_alloc_size, alignment=alignment
     )
 
@@ -111,8 +106,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
     var pad_h = IndexList[2](0)
     var pad_w = IndexList[2](0)
 
-    @parameter
-    if spec.static_info.rank == 1:
+    comptime if spec.static_info.rank == 1:
         pad_w = Index(spec.pad[0], spec.pad[1])
     elif spec.static_info.rank == 2:
         pad_h = Index(spec.pad[0], spec.pad[1])
@@ -139,7 +133,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
     @parameter
     @always_inline
-    fn bench_conv_wrapper(
+    def bench_conv_wrapper(
         mut b: Bencher, concrete_spec: ConvSpec[spec.static_info]
     ) raises:
         # Count the iteration to decide which input copy to use.
@@ -147,7 +141,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
 
         @always_inline
         @parameter
-        fn bench_fn():
+        def bench_fn():
             comptime layout_2 = Layout.row_major[spec.static_info.rank + 2]()
             comptime layout_3 = Layout.row_major[spec.static_info.rank + 3]()
             var input = LayoutTensor[input_type, layout_2](
@@ -168,9 +162,6 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
                     layout_2,
                     layout_3,
                     layout_2,
-                    _,
-                    _,
-                    _,
                     input_type,
                     filter_type,
                     output_type,
@@ -193,7 +184,7 @@ fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
         b.iter[bench_fn]()
 
     m.bench_with_input[ConvSpec[spec.static_info], bench_conv_wrapper](
-        BenchId("Conv", String(spec)),
+        BenchId("Conv", String.write(spec)),
         spec,
         # TODO: Pick relevant benchmetric.
         [ThroughputMeasure(BenchMetric.elements, spec.flops())],
@@ -214,7 +205,7 @@ struct ConvSpecStatic(ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
+struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Writable):
     var n: Int
     var input_dims: IndexList[Self.static_info.rank]
     var c: Int
@@ -225,10 +216,9 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
     var pad: IndexList[2 * Self.static_info.rank]
     var num_groups: Int
 
-    @no_inline
-    fn __str__(self) -> String:
-        # fmt: off
-        return String(
+    # fmt: off
+    def write_to(self, mut writer: Some[Writer]):
+        writer.write(
             "n=", self.n,
             ";input=", self.input_dims,
             ";c=", self.c,
@@ -237,13 +227,12 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
             ";stride=", self.stride,
             ";padding=", self.pad,
         )
-        # fmt: on
+    # fmt: on
 
-    fn flops(self) -> Int:
+    def flops(self) -> Int:
         var output_dims = IndexList[Self.static_info.rank](1)
 
-        @parameter
-        for i in range(Self.static_info.rank):
+        comptime for i in range(Self.static_info.rank):
             output_dims[i] = (
                 self.input_dims[i]
                 + self.pad[2 * i]
@@ -262,7 +251,7 @@ struct ConvSpec[static_info: ConvSpecStatic](ImplicitlyCopyable, Stringable):
         )
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig())
 
     comptime fp32_1d = ConvSpecStatic(
@@ -273,16 +262,16 @@ def main():
     )
 
     @always_inline
-    fn rebind1d(idx: IndexList[1]) -> IndexList[fp32_1d.rank]:
+    def rebind1d(idx: IndexList[1]) -> IndexList[fp32_1d.rank]:
         return rebind[IndexList[fp32_1d.rank]](idx)
 
     @always_inline
-    fn rebind1d_pad(idx: IndexList[2]) -> IndexList[2 * fp32_1d.rank]:
+    def rebind1d_pad(idx: IndexList[2]) -> IndexList[2 * fp32_1d.rank]:
         return rebind[IndexList[2 * fp32_1d.rank]](idx)
 
     # fmt: off
     @always_inline
-    fn spec1d(N: Int, W: Int, C: Int, S: Int, F: Int, st: Int, di: Int, \
+    def spec1d(N: Int, W: Int, C: Int, S: Int, F: Int, st: Int, di: Int, \
         pa: IndexList[2], ng: Int
     ) -> ConvSpec[fp32_1d]:
         return (
@@ -308,15 +297,15 @@ def main():
     )
 
     @always_inline
-    fn rebind2d(idx: IndexList[2]) -> IndexList[fp32_2d.rank]:
+    def rebind2d(idx: IndexList[2]) -> IndexList[fp32_2d.rank]:
         return rebind[IndexList[fp32_2d.rank]](idx)
 
     @always_inline
-    fn rebind2d_pad(idx: IndexList[4]) -> IndexList[2 * fp32_2d.rank]:
+    def rebind2d_pad(idx: IndexList[4]) -> IndexList[2 * fp32_2d.rank]:
         return rebind[IndexList[2 * fp32_2d.rank]](idx)
 
     @always_inline
-    fn spec2d(
+    def spec2d(
         N: Int,
         H: Int,
         W: Int,
@@ -349,16 +338,15 @@ def main():
     )
 
     @always_inline
-    fn rebind3d(idx: IndexList[3]) -> IndexList[fp32_3d.rank]:
+    def rebind3d(idx: IndexList[3]) -> IndexList[fp32_3d.rank]:
         return rebind[IndexList[fp32_3d.rank]](idx)
 
     @always_inline
-    fn rebind3d_pad(idx: IndexList[6]) -> IndexList[3 * fp32_3d.rank]:
+    def rebind3d_pad(idx: IndexList[6]) -> IndexList[3 * fp32_3d.rank]:
         return rebind[IndexList[3 * fp32_3d.rank]](idx)
 
     # 1D benchmarks for wavlm
-    @parameter
-    if env_get_string["model", "walvm"]() == "wavlm":
+    comptime if get_defined_string["model", "walvm"]() == "wavlm":
         bench_conv(m, spec1d(2, 16000, 1, 10, 512, 5, 1, Index(0, 0), 1))
         bench_conv(m, spec1d(2, 3199, 512, 3, 512, 2, 1, Index(0, 0), 1))
         bench_conv(m, spec1d(2, 1599, 512, 3, 512, 2, 1, Index(0, 0), 1))
@@ -369,7 +357,7 @@ def main():
         bench_conv(m, spec1d(2, 49, 1024, 128, 1024, 1, 1, Index(64, 64), 16))
     # fmt: off
     # 2D benchmarks for resnet
-    elif env_get_string["model", "wavlm"]() == "resnet50":
+    elif get_defined_string["model", "wavlm"]() == "resnet50":
         bench_conv(m, spec2d(1, 14, 14, 256, 3, 3, 256, Index(1, 1), Index(1, 1), Index(1, 1, 1, 1), 1))
         bench_conv(m, spec2d(1, 56, 56,  64, 3, 3,  64, Index(1, 1), Index(1, 1), Index(1, 1, 1, 1), 1))
         bench_conv(m, spec2d(1, 28, 28, 128, 3, 3, 128, Index(1, 1), Index(1, 1), Index(1, 1, 1, 1), 1))

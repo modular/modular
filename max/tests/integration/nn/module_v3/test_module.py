@@ -18,12 +18,17 @@ import re
 import weakref
 
 import pytest
-from max import driver, random
-from max import functional as F
+from max import driver
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
-from max.nn.module import Module, module_dataclass
-from max.tensor import Tensor, TensorType, defaults
+from max.experimental import functional as F
+from max.experimental import random
+from max.experimental.nn.module import (
+    Module,
+    PinnedDeviceTensor,
+    module_dataclass,
+)
+from max.experimental.tensor import Tensor, TensorType, defaults
 
 
 @module_dataclass
@@ -52,8 +57,8 @@ class SuperModule(Module[[Tensor], Tensor]):
 @pytest.fixture
 def test_module():  # noqa: ANN201
     return TestModule(
-        a=Tensor.constant(1),
-        sub=SubModule(b=Tensor.constant(2)),
+        a=Tensor(1),
+        sub=SubModule(b=Tensor(2)),
     )
 
 
@@ -61,8 +66,8 @@ def test_module():  # noqa: ANN201
 def lazy_test_module():  # noqa: ANN201
     with F.lazy():
         return TestModule(
-            a=Tensor.constant(1),
-            sub=SubModule(b=Tensor.constant(2)),
+            a=Tensor(1),
+            sub=SubModule(b=Tensor(2)),
         )
 
 
@@ -89,7 +94,7 @@ def test_module_repr(test_module: TestModule) -> None:
     # eps is the default value, shouldn't be present
     assert "eps=" not in repr(test_module)
 
-    sub = SubModule(b=Tensor.constant(2), eps=1e-6)
+    sub = SubModule(b=Tensor(2), eps=1e-6)
 
     assert "SubModule" in repr(sub)
     assert "b=Tensor" in repr(sub)
@@ -120,19 +125,19 @@ def test_module_custom_repr() -> None:
 
 
 def test_module_decomposition(test_module: TestModule) -> None:
-    test_module_2 = TestModule(a=Tensor.constant(1), sub=test_module.sub)
+    test_module_2 = TestModule(a=Tensor(1), sub=test_module.sub)
     assert test_module_2.sub is test_module.sub
     assert dict(test_module_2.children) == dict(test_module.children)
 
 
 def test_module_decomposition_call(test_module: TestModule) -> None:
-    x = Tensor.constant(1)
+    x = Tensor(1)
     assert test_module.sub.b.item() == 2
     assert test_module.sub(x).item() == 3
 
 
 def test_module_forward(test_module: TestModule) -> None:
-    x = Tensor.constant(1)
+    x = Tensor(1)
     # __call__ invokes forward, so both should produce the same result
     assert test_module.forward(x).item() == test_module(x).item()
 
@@ -220,8 +225,8 @@ def test_map_parameters(test_module: TestModule) -> None:
 
 def test_load_state_simple_dict(test_module: TestModule) -> None:
     weights = {
-        "a": Tensor.constant(5),
-        "sub.b": Tensor.constant(6),
+        "a": Tensor(5),
+        "sub.b": Tensor(6),
     }
     test_module.load_state(lambda name, _: weights[name])
     assert test_module.a.item() == 5
@@ -241,8 +246,8 @@ def test_load_state_name_remapping(test_module: TestModule) -> None:
         return name
 
     weights = {
-        "a": Tensor.constant(5),
-        "feed_forward.b": Tensor.constant(6),
+        "a": Tensor(5),
+        "feed_forward.b": Tensor(6),
     }
 
     test_module.load_state(lambda name, _: weights[remap_name(name)])
@@ -252,8 +257,8 @@ def test_load_state_name_remapping(test_module: TestModule) -> None:
 
 def test_load_state_dict(test_module: TestModule) -> None:
     weights = {
-        "a": Tensor.constant(5),
-        "sub.b": Tensor.constant(6),
+        "a": Tensor(5),
+        "sub.b": Tensor(6),
     }
     test_module.load_state_dict(weights)
     assert test_module.a.item() == 5
@@ -262,9 +267,9 @@ def test_load_state_dict(test_module: TestModule) -> None:
 
 def test_load_state_dict_strict(test_module: TestModule) -> None:
     weights = {
-        "a": Tensor.constant(5),
-        "sub.b": Tensor.constant(6),
-        "extra": Tensor.constant(7),
+        "a": Tensor(5),
+        "sub.b": Tensor(6),
+        "extra": Tensor(7),
     }
     with pytest.raises(ValueError):
         test_module.load_state_dict(weights)
@@ -272,9 +277,9 @@ def test_load_state_dict_strict(test_module: TestModule) -> None:
 
 def test_load_state_dict_nonstrict(test_module: TestModule) -> None:
     weights = {
-        "a": Tensor.constant(5),
-        "sub.b": Tensor.constant(6),
-        "extra": Tensor.constant(7),
+        "a": Tensor(5),
+        "sub.b": Tensor(6),
+        "extra": Tensor(7),
     }
     test_module.load_state_dict(weights, strict=False)
     assert test_module.a.item() == 5
@@ -370,6 +375,88 @@ def test_to(test_module: TestModule) -> None:
     assert all(t.device == CPU() for _, t in test_module.parameters)
 
 
+@pytest.mark.skipif(not accelerator_count(), reason="requires accelerator")
+def test_pinned_device_tensor_unchanged_by_to() -> None:
+    """`PinnedDeviceTensor` fields are not moved by `Module.to`."""
+
+    @module_dataclass
+    class ScaledModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+        scale: PinnedDeviceTensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = ScaledModule(
+        weight=Tensor.ones([3, 3]),
+        scale=Tensor.full([], 1.0, dtype=DType.float32),
+    )
+    original_scale_device = module.scale.device
+    module.to(Accelerator())
+
+    assert module.weight.device == Accelerator()
+    assert module.scale.device == original_scale_device
+
+
+@pytest.mark.skipif(not accelerator_count(), reason="requires accelerator")
+def test_pinned_device_tensor_in_child_module() -> None:
+    """`PinnedDeviceTensor` fields in child modules are not moved by `Module.to`."""
+
+    @module_dataclass
+    class Inner(Module[[Tensor], Tensor]):
+        weight: Tensor
+        scale: PinnedDeviceTensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    @module_dataclass
+    class Outer(Module[[Tensor], Tensor]):
+        inner: Inner
+
+        def forward(self, x: Tensor) -> Tensor:
+            return self.inner(x)
+
+    module = Outer(
+        inner=Inner(
+            weight=Tensor.ones([3, 3]),
+            scale=Tensor.full([], 2.0, dtype=DType.float32),
+        )
+    )
+    original_scale_device = module.inner.scale.device
+    module.to(Accelerator())
+
+    assert module.inner.weight.device == Accelerator()
+    assert module.inner.scale.device == original_scale_device
+
+
+@pytest.mark.skipif(not accelerator_count(), reason="requires accelerator")
+def test_pinned_device_tensor_inherited() -> None:
+    """`PinnedDeviceTensor` annotations are respected through inheritance."""
+
+    @module_dataclass
+    class Base(Module[[Tensor], Tensor]):
+        weight: Tensor
+        scale: PinnedDeviceTensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    @module_dataclass
+    class Child(Base):
+        pass
+
+    module = Child(
+        weight=Tensor.ones([3, 3]),
+        scale=Tensor.full([], 1.0, dtype=DType.float32),
+    )
+    original_scale_device = module.scale.device
+    module.to(Accelerator())
+
+    assert module.weight.device == Accelerator()
+    assert module.scale.device == original_scale_device
+
+
 def test_compile(test_module: TestModule) -> None:
     dtype, device = defaults()
     type = TensorType(dtype, ["batch", "n"], device=device)
@@ -380,6 +467,60 @@ def test_compile(test_module: TestModule) -> None:
     result_compiled = compiled(input)
 
     assert all((result_eager == result_compiled)._values())
+
+
+def test_compile_with_weights_shape_mismatch() -> None:
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
+    dtype, device = defaults()
+    type = TensorType(dtype, [3, 3], device=device)
+    weights = {
+        "weight": Tensor.zeros([4, 4], dtype=DType.float32),
+    }
+
+    with pytest.raises(ValueError, match="not assignable"):
+        module.compile(type, weights=weights)
+
+
+def test_compile_with_weights_dtype_mismatch() -> None:
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
+    dtype, device = defaults()
+    type = TensorType(dtype, [3, 3], device=device)
+    weights = {
+        "weight": Tensor.zeros([3, 3], dtype=DType.int32),
+    }
+
+    with pytest.raises(ValueError, match="not assignable"):
+        module.compile(type, weights=weights)
+
+
+def test_compile_with_weights_missing_parameter_raises() -> None:
+    @module_dataclass
+    class SimpleModule(Module[[Tensor], Tensor]):
+        weight: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x + self.weight
+
+    module = SimpleModule(weight=Tensor.zeros([3, 3], dtype=DType.float32))
+    dtype, device = defaults()
+    type = TensorType(dtype, [3, 3], device=device)
+
+    with pytest.raises(KeyError, match="is missing"):
+        module.compile(type, weights={})
 
 
 def test_compile_with_weights(lazy_test_module: TestModule) -> None:
@@ -438,3 +579,102 @@ def test_compile_with_weights_never_realized(
 
     assert not any(param.real for param in parameters.values())
     assert not any(param.real for _, param in test_module.parameters)
+
+
+# ---------------------------------------------------------------------------
+# Module.compile() with custom_extensions
+# ---------------------------------------------------------------------------
+
+import os
+from pathlib import Path
+
+
+@pytest.fixture
+def kernel_verification_ops_path() -> Path:
+    raw = os.environ.get("MODULAR_KERNEL_VERIFICATION_OPS_PATH")
+    if raw is None:
+        pytest.skip("MODULAR_KERNEL_VERIFICATION_OPS_PATH not set")
+    return Path(raw)
+
+
+def test_compile_with_custom_extensions(
+    kernel_verification_ops_path: Path,
+) -> None:
+    """Module.compile() loads custom kernels so F.custom works during tracing."""
+
+    @module_dataclass
+    class CustomAddModule(Module[[Tensor], Tensor]):
+        bias: Tensor
+
+        def forward(self, x: Tensor) -> Tensor:
+            return F.custom(
+                "my_add",
+                device=x.device,
+                values=[x, self.bias],
+                out_types=[x.type],
+            )[0]
+
+    device = CPU()
+    dtype = DType.float32
+    module = CustomAddModule(bias=Tensor.ones([64], dtype=dtype, device=device))
+    input_type = TensorType(dtype, [64], device=device)
+
+    compiled = module.compile(
+        input_type,
+        custom_extensions=[kernel_verification_ops_path],
+    )
+
+    x = Tensor.ones([64], dtype=dtype, device=device)
+    result = compiled(x)
+    assert result.shape == [64]
+    assert result.dtype == dtype
+
+
+@pytest.mark.parametrize(
+    ("kernel_name", "parameters"),
+    [
+        ("op_with_int_parameter", {"IntParameter": 42}),
+        ("op_with_static_string_parameter", {"StringParameter": "hello"}),
+    ],
+    ids=["int_param", "static_string_param"],
+)
+def test_compile_with_custom_extensions_struct_params(
+    kernel_verification_ops_path: Path,
+    kernel_name: str,
+    parameters: dict[str, int | str],
+) -> None:
+    """Module.compile() discovers struct-level parameters on custom kernels.
+
+    Without custom_extensions on compile(), struct parameters like
+    ``[IntParameter: Int]`` or ``[StringParameter: StaticString]`` were
+    not discovered during graph-tracing validation.
+    """
+
+    @module_dataclass
+    class StructParamModule(Module[[Tensor], Tensor]):
+        _kernel_name: str
+        _parameters: dict[str, int | str]
+
+        def forward(self, x: Tensor) -> Tensor:
+            return F.custom(
+                self._kernel_name,
+                device=x.device,
+                values=[x],
+                out_types=[x.type],
+                parameters=self._parameters,
+            )[0]
+
+    device = CPU()
+    dtype = DType.float32
+    module = StructParamModule(_kernel_name=kernel_name, _parameters=parameters)
+    input_type = TensorType(dtype, [64], device=device)
+
+    compiled = module.compile(
+        input_type,
+        custom_extensions=[kernel_verification_ops_path],
+    )
+
+    x = Tensor.ones([64], dtype=dtype, device=device)
+    result = compiled(x)
+    assert result.shape == [64]
+    assert result.dtype == dtype

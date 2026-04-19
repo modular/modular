@@ -20,12 +20,8 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.buffer_utils import cast_tensor_to
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kernels import kv_cache_ragged_radd
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.kernels import kv_cache_ragged_radd
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from test_common.context_utils import create_text_context
 
 
@@ -44,12 +40,10 @@ class KVCacheRaddModel:
         a: TensorValue,
         input_row_offsets: TensorValue,
         batch_offset: TensorValue,
-        kv_blocks: TensorValue,
-        cache_lengths: TensorValue,
-        lookup_table: TensorValue,
-        max_lengths: TensorValue,
+        *kv_inputs: TensorValue,
     ) -> None:
         """Apply the radd operation to the KV cache."""
+        kv_blocks, cache_lengths, lookup_table, max_lengths, *_ = kv_inputs
         kv_cache_ragged_radd(
             kv_params=self.kv_params,
             a=a,
@@ -73,8 +67,6 @@ def test_kv_cache_radd_basic() -> None:
     num_active_loras = 1
     layer_idx = 1
     num_layers = 2
-    seq_len = 100
-    max_seq_len = 1024
     device = Accelerator()
     session = InferenceSession(devices=[device])
 
@@ -82,7 +74,6 @@ def test_kv_cache_radd_basic() -> None:
         n_kv_heads=8,
         head_dim=128,
         dtype=dtype,
-        cache_strategy=KVCacheStrategy.PAGED,
         num_layers=num_layers,
         page_size=128,
         devices=[DeviceRef.GPU()],
@@ -92,6 +83,7 @@ def test_kv_cache_radd_basic() -> None:
         kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     # Calculate total length and offsets
@@ -120,7 +112,7 @@ def test_kv_cache_radd_basic() -> None:
             a_type,
             input_row_offsets_type,
             batch_offset_type,
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs().flatten(),
         ],
     )
 
@@ -135,7 +127,7 @@ def test_kv_cache_radd_basic() -> None:
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
 
-    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    kv_inputs = kv_manager.runtime_inputs([batch]).flatten()
 
     a_np = np.ones(
         (a_length, kv_params.n_kv_heads * kv_params.head_dim * 2),

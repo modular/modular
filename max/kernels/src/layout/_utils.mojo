@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from sys import size_of
-from sys.intrinsics import readfirstlane
+from std.collections import Optional
+from std.sys import size_of
+from std.sys.intrinsics import readfirstlane
 
-from gpu.host import DeviceBuffer, DeviceContext, HostBuffer
-from gpu.intrinsics import AMDBufferResource
-from gpu.compute.mma import mma
+from std.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from std.gpu.intrinsics import AMDBufferResource
+from std.gpu.compute.mma import mma
 from layout import *
 from layout.layout_tensor import LayoutTensor, LayoutTensorIter
-from memory.unsafe import bitcast
+from std.memory.unsafe import bitcast
 
-from utils import IndexList
+from std.utils import IndexList
 
 from .int_tuple import _get_index_type, _get_layout_type, product
 
@@ -42,21 +42,21 @@ struct ManagedLayoutTensor[
         Self.dtype,
         Self.layout,
         MutAnyOrigin,
-        layout_int_type = Self.element_type,
-        linear_idx_type = Self.index_type,
+        layout_int_type=Self.element_type,
+        linear_idx_type=Self.index_type,
     ]
 
     var device_data: Optional[DeviceBuffer[Self.dtype]]
     var host_data: HostBuffer[Self.dtype]
     var runtime_layout: RuntimeLayout[
         Self.layout,
-        element_type = Self.element_type,
-        linear_idx_type = Self.index_type,
+        element_type=Self.element_type,
+        linear_idx_type=Self.index_type,
     ]
     var ctx: DeviceContext
 
     @always_inline
-    fn __init__(out self) raises:
+    def __init__(out self) raises:
         self.ctx = DeviceContext(api="cpu")
         self.runtime_layout = {}
         self.device_data = None
@@ -66,7 +66,7 @@ struct ManagedLayoutTensor[
         self.ctx.synchronize()
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self, runtime_layout: RuntimeLayout[Self.layout, ...]
     ) raises:
         self.ctx = DeviceContext(api="cpu")
@@ -89,7 +89,7 @@ struct ManagedLayoutTensor[
         self.ctx.synchronize()
 
     @always_inline
-    fn __init__(out self, ctx: DeviceContext) raises:
+    def __init__(out self, ctx: DeviceContext) raises:
         self.ctx = ctx
         self.runtime_layout = {}
         self.device_data = ctx.enqueue_create_buffer[Self.dtype](
@@ -101,7 +101,7 @@ struct ManagedLayoutTensor[
         self.ctx.synchronize()
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         runtime_layout: RuntimeLayout[Self.layout, ...],
         ctx: DeviceContext,
@@ -137,20 +137,17 @@ struct ManagedLayoutTensor[
         )
         self.ctx.synchronize()
 
-    fn device_tensor[
+    def device_tensor[
         update: Bool = True
     ](self) raises -> Self.layout_tensor_type:
-        debug_assert(
-            self.ctx.api() != "cpu",
-            "device_tensor cannot be constructed for host only tensor.",
-        )
+        assert (
+            self.ctx.api() != "cpu"
+        ), "device_tensor cannot be constructed for host only tensor."
 
-        @parameter
-        if update:
+        comptime if update:
             self._update_device()
 
-        @parameter
-        if Self.layout.all_dims_known():
+        comptime if Self.layout.all_dims_known():
             return Self.layout_tensor_type(
                 self.device_data.value().unsafe_ptr(),
             )
@@ -160,38 +157,36 @@ struct ManagedLayoutTensor[
                 self.runtime_layout,
             )
 
-    fn tensor[update: Bool = True](self) raises -> Self.layout_tensor_type:
-        @parameter
-        if update:
+    def tensor[update: Bool = True](mut self) raises -> Self.layout_tensor_type:
+        comptime if update:
             self._update_host()
 
-        @parameter
-        if Self.layout.all_dims_known():
+        comptime if Self.layout.all_dims_known():
             return Self.layout_tensor_type(
-                self.host_data.unsafe_ptr(),
+                self.host_data,
             )
         else:
             return Self.layout_tensor_type(
-                self.host_data.unsafe_ptr(),
+                self.host_data,
                 self.runtime_layout,
             )
 
-    fn _update_device(self) raises:
+    def _update_device(self) raises:
         if self.ctx.api() != "cpu":
             self.ctx.enqueue_copy(self.device_data.value(), self.host_data)
             self.ctx.synchronize()
 
-    fn _update_host(self) raises:
+    def _update_host(self) raises:
         if self.ctx.api() != "cpu":
             self.ctx.enqueue_copy(self.host_data, self.device_data.value())
             self.ctx.synchronize()
 
     @always_inline
-    fn __del__(deinit self):
+    def __del__(deinit self):
         pass
 
 
-fn load_to_simd(
+def load_to_simd(
     tensor: LayoutTensor,
     out res: SIMD[tensor.dtype, product(tensor.layout.shape)],
 ):
@@ -205,7 +200,7 @@ fn load_to_simd(
 
 
 @always_inline
-fn _get_bounds(tensor: LayoutTensor) -> Int:
+def _get_bounds(tensor: LayoutTensor) -> Int:
     comptime assert (
         tensor.element_layout.all_dims_known()
     ), "Element layout must be known for _get_bounds"
@@ -228,7 +223,7 @@ fn _get_bounds(tensor: LayoutTensor) -> Int:
 
 
 @always_inline
-fn make_amd_buffer_resource(
+def make_amd_buffer_resource(
     tensor: LayoutTensor,
 ) -> AMDBufferResource:
     var ptr = tensor.ptr
@@ -237,7 +232,7 @@ fn make_amd_buffer_resource(
 
 
 @always_inline
-fn make_amd_buffer_resource(
+def make_amd_buffer_resource(
     tensor_iter: LayoutTensorIter, bound: Int
 ) -> AMDBufferResource:
     return AMDBufferResource(
@@ -246,12 +241,42 @@ fn make_amd_buffer_resource(
 
 
 @always_inline
-fn idx2crd[layout: Layout](idx: Int) -> IndexList[layout.rank()]:
+def _get_bounds(tensor: TileTensor) -> Int:
+    """Computes buffer bounds from a rank-2 TileTensor.
+
+    Works with MixedLayout (RuntimeInt + ComptimeInt dimensions).
+    Only dim[0] may be runtime; strides and dim[1] are typically comptime,
+    so the compiler constant-folds everything except the valid_rows multiply.
+    """
+    var dim0 = Int(tensor.dim[0]())
+    var dim1 = Int(tensor.dim[1]())
+    if dim0 == 0 or dim1 == 0:
+        return 0
+    var stride0 = tensor.layout.stride[0]().value()
+    var stride1 = tensor.layout.stride[1]().value()
+    return (dim0 - 1) * stride0 + (dim1 - 1) * stride1 + 1
+
+
+@always_inline
+def make_amd_buffer_resource(
+    tensor: TileTensor,
+) -> AMDBufferResource:
+    """Creates an AMD buffer resource descriptor from a TileTensor.
+
+    Uses _get_bounds to compute the valid range. For TileTensors with
+    ComptimeInt strides, only the RuntimeInt dimension contributes
+    runtime register cost.
+    """
+    var size = _get_bounds(tensor)
+    return AMDBufferResource(readfirstlane(tensor.ptr), readfirstlane(size))
+
+
+@always_inline
+def idx2crd[layout: Layout](idx: Int) -> IndexList[layout.rank()]:
     comptime assert layout.all_dims_known(), "Layout must be known for idx2crd"
     var res = IndexList[layout.rank()]()
 
-    @parameter
-    for i in range(layout.rank()):
+    comptime for i in range(layout.rank()):
         comptime stride = layout.stride[i].value()
         comptime shape = layout.shape[i].value()
         res[i] = (idx // stride) % shape
@@ -259,7 +284,7 @@ fn idx2crd[layout: Layout](idx: Int) -> IndexList[layout.rank()]:
 
 
 @always_inline
-fn hash(tensor: LayoutTensor) -> Int:
+def hash(tensor: LayoutTensor) -> Int:
     # Calculate hash of the content of the layout tensor, it can be useful for debugging
     comptime assert (
         size_of[tensor.dtype]() == 2

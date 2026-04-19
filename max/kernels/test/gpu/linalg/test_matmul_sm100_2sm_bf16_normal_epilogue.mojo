@@ -1,0 +1,367 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from std.sys import argv, size_of
+
+import linalg.matmul.vendor.blas as vendor_blas
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import alloc
+from linalg.utils import elementwise_epilogue_type
+
+from internal_utils import assert_almost_equal
+from std.random import rand
+from layout import (
+    TileTensor,
+    Coord,
+    CoordLike,
+    row_major,
+    Idx,
+)
+from linalg.matmul.gpu.sm100_structured.default.matmul import (
+    blackwell_matmul_tma_umma_warp_specialized,
+)
+from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
+    MatmulConfig,
+)
+
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
+
+
+def is_benchmark() -> Bool:
+    for arg in argv():
+        if arg == "--benchmark":
+            return True
+    return False
+
+
+def simple_init() -> Bool:
+    for arg in argv():
+        if arg == "--simple-init":
+            return True
+    return False
+
+
+def test_blackwell_matmul_tma_umma_warp_specialized[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    block_tile_shape: IndexList[3],
+    mma_shape: IndexList[3],
+    cluster_shape: StaticTuple[Int32, 3],
+    transpose_b: Bool = True,
+    a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    block_swizzle_size: Int = 0,
+    benchmark: Bool = False,
+    swapAB: Bool = False,
+    k_group_size: Int = 1,
+    normal_epilogue: Bool = False,
+](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
+    if not benchmark:
+        print(
+            "in/out dtypes=(",
+            a_type,
+            ", ",
+            b_type,
+            ", ",
+            c_type,
+            ") ",
+            " problem shape=(",
+            m.value(),
+            ", ",
+            n.value(),
+            ", ",
+            k.value(),
+            ") ",
+            "mma_shape=",
+            mma_shape,
+            " block_tile_shape=",
+            block_tile_shape,
+            " cta_group=",
+            2,
+            " cluster_shape=(",
+            cluster_shape[0],
+            ", ",
+            cluster_shape[1],
+            ", ",
+            cluster_shape[2],
+            ")",
+            " swapAB=",
+            swapAB,
+            " k_group_size=",
+            k_group_size,
+            sep="",
+        )
+
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var b_shape = row_major(
+        Coord(
+            Idx[NType.static_value if transpose_b else KType.static_value](),
+            Idx[KType.static_value if transpose_b else NType.static_value](),
+        )
+    )
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
+
+    var a_size = m.value() * k.value()
+    var b_size = n.value() * k.value() if transpose_b else k.value() * n.value()
+    var c_size = m.value() * n.value()
+
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host = TileTensor(a_host_ptr, a_shape)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host = TileTensor(b_host_ptr, b_shape)
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host = TileTensor(c_host_ptr, c_shape)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
+
+    var a_device = ctx.enqueue_create_buffer[a_type](a_size)
+    var a_tensor = TileTensor(a_device, a_shape)
+    var b_device = ctx.enqueue_create_buffer[b_type](b_size)
+    var b_tensor = TileTensor(b_device, b_shape)
+    var c_device = ctx.enqueue_create_buffer[c_type](c_size)
+    var c_tensor = TileTensor(c_device, c_shape)
+    var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
+
+    # Initialize matmul operands
+    if simple_init():
+        for m in range(m.value()):
+            for k in range(k.value()):
+                comptime assert a_host.flat_rank >= 2
+                a_host[(Idx(m), Idx(k))] = Float32(k).cast[a_type]()
+        for n in range(n.value()):
+            for k in range(k.value()):
+                b_host[(Idx(n), Idx(k))] = Float32(1 if n == k else 0).cast[
+                    b_type
+                ]()
+    else:
+        rand(a_host.ptr, a_host.num_elements())
+        rand(b_host.ptr, b_host.num_elements())
+
+    # Move operands to the Device
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
+
+    comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
+        cluster_shape=Index(
+            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        ),
+        mma_shape=mma_shape,
+        block_swizzle_size=block_swizzle_size,
+        cta_group=2,
+        AB_swapped=swapAB,
+        k_group_size=k_group_size,
+    )
+
+    var c_tensor_lt = c_tensor.to_layout_tensor()
+
+    @parameter
+    @always_inline
+    @__copy_capture(c_tensor_lt)
+    def epilogue_fn[
+        _dtype: DType,
+        width: Int,
+        *,
+        alignment: Int = 1,
+    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
+        c_tensor_lt.store[alignment=alignment * size_of[c_type](),](
+            idx, rebind[SIMD[c_type, width]](val)
+        )
+
+    comptime epi = Optional[elementwise_epilogue_type](
+        epilogue_fn
+    ) if normal_epilogue else None
+
+    blackwell_matmul_tma_umma_warp_specialized[
+        transpose_b=transpose_b,
+        config=matmul_config,
+        elementwise_lambda_fn=epi,
+    ](
+        c_tensor,
+        a_tensor,
+        b_tensor,
+        ctx,
+    )
+
+    comptime assert a_type != DType.float8_e4m3fn or transpose_b, (
+        "Testing is only supported for transposed_b==True when"
+        " a_type==float8_e4m3fn. Add the non-transposed case if needed."
+    )
+
+    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
+    var a_lt = a_tensor.to_layout_tensor()
+    var b_lt = b_tensor.to_layout_tensor()
+
+    vendor_blas.matmul(
+        ctx,
+        c_ref_tensor_lt,
+        a_lt,
+        b_lt,
+        c_row_major=True,
+        transpose_b=transpose_b,
+    )
+
+    ctx.synchronize()
+
+    ctx.enqueue_copy(c_host_ptr, c_device)
+    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+    ctx.synchronize()
+
+    comptime rtol = 1e-2
+    assert_almost_equal(
+        c_host.ptr,
+        c_host_ref.ptr,
+        c_host.num_elements(),
+        atol=0.0001,
+        rtol=rtol,
+    )
+    print("\n=== TEST PASSED ===\n")
+
+    # Cleanup
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
+    _ = a_device^
+    _ = b_device^
+    _ = c_device^
+    _ = c_device_ref^
+
+
+def main() raises:
+    with DeviceContext() as ctx:
+        comptime dtype = DType.bfloat16
+
+        comptime for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
+            comptime BK = (swizzle.bytes() // size_of[dtype]())
+            comptime MMA_K = 16
+
+            # we support all range of bn in range(8, 128+1, 8) but the test will time out so we only test a subset
+            comptime for bm in [64, 128]:
+                comptime for bn in [
+                    8,
+                    16,
+                    32,
+                    40,
+                    64,
+                    72,
+                    80,
+                    88,
+                    104,
+                    112,
+                    128,
+                ]:
+                    comptime block_tile_shape = Index(bm, bn, BK)
+                    comptime umma_shape = Index(2 * bm, 2 * bn, MMA_K)
+
+                    test_blackwell_matmul_tma_umma_warp_specialized[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        a_swizzle=swizzle,
+                        b_swizzle=swizzle,
+                        block_swizzle_size=8,
+                        normal_epilogue=True,
+                    ](
+                        ctx,
+                        Idx(Int(1000)),
+                        Idx(1024),
+                        Idx[1024 + 16](),
+                    )
+
+                    comptime for swapAB in [False, True]:
+                        test_blackwell_matmul_tma_umma_warp_specialized[
+                            dtype,
+                            dtype,
+                            DType.bfloat16,
+                            block_tile_shape,
+                            umma_shape,
+                            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                            a_swizzle=swizzle,
+                            b_swizzle=swizzle,
+                            block_swizzle_size=4,
+                            swapAB=swapAB,
+                            normal_epilogue=True,
+                        ](
+                            ctx,
+                            Idx(Int(512)),
+                            Idx(4096),
+                            Idx[1024 + 16](),
+                        )
+
+                        test_blackwell_matmul_tma_umma_warp_specialized[
+                            dtype,
+                            dtype,
+                            DType.bfloat16,
+                            block_tile_shape,
+                            umma_shape,
+                            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                            a_swizzle=swizzle,
+                            b_swizzle=swizzle,
+                            block_swizzle_size=0,
+                            swapAB=swapAB,
+                            k_group_size=2,
+                            normal_epilogue=True,
+                        ](
+                            ctx,
+                            Idx(Int(500)),
+                            Idx(2048),
+                            Idx(4096),
+                        )
+
+                    test_blackwell_matmul_tma_umma_warp_specialized[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
+                        a_swizzle=swizzle,
+                        b_swizzle=swizzle,
+                        block_swizzle_size=2,
+                        normal_epilogue=True,
+                    ](
+                        ctx,
+                        Idx(Int(999)),
+                        Idx(256),
+                        Idx(128),
+                    )
+
+                    test_blackwell_matmul_tma_umma_warp_specialized[
+                        dtype,
+                        dtype,
+                        DType.bfloat16,
+                        block_tile_shape,
+                        umma_shape,
+                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        a_swizzle=swizzle,
+                        b_swizzle=swizzle,
+                        block_swizzle_size=1,
+                        normal_epilogue=True,
+                    ](
+                        ctx,
+                        Idx(Int(777)),
+                        Idx(2560),
+                        Idx(8192),
+                    )

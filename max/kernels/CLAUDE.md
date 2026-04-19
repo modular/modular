@@ -25,10 +25,10 @@ This project uses Bazel for building. Commands should be run through the
 ./bazelw build //max/kernels/src/linalg:linalg
 
 # Build a specific benchmark
-./bazelw build //max/kernels/benchmarks/gpu:bench_matmul
+./bazelw build //max/kernels/benchmarks/gpu/linalg:bench_matmul
 
 # Build and run a benchmark
-./bazelw run //max/kernels/benchmarks/gpu:bench_matmul
+./bazelw run //max/kernels/benchmarks/gpu/linalg:bench_matmul
 
 # Run a specific test
 ./bazelw test //max/kernels/test/linalg:test_matmul
@@ -95,7 +95,7 @@ bd //KGEN/tools/mojo -- /path/to/file.mojo
 
 ```mojo
 from linalg.matmul import matmul
-from layout import Layout, LayoutTensor
+from layout import TileTensor, row_major
 from gpu.host import DeviceContext
 ```
 
@@ -121,16 +121,29 @@ from gpu.host import DeviceContext
 
 ### Benchmarking
 
+Before running benchmarks on remote GPU nodes, check for hardware throttling
+that can silently produce unreliable results (10x+ slowdowns):
+
+```bash
+# Check for GPU thermal/power throttling (exits non-zero if throttled)
+utils/check-gpu-throttle.sh
+
+# Quick manual check (NVIDIA) — look for "Active" on HW Slowdown lines
+nvidia-smi -q -d PERFORMANCE | grep -E 'HW (Slowdown|Thermal|Power Brake)'
+```
+
+If throttling is detected, switch to a different node before benchmarking.
+
 ```bash
 # Run benchmarks using the benchmarking framework
-./bazelw run //max/kernels/benchmarks/gpu:bench_matmul
+./bazelw run //max/kernels/benchmarks/gpu/linalg:bench_matmul
 
-# Run benchmarks with environment variables
-./bazelw run //max/kernels/benchmarks/gpu:bench_matmul -- \
-    env_get_int[M]=1024 env_get_int[N]=1024 env_get_int[K]=1024
+# Run benchmarks with compile-time defines
+./bazelw run //max/kernels/benchmarks/gpu/linalg:bench_matmul -- \
+    get_defined_int[M]=1024 get_defined_int[N]=1024 get_defined_int[K]=1024
 
 # Use autotune tools for performance analysis
-python benchmarks/autotune/kbench.py benchmarks/gpu/bench_matmul.yaml
+python benchmarks/autotune/kbench.py benchmarks/gpu/linalg/bench_matmul.yaml
 ```
 
 ### Format and Lint
@@ -159,20 +172,20 @@ mojo format ./
 - ARM NEON intrinsics
 - x86 AVX/VNNI instructions
 
-## Environment Variables
+## Compile-Time Defines
 
-Many benchmarks and tests use environment variables for configuration:
+Many benchmarks and tests use compile-time defines for configuration:
 
-- `env_get_int[]`: Get integer values
-- `env_get_bool[]`: Get boolean flags
-- `env_get_dtype[]`: Get data type specifications
+- `get_defined_int[]`: Get integer values
+- `get_defined_bool[]`: Get boolean flags
+- `get_defined_dtype[]`: Get data type specifications
 
 Example:
 
 ```bash
-./bazelw run //max/kernels/benchmarks/gpu:bench_matmul -- \
-    env_get_int[M]=512 env_get_bool[transpose_b]=true \
-    env_get_dtype[type]=float16
+./bazelw run //max/kernels/benchmarks/gpu/linalg:bench_matmul -- \
+    get_defined_int[M]=512 get_defined_bool[transpose_b]=true \
+    get_defined_dtype[type]=float16
 ```
 
 ## Debugging Tips
@@ -181,10 +194,10 @@ Example:
 
 ```bash
 # Debug with bazel
-bd //max/kernels/benchmarks/gpu:bench_matmul
+bd //max/kernels/benchmarks/gpu/linalg:bench_matmul
 
 # Debug in VSCode
-bd --vscode //max/kernels/benchmarks/gpu:bench_matmul
+bd --vscode //max/kernels/benchmarks/gpu/linalg:bench_matmul
 ```
 
 ### Common Debug Patterns

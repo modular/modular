@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import queue
 import tempfile
+import urllib.parse
 import uuid
 import weakref
 from collections.abc import Callable
@@ -35,10 +36,7 @@ T = TypeVar("T")
 Request = TypeVar("Request")
 Reply = TypeVar("Reply")
 
-DEFAULT_MSGPACK_NUMPY_ENCODER = msgpack_numpy_encoder(
-    use_shared_memory=True,
-    shared_memory_threshold=0,
-)
+DEFAULT_MSGPACK_NUMPY_ENCODER = msgpack_numpy_encoder(use_shared_memory=True)
 
 NON_SHARED_MSGPACK_NUMPY_ENCODER = msgpack_numpy_encoder()
 
@@ -67,18 +65,27 @@ def _validate_zmq_address(address: str) -> None:
 
     # Protocol-specific validation
     if address.startswith("tcp://"):
-        # TCP requires host:port format
-        parts = address[6:].split(":")
-        if len(parts) != 2:
+        # TCP requires host:port format, including bracketed IPv6
+        # e.g. tcp://host:port or tcp://[2001:db8::1]:port
+        parsed = urllib.parse.urlparse(address)
+        if not parsed.hostname:
             raise ValueError(
-                f"ZMQ tcp address must be in the format tcp://host:port. Found: {address}"
+                f"ZMQ tcp address must be in the format"
+                f" tcp://host:port or tcp://[ipv6]:port."
+                f" Found: {address}"
             )
         try:
-            port = int(parts[1])
+            port = parsed.port
         except ValueError:
             raise ValueError(
-                f"ZMQ tcp port must be a number. Found: {parts[1]}"
+                f"ZMQ tcp port must be a number. Found: {address}"
             ) from None
+        if port is None:
+            raise ValueError(
+                f"ZMQ tcp address must be in the format"
+                f" tcp://host:port or tcp://[ipv6]:port."
+                f" Found: {address}"
+            )
         if not (1 <= port <= 65535):
             raise ValueError(
                 f"ZMQ tcp port must be between 1 and 65535. Found: {port}"
@@ -117,6 +124,11 @@ def _open_zmq_socket(path: str, mode: int) -> zmq.Socket[bytes]:
     # "one I/O thread per gigabyte of data per second"
     zmq_ctx = zmq.Context.instance(io_threads=2)
     socket = zmq_ctx.socket(mode)
+
+    # Enable IPv6 so that bind/connect works when hostnames resolve to
+    # IPv6 addresses (e.g. Kubernetes pods with IPv6-only networking).
+    # With IPV6 enabled, the socket still accepts IPv4 connections.
+    socket.setsockopt(zmq.IPV6, 1)
 
     # Calculate buffer size based on system memory
     GIB = 1024**3

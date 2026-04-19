@@ -14,17 +14,19 @@
 
 These are Mojo built-ins, so you don't need to import them.
 """
-from collections.string.string_slice import _get_kgen_string
-from reflection import (
+from std.collections.string.string_slice import _get_kgen_string
+from std.reflection import (
     get_type_name,
+    is_struct_type,
     struct_field_names,
     struct_field_types,
 )
-from reflection.type_info import _unqualified_type_name
+from std.reflection.type_info import _unqualified_type_name
 
 
+@deprecated("Use `comptime assert` instead")
 @always_inline("nodebug")
-fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
+def constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
     """Asserts that the condition must be true at compile time.
 
     The `constrained()` function introduces a compile-time constraint on the
@@ -39,11 +41,11 @@ fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
     Example:
 
     ```mojo
-    fn half[dtype: DType](a: Scalar[dtype]) -> Scalar[dtype]:
+    def half[dtype: DType](a: Scalar[dtype]) -> Scalar[dtype]:
         comptime assert dtype.is_numeric(), "dtype must be numeric."
         return a / 2
 
-    def main():
+    def main() raises:
         print(half(UInt8(5)))  # prints 2
         print(half(Scalar[DType.bool](True)))  # constraint failed:
                                                #     dtype must be numeric.
@@ -56,13 +58,14 @@ fn constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
 
     """
     __mlir_op.`kgen.param.assert`[
-        cond = cond.__mlir_i1__(),
-        message = _get_kgen_string[msg, extra](),
+        cond=cond.__mlir_i1__(),
+        message=_get_kgen_string[msg, *extra](),
     ]()
 
 
+@deprecated("Use `comptime assert` instead")
 @always_inline("nodebug")
-fn constrained[cond: Bool]():
+def constrained[cond: Bool]():
     """Asserts that the condition must be true at compile time.
 
     The `constrained()` function introduces a compile-time constraint on the
@@ -84,7 +87,7 @@ fn constrained[cond: Bool]():
 
 
 @always_inline("nodebug")
-fn _constrained_conforms_to[
+def _constrained_conforms_to[
     cond: Bool,
     *,
     Parent: AnyType,
@@ -117,7 +120,7 @@ fn _constrained_conforms_to[
 
 
 @always_inline("nodebug")
-fn _constrained_field_conforms_to[
+def _constrained_field_conforms_to[
     cond: Bool,
     *,
     Parent: AnyType,
@@ -140,26 +143,42 @@ fn _constrained_field_conforms_to[
             (defaults to ParentConformsTo).
     """
     comptime names = struct_field_names[Parent]()
-    comptime types = struct_field_types[Parent]()
     comptime field_name = names[FieldIndex]
-    comptime FieldType = types[FieldIndex]
     comptime parent_type_name = _unqualified_type_name[Parent]()
-    comptime field_type_name = _unqualified_type_name[FieldType]()
+    comptime types = struct_field_types[Parent]()
+    comptime FieldType = types[FieldIndex]
 
     # Construct a message like:
-    #     Could not derive Equatable for Point - member field `x: Int` does not
-    #     implement Equatable
-    comptime assert cond, StaticString(
-        _get_kgen_string[
-            "Could not derive ",
-            ParentConformsTo,
-            " for ",
-            parent_type_name,
-            " - member field `",
-            field_name,
-            ": ",
-            field_type_name,
-            "` does not implement ",
-            FieldConformsTo,
-        ]()
-    )
+    #     Could not derive Equatable for Point - member field `x: Int`
+    #     does not implement Equatable
+    # For MLIR types, omit the type name since `_unqualified_type_name`
+    # can't handle non-struct types.
+    comptime if is_struct_type[FieldType]():
+        comptime field_type_name = _unqualified_type_name[FieldType]()
+        comptime assert cond, StaticString(
+            _get_kgen_string[
+                "Could not derive ",
+                ParentConformsTo,
+                " for ",
+                parent_type_name,
+                " - member field `",
+                field_name,
+                ": ",
+                field_type_name,
+                "` does not implement ",
+                FieldConformsTo,
+            ]()
+        )
+    else:
+        comptime assert cond, StaticString(
+            _get_kgen_string[
+                "Could not derive ",
+                ParentConformsTo,
+                " for ",
+                parent_type_name,
+                " - member field `",
+                field_name,
+                "` does not implement ",
+                FieldConformsTo,
+            ]()
+        )

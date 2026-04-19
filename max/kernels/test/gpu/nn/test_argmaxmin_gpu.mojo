@@ -11,22 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_float64
+from std.random import random_float64
 
-from gpu.host import DeviceContext
-from layout._coord import Coord
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceContext
+from layout import Coord, TileTensor, row_major
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
-from testing import assert_equal
-from utils.index import IndexList
+from std.testing import assert_equal
+from std.utils.index import IndexList
 
 
-fn test_argmaxmin_gpu[
+def test_argmaxmin_gpu[
     dtype: DType,
     output_type: DType,
-    fill_fn: fn[rank: Int, dtype: DType](
+    fill_fn: def[rank: Int, dtype: DType](
         TileTensor[mut=True, dtype, ...]
     ) capturing[_] -> None,
     largest: Bool = True,
@@ -38,8 +36,7 @@ fn test_argmaxmin_gpu[
     var in_shape: IndexList[rank]
     var out_shape: IndexList[rank]
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         out_shape = IndexList[rank](1)
         in_shape = IndexList[rank](N)
     elif rank == 2:
@@ -65,7 +62,7 @@ fn test_argmaxmin_gpu[
         row_major(Coord(in_shape)),
     )
     var out_idxs_host_ptr = alloc[Scalar[output_type]](out_size)
-    var out_idxs_host = TileTensor(
+    var _out_idxs_host = TileTensor(
         out_idxs_host_ptr,
         row_major(Coord(out_shape)),
     )
@@ -81,16 +78,15 @@ fn test_argmaxmin_gpu[
 
     # Create device TileTensors
     var device_in_tensor = TileTensor(
-        device_in.unsafe_ptr(),
+        device_in,
         row_major(Coord(in_shape)),
     )
     var device_out_tensor = TileTensor(
-        device_out_idxs.unsafe_ptr(),
+        device_out_idxs,
         row_major(Coord(out_shape)),
     )
 
-    @parameter
-    if largest:
+    comptime if largest:
         argmax_gpu(
             ctx,
             device_in_tensor,
@@ -113,8 +109,7 @@ fn test_argmaxmin_gpu[
         row_major(Coord(out_shape)),
     )
 
-    @parameter
-    if largest:
+    comptime if largest:
         argmax(
             in_host,
             rank - 1,
@@ -143,9 +138,9 @@ fn test_argmaxmin_gpu[
     _ = device_out_idxs^
 
 
-fn _test_argmaxmin_gpu_helper_2[
+def _test_argmaxmin_gpu_helper_2[
     idx_type: DType,
-    fill_fn: fn[rank: Int, dtype: DType](
+    fill_fn: def[rank: Int, dtype: DType](
         TileTensor[mut=True, dtype, ...]
     ) capturing[_] -> None,
     largest: Bool,
@@ -161,9 +156,9 @@ fn _test_argmaxmin_gpu_helper_2[
     ](ctx, N=1024, batch_size=12, num_batches=10)
 
 
-fn test_argmaxmin_gpu_helper[
+def test_argmaxmin_gpu_helper[
     idx_type: DType,
-    fill_fn: fn[rank: Int, dtype: DType](
+    fill_fn: def[rank: Int, dtype: DType](
         TileTensor[mut=True, dtype, ...]
     ) capturing[_] -> None,
 ](ctx: DeviceContext) raises:
@@ -174,14 +169,14 @@ fn test_argmaxmin_gpu_helper[
     _test_argmaxmin_gpu_helper_2[idx_type, fill_fn, largest=False](ctx)
 
 
-def main():
+def main() raises:
     @parameter
-    fn fill_random[
+    def fill_random[
         rank: Int, dtype: DType
     ](buffer: TileTensor[mut=True, dtype, ...]):
         comptime min_val = -1e9
         comptime max_val = 1e9
-        var total_elements = buffer.numel()
+        var total_elements = buffer.num_elements()
         for i in range(total_elements):
             var random_value = random_float64(min_val, max_val)
             buffer.ptr[i] = random_value.cast[dtype]()

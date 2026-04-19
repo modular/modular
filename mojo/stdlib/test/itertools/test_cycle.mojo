@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from itertools import cycle
-from testing import (
+from std.itertools import cycle
+from std.testing import (
     TestSuite,
     assert_equal,
     assert_false,
@@ -21,7 +21,7 @@ from testing import (
 )
 
 
-def test_cycle_basic():
+def test_cycle_basic() raises:
     """Tests basic cycling through a list."""
     var nums = [1, 2, 3]
     var it = cycle(nums)
@@ -42,7 +42,7 @@ def test_cycle_basic():
     assert_equal(next(it), 3)
 
 
-def test_cycle_strings():
+def test_cycle_strings() raises:
     """Tests cycling through a list of strings."""
     var colors = ["red", "green", "blue"]
     var it = cycle(colors)
@@ -58,7 +58,7 @@ def test_cycle_strings():
     assert_equal(next(it), "blue")
 
 
-def test_cycle_single_element():
+def test_cycle_single_element() raises:
     """Tests cycling through a single element."""
     var single = [42]
     var it = cycle(single)
@@ -70,7 +70,7 @@ def test_cycle_single_element():
     assert_equal(next(it), 42)
 
 
-def test_cycle_two_elements():
+def test_cycle_two_elements() raises:
     """Tests cycling through two elements."""
     var pair = [True, False]
     var it = cycle(pair)
@@ -83,7 +83,7 @@ def test_cycle_two_elements():
     assert_false(next(it))
 
 
-def test_cycle_empty():
+def test_cycle_empty() raises:
     """Tests cycling through an empty list raises StopIteration."""
     var empty = List[Int]()
     var it = cycle(empty)
@@ -92,7 +92,7 @@ def test_cycle_empty():
         _ = next(it)
 
 
-def test_cycle_empty_stays_exhausted():
+def test_cycle_empty_stays_exhausted() raises:
     """Tests that empty cycle consistently raises StopIteration."""
     var empty = List[Int]()
     var it = cycle(empty)
@@ -103,7 +103,7 @@ def test_cycle_empty_stays_exhausted():
             _ = next(it)
 
 
-def test_cycle_is_lazy():
+def test_cycle_is_lazy() raises:
     """Tests that cycle doesn't consume the source iterator at construction."""
     # Create a cycle but don't iterate - this should not consume the range
     var it = cycle(range(1000000))
@@ -116,7 +116,7 @@ def test_cycle_is_lazy():
     assert_equal(next(it), 2)
 
 
-def test_cycle_multiple_resets():
+def test_cycle_multiple_resets() raises:
     """Tests that cycle correctly resets multiple times."""
     var nums = [1, 2]
     var it = cycle(nums)
@@ -127,7 +127,7 @@ def test_cycle_multiple_resets():
         assert_equal(next(it), 2)
 
 
-def test_cycle_in_for_loop():
+def test_cycle_in_for_loop() raises:
     """Tests cycle iterator in a for loop with early termination."""
     var items = [10, 20, 30]
     var it = cycle(items)
@@ -150,7 +150,7 @@ def test_cycle_in_for_loop():
     assert_equal(results[6], 10)
 
 
-def test_cycle_large_count():
+def test_cycle_large_count() raises:
     """Tests cycling many times."""
     var small = [1, 2]
     var it = cycle(small)
@@ -163,7 +163,7 @@ def test_cycle_large_count():
     assert_equal(sum, 1500)
 
 
-def test_cycle_preserves_order():
+def test_cycle_preserves_order() raises:
     """Tests that cycle preserves the original order of elements."""
     var ordered = [5, 4, 3, 2, 1]
     var it = cycle(ordered)
@@ -177,7 +177,7 @@ def test_cycle_preserves_order():
         assert_equal(next(it), 1)
 
 
-def test_cycle_from_range():
+def test_cycle_from_range() raises:
     """Tests cycling through a range."""
     var it = cycle(range(3))
 
@@ -189,7 +189,7 @@ def test_cycle_from_range():
     assert_equal(next(it), 2)
 
 
-def test_cycle_copyable():
+def test_cycle_copyable() raises:
     """Tests that cycle iterator is copyable."""
     var nums = [1, 2, 3]
     var it1 = cycle(nums)
@@ -210,7 +210,7 @@ def test_cycle_copyable():
     assert_equal(next(it2), 1)
 
 
-def test_cycle_iterator_protocol():
+def test_cycle_iterator_protocol() raises:
     """Tests that cycle conforms to iterator protocol."""
     var nums = [1, 2, 3]
     var it = cycle(nums)
@@ -223,7 +223,7 @@ def test_cycle_iterator_protocol():
     assert_equal(next(it2), 1)
 
 
-def test_cycle_modulo_behavior():
+def test_cycle_modulo_behavior() raises:
     """Tests that cycle correctly wraps around."""
     var items = [100, 200, 300, 400]
     var it = cycle(items)
@@ -234,5 +234,79 @@ def test_cycle_modulo_behavior():
         assert_equal(next(it), expected)
 
 
-def main():
+@fieldwise_init
+struct _CopyableOwnedIter[size: Int](Copyable, IterableOwned, Iterator):
+    """A `Copyable` owned iterator backed by an `InlineArray` for testing."""
+
+    comptime Element = Int
+    comptime IteratorOwnedType: Iterator = Self
+    var _data: InlineArray[Int, Self.size]
+    var _index: Int
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Int:
+        if self._index >= Self.size:
+            raise StopIteration()
+        var val = self._data[self._index]
+        self._index += 1
+        return val
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var remaining = Self.size - self._index
+        return (remaining, remaining)
+
+
+@fieldwise_init
+struct _CopyableOwned[size: Int](IterableOwned):
+    """An `IterableOwned` whose owned iterator is `Copyable` for testing."""
+
+    comptime IteratorOwnedType: Iterator = _CopyableOwnedIter[Self.size]
+    var _data: InlineArray[Int, Self.size]
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return _CopyableOwnedIter(self._data, 0)
+
+
+def _owned1(a: Int) -> _CopyableOwned[1]:
+    var data: InlineArray[Int, 1] = [a]
+    return _CopyableOwned(data)
+
+
+def _owned3(a: Int, b: Int, c: Int) -> _CopyableOwned[3]:
+    var data: InlineArray[Int, 3] = [a, b, c]
+    return _CopyableOwned(data)
+
+
+def test_cycle_owned() raises:
+    var it = cycle(_owned3(1, 2, 3))
+
+    # First cycle
+    assert_equal(next(it), 1)
+    assert_equal(next(it), 2)
+    assert_equal(next(it), 3)
+
+    # Second cycle
+    assert_equal(next(it), 1)
+    assert_equal(next(it), 2)
+    assert_equal(next(it), 3)
+
+    # Third cycle
+    assert_equal(next(it), 1)
+    assert_equal(next(it), 2)
+    assert_equal(next(it), 3)
+
+
+def test_cycle_owned_single() raises:
+    var it = cycle(_owned1(42))
+
+    assert_equal(next(it), 42)
+    assert_equal(next(it), 42)
+    assert_equal(next(it), 42)
+    assert_equal(next(it), 42)
+    assert_equal(next(it), 42)
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

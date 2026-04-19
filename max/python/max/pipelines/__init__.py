@@ -17,15 +17,24 @@ from .architectures import register_all_models
 from .core import PixelContext, TextAndVisionContext, TextContext, TTSContext
 from .lib.config import (
     AudioGenerationConfig,
+    KVCacheConfig,
+    LoRAConfig,
+    MAXModelConfig,
     PipelineConfig,
-    PrependPromptSpeechTokens,
-    PrometheusMetricsMode,
-)
-from .lib.config_enums import (
     PipelineRole,
+    PrependPromptSpeechTokens,
+    ProfilingConfig,
+    PrometheusMetricsMode,
     RepoType,
     RopeType,
+    SpeculativeConfig,
     SupportedEncoding,
+    is_float4_encoding,
+    parse_supported_encoding_from_file_name,
+    supported_encoding_dtype,
+    supported_encoding_quantization,
+    supported_encoding_supported_devices,
+    supported_encoding_supported_on,
 )
 from .lib.embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
 from .lib.hf_utils import download_weight_files
@@ -35,19 +44,18 @@ from .lib.interfaces import (
     ModelOutputs,
     PipelineModel,
 )
-from .lib.kv_cache_config import KVCacheConfig
 from .lib.lora import ADAPTER_CONFIG_FILE
 from .lib.memory_estimation import MemoryEstimator
-from .lib.model_config import MAXModelConfig
 from .lib.pipeline_variants.pixel_generation import PixelGenerationPipeline
-from .lib.pipeline_variants.text_generation import TextGenerationPipeline
-from .lib.profiling_config import ProfilingConfig
+from .lib.pipeline_variants.text_generation import (
+    TextGenerationPipeline,
+    TextGenerationPipelineInterface,
+)
 from .lib.registry import PIPELINE_REGISTRY, SupportedArchitecture
 from .lib.sampling.sampling_config import SamplingConfig
 from .lib.speech_token_pipeline import SpeechTokenGenerationPipeline
 from .lib.tokenizer import (
     IdentityPipelineTokenizer,
-    PreTrainedPipelineTokenizer,
     TextAndVisionTokenizer,
     TextTokenizer,
 )
@@ -65,6 +73,7 @@ __all__ = [
     "GenerateMixin",
     "IdentityPipelineTokenizer",
     "KVCacheConfig",
+    "LoRAConfig",
     "MAXModelConfig",
     "MemoryEstimator",
     "ModelInputs",
@@ -74,13 +83,13 @@ __all__ = [
     "PipelineRole",
     "PixelContext",
     "PixelGenerationPipeline",
-    "PreTrainedPipelineTokenizer",
     "PrependPromptSpeechTokens",
     "ProfilingConfig",
     "PrometheusMetricsMode",
     "RepoType",
     "RopeType",
     "SamplingConfig",
+    "SpeculativeConfig",
     "SpeechTokenGenerationPipeline",
     "SupportedArchitecture",
     "SupportedEncoding",
@@ -89,7 +98,14 @@ __all__ = [
     "TextAndVisionTokenizer",
     "TextContext",
     "TextGenerationPipeline",
+    "TextGenerationPipelineInterface",
     "TextTokenizer",
     "download_weight_files",
+    "is_float4_encoding",
+    "parse_supported_encoding_from_file_name",
+    "supported_encoding_dtype",
+    "supported_encoding_quantization",
+    "supported_encoding_supported_devices",
+    "supported_encoding_supported_on",
     "upper_bounded_default",
 ]

@@ -10,23 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-build %s -o %t
-# RUN: %mpirun-gpu-per-thread %t
-
-from os import abort
-
-from gpu import block_dim, block_idx, global_idx
-from memory import LegacyUnsafePointer, alloc
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+# RUN: %mojo %s
+from std.gpu import block_dim, block_idx, global_idx
+from std.memory import UnsafePointer, alloc
+from std.ffi import c_size_t
 from shmem import *
-from testing import assert_equal
+from std.testing import assert_equal
 
 
-fn set_and_shift_kernel(
-    send_data: UnsafePointer[Float32],
-    recv_data: UnsafePointer[Float32],
-    num_elems: UInt,
+def set_and_shift_kernel(
+    send_data: UnsafePointer[Float32, MutAnyOrigin],
+    recv_data: UnsafePointer[Float32, MutAnyOrigin],
+    num_elems: Int,
     mype: Int32,
     npes: Int32,
     use_nbi: Int,
@@ -48,32 +43,31 @@ fn set_and_shift_kernel(
         shmem_put_nbi[SHMEMScope.block](
             recv_data + block_offset,
             send_data + block_offset,
-            min(block_dim.x, num_elems - block_offset),
+            c_size_t(min(block_dim.x, num_elems - block_offset)),
             peer,
         )
     else:
         shmem_put[SHMEMScope.block](
             recv_data + block_offset,
             send_data + block_offset,
-            min(block_dim.x, num_elems - block_offset),
+            c_size_t(min(block_dim.x, num_elems - block_offset)),
             peer,
         )
 
 
-fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
-    comptime num_elems: UInt = 8192
-    comptime threads_per_block: UInt = 256
-    debug_assert(
-        num_elems % threads_per_block == 0,
-        "num_elems must be divisible by threads_per_block",
-    )
+def test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
+    comptime num_elems: Int = 8192
+    comptime threads_per_block: Int = 256
+    assert (
+        num_elems % threads_per_block == 0
+    ), "num_elems must be divisible by threads_per_block"
     comptime num_blocks = num_elems // threads_per_block
 
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
 
-    var send_data = ctx.enqueue_create_buffer[DType.float32](Int(num_elems))
-    var recv_data = ctx.enqueue_create_buffer[DType.float32](Int(num_elems))
+    var send_data = ctx.enqueue_create_buffer[DType.float32](num_elems)
+    var recv_data = ctx.enqueue_create_buffer[DType.float32](num_elems)
 
     ctx.barrier_all()
 
@@ -88,7 +82,7 @@ fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
         block_dim=threads_per_block,
     )
 
-    var host = alloc[Float32](Int(num_elems))
+    var host = alloc[Float32](num_elems)
     recv_data.enqueue_copy_to(host)
 
     # The completion of the non-blocking version of `shmem_put` is
@@ -101,16 +95,16 @@ fn test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
 
     for i in range(num_elems):
         assert_equal(
-            host[Int(i)],
+            host[i],
             expected,
-            String("unexpected value on PE: ", mype, " at idx: ", i),
+            String(t"unexpected value on PE: {mype} at idx: {i}"),
         )
 
     print("[", mype, "of", npes, "] run complete. use_nbi=", use_nbi)
 
 
-def main():
-    def test_both(ctx: SHMEMContext):
+def main() raises:
+    def test_both(ctx: SHMEMContext) raises:
         test_shmem_put[False](ctx)
         # Test the non-blocking version of `shmem_put` primitive, which returns
         # after initiating the operation.

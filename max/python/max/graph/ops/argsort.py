@@ -23,7 +23,7 @@ def argsort(x: StrongTensorValueLike, ascending: bool = True) -> TensorValue:
     """Returns the indices that would sort a tensor.
 
     This function returns the indices that would sort the input tensor along
-    its first dimension. The returned indices are of type int64.
+    its first dimension. The returned indices are of type ``int64``.
 
     Args:
         x: Input tensor to be sorted.

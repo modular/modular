@@ -36,7 +36,11 @@ import tarfile
 import tempfile
 
 import boto3
-from botocore.exceptions import NoCredentialsError, UnauthorizedSSOTokenError
+from botocore.exceptions import (
+    NoCredentialsError,
+    SSOTokenLoadError,
+    UnauthorizedSSOTokenError,
+)
 from PIL import Image
 
 _DEFAULT_CACHE_DIR = "~/.cache/modular/testdata"
@@ -66,6 +70,19 @@ def load_from_s3(s3_path: str, cache_dir: str | None = None) -> str:
                 "AWS authentication failed. Please run 'aws sso login' to "
                 "refresh your credentials."
             ) from e
+        except SSOTokenLoadError:
+            print(
+                "Error loading SSO Token, attempting with anonymous credentials"
+            )
+            s3 = boto3.client(
+                "s3", aws_access_key_id="", aws_secret_access_key=""
+            )
+            s3._request_signer.sign = lambda *args, **kwargs: None
+            s3.download_file(
+                _S3_BUCKET,
+                s3_path,
+                local_path,
+            )
     return local_path
 
 
@@ -100,10 +117,13 @@ def _convert_image_mode(image: Image.Image, to_mode: str):  # noqa: ANN202
         return image.convert(to_mode)
 
 
-def load_from_tar(tar_s3_path: str) -> str:
-    """Loads and untars a file from S3."""
-    tar_path = load_from_s3(tar_s3_path)
+def load_from_tar(tar_path: str) -> str:
+    """Loads and untars a file from S3, or disk"""
+    if tar_path.startswith("s3://"):
+        on_disk_tar_path = load_from_s3(tar_path)
+    else:
+        on_disk_tar_path = tar_path
     temp_dir = tempfile.mkdtemp()
-    with tarfile.open(tar_path, "r:gz") as tar:
+    with tarfile.open(on_disk_tar_path, "r:gz") as tar:
         tar.extractall(path=temp_dir)
     return temp_dir

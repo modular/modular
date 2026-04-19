@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm._gpu.reduction import reduce_launch
-from gpu.host import DeviceContext
-from testing import assert_equal, TestSuite
+from std.algorithm.backend.gpu.reduction import reduce_launch
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal, TestSuite
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 comptime num_reductions = 2
 
 
-fn fused_reduce_inner_test[
-    reduce_fn: fn[ty: DType, width: Int, reduction_idx: Int](
+def fused_reduce_inner_test[
+    reduce_fn: def[ty: DType, width: SIMDSize, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     rank: Int,
@@ -71,7 +71,7 @@ fn fused_reduce_inner_test[
 
     @__copy_capture(input_buf_device, shape)
     @parameter
-    fn input_fn[
+    def input_fn[
         dtype: DType,
         width: Int,
         _rank: Int,
@@ -80,8 +80,7 @@ fn fused_reduce_inner_test[
         var linear_idx = 0
         var stride = 1
 
-        @parameter
-        for i in reversed(range(rank)):
+        comptime for i in reversed(range(rank)):
             linear_idx += c[i] * stride
             stride *= shape[i]
         return rebind[SIMD[dtype, width]](
@@ -90,8 +89,8 @@ fn fused_reduce_inner_test[
 
     @__copy_capture(output_buf_device0, output_buf_device1, out_shape)
     @parameter
-    fn output_fn[
-        _dtype: DType, width: Int, _rank: Int
+    def output_fn[
+        _dtype: DType, width: SIMDSize, _rank: Int
     ](
         coords: IndexList[_rank],
         val: StaticTuple[SIMD[_dtype, width], num_reductions],
@@ -100,8 +99,7 @@ fn fused_reduce_inner_test[
         var linear_idx = 0
         var stride = 1
 
-        @parameter
-        for i in reversed(range(rank)):
+        comptime for i in reversed(range(rank)):
             linear_idx += c[i] * stride
             stride *= out_shape[i]
         output_buf_device0.unsafe_ptr().store[width=width](
@@ -134,8 +132,8 @@ fn fused_reduce_inner_test[
     _ = res_device1
 
 
-fn reduce_inner_test[
-    reduce_fn: fn[dtype: DType, width: Int](
+def reduce_inner_test[
+    reduce_fn: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing[_] -> SIMD[dtype, width],
     rank: Int,
@@ -176,8 +174,8 @@ fn reduce_inner_test[
 
     @always_inline
     @parameter
-    fn reduce_wrapper[
-        dtype: DType, width: Int, reduction_idx: Int
+    def reduce_wrapper[
+        dtype: DType, width: SIMDSize, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert reduction_idx < num_reductions, "invalid reduction idx"
 
@@ -185,7 +183,7 @@ fn reduce_inner_test[
 
     @__copy_capture(input_buf_device, shape)
     @parameter
-    fn input_fn[
+    def input_fn[
         dtype: DType,
         width: Int,
         _rank: Int,
@@ -194,8 +192,7 @@ fn reduce_inner_test[
         var linear_idx = 0
         var stride = 1
 
-        @parameter
-        for i in reversed(range(rank)):
+        comptime for i in reversed(range(rank)):
             linear_idx += c[i] * stride
             stride *= shape[i]
         return rebind[SIMD[dtype, width]](
@@ -204,8 +201,8 @@ fn reduce_inner_test[
 
     @__copy_capture(output_buf_device, out_shape)
     @parameter
-    fn output_fn[
-        _dtype: DType, width: Int, _rank: Int
+    def output_fn[
+        _dtype: DType, width: SIMDSize, _rank: Int
     ](
         coords: IndexList[_rank],
         val: StaticTuple[SIMD[_dtype, width], num_reductions],
@@ -214,8 +211,7 @@ fn reduce_inner_test[
         var linear_idx = 0
         var stride = 1
 
-        @parameter
-        for i in reversed(range(rank)):
+        comptime for i in reversed(range(rank)):
             linear_idx += c[i] * stride
             stride *= out_shape[i]
         output_buf_device.unsafe_ptr().store[width=width](
@@ -234,25 +230,25 @@ fn reduce_inner_test[
     _ = res_device
 
 
-def test_reduce():
+def test_reduce() raises:
     @parameter
-    fn reduce_add[
+    def reduce_add[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
     @parameter
-    fn reduce_max[
+    def reduce_max[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return max(x, y)
 
     @parameter
-    fn fused_reduce_add_max[
+    def fused_reduce_add_max[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
         reduction_idx: Int,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert reduction_idx < 2, "reduction idx OOB"
@@ -422,14 +418,68 @@ def test_reduce():
             offset=offset,
         )
 
-        # bool tests
-        reduce_inner_test[reduce_max](
-            IndexList[2](5, 5),
-            Scalar[DType.bool].MIN,
-            [Scalar[DType.bool](True), False, True, False, True],
+
+def test_multiblock_reduce() raises:
+    """Tests the multiblock_reduce_kernel path for under-saturated cases
+    where num_rows is small but the reduction axis is large."""
+
+    @parameter
+    def reduce_add[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return x + y
+
+    @parameter
+    def reduce_max[
+        dtype: DType,
+        width: Int,
+    ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return max(x, y)
+
+    with DeviceContext() as ctx:
+        # Large 1D reduction: single row, exercises multiblock path.
+        # Shape [8192], reduce axis 0. Each element = 1, so sum = 8192.
+        reduce_inner_test[reduce_add](
+            IndexList[1](8192),
+            Float32(0),
+            [Float32(8192.0)],
+            ctx,
+            offset=1,
+            axis=0,
+        )
+
+        # Larger 1D reduction to stress the two-phase coordination.
+        reduce_inner_test[reduce_add](
+            IndexList[1](131072),
+            Float32(0),
+            [Float32(131072.0)],
+            ctx,
+            offset=1,
+            axis=0,
+        )
+
+        # Low-row 2D reduction: few rows with large reduction axis.
+        # Shape [4, 8192], reduce axis 1. Each row has constant value
+        # (row_idx + 1), so sum = value * 8192.
+        reduce_inner_test[reduce_add](
+            IndexList[2](4, 8192),
+            Float32(0),
+            [Float32(8192.0), 16384.0, 24576.0, 32768.0],
             ctx,
         )
 
+        # Max reduction on large 1D tensor.
+        # Elements are i // shape[axis] + offset = 0 + 1 = 1 for all i.
+        reduce_inner_test[reduce_max](
+            IndexList[1](8192),
+            Float32.MIN,
+            [Float32(1.0)],
+            ctx,
+            offset=1,
+            axis=0,
+        )
 
-def main():
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

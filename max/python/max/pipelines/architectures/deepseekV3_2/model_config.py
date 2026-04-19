@@ -16,9 +16,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.kv_cache.cache_params import (
+    KVCacheParamInterface,
+    KVCacheParams,
+    KVCacheQuantizationConfig,
+    MultiKVCacheParams,
+)
 from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from transformers import AutoConfig
 from typing_extensions import Self, override
 
 
@@ -31,14 +41,57 @@ class DeepseekV3_2Config(DeepseekV3Config):
     index_n_heads: int = 64
     index_topk: int = 2048
 
+    @staticmethod
+    def construct_kv_params(
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParamInterface:
+        mla_kv_params = DeepseekV3Config.construct_kv_params(
+            huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
+            devices=devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+        )
+
+        # Always store the indexer's K cache in float8_e4m3fn.
+        indexer_cache_dtype = DType.float8_e4m3fn
+        # TODO: Set valid scale_dtype when kv_scales are needed (SERVOPT-1094: [EPIC] SnapMLA Implementation).
+        indexer_kvcache_quant_config = KVCacheQuantizationConfig(
+            scale_dtype=DType.int8, quantization_granularity=32
+        )
+        assert isinstance(mla_kv_params, KVCacheParams)
+        indexer_kv_params = kv_cache_config.to_params(
+            dtype=indexer_cache_dtype,
+            # Similar to MLA, the indexer's k-cache uses a single KV head.
+            n_kv_heads=1,
+            head_dim=huggingface_config.index_head_dim,
+            num_layers=mla_kv_params.num_layers,
+            devices=devices,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            # Set to True because there is only a key-cache, and one KV head.
+            is_mla=True,
+            num_q_heads=huggingface_config.num_attention_heads,
+            kvcache_quant_config=indexer_kvcache_quant_config,
+        )
+        assert isinstance(indexer_kv_params, KVCacheParams)
+        return MultiKVCacheParams.from_params(mla_kv_params, indexer_kv_params)
+
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         """Initializes a DeepseekV3_2Config instance from pipeline configuration.
 
         This method creates a config instance with all fields that can be determined
         from the pipeline configuration, without needing the state_dict.
-        Fields that depend on the state_dict (like norm_dtype, float8_config, etc.)
+        Fields that depend on the state_dict (like norm_dtype, quant_config, etc.)
         should be set directly after calling this method.
 
         Args:
@@ -47,23 +100,24 @@ class DeepseekV3_2Config(DeepseekV3Config):
         Returns:
             An initialized DeepseekV3_2Config instance.
         """
-        config = pipeline_config.model.huggingface_config
+        model_config = model_config or pipeline_config.model
+        config = model_config.huggingface_config
         if config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
+        kv_cache_config = model_config.kv_cache
+        quantization_encoding = model_config.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        dtype = quantization_encoding.dtype
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        dtype = supported_encoding_dtype(quantization_encoding)
+        cache_dtype = model_config.kv_cache.cache_dtype
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model.device_specs
+            for spec in model_config.device_specs
         ]
 
         kv_params = cls.construct_kv_params(
@@ -78,7 +132,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
             dtype=dtype,
             kv_params=kv_params,
             devices=device_refs,
-            use_subgraphs=pipeline_config.model.use_subgraphs,
+            use_subgraphs=model_config.use_subgraphs,
             vocab_size=config.vocab_size,
             hidden_size=config.hidden_size,
             intermediate_size=config.intermediate_size,
@@ -105,7 +159,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
             max_position_embeddings=config.max_position_embeddings,
             rms_norm_eps=config.rms_norm_eps,
             tie_word_embeddings=config.tie_word_embeddings,
-            rope_theta=config.rope_theta,
+            rope_theta=get_rope_theta(config),
             rope_scaling=config.rope_scaling,
             rope_interleave=getattr(config, "rope_interleave", True),
             scoring_func=config.scoring_func,

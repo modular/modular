@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib._ahash import AHasher
+from std.hashlib._ahash import AHasher
 
-from memory import memset_zero
+from std.memory import memset_zero
 from test_utils import (
     assert_dif_hashes,
     assert_fill_factor,
@@ -27,51 +27,51 @@ from test_utils import (
     words_pl,
     words_ru,
 )
-from testing import assert_equal, assert_not_equal, assert_true, TestSuite
+from std.testing import assert_equal, assert_not_equal, assert_true, TestSuite
 
 comptime hasher0 = AHasher[SIMD[DType.uint64, 4](0, 0, 0, 0)]
 comptime hasher1 = AHasher[SIMD[DType.uint64, 4](1, 0, 0, 0)]
 
 
-def test_hash_byte_array():
+def test_hash_byte_array() raises:
     comptime a = StaticString("a")
     comptime b = StaticString("b")
     comptime c = StaticString("c")
     comptime d = StaticString("d")
 
-    assert_equal(hash[HasherType=hasher0](a), hash[HasherType=hasher0](a))
-    assert_equal(hash[HasherType=hasher1](a), hash[HasherType=hasher1](a))
-    assert_not_equal(hash[HasherType=hasher0](a), hash[HasherType=hasher1](a))
-    assert_equal(hash[HasherType=hasher0](b), hash[HasherType=hasher0](b))
-    assert_equal(hash[HasherType=hasher1](b), hash[HasherType=hasher1](b))
-    assert_not_equal(hash[HasherType=hasher0](b), hash[HasherType=hasher1](b))
-    assert_equal(hash[HasherType=hasher0](c), hash[HasherType=hasher0](c))
-    assert_equal(hash[HasherType=hasher1](c), hash[HasherType=hasher1](c))
-    assert_not_equal(hash[HasherType=hasher0](c), hash[HasherType=hasher1](c))
-    assert_equal(hash[HasherType=hasher0](d), hash[HasherType=hasher0](d))
-    assert_equal(hash[HasherType=hasher1](d), hash[HasherType=hasher1](d))
+    assert_equal(hash[hasher0](a), hash[hasher0](a))
+    assert_equal(hash[hasher1](a), hash[hasher1](a))
+    assert_not_equal(hash[hasher0](a), hash[hasher1](a))
+    assert_equal(hash[hasher0](b), hash[hasher0](b))
+    assert_equal(hash[hasher1](b), hash[hasher1](b))
+    assert_not_equal(hash[hasher0](b), hash[hasher1](b))
+    assert_equal(hash[hasher0](c), hash[hasher0](c))
+    assert_equal(hash[hasher1](c), hash[hasher1](c))
+    assert_not_equal(hash[hasher0](c), hash[hasher1](c))
+    assert_equal(hash[hasher0](d), hash[hasher0](d))
+    assert_equal(hash[hasher1](d), hash[hasher1](d))
     assert_not_equal(
-        hash[HasherType=hasher0](d),
-        hash[HasherType=hasher1](d),
+        hash[hasher0](d),
+        hash[hasher1](d),
     )
 
 
-def test_avalanche():
+def test_avalanche() raises:
     # test that values which differ just in one bit,
     # produce significatly different hash values
     var data = InlineArray[UInt8, 256](uninitialized=True)
     memset_zero(data.unsafe_ptr(), 256)
     var hashes0 = List[UInt64]()
     var hashes1 = List[UInt64]()
-    hashes0.append(hash[HasherType=hasher0](data.unsafe_ptr(), 256))
-    hashes1.append(hash[HasherType=hasher1](data.unsafe_ptr(), 256))
+    hashes0.append(hash[hasher0](data.unsafe_ptr(), 256))
+    hashes1.append(hash[hasher1](data.unsafe_ptr(), 256))
 
     for i in range(256):
         memset_zero(data.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
         data[i >> 3] = UInt8(v)
-        hashes0.append(hash[HasherType=hasher0](data.unsafe_ptr(), 256))
-        hashes1.append(hash[HasherType=hasher1](data.unsafe_ptr(), 256))
+        hashes0.append(hash[hasher0](data.unsafe_ptr(), 256))
+        hashes1.append(hash[hasher1](data.unsafe_ptr(), 256))
 
     for i in range(len(hashes0)):
         var diff = dif_bits(hashes0[i], hashes1[i])
@@ -86,7 +86,7 @@ def test_avalanche():
     assert_dif_hashes(hashes1, 12)
 
 
-def test_trailing_zeros():
+def test_trailing_zeros() raises:
     # checks that a value with different amount of trailing zeros,
     # results in significantly different hash values
     var data = InlineArray[UInt8, 8](uninitialized=True)
@@ -95,8 +95,8 @@ def test_trailing_zeros():
     var hashes0 = List[UInt64]()
     var hashes1 = List[UInt64]()
     for i in range(1, 9):
-        hashes0.append(hash[HasherType=hasher0](data.unsafe_ptr(), i))
-        hashes1.append(hash[HasherType=hasher1](data.unsafe_ptr(), i))
+        hashes0.append(hash[hasher0](data.unsafe_ptr(), i))
+        hashes1.append(hash[hasher1](data.unsafe_ptr(), i))
 
     for i in range(len(hashes0)):
         var diff = dif_bits(hashes0[i], hashes1[i])
@@ -111,7 +111,7 @@ def test_trailing_zeros():
     assert_dif_hashes(hashes1, 18)
 
 
-def test_fill_factor():
+def test_fill_factor() raises:
     var words: List[String] = gen_word_pairs[words_ar]()
     assert_fill_factor["AR", hasher0](words, len(words), 0.63)
     assert_fill_factor["AR", hasher0](words, len(words) // 2, 0.86)
@@ -155,8 +155,8 @@ def test_fill_factor():
     assert_fill_factor["RU", hasher0](words, len(words) // 13, 1.0)
 
 
-def test_hash_simd_values():
-    fn hash(value: SIMD) -> UInt64:
+def test_hash_simd_values() raises:
+    def hash(value: SIMD) -> UInt64:
         hasher = hasher0()
         hasher._update_with_simd(value)
         return hasher^.finish()
@@ -213,5 +213,5 @@ def test_hash_simd_values():
     assert_equal(hash(SIMD[DType.int32, 64](0)), 810077408472869726)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

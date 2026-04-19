@@ -21,6 +21,7 @@ from .context import (
     SamplingParamsGenerationConfigDefaults,
     SamplingParamsInput,
 )
+from .eos_tracking import EOSTracker
 from .generation import GenerationOutput
 from .log_probabilities import LogProbabilities
 from .logit_processors_type import (
@@ -51,10 +52,11 @@ from .pipeline_variants import (
     EmbeddingsGenerationOutput,
     ImageContentPart,
     ImageMetadata,
+    MessageContent,
     PixelGenerationContext,
     PixelGenerationContextType,
     PixelGenerationInputs,
-    PixelGenerationOutput,
+    SpecDecodingState,
     TextContentPart,
     TextGenerationContext,
     TextGenerationContextType,
@@ -65,9 +67,11 @@ from .pipeline_variants import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
+    VideoContentPart,
     VLMTextGenerationContext,
 )
 from .queue import MAXPullQueue, MAXPushQueue, drain_queue, get_blocking
+from .reasoning import ReasoningParser, ReasoningSpan
 from .request import (
     DUMMY_REQUEST_ID,
     OpenResponsesRequest,
@@ -77,9 +81,15 @@ from .request import (
 )
 from .scheduler import Scheduler, SchedulerResult
 from .status import GenerationStatus
-from .task import PipelineTask
+from .task import InputModality, PipelineTask
 from .tokenizer import PipelineTokenizer
 from .tokens import TokenBuffer, TokenSlice
+from .tool_parsing import (
+    ParsedToolCall,
+    ParsedToolCallDelta,
+    ParsedToolResponse,
+    ToolParser,
+)
 from .utils import (
     SharedMemoryArray,
     msgpack_numpy_decoder,
@@ -115,6 +125,7 @@ __all__ = [
     "BatchLogitsProcessor",
     "BatchProcessorInputs",
     "BatchType",
+    "EOSTracker",
     "EmbeddingsContext",
     "EmbeddingsGenerationContextType",
     "EmbeddingsGenerationInputs",
@@ -123,6 +134,7 @@ __all__ = [
     "GenerationStatus",
     "ImageContentPart",
     "ImageMetadata",
+    "InputModality",
     "LoRAOperation",
     "LoRARequest",
     "LoRAResponse",
@@ -132,7 +144,11 @@ __all__ = [
     "LogitsProcessor",
     "MAXPullQueue",
     "MAXPushQueue",
+    "MessageContent",
     "OpenResponsesRequest",
+    "ParsedToolCall",
+    "ParsedToolCallDelta",
+    "ParsedToolResponse",
     "Pipeline",
     "PipelineInputs",
     "PipelineInputsType",
@@ -145,8 +161,9 @@ __all__ = [
     "PixelGenerationContext",
     "PixelGenerationContextType",
     "PixelGenerationInputs",
-    "PixelGenerationOutput",
     "ProcessorInputs",
+    "ReasoningParser",
+    "ReasoningSpan",
     "Request",
     "RequestID",
     "RequestType",
@@ -156,11 +173,13 @@ __all__ = [
     "Scheduler",
     "SchedulerResult",
     "SharedMemoryArray",
+    "SpecDecodingState",
     "TextContentPart",
     "TextGenerationContext",
     "TextGenerationContextType",
     "TextGenerationInputs",
     "TextGenerationOutput",
+    "TextGenerationPipelineInterface",
     "TextGenerationRequest",
     "TextGenerationRequestFunction",
     "TextGenerationRequestMessage",
@@ -168,7 +187,9 @@ __all__ = [
     "TextGenerationResponseFormat",
     "TokenBuffer",
     "TokenSlice",
+    "ToolParser",
     "VLMTextGenerationContext",
+    "VideoContentPart",
     "drain_queue",
     "get_blocking",
     "msgpack_numpy_decoder",

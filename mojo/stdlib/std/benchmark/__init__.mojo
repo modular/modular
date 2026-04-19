@@ -20,18 +20,21 @@ and total time statistics across multiple runs.
 You can import these APIs from the `benchmark` package. For example:
 
 ```mojo
-import benchmark
-from time import sleep
+from std.benchmark import run, Unit
+from std.time import sleep
 ```
 
-You can pass any `fn` as a parameter into `benchmark.run[...]()`, it will return
+You can pass any `fn` as a parameter into `run[...]()`, it will return
 a `Report` where you can get the mean, duration, max, and more:
 
 ```mojo
-fn sleeper():
+from std.benchmark import run
+from std.time import sleep
+
+def sleeper():
     sleep(.01)
 
-var report = benchmark.run[sleeper]()
+var report = run[func2=sleeper]()
 print(report.mean())
 ```
 
@@ -42,6 +45,13 @@ print(report.mean())
 You can print a full report:
 
 ```mojo
+from std.benchmark import run
+from std.time import sleep
+
+def sleeper():
+    sleep(.01)
+
+var report = run[func2=sleeper]()
 report.print()
 ```
 
@@ -63,6 +73,13 @@ Slowest Mean: 0.012321428571428572
 Or all the batch runs:
 
 ```mojo
+from std.benchmark import run
+from std.time import sleep
+
+def sleeper():
+    sleep(.01)
+
+var report = run[func2=sleeper]()
 report.print_full()
 ```
 
@@ -99,8 +116,13 @@ If you want to use a different time unit you can bring in the Unit and pass
 it in as an argument:
 
 ```mojo
-from benchmark import Unit
+from std.benchmark import run, Unit
+from std.time import sleep
 
+def sleeper():
+    sleep(.01)
+
+var report = run[func2=sleeper]()
 report.print(Unit.ms)
 ```
 
@@ -121,6 +143,13 @@ Slowest Mean: 0.012421204081632654
 The unit's are just aliases for string constants, so you can for example:
 
 ```mojo
+from std.benchmark import run
+from std.time import sleep
+
+def sleeper():
+    sleep(.01)
+
+var report = run[func2=sleeper]()
 print(report.mean("ms"))
 ```
 
@@ -132,7 +161,13 @@ Benchmark.run takes four arguments to change the behaviour, to set warmup
 iterations to 5:
 
 ```mojo
-r = benchmark.run[sleeper](5)
+from std.benchmark import run
+from std.time import sleep
+
+def sleeper():
+    sleep(.01)
+
+var r = run[func2=sleeper](5)
 ```
 
 ```output
@@ -143,7 +178,13 @@ To set 1 warmup iteration, 2 max iterations, a min total time of 3 sec, and a
 max total time of 4 s:
 
 ```mojo
-r = benchmark.run[sleeper](1, 2, 3, 4)
+from std.benchmark import run
+from std.time import sleep
+
+def sleeper():
+    sleep(.01)
+
+var r = run[func2=sleeper](1, 2, 3, 4)
 ```
 
 Note that the min total time will take precedence over max iterations

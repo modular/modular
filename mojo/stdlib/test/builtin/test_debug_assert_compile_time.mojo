@@ -16,14 +16,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def main():
+def main() raises:
     comptime res = test_debug_assert_compile_time()
 
     # CHECK: 33
     print(res)
 
 
-fn test_debug_assert_compile_time() -> Int:
+def test_debug_assert_compile_time() -> Int:
     debug_assert(True, "ok")
     debug_assert[assert_mode="safe"](True, "ok")
     debug_assert[assert_mode="safe", cpu_only=True](True, "ok")

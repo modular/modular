@@ -18,6 +18,7 @@ import pytest
 from max.driver import CPU
 from max.interfaces import BatchType
 from max.kv_cache import InsufficientBlocksError
+from max.nn.kv_cache import KVConnectorType
 from max.support.math import ceildiv
 from tests.serve.scheduler.common import (
     CE,
@@ -813,27 +814,28 @@ def test_paged_scheduler_oom_tg() -> None:
 
 def test_paged_scheduler_max_batch_total_tokens_ce() -> None:
     max_batch_total_tokens = 1000
+    prompt_len = 60
+    page_size = 128
     scheduler, request_queue = create_paged_scheduler(
         max_seq_len=max_batch_total_tokens,
         max_batch_total_tokens=max_batch_total_tokens,
         target_tokens_per_batch_ce=max_batch_total_tokens,
         enable_chunked_prefill=True,
+        page_size=page_size,
     )
 
     for _ in range(20):
-        enqueue_request(request_queue, prompt_len=60, max_seq_len=67)
+        enqueue_request(request_queue, prompt_len=prompt_len, max_seq_len=67)
 
     actual = run_until_completion(scheduler)
     # fmt: off
     #
     #
     expected = [
-        # CE batch is limited to 17 requests as we can fit 16 * 60 = 960, and then chunk a 17th request
-        # to get to 1000.
-        BatchInfo(CE, batch_size=17, terminated=0, steps=1, preempted=0, input_toks=1000, cached_toks=0),
-        # As we can increase the TG batch size, by introducing new CE requests. We introduce the remaining
-        # CE requests.
-        BatchInfo(CE, batch_size=4, terminated=0, steps=1, preempted=0, input_toks=200, cached_toks=40),
+        # CE batch is limited by the page-aligned total-context budget.
+        BatchInfo(CE, batch_size=7, terminated=0, steps=1, preempted=0, input_toks=420, cached_toks=0),
+        BatchInfo(CE, batch_size=7, terminated=0, steps=1, preempted=0, input_toks=420, cached_toks=0),
+        BatchInfo(CE, batch_size=6, terminated=0, steps=1, preempted=0, input_toks=360, cached_toks=0),
         BatchInfo(TG, batch_size=20, terminated=20, steps=7, preempted=0, input_toks=20, cached_toks=1200),
         # The entire batch is completed, leading to a remaining empty batch.
         BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
@@ -841,29 +843,32 @@ def test_paged_scheduler_max_batch_total_tokens_ce() -> None:
     # fmt: on
     assert_batch_info_equal(actual, expected)
     for batch in actual:
-        cached_toks = batch.cached_toks
-        steps = batch.steps
-        batch_size = batch.batch_size
         if batch.batch_type == BatchType.CE:
-            assert cached_toks + batch_size * steps <= max_batch_total_tokens
+            aligned_len = ceildiv(prompt_len, page_size) * page_size
+            assert batch.batch_size * aligned_len <= max_batch_total_tokens
 
 
 def test_paged_scheduler_max_batch_total_tokens_tg() -> None:
     max_batch_total_tokens = 1000
+    prompt_len = 30
+    page_size = 128
     scheduler, request_queue = create_paged_scheduler(
         max_seq_len=max_batch_total_tokens,
         max_batch_total_tokens=max_batch_total_tokens,
         target_tokens_per_batch_ce=max_batch_total_tokens,
         enable_chunked_prefill=True,
+        page_size=page_size,
     )
 
     for _ in range(20):
-        enqueue_request(request_queue, prompt_len=30, max_seq_len=67)
+        enqueue_request(request_queue, prompt_len=prompt_len, max_seq_len=67)
 
     actual = run_until_completion(scheduler)
     # fmt: off
     expected = [
-        BatchInfo(CE, batch_size=20, terminated=0, steps=1, preempted=0, input_toks=600, cached_toks=0),
+        BatchInfo(CE, batch_size=7, terminated=0, steps=1, preempted=0, input_toks=210, cached_toks=0),
+        BatchInfo(CE, batch_size=7, terminated=0, steps=1, preempted=0, input_toks=210, cached_toks=0),
+        BatchInfo(CE, batch_size=6, terminated=0, steps=1, preempted=0, input_toks=180, cached_toks=0),
         BatchInfo(TG, batch_size=20, terminated=0, steps=10, preempted=0, input_toks=20, cached_toks=600),
         BatchInfo(TG, batch_size=20, terminated=0, steps=10, preempted=0, input_toks=20, cached_toks=800),
         BatchInfo(TG, batch_size=20, terminated=0, steps=10, preempted=0, input_toks=20, cached_toks=1000),
@@ -873,11 +878,11 @@ def test_paged_scheduler_max_batch_total_tokens_tg() -> None:
     # fmt: on
     assert_batch_info_equal(actual, expected)
     for batch in actual:
-        cached_toks = batch.cached_toks
         steps = batch.steps
         batch_size = batch.batch_size
+        per_req_aligned_len = ceildiv(prompt_len + steps, page_size) * page_size
         if batch.batch_type == BatchType.CE:
-            assert cached_toks + batch_size * steps <= max_batch_total_tokens
+            assert batch_size * per_req_aligned_len <= max_batch_total_tokens
 
 
 def test_paged_scheduler_dp8() -> None:
@@ -906,14 +911,61 @@ def test_paged_scheduler_dp8() -> None:
 def test_paged_scheduler_paging_to_host_on_cpu_raises() -> None:
     with pytest.raises(ValueError) as e:
         create_paged_scheduler(
-            enable_kvcache_swapping_to_host=True,
+            kv_connector=KVConnectorType.local,
             enable_prefix_caching=True,
             device=CPU(),
         )
     assert (
-        "Host device detected. Paging to host is not supported when executing on CPU."
+        "KVCacheBuffer is on the CPU. Unable to allocate host offload buffer for already-on-CPU buffers."
         in str(e.value)
     )
+
+
+def test_paged_scheduler_speculative_tokens_allocates_extra_pages() -> None:
+    """Verifies that num_speculative_tokens causes extra KV page allocation.
+
+    With num_speculative_tokens=7, each alloc reserves extra pages to
+    accommodate draft tokens. Under tight memory (6 pages of size 10 = 60
+    token capacity), this causes a preemption that would not happen without
+    speculative decoding.
+    """
+    prompt_len = 10
+    output_tokens = 10
+    page_size = 10
+    num_blocks = 6
+    num_speculative_tokens = 7
+    max_seq_len = prompt_len + output_tokens
+
+    scheduler, request_queue = create_paged_scheduler(
+        max_seq_len=max_seq_len,
+        num_blocks=num_blocks,
+        page_size=page_size,
+        num_speculative_tokens=num_speculative_tokens,
+    )
+
+    for _ in range(3):
+        enqueue_request(
+            request_queue,
+            prompt_len=prompt_len,
+            max_seq_len=max_seq_len,
+        )
+
+    # fmt: off
+    expected = [
+        # CE encodes all 3 requests (2 pages each due to speculative headroom).
+        BatchInfo(CE, batch_size=3, terminated=0, steps=1, preempted=0, input_toks=30, cached_toks=0),
+        # For TG each req needs 4 pages (seqlen = 11 + 2*7 + 10 - 1 = 34). Need to preempt 1 req to fit.
+        # The reason we have 2*7 is because we have 7 draft tokens to verify and will generate 7 more.
+        BatchInfo(TG, batch_size=1, terminated=1, steps=10, preempted=1, input_toks=1, cached_toks=10),
+        BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=11, cached_toks=0),
+        BatchInfo(TG, batch_size=1, terminated=1, steps=9, preempted=0, input_toks=1, cached_toks=10),
+        BatchInfo(TG, batch_size=1, terminated=1, steps=9, preempted=0, input_toks=1, cached_toks=11),
+        BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
+    ]
+    # fmt: on
+
+    actual = run_until_completion(scheduler)
+    assert_batch_info_equal(actual, expected)
 
 
 @pytest.mark.parametrize(

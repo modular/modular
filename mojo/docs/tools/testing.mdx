@@ -1,6 +1,6 @@
 ---
 title: Testing
-sidebar_position: 3
+sidebar_position: 4
 description: Testing Mojo programs.
 github_url: https://github.com/modular/modular/tree/main/mojo/examples/testing
 ---
@@ -37,20 +37,20 @@ For your first example of using the Mojo testing framework, create a file named
 
 ```mojo
 # Content of test_quickstart.mojo
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 
 def inc(n: Int) -> Int:
     return n + 1
 
-def test_inc_zero():
+def test_inc_zero() raises:
     # This test contains an intentional logical error to show an example of
     # what a test failure looks like at runtime.
     assert_equal(inc(0), 0)
 
-def test_inc_one():
+def test_inc_one() raises:
     assert_equal(inc(1), 2)
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 ```
 
@@ -133,7 +133,7 @@ assertion returns `None` if its condition is met or raises an error if it isn't.
 The boolean assertions report a basic error message when they fail.
 
 ```mojo
-from testing import *
+from std.testing import *
 assert_true(False)
 ```
 
@@ -176,7 +176,7 @@ manager](/mojo/manual/errors#use-a-context-manager),
 a given code block correctly raises an expected error.
 
 ```mojo
-def inc(n: Int) -> Int:
+def inc(n: Int) raises -> Int:
     if n == Int.MAX:
          raise Error("inc overflow")
     return n + 1
@@ -238,10 +238,6 @@ A Mojo unit test is simply a function that fulfills all of these requirements:
 - Raises an error to indicate test failure.
 - Is defined at the module scope, not as a Mojo struct method.
 
-You can use either `def` or `fn` to define a test function. Because a test
-function always raises an error to indicate failure, any test function defined
-using `fn` must include the `raises` declaration.
-
 Generally, you should use the assertion utilities from the Mojo standard library
 [`testing`](/mojo/std/testing/testing/) module to implement your tests.
 You can include multiple related assertions in the same test function. However,
@@ -264,21 +260,21 @@ in a source module named `my_target_module` (which is not shown here).
 # File: test_my_target_module.mojo
 
 from my_target_module import convert_input, validate_input
-from testing import assert_equal, assert_false, assert_raises, assert_true, TestSuite
+from std.testing import assert_equal, assert_false, assert_raises, assert_true, TestSuite
 
-def test_validate_input():
+def test_validate_input() raises:
     assert_true(validate_input("good"), msg="'good' should be valid input")
     assert_false(validate_input("bad"), msg="'bad' should be invalid input")
 
-def test_convert_input():
+def test_convert_input() raises:
     assert_equal(convert_input("input1"), "output1")
     assert_equal(convert_input("input2"), "output2")
 
-def test_convert_input_error():
+def test_convert_input_error() raises:
     with assert_raises():
         _ = convert_input("garbage")
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 ```
 

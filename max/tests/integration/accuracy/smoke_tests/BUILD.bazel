@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -6,6 +6,16 @@ package(default_visibility = [
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
+
+modular_py_library(
+    name = "inference_server_harness",
+    testonly = True,
+    srcs = ["inference_server_harness.py"],
+    imports = ["."],
+    deps = [
+        requirement("requests"),
+    ],
+)
 
 modular_py_binary(
     name = "smoke_test",
@@ -17,10 +27,12 @@ modular_py_binary(
     imports = [".."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
+        ":inference_server_harness",
         requirement("click"),
         requirement("requests"),
         requirement("lm-eval"),
         "//max/python/max/entrypoints:pipelines",
+        "//max/tests/integration:hf_repo_lock",
     ],
 )
 
@@ -41,6 +53,25 @@ modular_py_binary(
 )
 
 modular_py_test(
+    name = "test_smoke_test",
+    size = "small",
+    srcs = [
+        "conftest.py",
+        "test_smoke_test.py",
+    ],
+    imports = [".."],
+    tags = ["no-pydeps"],  # Depends on :smoke_test binary for imports
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":smoke_test",
+    ],
+)
+
+modular_py_test(
     name = "test_bisect_smoke_test",
     size = "small",
     srcs = [
@@ -48,6 +79,7 @@ modular_py_test(
         "test_bisect_smoke_test.py",
     ],
     imports = [".."],
+    tags = ["no-pydeps"],  # Depends on :smoke_test binary for imports
     # TODO(MODELS-994): Investigate and enable on macOS
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -67,7 +99,14 @@ modular_py_test(
         "test_smoke_test_github_matrix.py",
     ],
     imports = [".."],
+    tags = ["no-pydeps"],  # Depends on :smoke_test binary for imports
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
+        ":smoke_test",
         ":smoke_test_github_matrix",
         requirement("click"),
     ],

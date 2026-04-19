@@ -13,6 +13,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""Modular framework Python bindings."""
+
 import enum
 import inspect
 import os
@@ -22,7 +24,6 @@ from typing import Any, overload
 
 import max._core.driver
 import max._core.dtype
-from max import mlir
 from max._core.driver import Buffer
 from max._core_types.driver import DLPackArray
 
@@ -30,8 +31,7 @@ InputType = DLPackArray | Buffer | int | float | bool
 
 class TensorSpec:
     """
-    Defines the properties of a tensor, including its name, shape and
-    data type.
+    Defines the properties of a tensor, including its name, shape and data type.
 
     For usage examples, see :obj:`Model.input_metadata`.
     """
@@ -77,8 +77,7 @@ class Model:
     @property
     def input_metadata(self) -> list[TensorSpec]:
         """
-        Metadata about the model's input tensors, as a list of
-        :obj:`TensorSpec` objects.
+        Metadata about the model's input tensors, as a list of :obj:`TensorSpec` objects.
 
         For example, you can print the input tensor names, shapes, and dtypes:
 
@@ -97,8 +96,7 @@ class Model:
     @property
     def output_metadata(self) -> list[TensorSpec]:
         """
-        Metadata about the model's output tensors, as a list of
-        :obj:`TensorSpec` objects.
+        Metadata about the model's output tensors, as a list of :obj:`TensorSpec` objects.
 
         For example, you can print the output tensor names, shapes, and dtypes:
 
@@ -106,6 +104,16 @@ class Model:
 
             for tensor in model.output_metadata:
                 print(f'name: {tensor.name}, shape: {tensor.shape}, dtype: {tensor.dtype}')
+        """
+
+    @property
+    def kernel_summaries(self) -> list[str]:
+        """
+        Kernel fusion summaries from the compiled model.
+
+        Returns a list of strings, one per ``mgp.generic.execute`` kernel in
+        the compiled graph.  Each string describes the fused kernel composition,
+        e.g. ``"Epilogue(custom__kv_rope, custom__kv_cache_store)"``.
         """
 
     @property
@@ -212,9 +220,11 @@ class Model:
         """
 
     def __repr__(self) -> str: ...
-    def capture(self, *inputs: Buffer) -> list[Buffer]:
+    def capture(
+        self, graph_keys: int | Sequence[int], *inputs: Buffer
+    ) -> list[Buffer]:
         """
-        Capture execution into a device graph for the given inputs.
+        Capture execution into a device graph for caller-provided key.
 
         Capture is best-effort and model-dependent. It records the current execution
         path; models that perform unsupported operations during capture (for example,
@@ -222,19 +232,50 @@ class Model:
         phases are safe to capture (e.g. decode-only in serving).
         """
 
-    def replay(self, *inputs: Buffer) -> None:
-        """Replay the captured device graph for these inputs."""
+    def replay(self, graph_keys: int | Sequence[int], *inputs: Buffer) -> None:
+        """Replay the captured device graph for the provided key."""
+
+    def debug_verify_replay(
+        self, graph_keys: int | Sequence[int], *inputs: Buffer
+    ) -> None:
+        """
+        Execute eagerly and verify the launch trace matches the captured graph.
+
+        This method validates that graph capture correctly represents eager execution
+        by running the model and comparing kernel launch traces. Useful for debugging
+        graph capture issues.
+
+        Args:
+            graph_keys: One graph key per participating device stream.
+            inputs: Input buffers matching the captured input signature.
+
+        Raises:
+            RuntimeError: If no graph captured or trace verification fails.
+        """
 
     def _execute_device_tensors(
         self, tensors: Sequence[max._core.driver.Buffer]
     ) -> list[max._core.driver.Buffer]: ...
     def _capture(
-        self, inputs: Sequence[max._core.driver.Buffer]
+        self,
+        graph_keys: Sequence[int],
+        inputs: Sequence[max._core.driver.Buffer],
     ) -> list[max._core.driver.Buffer]:
         """Capture execution into a device graph."""
 
-    def _replay(self, inputs: Sequence[max._core.driver.Buffer]) -> None:
+    def _replay(
+        self,
+        graph_keys: Sequence[int],
+        inputs: Sequence[max._core.driver.Buffer],
+    ) -> None:
         """Replay the captured device graph."""
+
+    def _debug_verify_replay(
+        self,
+        graph_keys: Sequence[int],
+        inputs: Sequence[max._core.driver.Buffer],
+    ) -> None:
+        """Debug verify replay against captured graph."""
 
     def _export_mef(self, path: str) -> None:
         """
@@ -244,46 +285,144 @@ class Model:
           path: The filename where the mef is exported to.
         """
 
-    def _load(self, weights_registry: Mapping[str, Any]) -> None: ...
+    def reload(self, weights_registry: Mapping[str, Any]) -> None: ...
 
 class InferenceSession:
+    """
+    Manages compilation and execution of MAX models.
+
+    An inference session holds device configuration and compiles graphs
+    into executable :class:`Model` objects. It also manages custom
+    extensions and debug options.
+
+    .. code-block:: python
+
+        from max._core.engine import InferenceSession
+        from max import driver
+
+        devices = [driver.CPU()]
+        session = InferenceSession(devices, custom_extensions=[])
+        model = session.compile_from_path("model.mef", [])
+    """
+
     def __init__(
         self,
         devices: Sequence[max._core.driver.Device],
         custom_extensions: Sequence[str | os.PathLike],
         num_threads: int = 0,
-    ) -> None: ...
+    ) -> None:
+        """
+        Creates an inference session for model compilation and execution.
+
+        Args:
+            devices: List of devices used for compilation and execution.
+            custom_extensions: Paths to custom Mojo extension libraries.
+            num_threads (int): Number of execution threads. Defaults to 0,
+                which lets the runtime choose automatically.
+        """
+
+    def _load_all(
+        self, compiled: Model, weights_registry: Mapping[str, Any]
+    ) -> list[Model]: ...
     def compile_from_path(
         self,
         model_path: str | os.PathLike,
         custom_extension_paths: Sequence[str | os.PathLike],
-    ) -> Model: ...
+    ) -> Model:
+        """
+        Compiles a model from a file path.
+
+        Args:
+            model_path: Path to the compiled model file (for example, a ``.mef`` file).
+            custom_extension_paths: Paths to custom Mojo extension libraries.
+
+        Returns:
+            Model: The compiled model ready for execution.
+        """
+
     def compile_from_object(
         self,
         model: types.CapsuleType,
         custom_extensions: Sequence[str | os.PathLike],
         pipeline_name: str,
-    ) -> Model: ...
+    ) -> Model:
+        """
+        Compiles a model from an in-memory capsule object.
+
+        Args:
+            model: A capsule containing the compiled model object.
+            custom_extensions: Paths to custom Mojo extension libraries.
+            pipeline_name: Name identifier for the compiled pipeline.
+
+        Returns:
+            Model: The compiled model ready for execution.
+        """
+
     def set_debug_print_options(
         self, style: PrintStyle, precision: int, directory: str
-    ) -> None: ...
+    ) -> None:
+        """
+        Sets debug output options for tensor printing during execution.
+
+        Args:
+            style (PrintStyle): The output format style.
+            precision (int): Number of decimal places for floating-point values.
+            directory (str): Directory path for binary output files.
+        """
+
     @overload
-    def set_mojo_define(self, key: str, value: bool) -> None: ...
+    def set_mojo_define(self, key: str, value: bool) -> None:
+        """
+        Sets a compile-time Mojo define to a boolean value.
+
+        Args:
+            key (str): The define name.
+            value (bool): The boolean value to assign.
+        """
+
     @overload
-    def set_mojo_define(self, key: str, value: int) -> None: ...
+    def set_mojo_define(self, key: str, value: int) -> None:
+        """
+        Sets a compile-time Mojo define to an integer value.
+
+        Args:
+            key (str): The define name.
+            value (int): The integer value to assign.
+        """
+
     @overload
-    def set_mojo_define(self, key: str, value: str) -> None: ...
-    def register_runtime_context(self, ctx: mlir.Context) -> None: ...
+    def set_mojo_define(self, key: str, value: str) -> None:
+        """
+        Sets a compile-time Mojo define to a string value.
+
+        Args:
+            key (str): The define name.
+            value (str): The string value to assign.
+        """
+
     @property
-    def devices(self) -> list[max._core.driver.Device]: ...
+    def devices(self) -> list[max._core.driver.Device]:
+        """Returns the list of devices used by this session."""
 
 class PrintStyle(enum.Enum):
+    """
+    Controls the output format for debug tensor printing.
+
+    Pass one of these values to :meth:`InferenceSession.set_debug_print_options`
+    to configure how tensors are printed during execution.
+    """
+
     COMPACT = 0
+    """Compact human-readable format."""
 
     FULL = 1
+    """Full verbose format with all tensor details."""
 
     BINARY = 2
+    """Raw binary format."""
 
     BINARY_MAX_CHECKPOINT = 4
+    """Binary checkpoint format compatible with MAX."""
 
     NONE = 3
+    """Disables debug output."""

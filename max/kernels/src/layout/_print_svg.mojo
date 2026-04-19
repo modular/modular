@@ -10,14 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from pathlib import Path
-from sys import size_of
+from std.pathlib import Path
+from std.sys import size_of
 
 from layout import Layout, LayoutTensor
 from layout.swizzle import Swizzle
 
 
-fn print_svg[
+def print_svg[
     tensor_list_origin: ImmutOrigin,
     dtype: DType,
     layout: Layout,
@@ -41,7 +41,7 @@ fn print_svg[
             masked=masked,
         ]
     ],
-    color_map: Optional[fn(Int, Int) -> String] = None,
+    color_map: Optional[def(Int, Int) thin -> String] = None,
     file_path: Optional[Path] = None,
 ) raises:
     var s = String()
@@ -52,7 +52,7 @@ fn print_svg[
         print(s)
 
 
-fn _print_svg_impl[
+def _print_svg_impl[
     tensor_list_origin: ImmutOrigin,
     dtype: DType,
     layout: Layout,
@@ -78,7 +78,7 @@ fn _print_svg_impl[
         ]
     ],
     mut writer: W,
-    color_map: Optional[fn(Int, Int) -> String] = None,
+    color_map: Optional[def(Int, Int) thin -> String] = None,
 ) raises:
     # Given a base layout tensor and a sub tensor print the layouts
     # Verify rank constraint
@@ -153,8 +153,7 @@ fn _print_svg_impl[
             var idx = materialized_layout([i, j])
             var non_swizzled_idx = idx
 
-            @parameter
-            if swizzle:
+            comptime if swizzle:
                 idx = swizzle.value()(idx)
 
             map[idx] = IntTuple(i, j)
@@ -195,8 +194,7 @@ fn _print_svg_impl[
                 idx,
             )
 
-            @parameter
-            if memory_bank:
+            comptime if memory_bank:
                 writer.write(
                     " b=",
                     (
@@ -217,14 +215,14 @@ fn _print_svg_impl[
                     "</text>\n",
                 )
 
-    fn draw_element(
+    def draw_element(
         x: Int,
         y: Int,
         color: String,
         t: Int,
         element_idx: Int,
         mut writer: W,
-    ):
+    ) unified {mut cell_size}:
         writer.write(
             '<rect x="',
             x,

@@ -19,18 +19,19 @@ These tests verify:
 4. K-tile count is correct for each group
 """
 
-from gpu import barrier, block_idx, grid_dim, thread_idx
-from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor
+from std.gpu import block_idx, grid_dim, thread_idx
+from std.iter import zip
+from std.itertools import count
+from std.gpu.host import DeviceContext
+from layout import Layout, LayoutTensor, row_major as new_row_major
 from layout._utils import ManagedLayoutTensor
-from memory import stack_allocation
 
+from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul_kernel import (
+    _ProblemSizesTile,
+)
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_tile_scheduler import (
     GroupedTileScheduler,
-    GroupedWorkInfo,
-    GroupedWorkIterator,
 )
-from utils.index import Index
 
 
 # =============================================================================
@@ -38,7 +39,7 @@ from utils.index import Index
 # =============================================================================
 
 
-fn test_scheduler_kernel[
+def test_scheduler_kernel[
     tile_m: Int,
     tile_n: Int,
     tile_k: Int,
@@ -68,35 +69,41 @@ fn test_scheduler_kernel[
     tile_count: LayoutTensor[DType.int32, Layout.row_major(1, 1), MutAnyOrigin],
 ):
     """Kernel that iterates over all tiles and records their coordinates."""
+    # Convert LayoutTensor to TileTensor for the scheduler
+    from std.memory import UnsafePointer as NewPtr
+
+    var problem_sizes_tt = _ProblemSizesTile[max_groups](
+        ptr=NewPtr[Scalar[DType.int32], MutAnyOrigin](
+            unsafe_from_address=Int(problem_sizes.ptr)
+        ),
+        layout=new_row_major[max_groups, 4](),
+    )
     var scheduler = GroupedTileScheduler[tile_m, tile_n, tile_k, max_groups, 0](
-        problem_sizes, Int(num_groups)
+        problem_sizes_tt, Int(num_groups)
     )
 
     var work_iter = scheduler.work_iterator()
 
-    while work_iter.has_work():
-        var current = work_iter.current()
-
+    for linear_idx, current in zip(
+        count(Int(block_idx.x), Int(grid_dim.x)), work_iter
+    ):
         # Record visited tile (only thread 0 writes)
         if thread_idx.x == 0:
-            var idx = Int(work_iter.linear_tile_idx)
-            if idx < max_tiles:
-                visited_group[idx, 0] = Int32(current.group_idx)
-                visited_m[idx, 0] = Int32(current.m)
-                visited_n[idx, 0] = Int32(current.n)
-                visited_k_tiles[idx, 0] = Int32(current.k_tile_count)
-                visited_changed[idx, 0] = Int32(
+            if linear_idx < max_tiles:
+                visited_group[linear_idx, 0] = Int32(current.group_idx)
+                visited_m[linear_idx, 0] = Int32(current.m)
+                visited_n[linear_idx, 0] = Int32(current.n)
+                visited_k_tiles[linear_idx, 0] = Int32(current.k_tile_count)
+                visited_changed[linear_idx, 0] = Int32(
                     1 if current.group_changed else 0
                 )
-
-        work_iter.advance()
 
     # Record total tile count
     if thread_idx.x == 0 and block_idx.x == 0:
         tile_count[0, 0] = Int32(scheduler.total_tiles())
 
 
-def test_single_group(ctx: DeviceContext):
+def test_single_group(ctx: DeviceContext) raises:
     """Test scheduler with a single group."""
     print("  Test: Single group (64x64x128)")
 
@@ -200,7 +207,7 @@ def test_single_group(ctx: DeviceContext):
     _ = tile_count^
 
 
-def test_two_groups(ctx: DeviceContext):
+def test_two_groups(ctx: DeviceContext) raises:
     """Test scheduler with two groups of different sizes."""
     print("  Test: Two groups (32x32x64, 48x48x96)")
 
@@ -340,7 +347,7 @@ def test_two_groups(ctx: DeviceContext):
     _ = tile_count^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("=" * 60)
         print("Test: GroupedTileScheduler")

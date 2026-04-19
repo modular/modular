@@ -19,49 +19,28 @@ http://openshmem.org/site/sites/default/site_files/OpenSHMEM-1.6.pdf
 The headings below corrosspond to section 9: OpenSHMEM Library API.
 """
 
-from collections.optional import OptionalReg
-from os import getenv, setenv
-from sys import (
+from std.os import getenv
+from std.sys import (
     CompilationTarget,
-    argv,
     has_nvidia_gpu_accelerator,
     has_amd_gpu_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
     size_of,
 )
-from ffi import c_int, c_size_t, external_call
+from std.ffi import c_int, c_size_t
 
-from gpu.host import (
-    ConstantMemoryMapping,
-    DeviceAttribute,
+from std.gpu.host import (
     DeviceContext,
     DeviceFunction,
     DeviceStream,
-    Dim,
-    FuncAttribute,
-    LaunchAttribute,
 )
-from gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
-from gpu.host._amdgpu_hip import HIP, HIP_MODULE
-from gpu.host.device_context import (
-    _ConstCharPtr,
-    _checked,
-    _DeviceContextPtr,
-    _DumpPath,
-)
-from gpu.host.launch_attribute import LaunchAttributeID, LaunchAttributeValue
+from std.gpu.host._nvidia_cuda import CUDA, CUDA_MODULE
+from std.gpu.host._amdgpu_hip import HIP, HIP_MODULE
 
-from ._mpi import (
-    MPI_Comm_rank,
-    MPI_Comm_size,
-    MPI_Finalize,
-    MPI_Init,
-    get_mpi_comm_world,
-)
 from ._rocshmem import (
     rocshmem_my_pe,
-    rocshmem_init,
+    rocshmem_create_uniqueid,
     rocshmem_finalize,
     rocshmem_n_pes,
     rocshmem_malloc,
@@ -69,11 +48,19 @@ from ._rocshmem import (
     rocshmem_team_my_pe,
     rocshmem_free,
     rocshmem_barrier_all,
-    rocshmem_barrier_all_wave,
+    rocshmem_barrier_all_on_stream,
+    rocshmem_fence,
+    rocshmem_g,
+    rocshmem_get_nbi,
     rocshmem_p,
-    rocshmemx_hipmodule_init,
     rocshmem_put,
-    rocshmem_init_thread,
+    rocshmem_put_nbi,
+    rocshmem_put_signal_nbi,
+    rocshmem_signal_wait_until,
+    rocshmemx_hipmodule_init,
+    rocshmemx_signal_op,
+    rocshmem_init_thread_tcp,
+    rocshmem_create_uniqueid,
 )
 from ._nvshmem import (
     NVSHMEM_CMP_EQ,
@@ -88,9 +75,7 @@ from ._nvshmem import (
     NVSHMEM_TEAM_INVALID,
     NVSHMEM_TEAM_SHARED,
     NVSHMEM_TEAM_WORLD,
-    NVSHMEMX_INIT_WITH_MPI_COMM,
     NVSHMEMX_TEAM_NODE,
-    NVSHMEMXInitAttr,
     nvshmem_barrier_all,
     nvshmem_calloc,
     nvshmem_fence,
@@ -113,7 +98,6 @@ from ._nvshmem import (
     nvshmemx_hostlib_finalize,
     nvshmemx_init,
     nvshmemx_init_thread,
-    nvshmemx_init_status,
     nvshmemx_signal_op,
 )
 
@@ -138,10 +122,10 @@ struct SHMEMScope(Equatable, ImplicitlyCopyable):
     comptime warp = Self("_warp")
     """Execute RMA operation at warp scope (NVIDIA extension)."""
 
-    fn __init__(out self, value: StaticString):
+    def __init__(out self, value: StaticString):
         self.value = value
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self.value == other.value
 
 
@@ -165,12 +149,31 @@ comptime SHMEM_CMP_SENTINEL: c_int = NVSHMEM_CMP_SENTINEL
 comptime SHMEM_SIGNAL_SET: c_int = NVSHMEM_SIGNAL_SET
 comptime SHMEM_SIGNAL_ADD: c_int = NVSHMEM_SIGNAL_ADD
 
+
+# ===----------------------------------------------------------------------=== #
+# Shared Structs
+# ===----------------------------------------------------------------------=== #
+
+
+struct SHMEMUniqueID(ImplicitlyCopyable):
+    """Unique ID that must be identical across all threads and nodes to establish
+    communication."""
+
+    var data: InlineArray[Byte, 128]
+
+    def __init__(out self):
+        self.data = InlineArray[Byte, 128](fill=0)
+
+    def __init__(out self, *, copy: Self):
+        self.data = copy.data.copy()
+
+
 # ===----------------------------------------------------------------------=== #
 # 1: Library Setup, Exit, and Query Routines
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_init() raises:
+def shmem_init() raises:
     """A collective operation that allocates and initializes the resources used
     by the SHMEM library.
 
@@ -192,26 +195,21 @@ fn shmem_init() raises:
         If SHMEM initialization fails.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         nvshmemx_init()
-    elif has_amd_gpu_accelerator():
-        rocshmem_init()
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
-fn shmem_init_thread(
-    ctx: DeviceContext, number_of_devices_node: Int = -1
-) raises:
+def shmem_init_thread_mpi(ctx: DeviceContext, gpus_per_node: Int = -1) raises:
     """Modular-specific init that enables initializing SHMEM on one GPU per
     thread.
 
     Arguments:
         ctx: the `DeviceContext` to associate with this thread
-        number_of_devices_node: the number of devices participating on this node,
+        gpus_per_node: the number of devices participating on this node,
             by default this will use ctx.number_of_devices() to use all
             available GPUs.
 
@@ -219,18 +217,126 @@ fn shmem_init_thread(
         If SHMEM initialization fails.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
-        nvshmemx_init_thread(ctx, number_of_devices_node)
-    elif has_amd_gpu_accelerator():
-        rocshmem_init_thread(ctx, number_of_devices_node)
+    comptime if has_nvidia_gpu_accelerator():
+        nvshmemx_init_thread(ctx, gpus_per_node)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
-fn shmem_finalize():
+def shmem_create_uniqueid(
+    server_ip: String, server_port: c_int
+) raises -> SHMEMUniqueID:
+    """Create a unique ID for rocSHMEM TCP bootstrap.
+
+    Generates a `SHMEMUniqueID` that must be identical across all participating
+    PEs to establish communication. If using the same Server IP and Port, it will
+    be identical.
+
+    Arguments:
+        server_ip: the TCP bootstrap server that participating nodes connect to.
+        server_port: the TCP bootstrap server port that participating nodes communicate over.
+
+    Returns:
+        A `SHMEMUniqueID` to be passed to `shmem_init_thread_tcp`.
+    """
+
+    comptime if has_amd_gpu_accelerator():
+        return rocshmem_create_uniqueid(server_ip, server_port)
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
+        ]()
+
+
+def shmem_init_thread_tcp(
+    ctx: DeviceContext,
+    var node_id: Int = -1,
+    var total_nodes: Int = -1,
+    var gpus_per_node: Int = -1,
+    var server_ip: String = "-1",
+    var server_port: Int = -1,
+) raises:
+    """Modular-specific init that enables initializing SHMEM on one GPU per
+    thread using TCP bootstrapping, without mpirun or other launchers. The
+    bootstrap will wait until `total_nodes * gpus_per_node` have completed
+    the exchange of information before moving on from this function call.
+
+    By default it will run in single node mode with all attached GPUS,
+    which you can change with environment variables:
+
+        export SHMEM_NODE_ID=0              # 0-3 on 4 separate nodes
+        export SHMEM_TOTAL_NODES=4          # 4 nodes participating
+        export SHMEM_GPUS_PER_NODE=8        # 8 GPUs per node participating
+        export SHMEM_SERVER_IP=10.24.8.107  # IP of the network interface e.g. `ip addr show eno0`
+        export SHMEM_SERVER_PORT=44434      # Port for TCP bootstrapping
+
+    If using environment variables, simply pass the device context with the
+    given device id for the thread:
+
+    ```mojo
+    var ctx = DeviceContext(device_id=device_id)
+    shmem_init_thread_tcp(ctx)
+    ```
+
+    You can also explicitly pass arguments, for example if you have a CLI for your
+    shmem application:
+
+    ```mojo
+
+    var ctx = DeviceContext(device_id=device_id)
+    shmem_init_thread_tcp(
+        ctx,
+        node_id=0,
+        total_nodes=2,
+        server_ip="10.24.8.107",
+        server_port=44434
+    )
+    ```
+
+    Arguments:
+        ctx: the `DeviceContext` to associate with this thread.
+        node_id: a number from 0..N where N is the amount of `total_nodes - 1`.
+        gpus_per_node: the number of GPUs participating on this node.
+        total_nodes: the amount of nodes participating.
+        server_ip: the TCP bootstrap server that participating nodes connect to.
+        server_port: the TCP bootstrap server port that participating nodes communicate over.
+
+    Raises:
+        If SHMEM initialization fails on any thread.
+    """
+    # Check env vars if the defaults are not overridden
+    if node_id == -1:
+        node_id = atol(getenv("SHMEM_NODE_ID", "0"))
+    if total_nodes == -1:
+        total_nodes = atol(getenv("SHMEM_TOTAL_NODES", "1"))
+    if gpus_per_node == -1:
+        gpus_per_node = atol(getenv("SHMEM_GPUS_PER_NODE", "-1"))
+        # If not defined by argument or env var, use the number of attached GPUs
+        if gpus_per_node == -1:
+            gpus_per_node = DeviceContext.number_of_devices()
+    if server_ip == "-1":
+        server_ip = getenv("SHMEM_SERVER_IP", "0.0.0.0")
+    if server_port == -1:
+        server_port = atol(getenv("SHMEM_SERVER_PORT", "44434"))
+
+    comptime if has_amd_gpu_accelerator():
+        var uid = shmem_create_uniqueid(server_ip, c_int(server_port))
+        rocshmem_init_thread_tcp(
+            ctx,
+            UnsafePointer(to=uid),
+            node_id=node_id,
+            total_nodes=total_nodes,
+            gpus_per_node=gpus_per_node,
+        )
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
+        ]()
+
+
+def shmem_finalize():
     """A collective operation that releases all resources used by SHMEM.
 
     `shmem_finalize` ends the SHMEM portion of a program previously initialized
@@ -258,18 +364,17 @@ fn shmem_finalize():
     library resources that have been released.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         nvshmemx_hostlib_finalize()
     elif has_amd_gpu_accelerator():
         rocshmem_finalize()
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
-fn shmem_my_pe() -> c_int:
+def shmem_my_pe() -> c_int:
     """Returns the number of the calling PE.
 
     Returns:
@@ -278,32 +383,30 @@ fn shmem_my_pe() -> c_int:
         program.
     """
 
-    @parameter
-    if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
+    comptime if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
         return nvshmem_my_pe()
     elif is_amd_gpu() or has_amd_gpu_accelerator():
         return rocshmem_my_pe()
     else:
-        return CompilationTarget.unsupported_target_error[
-            c_int, operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
-fn shmem_n_pes() -> c_int:
+def shmem_n_pes() -> c_int:
     """Returns the number of PEs running in a program.
 
     Returns:
         Number of PEs running in the OpenSHMEM program.
     """
 
-    @parameter
-    if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
+    comptime if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
         return nvshmem_n_pes()
     elif is_amd_gpu() or has_amd_gpu_accelerator():
         return rocshmem_n_pes()
     else:
-        return CompilationTarget.unsupported_target_error[
-            c_int, operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
@@ -312,9 +415,9 @@ fn shmem_n_pes() -> c_int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_malloc[
+def shmem_malloc[
     dtype: DType
-](size: UInt) raises -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
+](size: Int) raises -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
     """Collectively allocate symmetric memory.
 
     Parameters:
@@ -344,21 +447,19 @@ fn shmem_malloc[
     symmetric heap allocation and won't error.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
-        return nvshmem_malloc[dtype](UInt(size_of[dtype]() * Int(size)))
+    comptime if has_nvidia_gpu_accelerator():
+        return nvshmem_malloc[dtype](c_size_t(size_of[dtype]() * size))
     elif has_amd_gpu_accelerator():
-        return rocshmem_malloc[dtype](UInt(size_of[dtype]() * Int(size)))
+        return rocshmem_malloc[dtype](c_size_t(size_of[dtype]() * size))
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
-        return {}
 
 
-fn shmem_calloc[
+def shmem_calloc[
     dtype: DType
-](count: UInt, size: UInt = UInt(size_of[dtype]())) raises -> UnsafePointer[
+](count: Int, size: Int = Int(size_of[dtype]())) raises -> UnsafePointer[
     Scalar[dtype], MutExternalOrigin
 ]:
     """Collectively allocate a zeroed block of symmetric memory.
@@ -392,19 +493,17 @@ fn shmem_calloc[
     symmetric heap allocation and won't error.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
-        return nvshmem_calloc[dtype](count, size)
+    comptime if has_nvidia_gpu_accelerator():
+        return nvshmem_calloc[dtype](c_size_t(count), c_size_t(size))
     elif has_amd_gpu_accelerator():
-        return rocshmem_calloc[dtype](count, size)
+        return rocshmem_calloc[dtype](c_size_t(count), c_size_t(size))
     else:
-        return CompilationTarget.unsupported_target_error[
-            UnsafePointer[Scalar[dtype], MutExternalOrigin],
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
         ]()
 
 
-fn shmem_free[
+def shmem_free[
     dtype: DType, //
 ](ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin]):
     """Collectively deallocate symmetric memory.
@@ -425,14 +524,13 @@ fn shmem_free[
     PEs; otherwise, the behavior is undefined.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         nvshmem_free(ptr)
     elif has_amd_gpu_accelerator():
         rocshmem_free(ptr)
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -441,7 +539,7 @@ fn shmem_free[
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_team_my_pe(team: shmem_team_t = SHMEM_TEAM_NODE) -> c_int:
+def shmem_team_my_pe(team: shmem_team_t = SHMEM_TEAM_NODE) -> c_int:
     """Returns the number of the calling PE within a specified team.
 
     When team specifies a valid team, the shmem_team_my_pe routine returns the
@@ -461,14 +559,13 @@ fn shmem_team_my_pe(team: shmem_team_t = SHMEM_TEAM_NODE) -> c_int:
         if the team handle compares equal to SHMEM_TEAM_INVALID.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         return c_int(Int(nvshmem_team_my_pe(c_int(team))))
     elif has_amd_gpu_accelerator():
         return c_int(Int(rocshmem_team_my_pe(c_int(team))))
     else:
-        return CompilationTarget.unsupported_target_error[
-            c_int, operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
@@ -477,12 +574,12 @@ fn shmem_team_my_pe(team: shmem_team_t = SHMEM_TEAM_NODE) -> c_int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_get[
+def shmem_get[
     dtype: DType,
     scope: SHMEMScope = SHMEMScope.default,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -501,21 +598,20 @@ fn shmem_get[
     local PE.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmem_get[scope](dest, source, nelems, pe)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
-fn shmem_get_nbi[
+def shmem_get_nbi[
     dtype: DType,
     scope: SHMEMScope = SHMEMScope.default,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -535,18 +631,19 @@ fn shmem_get_nbi[
     shmem_quiet, the data has been delivered to the dest array on the local PE.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmem_get_nbi[scope](dest, source, nelems, pe)
+    elif is_amd_gpu():
+        rocshmem_get_nbi(dest, source, nelems, pe)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
-fn shmem_g[
+def shmem_g[
     dtype: DType
-](source: UnsafePointer[Scalar[dtype]], pe: c_int) -> Scalar[dtype]:
+](source: UnsafePointer[Scalar[dtype], _], pe: c_int) -> Scalar[dtype]:
     """Copies one data item from a remote PE.
 
     Very low latency get capability for single elements.
@@ -560,22 +657,23 @@ fn shmem_g[
         A single element of dtype.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return nvshmem_g(source, pe)
+    elif is_amd_gpu():
+        return rocshmem_g(source, pe)
     else:
-        return CompilationTarget.unsupported_target_error[
-            Scalar[dtype], operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
-fn shmem_put[
+def shmem_put[
     dtype: DType,
     //,
     kind: SHMEMScope = SHMEMScope.default,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -596,22 +694,23 @@ fn shmem_put[
     introduced between the two calls.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmem_put[kind](dest, source, nelems, pe)
+    elif is_amd_gpu():
+        rocshmem_put(dest, source, nelems, pe)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
-fn shmem_put_nbi[
+def shmem_put_nbi[
     dtype: DType,
     //,
     kind: SHMEMScope = SHMEMScope.default,
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: c_size_t,
     pe: c_int,
 ):
@@ -634,16 +733,17 @@ fn shmem_put_nbi[
     introduced between the two calls.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmem_put_nbi[kind](dest, source, nelems, pe)
+    elif is_amd_gpu():
+        rocshmem_put_nbi(dest, source, nelems, pe)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
-fn shmem_p[
+def shmem_p[
     dtype: DType
 ](
     dest: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -664,14 +764,13 @@ fn shmem_p[
             the device.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmem_p(dest, value, pe)
     elif is_amd_gpu() or has_amd_gpu_accelerator():
         rocshmem_p(dest, value, pe)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -680,13 +779,13 @@ fn shmem_p[
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_put_signal_nbi[
+def shmem_put_signal_nbi[
     dtype: DType
 ](
-    dest: UnsafePointer[Scalar[dtype]],
-    source: UnsafePointer[Scalar[dtype]],
+    dest: UnsafePointer[Scalar[dtype], _],
+    source: UnsafePointer[Scalar[dtype], _],
     nelems: Int,
-    sig_addr: UnsafePointer[UInt64],
+    sig_addr: UnsafePointer[UInt64, _],
     signal: UInt64,
     sig_op: c_int,
     pe: c_int,
@@ -741,14 +840,17 @@ fn shmem_put_signal_nbi[
     heap.  sig_addr and dest may not be overlapping in memory
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmem_put_signal_nbi(
+            dest, source, nelems, sig_addr, signal, sig_op, pe
+        )
+    elif is_amd_gpu():
+        rocshmem_put_signal_nbi(
             dest, source, nelems, sig_addr, signal, sig_op, pe
         )
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -757,7 +859,7 @@ fn shmem_put_signal_nbi[
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_barrier_all():
+def shmem_barrier_all():
     """Registers the arrival of a PE at a barrier and blocks the PE until all
     other PEs arrive at the barrier and all local updates and remote memory
     updates on the default context are completed.
@@ -773,14 +875,13 @@ fn shmem_barrier_all():
     shmem_get_nbi.
     """
 
-    @parameter
-    if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
+    comptime if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
         nvshmem_barrier_all()
     elif is_amd_gpu() or has_amd_gpu_accelerator():
         rocshmem_barrier_all()
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -789,8 +890,8 @@ fn shmem_barrier_all():
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_signal_wait_until(
-    sig_addr: UnsafePointer[mut=True, UInt64], cmp: c_int, cmp_value: UInt64
+def shmem_signal_wait_until(
+    sig_addr: UnsafePointer[mut=True, UInt64, _], cmp: c_int, cmp_value: UInt64
 ):
     """Wait for a variable on the local PE to change from a signaling operation.
 
@@ -813,12 +914,13 @@ fn shmem_signal_wait_until(
     complete.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmem_signal_wait_until(sig_addr, cmp, cmp_value)
+    elif is_amd_gpu():
+        rocshmem_signal_wait_until(sig_addr, cmp, cmp_value)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -827,7 +929,7 @@ fn shmem_signal_wait_until(
 # ===----------------------------------------------------------------------=== #
 
 
-fn shmem_fence():
+def shmem_fence():
     """Ensures ordering of delivery of operations on symmetric data objects.
 
     All operations on symmetric data objects issued to a particular PE on the
@@ -838,12 +940,13 @@ fn shmem_fence():
     values fetched by nonblocking AMO routines.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmem_fence()
+    elif is_amd_gpu():
+        rocshmem_fence()
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
@@ -857,8 +960,8 @@ fn shmem_fence():
 # be generalized to support both NVSHMEM and ROCSHMEM where possible.
 
 
-fn shmem_signal_op(
-    sig_addr: UnsafePointer[mut=True, UInt64],
+def shmem_signal_op(
+    sig_addr: UnsafePointer[mut=True, UInt64, _],
     signal: UInt64,
     sig_op: c_int,
     pe: c_int,
@@ -875,16 +978,17 @@ fn shmem_signal_op(
         pe: PE number of the remote PE.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         nvshmemx_signal_op(sig_addr, signal, sig_op, pe)
+    elif is_amd_gpu():
+        rocshmemx_signal_op(sig_addr, signal, sig_op, pe)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+            operation=__get_current_function_name()
         ]()
 
 
-fn shmem_barrier_all_on_stream(stream: DeviceStream) raises:
+def shmem_barrier_all_on_stream(stream: DeviceStream) raises:
     """
     Mechanism for synchronizing all PEs at once. This routine blocks the calling
     PE until all PEs have called nvshmem_barrier_all. In a multithreaded NVSHMEM
@@ -902,18 +1006,17 @@ fn shmem_barrier_all_on_stream(stream: DeviceStream) raises:
         If the barrier operation fails.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         nvshmemx_barrier_all_on_stream(CUDA(stream))
     elif has_amd_gpu_accelerator():
-        rocshmem_barrier_all_wave(HIP(stream))
+        rocshmem_barrier_all_on_stream(HIP(stream))
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
         ]()
 
 
-fn shmem_module_init(device_function: DeviceFunction) raises:
+def shmem_module_init(device_function: DeviceFunction) raises:
     """
     Initializes the device state in the compiled function module so that it's
     able to perform SHMEM operations. Must have completed device
@@ -929,24 +1032,21 @@ fn shmem_module_init(device_function: DeviceFunction) raises:
         String: If module initialization fails.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         var func = CUDA_MODULE(device_function)
         var status = nvshmemx_cumodule_init(func)
         if status != 0:
-            raise Error("nvshmemx_hipmodule_init failed with status:", status)
+            raise Error("nvshmemx_cumodule_init failed with status:", status)
     elif has_amd_gpu_accelerator():
         var hip_module = HIP_MODULE(device_function)
-        var status = rocshmemx_hipmodule_init(hip_module)
-        if status != 0:
-            raise Error("rocshmemx_hipmodule_init failed with status:", status)
+        rocshmemx_hipmodule_init(hip_module)
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()
 
 
-fn shmem_module_finalize(device_function: DeviceFunction) raises:
+def shmem_module_finalize(device_function: DeviceFunction) raises:
     """
     Finalizes the device state in the compiled function module and cleans up
     NVSHMEM operations. This should be called when NVSHMEM operations are no
@@ -960,8 +1060,7 @@ fn shmem_module_finalize(device_function: DeviceFunction) raises:
         String: If module finalization fails.
     """
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         var func = CUDA_MODULE(device_function)
         _ = nvshmemx_cumodule_finalize(func)
     elif has_amd_gpu_accelerator():
@@ -969,5 +1068,5 @@ fn shmem_module_finalize(device_function: DeviceFunction) raises:
         pass
     else:
         CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+            operation=__get_current_function_name(),
         ]()

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# """This module includes traits abstracting WGMMA operand descriptors."""
+"""Implements traits for abstracting MMA operand descriptors in GPU matrix operations."""
 
 
 trait MMAOperandDescriptor(TrivialRegisterPassable):
@@ -20,7 +20,7 @@ trait MMAOperandDescriptor(TrivialRegisterPassable):
     """
 
     @always_inline
-    fn __add__(self, offset: Int) -> Self:
+    def __add__(self, offset: Int) -> Self:
         """Adds an offset to the operand descriptor.
 
         Args:

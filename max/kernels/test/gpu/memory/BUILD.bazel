@@ -13,6 +13,7 @@ _OTHER_TESTS = [
     "test_async_cpy_wait_group.mojo",
     "test_buffer_io.mojo",
     "test_copy_async.mojo",
+    "test_cp_async_bulk.mojo",
     "test_ldg_intrinsics.mojo",
     "test_ldmatrix_fp8.mojo",
     "test_load_cache.mojo",
@@ -20,13 +21,10 @@ _OTHER_TESTS = [
     "test_tma.mojo",
     "test_tcgen05.mojo",
     "test_tma_block_reduce.mojo",
+    "test_tma_gather4.mojo",
 ]
 
 _EXTRA_CONSTRAINTS = {
-    "test_external_and_static_shared_mem.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2397
 }
 
 mojo_filecheck_test(
@@ -120,14 +118,34 @@ mojo_test(
     ],
 )
 
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        tags = ["gpu"],
+        target_compatible_with = ["//:b200_gpu"],
+        deps = [
+            "//max:layout",
+            "//max:linalg",
+            "@mojo//:std",
+        ],
+    )
+    for src in [
+        "test_cp_async_bulk.mojo",
+        "test_tcgen05.mojo",
+    ]
+]
+
 mojo_test(
-    name = "test_tcgen05.test",
-    srcs = ["test_tcgen05.mojo"],
+    name = "test_tma_gather4.mojo.test",
+    srcs = ["test_tma_gather4.mojo"],
     tags = ["gpu"],
     target_compatible_with = ["//:b200_gpu"],
     deps = [
+        "//max:kv_cache",
         "//max:layout",
         "//max:linalg",
+        "//max:nn",
         "@mojo//:std",
     ],
 )

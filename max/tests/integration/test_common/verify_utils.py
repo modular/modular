@@ -19,11 +19,64 @@ from typing import Any
 
 import numpy as np
 import numpy.typing
+import torch
 from scipy.spatial import distance
 from scipy.special import rel_entr, softmax
-
 from test_common.custom_args import CommaSeparatedList
 from test_common.table import CONSOLE, PrettyTable
+from torchmetrics.image import StructuralSimilarityIndexMeasure
+from torchmetrics.image.lpip import (
+    LearnedPerceptualImagePatchSimilarity,
+)
+
+# --- Shared image metric computation (single source of truth for report + validators) ---
+
+
+def _prepare_images_for_torchmetrics(img: np.ndarray) -> torch.Tensor:
+    """Convert numpy image(s) to tensor (B, C, H, W) in [0, 1] for TorchMetrics."""
+    if img.ndim == 3:
+        img = img[None, ...]
+    img = np.transpose(img, (0, 3, 1, 2))
+    if img.max() > 1.0:
+        img = img.astype(np.float32) / 255.0
+    return torch.from_numpy(img.astype(np.float32))
+
+
+def compute_ssim(img1: np.ndarray, img2: np.ndarray) -> float:
+    """Compute SSIM between two images (single source of truth for report and SSIMValidator).
+
+    Args:
+        img1, img2: (H, W, C) or (B, H, W, C) in [0, 1] or [0, 255].
+    Returns:
+        SSIM score in [0, 1] (1 = identical). For batch, returns mean.
+    """
+    t1 = _prepare_images_for_torchmetrics(img1)
+    t2 = _prepare_images_for_torchmetrics(img2)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    metric = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
+    with torch.no_grad():
+        val = metric(t1.to(device), t2.to(device))
+    out = val.cpu().numpy()
+    return float(np.mean(out))
+
+
+def compute_lpips(img1: np.ndarray, img2: np.ndarray) -> np.ndarray:
+    """Compute LPIPS distance between images (single source of truth for report and LPIPSValidator).
+
+    Args:
+        img1, img2: (H, W, C) or (B, H, W, C) in [0, 1] or [0, 255].
+    Returns:
+        Array of LPIPS distances, shape (B,) or (1,) for single image. Lower = more similar.
+    """
+    t1 = _prepare_images_for_torchmetrics(img1)
+    t2 = _prepare_images_for_torchmetrics(img2)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    metric = LearnedPerceptualImagePatchSimilarity(
+        net_type="squeeze", normalize=True
+    ).to(device)
+    with torch.no_grad():
+        val = metric(t1.to(device), t2.to(device))
+    return val.cpu().numpy().flatten()
 
 
 @dataclass
@@ -36,13 +89,13 @@ class ValidationResult:
     """The message to print on failure. Not set if success == True"""
     message: str | None = None
     """The np.array of target values. Not set if success == True"""
-    target: numpy.typing.NDArray | None = None
+    target: numpy.typing.NDArray | None = None  # type: ignore[type-arg]
     """The np.array of reference values. Not set if success == True"""
-    reference: numpy.typing.NDArray | None = None
+    reference: numpy.typing.NDArray | None = None  # type: ignore[type-arg]
     """The indices of the failing tolerances. Not set if success == True"""
-    element_indices: numpy.typing.NDArray | None = None
+    element_indices: numpy.typing.NDArray | None = None  # type: ignore[type-arg]
     """The metrics to display on failure. Not set if success == True"""
-    data: list[numpy.typing.NDArray] = field(default_factory=list)
+    data: list[numpy.typing.NDArray] = field(default_factory=list)  # type: ignore[type-arg]
 
 
 class ValidationResultCollection:
@@ -158,8 +211,8 @@ class ValidatorBase(ABC):
     @abstractmethod
     def validate(
         self,
-        target: numpy.typing.NDArray,
-        reference: numpy.typing.NDArray,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
         **kwargs,
     ) -> ValidationResultCollection:
         """Performs the validation with the given metric.
@@ -171,9 +224,9 @@ class ValidatorBase(ABC):
     @abstractmethod
     def _print_suggested_tolerances(
         self,
-        targets: list[numpy.typing.NDArray],
-        references: list[numpy.typing.NDArray],
-        metrics: list[list[numpy.typing.NDArray]],
+        targets: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        references: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        metrics: list[list[numpy.typing.NDArray]],  # type: ignore[type-arg]
     ) -> None:
         raise NotImplementedError()
 
@@ -195,7 +248,7 @@ class ValidatorBase(ABC):
         references = []
         tensor_indices = []
         element_indices = []
-        data: list[list[numpy.typing.NDArray]] = []
+        data: list[list[numpy.typing.NDArray]] = []  # type: ignore[type-arg]
         metric_names = self._column_names()
         for tensor_idx, result_collection in enumerate(results):
             result = result_collection.get_result(self.short_name())
@@ -309,9 +362,9 @@ class MultiValidator(ValidatorBase):
 
     def _print_suggested_tolerances(
         self,
-        targets: list[numpy.typing.NDArray],
-        references: list[numpy.typing.NDArray],
-        metrics: list[list[numpy.typing.NDArray]],
+        targets: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        references: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        metrics: list[list[numpy.typing.NDArray]],  # type: ignore[type-arg]
     ) -> None:
         raise NotImplementedError(
             "_print_suggested_tolerances should not be called in MultiValidator"
@@ -322,8 +375,8 @@ class MultiValidator(ValidatorBase):
 
     def validate(
         self,
-        target: numpy.typing.NDArray,
-        reference: numpy.typing.NDArray,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
         **kwargs,
     ) -> ValidationResultCollection:
         overall_result = ValidationResultCollection()
@@ -386,9 +439,9 @@ class ToleranceValidator(ValidatorBase):
 
     def _print_suggested_tolerances(
         self,
-        targets: list[numpy.typing.NDArray],
-        references: list[numpy.typing.NDArray],
-        metrics: list[list[numpy.typing.NDArray]],
+        targets: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        references: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        metrics: list[list[numpy.typing.NDArray]],  # type: ignore[type-arg]
     ) -> None:
         target = np.concatenate([t.flatten() for t in targets])
         reference = np.concatenate([r.flatten() for r in references])
@@ -416,8 +469,8 @@ class ToleranceValidator(ValidatorBase):
 
     def validate(
         self,
-        target: numpy.typing.NDArray,
-        reference: numpy.typing.NDArray,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
         **kwargs,
     ) -> ValidationResultCollection:
         isoff = np.logical_not(
@@ -480,9 +533,9 @@ class DistanceValidatorBase(ValidatorBase, ABC):
 
     def _print_suggested_tolerances(
         self,
-        targets: list[numpy.typing.NDArray],
-        references: list[numpy.typing.NDArray],
-        metrics: list[list[numpy.typing.NDArray]],
+        targets: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        references: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        metrics: list[list[numpy.typing.NDArray]],  # type: ignore[type-arg]
     ) -> None:
         assert len(metrics) == 1
         max_dist = np.array(metrics[0]).max()
@@ -496,8 +549,10 @@ class DistanceValidatorBase(ValidatorBase, ABC):
 
     @abstractmethod
     def _compute_distance(
-        self, target: numpy.typing.NDArray, reference: numpy.typing.NDArray
-    ) -> numpy.typing.NDArray:
+        self,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
+    ) -> numpy.typing.NDArray:  # type: ignore[type-arg]
         raise NotImplementedError()
 
     @staticmethod
@@ -511,8 +566,8 @@ class DistanceValidatorBase(ValidatorBase, ABC):
 
     def validate(
         self,
-        target: numpy.typing.NDArray,
-        reference: numpy.typing.NDArray,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
         **kwargs,
     ) -> ValidationResultCollection:
         distance = self._compute_distance(target, reference)
@@ -578,8 +633,10 @@ class CosineSimilarityValidator(DistanceValidatorBase):
         return f"cos_similarity={self._threshold}"
 
     def _compute_distance(
-        self, target: numpy.typing.NDArray, reference: numpy.typing.NDArray
-    ) -> numpy.typing.NDArray:
+        self,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
+    ) -> numpy.typing.NDArray:  # type: ignore[type-arg]
         flat_target = target.reshape((-1, target.shape[-1]))
         flat_ref = reference.reshape((-1, reference.shape[-1]))
         flat_distance = np.zeros(flat_ref.shape[:-1], dtype=reference.dtype)
@@ -608,15 +665,191 @@ class KLDivergenceValidator(DistanceValidatorBase):
     def threshold_str(self) -> str:
         return f"kl_div={self._threshold}"
 
+    @staticmethod
+    def _smooth_probs(
+        probs: numpy.typing.NDArray[np.floating],
+        eps: float = 1e-10,
+    ) -> numpy.typing.NDArray[np.floating]:
+        """Smooths probabilities so no entry is below eps.
+
+        Applies (1 - N*eps) * probs + eps, which preserves the simplex
+        (probabilities still sum to 1) and guarantees a minimum value of eps.
+
+        The choice of eps is a tradeoff between numerical stability and
+        vocabulary size N. The (1 - N*eps) factor redistributes probability
+        away from softmax values to fund the eps floor. For typical vocab
+        sizes (~2e5), N*eps is ~2e-5, which is negligible for any
+        significant probability.
+        """
+        n = probs.shape[-1]
+        return (1 - n * eps) * probs + eps
+
     def _compute_distance(
-        self, target: numpy.typing.NDArray, reference: numpy.typing.NDArray
-    ) -> numpy.typing.NDArray:
-        eps = 1e-9
-        result = rel_entr(
-            softmax(reference, -1), softmax(target, -1) + eps
+        self,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
+    ) -> numpy.typing.NDArray:  # type: ignore[type-arg]
+        return rel_entr(
+            self._smooth_probs(softmax(reference, -1)),
+            self._smooth_probs(softmax(target, -1)),
         ).sum(-1)
 
-        return result
+
+class LPIPSValidator(ValidatorBase):
+    """Validator to check Learned Perceptual Image Patch Similarity (LPIPS).
+
+    LPIPS uses deep features from pre-trained networks to measure perceptual similarity.
+    Lower LPIPS = more similar images (range: [0, ∞), typically 0-1). Pass when lpips <= threshold.
+    """
+
+    def __init__(self, lpips_threshold: float, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._lpips_threshold = lpips_threshold
+
+    @staticmethod
+    def short_name() -> str:
+        return "lpips"
+
+    @staticmethod
+    def _column_names() -> list[str]:
+        return ["lpips"]
+
+    @staticmethod
+    def _indices_to_sort_by() -> list[int]:
+        return [0]
+
+    @staticmethod
+    def _pretty_names() -> list[str]:
+        return ["LPIPS"]
+
+    def threshold_str(self) -> str:
+        return f"lpips<={self._lpips_threshold}"
+
+    def _print_suggested_tolerances(
+        self,
+        targets: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        references: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        metrics: list[list[numpy.typing.NDArray]],  # type: ignore[type-arg]
+    ) -> None:
+        assert len(metrics) == 1
+        max_lpips = np.array(metrics[0]).max()
+        if math.isfinite(max_lpips):
+            base = math.pow(10, math.floor(math.log10(max_lpips)) - 1)
+            max_lpips = math.ceil(max_lpips / base) * base
+        CONSOLE.print(
+            f"Suggested {self._pretty_names()[0]} threshold: {max_lpips:.1e}\n"
+        )
+
+    def validate(
+        self,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
+        **kwargs,
+    ) -> ValidationResultCollection:
+        """Validate LPIPS: lower is better, pass when max(lpips) <= threshold."""
+        if target.ndim < 3 or reference.ndim < 3:
+            raise ValueError(
+                f"LPIPS requires 3D (H, W, C) or 4D (B, H, W, C) images, "
+                f"got shapes: target={target.shape}, reference={reference.shape}"
+            )
+        lpips_values = compute_lpips(target, reference)
+        max_lpips = float(np.max(lpips_values))
+
+        if max_lpips <= self._lpips_threshold:
+            return ValidationResultCollection(
+                ValidationResult(self.short_name(), True)
+            )
+
+        err_msg = (
+            f"LPIPS check failed: {max_lpips:.6f} > {self._lpips_threshold:.6f}"
+        )
+        result = ValidationResult(
+            self.short_name(),
+            False,
+            err_msg,
+            target,
+            reference,
+            np.array([[0]]),
+            [lpips_values],
+        )
+        return ValidationResultCollection(result)
+
+
+class SSIMValidator(ValidatorBase):
+    """Validator to check Structural Similarity Index (SSIM) for images.
+
+    SSIM measures perceptual similarity (range: [-1, 1], 1 = identical).
+    Higher SSIM is better; no distance conversion.
+    """
+
+    def __init__(self, ssim_threshold: float, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._ssim_threshold = ssim_threshold
+
+    @staticmethod
+    def short_name() -> str:
+        return "ssim"
+
+    @staticmethod
+    def _column_names() -> list[str]:
+        return ["ssim"]
+
+    @staticmethod
+    def _indices_to_sort_by() -> list[int]:
+        return [0]
+
+    @staticmethod
+    def _pretty_names() -> list[str]:
+        return ["SSIM"]
+
+    def threshold_str(self) -> str:
+        return f"ssim>={self._ssim_threshold}"
+
+    def _print_suggested_tolerances(
+        self,
+        targets: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        references: list[numpy.typing.NDArray],  # type: ignore[type-arg]
+        metrics: list[list[numpy.typing.NDArray]],  # type: ignore[type-arg]
+    ) -> None:
+        assert len(metrics) == 1
+        min_ssim = np.array(metrics[0]).min()
+        if math.isfinite(min_ssim):
+            CONSOLE.print(
+                f"Suggested {self._pretty_names()[0]} threshold: {min_ssim:.2e}\n"
+            )
+
+    def validate(
+        self,
+        target: numpy.typing.NDArray,  # type: ignore[type-arg]
+        reference: numpy.typing.NDArray,  # type: ignore[type-arg]
+        **kwargs,
+    ) -> ValidationResultCollection:
+        """Validate SSIM: higher is better, pass when ssim >= threshold."""
+        if target.ndim < 3 or reference.ndim < 3:
+            raise ValueError(
+                f"SSIM requires 3D (H, W, C) or 4D (B, H, W, C) images, "
+                f"got shapes: target={target.shape}, reference={reference.shape}"
+            )
+        ssim_score = compute_ssim(target, reference)
+
+        if ssim_score >= self._ssim_threshold:
+            return ValidationResultCollection(
+                ValidationResult(self.short_name(), True)
+            )
+
+        err_msg = (
+            f"SSIM check failed: {ssim_score:.6f} < {self._ssim_threshold:.6f}"
+        )
+        result = ValidationResult(
+            self.short_name(),
+            False,
+            err_msg,
+            target,
+            reference,
+            np.array([[0]]),
+            [np.array([ssim_score])],
+        )
+        return ValidationResultCollection(result)
 
 
 _VALIDATORS_BY_NAME: dict[str, type[ValidatorBase]] = {
@@ -625,6 +858,8 @@ _VALIDATORS_BY_NAME: dict[str, type[ValidatorBase]] = {
         ToleranceValidator,
         CosineSimilarityValidator,
         KLDivergenceValidator,
+        LPIPSValidator,
+        SSIMValidator,
     ]
 }
 
@@ -643,8 +878,8 @@ def construct_validator(
 
 
 def _print_pareto_tolerances(
-    a: np.typing.NDArray,
-    b: np.typing.NDArray,
+    a: np.typing.NDArray,  # type: ignore[type-arg]
+    b: np.typing.NDArray,  # type: ignore[type-arg]
     min_atol: float,
     max_atol: float,
     min_rtol: float,
@@ -752,7 +987,7 @@ def _print_pareto_tolerances(
         )
 
 
-def _is_pareto(costs: np.typing.NDArray) -> np.typing.NDArray:
+def _is_pareto(costs: np.typing.NDArray) -> np.typing.NDArray:  # type: ignore[type-arg]
     """
     Find the pareto-efficient points
 
@@ -777,9 +1012,9 @@ def _lookup(value: dict[str, Any], keys: Sequence[str]) -> list[Any]:
 
 
 def _print_diff_table(
-    tensor_indices: numpy.typing.NDArray,
-    element_indices: numpy.typing.NDArray,
-    data: list[numpy.typing.NDArray],
+    tensor_indices: numpy.typing.NDArray,  # type: ignore[type-arg]
+    element_indices: numpy.typing.NDArray,  # type: ignore[type-arg]
+    data: list[numpy.typing.NDArray],  # type: ignore[type-arg]
     column_names: list[str],
     max_shown: int,
     sort_by_idx: int,
@@ -850,8 +1085,8 @@ def _print_diff_table(
 
 
 def _is_close(  # noqa: ANN202
-    a: numpy.typing.NDArray,
-    b: numpy.typing.NDArray,
+    a: numpy.typing.NDArray,  # type: ignore[type-arg]
+    b: numpy.typing.NDArray,  # type: ignore[type-arg]
     absolute_tolerance: float,
     relative_tolerance: float,
     equal_nan: bool,

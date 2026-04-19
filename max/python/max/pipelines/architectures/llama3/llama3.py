@@ -18,20 +18,20 @@ import functools
 from collections.abc import Callable, Sequence
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, TensorValue, ops
+from max.graph import BufferType, DeviceRef, TensorType, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
-from max.nn.legacy.attention import (
+from max.nn.attention import (
     AttentionWithRope,
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
 )
-from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.layer import Module
-from max.nn.legacy.linear import MLP, GPTQLinear, Linear
-from max.nn.legacy.lora import AttentionWithRopeAndLoRA
-from max.nn.legacy.norm import ConstantLayerNorm, RMSNorm
-from max.nn.legacy.transformer import Transformer, TransformerBlock
+from max.nn.embedding import Embedding
+from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.layer import Module
+from max.nn.linear import MLP, GPTQLinear, Linear
+from max.nn.lora import AttentionWithRopeAndLoRA
+from max.nn.norm import ConstantLayerNorm, RMSNorm
+from max.nn.transformer import Transformer, TransformerBlock
 from max.pipelines.lib.lora import LoRAManager
 
 from .model_config import Llama3Config, create_rope_embedding
@@ -118,14 +118,16 @@ class Llama3(Transformer):
             )
         else:
             linear_cls = functools.partial(
-                Linear, float8_config=config.float8_config
+                Linear, quant_config=config.quant_config
             )
-        if config.stacked_mlp and config.float8_config:
-            raise ValueError("StackedMLP and float8 are not compatible")
+        if config.stacked_mlp and config.quant_config:
+            raise ValueError(
+                "StackedMLP and scaled quantization are not compatible"
+            )
         mlp_cls = (
             StackedMLP
             if config.stacked_mlp
-            else functools.partial(MLP, float8_config=config.float8_config)
+            else functools.partial(MLP, quant_config=config.quant_config)
         )
         attention_cls: Callable[..., AttentionWithRope]
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
@@ -156,7 +158,7 @@ class Llama3(Transformer):
                 has_bias=config.attention_bias,
                 max_num_loras=config.lora_config.max_num_loras,
                 max_lora_rank=config.lora_config.max_lora_rank,
-                float8_config=config.float8_config,
+                quant_config=config.quant_config,
             )
         else:
             attention_cls = functools.partial(
@@ -165,7 +167,7 @@ class Llama3(Transformer):
                 scale=config.attention_multiplier,
                 clip_qkv=config.clip_qkv,
                 has_bias=config.attention_bias,
-                float8_config=config.float8_config,
+                quant_config=config.quant_config,
             )
 
         layers = [
@@ -201,8 +203,8 @@ class Llama3(Transformer):
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             embedding_output_dtype = DType.bfloat16
             embedding_output_quantization = None
-        if config.float8_config and config.float8_config.embedding_output_dtype:
-            embedding_output_dtype = config.float8_config.embedding_output_dtype
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            embedding_output_dtype = config.quant_config.embedding_output_dtype
         embedding_layer = Embedding(
             config.vocab_size,
             config.hidden_size,
@@ -238,10 +240,10 @@ class Llama3(Transformer):
 
     def input_types(
         self,
-        kv_params: KVCacheParams,
+        kv_params: KVCacheParamInterface,
         lora_manager: LoRAManager | None,
         needs_hidden_state_input: bool = False,
-    ) -> tuple[TensorType, ...]:
+    ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model
         # config.
@@ -284,7 +286,7 @@ class Llama3(Transformer):
                 batch_seq_len,
                 lora_ids_kv,
                 lora_grouped_offsets_kv,
-                *kv_inputs[0],
+                *kv_inputs.flatten(),
             )
         # hidden state input is for EAGLE-like spec decoding draft models
         if needs_hidden_state_input:
@@ -298,12 +300,12 @@ class Llama3(Transformer):
                 input_row_offsets_type,
                 return_n_logits_type,
                 hidden_states_type,
-                *kv_inputs[0],
+                *kv_inputs.flatten(),
             )
 
         return (
             tokens_type,
             input_row_offsets_type,
             return_n_logits_type,
-            *kv_inputs[0],
+            *kv_inputs.flatten(),
         )

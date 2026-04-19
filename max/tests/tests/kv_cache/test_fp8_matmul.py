@@ -20,37 +20,35 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy import (
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
-    Float8WeightScaleSpec,
+from max.nn import (
+    InputScaleSpec,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
 )
-from max.nn.legacy.kernels import (
+from max.nn.kernels import (
+    _fused_qkv_ragged_matmul_scaled_float8 as fused_qkv_ragged_matmul_scaled_float8,
+)
+from max.nn.kernels import (
     batched_dynamic_scaled_fp8_matmul,
     dynamic_scaled_matmul,
-    fused_qkv_ragged_matmul_scaled_float8,
     grouped_dynamic_scaled_fp8_matmul,
     matmul_k_cache_ragged_scaled_float8,
 )
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 
 
 class DynamicScaledMatmul:
     return_type: DType
-    input_scale_spec: Float8InputScaleSpec
-    weight_scale_spec: Float8WeightScaleSpec
+    input_scale_spec: InputScaleSpec
+    weight_scale_spec: WeightScaleSpec
     """Return type of the `dynamic_scaled_matmul` custom op."""
 
     def __init__(
         self,
         return_type: DType,
-        input_scale_spec: Float8InputScaleSpec,
-        weight_scale_spec: Float8WeightScaleSpec,
+        input_scale_spec: InputScaleSpec,
+        weight_scale_spec: WeightScaleSpec,
     ) -> None:
         self.return_type = return_type
         self.input_scale_spec = input_scale_spec
@@ -98,13 +96,13 @@ def test_dynamic_scaled_matmul_rowwise() -> None:
             b,
             a_scales,
             b_scales,
-            input_scale_spec=Float8InputScaleSpec(
-                granularity=Float8ScaleGranularity.COLWISE,
-                origin=Float8ScaleOrigin.DYNAMIC,
+            input_scale_spec=InputScaleSpec(
+                granularity=ScaleGranularity.COLWISE,
+                origin=ScaleOrigin.DYNAMIC,
                 dtype=DType.bfloat16,
             ),
-            weight_scale_spec=Float8WeightScaleSpec(
-                granularity=Float8ScaleGranularity.ROWWISE,
+            weight_scale_spec=WeightScaleSpec(
+                granularity=ScaleGranularity.ROWWISE,
                 dtype=DType.bfloat16,
             ),
         )
@@ -163,13 +161,13 @@ def test_dynamic_scaled_matmul_dtype_mismatch(
             "dynamic_scaled_matmul",
             forward=DynamicScaledMatmul(
                 return_type=DType.bfloat16,
-                input_scale_spec=Float8InputScaleSpec(
-                    granularity=Float8ScaleGranularity.COLWISE,
-                    origin=Float8ScaleOrigin.DYNAMIC,
+                input_scale_spec=InputScaleSpec(
+                    granularity=ScaleGranularity.COLWISE,
+                    origin=ScaleOrigin.DYNAMIC,
                     dtype=a_scales_dtype,
                 ),
-                weight_scale_spec=Float8WeightScaleSpec(
-                    granularity=Float8ScaleGranularity.ROWWISE,
+                weight_scale_spec=WeightScaleSpec(
+                    granularity=ScaleGranularity.ROWWISE,
                     dtype=b_scales_dtype,
                 ),
             ),
@@ -233,7 +231,6 @@ def test_fused_qkv_ragged_matmul_scaled_float8_valid() -> None:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
         devices=[device],
     )
@@ -371,7 +368,6 @@ def test_fused_qkv_ragged_matmul_scaled_float8_device_mismatch(
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
         devices=[get_device(wqkv_dev)],
     )
@@ -427,7 +423,6 @@ def test_fused_qkv_ragged_matmul_scaled_float8_layer_idx_device() -> None:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
         devices=[device],
     )
@@ -473,7 +468,6 @@ def test_matmul_k_cache_ragged_scaled_float8_valid() -> None:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
         devices=[device],
     )
@@ -548,7 +542,6 @@ def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
         n_kv_heads=8,
         head_dim=64,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
         devices=[device],
     )
@@ -662,55 +655,6 @@ def test_matmul_k_cache_ragged_scaled_float8_invalid() -> None:
     ):
         try_create_graph(invalid_types)
 
-    # Test 6: unsupported cache strategy (should be PAGED)
-    invalid_kv_params = KVCacheParams(
-        dtype=DType.bfloat16,
-        n_kv_heads=8,
-        head_dim=64,
-        num_layers=1,
-        cache_strategy=KVCacheStrategy.MODEL_DEFAULT,  # Invalid strategy
-        page_size=128,
-        devices=[device],
-    )
-
-    with Graph(
-        "matmul_k_cache_ragged_scaled_float8",
-        input_types=get_valid_input_types(),
-    ) as graph:
-        (
-            hidden_states,
-            input_row_offsets,
-            weight,
-            input_scale,
-            weight_scale,
-            blocks,
-            cache_lengths,
-            lookup_table,
-            is_cache_empty,
-            layer_idx,
-        ) = graph.inputs
-        kv_collection = PagedCacheValues(
-            blocks.buffer,
-            cache_lengths.tensor,
-            lookup_table.tensor,
-            is_cache_empty.tensor,
-        )
-        with pytest.raises(
-            ValueError,
-            match="unsupported cache strategy for matmul_kv_cache_ragged",
-        ):
-            matmul_k_cache_ragged_scaled_float8(
-                invalid_kv_params,  # Use invalid params
-                hidden_states.tensor,
-                input_row_offsets.tensor,
-                weight.tensor,
-                input_scale.tensor,
-                weight_scale.tensor,
-                kv_collection,
-                scale_granularity,
-                layer_idx.tensor,
-            )
-
 
 def test_grouped_dynamic_scaled_fp8_matmul_valid() -> None:
     """Tests grouped_dynamic_scaled_fp8_matmul with all tensors on same device."""
@@ -753,14 +697,14 @@ def test_grouped_dynamic_scaled_fp8_matmul_valid() -> None:
             expert_start_indices.tensor,
             expert_ids.tensor,
             expert_usage_stats_host.tensor,
-            input_scale_spec=Float8InputScaleSpec(
-                granularity=Float8ScaleGranularity.BLOCK,
-                origin=Float8ScaleOrigin.DYNAMIC,
+            input_scale_spec=InputScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                origin=ScaleOrigin.DYNAMIC,
                 dtype=DType.float32,
                 block_size=(1, 128),
             ),
-            weight_scale_spec=Float8WeightScaleSpec(
-                granularity=Float8ScaleGranularity.BLOCK,
+            weight_scale_spec=WeightScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
                 dtype=DType.float32,
                 block_size=(128, 128),
             ),
@@ -815,14 +759,14 @@ def test_grouped_dynamic_scaled_fp8_matmul_invalid() -> None:
             expert_start_indices.tensor,
             expert_ids.tensor,
             expert_usage_stats_host.tensor,
-            input_scale_spec=Float8InputScaleSpec(
-                granularity=Float8ScaleGranularity.BLOCK,
-                origin=Float8ScaleOrigin.DYNAMIC,
+            input_scale_spec=InputScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                origin=ScaleOrigin.DYNAMIC,
                 dtype=DType.float32,
                 block_size=(1, 128),
             ),
-            weight_scale_spec=Float8WeightScaleSpec(
-                granularity=Float8ScaleGranularity.BLOCK,
+            weight_scale_spec=WeightScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
                 dtype=DType.float32,
                 block_size=(128, 128),
             ),
@@ -942,14 +886,14 @@ def test_batched_dynamic_scaled_fp8_matmul_valid() -> None:
             weight.tensor,
             a_scales.tensor,
             b_scales.tensor,
-            input_scale_spec=Float8InputScaleSpec(
-                granularity=Float8ScaleGranularity.BLOCK,
-                origin=Float8ScaleOrigin.DYNAMIC,
+            input_scale_spec=InputScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                origin=ScaleOrigin.DYNAMIC,
                 dtype=DType.float32,
                 block_size=(1, 128),
             ),
-            weight_scale_spec=Float8WeightScaleSpec(
-                granularity=Float8ScaleGranularity.BLOCK,
+            weight_scale_spec=WeightScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
                 dtype=DType.float32,
                 block_size=(128, 128),
             ),
@@ -992,14 +936,14 @@ def test_batched_dynamic_scaled_fp8_matmul_invalid() -> None:
             weight.tensor,
             a_scales.tensor,
             b_scales.tensor,
-            input_scale_spec=Float8InputScaleSpec(
-                granularity=Float8ScaleGranularity.BLOCK,
-                origin=Float8ScaleOrigin.DYNAMIC,
+            input_scale_spec=InputScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                origin=ScaleOrigin.DYNAMIC,
                 dtype=DType.float32,
                 block_size=(1, 128),
             ),
-            weight_scale_spec=Float8WeightScaleSpec(
-                granularity=Float8ScaleGranularity.BLOCK,
+            weight_scale_spec=WeightScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
                 dtype=DType.float32,
                 block_size=(128, 128),
             ),

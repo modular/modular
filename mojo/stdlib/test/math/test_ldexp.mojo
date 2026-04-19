@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import frexp, ldexp
-from ffi import external_call
+from std.math import frexp, ldexp
+from std.ffi import external_call
 
-from testing import TestSuite
-from testing import assert_almost_equal, assert_equal
+from std.testing import TestSuite
+from std.testing import assert_almost_equal, assert_equal
 
 
-def test_ldexp():
+def test_ldexp() raises:
     assert_equal(ldexp(Float32(1.5), 4), 24)
     assert_equal(ldexp(Float64(1.5), Int32(4)), 24)
 
 
-def test_ldexp_vector():
+def test_ldexp_vector() raises:
     assert_equal(
         ldexp(SIMD[DType.float32, 4](1.5), SIMD[DType.int32, 4](4)),
         SIMD[DType.float32, 4](24),
@@ -42,8 +42,8 @@ def test_ldexp_vector():
     )
 
 
-fn ldexp_libm[
-    dtype: DType, simd_width: Int
+def ldexp_libm[
+    dtype: DType, simd_width: SIMDSize
 ](arg: SIMD[dtype, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
@@ -54,7 +54,7 @@ fn ldexp_libm[
     return res
 
 
-def test_ldexp_extensive_float32():
+def test_ldexp_extensive_float32() raises:
     var i = -1e3
     while i < 1e3:
         var out = frexp(i.cast[DType.float32]())
@@ -75,5 +75,5 @@ def test_ldexp_extensive_float32():
         i += 1007
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

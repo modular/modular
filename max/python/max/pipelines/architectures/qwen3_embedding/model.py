@@ -18,6 +18,7 @@ import functools
 import logging
 import math
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import numpy as np
@@ -25,22 +26,24 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, ops
-from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.legacy.embedding import Embedding
-from max.nn.legacy.kv_cache import KVCacheInputs
-from max.nn.legacy.linear import MLP, Linear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.graph.weights import Weights, WeightsAdapter
+from max.nn.embedding import Embedding
+from max.nn.kv_cache import KVCacheInputs
+from max.nn.linear import MLP, Linear
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
+    CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 from transformers import AutoConfig
 
 from .layers import (
@@ -54,6 +57,7 @@ from .layers import (
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class Qwen3EmbeddingInputs(ModelInputs):
     """Input structure for Qwen3 embedding models."""
 
@@ -65,17 +69,6 @@ class Qwen3EmbeddingInputs(ModelInputs):
 
     return_n_logits: Buffer
     """Number of logits to return (kept for interface compatibility)"""
-
-    def __init__(
-        self,
-        tokens: Buffer,
-        input_row_offsets: Buffer,
-        return_n_logits: Buffer,
-    ) -> None:
-        super().__init__()
-        self.tokens = tokens
-        self.input_row_offsets = input_row_offsets
-        self.return_n_logits = return_n_logits
 
 
 class Qwen3EmbeddingModel(PipelineModel[TextContext]):
@@ -104,8 +97,6 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -117,49 +108,21 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         Args:
             pipeline_config: Pipeline configuration
             session: Inference session
-            huggingface_config: HuggingFace model configuration
-            encoding: Encoding configuration
             devices: List of devices
+            kv_cache_config: KV cache configuration
             weights: Model weights
             adapter: Optional weight adapter
+            return_logits: Return logits mode
         """
         self.pipeline_config = pipeline_config
         self.session = session
-        self.huggingface_config = huggingface_config
-        self.encoding = encoding
         self.devices = devices
 
         # Build and compile graph
-        logger.info(f"Building {self.__class__.__name__} graph")
-        graph = self._build_graph(weights, adapter, session)
-        logger.info(f"Compiling {self.__class__.__name__} model")
-        self.model = session.load(graph, weights_registry=self.state_dict)
-        logger.info("Model loaded successfully")
-
-    @property
-    def dtype(self) -> DType:
-        """Get the model's data type."""
-        return self.encoding.dtype
-
-    def _get_state_dict(
-        self, weights: Weights, adapter: WeightsAdapter | None
-    ) -> dict[str, WeightData]:
-        """Get state dictionary from weights.
-
-        Args:
-            weights: Model weights
-            adapter: Optional adapter
-
-        Returns:
-            State dictionary
-        """
-        if adapter:
-            return adapter(
-                dict(weights.items()),
-                huggingface_config=self.huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        return {key: value.data() for key, value in weights.items()}
+        with CompilationTimer("model") as timer:
+            graph = self._build_graph(weights, adapter, session)
+            timer.mark_build_complete()
+            self.model = session.load(graph, weights_registry=self.state_dict)
 
     def _build_graph(
         self,
@@ -178,19 +141,21 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             Compiled graph
         """
         # Load weights
-        state_dict = self._get_state_dict(weights, adapter)
+        state_dict = parse_state_dict_from_weights(
+            self.pipeline_config, weights, adapter
+        )
 
         # Get configuration
-        dtype = self.encoding.dtype
+        dtype = self.dtype
         device_refs = [DeviceRef.from_device(d) for d in self.devices]
 
         # Create RoPE
         head_dim = self.huggingface_config.head_dim
-        max_seq_len = self.pipeline_config.max_length or 32768
+        max_seq_len = self.pipeline_config.model.max_length or 32768
         rope = Llama3RotaryEmbedding(
             dim=self.huggingface_config.hidden_size,
             n_heads=self.huggingface_config.num_attention_heads,
-            theta=self.huggingface_config.rope_theta,
+            theta=get_rope_theta(self.huggingface_config),
             max_seq_len=max_seq_len,
             head_dim=head_dim,
             interleaved=False,  # Qwen3 uses non-interleaved RoPE
@@ -288,7 +253,6 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
             output=output,
             embedding=embedding_layer,
             rope=rope,
-            return_hidden_states=ReturnHiddenStates.ALL,  # Return un-normalized states, pooling+norm happens after
             embedding_multiplier=1.0,
             device=device_refs[0],
         )
@@ -311,17 +275,14 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         with Graph("qwen3_embedding", input_types=graph_inputs) as graph:
             tokens, input_row_offsets, return_n_logits = graph.inputs
 
-            # Forward pass - returns (hidden_states,)
-            outputs = nn_model(
+            # Forward pass - returns hidden_states
+            hidden_states = nn_model(
                 tokens.tensor,
                 input_row_offsets.tensor,
                 return_n_logits.tensor,
             )
 
-            # Extract hidden states
-            hidden_states = outputs[0]
-
-            if self.pipeline_config.pool_embeddings:
+            if self.pipeline_config.model.pool_embeddings:
                 # Apply last token pooling
                 embeddings = last_token_pool(
                     hidden_states, input_row_offsets.tensor
@@ -364,7 +325,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Qwen3EmbeddingInputs:
         """Prepare initial inputs for embedding generation.
@@ -444,7 +405,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext]):
         model_max = getattr(
             huggingface_config, "max_position_embeddings", 32768
         )
-        configured_max = pipeline_config.max_length or 8192
+        configured_max = pipeline_config.model.max_length or 8192
 
         if configured_max > model_max:
             raise ValueError(

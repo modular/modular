@@ -38,7 +38,7 @@ from max.interfaces import (
     RequestID,
     TextGenerationRequest,
 )
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.transformer import ReturnLogits
 from max.profiler import Tracer, traced
 
 if TYPE_CHECKING:
@@ -46,7 +46,6 @@ if TYPE_CHECKING:
 
 from max.support.algorithm import flatten2d
 
-from .hf_utils import download_weight_files
 from .interfaces import PipelineModel
 
 logger = logging.getLogger("max.pipelines")
@@ -75,22 +74,14 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         self._weight_adapters = weight_adapters
         # Initialize Session.
         devices = load_devices(self._pipeline_config.model.device_specs)
-        session = InferenceSession(devices=devices)
+        session = InferenceSession(devices=[*devices])
         self._pipeline_config.configure_session(session)
 
         if not self._pipeline_config.model.quantization_encoding:
             raise ValueError("quantization_encoding must not be None")
 
-        # Download weight files if not existent
-        weight_model_id = self._pipeline_config.model.huggingface_weight_repo_id
-
-        # Download weight files.
-        weight_paths = download_weight_files(
-            huggingface_model_id=weight_model_id,
-            filenames=[str(x) for x in self._pipeline_config.model.weight_path],
-            revision=self._pipeline_config.model.huggingface_weight_revision,
-            force_download=self._pipeline_config.model.force_download,
-        )
+        # Resolve weight paths (downloads from HF if needed).
+        weight_paths = self._pipeline_config.model.resolved_weight_paths()
 
         # Load weights
         weights = load_weights(weight_paths)
@@ -104,8 +95,6 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config,
             session=session,
-            huggingface_config=huggingface_config,
-            encoding=self._pipeline_config.model.quantization_encoding,
             devices=devices,
             kv_cache_config=self._pipeline_config.model.kv_cache,
             weights=weights,
@@ -151,7 +140,7 @@ class EmbeddingsPipeline(EmbeddingsPipelineType):
         tracer.push("prepare_response")
         for batch_index, request_id in enumerate(inputs.batch.keys()):
             request_embeddings = batch_embeddings[batch_index]
-            if not self._pipeline_config.pool_embeddings:
+            if not self._pipeline_config.model.pool_embeddings:
                 # Remove padded tokens from embeddings
                 request_embeddings = request_embeddings[
                     : context_batch[batch_index].tokens.active_length, :

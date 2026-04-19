@@ -79,7 +79,7 @@ def create_mock_kv_cache() -> Mock:
     cache.get_total_num_pages = Mock(return_value=128)
     cache.get_free_blocks_pct = Mock(return_value=0.5)
 
-    cache.alloc = Mock()
+    cache.alloc = Mock(return_value=0)
     cache.claim = Mock()
     cache.release = Mock()
     cache.contains = Mock(return_value=False)
@@ -153,7 +153,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_no_p
 
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = True
+    kv_cache.alloc.return_value = 0
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock()
@@ -260,7 +260,7 @@ def test_text_batch_constructor__batch_construction_no_requests(
 
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = True
+    kv_cache.alloc.return_value = 0
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock()
@@ -314,7 +314,7 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
         batch_constructor.enqueue_new_request(context)
 
     with pytest.raises(InsufficientBlocksError):
-        inputs = batch_constructor.construct_batch()
+        batch_constructor.construct_batch()
 
 
 def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_preemption(
@@ -331,7 +331,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     )
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = True
+    kv_cache.alloc.return_value = 0
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock()
@@ -416,14 +416,14 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_pre
     # Test for Pre-emption
     # The first item won't have enough space, so we will pre-empt the last one
     # The first item will have 2 alloc calls, failing with InsufficientBlocksError on the first,
-    # then succeeding and returning None for the remaining calls.
+    # then succeeding and returning 0 (no prefix cache skip) for the remaining calls.
     kv_cache.alloc.side_effect = [
         InsufficientBlocksError(),
-        None,
-        None,
-        None,
-        None,
-        None,
+        0,
+        0,
+        0,
+        0,
+        0,
     ]
 
     last_request_id = list(batch_constructor.replicas[0].tg_reqs.keys())[-1]
@@ -462,7 +462,7 @@ def test_text_batch_constructor__batch_construction_with_chunked_prefill_and_inf
     )
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = True
+    kv_cache.alloc.return_value = 0
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock()
@@ -528,7 +528,7 @@ def test_text_batch_constructor__batch_construction_without_chunked_prefill_and_
     )
     kv_cache = Mock()
     kv_cache.alloc = Mock()
-    kv_cache.alloc.return_value = True
+    kv_cache.alloc.return_value = 0
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.get_pct_used_blocks_after_allocation = Mock()
@@ -798,7 +798,7 @@ def test_tg_pure_age_based_preemption() -> None:
     kv_cache = create_mock_kv_cache()
 
     kv_cache.alloc = Mock(
-        side_effect=[None, InsufficientBlocksError, InsufficientBlocksError]
+        side_effect=[0, InsufficientBlocksError, InsufficientBlocksError]
     )
 
     config = TokenGenerationSchedulerConfig(

@@ -17,9 +17,13 @@ from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineConfig
+from max.pipelines.lib import MAXModelConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.serve.schemas.openai import CreateEmbeddingResponse
 
 MPNET_REPO_ID = "sentence-transformers/all-mpnet-base-v2"
+MPNET_REVISION = hf_repo_lock.revision_for_hf_repo(MPNET_REPO_ID)
+assert MPNET_REVISION is not None
 
 
 @pytest.mark.asyncio
@@ -27,12 +31,16 @@ MPNET_REPO_ID = "sentence-transformers/all-mpnet-base-v2"
     "pipeline_config",
     [
         PipelineConfig(
-            model_path=MPNET_REPO_ID,
-            huggingface_model_revision=hf_repo_lock.revision_for_hf_repo(
-                MPNET_REPO_ID
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=MPNET_REPO_ID,
+                        huggingface_model_revision=MPNET_REVISION,
+                        device_specs=[DeviceSpec.cpu()],
+                        max_length=256,
+                    )
+                }
             ),
-            max_length=256,
-            device_specs=[DeviceSpec.cpu()],
         )
     ],
     indirect=True,

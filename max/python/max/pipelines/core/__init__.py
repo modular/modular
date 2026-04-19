@@ -13,10 +13,10 @@
 
 from .context import (
     PixelContext,
+    SpecDecodingState,
     TextAndVisionContext,
     TextContext,
     TTSContext,
-    reserve_token_space_for_batch,
 )
 from .context_validators import (
     validate_aspect_ratio_args,
@@ -30,10 +30,10 @@ from .context_validators import (
 
 __all__ = [
     "PixelContext",
+    "SpecDecodingState",
     "TTSContext",
     "TextAndVisionContext",
     "TextContext",
-    "reserve_token_space_for_batch",
     "validate_aspect_ratio_args",
     "validate_image_grid_thw_args",
     "validate_image_shape_5d",

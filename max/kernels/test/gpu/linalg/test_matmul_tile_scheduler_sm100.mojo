@@ -11,60 +11,59 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.primitives.cluster import (
+from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_sync,
     elect_one_sync,
 )
-from gpu.host import DeviceContext
-from gpu import block_id_in_cluster, block_idx
-from gpu import warp_id as get_warp_id
-from gpu.memory import fence_mbarrier_init
-from gpu.sync import syncwarp
+from std.gpu.host import DeviceContext
+from std.gpu import warp_id as get_warp_id
+from std.gpu.memory import fence_mbarrier_init
+from std.gpu.sync import syncwarp
 from layout.tma_async import PipelineState, SharedMemBarrier
-from linalg.matmul.gpu.sm100.tile_scheduler import TileScheduler, WorkInfo
-from memory import stack_allocation
+from linalg.matmul.gpu.sm100.tile_scheduler import TileScheduler
+from std.memory import stack_allocation
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index
+from std.utils.static_tuple import StaticTuple
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
-fn test_kernel[
+def test_kernel[
     num_stages: Int, cluster_shape: StaticTuple[Int32, 3]
 ](cluster_dim: StaticTuple[Int32, 3]):
     var clc_response = stack_allocation[
         num_stages,
         UInt128,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
     var clc_full_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
     var clc_empty_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
     var clc_throttle_full_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
     var clc_throttle_empty_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
@@ -81,8 +80,7 @@ fn test_kernel[
     comptime clc_throttle_producer_arv_count = TMA_LOAD_THREADS
     comptime clc_throttle_consumer_arv_count = SCHEDULER_THREADS
 
-    @parameter
-    for i in range(num_stages):
+    comptime for i in range(num_stages):
         clc_full_mbar[i].init(clc_producer_arv_count)
         clc_empty_mbar[i].init(clc_consumer_arv_count)
         clc_throttle_full_mbar[i].init(clc_throttle_producer_arv_count)
@@ -106,7 +104,7 @@ fn test_kernel[
 
     var scheduler = TileScheduler[
         num_stages=num_stages,
-        cluster_shape = Index[dtype = DType.uint32](
+        cluster_shape=Index[dtype=DType.uint32](
             cluster_shape[0], cluster_shape[1], cluster_shape[2]
         ),
         block_swizzle_size=8,
@@ -173,8 +171,7 @@ fn test_kernel[
             work_info = next_work_info
             clc_pipe_consumer_state.step()
 
-        @parameter
-        for i in range(num_stages):
+        comptime for i in range(num_stages):
             clc_empty_mbar[clc_pipe_producer_state.index()].wait(
                 clc_pipe_producer_state.phase()
             )
@@ -207,7 +204,7 @@ fn test_kernel[
                 break
 
 
-fn test_tile_scheduler(ctx: DeviceContext) raises:
+def test_tile_scheduler(ctx: DeviceContext) raises:
     comptime cluster_shape = StaticTuple[Int32, 3](2, 1, 1)
     comptime grid_dim = (88, 16, 1)
 
@@ -241,6 +238,6 @@ fn test_tile_scheduler(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_tile_scheduler(ctx)

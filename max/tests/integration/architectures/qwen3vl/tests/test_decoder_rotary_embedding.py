@@ -19,7 +19,7 @@ import torch
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Dim, Graph, TensorType
 from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_rope_index,
 )
@@ -44,7 +44,7 @@ ATOL = 8e-3
 def generate_torch_outputs(
     position_ids: torch.Tensor,
     input_tensor: torch.Tensor,
-    hf_text_config: dict,
+    hf_text_config: dict,  # type: ignore[type-arg]
     dtype: torch.dtype = torch.bfloat16,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Generate reference outputs using the HuggingFace implementation."""
@@ -66,7 +66,7 @@ def generate_torch_outputs(
 
 def generate_max_outputs(
     position_ids: torch.Tensor,
-    qwen3vl_config: dict,
+    qwen3vl_config: dict,  # type: ignore[type-arg]
     dtype: DType,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Generate outputs using MAX Qwen3VLTextRotaryEmbedding implementation."""
@@ -94,7 +94,9 @@ def generate_max_outputs(
 
     # Define input types
     position_ids_type = TensorType(
-        DType.int64, shape=position_ids.shape, device=DeviceRef.CPU()
+        DType.int64,
+        shape=[position_ids.shape[0], Dim("total_seq_len")],
+        device=DeviceRef.CPU(),
     )
 
     with Graph(
@@ -145,7 +147,6 @@ def test_decoder_rotary_embedding_with_grid_thw(
     qwen3vl_config = loader.create_qwen3vl_config(ConfigNames.QWEN3VL_30B)
 
     # Create test inputs
-    hidden_size = hf_text_config["hidden_size"]
     num_heads = hf_text_config["num_attention_heads"]
     head_dim = hf_text_config.get("head_dim")
     patch_size = hf_vision_config["patch_size"]

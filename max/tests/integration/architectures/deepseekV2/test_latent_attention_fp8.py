@@ -21,22 +21,19 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.attention.multi_latent_attention_fp8 import (
+from max.nn.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.legacy.float8_config import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
-    Float8WeightScaleSpec,
+from max.nn.kv_cache import KVCacheParams
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
 )
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
-from max.nn.legacy.rotary_embedding import (
+from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
@@ -234,33 +231,33 @@ def generate_max_outputs_fp8(
         n_kv_heads=1,
         head_dim=576,
         num_layers=config.num_hidden_layers,
-        cache_strategy=KVCacheStrategy.PAGED,
         devices=[DeviceRef.GPU()],
         page_size=128,
         is_mla=True,
+        num_q_heads=config.num_attention_heads,
     )
 
     # Create FP8 configuration with block-wise dynamic scaling [128, 128]
-    input_spec = Float8InputScaleSpec(
-        granularity=Float8ScaleGranularity.BLOCK,
-        origin=Float8ScaleOrigin.DYNAMIC,
+    input_spec = InputScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        origin=ScaleOrigin.DYNAMIC,
         dtype=DType.float32,
         block_size=(1, 128),
     )
 
-    weight_spec = Float8WeightScaleSpec(
-        granularity=Float8ScaleGranularity.BLOCK,
+    weight_spec = WeightScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
         dtype=DType.float32,
         block_size=(128, 128),
     )
 
-    float8_config = Float8Config(
+    quant_config = QuantConfig(
         input_scale=input_spec,
         weight_scale=weight_spec,
-        mlp_in_float8=set(),
-        attn_qkv_in_float8=set(),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
         embedding_output_dtype=None,
-        quant_method="fp8",
+        format=QuantFormat.BLOCKSCALED_FP8,
     )
 
     latent_attention = LatentAttentionWithRopeFp8(
@@ -269,7 +266,7 @@ def generate_max_outputs_fp8(
         num_key_value_heads=config.num_key_value_heads,
         hidden_size=config.hidden_size,
         kv_params=kv_params,
-        float8_config=float8_config,
+        quant_config=quant_config,
         q_lora_rank=config.q_lora_rank,
         kv_lora_rank=config.kv_lora_rank,
         qk_nope_head_dim=config.qk_nope_head_dim,
@@ -284,6 +281,7 @@ def generate_max_outputs_fp8(
         params=kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     hidden_state_type = TensorType(
@@ -299,16 +297,15 @@ def generate_max_outputs_fp8(
             input_types=(
                 hidden_state_type,
                 input_row_offsets_type,
-                *kv_params.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs().flatten(),
             ),
         ) as graph:
             hidden_states = graph.inputs[0].tensor
             input_row_offsets = graph.inputs[1].tensor
-            kv_collection = PagedCacheValues(
-                kv_blocks=graph.inputs[2].buffer,
-                cache_lengths=graph.inputs[3].tensor,
-                lookup_table=graph.inputs[4].tensor,
-                max_lengths=graph.inputs[5].tensor,
+            kv_collection = (
+                kv_params.get_symbolic_inputs()
+                .unflatten(iter(graph.inputs[2:]))
+                .inputs[0]
             )
 
             result = latent_attention(
@@ -345,7 +342,7 @@ def generate_max_outputs_fp8(
         for tok_idx in range(total_tokens):
             for ctx in batch:
                 kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-            kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+            kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
             input_tensor_device = (
                 Buffer.from_numpy(
                     input_tensor[:, tok_idx, :].view(torch.float16).numpy()
@@ -354,7 +351,9 @@ def generate_max_outputs_fp8(
                 .to(device0)
             )
             max_output = compiled.execute(
-                input_tensor_device, input_row_offsets.to(device0), *kv_inputs
+                input_tensor_device,
+                input_row_offsets.to(device0),
+                *kv_inputs.flatten(),
             )
 
             for ctx in batch:
@@ -367,14 +366,14 @@ def generate_max_outputs_fp8(
 
     for ctx in batch:
         kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
-    kv_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
     input_tensor_device = (
         Buffer.from_numpy(input_tensor[0, :, :].view(torch.float16).numpy())
         .view(DType.bfloat16)
         .to(device0)
     )
     max_output = compiled.execute(
-        input_tensor_device, input_row_offsets.to(device0), *kv_inputs
+        input_tensor_device, input_row_offsets.to(device0), *kv_inputs.flatten()
     )
     torch_output = from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
     return torch_output[None, :, :]

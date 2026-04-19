@@ -11,25 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, rsqrt
-from sys import simd_width_of
+from std.math import ceildiv, rsqrt
+from std.sys import simd_width_of
 
-from gpu import WARP_SIZE
-from gpu.host import DeviceContext, get_gpu_target
-from layout._coord import Coord, Idx, coord_to_index_list
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu import WARP_SIZE
+from std.gpu.host import DeviceContext, get_gpu_target
+from layout import Coord, Idx, TileTensor, row_major
 from layout.math import mean, variance
 from nn.normalization import *
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
-fn run_layer_norm_block[
+def run_layer_norm_block[
     dtype: DType,
     *,
-    simd_width: Int = simd_width_of[dtype, target = get_gpu_target()](),
+    simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu block kernel")
 
@@ -65,14 +63,14 @@ fn run_layer_norm_block[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
+    def input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
         return data_buf.ptr.load[width=width](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
-    fn gamma_fn[
+    def gamma_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Idx(coords[0]))
@@ -81,7 +79,7 @@ fn run_layer_norm_block[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn output_fn[
+    def output_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, width]):
         var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
@@ -96,11 +94,11 @@ fn run_layer_norm_block[
     @always_inline
     @parameter
     @__copy_capture(data_buf, gamma, beta, epsilon)
-    fn run_func_ln() raises:
+    def run_func_ln() raises:
         comptime kernel = layer_norm_gpu_block[
-            LayoutType = beta.LayoutType,
-            origin = beta.origin,
-            UInt(simd_width),
+            LayoutType=beta.LayoutType,
+            origin=beta.origin,
+            simd_width,
             input_fn,
             gamma_fn,
             output_fn,
@@ -145,7 +143,7 @@ fn run_layer_norm_block[
     beta_h.free()
 
 
-fn run_layer_norm_gpu[
+def run_layer_norm_gpu[
     dtype: DType, rank: Int
 ](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu")
@@ -184,7 +182,7 @@ fn run_layer_norm_gpu[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
@@ -194,7 +192,7 @@ fn run_layer_norm_gpu[
     @__copy_capture(gamma)
     @always_inline
     @parameter
-    fn gamma_fn[
+    def gamma_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Idx(coords[0]))
@@ -203,7 +201,7 @@ fn run_layer_norm_gpu[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn output_fn[
+    def output_fn[
         width: Int, rank_: Int, alignment: Int
     ](coords: IndexList[rank_], val: SIMD[dtype, width]):
         var idx = data_buf.layout(Coord(coords))
@@ -240,10 +238,10 @@ fn run_layer_norm_gpu[
     beta_h.free()
 
 
-fn run_layer_norm_warp_tiling[
+def run_layer_norm_warp_tiling[
     dtype: DType,
     *,
-    simd_width: Int = simd_width_of[dtype, target = get_gpu_target()](),
+    simd_width: Int = simd_width_of[dtype, target=get_gpu_target()](),
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Float64 = 0.01) raises:
     print("== run_layer_norm_gpu warp tiling kernel")
 
@@ -279,7 +277,7 @@ fn run_layer_norm_warp_tiling[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
+    def input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
 
         return data_buf.ptr.load[width=width](idx)
@@ -287,7 +285,7 @@ fn run_layer_norm_warp_tiling[
     @__copy_capture(gamma)
     @always_inline
     @parameter
-    fn gamma_fn[
+    def gamma_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Idx(coords[0]))
@@ -296,7 +294,7 @@ fn run_layer_norm_warp_tiling[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn output_fn[
+    def output_fn[
         width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, width]):
         var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
@@ -304,18 +302,17 @@ fn run_layer_norm_warp_tiling[
             idx, rebind[SIMD[dtype, width]](val)
         )
 
-    var max_warps_per_block = (
-        ctx.default_device_info.max_thread_block_size // WARP_SIZE
-    )
+    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
 
     @always_inline
     @parameter
     @__copy_capture(data_buf, gamma, beta, epsilon)
-    fn run_func_ln() raises:
+    def run_func_ln() raises:
         comptime kernel = layer_norm_gpu_warp_tiling[
-            LayoutType = beta.LayoutType,
-            origin = beta.origin,
-            UInt(simd_width),
+            LayoutType=beta.LayoutType,
+            origin=beta.origin,
+            simd_width,
+            max_warps_per_block,
             input_fn,
             gamma_fn,
             output_fn,
@@ -360,7 +357,7 @@ fn run_layer_norm_warp_tiling[
     beta_h.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_layer_norm_block[DType.float32, simd_width=1](ctx, rows=3, cols=5)
         run_layer_norm_block[DType.float32](ctx, rows=3, cols=8)

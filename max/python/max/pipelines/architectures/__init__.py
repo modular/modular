@@ -40,61 +40,117 @@ def register_all_models() -> None:
     from .deepseekV3_nextn import deepseekV3_nextn_arch
     from .eagle_llama3 import eagle_llama_arch
     from .exaone import exaone_arch
-    from .flux1 import flux1_arch
+    from .exaone_modulev3 import exaone_modulev3_arch
+    from .flux1_modulev3 import flux1_arch, flux1_modulev3_arch
+    from .flux2 import flux2_arch, flux2_klein_arch
+    from .flux2_modulev3 import (
+        flux2_klein_modulev3_arch,
+        flux2_modulev3_arch,
+    )
     from .gemma3 import gemma3_arch
+    from .gemma3_modulev3 import gemma3_modulev3_arch
     from .gemma3multimodal import gemma3_multimodal_arch
+    from .gemma3multimodal_modulev3 import gemma3_multimodal_modulev3_arch
+    from .gemma4 import gemma4_arch
     from .gpt_oss import gpt_oss_arch
-    from .gpt_oss_legacy import gpt_oss_legacy_arch
+    from .gpt_oss_modulev3 import gpt_oss_modulev3_arch
     from .granite import granite_arch
+    from .granite_modulev3 import granite_modulev3_arch
     from .idefics3 import idefics3_arch
+    from .idefics3_modulev3 import idefics3_modulev3_arch
     from .internvl import internvl_arch
+    from .kimik2_5 import eagle3_kimik25_arch, kimik2_5_arch, kimivl_arch
     from .llama3 import llama_arch
-    from .llama4 import llama4_arch
+    from .llama3_modulev3 import llama_modulev3_arch
+    from .mamba import mamba_arch
     from .mistral import mistral_arch
     from .mistral3 import mistral3_arch
     from .mpnet import mpnet_arch
+    from .mpnet_modulev3 import mpnet_modulev3_arch
     from .olmo import olmo_arch
     from .olmo2 import olmo2_arch
+    from .olmo2_modulev3 import olmo2_modulev3_arch
+    from .olmo3 import olmo3_arch
+    from .olmo_modulev3 import olmo_modulev3_arch
     from .phi3 import phi3_arch
+    from .phi3_modulev3 import phi3_modulev3_arch
     from .pixtral import pixtral_arch
+    from .pixtral_modulev3 import pixtral_modulev3_arch
     from .qwen2 import qwen2_arch
     from .qwen2_5vl import qwen2_5_vl_arch
     from .qwen3 import qwen3_arch, qwen3_moe_arch
     from .qwen3_embedding import qwen3_embedding_arch
+    from .qwen3_embedding_modulev3 import qwen3_embedding_modulev3_arch
     from .qwen3vl_moe import qwen3vl_arch, qwen3vl_moe_arch
+    from .qwen_image import qwen_image_arch
+    from .qwen_image_edit import qwen_image_edit_arch, qwen_image_edit_plus_arch
+    from .unified_eagle_llama3 import unified_eagle_llama3_arch
+    from .unified_mtp_deepseekV3 import unified_mtp_deepseekV3_arch
+    from .wan import wan_arch, wan_i2v_arch
+    from .z_image_modulev3 import z_image_arch
 
     architectures = [
         exaone_arch,
+        exaone_modulev3_arch,
         deepseekV2_arch,
         deepseekV3_arch,
         deepseekV3_2_arch,
         deepseekV3_nextn_arch,
         eagle_llama_arch,
         flux1_arch,
+        flux1_modulev3_arch,
+        flux2_arch,
+        flux2_klein_arch,
+        flux2_modulev3_arch,
+        flux2_klein_modulev3_arch,
         gemma3_arch,
+        gemma3_modulev3_arch,
         gemma3_multimodal_arch,
+        gemma3_multimodal_modulev3_arch,
+        gemma4_arch,
         granite_arch,
+        granite_modulev3_arch,
         gpt_oss_arch,
-        gpt_oss_legacy_arch,
+        gpt_oss_modulev3_arch,
         internvl_arch,
         idefics3_arch,
+        idefics3_modulev3_arch,
+        eagle3_kimik25_arch,
+        kimik2_5_arch,
+        kimivl_arch,
         llama_arch,
-        llama4_arch,
+        llama_modulev3_arch,
+        mamba_arch,
         bert_arch,
         mistral_arch,
         mistral3_arch,
         mpnet_arch,
+        mpnet_modulev3_arch,
         olmo_arch,
+        olmo_modulev3_arch,
         olmo2_arch,
+        olmo2_modulev3_arch,
+        olmo3_arch,
         phi3_arch,
+        phi3_modulev3_arch,
         pixtral_arch,
+        pixtral_modulev3_arch,
         qwen2_arch,
         qwen2_5_vl_arch,
         qwen3_arch,
         qwen3_moe_arch,
         qwen3_embedding_arch,
+        qwen3_embedding_modulev3_arch,
         qwen3vl_arch,
         qwen3vl_moe_arch,
+        qwen_image_arch,
+        qwen_image_edit_arch,
+        qwen_image_edit_plus_arch,
+        unified_eagle_llama3_arch,
+        unified_mtp_deepseekV3_arch,
+        wan_arch,
+        wan_i2v_arch,
+        z_image_arch,
     ]
 
     for arch in architectures:

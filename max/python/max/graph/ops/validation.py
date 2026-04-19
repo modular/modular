@@ -12,14 +12,54 @@
 # ===----------------------------------------------------------------------=== #
 """Helper functions for asserting in ops."""
 
+import warnings
 from collections.abc import Iterable
 
+from ..graph import DevicePlacementPolicy, Graph
 from ..value import BufferValue, TensorValue
+
+
+def _check_device_placement(op_name: str, todo: str = "") -> None:
+    """Enforce the active graph's device placement policy for CPU-only ops.
+
+    Call this before implicitly transferring a non-CPU tensor to CPU inside an
+    op implementation. Follow it immediately with ``transfer_to(x, CPU())``.
+
+    Behavior is driven by ``Graph.strict_device_placement``:
+
+    - ``Ignore``: no action.
+    - ``Warn`` (default): emit a ``UserWarning``.
+    - ``Error``: raise ``ValueError``.
+
+    Args:
+        op_name: The public op name, e.g. ``"ops.cumsum"``.
+        todo: Tracking ticket for GPU kernel work, e.g. ``"TODO(KERN-1095)."``.
+    """
+    policy = Graph.current.strict_device_placement
+    if policy is DevicePlacementPolicy.Ignore:
+        return
+
+    msg = (
+        f"`{op_name}` does not support GPU execution and will implicitly"
+        " transfer the tensor to CPU."
+    )
+    if todo:
+        msg += f" {todo}"
+    msg += (
+        " Call `ops.transfer_to(x, CPU())` explicitly, or construct the"
+        " Graph with `strict_device_placement=DevicePlacementPolicy.Error`"
+        " to make this an error."
+    )
+
+    if policy is DevicePlacementPolicy.Error:
+        raise ValueError(msg)
+    warnings.warn(msg, stacklevel=3)
 
 
 def indent(
     lines: Iterable[str], level: int = 1, indent: str = "    "
 ) -> Iterable[str]:
+    """Prepends each line with the given indent string repeated level times."""
     for line in lines:
         yield (indent * level) + line
 
@@ -28,6 +68,7 @@ def assert_same_device(
     *values: TensorValue | BufferValue,
     **named_values: TensorValue | BufferValue,
 ) -> None:
+    """Raises ValueError if any of the given values are not on the same device."""
     named_values = {
         **{str(i): value for i, value in enumerate(values)},
         **named_values,
@@ -48,6 +89,7 @@ def assert_on_host(
     *values: TensorValue | BufferValue,
     **named_values: TensorValue | BufferValue,
 ) -> None:
+    """Raises ValueError if any of the given values are not on the CPU device."""
     named_values = {
         **{str(i): value for i, value in enumerate(values)},
         **named_values,
@@ -68,6 +110,7 @@ def assert_on_host(
 
 
 def assert_same_shape(*values: TensorValue | BufferValue) -> None:
+    """Raises ValueError if the given values do not all have the same shape."""
     first_shape = values[0].shape
 
     for i, tensor in enumerate(values[1:], start=1):
@@ -79,6 +122,7 @@ def assert_same_shape(*values: TensorValue | BufferValue) -> None:
 
 
 def assert_same_dtype(*values: TensorValue | BufferValue) -> None:
+    """Raises ValueError if the given values do not all have the same dtype."""
     first_dtype = values[0].dtype
 
     for i, tensor in enumerate(values[1:], start=1):
@@ -90,6 +134,7 @@ def assert_same_dtype(*values: TensorValue | BufferValue) -> None:
 
 
 def assert_valid_axis(value: TensorValue | BufferValue, axis: int) -> None:
+    """Raises IndexError if axis is out of range for the value's rank."""
     if not (-value.rank <= axis < value.rank):
         raise IndexError(
             f"Axis must be in range [-{value.rank}, {value.rank}), got {axis}"

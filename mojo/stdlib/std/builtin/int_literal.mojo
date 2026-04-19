@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the IntLiteral class."""
 
-from math import Ceilable, Floorable, Truncable
+from std.math import Ceilable, Floorable, Truncable
 
 
-@nonmaterializable(Int)
+@__nonmaterializable(Int)
 struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     Boolable,
     Ceilable,
@@ -23,9 +23,9 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     Floorable,
     Indexer,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Truncable,
+    Writable,
 ):
     """This type represents a static integer literal value with
     infinite precision.  This type is a compile-time construct which stores its
@@ -43,7 +43,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     # ===-------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __init__(out self):
+    def __init__(out self):
         """Constructor for any value."""
         pass
 
@@ -52,7 +52,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     # ===-------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __lt__(self, rhs: IntLiteral[_]) -> Bool:
+    def __lt__(self, rhs: IntLiteral[_]) -> Bool:
         """Compare this IntLiteral to the RHS using LT comparison.
 
         Args:
@@ -70,7 +70,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         ]
 
     @always_inline("builtin")
-    fn __le__(self, rhs: IntLiteral[_]) -> Bool:
+    def __le__(self, rhs: IntLiteral[_]) -> Bool:
         """Compare this IntLiteral to the RHS using LE comparison.
 
         Args:
@@ -89,7 +89,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         ]
 
     @always_inline("builtin")
-    fn __eq__(self, rhs: IntLiteral[_]) -> Bool:
+    def __eq__(self, rhs: IntLiteral[_]) -> Bool:
         """Compare this IntLiteral to the RHS using EQ comparison.
 
         Args:
@@ -107,7 +107,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         ]
 
     @always_inline("builtin")
-    fn __ne__(self, rhs: IntLiteral[_]) -> Bool:
+    def __ne__(self, rhs: IntLiteral[_]) -> Bool:
         """Compare this IntLiteral to the RHS using NE comparison.
 
         Args:
@@ -125,7 +125,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         ]
 
     @always_inline("builtin")
-    fn __gt__(self, rhs: IntLiteral[_]) -> Bool:
+    def __gt__(self, rhs: IntLiteral[_]) -> Bool:
         """Compare this IntLiteral to the RHS using GT comparison.
 
         Args:
@@ -143,7 +143,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         ]
 
     @always_inline("builtin")
-    fn __ge__(self, rhs: IntLiteral[_]) -> Bool:
+    def __ge__(self, rhs: IntLiteral[_]) -> Bool:
         """Compare this IntLiteral to the RHS using GE comparison.
 
         Args:
@@ -162,7 +162,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         ]
 
     @always_inline("builtin")
-    fn __pos__(self) -> Self:
+    def __pos__(self) -> Self:
         """Return +self.
 
         Returns:
@@ -171,7 +171,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return self
 
     @always_inline("builtin")
-    fn __neg__(self) -> type_of(0 - self):
+    def __neg__(self) -> type_of(0 - self):
         """Return -self.
 
         Returns:
@@ -180,7 +180,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return 0 - self
 
     @always_inline("builtin")
-    fn __invert__(self) -> type_of(self ^ -1):
+    def __invert__(self) -> type_of(self ^ -1):
         """Return ~self.
 
         Returns:
@@ -189,7 +189,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __add__(
+    def __add__(
         self,
         rhs: IntLiteral[_],
     ) -> IntLiteral[
@@ -212,7 +212,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __sub__(
+    def __sub__(
         self, rhs: IntLiteral[_]
     ) -> IntLiteral[
         __mlir_attr[
@@ -234,7 +234,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __mul__(
+    def __mul__(
         self, rhs: IntLiteral[_]
     ) -> IntLiteral[
         __mlir_attr[
@@ -255,10 +255,30 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         """
         return {}
 
-    # TODO: implement __pow__
+    @always_inline("builtin")
+    def __pow__(
+        self, exp: IntLiteral[_]
+    ) -> IntLiteral[
+        __mlir_attr[
+            `#pop<int_literal_bin<pow `,
+            self.value,
+            `,`,
+            exp.value,
+            `>> : !pop.int_literal`,
+        ]
+    ]:
+        """Return the value raised to the power of the given exponent.
+
+        Args:
+            exp: The exponent value.
+
+        Returns:
+            The value of `self` raised to the power of `exp`.
+        """
+        return {}
 
     @always_inline("builtin")
-    fn __floordiv__(
+    def __floordiv__(
         self, rhs: IntLiteral[_]
     ) -> IntLiteral[
         __mlir_attr[
@@ -280,7 +300,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __mod__(
+    def __mod__(
         self, rhs: IntLiteral[_]
     ) -> IntLiteral[
         __mlir_attr[
@@ -302,7 +322,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __lshift__(
+    def __lshift__(
         self, rhs: IntLiteral[_]
     ) -> IntLiteral[
         __mlir_attr[
@@ -324,7 +344,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __rshift__(
+    def __rshift__(
         self, rhs: IntLiteral[_]
     ) -> IntLiteral[
         __mlir_attr[
@@ -346,7 +366,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __and__(
+    def __and__(
         self, rhs: IntLiteral[_]
     ) -> IntLiteral[
         __mlir_attr[
@@ -368,7 +388,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __xor__(
+    def __xor__(
         self, rhs: IntLiteral[_]
     ) -> IntLiteral[
         __mlir_attr[
@@ -390,7 +410,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return {}
 
     @always_inline("builtin")
-    fn __or__(
+    def __or__(
         self, rhs: IntLiteral[_]
     ) -> IntLiteral[
         __mlir_attr[
@@ -416,7 +436,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     # ===-------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Convert this IntLiteral to Bool.
 
         Returns:
@@ -425,7 +445,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return self != 0
 
     @always_inline("builtin")
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """Convert from IntLiteral to Int.
 
         Returns:
@@ -434,7 +454,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return Int(mlir_value=self.__mlir_index__())
 
     @always_inline("builtin")
-    fn __ceil__(self) -> Self:
+    def __ceil__(self) -> Self:
         """Return the ceiling of the IntLiteral value, which is itself.
 
         Returns:
@@ -443,7 +463,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return self
 
     @always_inline("builtin")
-    fn __floor__(self) -> Self:
+    def __floor__(self) -> Self:
         """Return the floor of the IntLiteral value, which is itself.
 
         Returns:
@@ -452,7 +472,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return self
 
     @always_inline("builtin")
-    fn __trunc__(self) -> Self:
+    def __trunc__(self) -> Self:
         """Return the truncated of the IntLiteral value, which is itself.
 
         Returns:
@@ -461,16 +481,25 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         return self
 
     @no_inline
-    fn __str__(self) -> String:
-        """Convert from IntLiteral to String.
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes the IntLiteral in string form.
 
-        Returns:
-            The value as a string.
+        Args:
+            writer: The Writer to write the value to.
         """
-        return String(Int(self))
+        Int(self).write_to(writer)
+
+    @no_inline
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the IntLiteral in repr form.
+
+        Args:
+            writer: The Writer to write the value to.
+        """
+        Int(self).write_repr_to(writer)
 
     @always_inline("builtin")
-    fn __ceildiv__(
+    def __ceildiv__(
         self, denominator: IntLiteral
     ) -> type_of(-(self // -denominator)):
         """Return the rounded-up result of dividing self by denominator.
@@ -488,8 +517,9 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     # Methods
     # ===-------------------------------------------------------------------===#
 
+    @doc_hidden
     @always_inline("builtin")
-    fn __mlir_index__(self) -> __mlir_type.index:
+    def __mlir_index__(self) -> __mlir_type.index:
         """Convert from IntLiteral to index.
 
         Returns:

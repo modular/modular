@@ -69,6 +69,18 @@ gpu_toolchain_alias(
 )
 
 modular_cc_library(
+    name = "gtest_main_objc_pool_check",
+    testonly = True,
+    srcs = ["GTestMainObjcPoolCheck.cpp"],
+    target_compatible_with = ["@platforms//os:macos"],
+    deps = [
+        "@llvm-project//llvm:Support",
+        "@llvm-project//third-party/unittest:gmock",
+        "@llvm-project//third-party/unittest:gtest",
+    ],
+)
+
+modular_cc_library(
     name = "debugging_test_lib",
     srcs = ["debugging_test_lib.cpp"],
     hdrs = ["debugging_test_lib.h"],
@@ -86,6 +98,9 @@ modular_cc_binary(
 modular_py_binary(
     name = "sphinx",
     srcs = ["sphinx.py"],
+    # .pyi stubs for the _core C extension so that linkcode_resolve() in
+    # conf.py can map nanobind symbols to their stub definitions on GitHub.
+    data = ["//max/python/max:_core_pyi_stubs"],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         # Each invocation has different deps depending on what you are doing.
@@ -125,7 +140,7 @@ mojo_copts_toolchain(
         ],
         "//:linux_aarch64": [
             "-target-triple=aarch64-unknown-linux-gnu",
-            "--target-cpu=neoverse-v1",
+            "--target-cpu=neoverse-n1",
         ],
         "@platforms//os:macos": [
             "--target-cpu=apple-m1",

@@ -19,16 +19,14 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.comm.ep import EPConfig
-from max.nn.legacy.float8_config import Float8Config
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    KVCacheQuantizationConfig,
-    KVCacheStrategy,
-)
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.nn.comm.ep import EPConfig
+from max.nn.kv_cache import KVCacheParamInterface, KVCacheQuantizationConfig
+from max.nn.quant_config import QuantConfig
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -40,7 +38,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
     # MAX specific fields
     dtype: DType
-    kv_params: KVCacheParams
+    kv_params: KVCacheParamInterface
     devices: list[DeviceRef]
     use_subgraphs: bool = True
     data_parallel_degree: int = 1
@@ -84,9 +82,10 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     attention_dropout: float = 0.0
 
     norm_dtype: DType = DType.bfloat16
+    gate_dtype: DType | None = None
     correction_bias_dtype: DType | None = None
     max_batch_context_length: int = 131072
-    float8_config: Float8Config | None = None
+    quant_config: QuantConfig | None = None
     ep_config: EPConfig | None = None
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
 
@@ -96,13 +95,19 @@ class DeepseekV3Config(ArchConfigWithKVCache):
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     """Whether to return hidden states and which type (none, last, all, last_normalized, all_normalized)."""
 
+    eagle_aux_hidden_state_layer_ids: list[int] | None = None
+    """Optional explicit hidden-state capture layer ids for EAGLE3."""
+
     def __post_init__(self) -> None:
         if self.hidden_act != "silu":
             raise ValueError(
                 "'silu' is the only hidden_act currently supported"
             )
 
-        if self.rope_scaling and self.rope_scaling["type"] != "yarn":
+        rope_type = self.rope_scaling and self.rope_scaling.get(
+            "rope_type", self.rope_scaling.get("type")
+        )
+        if rope_type and rope_type != "yarn":
             raise ValueError(
                 "'yarn' is the only rope_scaling type currently supported"
             )
@@ -110,7 +115,18 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         if self.tie_word_embeddings:
             raise ValueError("tie_word_embeddings is not supported yet")
 
-    def get_kv_params(self) -> KVCacheParams:
+        # Validate data parallel degree for DeepSeekV3.
+        # DP attention requires DP degree to match device count.
+        # TP attention requires DP degree to be 1.
+        num_devices = len(self.devices)
+        if self.data_parallel_degree not in (1, num_devices):
+            raise ValueError(
+                f"data_parallel_degree for DeepSeekV3 ({self.data_parallel_degree}) must be "
+                f"1 (TP attention) or equal to the number of devices ({num_devices}). "
+                "DP attention requires DP degree to match device count."
+            )
+
+    def get_kv_params(self) -> KVCacheParamInterface:
         return self.kv_params
 
     def get_max_seq_len(self) -> int:
@@ -123,24 +139,20 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-        page_size: int = 128,
-    ) -> KVCacheParams:
+    ) -> KVCacheParamInterface:
         data_parallel_degree = pipeline_config.model.data_parallel_degree
-        if data_parallel_degree not in (1, len(devices)):
-            raise ValueError(
-                "data_parallel_degree must be 1 or match the number of devices"
-            )
-
         kvcache_quant_config = None
         if kv_cache_config.cache_dtype in (
             DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
         ):
             # Configure the KVCacheParams quantization parameters.
+            # TODO: Set valid scale_dtype when kv_scales are needed (SERVOPT-1094: [EPIC] SnapMLA Implementation).
             kvcache_quant_config = KVCacheQuantizationConfig(
-                scale_dtype=DType.float32, quantization_granularity=32
+                scale_dtype=DType.int8, quantization_granularity=32
             )
-        return KVCacheParams(
+
+        return kv_cache_config.to_params(
             dtype=cache_dtype,
             # n_kv_heads should always be 1 because we only cache a single latent vector
             # in LatentAttention
@@ -148,14 +160,10 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             head_dim=huggingface_config.kv_lora_rank
             + huggingface_config.qk_rope_head_dim,
             num_layers=DeepseekV3Config.get_num_layers(huggingface_config),
-            cache_strategy=KVCacheStrategy.PAGED,
             devices=devices,
-            page_size=page_size,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             data_parallel_degree=data_parallel_degree,
             is_mla=True,
+            num_q_heads=huggingface_config.num_attention_heads,
             kvcache_quant_config=kvcache_quant_config,
         )
 
@@ -165,12 +173,16 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         """Initializes a DeepseekV3Config instance from pipeline configuration.
 
         This method creates a config instance with all fields that can be determined
         from the pipeline configuration, without needing the state_dict.
-        Fields that depend on the state_dict (like norm_dtype, float8_config, etc.)
+        Fields that depend on the state_dict (like norm_dtype, quant_config, etc.)
         should be set via the `finalize()` method.
 
         Args:
@@ -179,23 +191,24 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         Returns:
             An initialized DeepseekV3Config instance.
         """
-        config = pipeline_config.model.huggingface_config
+        model_config = model_config or pipeline_config.model
+        config = model_config.huggingface_config
         if config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
+        kv_cache_config = model_config.kv_cache
+        quantization_encoding = model_config.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        dtype = quantization_encoding.dtype
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        dtype = supported_encoding_dtype(quantization_encoding)
+        cache_dtype = model_config.kv_cache.cache_dtype
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model.device_specs
+            for spec in model_config.device_specs
         ]
 
         kv_params = cls.construct_kv_params(
@@ -208,14 +221,15 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
         max_seq_len = upper_bounded_default(
             upper_bound=config.max_position_embeddings,
-            default=pipeline_config.max_length,
+            default=model_config.max_length,
         )
 
         return cls(
             dtype=dtype,
             kv_params=kv_params,
             devices=device_refs,
-            use_subgraphs=pipeline_config.model.use_subgraphs,
+            data_parallel_degree=model_config.data_parallel_degree,
+            use_subgraphs=model_config.use_subgraphs,
             vocab_size=config.vocab_size,
             hidden_size=config.hidden_size,
             intermediate_size=config.intermediate_size,
@@ -243,7 +257,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             max_seq_len=max_seq_len,
             rms_norm_eps=config.rms_norm_eps,
             tie_word_embeddings=config.tie_word_embeddings,
-            rope_theta=config.rope_theta,
+            rope_theta=get_rope_theta(config),
             rope_scaling=config.rope_scaling,
             rope_interleave=getattr(config, "rope_interleave", True),
             scoring_func=config.scoring_func,

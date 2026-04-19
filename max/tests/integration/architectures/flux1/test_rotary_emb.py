@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,10 +18,10 @@ import torch
 from diffusers.models.embeddings import (
     apply_rotary_emb as diffusers_apply_rotary_emb,
 )
-from max.pipelines.architectures.flux1.layers.embeddings import (
+from max.experimental.tensor import Tensor
+from max.pipelines.architectures.flux1_modulev3.layers.embeddings import (
     apply_rotary_emb as max_apply_rotary_emb,
 )
-from max.tensor import Tensor
 from torch.utils.dlpack import from_dlpack
 
 # query : torch.Size([1, 4608, 24, 128]), torch.bfloat16

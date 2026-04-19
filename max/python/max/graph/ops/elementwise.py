@@ -114,8 +114,7 @@ Raises:
 
 
 def div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
-    """
-    Divides two symbolic tensors using true division (Python operator `/`).
+    """Divides two symbolic tensors using true division (Python operator `/`).
 
     For integer operands, this performs true division by promoting to float,
     matching Python's `/` operator behavior. For floating-point operands,
@@ -643,8 +642,8 @@ mechanisms, activation functions, and probability distributions.
 
 .. code-block:: python
 
-    import max.functional as F
-    from max.tensor import Tensor
+    import max.experimental.functional as F
+    from max.experimental.tensor import Tensor
 
     # Create input tensor
     x = Tensor.constant([0.0, 1.0, 2.0])
@@ -692,8 +691,7 @@ Raises:
 
 
 def _gelu_exact(x: TensorValue):  # noqa: ANN202
-    """
-    Computes the elementwise gelu function of a symbolic tensor.
+    r"""Computes the elementwise gelu function of a symbolic tensor.
 
     Creates a new op node to compute the elementwise gelu function of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
@@ -702,8 +700,7 @@ def _gelu_exact(x: TensorValue):  # noqa: ANN202
     cumulative distribution function of the Gaussian distribution.
 
     Args:
-        value: The symbolic tensor to use as the input to the gelu function
-            computation.
+        x: The symbolic tensor to use as the input to the gelu function.
 
     Returns:
         A new symbolic tensor value representing the output of the gelu computation.
@@ -717,8 +714,7 @@ def _gelu_exact(x: TensorValue):  # noqa: ANN202
 
 
 def _gelu_quick(x: TensorValue):  # noqa: ANN202
-    """
-    Computes the elementwise quick gelu of a symbolic tensor.
+    """Computes the elementwise quick gelu of a symbolic tensor.
 
     Creates a new op node to compute the elementwise quick gelu of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
@@ -730,12 +726,10 @@ def _gelu_quick(x: TensorValue):  # noqa: ANN202
         - https://arxiv.org/abs/1606.08415
 
     Args:
-        value: The symbolic tensor to use as the input to the quick gelu
-            computation.
+        x: The symbolic tensor to use as the input to the quick gelu computation.
 
     Returns:
-        A new symbolic tensor value representing the output of the quick gelu
-            ccomputation.
+        A new symbolic tensor value representing the output of the quick gelu computation.
 
     Raises:
         Error: If the symbol doesn't represent a tensor value.
@@ -745,19 +739,16 @@ def _gelu_quick(x: TensorValue):  # noqa: ANN202
 
 
 def _gelu_tanh(x: TensorValue):  # noqa: ANN202
-    """
-    Computes the elementwise gelu of a symbolic tensor.
+    """Computes the elementwise gelu of a symbolic tensor.
 
     Creates a new op node to compute the elementwise gelu of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
     Args:
-        value: The symbolic tensor to use as the input to the gelu
-            computation.
+        x: The symbolic tensor to use as the input to the gelu computation.
 
     Returns:
-        A new symbolic tensor value representing the output of the tanh
-            value computation.
+        A new symbolic tensor value representing the output of the tanh computation.
 
     Raises:
         Error: If the symbol doesn't represent a tensor value.
@@ -771,8 +762,7 @@ def _gelu_tanh(x: TensorValue):  # noqa: ANN202
 
 
 def gelu(x: TensorValue, approximate: str = "none"):  # noqa: ANN201
-    """
-    Computes the elementwise gelu of a symbolic tensor.
+    """Computes the elementwise gelu of a symbolic tensor.
 
     Creates a new op node to compute the elementwise gelu of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
@@ -797,12 +787,11 @@ def gelu(x: TensorValue, approximate: str = "none"):  # noqa: ANN201
     is used.
 
     Args:
-        value: The symbolic tensor to use as the input to the gelu
-            computation.
+        x: The symbolic tensor to use as the input to the gelu computation.
+        approximate: One of ``none``, ``tanh``, or ``quick``.
 
     Returns:
-        A new symbolic tensor value representing the output of the gelu
-            value computation.
+        A new symbolic tensor value representing the output of the gelu computation.
 
     Raises:
         Error: If the symbol doesn't represent a tensor value.
@@ -829,8 +818,8 @@ probability calculations in machine learning.
 
 .. code-block:: python
 
-    import max.functional as F
-    from max.tensor import Tensor
+    import max.experimental.functional as F
+    from max.experimental.tensor import Tensor
 
     # Create input tensor (positive values only)
     x = Tensor.constant([1.0, 2.718, 7.389, 20.0])
@@ -906,7 +895,7 @@ def _softmax_like(op):  # noqa: ANN001, ANN202
     return softmax_like_op
 
 
-logsoftmax = _softmax_like(rmo.mo_logsoftmax)
+logsoftmax = _softmax_like(rmo.mo_reduce_logsoftmax)
 """
 Computes the elementwise logsoftmax of a symbolic tensor.
 
@@ -941,8 +930,8 @@ gradient problem.
 
 .. code-block:: python
 
-    import max.functional as F
-    from max.tensor import Tensor
+    import max.experimental.functional as F
+    from max.experimental.tensor import Tensor
 
     # Create input with negative and positive values
     x = Tensor.constant([[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]])
@@ -967,8 +956,7 @@ Raises:
 
 
 def sigmoid(x: TensorValue) -> TensorValue:
-    """
-    Computes the elementwise sigmoid activation of a symbolic tensor.
+    """Computes the elementwise sigmoid activation of a symbolic tensor.
 
     Creates a new op node to compute the elementwise sigmoid of a symbolic
     tensor and adds it to the graph, returning the symbolic result. Sigmoid
@@ -981,8 +969,8 @@ def sigmoid(x: TensorValue) -> TensorValue:
 
     .. code-block:: python
 
-        import max.functional as F
-        from max.tensor import Tensor
+        import max.experimental.functional as F
+        from max.experimental.tensor import Tensor
 
         # Create input tensor
         x = Tensor.constant([[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]])
@@ -994,12 +982,10 @@ def sigmoid(x: TensorValue) -> TensorValue:
         # All values mapped to range (0, 1)
 
     Args:
-        value: The symbolic tensor to use as the input to the sigmoid
-            computation.
+        x: The symbolic tensor to use as the input to the sigmoid computation.
 
     Returns:
-        A new symbolic tensor value representing the output of the sigmoid
-            value computation.
+        A new symbolic tensor value representing the output of the sigmoid computation.
 
     Raises:
         Error: If the symbol doesn't represent a tensor value.
@@ -1009,8 +995,7 @@ def sigmoid(x: TensorValue) -> TensorValue:
 
 
 def silu(x: TensorValue):  # noqa: ANN201
-    """
-    Computes the elementwise silu of a symbolic tensor.
+    """Computes the elementwise silu of a symbolic tensor.
 
     Creates a new op node to compute the elementwise silu of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
@@ -1018,12 +1003,10 @@ def silu(x: TensorValue):  # noqa: ANN201
     ``silu`` is defined as ``silu(x) = x * sigmoid(x)``.
 
     Args:
-        value: The symbolic tensor to use as the input to the silu
-            computation.
+        x: The symbolic tensor to use as the input to the silu computation.
 
     Returns:
-        A new symbolic tensor value representing the output of the silu
-            value computation.
+        A new symbolic tensor value representing the output of the silu computation.
 
     Raises:
         Error: If the symbol doesn't represent a tensor value.
@@ -1032,7 +1015,7 @@ def silu(x: TensorValue):  # noqa: ANN201
     return mul(x_cast, sigmoid(x_cast)).cast(x.dtype)
 
 
-softmax = _softmax_like(rmo.mo_softmax)
+softmax = _softmax_like(rmo.mo_reduce_softmax)
 """
 Computes the elementwise softmax of a symbolic tensor.
 
@@ -1157,8 +1140,8 @@ implementing mathematical operations like standard deviation.
 
 .. code-block:: python
 
-    import max.functional as F
-    from max.tensor import Tensor
+    import max.experimental.functional as F
+    from max.experimental.tensor import Tensor
 
     # Create tensor with positive values
     x = Tensor.constant([1.0, 4.0, 9.0, 16.0])
@@ -1221,8 +1204,8 @@ with gradient flow during training.
 
 .. code-block:: python
 
-    import max.functional as F
-    from max.tensor import Tensor
+    import max.experimental.functional as F
+    from max.experimental.tensor import Tensor
 
     # Create input tensor
     x = Tensor.constant([[-2.0, -1.0, 0.0], [1.0, 2.0, 3.0]])

@@ -11,39 +11,42 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_int
+from std.sys import get_defined_int
 
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from builtin._closure import __ownership_keepalive
-from gpu import *
-from gpu.host import DeviceContext
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.builtin._closure import __ownership_keepalive
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
 from internal_utils import update_bench_config_args
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
 
-fn vec_func(
-    in0: UnsafePointer[Float32],
-    in1: UnsafePointer[Float32],
-    output: UnsafePointer[Float32],
+def vec_func(
+    in0: UnsafePointer[Float32, ImmutAnyOrigin],
+    in1: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = in0[tid] + in1[tid]
 
 
 @no_inline
-fn bench_vec_add(
+def bench_vec_add(
     mut b: Bench, *, block_dim: Int, length: Int, context: DeviceContext
 ) raises:
     comptime dtype = DType.float32
-    var in0_host = UnsafePointer[Scalar[dtype]].alloc(length)
-    var in1_host = UnsafePointer[Scalar[dtype]].alloc(length)
-    var out_host = UnsafePointer[Scalar[dtype]].alloc(length)
+    var in0_host = alloc[Scalar[dtype]](length)
+    var in1_host = alloc[Scalar[dtype]](length)
+    var out_host = alloc[Scalar[dtype]](length)
 
     for i in range(length):
         in0_host[i] = Float32(i)
@@ -58,7 +61,7 @@ fn bench_vec_add(
 
     @always_inline
     @parameter
-    fn run_func() raises:
+    def run_func() raises:
         context.enqueue_function_experimental[vec_func](
             in0_device,
             in1_device,
@@ -70,10 +73,10 @@ fn bench_vec_add(
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             run_func()
 
         b.iter_custom[kernel_launch](context)
@@ -95,8 +98,8 @@ fn bench_vec_add(
     out_host.free()
 
 
-def main():
-    comptime block_dim = env_get_int["block_dim", 32]()
+def main() raises:
+    comptime block_dim = get_defined_int["block_dim", 32]()
     var m = Bench()
     update_bench_config_args(m)
 

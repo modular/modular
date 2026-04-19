@@ -15,22 +15,21 @@ from __future__ import annotations
 
 from typing import Literal
 
-from max.driver import Buffer, Device
+from max.driver import Device
 from max.engine import InferenceSession
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
+    MAXModelConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    SupportedEncoding,
 )
-from transformers import AutoConfig
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 
-from ..llama3.model import Llama3Inputs, LlamaModelBase
+from ..llama3.model import LlamaModelBase
 from .eagle_llama3 import EagleLlama3
 from .model_config import Llama3Config
 
@@ -44,8 +43,6 @@ class EagleLlama3Model(LlamaModelBase):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -56,8 +53,6 @@ class EagleLlama3Model(LlamaModelBase):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -67,34 +62,8 @@ class EagleLlama3Model(LlamaModelBase):
         )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
-        assert isinstance(model_inputs, Llama3Inputs)
-
-        # EAGLE models require hidden states
-        assert (
-            hasattr(model_inputs, "hidden_states")
-            and model_inputs.hidden_states is not None
-            and isinstance(model_inputs.hidden_states, Buffer)
-        ), (
-            "EAGLE model requires hidden_states as a single Buffer in model_inputs"
-        )
-
-        model_outputs = self.model.execute(
-            model_inputs.tokens,
-            model_inputs.input_row_offsets,
-            model_inputs.return_n_logits,
-            model_inputs.hidden_states,
-            *model_inputs.signal_buffers,
-            *curr_kv_cache_inputs,
-        )
-
-        assert len(model_outputs) == 2
-        assert isinstance(model_outputs[0], Buffer)
-        assert isinstance(model_outputs[1], Buffer)
-
-        return ModelOutputs(
-            logits=model_outputs[0],
-            hidden_states=model_outputs[1],
+        raise NotImplementedError(
+            "Cannot directly execute EagleLlama3Model. You should use the UnifiedEagleLlama3Model instead."
         )
 
     def _build_graph(
@@ -102,10 +71,20 @@ class EagleLlama3Model(LlamaModelBase):
         weights: Weights,
         adapter: WeightsAdapter | None = None,
     ) -> Graph:
-        state_dict = self._get_state_dict(weights, adapter)
-        model_config = Llama3Config.initialize(self.pipeline_config)
+        draft_model: MAXModelConfig | None = self.pipeline_config.draft_model
+        assert draft_model is not None
+        draft_hf_config = draft_model.huggingface_config
+        assert draft_hf_config is not None
+        state_dict = parse_state_dict_from_weights(
+            self.pipeline_config, weights, adapter, hf_config=draft_hf_config
+        )
+
+        model_config = Llama3Config.initialize_from_config(
+            self.pipeline_config,
+            draft_hf_config,
+        )
         model_config.finalize(
-            huggingface_config=self.huggingface_config,
+            huggingface_config=draft_hf_config,
             state_dict=state_dict,
             norm_method=self.norm_method,
             attention_bias=self.attention_bias,
@@ -141,16 +120,11 @@ class EagleLlama3Model(LlamaModelBase):
                 *kv_cache_inputs,
             ) = graph.inputs
 
-            kv_collection = PagedCacheValues(
-                kv_blocks=kv_cache_inputs[0].buffer,
-                cache_lengths=kv_cache_inputs[1].tensor,
-                lookup_table=kv_cache_inputs[2].tensor,
-                max_lengths=kv_cache_inputs[3].tensor,
-            )
+            kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
 
             outputs = single_model(
                 tokens.tensor,
-                kv_collection,
+                kv_collections[0],
                 return_n_logits.tensor,
                 input_row_offsets.tensor,
                 hidden_states.tensor,

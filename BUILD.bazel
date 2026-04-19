@@ -88,27 +88,28 @@ config_setting(
 ###
 
 string_flag(
-    name = "modular_version_major",
-    build_setting_default = "0",
-    make_variable = "MODULAR_VERSION_MAJOR",
+    name = "max_base_version",
+    build_setting_default = "26.3.0",
+    make_variable = "MAX_BASE_VERSION",
 )
 
 string_flag(
-    name = "modular_version_minor",
-    build_setting_default = "0",
-    make_variable = "MODULAR_VERSION_MINOR",
+    name = "mojo_base_version",
+    build_setting_default = "0.26.3.0",
+    make_variable = "MOJO_BASE_VERSION",
+)
+
+# The base versions are 'stable', while the labels change frequently.
+string_flag(
+    name = "max_version_label",
+    build_setting_default = ".dev0",
+    make_variable = "MAX_VERSION_LABEL",
 )
 
 string_flag(
-    name = "modular_version_patch",
-    build_setting_default = "0",
-    make_variable = "MODULAR_VERSION_PATCH",
-)
-
-string_flag(
-    name = "modular_version_label",
-    build_setting_default = "",
-    make_variable = "MODULAR_VERSION_LABEL",
+    name = "mojo_version_label",
+    build_setting_default = ".dev0",
+    make_variable = "MOJO_VERSION_LABEL",
 )
 
 string_flag(
@@ -199,6 +200,26 @@ platform(
     exec_properties = {
         "OSFamily": "Linux",
         "Pool": "b200-executors",
+        "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204-gpu",
+        "dockerNetwork": "off",
+        "test.resources:gpu-count": "0.01",
+        "test.resources:gpu-memory": DEFAULT_GPU_MEMORY,
+        "test.resources:gpu-1": "0.01",
+    },
+)
+
+platform(
+    name = "b200-benchmark-platform",
+    constraint_values = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+        ":nvidia_gpu",
+        ":has_gpu",
+        ":b200_gpu",
+    ],
+    exec_properties = {
+        "OSFamily": "Linux",
+        "Pool": "b200-executors-benchmark",
         "container-image": "docker://381491890578.dkr.ecr.us-east-1.amazonaws.com/modular-build-env:ubuntu2204-gpu",
         "dockerNetwork": "off",
         "test.resources:gpu-count": "0.01",
@@ -311,6 +332,28 @@ config_setting(
     name = "ubsan_macos",
     constraint_values = ["@platforms//os:macos"],
     flag_values = {"//:modular_config": "ubsan"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
+# Should only be read from the host config
+string_flag(
+    name = "host_modular_config",
+    build_setting_default = "default",
+    scope = "universal",
+    values = [
+        "default",
+        "ci_build",
+    ],
+)
+
+config_setting(
+    name = "host_modular_config_ci_build",
+    flag_values = {"//:host_modular_config": "ci_build"},
+)
+
+config_setting(
+    name = "host_modular_config_default",
+    flag_values = {"//:host_modular_config": "default"},
     tags = [ALLOW_UNUSED_TAG],
 )
 

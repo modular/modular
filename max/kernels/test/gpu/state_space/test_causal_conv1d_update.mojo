@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,38 +11,37 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, exp
-from sys.info import simd_width_of
+from std.math import ceildiv, exp
 
-from algorithm.functional import _get_start_indices_of_nth_subvolume
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import (
-    UNKNOWN_VALUE,
+    Idx,
     Layout,
     LayoutTensor,
-    RuntimeTuple,
     RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
 )
-from random import rand
-from layout.int_tuple import fill_like
-from memory import alloc
+from std.random import rand
+from std.memory import alloc
 from state_space.causal_conv1d import (
     causal_conv1d_update_cpu,
     causal_conv1d_update_cpu_no_bias,
     causal_conv1d_update_gpu,
     causal_conv1d_update_gpu_no_bias,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 @always_inline
-fn silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
+def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     """Reference SiLU implementation: x * sigmoid(x) = x / (1 + exp(-x))."""
     var x_f32 = x.cast[DType.float32]()
     var neg_x = -x_f32
@@ -52,7 +51,7 @@ fn silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     return (x_f32 * sigmoid_x).cast[dtype]()
 
 
-fn run_causal_conv1d_update_gpu[
+def run_causal_conv1d_update_gpu[
     dtype: DType,
     has_bias: Bool,
     activation: StaticString,
@@ -200,36 +199,60 @@ fn run_causal_conv1d_update_gpu[
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
 
+    # Create TileTensors for GPU kernel
+    var input_device_tt = TileTensor(
+        input_device,
+        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
+    )
+    var conv_state_device_tt = TileTensor(
+        conv_state_device,
+        row_major(Idx(batch), Idx(dim), Idx(state_len)),
+    )
+    var weight_device_tt = TileTensor(
+        weight_device,
+        row_major(Idx(dim), Idx(width)),
+    )
+    var bias_device_tt = TileTensor(
+        bias_device,
+        row_major(
+            Idx(dim),
+        ),
+    )
+    var output_device_tt = TileTensor(
+        output_device,
+        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
+    )
+
     # Run GPU kernel
     comptime kNThreads = 128
     with ctx.push_context():
         if has_bias:
             var compiled_func = ctx.compile_function[
                 causal_conv1d_update_gpu[
-                    input_device_tensor.dtype,
-                    input_device_tensor.layout,
-                    conv_state_device_tensor.dtype,
-                    conv_state_device_tensor.layout,
-                    weight_device_tensor.dtype,
-                    weight_device_tensor.layout,
-                    output_device_tensor.dtype,
-                    output_device_tensor.layout,
-                    bias_device_tensor.dtype,
-                    bias_device_tensor.layout,
+                    dtype,
+                    dtype,
+                    dtype,
+                    dtype,
+                    dtype,
                     kNThreads,
+                    input_device_tt.LayoutType,
+                    conv_state_device_tt.LayoutType,
+                    weight_device_tt.LayoutType,
+                    output_device_tt.LayoutType,
+                    bias_device_tt.LayoutType,
                 ],
                 causal_conv1d_update_gpu[
-                    input_device_tensor.dtype,
-                    input_device_tensor.layout,
-                    conv_state_device_tensor.dtype,
-                    conv_state_device_tensor.layout,
-                    weight_device_tensor.dtype,
-                    weight_device_tensor.layout,
-                    output_device_tensor.dtype,
-                    output_device_tensor.layout,
-                    bias_device_tensor.dtype,
-                    bias_device_tensor.layout,
+                    dtype,
+                    dtype,
+                    dtype,
+                    dtype,
+                    dtype,
                     kNThreads,
+                    input_device_tt.LayoutType,
+                    conv_state_device_tt.LayoutType,
+                    weight_device_tt.LayoutType,
+                    output_device_tt.LayoutType,
+                    bias_device_tt.LayoutType,
                 ],
             ]()
             ctx.enqueue_function(
@@ -239,11 +262,11 @@ fn run_causal_conv1d_update_gpu[
                 seqlen,
                 width,
                 state_len,
-                input_device_tensor,
-                conv_state_device_tensor,
-                weight_device_tensor,
-                output_device_tensor,
-                bias_device_tensor,
+                input_device_tt,
+                conv_state_device_tt,
+                weight_device_tt,
+                output_device_tt,
+                bias_device_tt,
                 x_batch_stride,
                 x_c_stride,
                 x_l_stride,
@@ -262,26 +285,26 @@ fn run_causal_conv1d_update_gpu[
         else:
             var compiled_func = ctx.compile_function[
                 causal_conv1d_update_gpu_no_bias[
-                    input_device_tensor.dtype,
-                    input_device_tensor.layout,
-                    conv_state_device_tensor.dtype,
-                    conv_state_device_tensor.layout,
-                    weight_device_tensor.dtype,
-                    weight_device_tensor.layout,
-                    output_device_tensor.dtype,
-                    output_device_tensor.layout,
+                    dtype,
+                    dtype,
+                    dtype,
+                    dtype,
                     kNThreads,
+                    input_device_tt.LayoutType,
+                    conv_state_device_tt.LayoutType,
+                    weight_device_tt.LayoutType,
+                    output_device_tt.LayoutType,
                 ],
                 causal_conv1d_update_gpu_no_bias[
-                    input_device_tensor.dtype,
-                    input_device_tensor.layout,
-                    conv_state_device_tensor.dtype,
-                    conv_state_device_tensor.layout,
-                    weight_device_tensor.dtype,
-                    weight_device_tensor.layout,
-                    output_device_tensor.dtype,
-                    output_device_tensor.layout,
+                    dtype,
+                    dtype,
+                    dtype,
+                    dtype,
                     kNThreads,
+                    input_device_tt.LayoutType,
+                    conv_state_device_tt.LayoutType,
+                    weight_device_tt.LayoutType,
+                    output_device_tt.LayoutType,
                 ],
             ]()
             ctx.enqueue_function(
@@ -291,10 +314,10 @@ fn run_causal_conv1d_update_gpu[
                 seqlen,
                 width,
                 state_len,
-                input_device_tensor,
-                conv_state_device_tensor,
-                weight_device_tensor,
-                output_device_tensor,
+                input_device_tt,
+                conv_state_device_tt,
+                weight_device_tt,
+                output_device_tt,
                 x_batch_stride,
                 x_c_stride,
                 x_l_stride,
@@ -316,30 +339,44 @@ fn run_causal_conv1d_update_gpu[
         ctx.enqueue_copy(result_gpu_buf.ptr, output_device)
         ctx.enqueue_copy(conv_state_gpu_buf.ptr, conv_state_device)
 
+    # Create TileTensors for CPU reference
+    var input_tt = TileTensor(
+        input_buf.ptr, row_major(Idx(batch), Idx(dim), Idx(seqlen))
+    )
+    var conv_state_cpu_tt = TileTensor(
+        conv_state_cpu_buf.ptr,
+        row_major(Idx(batch), Idx(dim), Idx(state_len)),
+    )
+    var weight_tt = TileTensor(weight_buf.ptr, row_major(Idx(dim), Idx(width)))
+    var bias_tt = TileTensor(
+        bias_buf.ptr,
+        row_major(
+            Idx(dim),
+        ),
+    )
+    var result_cpu_tt = TileTensor(
+        result_cpu_buf.ptr, row_major(Idx(batch), Idx(dim), Idx(seqlen))
+    )
+
     # Run CPU reference
     if has_bias:
         causal_conv1d_update_cpu[
-            input_buf.dtype,
-            input_buf.layout,
-            conv_state_cpu_buf.dtype,
-            conv_state_cpu_buf.layout,
-            weight_buf.dtype,
-            weight_buf.layout,
-            result_cpu_buf.dtype,
-            result_cpu_buf.layout,
-            bias_buf.dtype,
-            bias_buf.layout,
+            dtype,
+            dtype,
+            dtype,
+            dtype,
+            dtype,
         ](
             batch,
             dim,
             seqlen,
             width,
             state_len,
-            input_buf,
-            conv_state_cpu_buf,
-            weight_buf,
-            result_cpu_buf,
-            bias_buf,
+            input_tt,
+            conv_state_cpu_tt,
+            weight_tt,
+            result_cpu_tt,
+            bias_tt,
             x_batch_stride,
             x_c_stride,
             x_l_stride,
@@ -355,24 +392,20 @@ fn run_causal_conv1d_update_gpu[
         )
     else:
         causal_conv1d_update_cpu_no_bias[
-            input_buf.dtype,
-            input_buf.layout,
-            conv_state_cpu_buf.dtype,
-            conv_state_cpu_buf.layout,
-            weight_buf.dtype,
-            weight_buf.layout,
-            result_cpu_buf.dtype,
-            result_cpu_buf.layout,
+            dtype,
+            dtype,
+            dtype,
+            dtype,
         ](
             batch,
             dim,
             seqlen,
             width,
             state_len,
-            input_buf,
-            conv_state_cpu_buf,
-            weight_buf,
-            result_cpu_buf,
+            input_tt,
+            conv_state_cpu_tt,
+            weight_tt,
+            result_cpu_tt,
             x_batch_stride,
             x_c_stride,
             x_l_stride,
@@ -416,7 +449,7 @@ fn run_causal_conv1d_update_gpu[
     result_cpu_heap.free()
 
 
-fn test_gpu_causal_conv1d_update_basic() raises:
+def test_gpu_causal_conv1d_update_basic() raises:
     """Test basic GPU causal conv1d update with bias."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -426,7 +459,7 @@ fn test_gpu_causal_conv1d_update_basic() raises:
     )
 
 
-fn test_gpu_causal_conv1d_update_with_silu() raises:
+def test_gpu_causal_conv1d_update_with_silu() raises:
     """Test GPU causal conv1d update with SiLU activation."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -436,7 +469,7 @@ fn test_gpu_causal_conv1d_update_with_silu() raises:
     )
 
 
-fn test_gpu_causal_conv1d_update_without_bias() raises:
+def test_gpu_causal_conv1d_update_without_bias() raises:
     """Test GPU causal conv1d update without bias."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -446,7 +479,7 @@ fn test_gpu_causal_conv1d_update_without_bias() raises:
     )
 
 
-fn test_gpu_causal_conv1d_update_seqlen_greater_than_one() raises:
+def test_gpu_causal_conv1d_update_seqlen_greater_than_one() raises:
     """Test GPU causal conv1d update with seqlen > 1."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -456,7 +489,7 @@ fn test_gpu_causal_conv1d_update_seqlen_greater_than_one() raises:
     )
 
 
-fn test_gpu_causal_conv1d_update_various_widths() raises:
+def test_gpu_causal_conv1d_update_various_widths() raises:
     """Test GPU causal conv1d update with various kernel widths."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():

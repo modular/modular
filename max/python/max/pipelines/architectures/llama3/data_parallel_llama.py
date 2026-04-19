@@ -27,9 +27,9 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.legacy.data_parallelism import split_batch
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.legacy.layer import Module
+from max.nn.data_parallelism import split_batch
+from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.layer import Module
 from max.pipelines.lib.lora import LoRAManager
 
 from .llama3 import Llama3
@@ -76,7 +76,7 @@ class DataParallelLlama(Module):
     # Graph helpers.
     def input_types(
         self,
-        kv_params: KVCacheParams,
+        kv_params: KVCacheParamInterface,
         lora_manager: LoRAManager | None,
     ) -> tuple[TensorType | BufferType, ...]:
         """Creates input tensor types used for building the graph.
@@ -108,7 +108,7 @@ class DataParallelLlama(Module):
             return_n_logits_type,
             *single_model_kv_cache_inputs,
         ) = single_model_inputs
-        self.num_kv_cache_inputs = len(single_model_kv_cache_inputs)
+        del single_model_kv_cache_inputs
 
         flat_kv_cache_inputs = kv_params.get_symbolic_inputs().flatten()
 
@@ -127,13 +127,9 @@ class DataParallelLlama(Module):
         ]
         return tuple(inputs)
 
-    def _call_flat(self, *args: Value[Any]) -> tuple[TensorValue, ...]:
-        # TODO: Add better support for calling a module with
-        # inputs that have been flattened.
-        # Currently this function requires `input_types` to be called first,
-        # in order to unflatten the inputs.
-        assert hasattr(self, "num_kv_cache_inputs")
-
+    def _call_flat(
+        self, kv_params: KVCacheParamInterface, *args: Value[Any]
+    ) -> tuple[TensorValue, ...]:
         (
             tokens,
             input_row_offsets,
@@ -151,19 +147,17 @@ class DataParallelLlama(Module):
 
         all_model_args = []
 
-        for i in range(len(self.config.devices)):
-            start_idx = i * self.num_kv_cache_inputs
-            kv_cache_args = PagedCacheValues(
-                kv_blocks=all_kv_cache_inputs[start_idx].buffer,
-                cache_lengths=all_kv_cache_inputs[start_idx + 1].tensor,
-                lookup_table=all_kv_cache_inputs[start_idx + 2].tensor,
-                max_lengths=all_kv_cache_inputs[start_idx + 3].tensor,
-            )
+        kv_collections = (
+            kv_params.get_symbolic_inputs()
+            .unflatten(iter(all_kv_cache_inputs))
+            .inputs
+        )
 
+        for i in range(len(self.config.devices)):
             all_model_args.append(
                 (
                     split_tokens[i].tensor,
-                    kv_cache_args,
+                    kv_collections[i],
                     return_n_logits.tensor,
                     split_offsets[i].tensor,
                 )
@@ -184,7 +178,7 @@ def _assign_weight(module: Module, key: str, value: Any) -> None:
 
 def create_graph(
     config: Llama3Config,
-    kv_params: KVCacheParams,
+    kv_params: KVCacheParamInterface,
     state_dict: dict[str, Any],
 ) -> tuple[Graph, dict[str, Any]]:
     model = DataParallelLlama(config)
@@ -202,6 +196,6 @@ def create_graph(
     )
     inputs = model.input_types(kv_params, None)
     with Graph("llama3", input_types=inputs) as graph:
-        outputs = model._call_flat(*graph.inputs)
+        outputs = model._call_flat(kv_params, *graph.inputs)
         graph.output(*outputs)
         return graph, model.state_dict()

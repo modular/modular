@@ -11,20 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import rand, randint
+from std.random import rand, randint
 
-from benchmark import *
-from buffer.dimlist import Dim
+from std.benchmark import *
 from nn.gather_scatter import scatter_elements
 from tensor import DynamicTensor
 
-from utils.index import Index
+from std.utils.index import Index
 
 
-fn bench_scatter(mut m: Bench, spec: ScatterSpec) raises:
+def bench_scatter(mut m: Bench, spec: ScatterSpec) raises:
     @parameter
     @always_inline
-    fn bench_scatter_wrapper(mut b: Bencher, concrete_spec: ScatterSpec) raises:
+    def bench_scatter_wrapper(
+        mut b: Bencher, concrete_spec: ScatterSpec
+    ) raises:
         bench_scatter(b, concrete_spec)
 
     m.bench_with_input[ScatterSpec, bench_scatter_wrapper](
@@ -33,7 +34,7 @@ fn bench_scatter(mut m: Bench, spec: ScatterSpec) raises:
 
 
 @parameter
-fn bench_scatter(mut bencher: Bencher, spec: ScatterSpec):
+def bench_scatter(mut bencher: Bencher, spec: ScatterSpec):
     var index_rand_min = 0
     var index_rand_max = spec.m1 - 1
 
@@ -66,10 +67,10 @@ fn bench_scatter(mut bencher: Bencher, spec: ScatterSpec):
 
     @always_inline
     @parameter
-    fn bench_fn():
+    def bench_fn():
         @always_inline
         @parameter
-        fn reduce_fn[
+        def reduce_fn[
             _dtype: DType, width: Int
         ](
             input_val: SIMD[_dtype, width], update_val: SIMD[_dtype, width]
@@ -96,16 +97,20 @@ fn bench_scatter(mut bencher: Bencher, spec: ScatterSpec):
 
 
 @fieldwise_init
-struct ScatterSpec(ImplicitlyCopyable, Stringable):
+struct ScatterSpec(ImplicitlyCopyable, Writable):
     var axis: Int
     var m1: Int
     var m2: Int
     var n1: Int
     var n2: Int
 
-    @no_inline
-    fn __str__(self) -> String:
-        return String(
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the scatter spec.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
             "axis=",
             self.axis,
             ";Dim=(",
@@ -120,7 +125,7 @@ struct ScatterSpec(ImplicitlyCopyable, Stringable):
         )
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=2))
     bench_scatter(m, ScatterSpec(axis=1, m1=400, m2=400, n1=200, n2=200))
     bench_scatter(m, ScatterSpec(axis=1, m1=1000, m2=1000, n1=200, n2=200))

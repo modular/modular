@@ -11,28 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from random import random_float64
+from std.math import ceildiv
+from std.random import random_float64
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer import NDBuffer
-from gpu import block_dim
-from gpu.host import DeviceContext
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from std.gpu import block_dim
+from std.gpu.host import DeviceContext
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
 
 def test_vendor_blas[
     dtype: DType, transpose_b: Bool
-](*, M: Int, N: Int, K: Int, ctx: DeviceContext):
-    var a_host = UnsafePointer[Scalar[dtype]].alloc(M * K)
-    var b_host = UnsafePointer[Scalar[dtype]].alloc(K * N)
-    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
-    var c_host_ref = UnsafePointer[Scalar[dtype]].alloc(M * N)
+](*, M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
+    var a_host = alloc[Scalar[dtype]](M * K)
+    var b_host = alloc[Scalar[dtype]](K * N)
+    var c_host = alloc[Scalar[dtype]](M * N)
+    var c_host_ref = alloc[Scalar[dtype]](M * N)
 
     for m in range(M):
         for k in range(K):
@@ -50,12 +46,20 @@ def test_vendor_blas[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var a = NDBuffer[dtype, 2](a_device.unsafe_ptr(), (M, K))
-    var b = NDBuffer[dtype, 2](
-        b_device.unsafe_ptr(), (N, K) if transpose_b else (K, N)
+    var a = TileTensor(
+        a_device,
+        row_major(Coord(Idx(M), Idx(K))),
     )
-    var c = NDBuffer[dtype, 2](c_device.unsafe_ptr(), (M, N))
-    var c_ref = NDBuffer[dtype, 2](c_device_ref.unsafe_ptr(), (M, N))
+    var b = TileTensor(
+        b_device,
+        row_major(Coord(Idx(N), Idx(K))) if transpose_b else row_major(
+            Coord(Idx(K), Idx(N))
+        ),
+    )
+    var c = TileTensor(
+        c_device,
+        row_major(Coord(Idx(M), Idx(N))),
+    )
 
     vendor_blas.matmul(ctx, c, a, b, c_row_major=True, transpose_b=transpose_b)
 
@@ -63,25 +67,45 @@ def test_vendor_blas[
 
     comptime BLOCK_DIM = 16
 
-    var c_ref_tensor = from_ndbuffer_row_major(c_ref)
-    var a_tensor = from_ndbuffer_row_major(a)
-    var b_tensor = from_ndbuffer_row_major(b)
+    # Create TileTensors for the naive kernel.
+    # a/b are constructed as immutable to match the ImmutAnyOrigin
+    # parameters that matmul_kernel_naive expects.
+    from std.memory import UnsafePointer
+
+    var c_ref_tt = TileTensor(
+        c_device_ref,
+        row_major(Coord(Idx(M), Idx(N))),
+    )
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
+    )
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[dtype], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(N), Idx(K))) if transpose_b else row_major(
+            Coord(Idx(K), Idx(N))
+        ),
+    )
 
     comptime kernel = matmul_kernel_naive[
         dtype,
         dtype,
         dtype,
-        c_ref_tensor.layout,
-        a_tensor.layout,
-        b_tensor.layout,
+        type_of(c_ref_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
         BLOCK_DIM,
         transpose_b=transpose_b,
     ]
 
     ctx.enqueue_function_experimental[kernel](
-        c_ref_tensor,
-        a_tensor,
-        b_tensor,
+        c_ref_tt,
+        a_tt,
+        b_tt,
         M,
         N,
         K,
@@ -114,16 +138,16 @@ def test_vendor_blas[
 
 def dispatch_test_vendor_blas[
     transpose_b: Bool
-](*, M: Int, N: Int, K: Int, ctx: DeviceContext):
-    test_vendor_blas[dtype = DType.bfloat16, transpose_b=transpose_b](
+](*, M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
+    test_vendor_blas[dtype=DType.bfloat16, transpose_b=transpose_b](
         M=M, N=N, K=K, ctx=ctx
     )
-    test_vendor_blas[dtype = DType.float32, transpose_b=transpose_b](
+    test_vendor_blas[dtype=DType.float32, transpose_b=transpose_b](
         M=M, N=N, K=K, ctx=ctx
     )
 
 
-def test_vendor_blas_multi_gpu():
+def test_vendor_blas_multi_gpu() raises:
     """Test vendor BLAS on multiple GPUs to ensure device contexts work correctly.
     """
 
@@ -172,7 +196,7 @@ def test_vendor_blas_multi_gpu():
             )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         dispatch_test_vendor_blas[transpose_b=True](M=550, N=2048, K=8, ctx=ctx)
         dispatch_test_vendor_blas[transpose_b=False](M=63, N=65, K=66, ctx=ctx)

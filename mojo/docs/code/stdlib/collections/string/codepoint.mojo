@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def summary():
-    from collections.string import Codepoint
-    from testing import assert_true, assert_equal
+def summary() raises:
+    from std.collections.string import Codepoint
+    from std.testing import assert_true, assert_equal
 
     # Create a codepoint from a character
     var c = Codepoint.ord("A")
@@ -28,8 +28,8 @@ def summary():
     assert_equal(s, "A")
 
 
-def run_is_python_space():
-    from testing import assert_true, assert_false
+def run_is_python_space() raises:
+    from std.testing import assert_true, assert_false
 
     # ASCII space characters
     assert_true(Codepoint.ord(" ").is_python_space())
@@ -42,6 +42,6 @@ def run_is_python_space():
     assert_false(Codepoint.ord("a").is_python_space())
 
 
-def main():
+def main() raises:
     summary()
     run_is_python_space()

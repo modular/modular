@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from logger import Logger
-from testing import TestSuite
+from std.logger import Logger
+from std.testing import TestSuite
 
 
-def test_log_with_env():
+def test_log_with_env() raises:
     var log = Logger()
 
     # CHECK: {{.*}}DEBUG{{.*}}::: hello world
@@ -25,5 +25,5 @@ def test_log_with_env():
     log.info("hello")
 
 
-fn main() raises:
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

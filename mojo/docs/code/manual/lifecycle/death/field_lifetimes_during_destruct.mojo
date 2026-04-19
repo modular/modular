@@ -13,7 +13,7 @@
 
 
 # start-field-lifetimes-during-destruct
-fn consume(var str: String):
+def consume(var str: String):
     print("Consumed", str)
 
 
@@ -22,7 +22,7 @@ struct TwoStrings(Copyable):
     var str1: String
     var str2: String
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         # self value is whole at the beginning of the function
         self.dump()
         # After dump(): str2 is never used again, so str2.__del__() runs now
@@ -32,7 +32,7 @@ struct TwoStrings(Copyable):
         # no destructor is called for str1.
         # self.__del__() is not called (avoiding an infinite loop).
 
-    fn dump(mut self):
+    def dump(mut self):
         print("str1:", self.str1)
         print("str2:", self.str2)
 

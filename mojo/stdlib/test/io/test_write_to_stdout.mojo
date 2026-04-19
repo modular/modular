@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import sys
-from testing import TestSuite
+import std.sys
+from std.testing import TestSuite
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
@@ -24,15 +24,15 @@ struct Point(Writable):
     var x: Int
     var y: Int
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("Point(", self.x, ", ", self.y, ")")
 
 
 # CHECK-LABEL: test_write_to_stdout
-def test_write_to_stdout():
+def test_write_to_stdout() raises:
     print("== test_write_to_stdout")
 
-    var stdout = sys.stdout
+    var stdout = std.sys.stdout
 
     # CHECK: Hello, World!
     stdout.write("Hello, World!")

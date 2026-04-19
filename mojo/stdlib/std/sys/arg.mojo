@@ -15,19 +15,19 @@ environment.
 """
 
 
-from ffi import external_call
+from std.ffi import external_call
 
 
 # TODO: When we have global variables, this should be a global list.
-fn argv() -> VariadicList[StaticString]:
+def argv() -> Span[StaticString, StaticConstantOrigin]:
     """Gets the list of command line arguments given to the `mojo` CLI.
 
     For example:
 
     ```mojo title="app.mojo"
-    from sys import argv
+    from std.sys import argv
 
-    def main():
+    def main() raises:
         args = argv()
         for arg in args:
             print(arg)
@@ -48,6 +48,6 @@ fn argv() -> VariadicList[StaticString]:
     # SAFETY:
     #   It is valid to use `StringSlice` (and thus `StaticString`) here because
     #   `StringSlice` is guaranteed to be ABI compatible with `llvm::StringRef`.
-    var result = VariadicList[StaticString]("")
+    var result = Span[StaticString, StaticConstantOrigin]()
     external_call["KGEN_CompilerRT_GetArgV", NoneType](Pointer(to=result))
     return result

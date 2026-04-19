@@ -18,15 +18,16 @@ formatted reporting. It includes support for colored output, timing statistics,
 and flexible test selection via CLI arguments.
 """
 
-from math import ceil, floor
-from os import sep
-from time import perf_counter_ns
-from utils._ansi import Color, Text
-from collections import Set
+from std.math import ceil, floor
+from std.os import sep
+from std.time import perf_counter_ns
+from std.utils._ansi import Color, Text
+from std.collections import Set
+import std.format._utils as fmt
 
-from reflection import get_function_name, call_location, SourceLocation
-from sys.intrinsics import _type_is_eq
-from sys import argv
+from std.reflection import get_function_name, call_location, SourceLocation
+from std.sys.intrinsics import _type_is_eq
+from std.sys import argv
 
 
 struct _Indent[W: Writable, origin: ImmutOrigin](Writable):
@@ -37,23 +38,22 @@ struct _Indent[W: Writable, origin: ImmutOrigin](Writable):
     var writable: Pointer[Self.W, Self.origin]
     var level: Int
 
-    fn __init__(out self, ref[Self.origin] w: Self.W, *, level: Int):
+    def __init__(out self, ref[Self.origin] w: Self.W, *, level: Int):
         self.writable = Pointer(to=w)
         self.level = level
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         for _ in range(self.level):
             writer.write(Self.IndentStr)
         writer.write(self.writable[])
 
 
-fn _format_nsec(nanoseconds: UInt) -> String:
+def _format_nsec(nanoseconds: UInt) -> String:
     """Formats the given number of nanoseconds as milliseconds.
 
     The returned string is in the format of "NNN.NNN"
     """
-    var ms_total = nanoseconds // 1_000_000
-    var ns_remainder = nanoseconds % 1_000_000
+    var ms_total, ns_remainder = divmod(nanoseconds, 1_000_000)
 
     var fractional_ms = (ns_remainder * 1000) // 1_000_000
 
@@ -72,11 +72,10 @@ fn _format_nsec(nanoseconds: UInt) -> String:
 
 
 # TODO: (MOCO-2450) - Add defaulted `writeln` to `Writer` trait.
-fn _writeln[
+def _writeln[
     *Ts: Writable
 ](mut writer: Some[Writer], *args: *Ts, sep: StaticString = StaticString("")):
-    @parameter
-    for i in range(args.__len__()):
+    comptime for i in range(args.__len__()):
         args[i].write_to(writer)
         sep.write_to(writer)
     writer.write("\n")
@@ -97,7 +96,7 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
     comptime SKIP = Self(2)
     """The test was skipped."""
 
-    fn __eq__(self, rhs: Self) -> Bool:
+    def __eq__(self, rhs: Self) -> Bool:
         """Compare two test result codes for equality.
 
         Args:
@@ -108,7 +107,7 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
         """
         return self._value == rhs._value
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write the result code to the writer.
 
         Args:
@@ -120,6 +119,21 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
             writer.write(Text[Color.RED]("FAIL"))
         elif self == Self.SKIP:
             writer.write(Text[Color.YELLOW]("SKIP"))
+
+    @no_inline
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this test result to a writer.
+
+        Args:
+            writer: The writer to output to.
+        """
+        writer.write_string("TestResult.")
+        if self == Self.PASS:
+            writer.write_string("PASS")
+        elif self == Self.FAIL:
+            writer.write_string("FAIL")
+        elif self == Self.SKIP:
+            writer.write_string("SKIP")
 
 
 struct TestReport(Copyable, Writable):
@@ -140,7 +154,7 @@ struct TestReport(Copyable, Writable):
     """The error associated with a failing test."""
 
     @staticmethod
-    fn passed(*, var name: String, duration_ns: UInt) -> Self:
+    def passed(*, var name: String, duration_ns: UInt) -> Self:
         """Create a passing test report.
 
         Args:
@@ -157,7 +171,9 @@ struct TestReport(Copyable, Writable):
         }
 
     @staticmethod
-    fn failed(*, var name: String, duration_ns: UInt, var error: Error) -> Self:
+    def failed(
+        *, var name: String, duration_ns: UInt, var error: Error
+    ) -> Self:
         """Create a failing test report.
 
         Args:
@@ -176,7 +192,7 @@ struct TestReport(Copyable, Writable):
         }
 
     @staticmethod
-    fn skipped(*, var name: String) -> Self:
+    def skipped(*, var name: String) -> Self:
         """Create a skipped test report.
 
         Args:
@@ -187,8 +203,8 @@ struct TestReport(Copyable, Writable):
         """
         return {name = name^, duration_ns = 0, result = TestResult.SKIP}
 
-    @doc_private
-    fn __init__(
+    @doc_hidden
+    def __init__(
         out self,
         *,
         var name: String,
@@ -201,13 +217,13 @@ struct TestReport(Copyable, Writable):
         self.result = result
         self.error = error^
 
-    @doc_private
+    @doc_hidden
     @staticmethod
-    fn _format_error(e: Error) -> String:
+    def _format_error(e: Error) -> String:
         var replacement = String("\n", _Indent("", level=Self._ErrorIndent))
-        return e.__str__().replace("\n", replacement)
+        return String(e).replace("\n", replacement)
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write the formatted test report to the writer.
 
         Args:
@@ -226,6 +242,19 @@ struct TestReport(Copyable, Writable):
                     level=Self._ErrorIndent,
                 ),
             )
+
+    @no_inline
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this test report to a writer.
+
+        Args:
+            writer: The writer to output to.
+        """
+        fmt.FormatStruct(writer, "TestReport").fields(
+            fmt.Named("name", fmt.Repr(self.name)),
+            fmt.Named("result", fmt.Repr(self.result)),
+            fmt.Named("duration_ns", self.duration_ns),
+        )
 
 
 struct TestSuiteReport(Copyable, Writable):
@@ -249,7 +278,7 @@ struct TestSuiteReport(Copyable, Writable):
     var location: SourceLocation
     """The source location of the test suite."""
 
-    fn __init__(
+    def __init__(
         out self, *, var reports: List[TestReport], location: SourceLocation
     ):
         """Initialize a test suite report.
@@ -273,7 +302,7 @@ struct TestSuiteReport(Copyable, Writable):
                 self.skipped += 1
         self.passed = len(self.reports) - self.failures - self.skipped
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write the formatted test suite report to the writer.
 
         Args:
@@ -285,7 +314,7 @@ struct TestSuiteReport(Copyable, Writable):
             Text[Color.GREEN]("Running"),
             Text[Color.BOLD_WHITE](len(self.reports)),
             "tests for",
-            Text[Color.CYAN](self.location.file_name),
+            Text[Color.CYAN](self.location.file_name()),
             sep=" ",
         )
         for ref report in self.reports:
@@ -316,17 +345,31 @@ struct TestSuiteReport(Copyable, Writable):
             _writeln(
                 writer,
                 "Test suite'",
-                Text[Color.CYAN](self.location.file_name),
+                Text[Color.CYAN](self.location.file_name()),
                 "'failed!",
                 sep=" ",
             )
+
+    @no_inline
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this test suite report to a writer.
+
+        Args:
+            writer: The writer to output to.
+        """
+        fmt.FormatStruct(writer, "TestSuiteReport").fields(
+            fmt.Named("passed", self.passed),
+            fmt.Named("failed", self.failures),
+            fmt.Named("skipped", self.skipped),
+            fmt.Named("total_duration_ns", self.total_duration_ns),
+        )
 
 
 @fieldwise_init
 struct _Test(Copyable):
     """A single test to run."""
 
-    comptime fn_type = fn() raises
+    comptime fn_type = def() thin raises
     var test_fn: Self.fn_type
     var name: StaticString
 
@@ -342,27 +385,27 @@ struct TestSuite(Movable):
     Example:
 
     ```mojo
-    from testing import assert_equal, TestSuite
+    from std.testing import assert_equal, TestSuite
 
-    def test_something():
+    def test_something() raises:
         assert_equal(1 + 1, 2)
 
-    def test_some_other_thing():
+    def test_some_other_thing() raises:
         assert_equal(2 + 2, 4)
 
-    def main():
+    def main() raises:
         TestSuite.discover_tests[__functions_in_module()]().run()
     ```
 
     Alternatively, you can manually register tests by calling the `test` method.
 
     ```mojo
-    from testing import assert_equal, TestSuite
+    from std.testing import assert_equal, TestSuite
 
-    def some_test():
+    def some_test() raises:
         assert_equal(1 + 1, 2)
 
-    def main():
+    def main() raises:
         var suite = TestSuite()
         suite.test[some_test]()
         suite^.run()
@@ -385,7 +428,7 @@ struct TestSuite(Movable):
     """The raw command line arguments passed to the test suite."""
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         *,
         location: Optional[SourceLocation] = None,
@@ -403,20 +446,16 @@ struct TestSuite(Movable):
         self.location = location.or_else(call_location())
         self.skip_list = {}
         self.allow_list = None  # None means no allow list specified.
-        self.cli_args = cli_args.or_else(List[StaticString](argv()))
+        self.cli_args = cli_args^.or_else(List[StaticString](argv()))
 
-    fn _register_tests[test_funcs: Tuple, /](mut self) raises:
+    def _register_tests[test_funcs: Tuple, /](mut self) raises:
         """Internal function to prevent all registrations from being inlined."""
 
-        @parameter
-        for idx in range(len(test_funcs)):
+        comptime for idx in range(len(test_funcs)):
             comptime test_func = test_funcs[idx]
 
-            @parameter
-            if get_function_name[test_func]().startswith("test_"):
-
-                @parameter
-                if _type_is_eq[type_of(test_func), _Test.fn_type]():
+            comptime if get_function_name[test_func]().startswith("test_"):
+                comptime if _type_is_eq[type_of(test_func), _Test.fn_type]():
                     self.test[rebind[_Test.fn_type](test_func)]()
                 else:
                     raise Error(
@@ -427,7 +466,7 @@ struct TestSuite(Movable):
 
     @always_inline
     @staticmethod
-    fn discover_tests[
+    def discover_tests[
         test_funcs: Tuple, /
     ](
         *,
@@ -464,7 +503,7 @@ struct TestSuite(Movable):
             raise e^
         return suite^
 
-    fn test[f: _Test.fn_type](mut self):
+    def test[f: _Test.fn_type](mut self):
         """Registers a test to be run.
 
         Parameters:
@@ -472,7 +511,7 @@ struct TestSuite(Movable):
         """
         self.tests.append(_Test(f, get_function_name[f]()))
 
-    fn skip[f: _Test.fn_type](mut self):
+    def skip[f: _Test.fn_type](mut self):
         """Registers a test to be skipped.
 
         If attempting to skip a test that is not registered in the suite (either
@@ -485,7 +524,7 @@ struct TestSuite(Movable):
         comptime skipped_name = get_function_name[f]()
         self.skip_list.add(skipped_name)
 
-    fn _parse_filter_lists(mut self) raises:
+    def _parse_filter_lists(mut self) raises:
         # TODO: We need a proper argument parsing library to do this right.
         ref args = self.cli_args
         var num_args = len(args)
@@ -528,7 +567,7 @@ struct TestSuite(Movable):
             else:
                 self.skip_list.add(arg)
 
-    fn _should_skip(self, test: _Test) -> Bool:
+    def _should_skip(self, test: _Test) -> Bool:
         if test.name in self.skip_list:
             return True
         if not self.allow_list:
@@ -536,7 +575,7 @@ struct TestSuite(Movable):
         # SAFETY: We know that `self.allow_list` is not `None` here.
         return test.name not in self.allow_list.unsafe_value()
 
-    fn _validate_skip_list(self) raises:
+    def _validate_skip_list(self) raises:
         # TODO: _Test doesn't conform to Equatable, so we can't use
         # `in` here. Also, we might wanna do this in O(1) time.
         for test_name in self.skip_list:
@@ -554,7 +593,7 @@ struct TestSuite(Movable):
                     test_name,
                 )
 
-    fn generate_report(
+    def generate_report(
         mut self, skip_all: Bool = False
     ) raises -> TestSuiteReport:
         """Runs the test suite and generates a report.
@@ -605,7 +644,7 @@ struct TestSuite(Movable):
 
         return TestSuiteReport(reports=reports^, location=self.location)
 
-    fn run(deinit self, *, quiet: Bool = False, skip_all: Bool = False) raises:
+    def run(deinit self, *, quiet: Bool = False, skip_all: Bool = False) raises:
         """Runs the test suite and prints the results to the console.
 
         Args:
@@ -625,6 +664,6 @@ struct TestSuite(Movable):
         if not quiet:
             print(report)
 
-    fn abandon(deinit self):
+    def abandon(deinit self):
         """Destroy a test suite without running any tests."""
         pass

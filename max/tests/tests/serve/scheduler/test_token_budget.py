@@ -88,15 +88,58 @@ def test_token_budget__active_token_budget_without_chunking() -> None:
     assert active_token_budget.remaining < 0
 
 
+def test_token_budget__total_context_budget_with_cost_alignment_alignment() -> (
+    None
+):
+    """TotalContextTokenBudget should align the effective cost to the page size."""
+
+    total_context_budget = TotalContextTokenBudget(
+        capacity=30,
+        allow_chunking=False,
+        applicable_types=[RequestType.CE],
+        cost_alignment=8,  # token cost is aligned to 8 for this test
+    )
+
+    # current_length = 10, num_steps = 3 => total_length = 10 + (3 - 1) = 12
+    # aligned cost = align_up(12, 8) = 16
+    context = TextContext(
+        tokens=TokenBuffer(np.ones(10, dtype=np.int64)), max_length=100
+    )
+    status = total_context_budget.status_after_context(
+        context, num_steps=3, request_type=RequestType.CE
+    )
+    assert status == BudgetStatus.BUDGET_AVAILABLE
+
+    # Commit the aligned length to the budget:
+    # used = 16, remaining = 30 - 16 = 14.
+    total_context_budget.add_to_budget(
+        context, num_steps=3, request_type=RequestType.CE
+    )
+    assert total_context_budget.remaining == 14
+
+    # Now with remaining=14, a new 10-token context and num_steps=4 gives
+    # total_length = 10 + (4 - 1) = 13, aligned cost = align_up(13, 8) = 16
+    # which is greater than remaining=14, so it should be rejected.
+    context2 = TextContext(
+        tokens=TokenBuffer(np.ones(10, dtype=np.int64)), max_length=100
+    )
+    status2 = total_context_budget.status_after_context(
+        context2, num_steps=4, request_type=RequestType.CE
+    )
+    assert status2 == BudgetStatus.BUDGET_EXHAUSTED
+
+
 def test_token_budget__total_context_budget_num_steps_available_and_reached() -> (
     None
 ):
     """TotalContextTokenBudget should account for num_steps when checking capacity."""
-    # Capacity large enough to admit two 10-token contexts, accounting for num_steps.
+    # Capacity large enough to admit two 10-token contexts, accounting for
+    # num_steps and page-size alignment.
     total_budget = TotalContextTokenBudget(
         capacity=25,
         allow_chunking=False,
         applicable_types=[RequestType.CE, RequestType.TG, RequestType.MIXED],
+        cost_alignment=1,  # no alignment needed for this test
     )
 
     # current_length = 10, num_steps = 3 => total_length = 10 + (3 - 1) = 12 < 25
@@ -129,7 +172,10 @@ def test_token_budget__total_context_budget_num_steps_available_and_reached() ->
 def test_token_budget__total_context_budget_num_steps_exhausted() -> None:
     """TotalContextTokenBudget should reject contexts that would overflow with num_steps > 1."""
     total_budget = TotalContextTokenBudget(
-        capacity=14, allow_chunking=False, applicable_types=[RequestType.CE]
+        capacity=14,
+        allow_chunking=False,
+        applicable_types=[RequestType.CE],
+        cost_alignment=1,  # no alignment needed for this test
     )
 
     # current_length = 10, num_steps = 6 => total_length = 10 + (6 - 1) = 15 > 14
@@ -147,7 +193,10 @@ def test_token_budget__total_context_budget_with_chunking_exhausts_overage() -> 
 ):
     """TotalContextTokenBudget should not chunk; total-context overage is exhausted."""
     total_budget = TotalContextTokenBudget(
-        capacity=20, allow_chunking=True, applicable_types=[RequestType.CE]
+        capacity=20,
+        allow_chunking=True,
+        applicable_types=[RequestType.CE],
+        cost_alignment=1,  # no alignment needed for this test
     )
 
     context = TextContext(
@@ -169,7 +218,10 @@ def test_token_budget__total_context_budget_with_chunking_exhausts_overage() -> 
 def test_token_budget__total_context_budget_overage_does_not_chunk() -> None:
     """TotalContextTokenBudget should not chunk even when remaining exceeds active_length."""
     total_budget = TotalContextTokenBudget(
-        capacity=100, allow_chunking=True, applicable_types=[RequestType.CE]
+        capacity=100,
+        allow_chunking=True,
+        applicable_types=[RequestType.CE],
+        cost_alignment=1,  # no alignment needed for this test
     )
 
     context = TextContext(
@@ -191,7 +243,10 @@ def test_token_budget__total_context_budget_chunking_disabled_for_unit_active_le
 ):
     """Chunking is not applied when active_length == 1, even if allow_chunking is True."""
     total_budget = TotalContextTokenBudget(
-        capacity=10, allow_chunking=True, applicable_types=[RequestType.CE]
+        capacity=10,
+        allow_chunking=True,
+        applicable_types=[RequestType.CE],
+        cost_alignment=1,  # no alignment needed for this test
     )
 
     # Create a context where only a single token is active, but the total
@@ -220,6 +275,7 @@ def test_token_budget__total_context_budget__ce_after_tg() -> None:
         capacity=10,
         allow_chunking=True,
         applicable_types=[RequestType.MIXED, RequestType.CE],
+        cost_alignment=1,  # no alignment needed for this test
     )
 
     # Create

@@ -12,21 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 """Implements math methods that work on layout tensors."""
 
-import math
-from sys.info import simd_width_of
+import std.math
+from std.sys.info import simd_width_of
 
-import algorithm.reduction
-from algorithm import vectorize
-from math.math import max as b_max
-from layout import LayoutTensor, UNKNOWN_VALUE
-from layout._coord import Coord, Idx
-from layout._tile_tensor import TileTensor
+import std.algorithm.reduction as reduction
+from std.algorithm import vectorize
+from std.math.math import max as b_max
+from layout import Coord, Idx, LayoutTensor, TileTensor, UNKNOWN_VALUE
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 @always_inline
-fn outer_product_acc(
+def outer_product_acc(
     res: LayoutTensor[mut=True, ...],
     lhs: LayoutTensor,
     rhs: LayoutTensor,
@@ -66,23 +64,20 @@ fn outer_product_acc(
     comptime assert lhs.shape[0]() == M, "lhs shape mismatch"
     comptime assert rhs.shape[0]() == N, "rhs shape mismatch"
 
-    @parameter
-    for i in range(M):
-
-        @parameter
-        for j in range(N):
+    comptime for i in range(M):
+        comptime for j in range(N):
             res[i, j] += rebind[res.element_type](
                 lhs[i].cast[dtype]()
             ) * rebind[res.element_type](rhs[j].cast[dtype]())
 
 
 @always_inline
-fn _reduce[
+def _reduce[
     axis: Int,
-    init_func: fn[dtype: DType, width: Int]() -> SIMD[dtype, width],
-    func: fn[dtype: DType, width: Int](
+    init_func: def[dtype: DType, width: Int]() thin -> SIMD[dtype, width],
+    func: def[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) -> (SIMD[dtype, width]),
+    ) thin -> (SIMD[dtype, width]),
 ](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     comptime assert (
         inp.layout.known_shape() and outp.layout.known_shape()
@@ -91,21 +86,15 @@ fn _reduce[
         inp.rank - 1 == outp.rank
     ), "_reduce expects output of rank = inp.rank - 1"
 
-    @parameter
-    for dim in range(axis):
-
-        @parameter
-        if dim != axis:
+    comptime for dim in range(axis):
+        comptime if dim != axis:
             comptime assert dim != UNKNOWN_VALUE
             comptime assert (
                 inp.shape[dim]() == outp.shape[dim]()
             ), "_reduce expects none reduction dims to be the same"
 
-    @parameter
-    for dim in range(axis + 1, inp.rank):
-
-        @parameter
-        if dim != axis:
+    comptime for dim in range(axis + 1, inp.rank):
+        comptime if dim != axis:
             comptime assert dim != UNKNOWN_VALUE
             comptime assert (dim - 1) != UNKNOWN_VALUE
             comptime assert (
@@ -115,15 +104,11 @@ fn _reduce[
     # TODO(KERN-777): We need to relax this constraine.
     comptime assert inp.rank == 2, "Only rank-2 _reduce is supported"
 
-    @parameter
-    if inp.rank == 2 and axis == 1:
-
-        @parameter
-        for i in range(inp.shape[0]()):
+    comptime if inp.rank == 2 and axis == 1:
+        comptime for i in range(inp.shape[0]()):
             var reduce_val = init_func[outp.dtype, outp.element_size]()
 
-            @parameter
-            for j in range(inp.shape[1]()):
+            comptime for j in range(inp.shape[1]()):
                 reduce_val = func(
                     reduce_val,
                     rebind[outp.element_type](inp[i, j].cast[outp.dtype]()),
@@ -132,13 +117,10 @@ fn _reduce[
             outp[i] = reduce_val
 
     elif inp.rank == 2 and axis == 0:
-
-        @parameter
-        for j in range(inp.shape[1]()):
+        comptime for j in range(inp.shape[1]()):
             var reduce_val = init_func[outp.dtype, outp.element_size]()
 
-            @parameter
-            for i in range(inp.shape[0]()):
+            comptime for i in range(inp.shape[0]()):
                 reduce_val = func(
                     reduce_val,
                     rebind[outp.element_type](inp[i, j].cast[outp.dtype]()),
@@ -148,7 +130,7 @@ fn _reduce[
 
 
 @always_inline
-fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
+def sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     """Computes sum reduction along specified axis.
 
     Reduces the input tensor by summing elements along the specified axis
@@ -190,10 +172,10 @@ fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     ```
     """
 
-    fn sum_init[dtype: DType, width: Int]() -> SIMD[dtype, width]:
+    def sum_init[dtype: DType, width: Int]() -> SIMD[dtype, width]:
         return 0
 
-    fn sum_func[
+    def sum_func[
         dtype: DType, width: Int
     ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return a + b
@@ -202,7 +184,7 @@ fn sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
 
 
 @always_inline
-fn max[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
+def max[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     """Computes maximum reduction along specified axis.
 
     Reduces the input tensor by taking maximum elements along the specified
@@ -222,10 +204,10 @@ fn max[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
         Currently only supports rank-2 inputs.
     """
 
-    fn max_init[dtype: DType, width: Int]() -> SIMD[dtype, width]:
+    def max_init[dtype: DType, width: Int]() -> SIMD[dtype, width]:
         return SIMD[dtype, width].MIN
 
-    fn max_func[
+    def max_func[
         dtype: DType, width: Int
     ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return b_max(a, b)
@@ -233,7 +215,7 @@ fn max[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     _reduce[axis, max_init, max_func](inp, outp)
 
 
-fn _reduce_res_row_major_shape(axis: Int, in_layout: Layout) -> Layout:
+def _reduce_res_row_major_shape(axis: Int, in_layout: Layout) -> Layout:
     var res_shape = IntTuple()
     for dim in range(0, axis):
         res_shape.append(Int(in_layout.shape[dim]))
@@ -243,7 +225,7 @@ fn _reduce_res_row_major_shape(axis: Int, in_layout: Layout) -> Layout:
 
 
 @always_inline
-fn max[
+def max[
     axis: Int
 ](
     inp: LayoutTensor,
@@ -251,10 +233,10 @@ fn max[
         inp.dtype,
         _reduce_res_row_major_shape(axis, inp.layout),
         MutAnyOrigin,
-        address_space = inp.address_space,
-        element_layout = inp.element_layout,
-        layout_int_type = inp.layout_int_type,
-        linear_idx_type = inp.linear_idx_type,
+        address_space=inp.address_space,
+        element_layout=inp.element_layout,
+        layout_int_type=inp.layout_int_type,
+        linear_idx_type=inp.linear_idx_type,
     ],
 ):
     """Computes maximum reduction along specified axis, returning a new tensor.
@@ -284,7 +266,7 @@ fn max[
 
 
 @always_inline
-fn max[
+def max[
     dtype: DType, layout: Layout
 ](
     x: LayoutTensor[dtype, layout, ...], y: LayoutTensor[dtype, layout, ...]
@@ -314,15 +296,14 @@ fn max[
     ), "max expects tensor of statically know shape"
     var res_tensor = type_of(x).stack_allocation()
 
-    @parameter
-    for i in range(res_tensor.layout.size()):
+    comptime for i in range(res_tensor.layout.size()):
         comptime idx = x.layout(i)
         res_tensor.ptr[idx] = b_max(x.ptr[idx], y.ptr[idx])
     return res_tensor
 
 
 @always_inline
-fn sum[
+def sum[
     axis: Int,
 ](
     inp: LayoutTensor,
@@ -330,10 +311,10 @@ fn sum[
         inp.dtype,
         _reduce_res_row_major_shape(axis, inp.layout),
         MutAnyOrigin,
-        address_space = inp.address_space,
-        element_layout = inp.element_layout,
-        layout_int_type = inp.layout_int_type,
-        linear_idx_type = inp.linear_idx_type,
+        address_space=inp.address_space,
+        element_layout=inp.element_layout,
+        layout_int_type=inp.layout_int_type,
+        linear_idx_type=inp.linear_idx_type,
     ],
 ):
     """Computes sum reduction along specified axis, returning a new tensor.
@@ -362,7 +343,7 @@ fn sum[
     return res_tensor
 
 
-fn mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
+def mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
     """Computes the mean value of the elements in a buffer.
 
     Args:
@@ -376,11 +357,11 @@ fn mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
     """
     comptime assert src.rank == 1, "src must be of rank 1"
 
-    debug_assert(src.size() != 0, "input must not be empty")
+    assert src.size() != 0, "input must not be empty"
 
     @parameter
     @always_inline
-    fn input_fn_1d[
+    def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
         var src_idx = src.runtime_layout(
@@ -391,7 +372,7 @@ fn mean(src: LayoutTensor[...]) raises -> Scalar[src.dtype]:
     return reduction.mean[src.dtype, input_fn_1d](src.size())
 
 
-fn mean[
+def mean[
     reduce_axis: Int
 ](src: LayoutTensor[...], dst: LayoutTensor[mut=True, src.dtype, ...]) raises:
     """Computes the mean across reduce_axis of a LayoutTensor.
@@ -413,7 +394,7 @@ fn mean[
     var dst_1d = LayoutTensor[
         dst.dtype,
         Layout.row_major(UNKNOWN_VALUE),
-        address_space = dst.address_space,
+        address_space=dst.address_space,
     ](
         dst.ptr,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
@@ -423,11 +404,10 @@ fn mean[
 
     comptime src_dtype = src.dtype
 
-    @parameter
-    if dst.dtype.is_integral():
+    comptime if dst.dtype.is_integral():
 
         @always_inline
-        fn normalize_integral[
+        def normalize_integral[
             simd_width: Int
         ](idx: Int) unified {var dst_1d, var n}:
             var idx_1d = dst_1d.runtime_layout(
@@ -442,7 +422,7 @@ fn mean[
         var n_recip = Scalar[dst.dtype](1) / Scalar[src.dtype](n)
 
         @always_inline
-        fn normalize_floating[
+        def normalize_floating[
             simd_width: Int
         ](idx: Int) unified {var dst_1d, var n, var n_recip}:
             var idx_1d = dst_1d.runtime_layout(
@@ -455,7 +435,7 @@ fn mean[
         vectorize[simd_width](dst_1d.size(), normalize_floating)
 
 
-fn variance(
+def variance(
     src: LayoutTensor[...], correction: Int = 1
 ) raises -> Scalar[src.dtype]:
     """Computes the variance value of the elements in a buffer.
@@ -477,7 +457,7 @@ fn variance(
 
     @always_inline
     @parameter
-    fn input_fn_1d[
+    def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
         var src_idx = src.runtime_layout(
@@ -488,9 +468,7 @@ fn variance(
     return reduction.variance[src.dtype, input_fn_1d](src.size(), correction)
 
 
-fn variance(
-    src: TileTensor[...], correction: Int = 1
-) raises -> Scalar[src.dtype]:
+def variance(src: TileTensor, correction: Int = 1) raises -> Scalar[src.dtype]:
     """Computes the variance value of the elements in a buffer.
 
     ```
@@ -510,16 +488,18 @@ fn variance(
 
     @always_inline
     @parameter
-    fn input_fn_1d[
+    def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
         var src_idx = src.layout(Idx(idx))
         return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
 
-    return reduction.variance[src.dtype, input_fn_1d](src.numel(), correction)
+    return reduction.variance[src.dtype, input_fn_1d](
+        src.num_elements(), correction
+    )
 
 
-fn mean(src: TileTensor[...]) raises -> Scalar[src.dtype]:
+def mean(src: TileTensor) raises -> Scalar[src.dtype]:
     """Computes the mean value of the elements in a buffer.
 
     Args:
@@ -533,14 +513,14 @@ fn mean(src: TileTensor[...]) raises -> Scalar[src.dtype]:
     """
     comptime assert src.rank == 1, "src must be of rank 1"
 
-    debug_assert(src.numel() != 0, "input must not be empty")
+    assert src.num_elements() != 0, "input must not be empty"
 
     @parameter
     @always_inline
-    fn input_fn_1d[
+    def input_fn_1d[
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
         var src_idx = src.layout(Idx(idx))
         return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
 
-    return reduction.mean[src.dtype, input_fn_1d](src.numel())
+    return reduction.mean[src.dtype, input_fn_1d](src.num_elements())

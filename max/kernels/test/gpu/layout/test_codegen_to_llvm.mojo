@@ -11,17 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from compile import compile_info
-from gpu.host import get_gpu_target
-from layout import Layout, LayoutTensor
-from layout.int_tuple import UNKNOWN_VALUE
+from std.compile import compile_info
+from std.gpu.host import get_gpu_target
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 
 
 # CHECK-LABEL: test_no_alloca_fill
-fn test_no_alloca_fill():
+def test_no_alloca_fill():
     print("== test_no_alloca_fill")
 
-    fn layout_tensor_kernel(
+    def layout_tensor_kernel(
         output: LayoutTensor[
             DType.float32,
             Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
@@ -43,10 +42,10 @@ fn test_no_alloca_fill():
         compile_info[
             layout_tensor_kernel,
             emission_kind="llvm",
-            target = get_gpu_target(),
+            target=get_gpu_target(),
         ]()
     )
 
 
-fn main():
+def main():
     test_no_alloca_fill()

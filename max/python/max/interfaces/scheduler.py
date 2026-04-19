@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Defines the :class:`Scheduler` abstract base class and :class:`SchedulerResult` data structure."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -36,8 +38,7 @@ class Scheduler(ABC):
 
 
 class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
-    """
-    Structure representing the result of a scheduler operation for a specific pipeline execution.
+    """Structure representing the result of a scheduler operation for a specific pipeline execution.
 
     This class encapsulates the outcome of a pipeline operation as managed by the scheduler,
     including both the execution status and any resulting data from the pipeline. The scheduler
@@ -57,11 +58,10 @@ class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
 
     @classmethod
     def cancelled(cls) -> SchedulerResult[PipelineOutputType]:
-        """
-        Create a SchedulerResult representing a cancelled pipeline operation.
+        """Create a SchedulerResult representing a cancelled pipeline operation.
 
         Returns:
-            SchedulerResult: A SchedulerResult that is done.
+            A :class:`SchedulerResult` that is done.
         """
         return SchedulerResult(is_done=True, result=None)
 
@@ -69,13 +69,12 @@ class SchedulerResult(msgspec.Struct, Generic[PipelineOutputType]):
     def create(
         cls, result: PipelineOutputType
     ) -> SchedulerResult[PipelineOutputType]:
-        """
-        Create a SchedulerResult representing a pipeline operation with some result.
+        """Create a SchedulerResult representing a pipeline operation with some result.
 
         Args:
             result: The pipeline output data.
 
         Returns:
-            SchedulerResult: A SchedulerResult with a result.
+            A :class:`SchedulerResult` with a result.
         """
         return SchedulerResult(is_done=result.is_done, result=result)

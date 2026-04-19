@@ -11,13 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor, row_major
 from nn.broadcast import broadcast
 
 
 # CHECK-LABEL: test_broadcast_empty_shape
-fn test_broadcast_empty_shape():
+def test_broadcast_empty_shape():
     print("== test_broadcast_empty_shape")
 
     # parameters
@@ -48,7 +47,7 @@ fn test_broadcast_empty_shape():
 
 
 # CHECK-LABEL: test_broadcast_same_shape
-fn test_broadcast_same_shape():
+def test_broadcast_same_shape():
     print("== test_broadcast_same_shape")
 
     # parameters
@@ -86,7 +85,7 @@ fn test_broadcast_same_shape():
 
 
 # CHECK-LABEL: test_broadcast_single_axis
-fn test_broadcast_single_axis():
+def test_broadcast_single_axis():
     print("== test_broadcast_single_axis")
 
     # parameters
@@ -133,7 +132,7 @@ fn test_broadcast_single_axis():
 
 
 # CHECK-LABEL: test_broadcast_multi_axes
-fn test_broadcast_multi_axes():
+def test_broadcast_multi_axes():
     print("== test_broadcast_multi_axes")
 
     # parameters
@@ -192,7 +191,7 @@ fn test_broadcast_multi_axes():
     print(output[1, 1, 2])
 
 
-fn test_broadcast_multi_axes_nested():
+def test_broadcast_multi_axes_nested():
     # parameters
     comptime input_layout = row_major[2, 1, 2, 1, 2]()
     comptime output_layout = row_major[2, 2, 2, 2, 2]()
@@ -290,7 +289,7 @@ fn test_broadcast_multi_axes_nested():
     print(output[1, 1, 1, 1, 1])
 
 
-fn main():
+def main():
     test_broadcast_empty_shape()
     test_broadcast_same_shape()
     test_broadcast_single_axis()

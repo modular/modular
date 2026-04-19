@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import simd_bit_width, simd_width_of
+from std.sys.info import simd_bit_width, simd_width_of
 
-from gpu.host import get_gpu_target
-from testing import assert_equal
-
-
-def test_simd_bit_width():
-    assert_equal(128, simd_bit_width[target = get_gpu_target()]())
-    assert_equal(4, simd_width_of[Float32, target = get_gpu_target()]())
+from std.gpu.host import get_gpu_target
+from std.testing import assert_equal
 
 
-def main():
+def test_simd_bit_width() raises:
+    assert_equal(128, simd_bit_width[target=get_gpu_target()]())
+    assert_equal(4, simd_width_of[Float32, target=get_gpu_target()]())
+
+
+def main() raises:
     test_simd_bit_width()

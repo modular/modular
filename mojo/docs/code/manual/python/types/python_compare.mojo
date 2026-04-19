@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 # start-python-compare-example
-from python import Python, PythonObject
+from std.python import Python, PythonObject
 
 
-def main():
+def main() raises:
     var value1: PythonObject = 3.7
     value2 = Python.evaluate("10/3")
 

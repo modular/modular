@@ -10,9 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the `DevicePassable` trait for types transferable to accelerator devices."""
 
-from sys.intrinsics import _type_is_eq
-from builtin.rebind import downcast
+from std.sys.intrinsics import _type_is_eq
+from std.builtin.rebind import downcast
 
 
 trait DevicePassable:
@@ -22,18 +23,17 @@ trait DevicePassable:
     """Indicate the type being used on accelerator devices."""
 
     @staticmethod
-    fn _is_convertible_to_device_type[T: AnyType]() -> Bool:
-        @parameter
-        if not _type_is_eq[Self, Self.device_type]() and conforms_to(
+    def _is_convertible_to_device_type[SrcT: AnyType]() -> Bool:
+        comptime if not _type_is_eq[Self, Self.device_type]() and conforms_to(
             Self.device_type, DevicePassable
         ):
             return downcast[
                 Self.device_type, DevicePassable
-            ]._is_convertible_to_device_type[T]()
+            ]._is_convertible_to_device_type[SrcT]()
         else:
-            return _type_is_eq[T, Self.device_type]()
+            return _type_is_eq[SrcT, Self.device_type]()
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         """
         Convert the host type object to a device_type and store it at the
         target address.
@@ -44,7 +44,7 @@ trait DevicePassable:
         ...
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """
         Gets the name of the host type (the one implementing this trait).
         For example, Int would return "Int", DeviceBuffer[DType.float32] would

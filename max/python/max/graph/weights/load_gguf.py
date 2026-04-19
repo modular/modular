@@ -132,7 +132,6 @@ class GGUFWeights(Weights):
             prefix: Weight name or prefix.
             allocated: Dictionary of allocated values.
         """
-
         self._reader = (
             source
             if isinstance(source, gguf.GGUFReader)
@@ -177,6 +176,7 @@ class GGUFWeights(Weights):
         return self.__getattr__(str(idx))
 
     def data(self) -> WeightData:
+        """Loads and returns the weight data for this tensor."""
         tensor = self._raw_tensor()
 
         try:
@@ -219,6 +219,7 @@ class GGUFWeights(Weights):
         return self._tensors[self._prefix]
 
     def exists(self) -> bool:
+        """Returns True if a tensor exists for the current prefix."""
         return self._prefix in self._tensors
 
     def _parse_weight(

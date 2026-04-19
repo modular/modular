@@ -16,14 +16,22 @@ import gc
 import logging
 import math
 import os
+import pickle
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from time import time
 
 import click
 import pandas as pd
 import rich
-from kbench_model import KBENCH_MODE, KbenchCache, Scheduler, Spec, SpecInstance
+from kbench_model import (
+    KBENCH_MODE,
+    KbenchCache,
+    Scheduler,
+    Spec,
+    SpecInstance,
+)
 from rich import traceback
 from rich.console import Console
 from rich.logging import RichHandler
@@ -37,8 +45,8 @@ from terminal_viz import render_results
 from utils import (
     LINE,
     _get_core_count,
+    _get_gpu_count,
     _get_visible_device_prefix,
-    _percentage,
     check_gpu_clock,
     check_valid_target_accelerator,
     get_target_accelerator_helpstr,
@@ -48,7 +56,6 @@ from utils import (
 ##### Utilities and configurations #####
 
 CONSOLE = Console(width=80)
-CURRENT_FILE = Path(__file__).resolve()
 
 pd.set_option("display.float_format", str)
 
@@ -96,13 +103,13 @@ def log_and_raise_error(message: str, param_hint: str | None = None) -> None:
 
 
 def run(
-    yaml_path_list,  # noqa: ANN001
+    yaml_path_list: list[Path] | None,
     obj_cache: KbenchCache,
     shape: SpecInstance,
     output_path: Path = Path(),
-    mode=KBENCH_MODE.BUILD_AND_RUN,  # noqa: ANN001
-    param_list=None,  # noqa: ANN001
-    filter_list=None,  # noqa: ANN001
+    mode: KBENCH_MODE = KBENCH_MODE.BUILD_AND_RUN,
+    param_list: Sequence[str] | None = None,
+    filter_list: Sequence[str] | None = None,
     build_opts: list[str] = [],  # noqa: B006
     profile: str = "",
     exec_prefix: list[str] = [],  # noqa: B006
@@ -115,6 +122,8 @@ def run(
     target_accelerator: str | None = None,
     timeout_secs: int | None = None,
     plot: str = "bars",
+    use_shared_lib: bool = False,
+    cache_dir: Path | None = None,
 ) -> None:
     if yaml_path_list:
         # Load specs from a list of YAML files and join them in 'spec'.
@@ -139,7 +148,6 @@ def run(
         spec.extend_shape_params(shape.params)
         # Each shape should have its own temporary directory.
         output_dir = output_dir / Path(shape.hash(with_variables=True))
-
     logging.info(f"output-dir: [{output_dir}]")
 
     # Expand with CLI params
@@ -167,11 +175,6 @@ def run(
         transient=True,
     )
 
-    # Set num_cpu to the half of maximum number of available CPUs
-    if num_cpu == -1:
-        num_cpu = max(_get_core_count() // 2, 1)
-
-    logging.info(f"num cpu's: {num_cpu}")
     # Kbench Singleton Scheduler
     scheduler = Scheduler(
         num_cpu=num_cpu,
@@ -184,139 +187,77 @@ def run(
         dryrun=dryrun,
         output_suffix="output.csv",
         progress=progress,
+        use_shared_lib=use_shared_lib,
+        cache_dir=cache_dir,
     )
 
     visible_device_prefix = _get_visible_device_prefix(str(target_accelerator))
 
+    # 0 means no timeout (infinite wait).
+    effective_timeout = timeout_secs if timeout_secs else None
+
     # Run the code over the mesh of param/values
     t_start_total = time()
-    t_benchmark_total = 0.0
 
     with progress:
         try:
-            # Get the binary path for the unique list of build items
-            # Build the binary if:
-            # - could not find executable in the cache or cache is not active,
-            # - could not find executable in the unique list of scheduled build items
             scheduler.build_all()
             obj_cache.dump()
 
-            t_build_total = time() - t_start_total
-
-            t_benchmark_start = time()
-            if mode in [KBENCH_MODE.RUN, KBENCH_MODE.BUILD_AND_RUN]:
-                scheduler.setup_execution_pool()
-                num_build_items = len(scheduler.build_items)
-                exec_progress = scheduler.progress.add_task(
-                    "run",
-                    total=num_build_items,
+            if mode == KBENCH_MODE.BUILD:
+                # In build-only mode, skip execution, dump, and
+                # visualization. Print the summary line that
+                # bench_compare.py parses.
+                num_valid = sum(
+                    1 for bi in scheduler.build_items if bi.bin_path is not None
                 )
+                num_total = len(spec)
+                print(
+                    f"Number of valid built specs: {num_valid}"
+                    f" (out of {num_total})"
+                )
+                return
 
-                # execute build items in batches of size Scheduler.EXEC_STRIDE
-                for lower_bound in range(
-                    0, num_build_items, Scheduler.EXEC_STRIDE
-                ):
-                    upper_bound = min(
-                        lower_bound + Scheduler.EXEC_STRIDE, num_build_items
-                    )
-
-                    tasks = []
-                    for cnt in range(lower_bound, upper_bound):
-                        env = {}
-                        if visible_device_prefix and num_gpu > 1:
-                            env[visible_device_prefix] = str(cnt % num_gpu)
-
-                        tasks.append(
-                            (
-                                scheduler.build_items[cnt],
-                                profile,
-                                exec_prefix,
-                                exec_suffix,
-                                env,
-                                timeout_secs,
-                            )
-                        )
-
-                    # This is to further ensure at most `num-gpu` processes are
-                    # running at once, none of them sharing the same device context.
-                    for cnt in range(lower_bound, upper_bound, num_gpu):
-                        ub_gpu = min(upper_bound, cnt + num_gpu)
-                        current_cnt = ub_gpu - cnt
-                        for i, b in enumerate(
-                            scheduler.execution_pool.imap(
-                                scheduler._pool_execute_item_wrapper,
-                                tasks[cnt - lower_bound : ub_gpu - lower_bound],
-                                chunksize=1,
-                            )
-                        ):
-                            scheduler.build_items[cnt + i] = b
-                            logging.info(
-                                f"running binary [{b.idx}/{num_build_items - 1}] ({_percentage(b.idx + 1, num_build_items)}%)"
-                            )
-                        scheduler.progress.update(
-                            exec_progress, advance=current_cnt
-                        )
-
-                    t_benchmark_total = time() - t_benchmark_start
-                    t_elapsed_total = time() - t_start_total
-
-                    # dump results that have been executed so far
-                    # ensure there are more than one iterations of stride loop.
-                    if num_build_items >= Scheduler.EXEC_STRIDE:
-                        Scheduler.dump(
-                            scheduler.build_items[0:upper_bound],
-                            spec,
-                            output_path,
-                            mode,
-                            t_build_total,
-                            t_benchmark_total,
-                            t_elapsed_total,
-                            verbose=False,
-                        )
-                logging.info("finished running all binaries")
-                scheduler.close_execution_pool()
+            # Only RUN and BUILD_AND_RUN reach here.
+            scheduler.execute_all(
+                visible_device_prefix=visible_device_prefix,
+                timeout_secs=effective_timeout,
+                profile=profile,
+                exec_prefix=exec_prefix,
+                exec_suffix=exec_suffix,
+            )
 
         except KeyboardInterrupt:
             scheduler.close_build_pool()
-            scheduler.close_execution_pool()
+            scheduler.shutdown_workers()
             obj_cache.dump()
             sys.exit(0)
 
+    t_elapsed_total = time() - t_start_total
+
     ###############################
     # dump all the details
-    t_elapsed_total = time() - t_start_total
     gc.collect()
     Scheduler.dump(
         scheduler.build_items,
         spec,
         output_path,
         mode,
-        t_build_total,
-        t_benchmark_total,
+        scheduler.t_build_total,
+        scheduler.t_benchmark_total,
         t_elapsed_total,
         verbose=verbose,
     )
-    logging.info(f"output-dir: [{output_dir}]\n{LINE}")
-
     # Render terminal visualization if requested
-    if plot != "none" and mode in [KBENCH_MODE.RUN, KBENCH_MODE.BUILD_AND_RUN]:
+    if plot != "none":
         pkl_path = output_path.with_suffix(output_path.suffix + ".pkl")
         if pkl_path.exists():
-            import pickle
-
             with open(pkl_path, "rb") as f:
                 pkl_data = pickle.load(f)
             if "merged_df" in pkl_data:
                 render_results(
                     pkl_data["merged_df"], mode=plot, console=CONSOLE
                 )
-
-    logging.info(f"Number of specs: {scheduler.num_specs}")
-    logging.info(
-        f"Number of unique build items: {scheduler.num_unique_build_items}"
-    )
-    logging.info(f"num-cpu: {scheduler.num_cpu}")
-    logging.info(f"num-gpu: {scheduler.num_gpu}")
 
 
 def _validate_partition(partition: str) -> list[int]:
@@ -329,13 +270,14 @@ def _validate_partition(partition: str) -> list[int]:
     return [partition_idx, num_partitions]
 
 
-def set_build_opts(  # noqa: ANN201
-    debug_level=None,  # noqa: ANN001
-    optimization_level=None,  # noqa: ANN001
-    use_experimental_kernels=None,  # noqa: ANN001
-    target_accelerator=None,  # noqa: ANN001
-    disable_warnings=None,  # noqa: ANN001
-):
+def set_build_opts(
+    debug_level: str | None = None,
+    optimization_level: str | None = None,
+    use_experimental_kernels: bool | None = None,
+    target_accelerator: str | None = None,
+    disable_warnings: bool | None = None,
+    march: str | None = None,
+) -> list[str]:
     build_opts = []
     if debug_level:
         build_opts.extend(["--debug-level", debug_level])
@@ -347,6 +289,8 @@ def set_build_opts(  # noqa: ANN201
         build_opts.extend(["--target-accelerator", target_accelerator])
     if disable_warnings:
         build_opts.extend(["--disable-warnings"])
+    if march:
+        build_opts.extend(["--march", march])
     # TODO: add num_threads to CLI
     # num_threads_per_build = 1
     # build_opts.extend(["--num-threads", num_threads_per_build])
@@ -422,6 +366,13 @@ def set_build_opts(  # noqa: ANN201
     + get_target_accelerator_helpstr(),
 )
 @click.option(
+    "--march",
+    default=None,
+    help="Set the host CPU architecture for cross-compilation (e.g. x86-64-v3). "
+    "Passed directly to mojo as --march. Useful when compiling on a different "
+    "machine than the one that will run the benchmarks.",
+)
+@click.option(
     "--disable-warnings",
     is_flag=True,
     default=False,
@@ -446,6 +397,14 @@ def set_build_opts(  # noqa: ANN201
     is_flag=True,
     default=False,
     help="Enable Kbench cache (WARNING: doesn't check for source changes).",
+)
+@click.option(
+    "--cache-dir",
+    "cache_dir",
+    default=None,
+    help="Fixed directory for compiled binaries and cache pickle. "
+    "Enables portable caching for split build/run workflows.",
+    type=click.Path(path_type=Path),
 )
 @click.option(
     "--clear-cache",
@@ -494,7 +453,7 @@ def set_build_opts(  # noqa: ANN201
 )
 @click.option(
     "--profile",
-    default=(),
+    default="",
     help="Set the profiler [ncu, ncu-single, rocm, rocprof-compute].",
     multiple=False,
 )
@@ -512,8 +471,9 @@ def set_build_opts(  # noqa: ANN201
 )
 @click.option(
     "--timeout-secs",
-    default=None,
-    help="Timeout seconds for executing each binary. (default=None)",
+    default=120,
+    show_default=True,
+    help="Timeout seconds for executing each benchmark. 0 disables timeout.",
     multiple=False,
     type=click.INT,
 )
@@ -535,33 +495,35 @@ def set_build_opts(  # noqa: ANN201
 )
 @click.argument("files", nargs=-1, type=click.UNPROCESSED)
 def cli(
-    files,  # noqa: ANN001
-    filter,  # noqa: ANN001
-    output_path,  # noqa: ANN001
-    output_dir,  # noqa: ANN001
-    build,  # noqa: ANN001
-    run_only,  # noqa: ANN001
-    param,  # noqa: ANN001
-    debug_level,  # noqa: ANN001
-    use_experimental_kernels,  # noqa: ANN001
-    optimization_level,  # noqa: ANN001
-    target_accelerator,  # noqa: ANN001
-    disable_warnings,  # noqa: ANN001
-    force,  # noqa: ANN001
-    skip_clock_check,  # noqa: ANN001
-    cached,  # noqa: ANN001
-    clear_cache,  # noqa: ANN001
-    num_cpu,  # noqa: ANN001
-    num_gpu,  # noqa: ANN001
+    files: tuple[str, ...],
+    filter: tuple[str, ...],
+    output_path: str,
+    output_dir: str,
+    build: bool,
+    run_only: bool,
+    param: tuple[str, ...],
+    debug_level: str | None,
+    use_experimental_kernels: bool,
+    optimization_level: str | None,
+    target_accelerator: str | None,
+    march: str | None,
+    disable_warnings: bool,
+    force: bool,
+    skip_clock_check: bool,
+    cached: bool,
+    cache_dir: Path | None,
+    clear_cache: bool,
+    num_cpu: int,
+    num_gpu: int,
     mpirun_np: int,
     dryrun: bool,
-    verbose,  # noqa: ANN001
-    shapes,  # noqa: ANN001
-    build_opts,  # noqa: ANN001
-    profile,  # noqa: ANN001
-    exec_prefix,  # noqa: ANN001
-    exec_suffix,  # noqa: ANN001
-    timeout_secs: int,
+    verbose: bool,
+    shapes: tuple[str, ...],
+    build_opts: str,
+    profile: str,
+    exec_prefix: str,
+    exec_suffix: str,
+    timeout_secs: int | None,
     partition: str,
     plot: str,
 ) -> bool:
@@ -593,7 +555,13 @@ def cli(
     if build:
         mode = KBENCH_MODE.BUILD
 
-    obj_cache = KbenchCache()
+    if cache_dir:
+        cache_dir = Path(cache_dir).resolve()
+        obj_cache = KbenchCache(base_dir=cache_dir)
+        cached = True  # --cache-dir implies --cached
+    else:
+        obj_cache = KbenchCache()
+
     # check kbench_cache and load it if exists:
     if clear_cache and run_only:
         log_and_raise_error("Trying to clear cache when run_only")
@@ -630,7 +598,9 @@ def cli(
         check_gpu_clock()
 
     # If `shapes` is not specified, pick an empty Spec and '-o output_path'.
-    shape_list = list(Spec.load_yaml_list(shapes) if shapes else Spec())
+    shape_list = list(
+        Spec.load_yaml_list([Path(s) for s in shapes]) if shapes else Spec()
+    )
     shape_path_list = (
         [Path(sh.hash(with_variables=True)) for sh in shape_list]
         if shapes
@@ -650,14 +620,15 @@ def cli(
             param_hint="'--target-accelerator'",
         )
 
-    build_opts = build_opts.split(" ") if build_opts else []
-    build_opts.extend(
+    build_opts_list: list[str] = build_opts.split(" ") if build_opts else []
+    build_opts_list.extend(
         set_build_opts(
             debug_level,
             optimization_level,
             use_experimental_kernels,
             target_accelerator,
             disable_warnings,
+            march,
         )
     )
 
@@ -670,15 +641,38 @@ def cli(
             "Cannot use --num-gpu>1 and --mpirun-np>1 at the same time!"
         )
 
-    exec_suffix = exec_suffix.split(" ") if exec_suffix else []
-    exec_prefix = exec_prefix.split(" ") if exec_prefix else []
+    # Validate requested GPU count against available hardware
+    gpu_request = num_gpu if num_gpu > 1 else mpirun_np
+    if gpu_request > 1 and target_accelerator:
+        available = _get_gpu_count(target_accelerator)
+        if available is not None and gpu_request > available:
+            flag = "--num-gpu" if num_gpu > 1 else "--mpirun-np"
+            raise ValueError(
+                f"{flag}={gpu_request} exceeds the {available} GPUs"
+                " detected on this machine."
+            )
+
+    exec_suffix_list: list[str] = exec_suffix.split(" ") if exec_suffix else []
+    exec_prefix_list: list[str] = exec_prefix.split(" ") if exec_prefix else []
     if mpirun_np > 1:
-        exec_prefix.extend(["mpirun", "-np", str(mpirun_np)])
+        exec_prefix_list.extend(["mpirun", "-np", str(mpirun_np)])
+
+    # Auto-select: use shared lib (.so) mode when possible for faster execution.
+    # Falls back to subprocess mode when profiling or using custom exec wrappers.
+    use_shared_lib = not profile and not exec_prefix and not exec_suffix
+    if use_shared_lib:
+        logging.info("Using shared library (.so) mode for faster execution")
+
+    # Resolve num_cpu sentinel value once before the shape loop.
+    if num_cpu == -1:
+        num_cpu = max(_get_core_count() // 2, 1)
+    logging.info(f"num cpu's: {num_cpu}, num gpu's: {num_gpu}")
 
     shapes_per_partition = math.ceil(len(shape_list) / num_partitions)
     shape_idx_lb = partition_idx * shapes_per_partition
     shape_idx_ub = min(shape_idx_lb + shapes_per_partition, len(shape_list))
 
+    output_dir_path: Path | None = Path(output_dir) if output_dir else None
     for i in range(shape_idx_lb, shape_idx_ub):
         run(
             yaml_path_list=yaml_files,
@@ -688,18 +682,20 @@ def cli(
             mode=mode,
             param_list=param,
             filter_list=filter,
-            build_opts=build_opts,
+            build_opts=build_opts_list,
             profile=profile,
-            exec_prefix=exec_prefix,
-            exec_suffix=exec_suffix,
+            exec_prefix=exec_prefix_list,
+            exec_suffix=exec_suffix_list,
             dryrun=dryrun,
             verbose=verbose,
-            output_dir=output_dir,
+            output_dir=output_dir_path,
             num_cpu=num_cpu,
             num_gpu=num_gpu,
             target_accelerator=target_accelerator,
             timeout_secs=timeout_secs,
             plot=plot,
+            use_shared_lib=use_shared_lib,
+            cache_dir=cache_dir,
         )
         if obj_cache.is_active:
             obj_cache.dump()

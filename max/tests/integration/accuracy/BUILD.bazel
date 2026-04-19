@@ -55,6 +55,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/experimental/nn",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/tools:debugging_utils",
         requirement("transformers"),
@@ -73,7 +74,7 @@ modular_py_binary(
     imports = ["."],
     deps = [
         "//max/tests/integration/test_common:distance_metrics",
-        "//max/tests/integration/test_common:evaluate",
+        "//max/tests/integration/test_common:model_output",
         "//max/tests/integration/test_common:numpy_encoder",
         "//max/tests/integration/test_common:verify_utils",
         requirement("click"),
@@ -98,15 +99,95 @@ modular_py_binary(
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
     deps = [
+        "//max/tests/integration/tools:transformers_v4",
+        "//max/tests/integration/tools:huggingface_hub_v0",
+        # Don't sort the above deps, see generate_llm_logits
         ":verify",
         "//max/python/max/pipelines/lib",
+        "//max/tests/integration/accuracy/logit_verification:logit_verification_config",
         "//max/tests/integration/tools:generate_llm_logits",
+        "//max/tests/integration/tools:tag_filters",
         requirement("click"),
         "//max/tests/integration/test_common:evaluate",
         "//max/tests/integration/test_common:numpy_encoder",
         "//max/tests/integration/test_common:process_isolation",
         "//max/tests/integration/test_common:storage",
         "@rules_python//python/runfiles",
+        requirement("numpy"),
+        requirement("pillow"),
+    ],
+)
+
+modular_py_test(
+    #a generic test that can be used with parameters
+    name = "test_verify_pipelines",
+    size = "enormous",
+    srcs = ["test_verify_pipelines.py"],
+    data = [
+        "//max/tests/integration/architectures/llama3/testdata",
+        "@nvshmem_prebuilt//:host",
+    ],
+    env = {
+        # PIPELINES_TESTDATA is required by the Llama3 scripts.
+        "PIPELINES_TESTDATA": (
+            "max/tests/integration/architectures/llama3/testdata"
+        ),
+        # required by models that use Expert Parallelism.
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "80",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    main = "test_verify_pipelines.py",
+    tags = [
+        "gpu",
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        ":verify_pipelines",
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "allenai/OLMo-1B-hf-float32",
+    size = "large",
+    srcs = ["test_verify_pipelines.py"],
+    args = [
+        "--pipeline=allenai/OLMo-1B-hf-float32",
+        "--devices=cpu",
+        "--override-pipeline-golden-location",
+        "allenai/OLMo-1B-hf-float32:$(rootpath @torch_olmo-1b-hf_golden.tar.gz//file:downloaded)",
+    ],
+    data = [
+        "//max/tests/integration/architectures/llama3/testdata",
+        "@nvshmem_prebuilt//:host",
+        "@torch_olmo-1b-hf_golden.tar.gz//file:downloaded",
+    ],
+    env = {
+        "HF_HUB_OFFLINE": "1",  #needed to run locally
+        # PIPELINES_TESTDATA is required by the Llama3 scripts.
+        "PIPELINES_TESTDATA": (
+            "max/tests/integration/architectures/llama3/testdata"
+        ),
+        # required by models that use Expert Parallelism.
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    main = "test_verify_pipelines.py",
+    tags = ["skip-external-ci"],  # Will not fix, see QUA-61
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//:asan": ["@platforms//:incompatible"],  # FIXME MODELS-1202: Disabled due to asan timeout
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":verify_pipelines",
+        "//max/tests/integration/tools:huggingface_hub_v0",
+        "//max/tests/integration/tools:transformers_v4",
+        requirement("click"),
     ],
 )
 
@@ -131,11 +212,22 @@ modular_py_test(
 
 modular_py_test(
     name = "test_verify",
-    size = "small",
+    size = "large",
     srcs = ["test_verify.py"],
     deps = [
         ":verify",
         "//max/tests/integration/test_common:numpy_encoder",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_verify_pipelines_results",
+    size = "large",
+    srcs = ["test_verify_pipelines_results.py"],
+    deps = [
+        ":verify_pipelines",
+        requirement("click"),
         requirement("numpy"),
     ],
 )
@@ -187,11 +279,15 @@ modular_py_binary(
     name = "longbench-v2-eval",
     testonly = True,
     srcs = ["run_longbench_v2.py"],
+    ignore_extra_deps = [
+        requirement("tiktoken"),
+    ],
     main = "run_longbench_v2.py",
     deps = [
         requirement("click"),
         requirement("datasets"),
         requirement("openai"),
+        requirement("tiktoken"),
         requirement("tqdm"),
         requirement("transformers"),
     ],
@@ -230,6 +326,7 @@ modular_py_test(
     size = "medium",
     srcs = ["test_pipelines_lm_eval.py"],
     tags = [
+        "manual",  # FIXME(PAQ-2216): Re-enable after timeout investigation.
         "no-sandbox",
         "requires-network",
     ],
@@ -242,6 +339,26 @@ modular_py_test(
         ":pipelines-lm-eval",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration:hf_repo_lock",
+        requirement("click"),
+    ],
+)
+
+modular_py_binary(
+    name = "dataset_eval_matrix",
+    srcs = ["dataset_eval_matrix.py"],
+    imports = ["."],
+    deps = [
+        requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_dataset_eval_matrix",
+    size = "small",
+    srcs = ["test_dataset_eval_matrix.py"],
+    imports = ["."],
+    deps = [
+        ":dataset_eval_matrix",
         requirement("click"),
     ],
 )

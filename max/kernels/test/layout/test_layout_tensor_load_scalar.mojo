@@ -17,17 +17,21 @@ from tensors, addressing the issue where __getitem__ returns SIMD[dtype, element
 which can be surprising in generic contexts when element_size > 1.
 """
 
-from layout import Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
-from layout._fillers import arange
-from layout.int_tuple import UNKNOWN_VALUE
-from testing import TestSuite, assert_equal
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    RuntimeTuple,
+    UNKNOWN_VALUE,
+)
+from std.testing import TestSuite, assert_equal
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
-fn test_load_scalar_static_layout() raises:
+def test_load_scalar_static_layout() raises:
     """Test load_scalar with a static 2x3 row-major layout."""
     comptime layout = Layout.row_major(2, 3)
     var storage: InlineArray[Float32, 6] = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
@@ -54,15 +58,15 @@ fn test_load_scalar_static_layout() raises:
     assert_equal(v12, 5.0)
 
 
-fn test_load_scalar_dynamic_layout() raises:
+def test_load_scalar_dynamic_layout() raises:
     """Test load_scalar with a dynamic runtime layout."""
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
-        layout, element_type = DType.int32, linear_idx_type = DType.int32
+        layout, element_type=DType.int32, linear_idx_type=DType.int32
     ](
-        RuntimeTuple[layout.shape, element_type = DType.int32](3, 4),
-        RuntimeTuple[layout.stride, element_type = DType.int32](4, 1),
+        RuntimeTuple[layout.shape, element_type=DType.int32](3, 4),
+        RuntimeTuple[layout.stride, element_type=DType.int32](4, 1),
     )
 
     var storage = InlineArray[Float32, 12](uninitialized=True)
@@ -72,8 +76,8 @@ fn test_load_scalar_dynamic_layout() raises:
     var tensor = LayoutTensor[
         DType.float32,
         layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
     ](storage.unsafe_ptr(), dynamic_layout)
 
     # Test load_scalar at various positions
@@ -87,15 +91,15 @@ fn test_load_scalar_dynamic_layout() raises:
     assert_equal(v23, 11.0)  # row 2, col 3 = 2*4 + 3 = 11
 
 
-fn test_load_scalar_with_runtime_tuple() raises:
+def test_load_scalar_with_runtime_tuple() raises:
     """Test load_scalar using RuntimeTuple coordinates."""
     comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[
-        layout, element_type = DType.int32, linear_idx_type = DType.int32
+        layout, element_type=DType.int32, linear_idx_type=DType.int32
     ](
-        RuntimeTuple[layout.shape, element_type = DType.int32](4, 4),
-        RuntimeTuple[layout.stride, element_type = DType.int32](4, 1),
+        RuntimeTuple[layout.shape, element_type=DType.int32](4, 4),
+        RuntimeTuple[layout.stride, element_type=DType.int32](4, 1),
     )
 
     var storage = InlineArray[Float32, 16](uninitialized=True)
@@ -105,17 +109,17 @@ fn test_load_scalar_with_runtime_tuple() raises:
     var tensor = LayoutTensor[
         DType.float32,
         layout,
-        layout_int_type = DType.int32,
-        linear_idx_type = DType.int32,
+        layout_int_type=DType.int32,
+        linear_idx_type=DType.int32,
     ](storage.unsafe_ptr(), dynamic_layout)
 
     # Test load_scalar with RuntimeTuple
-    var coord = RuntimeTuple[layout.shape, element_type = DType.int32](2, 3)
+    var coord = RuntimeTuple[layout.shape, element_type=DType.int32](2, 3)
     var val: Scalar[DType.float32] = tensor.load_scalar(coord)
     assert_equal(val, 11.0)  # row 2, col 3 = 2*4 + 3 = 11
 
 
-fn test_load_scalar_matches_getitem_lane0() raises:
+def test_load_scalar_matches_getitem_lane0() raises:
     """Test that load_scalar returns the same value as __getitem__[0]."""
     comptime layout = Layout.row_major(4, 4)
     var storage = InlineArray[Float32, 16](uninitialized=True)
@@ -132,7 +136,7 @@ fn test_load_scalar_matches_getitem_lane0() raises:
             assert_equal(scalar_val, simd_val[0])
 
 
-fn test_load_scalar_vectorized_element_size_gt_1() raises:
+def test_load_scalar_vectorized_element_size_gt_1() raises:
     """Test load_scalar with a vectorized tensor where element_size > 1.
 
     This is the primary use case for load_scalar: when element_layout.size() > 1,
@@ -151,10 +155,9 @@ fn test_load_scalar_vectorized_element_size_gt_1() raises:
     var vec_tensor = tensor.vectorize[1, 4]()
 
     # Verify element_size > 1
-    constrained[
-        vec_tensor.element_size == 4,
-        "Expected element_size == 4 for vectorized tensor",
-    ]()
+    comptime assert (
+        vec_tensor.element_size == 4
+    ), "Expected element_size == 4 for vectorized tensor"
 
     # __getitem__ returns SIMD[float32, 4], load_scalar returns just the 0th lane
     # For position (0, 0): the element contains [0, 1, 2, 3], load_scalar returns 0

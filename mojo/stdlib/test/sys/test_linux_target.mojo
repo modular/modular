@@ -15,16 +15,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys import CompilationTarget
+from std.sys import CompilationTarget
 
-from testing import assert_false, assert_true
-from testing import TestSuite
+from std.testing import assert_false, assert_true
+from std.testing import TestSuite
 
 
-def test_os_query():
+def test_os_query() raises:
     assert_false(CompilationTarget.is_macos())
     assert_true(CompilationTarget.is_linux())
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn speak[a: Int = 3, msg: String = "woof"]():
+def speak[a: Int = 3, msg: String = "woof"]():
     print(msg, a)
 
 
-fn use_defaults():
+def use_defaults():
     speak()  # prints 'woof 3'
     speak[5]()  # prints 'woof 5'
     speak[7, "meow"]()  # prints 'meow 7'

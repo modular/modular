@@ -12,30 +12,30 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from gpu import *
-from gpu.host import DeviceContext
-from testing import TestSuite, assert_equal
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
+from std.testing import TestSuite, assert_equal
 
 
-fn vec_func(
+def vec_func(
     in0: UnsafePointer[Float32, MutAnyOrigin],
     in1: UnsafePointer[Float32, MutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = in0[tid] + in1[tid]
 
 
-def test_concurrent_copy():
+def test_concurrent_copy() raises:
     var ctx1 = create_test_device_context()
     var ctx2 = create_test_device_context()
     _run_test_concurrent_copy(ctx1, ctx2)
 
 
-fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
+def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     comptime length = 1 * 1024 * 1024
     comptime T = DType.float32
 
@@ -163,13 +163,13 @@ fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         )
 
 
-def test_concurrent_func():
+def test_concurrent_func() raises:
     var ctx1 = create_test_device_context()
     var ctx2 = create_test_device_context()
     _run_test_concurrent_func(ctx1, ctx2)
 
 
-fn _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
+def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     comptime length = 20 * 1024 * 1024
     comptime T = DType.float32
 
@@ -295,7 +295,7 @@ fn _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         )
 
 
-def main():
+def main() raises:
     # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
     # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()

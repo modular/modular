@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OwnedKwargsDict
-from os import abort
+from std.collections import OwnedKwargsDict
+from std.os import abort
 
-from python import Python, PythonObject
-from python.bindings import PythonModuleBuilder
+from std.python import Python, PythonObject
+from std.python.bindings import PythonModuleBuilder
 
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     try:
         var b = PythonModuleBuilder("mojo_module")
 
@@ -57,7 +57,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
 
 @export
-fn takes_zero_raises_returns() raises -> PythonObject:
+def takes_zero_raises_returns() raises -> PythonObject:
     var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")
     if s != "just a python string":
         raise Error("`s` must be 'just a python string'")
@@ -66,14 +66,14 @@ fn takes_zero_raises_returns() raises -> PythonObject:
 
 
 @export
-fn takes_one_raises_returns(a: PythonObject) raises -> PythonObject:
+def takes_one_raises_returns(a: PythonObject) raises -> PythonObject:
     if a != PythonObject("foo"):
         raise Error("input must be 'foo'")
     return a
 
 
 @export
-fn takes_two_raises_returns(
+def takes_two_raises_returns(
     a: PythonObject, b: PythonObject
 ) raises -> PythonObject:
     if a != PythonObject("foo"):
@@ -82,7 +82,7 @@ fn takes_two_raises_returns(
 
 
 @export
-fn takes_three_raises_returns(
+def takes_three_raises_returns(
     a: PythonObject, b: PythonObject, c: PythonObject
 ) raises -> PythonObject:
     if a != PythonObject("foo"):
@@ -91,7 +91,7 @@ fn takes_three_raises_returns(
 
 
 @export
-fn takes_zero_returns() -> PythonObject:
+def takes_zero_returns() -> PythonObject:
     try:
         return takes_zero_raises_returns()
     except e:
@@ -99,7 +99,7 @@ fn takes_zero_returns() -> PythonObject:
 
 
 @export
-fn takes_one_returns(a: PythonObject) -> PythonObject:
+def takes_one_returns(a: PythonObject) -> PythonObject:
     try:
         return takes_one_raises_returns(a)
     except e:
@@ -107,7 +107,7 @@ fn takes_one_returns(a: PythonObject) -> PythonObject:
 
 
 @export
-fn takes_two_returns(a: PythonObject, b: PythonObject) -> PythonObject:
+def takes_two_returns(a: PythonObject, b: PythonObject) -> PythonObject:
     try:
         return takes_two_raises_returns(a, b)
     except e:
@@ -115,7 +115,7 @@ fn takes_two_returns(a: PythonObject, b: PythonObject) -> PythonObject:
 
 
 @export
-fn takes_three_returns(
+def takes_three_returns(
     a: PythonObject, b: PythonObject, c: PythonObject
 ) -> PythonObject:
     try:
@@ -125,7 +125,7 @@ fn takes_three_returns(
 
 
 @export
-fn takes_zero_raises() raises:
+def takes_zero_raises() raises:
     var s = Python().evaluate("getattr(sys.modules['test_module'], 's')")
     if s != "just a python string":
         raise Error("`s` must be 'just a python string'")
@@ -137,21 +137,21 @@ fn takes_zero_raises() raises:
 
 
 @export
-fn takes_one_raises(list_obj: PythonObject) raises:
+def takes_one_raises(list_obj: PythonObject) raises:
     if len(list_obj) != 3:
         raise Error("list_obj must have length 3")
     list_obj[PythonObject(0)] = PythonObject("baz")
 
 
 @export
-fn takes_two_raises(list_obj: PythonObject, obj: PythonObject) raises:
+def takes_two_raises(list_obj: PythonObject, obj: PythonObject) raises:
     if len(list_obj) != 3:
         raise Error("list_obj must have length 3")
     list_obj[PythonObject(0)] = obj
 
 
 @export
-fn takes_three_raises(
+def takes_three_raises(
     list_obj: PythonObject, obj: PythonObject, obj2: PythonObject
 ) raises:
     if len(list_obj) != 3:
@@ -160,7 +160,7 @@ fn takes_three_raises(
 
 
 @export
-fn takes_zero():
+def takes_zero():
     try:
         takes_zero_raises()
     except e:
@@ -168,7 +168,7 @@ fn takes_zero():
 
 
 @export
-fn takes_one(list_obj: PythonObject):
+def takes_one(list_obj: PythonObject):
     try:
         takes_one_raises(list_obj)
     except e:
@@ -176,7 +176,7 @@ fn takes_one(list_obj: PythonObject):
 
 
 @export
-fn takes_two(list_obj: PythonObject, obj: PythonObject):
+def takes_two(list_obj: PythonObject, obj: PythonObject):
     try:
         takes_two_raises(list_obj, obj)
     except e:
@@ -184,7 +184,7 @@ fn takes_two(list_obj: PythonObject, obj: PythonObject):
 
 
 @export
-fn takes_three(list_obj: PythonObject, obj: PythonObject, obj2: PythonObject):
+def takes_three(list_obj: PythonObject, obj: PythonObject, obj2: PythonObject):
     try:
         takes_three_raises(list_obj, obj, obj2)
     except e:
@@ -197,7 +197,7 @@ fn takes_three(list_obj: PythonObject, obj: PythonObject, obj2: PythonObject):
 
 
 @export
-fn sum_kwargs_ints(
+def sum_kwargs_ints(
     kwargs: OwnedKwargsDict[PythonObject],
 ) raises -> PythonObject:
     """Test function that takes kwargs, converts them to Ints, adds them together and returns the sum.
@@ -211,7 +211,7 @@ fn sum_kwargs_ints(
 
 
 @export
-fn sum_pos_arg_and_kwargs(
+def sum_pos_arg_and_kwargs(
     arg1: PythonObject, kwargs: OwnedKwargsDict[PythonObject]
 ) raises -> PythonObject:
     return PythonObject(Int(py=arg1) + Int(py=sum_kwargs_ints(kwargs)))

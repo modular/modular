@@ -12,18 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: echo "Hello, World" | %mojo %s
 
-import sys
-from io.io import _fdopen
+import std.sys
+from std.io.io import _fdopen
 
-from testing import testing, TestSuite
+from std.testing import testing, TestSuite
 
 
-fn test_stdin() raises:
+def test_stdin() raises:
     # "Hello, World" piped from RUN command above
-    var stdin = _fdopen["r"](sys.stdin)
+    var stdin = _fdopen["r"](std.sys.stdin)
     testing.assert_equal(stdin.read_until_delimiter(","), "Hello")
     testing.assert_equal(stdin.readline(), " World")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

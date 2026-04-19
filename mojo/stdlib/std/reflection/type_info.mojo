@@ -22,26 +22,26 @@ This module provides compile-time introspection of type and function names:
 Example:
 
 ```mojo
-from reflection import get_type_name, get_function_name
+from std.reflection import get_type_name, get_function_name
 
 struct Point:
     var x: Int
     var y: Float64
 
-fn my_function():
+def my_function():
     pass
 
-fn main():
+def main():
     print(get_type_name[Point]())        # "Point"
     print(get_function_name[my_function]())  # "my_function"
 ```
 """
 
-from sys.info import _current_target, _TargetType
-from collections.string.string_slice import get_static_string
+from std.sys.info import _current_target, _TargetType
+from std.collections.string.string_slice import get_static_string
 
 
-fn get_linkage_name[
+def get_linkage_name[
     func_type: AnyType,
     //,
     func: func_type,
@@ -68,7 +68,9 @@ fn get_linkage_name[
     return StaticString(res)
 
 
-fn get_function_name[func_type: AnyType, //, func: func_type]() -> StaticString:
+def get_function_name[
+    func_type: AnyType, //, func: func_type
+]() -> StaticString:
     """Returns `func`'s name as declared in the source code.
 
     The returned name does not include any information about the function's
@@ -86,17 +88,14 @@ fn get_function_name[func_type: AnyType, //, func: func_type]() -> StaticString:
     return StaticString(res)
 
 
-fn get_type_name[
-    type_type: __TypeOfAllTypes,
-    //,
-    type: type_type,
+def get_type_name[
+    type: AnyType,
     *,
     qualified_builtins: Bool = False,
 ]() -> StaticString:
     """Returns the struct name of the given type parameter.
 
     Parameters:
-        type_type: Type of type.
         type: A mojo type.
         qualified_builtins: Whether to print fully qualified builtin type names
             (e.g. `std.builtin.int.Int`) or shorten them (e.g. `Int`).
@@ -117,14 +116,18 @@ fn get_type_name[
 # TODO: This currently does not strip the module name from the inner type name.
 # For example, Generic[Foo] should return "Generic[Foo]" but currently returns
 # "Generic[module_name.Foo]".
-fn _unqualified_type_name[type: AnyType]() -> StaticString:
+def _unqualified_type_name[type: AnyType]() -> StaticString:
     comptime name = get_type_name[type]()
     comptime parameter_list_start = name.find("[")
     if parameter_list_start == -1:
-        return name.split(".")[-1]
+        # HACK: Split is evaluated twice because `List[StringSlice]` cannot
+        # be materialized to runtime from a comptime context.
+        comptime n = len(name.split("."))
+        return name.split(".")[n - 1]
     else:
-        comptime base_name = name[:parameter_list_start].split(".")[-1]
-        comptime parameters = name[parameter_list_start:]
+        comptime split = name[byte=:parameter_list_start].split(".")
+        comptime base_name = split[len(split) - 1]
+        comptime parameters = name[byte=parameter_list_start:]
         return get_static_string[base_name, parameters]()
 
 
@@ -138,7 +141,7 @@ fn _unqualified_type_name[type: AnyType]() -> StaticString:
 # ===----------------------------------------------------------------------=== #
 
 
-fn get_base_type_name[T: AnyType]() -> StaticString:
+def get_base_type_name[T: AnyType]() -> StaticString:
     """Returns the name of the base type of a parameterized type.
 
     For parameterized types like `List[Int]`, this returns `"List"`.
@@ -155,9 +158,10 @@ fn get_base_type_name[T: AnyType]() -> StaticString:
 
     Example:
         ```mojo
-        from collections import List, Dict
+        from std.collections import List, Dict
+        from std.reflection.type_info import get_base_type_name
 
-        fn main():
+        def main():
             print(get_base_type_name[List[Int]]())  # "List"
             print(get_base_type_name[Dict[String, Int]]())  # "Dict"
             print(get_base_type_name[Int]())  # "Int"

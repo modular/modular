@@ -11,24 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from testing import assert_true, TestSuite
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.testing import assert_true, TestSuite
 
 comptime A100_TARGET = get_gpu_target["sm_80"]()
 comptime MI300X_TARGET = get_gpu_target["mi300x"]()
 
 
-def test_abs():
-    fn do_abs[
+def test_abs() raises:
+    def do_abs[
         dtype: DType, *, width: Int = 1
     ](val: SIMD[dtype, width]) -> type_of(val):
         return abs(val)
 
     # AMD GPU kernels cannot have a return value
-    fn do_abs_noreturn[
+    def do_abs_noreturn[
         dtype: DType, *, width: Int = 1
-    ](val: SIMD[dtype, width], x: UnsafePointer[mut=True, Scalar[dtype]]):
+    ](val: SIMD[dtype, width], x: UnsafePointer[mut=True, Scalar[dtype], _]):
         x.store(0, abs(val))
 
     # Check the NVIDIA PTX.
@@ -87,5 +87,5 @@ def test_abs():
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

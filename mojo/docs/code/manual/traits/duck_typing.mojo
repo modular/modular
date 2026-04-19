@@ -13,31 +13,31 @@
 
 
 trait Quackable:
-    fn quack(self):
+    def quack(self):
         ...
 
 
 @fieldwise_init
 struct Duck(Copyable, Quackable):
-    fn quack(self):
+    def quack(self):
         print("Quack")
 
 
 @fieldwise_init
 struct StealthCow(Copyable, Quackable):
-    fn quack(self):
+    def quack(self):
         print("Moo!")
 
 
-fn make_it_quack[DuckType: Quackable](maybe_a_duck: DuckType):
+def make_it_quack[DuckType: Quackable](maybe_a_duck: DuckType):
     maybe_a_duck.quack()
 
 
-fn make_it_quack2(maybe_a_duck: Some[Quackable]):
+def make_it_quack2(maybe_a_duck: Some[Quackable]):
     maybe_a_duck.quack()
 
 
-fn take_two_quackers[
+def take_two_quackers[
     DuckType: Quackable
 ](quacker1: DuckType, quacker2: DuckType):
     pass

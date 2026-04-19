@@ -12,13 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn take_simd8(x: SIMD[DType.float32, 8]):
+def take_simd8(x: SIMD[DType.float32, 8]):
     pass
 
 
-fn generic_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
-    @parameter
-    if nelts == 8:
+def generic_simd[nelts: Int](x: SIMD[DType.float32, nelts]):
+    comptime if nelts == 8:
         take_simd8(rebind[SIMD[DType.float32, 8]](x))
 
 

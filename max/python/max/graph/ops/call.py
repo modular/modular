@@ -24,28 +24,68 @@ from ..value import Value, _ChainValue
 
 
 def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
-    """Call a graph with the provided arguments and return its results.
+    """Calls a previously defined graph with the provided arguments.
 
-    This function invokes a previously defined graph, passing in the provided
-    arguments and the current chain value, and returns the results.
+    Use this function to invoke a subgraph built with
+    :meth:`~max.graph.Graph.add_subgraph` or
+    :meth:`~max.nn.Module.build_subgraph`. The primary benefit is that the
+    compiler processes the subgraph definition once, which reduces compile
+    time significantly for models with repeated blocks.
 
-    The body of the graph is ultimately inlined into the caller, so the chain
-    value is only used for serialization if the subgraph's body contains an
-    operation that makes use of it in the first place.
+    Examples:
+        Call a subgraph and forward its outputs to the parent graph:
 
-    The current advantage of using subgraphs is that it offers a way to improve
-    compile times for operations that are used repeatedly in a model. As a
-    secondary benefit, it also makes the IR more readable by allowing control
-    flow to be expressed in a more natural way.
+        .. code-block:: python
+
+            from max.dtype import DType
+            from max.graph import Graph, ops
+            from max.graph.type import TensorType, DeviceRef
+
+            input_type = TensorType(DType.float32, [10], DeviceRef.CPU())
+
+            with Graph("main", input_types=[input_type]) as graph:
+                with graph.add_subgraph(
+                    "add_one", input_types=[input_type]
+                ) as sub:
+                    x = sub.inputs[0].tensor
+                    one = ops.constant(1, DType.float32, device=DeviceRef.CPU())
+                    sub.output(ops.elementwise.add(x, one))
+
+                result = ops.call(sub, graph.inputs[0])
+                graph.output(*result)
+
+        Call a shared subgraph for each layer of a model, resolving
+        different weights at each call site with ``prefix``:
+
+        .. code-block:: python
+
+            # Build the subgraph once from the first layer.
+            subgraph = self.layers[0].build_subgraph(
+                "transformer_block",
+                input_types=input_types,
+                weight_prefix="layers.0.",
+            )
+
+            # Invoke it once per layer with layer-specific weights.
+            for idx in range(num_layers):
+                outputs = ops.call(
+                    subgraph, *h, prefix=f"layers.{idx}."
+                )
 
     Args:
-        graph: The graph to call
-        *args: Arguments to pass to the called graph
-        prefix: Prefix to add to the names of any weights in the subgraph
+        graph: The subgraph to call.
+        *args: Arguments to pass to the subgraph. Must match the subgraph's
+            input types, excluding the chain value (handled internally).
+        prefix: A string prepended to all weight names when the subgraph is
+            invoked. Use this to distinguish repeated calls to the same
+            subgraph. For example, if a transformer block references a weight
+            named ``attention.wq``, calling with ``prefix="layers.3."``
+            resolves it to ``layers.3.attention.wq`` in the weights registry.
+            Leave empty if the subgraph contains no placeholder weights.
 
     Returns:
-        Either a single Value or a list of Values representing the graph outputs
-        (excluding the chain value which is handled internally)
+        A list of :class:`~max.graph.Value` objects representing the
+        subgraph's outputs, excluding any internal chain values.
     """
     # Get the current graph context
     current_graph = Graph.current

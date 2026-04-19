@@ -15,7 +15,7 @@
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy import Signals
+from max.nn import Signals
 
 
 def test_reducescatter_rep_device() -> None:
@@ -38,18 +38,10 @@ def test_reducescatter_rep_device() -> None:
         with Graph(
             "reducescatter",
             input_types=[
-                TensorType(
-                    dtype=DType.float32, shape=[24, 5], device=devices[0]
-                ),
-                TensorType(
-                    dtype=DType.float32, shape=[24, 5], device=devices[1]
-                ),
-                TensorType(
-                    dtype=DType.float32, shape=[24, 5], device=devices[2]
-                ),
-                TensorType(
-                    dtype=DType.float32, shape=[24, 5], device=devices[3]
-                ),
+                *[
+                    TensorType(dtype=DType.float32, shape=[24, 5], device=dev)
+                    for dev in devices
+                ],
                 *signals.input_types(),
             ],
         ) as graph:
@@ -105,8 +97,8 @@ def test_reducescatter_wrong_shape() -> None:
 def test_reducescatter_basic() -> None:
     """Test basic reducescatter use case.
 
-    With 4 devices and input shape [5, 24], output shape should be [5, 6]
-    (24 / 4 = 6 along axis 1).
+    With 4 devices and input shape [8, 24], output shape should be [2, 24]
+    (8 / 4 = 2 along axis 0).
     """
     devices = [
         DeviceRef.GPU(id=0),
@@ -116,13 +108,16 @@ def test_reducescatter_basic() -> None:
     ]
     signals = Signals(devices)
 
+    in_shape = [8, 24]
+    out_shape_expected = [2, 24]
+
     with Graph(
         "reducescatter",
         input_types=[
-            TensorType(dtype=DType.float32, shape=[5, 24], device=devices[0]),
-            TensorType(dtype=DType.float32, shape=[5, 24], device=devices[1]),
-            TensorType(dtype=DType.float32, shape=[5, 24], device=devices[2]),
-            TensorType(dtype=DType.float32, shape=[5, 24], device=devices[3]),
+            *[
+                TensorType(dtype=DType.float32, shape=in_shape, device=dev)
+                for dev in devices
+            ],
             *signals.input_types(),
         ],
     ) as graph:
@@ -133,12 +128,79 @@ def test_reducescatter_basic() -> None:
         graph.output(*reducescatter_outputs)
         for output, device in zip(reducescatter_outputs, devices, strict=True):
             assert device == output.device
-            assert output.shape[0] == 5
-            assert output.shape[1] == 6  # 24 / 4
+            assert output.shape == out_shape_expected
 
 
-def test_reducescatter_axis0_not_supported() -> None:
-    """Test that axis != -1 raises NotImplementedError."""
+def test_reducescatter_axis0() -> None:
+    """Test reducescatter with axis=0.
+
+    With 2 devices and input shape [6, 10], output shape should be [3, 10]
+    (6 / 2 = 3 along axis 0).
+    """
+    devices = [
+        DeviceRef.GPU(id=0),
+        DeviceRef.GPU(id=1),
+    ]
+    signals = Signals(devices)
+
+    in_shape = [6, 10]
+    out_shape_expected = [3, 10]
+
+    with Graph(
+        "reducescatter",
+        input_types=[
+            TensorType(dtype=DType.float32, shape=in_shape, device=devices[0]),
+            TensorType(dtype=DType.float32, shape=in_shape, device=devices[1]),
+            *signals.input_types(),
+        ],
+    ) as graph:
+        reducescatter_outputs = ops.reducescatter.sum(
+            inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+            signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+            axis=0,
+        )
+        graph.output(*reducescatter_outputs)
+        for output, device in zip(reducescatter_outputs, devices, strict=True):
+            assert device == output.device
+            assert output.shape == out_shape_expected
+
+
+def test_reducescatter_axis1() -> None:
+    """Test reducescatter with explicit axis=1.
+
+    With 2 devices and input shape [6, 10], output shape should be [6, 5]
+    (10 / 2 = 5 along axis 1).
+    """
+    devices = [
+        DeviceRef.GPU(id=0),
+        DeviceRef.GPU(id=1),
+    ]
+    signals = Signals(devices)
+
+    in_shape = [6, 10]
+    out_shape_expected = [6, 5]
+
+    with Graph(
+        "reducescatter",
+        input_types=[
+            TensorType(dtype=DType.float32, shape=in_shape, device=devices[0]),
+            TensorType(dtype=DType.float32, shape=in_shape, device=devices[1]),
+            *signals.input_types(),
+        ],
+    ) as graph:
+        reducescatter_outputs = ops.reducescatter.sum(
+            inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+            signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+            axis=1,
+        )
+        graph.output(*reducescatter_outputs)
+        for output, device in zip(reducescatter_outputs, devices, strict=True):
+            assert device == output.device
+            assert output.shape == out_shape_expected
+
+
+def test_reducescatter_axis_out_of_bounds() -> None:
+    """Test that out-of-bounds axis raises ValueError."""
     devices = [
         DeviceRef.GPU(id=0),
         DeviceRef.GPU(id=1),
@@ -146,8 +208,8 @@ def test_reducescatter_axis0_not_supported() -> None:
     signals = Signals(devices)
 
     with pytest.raises(
-        NotImplementedError,
-        match=r"reducescatter.sum only supports axis=-1",
+        ValueError,
+        match=r"axis .* is out of bounds",
     ):
         with Graph(
             "reducescatter",
@@ -164,5 +226,38 @@ def test_reducescatter_axis0_not_supported() -> None:
             ops.reducescatter.sum(
                 inputs=(v.tensor for v in graph.inputs[: len(devices)]),
                 signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
-                axis=0,
+                axis=5,
             )
+
+
+def test_reducescatter_ragged_axis0() -> None:
+    """Test ragged partition where scatter dim is not evenly divisible.
+
+    With 8 devices and input shape [9, 16], axis=0:
+    GPU 0 gets (2, 16) (9 // 8 + 1 remainder) and GPUs 1-7 get (1, 16).
+    """
+    num_gpus = 8
+    devices = [DeviceRef.GPU(id=i) for i in range(num_gpus)]
+    signals = Signals(devices)
+
+    with Graph(
+        "reducescatter",
+        input_types=[
+            TensorType(dtype=DType.float32, shape=[9, 16], device=dev)
+            for dev in devices
+        ]
+        + list(signals.input_types()),
+    ) as graph:
+        reducescatter_outputs = ops.reducescatter.sum(
+            inputs=(v.tensor for v in graph.inputs[:num_gpus]),
+            signal_buffers=(v.buffer for v in graph.inputs[num_gpus:]),
+            axis=0,
+        )
+        graph.output(*reducescatter_outputs)
+        for dev_idx, (output, device) in enumerate(
+            zip(reducescatter_outputs, devices, strict=True)
+        ):
+            assert device == output.device
+            expected_rows = 2 if dev_idx < 1 else 1  # 9 % 8 == 1
+            assert output.shape[0] == expected_rows
+            assert output.shape[1] == 16

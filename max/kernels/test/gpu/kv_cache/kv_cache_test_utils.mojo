@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """Shared utilities for KV cache tests."""
 
-from collections import Set
-from math import ceildiv
-from random import random_ui64
+from std.collections import Set
+from std.math import ceildiv
+from std.random import random_ui64
 
-from gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 
 struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
@@ -29,31 +29,31 @@ struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
     var host_ptr: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
     var device_buf: Optional[DeviceBuffer[Self.dtype]]
 
-    fn __init__(out self, shape: IndexList[Self.rank]):
+    def __init__(out self, shape: IndexList[Self.rank]):
         self.shape = shape
         self.host_ptr = alloc[Scalar[Self.dtype]](shape.flattened_length())
         self.device_buf = None
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         self.host_ptr.free()
 
-    fn copy_to_device(mut self, ctx: DeviceContext) raises:
+    def copy_to_device(mut self, ctx: DeviceContext) raises:
         self.device_buf = ctx.enqueue_create_buffer[Self.dtype](
             self.shape.flattened_length()
         )
         ctx.enqueue_copy(self.device_buf.value(), self.host_ptr)
 
-    fn host_tensor(self) -> Self.tensor_type:
+    def host_tensor(self) -> Self.tensor_type:
         return self._tensor(self.host_ptr)
 
-    fn device_tensor(self) -> Self.tensor_type:
+    def device_tensor(self) -> Self.tensor_type:
         return self._tensor(self.device_buf.value().unsafe_ptr())
 
-    fn _runtime_layout(self) -> RuntimeLayout[Self.layout]:
+    def _runtime_layout(self) -> RuntimeLayout[Self.layout]:
         return RuntimeLayout[Self.layout].row_major(self.shape)
 
-    fn _tensor(
-        self, ptr: UnsafePointer[Scalar[Self.dtype]]
+    def _tensor(
+        self, ptr: UnsafePointer[Scalar[Self.dtype], _]
     ) -> Self.tensor_type:
         return Self.tensor_type(ptr, self._runtime_layout())
 
@@ -71,7 +71,7 @@ struct CacheLengthsTable(Copyable):
     var max_seq_length_batch: Int
     var total_length: Int
 
-    fn __init__(out self, batch_size: Int):
+    def __init__(out self, batch_size: Int):
         self.batch_size = batch_size
         self.cache_lengths = type_of(self.cache_lengths)(Index(batch_size))
         self.input_row_offsets = type_of(self.input_row_offsets)(
@@ -81,7 +81,7 @@ struct CacheLengthsTable(Copyable):
         self.max_seq_length_batch = 0
         self.total_length = 0
 
-    fn _build(
+    def _build(
         mut self,
         prompt_lens: List[Int],
         cache_lens: List[Int],
@@ -117,7 +117,7 @@ struct CacheLengthsTable(Copyable):
             self.input_row_offsets.copy_to_device(ctx.value())
 
     @staticmethod
-    fn build(
+    def build(
         prompt_lens: List[Int],
         cache_lens: List[Int],
         ctx: Optional[DeviceContext],
@@ -131,12 +131,14 @@ struct CacheLengthsTable(Copyable):
 struct PagedLookupTable[page_size: Int](Copyable):
     var paged_lut: _KVCacheTestTensor[DType.uint32, Layout.row_major[2](), 2]
 
-    fn __init__(out self, batch_size: Int, max_full_context_length: Int) raises:
+    def __init__(
+        out self, batch_size: Int, max_full_context_length: Int
+    ) raises:
         self.paged_lut = type_of(self.paged_lut)(
             Index(batch_size, ceildiv(max_full_context_length, Self.page_size))
         )
 
-    fn _build(
+    def _build(
         mut self,
         prompt_lens: List[Int],
         cache_lens: List[Int],
@@ -168,7 +170,7 @@ struct PagedLookupTable[page_size: Int](Copyable):
             self.paged_lut.copy_to_device(ctx.value())
 
     @staticmethod
-    fn build(
+    def build(
         prompt_lens: List[Int],
         cache_lens: List[Int],
         max_full_context_length: Int,
@@ -181,7 +183,7 @@ struct PagedLookupTable[page_size: Int](Copyable):
         return paged_lut^
 
     @staticmethod
-    fn build[
+    def build[
         batch_size: Int
     ](
         prompt_lens: IndexList[batch_size],
@@ -191,7 +193,7 @@ struct PagedLookupTable[page_size: Int](Copyable):
         ctx: DeviceContext,
     ) raises -> Self:
         @parameter
-        fn _to_list(idx_list: IndexList) -> List[Int]:
+        def _to_list(idx_list: IndexList) -> List[Int]:
             var list = List[Int](capacity=idx_list.size)
             for i in range(idx_list.size):
                 list.append(idx_list[i])
@@ -205,8 +207,8 @@ struct PagedLookupTable[page_size: Int](Copyable):
             ctx,
         )
 
-    fn host_tensor(self) -> type_of(self.paged_lut).tensor_type:
+    def host_tensor(self) -> type_of(self.paged_lut).tensor_type:
         return self.paged_lut.host_tensor()
 
-    fn device_tensor(self) -> type_of(self.paged_lut).tensor_type:
+    def device_tensor(self) -> type_of(self.paged_lut).tensor_type:
         return self.paged_lut.device_tensor()

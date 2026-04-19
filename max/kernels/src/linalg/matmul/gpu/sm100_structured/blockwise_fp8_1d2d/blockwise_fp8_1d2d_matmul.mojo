@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""CPU entrypoint for grouped 1D-1D blockwise FP8 SM100 matmul.
+"""CPU entrypoint for grouped 1D2D blockwise FP8 SM100 matmul.
 
-This module provides the public API for launching the grouped 1D-1D blockwise
+This module provides the public API for launching the grouped 1D2D blockwise
 FP8 matmul kernel for Mixture of Experts (MoE) layers.
 
 Usage:
@@ -30,56 +30,43 @@ Usage:
     )
 """
 
-from collections import Optional
-from math import ceildiv
-from sys import size_of
+from std.sys import size_of
 
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import B200
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout, LayoutTensor
-from layout.tma_async import create_tensor_tile, create_tma_tile
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.info import B200
+from layout import TileTensor, flatten_leading
+from structured_kernels.tile_types import create_tma_tile
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from ..structured_kernels.config import MatmulConfig
 from .blockwise_fp8_1d2d_smem import BlockwiseFP8_1D2DSmem
 from .blockwise_fp8_1d2d_matmul_kernel import BlockwiseFP8_1D2DMatmulKernel
 
 
-fn grouped_matmul_1d2d_blockwise_fp8[
-    c_type: DType,
-    c_layout: Layout,
-    a_type: DType,
-    a_layout: Layout,
-    b_type: DType,
-    b_layout: Layout,
+def grouped_matmul_1d2d_blockwise_fp8[
     a_scales_type: DType,
     b_scales_type: DType,
-    a_scales_layout: Layout,
-    b_scales_layout: Layout,
-    a_offsets_layout: Layout,
-    expert_ids_layout: Layout,
-    expert_scales_layout: Layout,
     transpose_b: Bool,
     //,
     *,
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    config: MatmulConfig[_, _, _, transpose_b],
 ](
-    c_device: LayoutTensor[c_type, c_layout, ...],
-    a_device: LayoutTensor[a_type, a_layout, ...],
-    b_device: LayoutTensor[b_type, b_layout, ...],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, ...],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ...],
-    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, ...],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, ...],
-    expert_scales: LayoutTensor[
-        DType.float32, expert_scales_layout, MutAnyOrigin
-    ],
+    c_device: TileTensor,
+    a_device: TileTensor,
+    b_device: TileTensor,
+    a_scales: TileTensor,
+    b_scales: TileTensor,
+    a_offsets: TileTensor,
+    expert_ids: TileTensor,
+    expert_scales: TileTensor,
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
+    comptime a_type = config.a_type
+    comptime b_type = config.b_type
+    comptime c_type = config.c_type
     """Launch grouped 1D-1D blockwise FP8 matmul kernel.
 
     This function sets up TMA descriptors and launches the kernel with the
@@ -97,19 +84,18 @@ fn grouped_matmul_1d2d_blockwise_fp8[
         num_active_experts: Number of active experts.
         ctx: Device context.
     """
-    constrained[transpose_b, "Only support transposed B"]()
-    constrained[
-        a_type == b_type and a_type == DType.float8_e4m3fn,
-        "Only support float8_e4m3fn",
-    ]()
-    constrained[
-        a_scales_type == b_scales_type,
-        "a_scales_type and b_scales_type must match",
-    ]()
-    constrained[
-        config.cta_group in (1, 2), "Only support cta_group == 1 or 2"
-    ]()
-    constrained[not config.AB_swapped, "Swapped AB is not supported"]()
+    comptime assert transpose_b, "Only support transposed B"
+    comptime assert (
+        a_type == b_type and a_type == DType.float8_e4m3fn
+    ), "Only support float8_e4m3fn"
+    comptime assert (
+        a_scales_type == b_scales_type
+    ), "a_scales_type and b_scales_type must match"
+    comptime assert config.cta_group in (
+        1,
+        2,
+    ), "Only support cta_group == 1 or 2"
+    comptime assert not config.AB_swapped, "Swapped AB is not supported"
 
     comptime MMA_M = config.mma_shape[0]
     comptime MMA_N = config.mma_shape[1]
@@ -119,48 +105,18 @@ fn grouped_matmul_1d2d_blockwise_fp8[
     comptime BN = MMA_N // config.cta_group
     comptime BK = config.block_tile_shape[2]
 
-    constrained[BK == 128, "Only support BK = 128"]()
+    comptime assert BK == 128, "Only support BK = 128"
 
-    comptime num_experts = b_layout.shape[0].value()
-    comptime N = c_layout.shape[1].value()
-    comptime K = a_layout.shape[1].value()
+    comptime num_experts = type_of(b_device).LayoutType.static_shape[0]
+    comptime N = type_of(c_device).LayoutType.static_shape[1]
+    comptime K = type_of(a_device).LayoutType.static_shape[1]
     comptime expert_n = N
 
     # Reshape B from (num_experts, N, K) to (num_experts * N, K)
-    var b_2d = LayoutTensor[
-        b_type,
-        Layout.row_major(num_experts * N, K),
-        b_device.origin,
-        address_space = b_device.address_space,
-    ](b_device.ptr)
+    var b_2d = flatten_leading(b_device)
 
-    # Reshape b_scales from 3D (num_experts, N//128, K//128) to 2D
-    comptime b_scales_expert = b_scales_layout.shape[0].value()
-    comptime b_scales_n = b_scales_layout.shape[1].value()
-    comptime b_scales_k = b_scales_layout.shape[2].value()
-    var b_scales_2d = LayoutTensor[
-        b_scales_type,
-        Layout.row_major(b_scales_expert * b_scales_n, b_scales_k),
-        b_scales.origin,
-        address_space = b_scales.address_space,
-    ](b_scales.ptr)
-
-    # Create TMA descriptors
-    var a_tma_op = create_tensor_tile[
-        Index(BM // config.cluster_shape[1], BK),
-        swizzle_mode = config.a_swizzle,
-    ](ctx, a_device)
-
-    var b_tma_op = create_tensor_tile[
-        Index(
-            BN // (config.cluster_shape[0] // config.cta_group), BK
-        ) if transpose_b else Index(
-            BK, BN // (config.cluster_shape[0] // config.cta_group)
-        ),
-        swizzle_mode = config.b_swizzle,
-    ](ctx, b_2d)
-
-    var a_scales_tma_op = create_tma_tile[1, BM](ctx, a_scales)
+    # Reshape b_scales from 3D to 2D
+    var b_scales_2d = flatten_leading(b_scales)
 
     # Shared memory size calculation
     comptime SmemType = BlockwiseFP8_1D2DSmem[
@@ -176,33 +132,52 @@ fn grouped_matmul_1d2d_blockwise_fp8[
     # B200 SMEM limit
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
-    # Define kernel function
-    comptime kernel = BlockwiseFP8_1D2DMatmulKernel[
+    # Instantiate kernel type -- layout params derived from caller's TileTensors
+    # so types match by construction in enqueue_function.
+    comptime KernelType = BlockwiseFP8_1D2DMatmulKernel[
         a_type,
         b_type,
         c_type,
         a_scales_type,
         b_scales_type,
-        a_tma_op.layout,
-        b_tma_op.layout,
-        a_scales_tma_op.layout,
-        b_scales_2d.layout,
-        a_tma_op.desc_layout,
-        b_tma_op.desc_layout,
-        a_scales_tma_op.desc_layout,
-        a_offsets.layout,
-        expert_ids.layout,
-        expert_scales.layout,
-        c_layout,  # Full C tensor layout for bounds-checked stores
+        type_of(b_scales_2d).LayoutType,
+        type_of(c_device).LayoutType,
         transpose_b,
         config=config,
         static_N=expert_n,
-        cluster_shape = StaticTuple[Int32, 3](
+        static_K=K,
+        cluster_shape=StaticTuple[Int32, 3](
             Int32(config.cluster_shape[0]),
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
         ),
-    ].run
+    ]
+    comptime kernel = KernelType.run
+
+    # Create TMA descriptors using kernel's layout types
+    var a_tma_op = create_tma_tile[
+        KernelType.ATileLayout,
+        KernelType.ADescLayout,
+        Index(BM // config.cluster_shape[1], BK),
+        swizzle_mode=config.a_swizzle,
+    ](ctx, a_device)
+
+    var b_tma_op = create_tma_tile[
+        KernelType.BTileLayout,
+        KernelType.BDescLayout,
+        Index(
+            BN // (config.cluster_shape[0] // config.cta_group), BK
+        ) if transpose_b else Index(
+            BK, BN // (config.cluster_shape[0] // config.cta_group)
+        ),
+        swizzle_mode=config.b_swizzle,
+    ](ctx, b_2d)
+
+    var a_scales_tma_op = create_tma_tile[
+        KernelType.AScalesLayout,
+        KernelType.AScalesLayout,
+        Index(1, BM),
+    ](ctx, a_scales)
 
     var grid_dim = (
         B200.sm_count,
@@ -223,7 +198,7 @@ fn grouped_matmul_1d2d_blockwise_fp8[
         a_offsets,
         expert_ids,
         expert_scales,
-        c_device,  # For bounds-checked stores
+        c_device,
         num_active_experts,
         UInt32(K),
         grid_dim=grid_dim,
@@ -235,33 +210,20 @@ fn grouped_matmul_1d2d_blockwise_fp8[
     )
 
 
-fn grouped_matmul_dynamic_scaled_fp8_1d2d[
-    c_type: DType,
-    c_layout: Layout,
-    a_type: DType,
-    a_layout: Layout,
-    b_type: DType,
-    b_layout: Layout,
+def grouped_matmul_dynamic_scaled_fp8_1d2d[
     a_scales_type: DType,
     b_scales_type: DType,
-    a_scales_layout: Layout,
-    b_scales_layout: Layout,
-    a_offsets_layout: Layout,
-    expert_ids_layout: Layout,
-    expert_scales_layout: Layout,
     //,
     transpose_b: Bool = True,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, MutAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
-    a_offsets: LayoutTensor[DType.uint32, a_offsets_layout, MutAnyOrigin],
-    expert_ids: LayoutTensor[DType.int32, expert_ids_layout, MutAnyOrigin],
-    expert_scales: LayoutTensor[
-        DType.float32, expert_scales_layout, MutAnyOrigin
-    ],
+    c: TileTensor,
+    a: TileTensor,
+    b: TileTensor,
+    a_scales: TileTensor,
+    b_scales: TileTensor,
+    a_offsets: TileTensor,
+    expert_ids: TileTensor,
+    expert_scales: TileTensor,
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -274,6 +236,9 @@ fn grouped_matmul_dynamic_scaled_fp8_1d2d[
     comptime BM = umma_shape[0]  # cta_group=1
     comptime a_scales_smem_per_stage = BM * size_of[DType.float32]()
 
+    comptime a_type = DType.float8_e4m3fn
+    comptime b_type = DType.float8_e4m3fn
+    comptime c_type = type_of(c).dtype
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         cluster_shape=Index(1, 1, 1),
         mma_shape=umma_shape,
@@ -284,7 +249,10 @@ fn grouped_matmul_dynamic_scaled_fp8_1d2d[
     )
 
     grouped_matmul_1d2d_blockwise_fp8[
-        transpose_b=transpose_b, config=matmul_config
+        a_scales_type=a_scales_type,
+        b_scales_type=b_scales_type,
+        transpose_b=transpose_b,
+        config=matmul_config,
     ](
         c,
         a,

@@ -11,24 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from layout._coord import Coord, Idx
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceContext
+from layout import Coord, Idx, TileTensor, row_major
 
 from nn.pad import pad_constant as pad_cpu
 from nn.pad_gpu import get_padding_output_shape, pad_constant
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 @no_inline
-fn test_pad_constant_gpu[
+def test_pad_constant_gpu[
     dtype: DType, rank: Int
 ](
     input_shape: IndexList[rank],
-    paddings: TileTensor[DType.int, address_space = AddressSpace.GENERIC, ...],
+    paddings: TileTensor[DType.int, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContext,
     verbose: Bool = False,
 ) raises:
@@ -117,7 +115,7 @@ fn test_pad_constant_gpu[
         print(output_cpu)
 
     # Compare GPU and CPU results
-    for i in range(output.numel()):
+    for i in range(output.num_elements()):
         var idx = output.layout(Idx(i))
         assert_equal(output.ptr[idx], output_cpu.ptr[idx])
 
@@ -127,7 +125,7 @@ fn test_pad_constant_gpu[
     _ = out_device
 
 
-def main():
+def main() raises:
     comptime dtype = DType.float32
     with DeviceContext() as ctx:
         # 1D test

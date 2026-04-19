@@ -12,16 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from algorithm import elementwise
-from layout._coord import Coord, coord_to_index_list
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.algorithm import elementwise
+from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.slice import slice_dim_as_view
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
-def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]):
+def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]) raises:
     var shape = coord_to_index_list(tensor.layout.shape_coord())
     var stride = coord_to_index_list(tensor.layout.stride_coord())
     print("New shape:", shape)
@@ -29,7 +27,7 @@ def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]):
 
     @always_inline
     @parameter
-    fn print_elements_lambda[
+    def print_elements_lambda[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](coords: IndexList[rank]):
         var index = rebind[IndexList[tensor.rank]](coords)
@@ -42,10 +40,10 @@ def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]):
 # slice_dim
 def test_slice_dim[
     dtype: DType, numelems: Int, outer_rank: Int, dim: Int
-](dims: IndexList[outer_rank], start: Int, stop: Int, step: Int):
+](dims: IndexList[outer_rank], start: Int, stop: Int, step: Int) raises:
     var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
     var in_tensor = TileTensor(
-        memory1.unsafe_ptr(),
+        memory1,
         row_major(Coord(dims)),
     )
 
@@ -69,7 +67,7 @@ def test_slice_dim[
 
 
 # CHECK-LABEL: == test_slice_dim_basic
-def test_slice_dim_basic():
+def test_slice_dim_basic() raises:
     print("== test_slice_dim_basic")
 
     # CHECK-NEXT: In shape: (4, 4)
@@ -105,5 +103,5 @@ def test_slice_dim_basic():
     test_slice_dim[DType.float32, 16, 2, 1](IndexList[2](4, 4), 2, 4, 1)
 
 
-def main():
+def main() raises:
     test_slice_dim_basic()

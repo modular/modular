@@ -23,19 +23,18 @@ import torch
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy import AttentionWithRope, Linear, RotaryEmbedding
-from max.nn.legacy.float8_config import (
-    Float8Config,
-)
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn import AttentionWithRope, Linear, RotaryEmbedding
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.llama3.model_config import (
     create_rope_embedding,
 )
-from max.pipelines.lib.float8 import parse_float8_config
+from max.pipelines.lib.quant import parse_quant_config
 from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_h100_h200
 from torch.utils.dlpack import from_dlpack
@@ -98,22 +97,23 @@ def attention_weights_and_scales(
         outdim = config.num_attention_heads * config.head_dim
         if key in "kv":
             outdim = config.head_dim * config.num_key_value_heads
-            # state_dict.update({f"{key}_proj.{key}_scale": torch.randn(1, dtype=torch.bfloat16).abs()})
 
+        # QKV projections use StackedLinear namespace; o_proj stays as-is.
+        prefix = f"qkv_proj.{key}" if key in "qkv" else "o_proj"
         state_dict.update(
             {
-                f"{key}_proj.input_scale": torch.tensor(
+                f"{prefix}.input_scale": torch.tensor(
                     [0.0015], dtype=torch.float32
                 ),
-                f"{key}_proj.weight": torch.randint(
+                f"{prefix}.weight": torch.randint(
                     255, (outdim, hidden_size // 2), dtype=torch.uint8
                 ),
-                f"{key}_proj.weight_scale": torch.randn(
+                f"{prefix}.weight_scale": torch.randn(
                     outdim, hidden_size // block_size
                 )
                 .abs()
                 .to(torch.float8_e4m3fn),
-                f"{key}_proj.weight_scale_2": torch.tensor(
+                f"{prefix}.weight_scale_2": torch.tensor(
                     [0.0002], dtype=torch.float32
                 ),
             }
@@ -141,7 +141,7 @@ def get_state_dict(
             normalized_state_dict[name] = WeightData(
                 data=tensor,
                 name=name,
-                dtype=DType.from_torch(tensor.dtype),
+                dtype=torch_dtype_to_max(tensor.dtype),
                 shape=Shape(tensor.shape),
             )
     return normalized_state_dict
@@ -149,7 +149,7 @@ def get_state_dict(
 
 def model(
     config: LlamaConfig,
-    float8_config: Float8Config,
+    quant_config: QuantConfig,
     kv_params: KVCacheParams,
     state_dict: dict[str, WeightData],
     dtype: DType,
@@ -166,14 +166,14 @@ def model(
     )
     attention_multiplier = rope.compute_scale()
 
-    linear_cls = functools.partial(Linear, float8_config=float8_config)
+    linear_cls = functools.partial(Linear, quant_config=quant_config)
 
     layer = AttentionWithRope(
         stacked_qkv="layers.0.self_attn.qkv_proj.weight" in state_dict,
         scale=attention_multiplier,
         clip_qkv=getattr(config, "clip_qkv", None),
         has_bias=False,
-        float8_config=float8_config,
+        quant_config=quant_config,
         num_attention_heads=config.num_attention_heads,
         num_key_value_heads=config.num_key_value_heads,
         hidden_size=config.hidden_size,
@@ -199,15 +199,15 @@ def generate_max_outputs_fp4(
     weight_dtype = DType.uint8
     cache_dtype = DType.bfloat16
 
-    # Parse float8 config for fp4
-    float8_config = parse_float8_config(
+    # Parse quant config for fp4
+    quant_config = parse_quant_config(
         config,
         state_dict,
         weight_dtype,  # uint8 for fp4-e2m1fnX2
     )
 
-    if float8_config is None:
-        raise ValueError("Failed to parse float8 config for FP4")
+    if quant_config is None:
+        raise ValueError("Failed to parse quant config for FP4")
 
     kv_params = KVCacheParams(
         dtype=cache_dtype,
@@ -218,7 +218,7 @@ def generate_max_outputs_fp4(
     )
 
     layer, rope = model(
-        config, float8_config, kv_params, state_dict, weight_dtype
+        config, quant_config, kv_params, state_dict, weight_dtype
     )
 
     device_ref = DeviceRef.GPU()
@@ -233,10 +233,7 @@ def generate_max_outputs_fp4(
     input_row_offsets_type = TensorType(
         DType.uint32, shape=["input_row_offsets_len"], device=device_ref
     )
-    kv_cache_args = kv_params.get_symbolic_inputs()
-    flattened_kv_types = [
-        kv_type for sublist in kv_cache_args for kv_type in sublist
-    ]
+    flattened_kv_types = kv_params.get_symbolic_inputs().flatten()
 
     session = InferenceSession(devices=[Accelerator()])
 
@@ -245,6 +242,7 @@ def generate_max_outputs_fp4(
         params=kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     # Build graph with context manager
@@ -257,12 +255,8 @@ def generate_max_outputs_fp4(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        # Unflatten KV cache inputs
-        kv_collection = PagedCacheValues(
-            kv_blocks=kv_cache[0].buffer,
-            cache_lengths=kv_cache[1].tensor,
-            lookup_table=kv_cache[2].tensor,
-            max_lengths=kv_cache[3].tensor,
+        kv_collection: PagedCacheValues = (
+            kv_params.get_symbolic_inputs().unflatten(iter(kv_cache)).inputs[0]
         )
 
         # Create layer_idx constant
@@ -285,11 +279,10 @@ def generate_max_outputs_fp4(
     batch = [create_text_context(np.empty(input_seq_len))]
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     kv_manager.alloc(batch[0], replica_idx=0)
-    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs(
-            cast(list[list[TextGenerationContext]], [batch])
-        )[0]
-    )
+    kv_runtime_inputs = kv_manager.runtime_inputs(
+        cast(list[list[TextGenerationContext]], [batch])
+    ).inputs[0]
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     # Prepare inputs - flatten batch and sequence dimensions
     input_tensor_flat = input_tensor[0].reshape(-1, config.hidden_size)
@@ -298,10 +291,11 @@ def generate_max_outputs_fp4(
     out = compiled.execute(
         Buffer.from_dlpack(input_tensor_flat).to(device),
         Buffer.from_numpy(input_row_offsets_input).to(device),
-        blocks.to(device),
-        cache_lengths.to(device),
-        lookup_table_tensor.to(device),
-        is_cache_empty_buf,
+        kv_runtime_inputs.kv_blocks.to(device),
+        kv_runtime_inputs.cache_lengths.to(device),
+        kv_runtime_inputs.lookup_table.to(device),
+        kv_runtime_inputs.max_lengths,
+        kv_runtime_inputs.attention_dispatch_metadata,
     )[0]
     return from_dlpack(out).to(torch.bfloat16)
 

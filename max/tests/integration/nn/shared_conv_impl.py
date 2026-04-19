@@ -21,7 +21,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy import Conv1D, Conv2d, Conv3D
+from max.nn import Conv1D, Conv2d, Conv3D
 
 # On some newer CUDA architectures (e.g. Ampere / Hopper) cuDNN may internally
 ACCURACY_RTOL = 2.5e-3
@@ -604,6 +604,105 @@ def conv3d_tuple_padding_impl(session: InferenceSession) -> None:
 
     graph = Graph(
         "conv3d_tuple_padding",
+        max_conv,
+        input_types=(
+            TensorType(max_dtype, input_sequence.shape, device=max_device),
+        ),
+    )
+
+    compiled = session.load(graph, weights_registry=max_conv.state_dict())
+    graph_api_conv_result = compiled.execute(input_sequence)[0]
+    assert isinstance(graph_api_conv_result, Buffer)
+
+    np.testing.assert_allclose(
+        graph_api_conv_result.to_numpy(),
+        torch_conv_result.detach().cpu().numpy(),
+        equal_nan=True,
+        rtol=ACCURACY_RTOL,
+        atol=ACCURACY_ATOL,
+    )
+
+
+def conv2d_1x1_impl(session: InferenceSession) -> None:
+    """Test 1x1 Conv2d with permute=True (FCRS layout).
+
+    This specifically exercises the conv-to-matmul optimization in the graph
+    compiler, which rewrites 1x1 convolutions as matmul ops. A past bug
+    caused the FCRS filter's transpose to be dropped by
+    MatmulOp::canonicalize, producing silently wrong results.
+    """
+    torch.manual_seed(99)
+
+    batch_size = 2
+    in_channels = 16
+    out_channels = 32
+    kernel_size = (1, 1)
+    stride = (1, 1)
+    padding = 0
+    height = 8
+    width = 8
+
+    is_gpu = not session.devices[0].is_host
+    torch_dtype = torch.float32
+    torch_device = torch.device("cuda") if is_gpu else torch.device("cpu")
+    max_dtype = DType.float32
+    max_device = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
+
+    input_sequence = torch.rand(
+        size=(batch_size, in_channels, height, width),
+        dtype=torch_dtype,
+        device=torch_device,
+    )
+
+    torch_conv = nn.Conv2d(
+        in_channels=in_channels,
+        out_channels=out_channels,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        bias=True,
+        device=torch_device,
+    )
+
+    max_conv = Conv2d(
+        kernel_size=kernel_size,
+        in_channels=in_channels,
+        out_channels=out_channels,
+        dtype=max_dtype,
+        stride=stride,
+        padding=padding,
+        has_bias=True,
+        permute=True,
+        device=max_device,
+    )
+
+    torch_conv.weight.data = nn.Parameter(
+        torch.rand(
+            size=torch_conv.weight.data.shape,
+            dtype=torch_dtype,
+            device=torch_device,
+        )
+    )
+    assert torch_conv.bias is not None
+    torch_conv.bias.data = nn.Parameter(
+        torch.rand(
+            size=torch_conv.bias.data.shape,
+            dtype=torch_dtype,
+            device=torch_device,
+        )
+    )
+
+    state_dict = {
+        "weight": torch_conv.weight.data.detach().cpu(),
+        "bias": torch_conv.bias.data.detach().cpu(),
+    }
+    max_conv.load_state_dict(state_dict)
+
+    with torch.no_grad():
+        torch_conv_result = torch_conv(input_sequence)
+
+    graph = Graph(
+        "conv2d_1x1",
         max_conv,
         input_types=(
             TensorType(max_dtype, input_sequence.shape, device=max_device),

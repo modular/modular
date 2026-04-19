@@ -19,8 +19,6 @@ These are Mojo built-ins, so you don't need to import them.
 struct NoneType(
     Defaultable,
     ImplicitlyCopyable,
-    Representable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -32,13 +30,13 @@ struct NoneType(
     var _value: Self._mlir_type
 
     @always_inline("builtin")
-    fn __init__(out self):
+    def __init__(out self):
         """Construct an instance of the `None` type."""
         self._value = None
 
     @always_inline("builtin")
     @implicit
-    fn __init__(out self, value: Self._mlir_type):
+    def __init__(out self, value: Self._mlir_type):
         """Construct an instance of the `None` type.
 
         Args:
@@ -47,28 +45,19 @@ struct NoneType(
         self._value = value
 
     @no_inline
-    fn __str__(self) -> String:
-        """Returns the string representation of `None`.
-
-        Returns:
-            `"None"`.
-        """
-        return "None"
-
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns the string representation of `None`.
-
-        Returns:
-            `"None"`.
-        """
-        return "None"
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
-        """Write `None` to a writer stream.
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes `None` to a writer.
 
         Args:
             writer: The object to write to.
         """
-        writer.write("None")
+        writer.write_string("None")
+
+    @no_inline
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Writes `None` to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write_string("None")

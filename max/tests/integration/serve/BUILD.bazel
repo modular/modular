@@ -62,24 +62,34 @@ modular_py_test(
         "PIPELINES_TESTDATA": "max/tests/integration/architectures/llama3/testdata",
     },
     tags = [
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
     ],
     # TODO(SERVOPT-949): Investigate and enable on macOS
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
+        # tinyllama test taking too long on asan
+        "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/driver",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/serve",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve/pipelines",
         "//max/python/max/serve/schemas",
+        "//max/python/max/serve/telemetry",
+        "//max/python/max/serve/worker_interface",
         "//max/tests/integration:hf_repo_lock",
-        "//max/tests/integration/test_common",
+        "//max/tests/integration/test_common:test_data",
         requirement("async-asgi-testclient"),
+        requirement("fastapi"),
         requirement("pytest-asyncio"),
+        requirement("requests"),
         requirement("sse-starlette"),
     ],
 )
@@ -156,7 +166,6 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/interfaces",
-        "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
@@ -198,5 +207,30 @@ modular_py_test(
     }),
     deps = [
         "//max/python/max/entrypoints",
+    ],
+)
+
+modular_py_test(
+    name = "test_max_serve_e2e",
+    size = "large",
+    srcs = [
+        "test_max_serve_e2e.py",
+    ],
+    tags = [
+        "requires-network",
+    ],
+    # TODO(GEX-3155): Times out on remote macOS CI (~374s due to model compilation)
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/entrypoints",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/serve:config",
+        requirement("httpx"),
+        requirement("pytest-asyncio"),
     ],
 )

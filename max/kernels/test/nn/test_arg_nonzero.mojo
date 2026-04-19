@@ -11,17 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from itertools import product
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.itertools import product
+from layout import TileTensor, row_major
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
-from testing import assert_equal
-
-from utils import IndexList
+from std.testing import assert_equal
 
 
 # CHECK-LABEL: test_where_size
-def test_where_size():
+def test_where_size() raises:
     print("== test_where_size")
     comptime rank = 3
     comptime values_shape = row_major[3, 2, 1]()
@@ -37,7 +34,7 @@ def test_where_size():
     values[2, 0, 0] = 0.0
     values[2, 1, 0] = -3.0
 
-    var output_shape = arg_nonzero_shape[DType.float32, True](
+    var output_shape = arg_nonzero_shape[DType.float32](
         values.make_dynamic[DType.int64]()
     )
 
@@ -46,7 +43,7 @@ def test_where_size():
 
 
 # CHECK-LABEL: test_where_size_bool
-def test_where_size_bool():
+def test_where_size_bool() raises:
     print("== test_where_size_bool")
     comptime rank = 3
     comptime values_shape = row_major[3, 2, 1]()
@@ -62,7 +59,7 @@ def test_where_size_bool():
     values[2, 0, 0] = Scalar[DType.bool](False)
     values[2, 1, 0] = Scalar[DType.bool](True)
 
-    var output_shape = arg_nonzero_shape[DType.bool, True](
+    var output_shape = arg_nonzero_shape[DType.bool](
         values.make_dynamic[DType.int64]()
     )
 
@@ -71,7 +68,7 @@ def test_where_size_bool():
 
 
 # CHECK-LABEL: test_where
-def test_where():
+def test_where() raises:
     print("== test_where")
     comptime rank = 3
     comptime values_shape = row_major[3, 2, 1]()
@@ -119,7 +116,7 @@ def test_where():
 
 
 # CHECK-LABEL: test_where_1d
-def test_where_1d():
+def test_where_1d() raises:
     print("== test_where_1d")
     comptime num_elements = 12
     comptime num_indices = 6
@@ -169,7 +166,7 @@ def test_where_1d():
 
 
 # CHECK-LABEL: test_where_bool
-def test_where_bool():
+def test_where_bool() raises:
     print("== test_where_bool")
     comptime rank = 3
     comptime values_shape = row_major[3, 2, 1]()
@@ -210,7 +207,7 @@ def test_where_bool():
         assert_equal(computed_outputs[i, j], golden_outputs[i, j])
 
 
-def main():
+def main() raises:
     test_where_size()
     test_where_size_bool()
     test_where()

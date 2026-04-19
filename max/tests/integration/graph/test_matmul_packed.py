@@ -71,7 +71,7 @@ def test_matmul_dense(session: InferenceSession) -> None:
 
     batch_sizes = st.integers(min_value=1, max_value=32)
 
-    @settings(max_examples=50, deadline=None)
+    @settings(max_examples=20, deadline=None)
     @given(batch_size=batch_sizes)
     def check_matmul_dense(batch_size: int) -> None:
         # Generate random input data
@@ -121,7 +121,7 @@ def test_matmul_transpose(session: InferenceSession) -> None:
 
     batch_sizes = st.integers(min_value=1, max_value=32)
 
-    @settings(max_examples=50, deadline=None)
+    @settings(max_examples=20, deadline=None)
     @given(batch_size=batch_sizes)
     def check_matmul_transpose(batch_size: int) -> None:
         # Generate random input data

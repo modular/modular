@@ -22,26 +22,27 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn.legacy.float8_config import Float8Config
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.linear import DistributedGemmConfig
-from max.nn.legacy.rotary_embedding import (
+from max.nn.kv_cache import KVCacheParams
+from max.nn.quant_config import QuantConfig
+from max.nn.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
     LongRoPERotaryEmbedding,
     LongRoPEScalingParams,
     RotaryEmbedding,
 )
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
+    MAXModelConfig,
     PipelineConfig,
-    RopeType,
-    parse_float8_config,
+    parse_quant_config,
     upper_bounded_default,
 )
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -122,9 +123,8 @@ class Llama3Config(ArchConfigWithKVCache):
     residual_multiplier: float
     devices: list[DeviceRef]
     clip_qkv: float | None
-    float8_config: Float8Config | None = None
+    quant_config: QuantConfig | None = None
     lora_config: LoRAConfig | None = None
-    dist_gemm_config: DistributedGemmConfig | None = None
     longrope_scaling_params: LongRoPEScalingParams | None = None
     logits_scaling: float = 1.0
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
@@ -169,16 +169,11 @@ class Llama3Config(ArchConfigWithKVCache):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        return KVCacheParams(
+        return kv_cache_config.to_params(
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=Llama3Config.get_head_dim(huggingface_config),
             num_layers=Llama3Config.get_num_layers(huggingface_config),
-            page_size=kv_cache_config.kv_cache_page_size,
-            cache_strategy=kv_cache_config.cache_strategy,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
@@ -204,53 +199,66 @@ class Llama3Config(ArchConfigWithKVCache):
     def calculate_max_seq_len(
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
     ) -> int:
+        model_config = model_config or pipeline_config.model
         try:
             return upper_bounded_default(
                 upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.max_length,
+                default=model_config.max_length,
             )
         except ValueError as e:
             raise ValueError(
                 "Unable to infer max_length for Llama3, the provided "
-                f"max_length ({pipeline_config.max_length}) exceeds the "
+                f"max_length ({model_config.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({huggingface_config.max_position_embeddings})."
             ) from e
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
-        huggingface_config = pipeline_config.model.huggingface_config
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
+        model_config = model_config or pipeline_config.model
+        huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        return cls.initialize_from_config(pipeline_config, huggingface_config)
+        return cls.initialize_from_config(
+            pipeline_config, huggingface_config, model_config
+        )
 
     @classmethod
     def initialize_from_config(
-        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+        cls,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+        model_config: MAXModelConfig | None = None,
     ) -> Self:
-        kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
+        model_config = model_config or pipeline_config.model
+        kv_cache_config = model_config.kv_cache
+        quantization_encoding = model_config.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        dtype = quantization_encoding.dtype
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        dtype = supported_encoding_dtype(quantization_encoding)
+        cache_dtype = model_config.kv_cache.cache_dtype
         n_devices = len(pipeline_config.model.device_specs)
 
-        _weights_format = weights_format(pipeline_config.model.weight_path)
+        _weights_format = weights_format(model_config.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.model.rope_type == RopeType.normal
+            and model_config.rope_type == "normal"
         )
 
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model.device_specs[:n_devices]
+            for spec in model_config.device_specs[:n_devices]
         ]
 
         embedding_multiplier = getattr(
@@ -305,9 +313,11 @@ class Llama3Config(ArchConfigWithKVCache):
             rope_embedding = create_rope_embedding(
                 hidden_size=huggingface_config.hidden_size,
                 num_attention_heads=huggingface_config.num_attention_heads,
-                rope_theta=huggingface_config.rope_theta,
+                rope_theta=get_rope_theta(huggingface_config),
                 max_seq_len=Llama3Config.calculate_max_seq_len(
-                    pipeline_config, huggingface_config=huggingface_config
+                    pipeline_config,
+                    huggingface_config=huggingface_config,
+                    model_config=model_config,
                 ),
                 interleaved_rope_weights=interleaved_rope_weights,
                 rope_scaling_params=rope_scaling_params,
@@ -321,7 +331,7 @@ class Llama3Config(ArchConfigWithKVCache):
             num_attention_heads=huggingface_config.num_attention_heads,
             num_key_value_heads=huggingface_config.num_key_value_heads,
             num_hidden_layers=huggingface_config.num_hidden_layers,
-            rope_theta=huggingface_config.rope_theta,
+            rope_theta=get_rope_theta(huggingface_config),
             rope_scaling_params=rope_scaling_params,
             longrope_scaling_params=longrope_scaling_params,
             intermediate_size=huggingface_config.intermediate_size,
@@ -331,7 +341,9 @@ class Llama3Config(ArchConfigWithKVCache):
             model_quantization_encoding=pipeline_config.model.graph_quantization_encoding,
             quantization_config=pipeline_config.model._quant,
             max_seq_len=Llama3Config.calculate_max_seq_len(
-                pipeline_config, huggingface_config=huggingface_config
+                pipeline_config,
+                huggingface_config=huggingface_config,
+                model_config=model_config,
             ),
             kv_params=Llama3Config.construct_kv_params(
                 huggingface_config=huggingface_config,
@@ -346,13 +358,6 @@ class Llama3Config(ArchConfigWithKVCache):
             devices=device_refs,
             clip_qkv=getattr(huggingface_config, "clip_qkv", None),
             use_subgraphs=pipeline_config.model.use_subgraphs,
-            # Force-disable matmul-allreduce overlap for llama FP8.
-            # TODO: GEX-2388: Figure out the issue and re-enable this.
-            dist_gemm_config=DistributedGemmConfig(
-                enable_matmul_allreduce=False
-            )
-            if dtype.is_float8()
-            else DistributedGemmConfig.generate(),
             lora_config=pipeline_config.lora,
             logits_scaling=getattr(huggingface_config, "logits_scaling", 1.0),
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
@@ -394,7 +399,7 @@ class Llama3Config(ArchConfigWithKVCache):
             normalized_state_dict = dict(state_dict)
 
         # Parse the float8 config from compressed-tensors or FBGEMM.
-        float8_config = parse_float8_config(
+        quant_config = parse_quant_config(
             huggingface_config, normalized_state_dict, self.dtype
         )
 
@@ -429,7 +434,7 @@ class Llama3Config(ArchConfigWithKVCache):
         self.norm_dtype = norm_dtype
         self.rms_norm_eps = rms_norm_eps
         self.tie_word_embeddings = tie_word_embeddings
-        self.float8_config = float8_config
+        self.quant_config = quant_config
         self.stacked_mlp = (
             "layers.0.mlp.gate_up_proj.weight" in normalized_state_dict
         )

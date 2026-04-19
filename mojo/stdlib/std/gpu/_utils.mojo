@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 
 # ===-----------------------------------------------------------------------===#
@@ -21,10 +21,10 @@ from utils import StaticTuple
 
 
 @always_inline
-fn to_llvm_shared_cluster_mem_ptr[
+def to_llvm_shared_cluster_mem_ptr[
     type: AnyType
 ](
-    ptr: UnsafePointer[type, address_space = AddressSpace.SHARED_CLUSTER, ...]
+    ptr: UnsafePointer[type, address_space=AddressSpace.SHARED_CLUSTER, ...]
 ) -> __mlir_type.`!llvm.ptr<7>`:
     """Cast shared cluster memory pointer to LLVMPointer Type.
 
@@ -32,15 +32,34 @@ fn to_llvm_shared_cluster_mem_ptr[
         ptr: Shared cluster memory pointer.
     """
     return __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type = __mlir_type.`!llvm.ptr<7>`
+        _type=__mlir_type.`!llvm.ptr<7>`
     ](ptr)
 
 
 @always_inline
-fn to_llvm_shared_mem_ptr[
+def to_llvm_global_mem_ptr[
     type: AnyType
 ](
-    ptr: UnsafePointer[type, address_space = AddressSpace.SHARED, ...]
+    ptr: UnsafePointer[type, address_space=AddressSpace.GLOBAL, ...]
+) -> __mlir_type.`!llvm.ptr<1>`:
+    """Cast global memory pointer to LLVMPointer Type.
+
+    Args:
+        ptr: Global memory pointer.
+
+    Returns:
+        A pointer of type !llvm.ptr<1>.
+    """
+    return __mlir_op.`builtin.unrealized_conversion_cast`[
+        _type=__mlir_type.`!llvm.ptr<1>`
+    ](ptr)
+
+
+@always_inline
+def to_llvm_shared_mem_ptr[
+    type: AnyType
+](
+    ptr: UnsafePointer[type, address_space=AddressSpace.SHARED, ...]
 ) -> __mlir_type.`!llvm.ptr<3>`:
     """Cast shared memory pointer to LLVMPointer Type.
 
@@ -51,12 +70,12 @@ fn to_llvm_shared_mem_ptr[
         A pointer of type !llvm.ptr<3>.
     """
     return __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type = __mlir_type.`!llvm.ptr<3>`
+        _type=__mlir_type.`!llvm.ptr<3>`
     ](ptr)
 
 
 @always_inline
-fn to_llvm_ptr[
+def to_llvm_ptr[
     type: AnyType
 ](ptr: UnsafePointer[type, ...]) -> __mlir_type.`!llvm.ptr`:
     """Cast a pointer to LLVMPointer Type.
@@ -68,12 +87,12 @@ fn to_llvm_ptr[
         A pointer of type !llvm.ptr.
     """
     return __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type = __mlir_type.`!llvm.ptr`
+        _type=__mlir_type.`!llvm.ptr`
     ](ptr)
 
 
 @always_inline
-fn to_i32(val: Int32) -> __mlir_type.i32:
+def to_i32(val: Int32) -> __mlir_type.i32:
     """Cast Scalar I32 value into MLIR i32.
 
     Args:
@@ -82,13 +101,13 @@ fn to_i32(val: Int32) -> __mlir_type.i32:
     Returns:
        Input casted to MLIR i32 value.
     """
-    return __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.`i32`](
+    return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.`i32`](
         val._mlir_value
     )
 
 
 @always_inline
-fn to_i16(val: UInt16) -> __mlir_type.i16:
+def to_i16(val: UInt16) -> __mlir_type.i16:
     """Cast a scalar UInt16 value into MLIR i16.
 
     Args:
@@ -97,13 +116,13 @@ fn to_i16(val: UInt16) -> __mlir_type.i16:
     Returns:
        The input value cast to an MLIR i16.
     """
-    return __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.`i16`](
+    return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.`i16`](
         val._mlir_value
     )
 
 
 @always_inline
-fn to_i64(val: Int64) -> __mlir_type.i64:
+def to_i64(val: Int64) -> __mlir_type.i64:
     """Cast Scalar I64 value into MLIR i64.
 
     Args:
@@ -112,7 +131,7 @@ fn to_i64(val: Int64) -> __mlir_type.i64:
     Returns:
        Input casted to MLIR i64 value.
     """
-    return __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.`i64`](
+    return __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.`i64`](
         val._mlir_value
     )
 
@@ -167,10 +186,10 @@ comptime llvm_struct_splat[
 ] = __mlir_type[
     `!llvm.struct<(`,
     __mlir_type[
-        `!kgen.variadic_splat<`,
+        `!kgen.param_list_splat<`,
         +field_type,
         `, `,
-        repeat._mlir_value,
+        repeat._int_mlir_index(),
         `>`,
     ],
     `)>`,
@@ -181,10 +200,10 @@ comptime kgen_struct_splat[
 ] = __mlir_type[
     `!kgen.struct<(`,
     __mlir_type[
-        `!kgen.variadic_splat<`,
+        `!kgen.param_list_splat<`,
         +field_type,
         `, `,
-        repeat._mlir_value,
+        repeat._int_mlir_index(),
         `>`,
     ],
     `)>`,
@@ -200,7 +219,7 @@ comptime kgen_struct_dtype_splat_type[dtype: DType, n: Int] = kgen_struct_splat[
 
 
 @always_inline
-fn simd_to_llvm_struct[
+def simd_to_llvm_struct[
     dtype: DType, n: Int
 ](simd: SIMD[dtype, n]) -> llvm_struct_dtype_splat_type[dtype, n]:
     """Repack a SIMD value to a `!llvm.struct`.
@@ -212,28 +231,27 @@ fn simd_to_llvm_struct[
         A `!llvm.struct` with the same number of fields as the SIMD value.
     """
     var llvmst = __mlir_op.`llvm.mlir.undef`[
-        _type = llvm_struct_dtype_splat_type[dtype, n]
+        _type=llvm_struct_dtype_splat_type[dtype, n]
     ]()
 
     var st = __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type = kgen_struct_dtype_splat_type[dtype, n]
+        _type=kgen_struct_dtype_splat_type[dtype, n]
     ](llvmst)
 
-    @parameter
-    for i in range(n):
+    comptime for i in range(n):
         var e = simd[i]
         st = __mlir_op.`kgen.struct.replace`[
-            _type = kgen_struct_dtype_splat_type[dtype, n],
-            index = __mlir_attr[i._mlir_value, `:index`],
+            _type=kgen_struct_dtype_splat_type[dtype, n],
+            index=__mlir_attr[i._int_mlir_index(), `:index`],
         ](e, st)
 
     return __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type = llvm_struct_dtype_splat_type[dtype, n]
+        _type=llvm_struct_dtype_splat_type[dtype, n]
     ](st)
 
 
 @always_inline
-fn llvm_struct_to_simd[
+def llvm_struct_to_simd[
     dtype: DType, n: Int
 ](llvmst: llvm_struct_dtype_splat_type[dtype, n]) -> SIMD[dtype, n]:
     """Repack value of a `!llvm.struct` type to SIMD.
@@ -246,14 +264,13 @@ fn llvm_struct_to_simd[
     """
     var simd = SIMD[dtype, n]()
     var st = __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type = kgen_struct_dtype_splat_type[dtype, n]
+        _type=kgen_struct_dtype_splat_type[dtype, n]
     ](llvmst)
 
-    @parameter
-    for i in range(n):
+    comptime for i in range(n):
         var e = __mlir_op.`kgen.struct.extract`[
-            _type = Scalar[dtype]._mlir_type,
-            index = __mlir_attr[i._mlir_value, `:index`],
+            _type=Scalar[dtype]._mlir_type,
+            index=__mlir_attr[i._int_mlir_index(), `:index`],
         ](st)
 
         simd[i] = Scalar[dtype](mlir_value=e)
@@ -261,7 +278,7 @@ fn llvm_struct_to_simd[
 
 
 @always_inline
-fn array_to_llvm_struct[
+def array_to_llvm_struct[
     dtype: DType, n: Int
 ](array: StaticTuple[Scalar[dtype], n]) -> llvm_struct_dtype_splat_type[
     dtype, n
@@ -275,28 +292,27 @@ fn array_to_llvm_struct[
         A `!llvm.struct` with the same number of fields as the array value.
     """
     var llvmst = __mlir_op.`llvm.mlir.undef`[
-        _type = llvm_struct_dtype_splat_type[dtype, n]
+        _type=llvm_struct_dtype_splat_type[dtype, n]
     ]()
 
     var st = __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type = kgen_struct_dtype_splat_type[dtype, n]
+        _type=kgen_struct_dtype_splat_type[dtype, n]
     ](llvmst)
 
-    @parameter
-    for i in range(n):
+    comptime for i in range(n):
         var e = array[i]
         st = __mlir_op.`kgen.struct.replace`[
-            _type = kgen_struct_dtype_splat_type[dtype, n],
-            index = __mlir_attr[i._mlir_value, `:index`],
+            _type=kgen_struct_dtype_splat_type[dtype, n],
+            index=__mlir_attr[i._int_mlir_index(), `:index`],
         ](e, st)
 
     return __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type = llvm_struct_dtype_splat_type[dtype, n]
+        _type=llvm_struct_dtype_splat_type[dtype, n]
     ](st)
 
 
 @always_inline
-fn llvm_struct_to_array[
+def llvm_struct_to_array[
     dtype: DType, n: Int
 ](llvmst: llvm_struct_dtype_splat_type[dtype, n]) -> StaticTuple[
     Scalar[dtype], n
@@ -311,14 +327,13 @@ fn llvm_struct_to_array[
     """
     var array = StaticTuple[Scalar[dtype], n]()
     var st = __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type = kgen_struct_dtype_splat_type[dtype, n]
+        _type=kgen_struct_dtype_splat_type[dtype, n]
     ](llvmst)
 
-    @parameter
-    for i in range(n):
+    comptime for i in range(n):
         var e = __mlir_op.`kgen.struct.extract`[
-            _type = Scalar[dtype]._mlir_type,
-            index = __mlir_attr[i._mlir_value, `:index`],
+            _type=Scalar[dtype]._mlir_type,
+            index=__mlir_attr[i._int_mlir_index(), `:index`],
         ](st)
 
         array[i] = Scalar[dtype](mlir_value=e)

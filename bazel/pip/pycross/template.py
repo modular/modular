@@ -24,7 +24,6 @@ load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@@rules_pycross+//pycross:defs.bzl", "pycross_wheel_build", "pycross_wheel_library")
 
 _TESTONLY_DEPS = [
-    "accelerate",
     "einx",
     "frozendict",
     "hypothesis",
@@ -62,21 +61,21 @@ def targets():
     native.alias(
         name = "torch@multiple",
         actual = select({{
-            "@@//:amd_gpu": ":torch@2.9.1.dev20251204+rocm7.0.2.lw.git351ff442",
-            "@@//:nvidia_gpu": ":torch@2.9.1+cu128",
-            "@platforms//os:macos": ":torch@2.9.1",
-            "//conditions:default": ":torch@2.9.1+cpu",
+            "@@//:amd_gpu": ":torch@2.10.0+rocm7.1.1.lw.gitd9556b05",
+            "@@//:nvidia_gpu": ":torch@2.10.0+cu128",
+            "@platforms//os:macos": ":torch@2.10.0",
+            "//conditions:default": ":torch@2.10.0+cpu",
         }}),
     )
 
     native.alias(
         name = "torchaudio@multiple",
         actual = select({{
-            "@@//:amd_gpu": ":torchaudio@2.9.0+rocm7.0.2.gite3c6ee2b",
-            "@@//:nvidia_gpu": ":torchaudio@2.9.1+cu128",
-            "@platforms//os:macos": ":torchaudio@2.9.1",
-            "@@//:linux_aarch64": ":torchaudio@2.9.1",
-            "//conditions:default": ":torchaudio@2.9.1+cpu",
+            "@@//:amd_gpu": ":torchaudio@2.10.0+rocm7.1.1.git5047768f",
+            "@@//:nvidia_gpu": ":torchaudio@2.10.0+cu128",
+            "@platforms//os:macos": ":torchaudio@2.10.0",
+            "@@//:linux_aarch64": ":torchaudio@2.10.0",
+            "//conditions:default": ":torchaudio@2.10.0+cpu",
         }}),
     )
 
@@ -84,11 +83,11 @@ def targets():
         name = "torchvision@multiple",
         testonly = True,
         actual = select({{
-            "@@//:amd_gpu": ":torchvision@0.24.0+rocm7.0.2.gitb919bd0c",
-            "@@//:nvidia_gpu": ":torchvision@0.24.1+cu128",
-            "@platforms//os:macos": ":torchvision@0.24.1",
-            "@@//:linux_aarch64": ":torchvision@0.24.1",
-            "//conditions:default": ":torchvision@0.24.1+cpu",
+            "@@//:amd_gpu": ":torchvision@0.25.0+rocm7.1.1.git82df5f59",
+            "@@//:nvidia_gpu": ":torchvision@0.25.0+cu128",
+            "@platforms//os:macos": ":torchvision@0.25.0",
+            "@@//:linux_aarch64": ":torchvision@0.25.0+cpu",
+            "//conditions:default": ":torchvision@0.25.0+cpu",
         }}),
     )
 
@@ -96,8 +95,8 @@ def targets():
         name = "triton@multiple",
         testonly = True,
         actual = select({{
-            "@@//:amd_gpu": ":triton@3.5.1+rocm7.0.2.gita272dfa8",
-            "//conditions:default": ":triton@3.5.1",
+            "@@//:amd_gpu": ":triton@3.6.0+rocm7.1.1.gitba5c1517",
+            "//conditions:default": ":triton@3.6.0",
         }}),
     )
 

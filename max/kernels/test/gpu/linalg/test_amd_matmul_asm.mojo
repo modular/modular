@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,20 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import has_amd_gpu_accelerator
+from std.sys import has_amd_gpu_accelerator
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from layout import Layout, LayoutTensor
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from layout import Layout, LayoutTensor, LTToTTLayout
 from linalg.matmul.gpu import _amdgpu_matmul_config_from_block_shape
-from linalg.matmul.gpu.amd.matmul import gemm_kernel_amd
-from linalg.matmul.gpu.amd.pingpong_kernel import (
-    AMDPingPongMatmul,
-    KernelConfig,
-)
-from testing import assert_true
+from linalg.matmul.gpu.amd import AMDMatmul, AMDPingPongMatmul, KernelConfig
+from std.testing import assert_true
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 struct RegisterCounts(Movable):
@@ -36,21 +32,14 @@ struct RegisterCounts(Movable):
     var vgpr_spills: Int
     var sgpr_spills: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.vgprs = 0
         self.sgprs = 0
         self.agprs = 0
         self.vgpr_spills = 0
         self.sgpr_spills = 0
 
-    fn __moveinit__(out self, deinit existing: Self):
-        self.vgprs = existing.vgprs
-        self.sgprs = existing.sgprs
-        self.agprs = existing.agprs
-        self.vgpr_spills = existing.vgpr_spills
-        self.sgpr_spills = existing.sgpr_spills
-
-    fn print_summary(self):
+    def print_summary(self):
         """Print register usage summary."""
         print("\nRegister usage:")
         print("  VGPRs: ", self.vgprs)
@@ -60,7 +49,7 @@ struct RegisterCounts(Movable):
         print("  SGPR spills: ", self.sgpr_spills)
 
 
-fn parse_directive_value(asm: String, directive: String) -> Int:
+def parse_directive_value(asm: String, directive: String) -> Int:
     """Parse numeric value from an assembly directive.
 
     Args:
@@ -78,19 +67,19 @@ fn parse_directive_value(asm: String, directive: String) -> Int:
     if line_end <= directive_idx:
         return 0
 
-    var line = asm[directive_idx:line_end]
+    var line = asm[byte=directive_idx:line_end]
     var colon_idx = line.find(":")
     if colon_idx < 0:
         return 0
 
     try:
-        var num_part = line[colon_idx + 1 :].strip()
+        var num_part = line[byte = colon_idx + 1 :].strip()
         return Int(num_part)
     except:
         return 0
 
 
-fn parse_register_counts(asm: String) -> RegisterCounts:
+def parse_register_counts(asm: String) -> RegisterCounts:
     """Extract all register counts from AMD GPU assembly.
 
     Args:
@@ -108,7 +97,7 @@ fn parse_register_counts(asm: String) -> RegisterCounts:
     return counts^
 
 
-fn validate_register_counts(counts: RegisterCounts) raises:
+def validate_register_counts(counts: RegisterCounts) raises:
     """Verify that spill counts are zero.
 
     Args:
@@ -121,7 +110,7 @@ fn validate_register_counts(counts: RegisterCounts) raises:
     assert_true(counts.sgpr_spills == 0, "SGPR spill count should be 0")
 
 
-fn compile_kernel_to_asm[
+def compile_kernel_to_asm[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -131,7 +120,7 @@ fn compile_kernel_to_asm[
     block_m: Int,
     block_n: Int,
 ]() raises -> String:
-    """Compile AMD gemm_kernel_amd and return assembly.
+    """Compile AMD AMDMatmul kernel and return assembly.
 
     Returns:
         The compiled assembly string.
@@ -149,38 +138,27 @@ fn compile_kernel_to_asm[
     comptime b_layout = Layout.row_major(N, K)
     comptime c_layout = Layout.row_major(M, N)
 
-    # Create dummy tensors to get type information
-    comptime TensorA = LayoutTensor[a_type, a_layout, MutAnyOrigin]
-    comptime TensorB = LayoutTensor[b_type, b_layout, MutAnyOrigin]
-    comptime TensorC = LayoutTensor[c_type, c_layout, MutAnyOrigin]
-
-    comptime kernel = gemm_kernel_amd[
-        c_type,
-        c_layout,
+    comptime kernel = AMDMatmul[
         a_type,
-        a_layout,
         b_type,
-        b_layout,
-        True,  # transpose_b
-        TensorC.layout_int_type,
-        TensorA.layout_int_type,
-        TensorB.layout_int_type,
-        TensorC.linear_idx_type,
-        TensorA.linear_idx_type,
-        TensorB.linear_idx_type,
+        c_type,
+        True,
         config,
-        None,  # elementwise_lambda_fn
+    ].run[
+        LTToTTLayout[c_layout],
+        LTToTTLayout[a_layout],
+        LTToTTLayout[b_layout],
     ]
 
     # Compile for AMD GPU
     var compiled = _compile_code[
         kernel,
-        target = get_gpu_target["gfx950"](),
+        target=get_gpu_target["gfx950"](),
     ]()
     return compiled.asm
 
 
-fn compile_pingpong_kernel_to_asm[
+def compile_pingpong_kernel_to_asm[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -205,16 +183,12 @@ fn compile_pingpong_kernel_to_asm[
     Returns:
         The compiled assembly string.
     """
-    # Use the ping-pong kernel configuration (256x256xblock_k)
-    comptime block_m = 256
-    comptime block_n = 256
-
     comptime a_layout = Layout.row_major(M, K)
     comptime b_layout = Layout.row_major(N, K)
     comptime c_layout = Layout.row_major(M, N)
 
     comptime pingpong_config = KernelConfig(
-        block_shape=Index(block_m, block_n, block_k),
+        block_shape=Index(256, 256, block_k),
         warp_shape=Index(128, 64, block_k),
         mma_shape=Index(16, 16, mma_k),
     )
@@ -223,22 +197,23 @@ fn compile_pingpong_kernel_to_asm[
         a_type,
         b_type,
         c_type,
-        a_layout,
-        b_layout,
-        c_layout,
         pingpong_config,
         enable_swizzle=True,
-    ].matmul_ping_pong
+    ].run[
+        LTToTTLayout[a_layout],
+        LTToTTLayout[b_layout],
+        LTToTTLayout[c_layout],
+    ]
 
     # Compile for AMD GPU
     var compiled = _compile_code[
         kernel,
-        target = get_gpu_target["gfx950"](),
+        target=get_gpu_target["gfx950"](),
     ]()
     return compiled.asm
 
 
-fn print_test_header[
+def print_test_header[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -251,7 +226,7 @@ fn print_test_header[
     print("Block shape: BM=", block_m, ", BN=", block_n, sep="")
 
 
-fn test_matmul_config[
+def test_matmul_config[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -282,13 +257,11 @@ fn test_matmul_config[
     print("=== Assembly check passed ===\n")
 
 
-fn test_amd_matmul_bf16_max_config() raises:
-    """Test AMD gemm_kernel_amd assembly for BF16 with max config (256x256x64).
-    """
+def test_amd_matmul_bf16_max_config() raises:
+    """Test AMD AMDMatmul assembly for BF16 with max config (256x256x64)."""
     print("== test_amd_matmul_bf16_max_config (256x256x64)")
 
-    @parameter
-    if not has_amd_gpu_accelerator():
+    comptime if not has_amd_gpu_accelerator():
         print("Skipping test - AMD GPU not available")
         return
 
@@ -301,13 +274,11 @@ fn test_amd_matmul_bf16_max_config() raises:
     ]()
 
 
-fn test_amd_matmul_fp8_max_config() raises:
-    """Test AMD gemm_kernel_amd assembly for FP8 with max config (256x256x128).
-    """
+def test_amd_matmul_fp8_max_config() raises:
+    """Test AMD AMDMatmul assembly for FP8 with max config (256x256x128)."""
     print("== test_amd_matmul_fp8_max_config (256x256x128)")
 
-    @parameter
-    if not has_amd_gpu_accelerator():
+    comptime if not has_amd_gpu_accelerator():
         print("Skipping test - AMD GPU not available")
         return
 
@@ -320,12 +291,11 @@ fn test_amd_matmul_fp8_max_config() raises:
     ]()
 
 
-fn test_amd_pingpong_fp8_max_config() raises:
+def test_amd_pingpong_fp8_max_config() raises:
     """Test AMD ping-pong matmul kernel assembly for FP8 (256x256x128)."""
     print("== test_amd_pingpong_fp8_max_config (256x256x128)")
 
-    @parameter
-    if not has_amd_gpu_accelerator():
+    comptime if not has_amd_gpu_accelerator():
         print("Skipping test - AMD GPU not available")
         return
 
@@ -352,12 +322,11 @@ fn test_amd_pingpong_fp8_max_config() raises:
     print("=== Assembly check passed ===\n")
 
 
-fn test_amd_pingpong_bf16_max_config() raises:
+def test_amd_pingpong_bf16_max_config() raises:
     """Test AMD ping-pong matmul kernel assembly for BF16 (256x256x64)."""
     print("== test_amd_pingpong_bf16_max_config (256x256x64)")
 
-    @parameter
-    if not has_amd_gpu_accelerator():
+    comptime if not has_amd_gpu_accelerator():
         print("Skipping test - AMD GPU not available")
         return
 
@@ -384,7 +353,7 @@ fn test_amd_pingpong_bf16_max_config() raises:
     print("=== Assembly check passed ===\n")
 
 
-def main():
+def main() raises:
     test_amd_matmul_bf16_max_config()
     test_amd_matmul_fp8_max_config()
     test_amd_pingpong_fp8_max_config()

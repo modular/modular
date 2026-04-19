@@ -11,13 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
+from std.gpu.host import DeviceContext
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
+    lt_to_tt,
+)
 from layout._fillers import random
 from linalg.fp4_quantization import quantize_dynamic_scaled_fp4fp8
-from testing import assert_equal, assert_almost_equal
-from math import ceildiv, recip
-from utils.numerics import max_finite, min_finite
+from std.testing import assert_almost_equal
+from std.math import ceildiv, recip
 from linalg.fp4_utils import (
     cast_fp_to_fp4e2m1,
     cast_uint_to_fp4e2m1,
@@ -28,11 +33,10 @@ from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     get_scale_factor,
 )
-from utils import IndexList
-from memory import bitcast
+from std.utils import IndexList
 
 
-fn test_dynamic_fp4_quant[
+def test_dynamic_fp4_quant[
     in_dtype: DType,
     scales_dtype: DType,
     SF_VECTOR_SIZE: Int,
@@ -119,9 +123,9 @@ fn test_dynamic_fp4_quant[
     # Run the quantization kernel
     quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
         ctx,
-        output_tensor.as_any_origin(),
-        scales_tensor.as_any_origin(),
-        input_tensor.as_any_origin(),
+        lt_to_tt(output_tensor).as_any_origin(),
+        lt_to_tt(scales_tensor).as_any_origin(),
+        lt_to_tt(input_tensor).as_any_origin(),
         num_cols=n,
         num_cols_padded=n,
         tensor_sf=tensor_sf,
@@ -207,8 +211,8 @@ fn test_dynamic_fp4_quant[
                             )
                             var ref_output_e2m1 = cast_fp_to_fp4e2m1(input_f32)
                             var output_e2m1 = cast_uint_to_fp4e2m1[
-                                out_dtype = DType.float32,
-                                out_width = SF_VECTOR_SIZE // 2,
+                                out_dtype=DType.float32,
+                                out_width=SF_VECTOR_SIZE // 2,
                             ](
                                 output_tensor_host.load[
                                     (SF_VECTOR_SIZE // 2) // 2
@@ -229,7 +233,7 @@ fn test_dynamic_fp4_quant[
                             )
                             var ref_output_e2m1 = cast_fp_to_fp4e2m1(input_f32)
                             var output_e2m1 = cast_uint_to_fp4e2m1[
-                                out_dtype = DType.float32,
+                                out_dtype=DType.float32,
                                 out_width=SF_VECTOR_SIZE,
                             ](
                                 output_tensor_host.load[(SF_VECTOR_SIZE // 2)](
@@ -244,7 +248,7 @@ fn test_dynamic_fp4_quant[
                             )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Zero-row inputs should not launch kernels.
         test_dynamic_fp4_quant[
@@ -252,40 +256,40 @@ def main():
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
             M=None,
-            N = Int(128),
+            N=Int(128),
         ](ctx, 0, 128)
         test_dynamic_fp4_quant[
             DType.bfloat16,
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
             M=None,
-            N = Int(128),
+            N=Int(128),
         ](ctx, 256, 128)
         test_dynamic_fp4_quant[
             DType.bfloat16,
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
             M=None,
-            N = Int(128 + 8),
+            N=Int(128 + 8),
         ](ctx, 258, 128 + 8)
         test_dynamic_fp4_quant[
             DType.bfloat16,
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
             M=None,
-            N = Int(128 + 64 - 8),
+            N=Int(128 + 64 - 8),
         ](ctx, 258, 128 + 64 - 8)
         test_dynamic_fp4_quant[
             DType.bfloat16,
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
             M=None,
-            N = Int(8192 + 8),
+            N=Int(8192 + 8),
         ](ctx, 1000, 8192 + 8, tensor_sf=0.43)
         test_dynamic_fp4_quant[
             DType.bfloat16,
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
             M=None,
-            N = Int(16384 + 8),
+            N=Int(16384 + 8),
         ](ctx, 2048, 16384 + 8, tensor_sf=0.5)

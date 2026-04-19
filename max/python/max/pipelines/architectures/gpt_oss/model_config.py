@@ -18,11 +18,15 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.rotary_embedding import YarnScalingParams
-from max.nn.legacy.transformer import ReturnLogits
-from max.pipelines.lib import KVCacheConfig, PipelineConfig, RopeType
+from max.nn.kv_cache import KVCacheParams
+from max.nn.quant_config import QuantConfig
+from max.nn.rotary_embedding import YarnScalingParams
+from max.nn.transformer import ReturnLogits
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.lib.quant import parse_quant_config
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -124,6 +128,9 @@ class GptOssConfig(ArchConfigWithKVCache):
     kv_params: KVCacheParams
     """KV cache parameters."""
 
+    quant_config: QuantConfig | None = None
+    """Float8/Float4 quantization configuration, if applicable."""
+
     tie_word_embeddings: bool = False
     """Whether to tie weight embeddings. When true, the output linear layer
     uses the same weight as the embedding layer."""
@@ -156,18 +163,12 @@ class GptOssConfig(ArchConfigWithKVCache):
         Returns:
             The configured :obj:`max.pipelines.kv_cache.KVCacheParams` object.
         """
-        return KVCacheParams(
+        return kv_cache_config.to_params(
             dtype=cache_dtype,
-            num_layers=GptOssConfig.get_num_layers(huggingface_config),
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
-            page_size=kv_cache_config.kv_cache_page_size,
-            cache_strategy=kv_cache_config.cache_strategy,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
+            num_layers=GptOssConfig.get_num_layers(huggingface_config),
             devices=devices,
-            data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
 
     @staticmethod
@@ -199,14 +200,18 @@ class GptOssConfig(ArchConfigWithKVCache):
         Returns:
             The calculated maximum sequence length.
         """
-        max_seq_len = pipeline_config.max_length
+        max_seq_len = pipeline_config.model.max_length
         if max_seq_len:
             return max_seq_len
         return huggingface_config.max_position_embeddings
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         """Initializes a GptOssConfig instance from pipeline configuration.
 
         This method creates a config instance with all fields that can be determined
@@ -220,28 +225,34 @@ class GptOssConfig(ArchConfigWithKVCache):
         Returns:
             An initialized GptOssConfig instance.
         """
-        huggingface_config = pipeline_config.model.huggingface_config
+        model_config = model_config or pipeline_config.model
+        huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
-        kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
+        kv_cache_config = model_config.kv_cache
+        quantization_encoding = model_config.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        dtype = quantization_encoding.dtype
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        dtype = supported_encoding_dtype(quantization_encoding)
+        # For MXFP4 models, non-quantized layers (embedding, attention, norm,
+        # lm_head) are BF16.  The MoE expert weights use MXFP4 packed uint8
+        # but are initialized separately via StackedMoE._init_mxfp4_weights.
+        if quantization_encoding == "float4_e2m1fnx2":
+            dtype = DType.bfloat16
+        cache_dtype = model_config.kv_cache.cache_dtype
 
-        _weights_format = weights_format(pipeline_config.model.weight_path)
+        _weights_format = weights_format(model_config.weight_path)
         interleaved_rope_weights = (
             _weights_format == WeightsFormat.gguf
-            and pipeline_config.model.rope_type == RopeType.normal
+            and model_config.rope_type == "normal"
         )
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model.device_specs
+            for spec in model_config.device_specs
         ]
 
         rope_scaling_params: YarnScalingParams
@@ -323,7 +334,7 @@ class GptOssConfig(ArchConfigWithKVCache):
             hidden_activation=hidden_activation,
             max_position_embeddings=huggingface_config.max_position_embeddings,
             rms_norm_eps=huggingface_config.rms_norm_eps,
-            rope_theta=huggingface_config.rope_theta,
+            rope_theta=get_rope_theta(huggingface_config),
             attention_bias=huggingface_config.attention_bias,
             sliding_window=huggingface_config.sliding_window,
             rope_scaling=rope_scaling_params,
@@ -370,6 +381,22 @@ class GptOssConfig(ArchConfigWithKVCache):
             or "language_model.lm_head.weight" not in state_dict
         )
 
+        # Normalize state dict keys for float8 config parsing.
+        has_lm_prefix = any(k.startswith("language_model.") for k in state_dict)
+        if has_lm_prefix:
+            normalized_state_dict = {
+                k.removeprefix("language_model."): v
+                for k, v in state_dict.items()
+                if k.startswith("language_model.")
+            }
+        else:
+            normalized_state_dict = dict(state_dict)
+
+        quant_config = parse_quant_config(
+            huggingface_config, normalized_state_dict, self.dtype
+        )
+
+        self.quant_config = quant_config
         self.tie_word_embeddings = tie_word_embeddings
         self.return_logits = return_logits
 

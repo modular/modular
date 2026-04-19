@@ -12,29 +12,25 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host import DeviceContext
-from layout._coord import Idx
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceContext
+from layout import Idx, TileTensor, row_major
 
 from nn.argsort import argsort
-from testing import assert_equal
-
-from utils.index import IndexList
+from std.testing import assert_equal
 
 
-fn linear_filler(i: Int, n: Int) -> Float32:
+def linear_filler(i: Int, n: Int) -> Float32:
     return Float32(i)
 
 
-fn reverse_filler(i: Int, n: Int) -> Float32:
+def reverse_filler(i: Int, n: Int) -> Float32:
     return Float32(n - i)
 
 
-fn test_argsort[
+def test_argsort[
     dtype: DType = DType.float32,
     *,
-    filler: fn(Int, Int) -> Float32,
+    filler: def(Int, Int) thin -> Float32,
     ascending: Bool = True,
 ](ctx: DeviceContext, N: Int) raises:
     # Allocate host memory
@@ -54,11 +50,11 @@ fn test_argsort[
 
     # Create device LayoutTensors
     var device_indices_tensor = TileTensor(
-        device_indices.unsafe_ptr(),
+        device_indices,
         row_major(Idx(N)),
     )
     var device_input_tensor = TileTensor(
-        device_input.unsafe_ptr(),
+        device_input,
         row_major(Idx(N)),
     )
 
@@ -84,20 +80,9 @@ fn test_argsort[
             indices_host_ptr[i],
             expected_indices_ptr[i],
             msg=String(
-                "indices[",
-                i,
-                "] = ",
-                indices_host_ptr[i],
-                " expected_indices[",
-                i,
-                "] = ",
-                expected_indices_ptr[i],
-                " N = ",
-                N,
-                " ascending = ",
-                ascending,
-                " at position ",
-                i,
+                t"indices[{i}] = {indices_host_ptr[i]} expected_indices[{i}] ="
+                t" {expected_indices_ptr[i]} N = {N} ascending = {ascending} at"
+                t" position {i}"
             ),
         )
 
@@ -111,10 +96,10 @@ fn test_argsort[
     _ = device_input^
 
 
-fn test_argsort_helper[
+def test_argsort_helper[
     *,
     dtype: DType,
-    filler: fn(Int, Int) -> Float32,
+    filler: def(Int, Int) thin -> Float32,
     ascending: Bool,
 ](ctx: DeviceContext) raises:
     test_argsort[dtype, filler=filler, ascending=ascending](ctx, N=3731)
@@ -124,17 +109,17 @@ fn test_argsort_helper[
     test_argsort[dtype, filler=filler, ascending=ascending](ctx, N=1024)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:  # argmax tests
         test_argsort_helper[
-            dtype = DType.float32, filler=linear_filler, ascending=True
+            dtype=DType.float32, filler=linear_filler, ascending=True
         ](ctx)
         test_argsort_helper[
-            dtype = DType.float32, filler=linear_filler, ascending=False
+            dtype=DType.float32, filler=linear_filler, ascending=False
         ](ctx)
         test_argsort_helper[
-            dtype = DType.float32, filler=reverse_filler, ascending=True
+            dtype=DType.float32, filler=reverse_filler, ascending=True
         ](ctx)
         test_argsort_helper[
-            dtype = DType.float32, filler=reverse_filler, ascending=False
+            dtype=DType.float32, filler=reverse_filler, ascending=False
         ](ctx)

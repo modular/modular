@@ -11,7 +11,7 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 name: bench_matmul
-file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_matmul.mojo
+file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_matmul.mojo
 common: &common
 - name: bench_matmul
   AUTOTUNING_MODE: true

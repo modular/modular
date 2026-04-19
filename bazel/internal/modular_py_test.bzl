@@ -126,30 +126,29 @@ def modular_py_test(
     modular_py_venv(
         name = name + ".venv",
         data = data + extra_data,
+        target_compatible_with = gpu_constraints + target_compatible_with,
         deps = deps + [
             requirement("pytest"),
         ],
     )
 
-    for target in [".debug", ".shell"]:
-        py_repl(
-            name = name + target,
-            data = data + extra_data,
-            deps = deps + [
-                requirement("pytest"),
-                "@rules_python//python/runfiles",
-            ],
-            direct = False,
-            env = env_for_available_tools() | extra_env | env | {
-                "DEBUG_SRCS": ":".join(["$(location {})".format(src) for src in srcs]),
-                # TODO: This should be PYTHONINSPECT but that doesn't work. We're avoiding args so lldb works without --
-                "PYTHONSTARTUP": "$(location //bazel/internal:test_debug_shim.py)",
-                "REPL_TARGET": target,
-            },
-            srcs = srcs + ["//bazel/internal:test_debug_shim.py"],
-            toolchains = toolchains,
-            target_compatible_with = gpu_constraints + target_compatible_with,
-        )
+    py_repl(
+        name = name + ".debug",
+        data = data + extra_data,
+        deps = deps + [
+            requirement("pytest"),
+            "@rules_python//python/runfiles",
+        ],
+        direct = False,
+        env = env_for_available_tools() | extra_env | env | {
+            "DEBUG_SRCS": ":".join(["$(location {})".format(src) for src in srcs]),
+            # TODO: This should be PYTHONINSPECT but that doesn't work. We're avoiding args so lldb works without --
+            "PYTHONSTARTUP": "$(location //bazel/internal:test_debug_shim.py)",
+        },
+        srcs = srcs + ["//bazel/internal:test_debug_shim.py"],
+        toolchains = toolchains,
+        target_compatible_with = gpu_constraints + target_compatible_with,
+    )
 
     if main:
         kwargs |= {

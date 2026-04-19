@@ -53,12 +53,12 @@ def buffer_load(x: BufferValue) -> TensorValue:
 def buffer_store(destination: BufferValueLike, source: TensorValueLike) -> None:
     """Stores the input tensor into the in-out buffer.
 
-    It stores the immutable input tensor `x` in the mutable tensor `y`.
-    This is semantically equivalent to a copy from `x` tensor to the `y` buffer.
+    It stores the immutable source tensor in the mutable destination buffer.
+    This is semantically equivalent to a copy from source to destination.
 
     Args:
-        x: The tensor to be stored in the buffer.
-        y: The buffer to store the tensor in.
+        destination: The buffer to store the tensor in.
+        source: The tensor to be stored in the buffer.
     """
     destination = BufferValue(destination)
     in_chain = Graph.current.device_chains[destination.device]

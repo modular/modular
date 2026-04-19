@@ -40,6 +40,7 @@ from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
 from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
+from .dp_padding import DPBatchPadder
 from .utils import SchedulerLogger, get_cancelled_reqs
 
 logger = logging.getLogger("max.serve")
@@ -60,6 +61,7 @@ class TokenGenerationScheduler(Scheduler):
         cancel_queue: MAXPullQueue[list[RequestID]],
         kv_cache: PagedKVCacheManager,
         support_empty_batches: bool = False,
+        dp_padder: DPBatchPadder | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -86,6 +88,7 @@ class TokenGenerationScheduler(Scheduler):
             pipeline=pipeline,
             kv_cache=kv_cache,
             batch_scheduling_strategy=batch_strategy,
+            dp_padder=dp_padder,
         )
         self.scheduler_logger = SchedulerLogger()
         self.support_empty_batches = support_empty_batches
@@ -161,6 +164,9 @@ class TokenGenerationScheduler(Scheduler):
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
+            speculative_decoding_metrics=self.pipeline.spec_decode_metrics()
+            if hasattr(self.pipeline, "spec_decode_metrics")
+            else None,
         )
 
         for cancelled_id in get_cancelled_reqs(self.cancel_queue):
@@ -223,6 +229,22 @@ def load_text_generation_scheduler(
         pipeline_config
     )
 
+    # Build DP batch padder when DP > 1 with device graph capture.
+    kv_manager = pipeline.kv_manager
+    dp_padder: DPBatchPadder | None = None
+    assert pipeline_config.model is not None
+    if (
+        scheduler_config.data_parallel_degree > 1
+        and pipeline_config.runtime.device_graph_capture
+    ):
+        dp_padder = DPBatchPadder(
+            dp_size=scheduler_config.data_parallel_degree,
+            kv_manager=kv_manager,
+            max_length=pipeline._pipeline_model.max_seq_len,
+            model_name=pipeline_config.model.model_name,
+            pipeline=pipeline,
+        )
+
     # Return Scheduler
     return TokenGenerationScheduler(
         scheduler_config=scheduler_config,
@@ -230,9 +252,10 @@ def load_text_generation_scheduler(
         # For spec decoding, there may be multiple KVCaches. The scheduler
         # arbitrarily uses either the draft or target one. The other kvcache is
         # hidden from scheduler currently and managed by pipelines.
-        kv_cache=pipeline.kv_managers[0],
+        kv_cache=kv_manager,
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
-        support_empty_batches=pipeline_config.execute_empty_batches,
+        support_empty_batches=pipeline_config.runtime.execute_empty_batches,
+        dp_padder=dp_padder,
     )

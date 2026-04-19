@@ -11,21 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from std.gpu.host import DeviceContext
+from layout import Idx, TileTensor, row_major
 from layout._fillers import random
-from memory import LegacyUnsafePointer
+from nn.conv.conv import conv_cudnn, conv_gpu
+from std.testing import assert_almost_equal
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from nn.conv import conv_cudnn, conv_gpu
-from testing import assert_almost_equal
-
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # input: NHWC
 # filer: RSCF
-fn test_conv_cudnn[
+def test_conv_cudnn[
     input_dim: IndexList[4],
     filter_dim: IndexList[4],
     output_dim: IndexList[4],
@@ -66,43 +63,52 @@ fn test_conv_cudnn[
     comptime Wout = output_dim[2]
     comptime Cout = output_dim[3]
 
-    # Define layouts
-    comptime input_layout = Layout.row_major(N, H, W, C_in)
-    comptime filter_layout = Layout.row_major(R, S, C, F)
-    comptime filter_nchw_layout = Layout.row_major(F, C, R, S)
-    comptime output_layout = Layout.row_major(Nout, Hout, Wout, Cout)
-
     comptime input_dim_flattened = N * H * W * C_in
     comptime filter_dim_flattened = R * S * C * F
     comptime output_dim_flattened = Nout * Hout * Wout * Cout
 
-    # Allocate host memory
-    var input_host_ptr = UnsafePointer[Scalar[input_type]].alloc(
-        input_dim_flattened
+    # Define TileTensor layouts
+    comptime input_tt_layout = row_major(
+        (Idx[N](), Idx[H](), Idx[W](), Idx[C_in]())
     )
-    var filter_host_ptr = UnsafePointer[Scalar[filter_type]].alloc(
-        filter_dim_flattened
+    comptime filter_tt_layout = row_major(
+        (Idx[R](), Idx[S](), Idx[C](), Idx[F]())
     )
-    var filter_nchw_host_ptr = UnsafePointer[Scalar[filter_type]].alloc(
-        filter_dim_flattened
+    comptime filter_nchw_tt_layout = row_major(
+        (Idx[F](), Idx[C](), Idx[R](), Idx[S]())
     )
-    var output_ref_host_ptr = UnsafePointer[Scalar[output_type]].alloc(
-        output_dim_flattened
-    )
-    var output_host_ptr = UnsafePointer[Scalar[output_type]].alloc(
-        output_dim_flattened
+    comptime output_tt_layout = row_major(
+        (Idx[Nout](), Idx[Hout](), Idx[Wout](), Idx[Cout]())
     )
 
-    # Create host LayoutTensors
-    var input_host = LayoutTensor[input_type, input_layout](input_host_ptr)
-    var filter_host = LayoutTensor[filter_type, filter_layout](filter_host_ptr)
-    var filter_nchw_host = LayoutTensor[filter_type, filter_nchw_layout](
-        filter_nchw_host_ptr
+    # Allocate host memory
+    var input_host_ptr = alloc[Scalar[input_type]](input_dim_flattened)
+    var filter_host_ptr = alloc[Scalar[filter_type]](filter_dim_flattened)
+    var filter_nchw_host_ptr = alloc[Scalar[filter_type]](filter_dim_flattened)
+    var output_ref_host_ptr = alloc[Scalar[output_type]](output_dim_flattened)
+    var output_host_ptr = alloc[Scalar[output_type]](output_dim_flattened)
+
+    # Create host TileTensors
+    var input_host = TileTensor(
+        Span(ptr=input_host_ptr, length=input_dim_flattened),
+        input_tt_layout,
     )
-    var output_ref_host = LayoutTensor[output_type, output_layout](
-        output_ref_host_ptr
+    var filter_host = TileTensor(
+        Span(ptr=filter_host_ptr, length=filter_dim_flattened),
+        filter_tt_layout,
     )
-    var output_host = LayoutTensor[output_type, output_layout](output_host_ptr)
+    var filter_nchw_host = TileTensor(
+        Span(ptr=filter_nchw_host_ptr, length=filter_dim_flattened),
+        filter_nchw_tt_layout,
+    )
+    var output_ref_host = TileTensor(
+        Span(ptr=output_ref_host_ptr, length=output_dim_flattened),
+        output_tt_layout,
+    )
+    var output_host = TileTensor(
+        Span(ptr=output_host_ptr, length=output_dim_flattened),
+        output_tt_layout,
+    )
 
     random(input_host)
     random(filter_host)
@@ -132,38 +138,25 @@ fn test_conv_cudnn[
         output_dim_flattened
     )
 
-    # Create device LayoutTensors
-    var input_dev_tensor = LayoutTensor[input_type, input_layout](
-        input_dev.unsafe_ptr()
-    )
-    var filter_dev_tensor = LayoutTensor[filter_type, filter_layout](
-        filter_dev.unsafe_ptr()
-    )
-    var filter_nchw_dev_tensor = LayoutTensor[filter_type, filter_nchw_layout](
-        filter_nchw_dev.unsafe_ptr()
-    )
-    var output_dev_tensor = LayoutTensor[output_type, output_layout](
-        output_dev.unsafe_ptr()
-    )
-    var output_ref_dev_tensor = LayoutTensor[output_type, output_layout](
-        output_ref_dev.unsafe_ptr()
-    )
+    # Create device TileTensors
+    var input_dev_tt = TileTensor(input_dev, input_tt_layout)
+    var filter_dev_tt = TileTensor(filter_dev, filter_tt_layout)
+    var filter_nchw_dev_tt = TileTensor(filter_nchw_dev, filter_nchw_tt_layout)
+    var output_dev_tt = TileTensor(output_dev, output_tt_layout)
+    var output_ref_dev_tt = TileTensor(output_ref_dev, output_tt_layout)
 
     ctx.enqueue_copy(input_dev, input_host_ptr)
     ctx.enqueue_copy(filter_dev, filter_host_ptr)
     ctx.enqueue_copy(filter_nchw_dev, filter_nchw_host_ptr)
 
     conv_gpu[
-        input_layout,
-        filter_layout,
-        output_layout,
         input_type,
         filter_type,
         output_type,
     ](
-        input_dev_tensor.as_any_origin(),
-        filter_dev_tensor.as_any_origin(),
-        output_ref_dev_tensor.as_any_origin(),
+        input_dev_tt,
+        filter_dev_tt,
+        output_ref_dev_tt,
         stride_dim,
         dilation_dim,
         pad_dim,
@@ -179,9 +172,9 @@ fn test_conv_cudnn[
     # pad_h_before == pad_h_after and pad_w_before == pad_w_after.
     var pad_for_cudnn = IndexList[2](pad_dim[0], pad_dim[2])
     conv_cudnn[input_type, filter_type, output_type](
-        input_dev_tensor,
-        filter_nchw_dev_tensor,
-        output_dev_tensor,
+        input_dev_tt,
+        filter_nchw_dev_tt,
+        output_dev_tt,
         stride_dim,
         dilation_dim,
         pad_for_cudnn,
@@ -220,7 +213,7 @@ fn test_conv_cudnn[
     _ = output_ref_dev^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Test configurations for data types.
         comptime dtype_configs = (DType.float32, DType.float16, DType.bfloat16)
@@ -242,8 +235,7 @@ def main():
         ](ctx)
 
         # Test different data types.
-        @parameter
-        for i in range(len(dtype_configs)):
+        comptime for i in range(len(dtype_configs)):
             comptime dtype = dtype_configs[i]
 
             test_conv_cudnn[

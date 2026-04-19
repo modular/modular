@@ -21,15 +21,15 @@ from unittest.mock import NonCallableMock
 import hf_repo_lock
 import torch
 from max.driver import DeviceSpec
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
-    SupportedEncoding,
     TextGenerationPipeline,
     TextTokenizer,
 )
-from max.pipelines.lib import MAXModelConfig
+from max.pipelines.lib import KVCacheConfig, LoRAConfig, MAXModelConfig
+from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from safetensors.torch import save_file
 from transformers import AutoConfig
 
@@ -224,18 +224,26 @@ def create_pipeline_config_with_lora(
         PipelineConfig: Configuration with LoRA settings
     """
     return PipelineConfig(
-        model_path=model_path,
-        quantization_encoding=SupportedEncoding.bfloat16,  # Use bfloat16 for GPU
-        max_batch_size=4,
-        enable_lora=True,
-        max_num_loras=max_num_loras,
-        lora_paths=lora_paths,
-        max_lora_rank=max_lora_rank,
-        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
-        max_length=512,
-        cache_strategy=KVCacheStrategy.PAGED,
-        enable_prefix_caching=False,  # LoRA requires prefix caching to be disabled
-        device_specs=[DeviceSpec(device_type="gpu", id=0)],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=model_path,
+                    quantization_encoding="bfloat16",  # Use bfloat16 for GPU
+                    device_specs=[DeviceSpec(device_type="gpu", id=0)],
+                    kv_cache=KVCacheConfig(
+                        enable_prefix_caching=False,  # LoRA requires prefix caching to be disabled
+                    ),
+                    max_length=512,
+                )
+            }
+        ),
+        lora=LoRAConfig(
+            enable_lora=True,
+            max_num_loras=max_num_loras,
+            lora_paths=lora_paths,
+            max_lora_rank=max_lora_rank,
+        ),
+        runtime=PipelineRuntimeConfig(max_batch_size=4),
     )
 
 
@@ -249,17 +257,22 @@ def create_pipeline_config_base(model_path: str = REPO_ID) -> PipelineConfig:
         PipelineConfig: Base configuration without LoRA
     """
     return PipelineConfig(
-        model_path=model_path,
-        quantization_encoding=SupportedEncoding.bfloat16,  # Use bfloat16 for GPU
-        max_batch_size=4,
-        max_length=512,
-        cache_strategy=KVCacheStrategy.PAGED,
-        allow_safetensors_weights_fp32_bf6_bidirectional_cast=True,
-        device_specs=[DeviceSpec(device_type="gpu", id=0)],
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=model_path,
+                    quantization_encoding="bfloat16",  # Use bfloat16 for GPU
+                    device_specs=[DeviceSpec(device_type="gpu", id=0)],
+                    kv_cache=KVCacheConfig(),
+                    max_length=512,
+                )
+            }
+        ),
+        runtime=PipelineRuntimeConfig(max_batch_size=4),
     )
 
 
-def create_pipeline_with_lora(lora_paths: list[str]) -> TextGenerationPipeline:
+def create_pipeline_with_lora(lora_paths: list[str]) -> TextGenerationPipeline:  # type: ignore[type-arg]
     """Create a text generation pipeline with LoRA enabled.
 
     Args:

@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 
-from gpu.host import DeviceContext
-from internal_utils._utils import dynamic, static
+from std.gpu.host import DeviceContext
 from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 
-from utils.index import Index
+from std.utils.index import Index
+
+from layout import Idx
 
 # Helper to calculate wgmma_shape based on dtype and BN
 comptime wgmma_shape[BN: Int, a_dtype: DType] = Index(
@@ -29,7 +29,7 @@ comptime wgmma_shape[BN: Int, a_dtype: DType] = Index(
 comptime get_num_consumer[BM: Int] = 1 if BM == 64 else 2
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # NOTE: please note that cublaslt handle should be used for fp8-e4m3fn and cublas handle for bfloat16
         # because cublas does not support float8-e4m3fn. Also, fp8 tests should be run first and then bfloat16 tests
@@ -42,17 +42,17 @@ def main():
             Index(1, 1, 1),
             Index(128, 80, 128),
             wgmma_shape[80, DType.float8_e4m3fn],
-            num_consumer = get_num_consumer[128],
+            num_consumer=get_num_consumer[128],
             num_pipeline_stages=6,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.DS_SCHEDULER,
-            grid_shape = Index(128, 1),
+            schedule=MatmulSchedule.DS_SCHEDULER,
+            grid_shape=Index(128, 1),
             measure_threshold=0.001,
         ](
             ctx,
-            static[512](),
-            static[2560](),
-            static[8192](),
+            Idx[512](),
+            Idx[2560](),
+            Idx[8192](),
         )
         test_matmul_sm90[
             DType.float8_e4m3fn,
@@ -61,17 +61,17 @@ def main():
             Index(1, 1, 1),
             Index(64, 128, 128),
             wgmma_shape[128, DType.float8_e4m3fn],
-            num_consumer = get_num_consumer[64],
+            num_consumer=get_num_consumer[64],
             num_pipeline_stages=8,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.DS_SCHEDULER,
-            grid_shape = Index(128, 1),
+            schedule=MatmulSchedule.DS_SCHEDULER,
+            grid_shape=Index(128, 1),
             measure_threshold=0.001,
         ](
             ctx,
-            static[512](),
-            static[16384](),
-            static[2048](),
+            Idx[512](),
+            Idx[16384](),
+            Idx[2048](),
         )
         test_matmul_sm90[
             DType.float8_e4m3fn,
@@ -80,17 +80,17 @@ def main():
             Index(1, 1, 1),
             Index(64, 48, 128),
             wgmma_shape[48, DType.float8_e4m3fn],
-            num_consumer = get_num_consumer[64],
+            num_consumer=get_num_consumer[64],
             num_pipeline_stages=8,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.DS_SCHEDULER,
-            grid_shape = Index(128, 1),
+            schedule=MatmulSchedule.DS_SCHEDULER,
+            grid_shape=Index(128, 1),
             measure_threshold=0.001,
         ](
             ctx,
-            static[512](),
-            static[2304](),
-            static[16384](),
+            Idx[512](),
+            Idx[2304](),
+            Idx[16384](),
         )
         test_matmul_sm90[
             DType.float8_e4m3fn,
@@ -99,17 +99,17 @@ def main():
             Index(1, 1, 1),
             Index(128, 128, 128),
             wgmma_shape[128, DType.float8_e4m3fn],
-            num_consumer = get_num_consumer[128],
+            num_consumer=get_num_consumer[128],
             num_pipeline_stages=4,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.DS_SCHEDULER,
-            grid_shape = Index(128, 1),
+            schedule=MatmulSchedule.DS_SCHEDULER,
+            grid_shape=Index(128, 1),
             measure_threshold=0.001,
         ](
             ctx,
-            static[512](),
-            static[13312](),
-            static[16384](),
+            Idx[512](),
+            Idx[13312](),
+            Idx[16384](),
         )
         test_matmul_sm90[
             DType.float8_e4m3fn,
@@ -118,17 +118,17 @@ def main():
             Index(1, 1, 1),
             Index(128, 128, 128),
             wgmma_shape[128, DType.float8_e4m3fn],
-            num_consumer = get_num_consumer[128],
+            num_consumer=get_num_consumer[128],
             num_pipeline_stages=4,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.DS_SCHEDULER,
-            grid_shape = Index(128, 1),
+            schedule=MatmulSchedule.DS_SCHEDULER,
+            grid_shape=Index(128, 1),
             measure_threshold=0.001,
         ](
             ctx,
-            static[512](),
-            static[16384](),
-            static[6656](),
+            Idx[512](),
+            Idx[16384](),
+            Idx[6656](),
         )
 
         print("BFLOAT16 GEMM TESTS")
@@ -139,13 +139,13 @@ def main():
             Index(1, 1, 1),
             Index(64, 32, 64),
             wgmma_shape[32, DType.bfloat16],
-            num_consumer = get_num_consumer[64],
+            num_consumer=get_num_consumer[64],
             num_pipeline_stages=8,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.DS_SCHEDULER,
-            grid_shape = Index(128, 1),
+            schedule=MatmulSchedule.DS_SCHEDULER,
+            grid_shape=Index(128, 1),
             measure_threshold=0.001,
-        ](ctx, dynamic(64), static[2560](), static[8192]())
+        ](ctx, Idx(Int(64)), Idx[2560](), Idx[8192]())
         test_matmul_sm90[
             DType.bfloat16,
             DType.bfloat16,
@@ -153,13 +153,13 @@ def main():
             Index(1, 1, 1),
             Index(64, 40, 64),
             wgmma_shape[40, DType.bfloat16],
-            num_consumer = get_num_consumer[64],
+            num_consumer=get_num_consumer[64],
             num_pipeline_stages=8,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.DS_SCHEDULER,
-            grid_shape = Index(128, 1),
+            schedule=MatmulSchedule.DS_SCHEDULER,
+            grid_shape=Index(128, 1),
             measure_threshold=0.001,
-        ](ctx, dynamic(128), static[2560](), static[8192]())
+        ](ctx, Idx(Int(128)), Idx[2560](), Idx[8192]())
         test_matmul_sm90[
             DType.bfloat16,
             DType.bfloat16,
@@ -167,13 +167,13 @@ def main():
             Index(1, 1, 1),
             Index(64, 80, 64),
             wgmma_shape[80, DType.bfloat16],
-            num_consumer = get_num_consumer[64],
+            num_consumer=get_num_consumer[64],
             num_pipeline_stages=8,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.DS_SCHEDULER,
-            grid_shape = Index(128, 1),
+            schedule=MatmulSchedule.DS_SCHEDULER,
+            grid_shape=Index(128, 1),
             measure_threshold=0.001,
-        ](ctx, dynamic(256), static[2560](), static[8192]())
+        ](ctx, Idx(Int(256)), Idx[2560](), Idx[8192]())
         test_matmul_sm90[
             DType.bfloat16,
             DType.bfloat16,
@@ -181,13 +181,13 @@ def main():
             Index(1, 1, 1),
             Index(64, 160, 64),
             wgmma_shape[160, DType.bfloat16],
-            num_consumer = get_num_consumer[64],
+            num_consumer=get_num_consumer[64],
             num_pipeline_stages=7,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.DS_SCHEDULER,
-            grid_shape = Index(128, 1),
+            schedule=MatmulSchedule.DS_SCHEDULER,
+            grid_shape=Index(128, 1),
             measure_threshold=0.001,
-        ](ctx, dynamic(512), static[2560](), static[8192]())
+        ](ctx, Idx(Int(512)), Idx[2560](), Idx[8192]())
         test_matmul_sm90[
             DType.bfloat16,
             DType.bfloat16,
@@ -195,13 +195,13 @@ def main():
             Index(1, 1, 1),
             Index(64, 160, 64),
             wgmma_shape[160, DType.bfloat16],
-            num_consumer = get_num_consumer[64],
+            num_consumer=get_num_consumer[64],
             num_pipeline_stages=5,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.DS_SCHEDULER,
-            grid_shape = Index(128, 1),
+            schedule=MatmulSchedule.DS_SCHEDULER,
+            grid_shape=Index(128, 1),
             measure_threshold=0.001,
-        ](ctx, dynamic(1024), static[2560](), static[8192]())
+        ](ctx, Idx(Int(1024)), Idx[2560](), Idx[8192]())
         test_matmul_sm90[
             DType.bfloat16,
             DType.bfloat16,
@@ -209,13 +209,13 @@ def main():
             Index(1, 1, 1),
             Index(128, 160, 64),
             wgmma_shape[160, DType.bfloat16],
-            num_consumer = get_num_consumer[128],
+            num_consumer=get_num_consumer[128],
             num_pipeline_stages=5,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.DS_SCHEDULER,
-            grid_shape = Index(128, 1),
+            schedule=MatmulSchedule.DS_SCHEDULER,
+            grid_shape=Index(128, 1),
             measure_threshold=0.001,
-        ](ctx, dynamic(2048), static[2560](), static[8192]())
+        ](ctx, Idx(Int(2048)), Idx[2560](), Idx[8192]())
         test_matmul_sm90[
             DType.bfloat16,
             DType.bfloat16,
@@ -223,13 +223,13 @@ def main():
             Index(1, 1, 1),
             Index(128, 256, 64),
             wgmma_shape[256, DType.bfloat16],
-            num_consumer = get_num_consumer[128],
+            num_consumer=get_num_consumer[128],
             num_pipeline_stages=4,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.DS_SCHEDULER,
-            grid_shape = Index(128, 1),
+            schedule=MatmulSchedule.DS_SCHEDULER,
+            grid_shape=Index(128, 1),
             measure_threshold=0.001,
-        ](ctx, dynamic(4096), static[2560](), static[8192]())
+        ](ctx, Idx(Int(4096)), Idx[2560](), Idx[8192]())
         test_matmul_sm90[
             DType.bfloat16,
             DType.bfloat16,
@@ -237,10 +237,10 @@ def main():
             Index(1, 1, 1),
             Index(128, 256, 64),
             wgmma_shape[256, DType.bfloat16],
-            num_consumer = get_num_consumer[128],
+            num_consumer=get_num_consumer[128],
             num_pipeline_stages=4,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.DS_SCHEDULER,
-            grid_shape = Index(128, 1),
+            schedule=MatmulSchedule.DS_SCHEDULER,
+            grid_shape=Index(128, 1),
             measure_threshold=0.001,
-        ](ctx, dynamic(8192), static[2560](), static[8192]())
+        ](ctx, Idx(Int(8192)), Idx[2560](), Idx[8192]())

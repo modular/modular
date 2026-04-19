@@ -11,19 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from layout import UNKNOWN_VALUE, Layout, RuntimeLayout
+from std.gpu.host import DeviceContext
+from layout import IntTuple, Layout, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import IntTuple
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 # Tests for the ManagedLayoutTensor
 # Verifies that device_tensor() and tensor() methods work correctly for various ranks
 
 
-fn test_managed_layout_tensor_1d() raises:
+def test_managed_layout_tensor_1d() raises:
     """Test 1D ManagedLayoutTensor tensor operations."""
     comptime layout_1d = Layout(IntTuple(10))
 
@@ -41,7 +40,7 @@ fn test_managed_layout_tensor_1d() raises:
     assert_equal(device_tensor_1d.dim[0](), 10)
 
 
-fn test_managed_layout_tensor_2d() raises:
+def test_managed_layout_tensor_2d() raises:
     """Test 2D ManagedLayoutTensor tensor operations."""
     comptime layout_2d = Layout(IntTuple(4, 6))
 
@@ -61,7 +60,7 @@ fn test_managed_layout_tensor_2d() raises:
     assert_equal(device_tensor_2d.dim[1](), 6)
 
 
-fn test_managed_layout_tensor_3d() raises:
+def test_managed_layout_tensor_3d() raises:
     """Test 3D ManagedLayoutTensor tensor operations."""
     comptime layout_3d = Layout(IntTuple(2, 3, 4))
 
@@ -83,7 +82,7 @@ fn test_managed_layout_tensor_3d() raises:
     assert_equal(device_tensor_3d.dim[2](), 4)
 
 
-fn test_managed_layout_tensor_dynamic() raises:
+def test_managed_layout_tensor_dynamic() raises:
     """Test ManagedLayoutTensor with dynamic dimensions."""
     # Create layout with some dynamic dimensions
     comptime layout_dynamic = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE, 4)
@@ -114,7 +113,7 @@ fn test_managed_layout_tensor_dynamic() raises:
     assert_equal(device_tensor_dynamic.dim[2](), 4)
 
 
-def main():
+def main() raises:
     """Main test function that runs all ManagedLayoutTensor tests."""
     test_managed_layout_tensor_1d()
     test_managed_layout_tensor_2d()

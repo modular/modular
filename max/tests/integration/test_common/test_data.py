@@ -21,10 +21,20 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from max.interfaces import (
+    ImageContentPart,
     RequestID,
     SamplingParams,
+    TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+)
+from max.interfaces.provider_options import (
+    ImageProviderOptions,
+    ProviderOptions,
+)
+from max.interfaces.request import (
+    OpenResponsesRequest,
+    OpenResponsesRequestBody,
 )
 from max.support import fetch_bytes_from_s3
 
@@ -69,8 +79,10 @@ class MockTextGenerationRequest:
             proper_messages = [
                 TextGenerationRequestMessage(
                     role="user",
-                    content=[{"type": "text", "text": prompt}]
-                    + [{"type": "image"} for _ in images],
+                    content=[
+                        TextContentPart(text=prompt),
+                        *(ImageContentPart() for _ in images),
+                    ],
                 )
             ]
         else:
@@ -127,6 +139,103 @@ class MockTextGenerationRequest:
                 sampling_params=sampling_params,
                 prompt=self.prompt,
             )
+
+
+@dataclass(frozen=True)
+class MockPixelGenerationRequest:
+    """Request for pixel generation testing."""
+
+    prompt: str
+    """The text prompt for image generation."""
+
+    secondary_prompt: str | None = None
+    """Optional secondary text prompt for dual text encoders."""
+
+    negative_prompt: str | None = None
+    """Optional negative prompt to guide what NOT to generate."""
+
+    secondary_negative_prompt: str | None = None
+    """Optional secondary negative prompt."""
+
+    height: int | None = None
+    """Height of generated image in pixels."""
+
+    width: int | None = None
+    """Width of generated image in pixels."""
+
+    num_inference_steps: int = 50
+    """Number of denoising steps."""
+
+    guidance_scale: float = 3.5
+    """Guidance scale for classifier-free guidance."""
+
+    true_cfg_scale: float = 1.0
+    """True CFG scale."""
+
+    seed: int | None = None
+    """Random seed for reproducibility."""
+
+    input_image: str | None = None
+    """Optional input image URI for image-to-image generation."""
+
+    model_name: str = ""
+    """Model name for the request."""
+
+    @classmethod
+    def from_prompt(
+        cls,
+        prompt: str,
+        *,
+        secondary_prompt: str | None = None,
+        negative_prompt: str | None = None,
+        secondary_negative_prompt: str | None = None,
+        height: int | None = None,
+        width: int | None = None,
+        num_inference_steps: int = 50,
+        guidance_scale: float = 3.5,
+        true_cfg_scale: float = 1.0,
+        seed: int | None = None,
+        input_image: str | None = None,
+        model_name: str = "",
+    ) -> MockPixelGenerationRequest:
+        """Creates a pixel generation request from a prompt."""
+        return cls(
+            prompt=prompt,
+            secondary_prompt=secondary_prompt,
+            negative_prompt=negative_prompt,
+            secondary_negative_prompt=secondary_negative_prompt,
+            height=height,
+            width=width,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            true_cfg_scale=true_cfg_scale,
+            seed=seed,
+            input_image=input_image,
+            model_name=model_name,
+        )
+
+    def to_open_responses_request(
+        self, request_id: RequestID, model_name: str | None = None
+    ) -> OpenResponsesRequest:
+        """Convert to an OpenResponsesRequest for pixel generation."""
+        body = OpenResponsesRequestBody(
+            model=model_name or self.model_name,
+            input=self.prompt,
+            seed=self.seed,
+            provider_options=ProviderOptions(
+                image=ImageProviderOptions(
+                    negative_prompt=self.negative_prompt,
+                    secondary_prompt=self.secondary_prompt,
+                    secondary_negative_prompt=self.secondary_negative_prompt,
+                    height=self.height,
+                    width=self.width,
+                    steps=self.num_inference_steps,
+                    guidance_scale=self.guidance_scale,
+                    true_cfg_scale=self.true_cfg_scale,
+                )
+            ),
+        )
+        return OpenResponsesRequest(request_id=request_id, body=body)
 
 
 # Existing test data extracted from evaluate.py
@@ -189,7 +298,7 @@ INTERNVL_INSTRUCT_MESSAGES = [
 ]
 INTERNVL_INSTRUCT_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/internvl_instruct_image.jpg"
 
-IDEFICS3_INSTRUCT_PROMPT = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n<image> Describe the image:<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+IDEFICS3_INSTRUCT_PROMPT = "<|begin_of_text|>User:<image>Describe the image:<end_of_utterance>\nAssistant:"
 IDEFICS3_INSTRUCT_MESSAGES = [
     {
         "role": "user",
@@ -241,5 +350,63 @@ IDEFICS3_INSTRUCT_REQUESTS = [
         IDEFICS3_INSTRUCT_PROMPT,
         [IDEFICS3_INSTRUCT_IMAGE],
         messages=IDEFICS3_INSTRUCT_MESSAGES,
+    ),
+]
+
+# Default pixel generation prompts
+DEFAULT_PIXEL_GENERATION_PROMPTS = [
+    "photography, soft natural textures, highly realistic light, editorial, A black panther stalking through the dense undergrowth of an Indian jungle, early evening with shadows from tall trees, captured with low light photography, high ISO setting to highlight the panther's muscles in motion",
+    "Dramatic news broadcast scene in a Teahupoʻo wave's where a cow surfing, mimicking pro surf rider poses. Yogis laugh and take pictures. The news banner reads: 'COW win Olympics!!'",
+    "Full body shot of a handsome tattooed short dark haired man wearing a jean and a white tee-shirt in 'Chiaroscuro Chronicles', lost in a captivating, slate gray monochromatic realm of masterful lighting and careful shading, emphasizing the emotional depth of the narrative, abrasive authenticity, ambient occlusion",
+    "A beautiful woman in a red dress walking down a street",
+    'Four elements split into quadrants: top-left shows splashing water forming the word "WATER" on a water background, top-right shows soil forming "EARTH" with planet earth behind, bottom-left shows colorful clouds forming "AIR" at sunset, bottom-right shows fiery lava forming "FIRE" against the sun',
+]
+
+DEFAULT_PIXEL_GENERATION = [
+    MockPixelGenerationRequest.from_prompt(prompt=prompt, seed=42)
+    for prompt in DEFAULT_PIXEL_GENERATION_PROMPTS
+]
+
+# The prompt contains Kimi-specific media tokens for the vLLM path, which
+# uses it directly.  The messages are the clean (no special tokens) version
+# that the MAX tokenizer runs through the HuggingFace chat template.
+KIMIK2_5_PROMPT = (
+    "<|im_user|>user<|media_begin|>image<|media_content|>"
+    "<|media_pad|><|media_end|>Describe this image.<|im_end|>"
+    "<|im_assistant|>assistant<|im_middle|></think>"
+)
+KIMIK2_5_MESSAGES = [
+    {
+        "role": "user",
+        "content": [
+            {"type": "image"},
+            {"type": "text", "text": "Describe this image."},
+        ],
+    }
+]
+KIMIK2_5_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/kimik2_5_image.jpg"
+
+KIMIK2_5_REQUESTS = [
+    MockTextGenerationRequest.with_images(
+        prompt=KIMIK2_5_PROMPT,
+        images=[KIMIK2_5_IMAGE],
+        messages=KIMIK2_5_MESSAGES,
+    ),
+]
+
+FLUX2_PIXEL_GENERATION_I2I = [
+    MockPixelGenerationRequest.from_prompt(
+        prompt="Transform this image into a cinematic nighttime scene with neon reflections, wet streets, and dramatic contrast.",
+        seed=42,
+        input_image=MULTIMODAL_IMAGE,
+        height=1024,
+        width=1024,
+    ),
+    MockPixelGenerationRequest.from_prompt(
+        prompt="Restyle this image as a watercolor painting with soft edges, visible brush texture, and warm afternoon light.",
+        seed=42,
+        input_image=MULTIMODAL_IMAGE,
+        height=1024,
+        width=1024,
     ),
 ]

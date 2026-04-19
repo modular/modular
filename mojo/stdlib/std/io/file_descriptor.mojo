@@ -17,21 +17,21 @@ These are Mojo built-ins, so you don't need to import them.
 For example, here's how to print to a file
 
 ```mojo
-var f = open("my_file.txt", "r")
-print("hello", file=f^)
+var f = open("my_file.txt", "w")
+var fd = FileDescriptor(f)
+print("hello", file=fd)
 f.close()
 ```
 
 """
-from os import abort
-from sys import (
+from std.os import abort
+from std.sys import (
     CompilationTarget,
     is_amd_gpu,
-    is_compile_time,
     is_gpu,
     is_nvidia_gpu,
 )
-from ffi import (
+from std.ffi import (
     c_ssize_t,
     c_int,
     external_call,
@@ -39,7 +39,7 @@ from ffi import (
     get_errno,
 )
 
-from memory import Span
+from std.memory import Span
 
 
 struct FileDescriptor(TrivialRegisterPassable, Writer):
@@ -48,7 +48,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
     var value: Int
     """The underlying value of the file descriptor."""
 
-    fn __init__(out self, value: Int = 1):
+    def __init__(out self, value: Int = 1):
         """Constructs the file descriptor from an integer.
 
         Args:
@@ -56,7 +56,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         """
         self.value = value
 
-    fn __init__(out self, f: FileHandle):
+    def __init__(out self, f: FileHandle):
         """Constructs the file descriptor from a file handle.
 
         Args:
@@ -65,7 +65,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         self.value = f._get_raw_fd()
 
     @always_inline
-    fn write_bytes(mut self, bytes: Span[Byte, _]):
+    def write_bytes(mut self, bytes: Span[Byte, _]):
         """
         Write a span of bytes to the file.
 
@@ -73,14 +73,13 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
             bytes: The byte span to write to this file.
         """
         written = external_call["write", c_ssize_t](
-            self.value, bytes.unsafe_ptr(), len(bytes)
+            self.value._int_mlir_index(),
+            bytes.unsafe_ptr(),
+            len(bytes)._int_mlir_index(),
         )
-        debug_assert(
-            written == len(bytes),
-            "expected amount of bytes not written",
-        )
+        assert written == len(bytes), "expected amount of bytes not written"
 
-    fn write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSlice):
         """
         Write a `StringSlice` to this `FileDescriptor`.
 
@@ -92,7 +91,7 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
         self.write_bytes(string.as_bytes())
 
     @always_inline
-    fn read_bytes(mut self, buffer: Span[mut=True, Byte]) raises -> UInt:
+    def read_bytes(mut self, buffer: Span[mut=True, Byte, _]) raises -> UInt:
         """Read a number of bytes from the file into a buffer.
 
         Args:
@@ -112,22 +111,17 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
             not is_gpu()
         ), "`read_bytes()` is not yet implemented for GPUs."
 
-        @parameter
-        if CompilationTarget.is_macos() or CompilationTarget.is_linux():
-            var read = external_call["read", c_ssize_t](
-                self.value, buffer.unsafe_ptr(), len(buffer)
-            )
-            if read < 0:
-                raise Error("Failed to read bytes.")
-            return UInt(read)
-        else:
-            constrained[
-                False,
-                "`read_bytes()` is not yet implemented for unknown platform.",
-            ]()
-            abort()
+        comptime assert (
+            CompilationTarget.is_macos() or CompilationTarget.is_linux()
+        ), "`read_bytes()` is not yet implemented for unknown platform."
+        var read = external_call["read", c_ssize_t](
+            self.value, buffer.unsafe_ptr(), len(buffer)
+        )
+        if read < 0:
+            raise Error("Failed to read bytes.")
+        return UInt(read)
 
-    fn isatty(self) -> Bool:
+    def isatty(self) -> Bool:
         """Checks whether a file descriptor refers to a terminal.
 
         Returns `True` if the file descriptor is open and connected to a
@@ -139,6 +133,8 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
 
         Examples:
             ```mojo
+            from sys import stdout
+
             # Check if stdout is a terminal
             if stdout.isatty():
                 print("Running in a terminal")
@@ -147,7 +143,6 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
             ```
         """
 
-        @parameter
-        if is_gpu():
+        comptime if is_gpu():
             return False
         return _external_call_const["isatty", c_int](c_int(self.value)) != 0

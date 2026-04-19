@@ -11,27 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import *
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import *
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
+from std.testing import *
 
 
-fn add_constant_fn(
-    output: UnsafePointer[Float32],
-    input: UnsafePointer[Float32],
+def add_constant_fn(
+    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: UnsafePointer[Float32, ImmutAnyOrigin],
     constant: Float32,
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = input[tid] + constant
 
 
-def run_add_constant(ctx: DeviceContext):
+def run_add_constant(ctx: DeviceContext) raises:
     comptime length = 1024
 
     var in_device = ctx.enqueue_create_buffer[DType.float32](length)
@@ -59,6 +56,6 @@ def run_add_constant(ctx: DeviceContext):
             assert_equal(out_host[i], Float32(i) + constant)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_add_constant(ctx)

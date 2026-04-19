@@ -11,62 +11,44 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string.string import (
+from std.collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
 )
-from collections.string.string_slice import _to_string_list
-from math import isinf, isnan
+from std.collections.string.string_slice import _to_string_list
+from std.math import isinf, isnan
 
-from memory import memcpy
-from python import Python, PythonObject
-from testing import (
+from std.memory import memcpy
+from std.python import Python, PythonObject
+from std.testing import (
     assert_equal,
     assert_false,
     assert_not_equal,
     assert_raises,
     assert_true,
 )
-from testing import TestSuite
+from std.testing import TestSuite
 
 
-@fieldwise_init
-struct AString(Stringable):
-    fn __str__(self) -> String:
-        return "a string"
-
-
-def test_stringable():
-    assert_equal("hello", String("hello"))
-    assert_equal("0", String(0))
-    assert_equal("AAA", String(StringSlice("AAA")))
-    assert_equal("a string", String(AString()))
-
-    # Should not produce an exclusivity error.
-    # Incorrect exclusivity error when printing a StringSlice
-    # https://github.com/modular/modular/issues/4790
-    print(String("test").removeprefix(""))
-
-
-def test_constructors():
+def test_constructors() raises:
     # Default construction
-    assert_equal(0, len(String()))
+    assert_equal(0, String().byte_length())
     assert_true(not String())
     assert_not_equal("xyz", "abc")
 
     # Construction from Int
     var s0 = String(0)
     assert_equal("0", String(0))
-    assert_equal(1, len(s0))
+    assert_equal(1, s0.byte_length())
 
     var s1 = String(123)
     assert_equal("123", String(123))
-    assert_equal(3, len(s1))
+    assert_equal(3, s1.byte_length())
 
     # Construction from StringLiteral
     var s2 = "abc"
     assert_equal("abc", String(s2))
-    assert_equal(3, len(s2))
+    assert_equal(3, s2.byte_length())
 
     # Construction with capacity
     var s4 = String(capacity=1)
@@ -78,7 +60,7 @@ def test_constructors():
     assert_equal(s5, "A")
 
 
-def test_copy():
+def test_copy() raises:
     var s0 = "find"
     var s1 = String(s0)
     s1.unsafe_ptr_mut()[3] = Byte(ord("e"))
@@ -86,21 +68,21 @@ def test_copy():
     assert_equal("fine", s1)
 
 
-def test_len():
+def test_len() raises:
     # String length is in bytes, not codepoints.
     var s0 = "ನಮಸ್ಕಾರ"
 
-    assert_equal(len(s0), 21)
+    assert_equal(s0.byte_length(), 21)
     assert_equal(len(s0.codepoints()), 7)
 
     # For ASCII string, the byte and codepoint length are the same:
     var s1 = "abc"
 
-    assert_equal(len(s1), 3)
+    assert_equal(s1.byte_length(), 3)
     assert_equal(len(s1.codepoints()), 3)
 
 
-def test_equality_operators():
+def test_equality_operators() raises:
     var s0 = "abc"
     var s1 = "def"
     assert_equal(s0, s0)
@@ -121,7 +103,7 @@ def test_equality_operators():
     assert_not_equal(s0, "notabc")
 
 
-def test_comparison_operators():
+def test_comparison_operators() raises:
     var abc = "abc"
     var de = "de"
     var ABC = "ABC"
@@ -161,7 +143,7 @@ def test_comparison_operators():
     assert_true(String.__ge__("", ""))
 
 
-def test_add():
+def test_add() raises:
     var s1 = "123"
     var s2 = "abc"
     var s3 = s1 + s2
@@ -180,12 +162,8 @@ def test_add():
     assert_equal("abcdef", s2 + "def")
     assert_equal("123abc", "123" + s2)
 
-    var s8 = "abc is "
-    var s9 = AString()
-    assert_equal("abc is a string", String(s8) + String(s9))
 
-
-def test_add_string_slice():
+def test_add_string_slice() raises:
     var s1 = "123"
     var s2 = StringSlice("abc")
     var s3 = "abc"
@@ -198,7 +176,7 @@ def test_add_string_slice():
     assert_equal("123abcabc", s1)
 
 
-def test_string_join():
+def test_string_join() raises:
     var sep = ","
     var s0 = "abc"
     var s1 = sep.join(Span([s0, s0, s0, s0]))
@@ -210,23 +188,23 @@ def test_string_join():
     #   arguments, somehow?
     # assert_equal(sep.join(1, "abc", 3), "1,abc,3")
 
-    var s2 = ",".join(Span[UInt8]([1, 2, 3]))
+    var s2 = ",".join(Span([UInt8(1), 2, 3]))
     assert_equal(s2, "1,2,3")
 
-    var s3 = ",".join(Span[UInt8]([1, 2, 3, 4, 5, 6, 7, 8, 9]))
+    var s3 = ",".join(Span([UInt8(1), 2, 3, 4, 5, 6, 7, 8, 9]))
     assert_equal(s3, "1,2,3,4,5,6,7,8,9")
 
     var s4 = ",".join(List[UInt8]())
     assert_equal(s4, "")
 
-    var s5 = ",".join(Span[UInt8]([1]))
+    var s5 = ",".join(Span([UInt8(1)]))
     assert_equal(s5, "1")
 
     var s6 = ",".join(Span[String](["1", "2", "3"]))
     assert_equal(s6, "1,2,3")
 
 
-def test_ord():
+def test_ord() raises:
     # Regular ASCII
     assert_equal(ord("A"), 65)
     assert_equal(ord("Z"), 90)
@@ -262,7 +240,7 @@ def test_ord():
     assert_equal(ord(StringSlice("🔥")), 128293)
 
 
-def test_chr():
+def test_chr() raises:
     assert_equal("\0", chr(0))
     assert_equal("A", chr(65))
     assert_equal("a", chr(97))
@@ -272,29 +250,28 @@ def test_chr():
     assert_equal("🔥", chr(128293))
 
 
-def test_string_indexing():
+def test_string_indexing() raises:
     var str = "Hello Mojo!!"
 
     assert_equal("H", str[byte=0])
-    assert_equal("!", str[byte= -1])
-    assert_equal("H", str[byte = -len(str)])
-    assert_equal("llo Mojo!!", str[2:])
-    assert_equal("lo Mojo!", str[3:-1])
-    assert_equal("lo Moj", str[3:-3])
-
-    assert_equal("Hello Mojo!!", str[-50::])
-    assert_equal("Hello Mojo!!", str[:50:])
+    assert_equal("!", str[byte=str.byte_length() - 1])
+    assert_equal("H", str[byte=0])
+    assert_equal("llo Mojo!!", str[byte=2:])
+    assert_equal("lo Mojo!", str[byte=3:-1])
+    assert_equal("lo Moj", str[byte=3:-3])
+    assert_equal("Hello Mojo!!", str[byte= -50::])
+    assert_equal("Hello Mojo!!", str[byte=:50:])
 
     var str2 = "😌😃"
     assert_equal("😌", str2[byte=0])
-    assert_equal("😌", str2[0:4])
+    assert_equal("😌", str2[byte=0:4])
     assert_equal("😃", str2[byte=4])
-    assert_equal("😃", str2[4:])
+    assert_equal("😃", str2[byte=4:])
     var str3 = "😌😃🥰😋"
-    assert_equal("😃🥰", str3[4:12])
+    assert_equal("😃🥰", str3[byte=4:12])
 
 
-def test_atol():
+def test_atol() raises:
     # base 10
     assert_equal(375, atol("375"))
     assert_equal(1, atol("001"))
@@ -396,7 +373,7 @@ def test_atol():
         _ = atol("9223372036854775832")
 
 
-def test_atol_base_0():
+def test_atol_base_0() raises:
     assert_equal(155, atol(" 155", base=0))
     assert_equal(155_155, atol("155_155 ", base=0))
 
@@ -453,7 +430,7 @@ def test_atol_base_0():
         _ = atol("0of_", base=0)
 
 
-def test_atof():
+def test_atof() raises:
     assert_equal(375.0, atof("375.f"))
     assert_equal(1.0, atof("001."))
     assert_equal(+5.0, atof(" +005."))
@@ -572,7 +549,7 @@ def test_atof():
         _ = atof("e5")  # Exponent with no mantissa
 
 
-def test_calc_initial_buffer_size_int32():
+def test_calc_initial_buffer_size_int32() raises:
     assert_equal(1, _calc_initial_buffer_size_int32(0))
     assert_equal(1, _calc_initial_buffer_size_int32(9))
     assert_equal(2, _calc_initial_buffer_size_int32(10))
@@ -584,7 +561,7 @@ def test_calc_initial_buffer_size_int32():
     assert_equal(10, _calc_initial_buffer_size_int32(4294967295))
 
 
-def test_calc_initial_buffer_size_int64():
+def test_calc_initial_buffer_size_int64() raises:
     assert_equal(1, _calc_initial_buffer_size_int64(0))
     assert_equal(1, _calc_initial_buffer_size_int64(9))
     assert_equal(2, _calc_initial_buffer_size_int64(10))
@@ -596,7 +573,7 @@ def test_calc_initial_buffer_size_int64():
     assert_equal(20, _calc_initial_buffer_size_int64(18446744073709551615))
 
 
-def test_contains():
+def test_contains() raises:
     var str = "Hello world"
 
     assert_true(str.__contains__(""))
@@ -609,7 +586,7 @@ def test_contains():
     assert_true("below" not in str)
 
 
-def test_find():
+def test_find() raises:
     var str = "Hello world"
 
     assert_equal(0, str.find(""))
@@ -632,7 +609,7 @@ def test_find():
     assert_equal(-1, String("abc").find("abcd"))
 
 
-def test_replace():
+def test_replace() raises:
     # Replace empty
     var s1 = "abc"
     assert_equal("xaxbxc", s1.replace("", "x"))
@@ -652,7 +629,7 @@ def test_replace():
     assert_equal("a  complex test case with some spaces", s3.replace("  ", " "))
 
 
-def test_rfind():
+def test_rfind() raises:
     var s1 = "hello world"
     # Basic usage.
     assert_equal(s1.rfind("world"), 6)
@@ -680,7 +657,7 @@ def test_rfind():
     # assert_equal(String("🔥🔥").rfind("🔥"), 1)
 
 
-def test_split():
+def test_split() raises:
     comptime S = StaticString
 
     # Should add all whitespace-like chars as one
@@ -761,7 +738,7 @@ def test_split():
     assert_equal(S(",").join(S("123").split("")), ",1,2,3,")
 
 
-def test_splitlines():
+def test_splitlines() raises:
     comptime S = String
     comptime L = List[StaticString]
 
@@ -807,12 +784,12 @@ def test_splitlines():
     )
 
     # test \x85 \u2028 \u2029
-    var next_line = String(unsafe_from_utf8=Span[Byte]([0xC2, 0x85]))
+    var next_line = String(unsafe_from_utf8=Span([Byte(0xC2), 0x85]))
     var unicode_line_sep = String(
-        unsafe_from_utf8=Span[Byte]([0xE2, 0x80, 0xA8])
+        unsafe_from_utf8=Span([Byte(0xE2), 0x80, 0xA8])
     )
     var unicode_paragraph_sep = String(
-        unsafe_from_utf8=Span[Byte]([0xE2, 0x80, 0xA9])
+        unsafe_from_utf8=Span([Byte(0xE2), 0x80, 0xA9])
     )
 
     for u in [next_line^, unicode_line_sep^, unicode_paragraph_sep^]:
@@ -826,7 +803,7 @@ def test_splitlines():
         )
 
 
-def test_isspace():
+def test_isspace() raises:
     assert_false(String().isspace())
 
     # test all utf8 and unicode separators
@@ -865,7 +842,7 @@ def test_isspace():
         _ = sep
 
 
-def test_ascii_aliases():
+def test_ascii_aliases() raises:
     assert_true("a" in String.ASCII_LOWERCASE)
     assert_true("b" in String.ASCII_LOWERCASE)
     assert_true("y" in String.ASCII_LOWERCASE)
@@ -908,7 +885,7 @@ def test_ascii_aliases():
         assert_true(cp in String.PRINTABLE)
 
 
-def test_rstrip():
+def test_rstrip() raises:
     # with default rstrip chars
     var empty_string = String()
     assert_true(empty_string.rstrip() == "")
@@ -942,7 +919,7 @@ def test_rstrip():
     assert_true(str6.rstrip("Ò") == "eeeeÑ")
 
 
-def test_lstrip():
+def test_lstrip() raises:
     # with default lstrip chars
     var empty_string = String()
     assert_true(empty_string.lstrip() == "")
@@ -976,7 +953,7 @@ def test_lstrip():
     assert_true(str6.lstrip("Ò") == "Ñeeee")
 
 
-def test_strip():
+def test_strip() raises:
     # with default strip chars
     var empty_string = String()
     assert_true(empty_string.strip() == "")
@@ -1030,8 +1007,8 @@ def test_strip():
     assert_true(str6.strip("Ò") == "ÑeeeeÑ")
 
 
-def test_hash():
-    fn assert_hash_equals_literal_hash[s: StaticString]() raises:
+def test_hash() raises:
+    def assert_hash_equals_literal_hash[s: StaticString]() raises:
         assert_equal(hash(s), hash(String(s)))
 
     assert_hash_equals_literal_hash["a"]()
@@ -1049,7 +1026,7 @@ Pink: No! Darkness! (Pink is floating in the air)"""
     ]()
 
 
-def test_startswith():
+def test_startswith() raises:
     var str = "Hello world"
 
     assert_true(str.startswith("Hello"))
@@ -1060,7 +1037,7 @@ def test_startswith():
     assert_false(str.startswith("llo", 2, 3))
 
 
-def test_endswith():
+def test_endswith() raises:
     var str = "Hello world"
 
     assert_true(str.endswith(""))
@@ -1073,7 +1050,7 @@ def test_endswith():
     assert_false(str.endswith("llo", 2, 3))
 
 
-def test_removeprefix():
+def test_removeprefix() raises:
     assert_equal(StaticString("hello world").removeprefix(""), "hello world")
     assert_equal(StaticString("hello world").removeprefix("hello"), " world")
     assert_equal(
@@ -1085,7 +1062,7 @@ def test_removeprefix():
     )
 
 
-def test_removesuffix():
+def test_removesuffix() raises:
     assert_equal(StaticString("hello world").removesuffix(""), "hello world")
     assert_equal(StaticString("hello world").removesuffix("world"), "hello ")
     assert_equal(
@@ -1097,27 +1074,27 @@ def test_removesuffix():
     )
 
 
-def test_intable():
+def test_intable() raises:
     assert_equal(Int("123"), 123)
 
     with assert_raises():
         _ = Int("hi")
 
 
-def test_string_mul():
+def test_string_mul() raises:
     assert_equal("*" * 0, "")
     assert_equal("!" * 10, "!!!!!!!!!!")
     assert_equal("ab" * 5, "ababababab")
 
 
-def test_indexing():
+def test_indexing() raises:
     a = "abc"
-    assert_equal(a[byte=False], "a")
-    assert_equal(a[byte = Int(1)], "b")
+    assert_equal(a[byte=0], "a")
+    assert_equal(a[byte=Int(1)], "b")
     assert_equal(a[byte=2], "c")
 
 
-def test_string_codepoints_iter():
+def test_string_codepoints_iter() raises:
     var s = "abc"
     var iter = s.codepoints()
     assert_equal(iter.__next__(), Codepoint.ord("a"))
@@ -1127,7 +1104,7 @@ def test_string_codepoints_iter():
         _ = iter.__next__()  # raises StopIteration
 
 
-def test_string_char_slices_iter():
+def test_string_char_slices_iter() raises:
     var s0 = "abc"
     var s0_iter = s0.codepoint_slices()
     assert_true(s0_iter.__next__() == "a")
@@ -1139,7 +1116,7 @@ def test_string_char_slices_iter():
     var vs = "123"
 
     # Borrow immutably
-    fn conc(vs: String) -> String:
+    def conc(vs: String) -> String:
         var c = String()
         for v in vs.codepoint_slices():
             c += v
@@ -1223,7 +1200,7 @@ def test_string_char_slices_iter():
         assert_equal(rev[item_idx], concat)
 
 
-def test_format_args():
+def test_format_args() raises:
     with assert_raises(contains="Index -1 not in *args"):
         _ = String("{-1} {0}").format("First")
 
@@ -1252,7 +1229,7 @@ def test_format_args():
     var s = " {} , {} {} !".format("Hello", "Beautiful", "World")
     assert_equal(s, " Hello , Beautiful World !")
 
-    fn curly(c: StaticString) -> String:
+    def curly(c: StaticString) -> String:
         return "there is a single curly " + c + " left unclosed or unescaped"
 
     with assert_raises(contains=curly("{")):
@@ -1296,20 +1273,20 @@ def test_format_args():
 
     var vinput = "{} {}"
     var output = vinput.format("123", 456)
-    assert_equal(len(output), 7)
+    assert_equal(output.byte_length(), 7)
 
     var vinput2 = "{1}{0}"
     output = vinput2.format("123", 456)
-    assert_equal(len(output), 6)
+    assert_equal(output.byte_length(), 6)
     assert_equal(output, "456123")
 
     var vinput3 = "123"
     output = vinput3.format()
-    assert_equal(len(output), 3)
+    assert_equal(output.byte_length(), 3)
 
     var vinput4 = ""
     output = vinput4.format()
-    assert_equal(len(output), 0)
+    assert_equal(output.byte_length(), 0)
 
     var res = "🔥 Mojo ❤️‍🔥 Mojo 🔥"
     assert_equal("{0} {1} ❤️‍🔥 {1} {0}".format("🔥", "Mojo"), res)
@@ -1320,7 +1297,7 @@ def test_format_args():
     assert_equal("{0} {1} {0} {1}".format("{1}", "Mojo"), "{1} Mojo {1} Mojo")
 
 
-def test_format_conversion_flags():
+def test_format_conversion_flags() raises:
     assert_equal("{!r}".format(""), "''")
     var special_str = "a\nb\tc"
     assert_equal(
@@ -1417,7 +1394,7 @@ def test_format_conversion_flags():
         _ = String("{!r:d}").format(1)
 
 
-def test_float_conversion():
+def test_float_conversion() raises:
     # This is basically just a wrapper around atof which is
     # more throughouly tested above
     assert_equal(String("4.5").__float__(), 4.5)
@@ -1426,19 +1403,19 @@ def test_float_conversion():
         _ = Float64("not a float")
 
 
-def test_slice_contains():
+def test_slice_contains() raises:
     assert_true(StringSlice("hello world").__contains__("world"))
     assert_false(StringSlice("hello world").__contains__("not-found"))
 
 
-def test_reserve():
+def test_reserve() raises:
     var s = String()
     assert_equal(s.capacity(), 23)
     s.reserve(61)
     assert_equal(s.capacity(), 64)
 
 
-def test_resize():
+def test_resize() raises:
     var s = String()
     s.resize(100, 0)
     for c in s.codepoints():
@@ -1448,8 +1425,8 @@ def test_resize():
     assert_equal(s2, "😀")
 
 
-def test_uninit_ctor():
-    var hello_len = len("hello")
+def test_uninit_ctor() raises:
+    var hello_len = "hello".byte_length()
     var s = String(unsafe_uninit_length=hello_len)
     memcpy(
         dest=s.unsafe_ptr_mut(),
@@ -1471,66 +1448,70 @@ def test_uninit_ctor():
 
     var s3 = String()
     var long: StaticString = "hellohellohellohellohellohellohellohellohellohel"
-    s3.resize(unsafe_uninit_length=len(long))
-    memcpy(dest=s3.unsafe_ptr_mut(), src=long.unsafe_ptr(), count=len(long))
+    s3.resize(unsafe_uninit_length=long.byte_length())
+    memcpy(
+        dest=s3.unsafe_ptr_mut(),
+        src=long.unsafe_ptr(),
+        count=long.byte_length(),
+    )
     assert_equal(s3, long)
     assert_equal(s3._is_inline(), False)
 
 
-def test_as_c_string_slice_empty():
+def test_as_c_string_slice_empty() raises:
     var string = String()
     var cslice = string.as_c_string_slice()
-    assert_equal(len(string), 0)
+    assert_equal(string.byte_length(), 0)
     assert_true(string.capacity() > 0)
-    # Safe to index `len(string)` as this has a nul terminator
-    assert_equal(string.unsafe_ptr()[len(string)], 0)
+    # Safe to index `string.byte_length()` as this has a nul terminator
+    assert_equal(string.unsafe_ptr()[string.byte_length()], 0)
     assert_true(string.as_bytes() == cslice.as_bytes())
 
 
-def test_as_c_string_slice_inlined():
+def test_as_c_string_slice_inlined() raises:
     var string = String("a")
     var cslice = string.as_c_string_slice()
-    # Safe to index `len(string)` as this has a nul terminator
-    assert_equal(string.unsafe_ptr()[len(string)], 0)
+    # Safe to index `string.byte_length()` as this has a nul terminator
+    assert_equal(string.unsafe_ptr()[string.byte_length()], 0)
     assert_true(string.as_bytes() == cslice.as_bytes())
 
 
-def test_as_c_string_slice_heap():
+def test_as_c_string_slice_heap() raises:
     var string = String("abcdefghijlmnopqrstuvwxyz")
     var cslice = string.as_c_string_slice()
-    # Safe to index `len(string)` as this has a nul terminator
-    assert_equal(string.unsafe_ptr()[len(string)], 0)
+    # Safe to index `string.byte_length()` as this has a nul terminator
+    assert_equal(string.unsafe_ptr()[string.byte_length()], 0)
     assert_true(string.as_bytes() == cslice.as_bytes())
 
 
-def test_variadic_ctors():
+def test_variadic_ctors() raises:
     var s = String("message", 42, 42.2, True, sep=", ")
     assert_equal(s, "message, 42, 42.2, True")
 
     var s2 = String.write("message", 42, 42.2, True, sep=", ")
     assert_equal(s2, "message, 42, 42.2, True")
 
-    fn forward_variadic_pack[
+    def forward_variadic_pack[
         *Ts: Writable,
     ](*args: *Ts) -> String:
-        return String(args)
+        return String(*args)
 
     var s3 = forward_variadic_pack(1, ", ", 2.0, ", ", "three")
     assert_equal(s3, "1, 2.0, three")
 
 
-def test_sso():
+def test_sso() raises:
     # String literals are initially stored as indirect regardless of length
     var s = "hello"
     assert_equal(s.capacity(), 5)
-    assert_equal(len(s), 5)
+    assert_equal(s.byte_length(), 5)
     assert_equal(s._is_inline(), False)
     assert_equal(s._has_nul_terminator(), True)
     assert_equal(s.unsafe_ptr()[s.byte_length()], 0)
 
     # Adding a single char should remove the nul terminator and inline it.
     s += "f"
-    assert_equal(len(s), 6)
+    assert_equal(s.byte_length(), 6)
     assert_equal(s.capacity(), String.INLINE_CAPACITY)
     assert_equal(s._is_inline(), True)
     assert_equal(s._has_nul_terminator(), False)
@@ -1539,7 +1520,7 @@ def test_sso():
     # Test StringLiterals behave the same when above SSO capacity.
     comptime long = "hellohellohellohellohellohellohellohellohellohellohello"
     s = String(long)
-    assert_equal(len(s), 55)
+    assert_equal(s.byte_length(), 55)
     assert_equal(s.capacity(), 55)
     assert_equal(s._is_inline(), False)
     assert_equal(s._has_nul_terminator(), True)
@@ -1547,7 +1528,7 @@ def test_sso():
 
     # Modifying it should remove the nul terminator.
     s += "f"
-    assert_equal(len(s), 56)
+    assert_equal(s.byte_length(), 56)
     assert_true(s.capacity() >= 56)
     assert_equal(s._is_inline(), False)
     assert_equal(s._has_nul_terminator(), False)
@@ -1560,7 +1541,7 @@ def test_sso():
     assert_equal(s._has_nul_terminator(), False)
 
     s += "f" * String.INLINE_CAPACITY
-    assert_equal(len(s), String.INLINE_CAPACITY)
+    assert_equal(s.byte_length(), String.INLINE_CAPACITY)
     assert_equal(s.capacity(), String.INLINE_CAPACITY)
     assert_equal(s._is_inline(), True)
 
@@ -1589,35 +1570,34 @@ def test_sso():
     assert_equal(s._is_inline(), True)
 
 
-def test_copyinit():
+def test_copyinit() raises:
     comptime sizes = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
     assert_equal(len(sizes), 10)
     var test_current_size = 1
 
-    @parameter
-    for sizes_index in range(len(sizes)):
+    comptime for sizes_index in range(len(sizes)):
         comptime current_size = sizes[sizes_index]
         x = ""
         for i in range(current_size):
             x += String(i)[byte=0]
         y = x
         assert_equal(test_current_size, current_size)
-        assert_equal(len(y), current_size)
+        assert_equal(y.byte_length(), current_size)
         # TODO: check pointer equality?
         test_current_size *= 2
     assert_equal(test_current_size, 1024)
 
 
-def test_from_utf8_lossy():
+def test_from_utf8_lossy() raises:
     # Test empty byte span
     var empty = String(from_utf8_lossy=List[Byte]())
     assert_equal(empty, "")
-    assert_equal(len(empty), 0)
+    assert_equal(empty.byte_length(), 0)
 
     # Test single ASCII character
     var single_char = String(from_utf8_lossy=Span([Byte(0x41)]))
     assert_equal(single_char, "A")
-    assert_equal(len(single_char), 1)
+    assert_equal(single_char.byte_length(), 1)
 
     # Test valid 2-byte sequence
     var two_byte = String(from_utf8_lossy=Span([Byte(0xC2), 0xA9]))
@@ -1631,7 +1611,7 @@ def test_from_utf8_lossy():
     var four_byte = String(from_utf8_lossy=Span([Byte(0xF0), 0x9F, 0x94, 0xA5]))
     assert_equal(four_byte, "🔥")
 
-    fn replacement_bytes() -> List[Byte]:
+    def replacement_bytes() -> List[Byte]:
         # The byte sequence for the replacement character '�'
         return [Byte(0xEF), 0xBF, 0xBD]
 
@@ -1768,16 +1748,16 @@ def test_from_utf8_lossy():
     )
 
 
-def test_from_utf8():
+def test_from_utf8() raises:
     # Test empty byte span
     var empty = String(from_utf8=List[Byte]())
     assert_equal(empty, "")
-    assert_equal(len(empty), 0)
+    assert_equal(empty.byte_length(), 0)
 
     # Test single ASCII character
     var single_char = String(from_utf8=Span([Byte(0x41)]))
     assert_equal(single_char, "A")
-    assert_equal(len(single_char), 1)
+    assert_equal(single_char.byte_length(), 1)
 
     # Test valid 4-byte sequence
     var four_byte = String(from_utf8=Span([Byte(0xF0), 0x9F, 0x94, 0xA5]))
@@ -1803,7 +1783,7 @@ def test_from_utf8():
             _ = String(from_utf8=Span(sequence))
 
 
-def test_append_codepoint():
+def test_append_codepoint() raises:
     var s = String()
     s.append(Codepoint.ord("a"))
     assert_equal(s, "a")
@@ -1818,5 +1798,5 @@ def test_append_codepoint():
     assert_equal(s.byte_length(), 8)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

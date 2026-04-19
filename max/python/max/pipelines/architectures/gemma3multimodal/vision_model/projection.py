@@ -23,8 +23,8 @@ from max.graph import (
     ops,
 )
 from max.graph.ops import avg_pool2d
-from max.nn.legacy.layer import Module, Shardable
-from max.nn.legacy.linear import Linear
+from max.nn.layer import Module, Shardable
+from max.nn.linear import Linear
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 
 from ..model_config import Gemma3ForConditionalGenerationConfig

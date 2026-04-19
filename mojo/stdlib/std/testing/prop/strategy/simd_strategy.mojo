@@ -10,13 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the SIMD strategy for generating random `SIMD` values in property tests."""
 
-from testing.prop.random import Rng
+from std.testing.prop.random import Rng
 
 
 __extension SIMD:
     @staticmethod
-    fn strategy(
+    def strategy(
         *,
         min: Scalar[dtype] = Scalar[dtype].MIN_FINITE,
         max: Scalar[dtype] = Scalar[dtype].MAX_FINITE,
@@ -39,7 +40,7 @@ struct _SIMDStrategy[dtype: DType, size: Int](Movable, Strategy):
     var _min: Scalar[Self.dtype]
     var _max: Scalar[Self.dtype]
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         min: Scalar[Self.dtype] = Scalar[Self.dtype].MIN_FINITE,
@@ -50,11 +51,10 @@ struct _SIMDStrategy[dtype: DType, size: Int](Movable, Strategy):
 
     # TODO: Provide better more consistent "corner case" values
     # e.g. 0, -1, 1, max, min, max-1, min+1, etc...
-    fn value(mut self, mut rng: Rng) raises -> Self.Value:
+    def value(mut self, mut rng: Rng) raises -> Self.Value:
         var result = SIMD[Self.dtype, Self.size](0)
 
-        @parameter
-        for i in range(Self.size):
+        comptime for i in range(Self.size):
             result[i] = rng.rand_scalar[Self.dtype](
                 min=self._min, max=self._max
             )

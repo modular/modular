@@ -27,7 +27,6 @@ def load_weights_to_hf_merger(
     weights: dict[str, torch.Tensor],
 ) -> None:
     """Load weights into HuggingFace merger."""
-    device = weights["norm.weight"].device
     # Load norm weights
     hf_merger.norm.weight.data = weights["norm.weight"].cuda()
     hf_merger.norm.bias.data = weights["norm.bias"].cuda()

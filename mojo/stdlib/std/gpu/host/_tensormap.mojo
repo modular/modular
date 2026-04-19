@@ -11,11 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from ffi import external_call
-from sys import size_of
-from gpu.host import DeviceBuffer
-from gpu.host.device_context import _checked, _ConstCharPtr, _DeviceBufferPtr
-from utils import IndexList, StaticTuple
+from std.ffi import external_call
+from std.sys import size_of
+from std.gpu.host import DeviceBuffer
+from std.gpu.host.device_context import (
+    _checked,
+    _CString,
+    _DeviceBufferPtr,
+)
+from std.utils import IndexList, StaticTuple
 
 
 @fieldwise_init("implicit")
@@ -41,7 +45,7 @@ struct DataType(TrivialRegisterPassable):
     comptime TFLOAT32_FTZ = Self(12)
 
     @staticmethod
-    fn from_dtype[dtype: DType]() -> Self:
+    def from_dtype[dtype: DType]() -> Self:
         """
         Convert a DType to a DataType enum value.
 
@@ -60,8 +64,7 @@ struct DataType(TrivialRegisterPassable):
             DType.float8_e8m0fnu,
         ), "Unsupported dtype"
 
-        @parameter
-        if dtype == DType.float32:
+        comptime if dtype == DType.float32:
             return Self.FLOAT32
         elif dtype == DType.float16:
             return Self.FLOAT16
@@ -91,7 +94,6 @@ struct SwizzleMode(
     Equatable,
     ImplicitlyCopyable,
     Intable,
-    Stringable,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -110,7 +112,7 @@ struct SwizzleMode(
     comptime _128B = Self(3)
 
     @always_inline("nodebug")
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """Convert SwizzleMode to integer representation.
 
         Returns:
@@ -119,7 +121,7 @@ struct SwizzleMode(
         return Int(self._value)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Check equality between two SwizzleMode instances.
 
         Args:
@@ -131,7 +133,7 @@ struct SwizzleMode(
         return self._value == other._value
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Check inequality between two SwizzleMode instances.
 
         Args:
@@ -143,7 +145,7 @@ struct SwizzleMode(
         return self._value != other._value
 
     @always_inline
-    fn bytes(self) -> Int:
+    def bytes(self) -> Int:
         """Get the swizzle size in bytes.
 
         Returns:
@@ -155,17 +157,8 @@ struct SwizzleMode(
         """
         return Int((2**self._value) * 16)
 
-    @no_inline
-    fn __str__(self) -> String:
-        """Convert SwizzleMode to string representation.
-
-        Returns:
-            A human-readable string describing the swizzle mode.
-        """
-        return String.write(self)
-
     @always_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write a human-readable representation of the SwizzleMode to a writer.
 
         Args:
@@ -232,7 +225,7 @@ struct TensorMap(ImplicitlyCopyable):
     """The underlying 128-byte opaque descriptor data filled by the CUDA driver API."""
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize an empty TensorMap descriptor.
 
         Creates a zero-initialized 128-byte tensor map descriptor.
@@ -242,17 +235,17 @@ struct TensorMap(ImplicitlyCopyable):
         self.data = StaticTuple[UInt8, 128]()
 
     @always_inline
-    fn __copyinit__(out self, other: Self):
+    def __init__(out self, *, copy: Self):
         """Copy constructor for TensorMap.
 
         Args:
-            other: The TensorMap instance to copy from.
+            copy: The TensorMap instance to copy from.
         """
-        self.data = other.data
+        self.data = copy.data
 
 
 @always_inline
-fn create_tensormap[
+def create_tensormap[
     dtype: DType,
     rank: Int,
     //,
@@ -307,8 +300,7 @@ fn create_tensormap[
     # goes from the least rapidly varying dim to the highest. Here we inverse the
     # inputs for the tensormap constructor arguments.
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         global_dim_arg[i] = Int64(global_shape[rank - i - 1])
         global_strides_arg[i] = Int64(
             global_strides[rank - i - 1] * size_of[dtype]()
@@ -335,11 +327,11 @@ fn create_tensormap[
     _checked(
         external_call[
             "AsyncRT_cuda_tensorMapEncodeTiled",
-            _ConstCharPtr,
+            _CString[],
             OpaquePointer[MutAnyOrigin],  # tensorMap
             Int32,  # tensorDataType
             Int32,  # tensorRank
-            _DeviceBufferPtr,  #  globalAddress
+            type_of(global_buf._handle),  #  globalAddress
             UnsafePointer[Int64, MutAnyOrigin],  # globalDim
             UnsafePointer[Int64, MutAnyOrigin],  # globalStrides
             UnsafePointer[Int32, MutAnyOrigin],  # boxDim
@@ -369,7 +361,7 @@ fn create_tensormap[
 
 
 @always_inline
-fn create_tensormap_im2col[
+def create_tensormap_im2col[
     dtype: DType,
     rank: Int,
     spatial_rank: Int,
@@ -438,16 +430,14 @@ fn create_tensormap_im2col[
     var element_stride_arg = InlineArray[Int32, rank](fill=1)
 
     # Reverse dimension order for TMA API (CWHDN from NHWC)
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         global_dim_arg[i] = Int64(global_shape[rank - i - 1])
         global_strides_arg[i] = Int64(
             global_strides[rank - i - 1] * size_of[dtype]()
         )
 
     # Reverse spatial corners (W, H, D from D, H, W or H, W)
-    @parameter
-    for i in range(spatial_rank):
+    comptime for i in range(spatial_rank):
         lower_corner_arg[i] = Int32(lower_corner[spatial_rank - i - 1])
         upper_corner_arg[i] = Int32(upper_corner[spatial_rank - i - 1])
 
@@ -455,22 +445,7 @@ fn create_tensormap_im2col[
     _checked(
         external_call[
             "AsyncRT_cuda_tensorMapEncodeIm2col",
-            _ConstCharPtr,
-            OpaquePointer[MutAnyOrigin],  # tensorMap
-            Int32,  # tensorDataType
-            Int32,  # tensorRank
-            _DeviceBufferPtr,  # globalAddress
-            UnsafePointer[Int64, MutAnyOrigin],  # globalDim
-            UnsafePointer[Int64, MutAnyOrigin],  # globalStrides
-            UnsafePointer[Int32, MutAnyOrigin],  # pixelBoxLowerCorner
-            UnsafePointer[Int32, MutAnyOrigin],  # pixelBoxUpperCorner
-            Int32,  # channelsPerPixel
-            Int32,  # pixelsPerColumn
-            UnsafePointer[Int32, MutAnyOrigin],  # elementStrides
-            Int32,  # interleave
-            Int32,  # swizzle
-            Int32,  # l2Promotion
-            Int32,  # oobFill
+            _CString[],
         ](
             tensormap_ptr,
             DataType.from_dtype[dtype]()._value,

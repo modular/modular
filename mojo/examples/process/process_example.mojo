@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List, Optional
-from os import Process
-from sys._libc import SignalCodes
-from time import sleep
+from std.collections import List, Optional
+from std.os import Process
+from std.sys._libc import SignalCodes
+from std.time import sleep
 
 
-fn test_long_running_process_wait() raises:
+def test_long_running_process_wait() raises:
     print("== Test: Wait for a long-running process ==")
 
     var command = "sleep"
@@ -36,7 +36,7 @@ fn test_long_running_process_wait() raises:
         print("Process terminated by signal:", status.term_signal.value())
 
 
-fn test_long_running_process_poll() raises:
+def test_long_running_process_poll() raises:
     print("== Test: Poll a long-running process ==")
 
     var command = "sleep"
@@ -59,7 +59,7 @@ fn test_long_running_process_poll() raises:
         print("Process terminated by signal:", status.term_signal.value())
 
 
-fn test_interrupt_process() raises:
+def test_interrupt_process() raises:
     print("== Test: Interrupt a process (SIGINT) ==")
 
     var command = "sleep"
@@ -87,7 +87,7 @@ fn test_interrupt_process() raises:
         print("Process finished with exit code:", status.exit_code.value())
 
 
-fn test_kill_process() raises:
+def test_kill_process() raises:
     print("== Test: Kill a process (SIGKILL) ==")
 
     var command = "sleep"
@@ -115,7 +115,7 @@ fn test_kill_process() raises:
         print("Process finished with exit code:", status.exit_code.value())
 
 
-fn main() raises:
+def main() raises:
     test_long_running_process_wait()
     print("\n--------------------\n")
     test_long_running_process_poll()

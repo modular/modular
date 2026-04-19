@@ -22,7 +22,7 @@ import torch.nn.functional as F
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy import LayerNorm
+from max.nn import LayerNorm
 from test_common.distance_metrics import is_euclidean_distance_close
 from test_common.ndarray_from_tensor_type import ndarray_from_tensor_type
 

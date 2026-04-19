@@ -26,14 +26,9 @@ TODO E2EOPT-116: Port block_pool.py and block_utils.py to Mojo
 from __future__ import annotations
 
 import logging
-import multiprocessing
 
+from max.kv_cache.memory_tier import MemoryTier
 from max.profiler import traced
-from max.serve.kvcache_agent.kvcache_agent import KVCacheChangeMessage
-from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
-    MemoryTier,
-    UpdateType,
-)
 
 from .block_utils import FreeKVCacheBlockQueue, KVCacheBlock
 
@@ -41,6 +36,8 @@ logger = logging.getLogger("max.pipelines")
 
 
 class BlockPool:
+    """A pool of fixed-size memory blocks for the paged KV cache."""
+
     @traced
     def __init__(
         self,
@@ -71,11 +68,6 @@ class BlockPool:
         # be evicted.
         self.hash_to_committed_block: dict[int, KVCacheBlock] = {}
 
-        # Queue for the KV Cache Agent updates
-        self.kv_cache_agent_queue: (
-            multiprocessing.Queue[KVCacheChangeMessage] | None
-        ) = None
-
     @traced
     def commit_into_prefix_cache(
         self,
@@ -87,22 +79,7 @@ class BlockPool:
         block.block_hash = block_hash
 
         # Commit the block into the prefix cache.
-        hash_value = block_hash
-        self.hash_to_committed_block[hash_value] = block
-
-        if self.kv_cache_agent_queue is None:
-            return
-
-        logger.debug(
-            f"Updating KV Cache Agent with block {hash_value}, memory tier {self.memory_tier}, update type {UpdateType.UPDATE_TYPE_ADDED}"
-        )
-        self.kv_cache_agent_queue.put_nowait(
-            KVCacheChangeMessage(
-                cache_id=str(hash_value),
-                memory_tier=self.memory_tier,
-                update_type=UpdateType.UPDATE_TYPE_ADDED,
-            )
-        )
+        self.hash_to_committed_block[block_hash] = block
 
     def get_or_commit_into_prefix_cache(
         self,
@@ -147,25 +124,9 @@ class BlockPool:
         del self.hash_to_committed_block[hash_value]
         block.block_hash = None
 
-        if self.kv_cache_agent_queue is None:
-            return
-
-        # Notify KV Cache Agent of update
-        logger.debug(
-            f"Updating KV Cache Agent with block {hash_value}, memory tier {self.memory_tier}, update type {UpdateType.UPDATE_TYPE_ADDED}"
-        )
-        self.kv_cache_agent_queue.put_nowait(
-            KVCacheChangeMessage(
-                cache_id=str(hash_value),
-                memory_tier=self.memory_tier,
-                update_type=UpdateType.UPDATE_TYPE_REMOVED,
-            )
-        )
-
     @traced
     def alloc_block(self) -> tuple[KVCacheBlock, int | None]:
-        """Allocate a block from the free block queue."""
-
+        """Allocates a block from the free block queue."""
         # First allocate block
         curr_block = self.free_block_queue.popleft()
         assert curr_block.ref_cnt == 0
@@ -182,12 +143,11 @@ class BlockPool:
 
     @traced
     def free_block(self, block: KVCacheBlock) -> None:
-        """Free a block by decreasing its reference count.
+        """Frees a block by decreasing its reference count.
 
         If the reference count is 0, the block is added to the free block queue.
-
-        Note that a block can be in both the prefix cache and the free block
-        queue at the same time.
+        A block can be in both the prefix cache and the free block queue at the
+        same time.
         """
         block.ref_cnt -= 1
         assert block.ref_cnt >= 0
@@ -196,9 +156,9 @@ class BlockPool:
 
     @traced
     def touch(self, block: KVCacheBlock) -> None:
-        """Touching a block increases its reference count by 1, and may remove
-        the block from the free queue. This is used when a block is hit by
-        another request with the same prefix.
+        """Increases the block's reference count by 1 and may remove it from the free queue.
+
+        Used when a block is hit by another request with the same prefix.
         """
         # ref_cnt=0 means this block is in the free list (i.e. eviction
         # candidate), so remove it.
@@ -227,9 +187,7 @@ class BlockPool:
 
     @traced
     def assert_runtime_invariants(self, active_bids: list[int]) -> None:
-        """If runtime checks are enabled, assert that the runtime checks are
-        correct.
-        """
+        """Asserts runtime invariants when runtime checks are enabled."""
         if not self.enable_runtime_checks:
             return
 

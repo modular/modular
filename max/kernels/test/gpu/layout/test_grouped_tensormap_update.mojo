@@ -32,27 +32,27 @@ This pattern is based on NVIDIA CuTe DSL's grouped block-scaled GEMM which uses
 `tensormap.replace.tile.global_address` PTX instructions for dynamic updates.
 """
 
-from sys import size_of
+from std.sys import size_of
 
-from gpu import barrier, WARP_SIZE
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
-from gpu import block_idx, thread_idx, lane_id
-from gpu.sync import syncwarp
+from std.gpu import barrier
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TMADescriptor
+from std.gpu import block_idx, thread_idx
+from std.gpu.sync import syncwarp
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_sram_to_dram
 from layout.tma_async import (
+    _idx_product,
     create_tensor_tile,
     SharedMemBarrier,
     TMATensorTile,
     TMATensorTileArray,
 )
-from memory import stack_allocation, UnsafePointer
-from testing import assert_equal
+from std.memory import stack_allocation, UnsafePointer
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # =============================================================================
@@ -62,28 +62,29 @@ from utils.index import Index, IndexList
 
 @__llvm_arg_metadata(template_tma_a, `nvvm.grid_constant`)
 @__llvm_arg_metadata(template_tma_b, `nvvm.grid_constant`)
-fn test_grouped_tensormap_update_kernel[
+def test_grouped_tensormap_update_kernel[
     dtype: DType,
     num_groups: Int,
     num_blocks: Int,
-    tile_layout: Layout,
-    desc_layout: Layout,
+    tma_rank: Int,
+    tile_shape: IndexList[tma_rank],
+    desc_shape: IndexList[tma_rank],
     thread_layout: Layout,
 ](
     # Output: concatenated results from all groups
     dst_a: LayoutTensor[
         dtype,
         Layout.row_major(
-            num_groups * tile_layout.shape[0].value(),
-            tile_layout.shape[1].value(),
+            num_groups * tile_shape[0],
+            tile_shape[1],
         ),
         MutAnyOrigin,
     ],
     dst_b: LayoutTensor[
         dtype,
         Layout.row_major(
-            num_groups * tile_layout.shape[0].value(),
-            tile_layout.shape[1].value(),
+            num_groups * tile_shape[0],
+            tile_shape[1],
         ),
         MutAnyOrigin,
     ],
@@ -95,14 +96,14 @@ fn test_grouped_tensormap_update_kernel[
         DType.uint64, Layout.row_major(num_groups, 1), MutAnyOrigin
     ],
     # Template TMA descriptor (grid constant, for SMEM init)
-    template_tma_a: TMATensorTile[dtype, tile_layout, desc_layout],
-    template_tma_b: TMATensorTile[dtype, tile_layout, desc_layout],
+    template_tma_a: TMATensorTile[dtype, tma_rank, tile_shape, desc_shape],
+    template_tma_b: TMATensorTile[dtype, tma_rank, tile_shape, desc_shape],
     # Per-block GMEM tensormaps (TMATensorTileArray)
     device_tma_a: TMATensorTileArray[
-        num_blocks, dtype, tile_layout, desc_layout
+        num_blocks, dtype, tma_rank, tile_shape, desc_shape
     ],
     device_tma_b: TMATensorTileArray[
-        num_blocks, dtype, tile_layout, desc_layout
+        num_blocks, dtype, tma_rank, tile_shape, desc_shape
     ],
 ):
     """Kernel that updates 2 tensormaps for each group and loads data.
@@ -113,16 +114,19 @@ fn test_grouped_tensormap_update_kernel[
     3. Load A and B tiles using block's GMEM tensormaps
     4. Store results to output for verification
     """
-    comptime M = tile_layout.shape[0].value()
-    comptime N = tile_layout.shape[1].value()
-    comptime expected_bytes = tile_layout.size() * size_of[dtype]()
+    comptime M = tile_shape[0]
+    comptime N = tile_shape[1]
+    comptime tile_layout = Layout.row_major(M, N)
+    comptime expected_bytes = _idx_product[tma_rank, tile_shape]() * size_of[
+        dtype
+    ]()
 
     # Allocate SMEM for tiles
     tile_a = LayoutTensor[
         dtype,
         tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -130,21 +134,21 @@ fn test_grouped_tensormap_update_kernel[
         dtype,
         tile_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     # Allocate SMEM for tensormap descriptors
     var smem_desc_a = stack_allocation[
-        1, TMADescriptor, alignment=128, address_space = AddressSpace.SHARED
+        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
     ]()
     var smem_desc_b = stack_allocation[
-        1, TMADescriptor, alignment=128, address_space = AddressSpace.SHARED
+        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
     ]()
 
     # Allocate barriers
     var mbar = stack_allocation[
-        2, SharedMemBarrier, address_space = AddressSpace.SHARED, alignment=8
+        2, SharedMemBarrier, address_space=AddressSpace.SHARED, alignment=8
     ]()
 
     barrier()  # Initial sync before entering loop
@@ -161,8 +165,8 @@ fn test_grouped_tensormap_update_kernel[
         barrier()
 
         # ===== Step 1: Acquire fence on block's GMEM tensormaps =====
-        device_tma_a[Int(block_idx.x)][].tensormap_fence_acquire()
-        device_tma_b[Int(block_idx.x)][].tensormap_fence_acquire()
+        device_tma_a[block_idx.x][].tensormap_fence_acquire()
+        device_tma_b[block_idx.x][].tensormap_fence_acquire()
 
         # ===== Step 2: Update SMEM descriptors with group's pointers =====
         if thread_idx.x == 0:
@@ -179,12 +183,12 @@ fn test_grouped_tensormap_update_kernel[
 
             # Update SMEM tensormaps with new addresses
             device_tma_a[
-                Int(block_idx.x)
+                block_idx.x
             ][].replace_tensormap_global_address_in_shared_mem(
                 smem_desc_a, a_ptr
             )
             device_tma_b[
-                Int(block_idx.x)
+                block_idx.x
             ][].replace_tensormap_global_address_in_shared_mem(
                 smem_desc_b, b_ptr
             )
@@ -193,8 +197,8 @@ fn test_grouped_tensormap_update_kernel[
         syncwarp()
 
         # ===== Step 3: Fence release copies SMEM -> GMEM =====
-        device_tma_a[Int(block_idx.x)][].tensormap_cp_fence_release(smem_desc_a)
-        device_tma_b[Int(block_idx.x)][].tensormap_cp_fence_release(smem_desc_b)
+        device_tma_a[block_idx.x][].tensormap_cp_fence_release(smem_desc_a)
+        device_tma_b[block_idx.x][].tensormap_cp_fence_release(smem_desc_b)
 
         barrier()
 
@@ -204,9 +208,9 @@ fn test_grouped_tensormap_update_kernel[
             mbar[1].expect_bytes(Int32(expected_bytes))
 
             # Load A tile using block's GMEM tensormap
-            device_tma_a[Int(block_idx.x)][].async_copy(tile_a, mbar[0], (0, 0))
+            device_tma_a[block_idx.x][].async_copy(tile_a, mbar[0], (0, 0))
             # Load B tile using block's GMEM tensormap
-            device_tma_b[Int(block_idx.x)][].async_copy(tile_b, mbar[1], (0, 0))
+            device_tma_b[block_idx.x][].async_copy(tile_b, mbar[1], (0, 0))
 
         barrier()
         mbar[0].wait()
@@ -225,7 +229,7 @@ fn test_grouped_tensormap_update_kernel[
 def test_grouped_tensormap_update[
     num_groups: Int,
     tile_shape: IndexList[2],
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     """Test updating 2 tensormaps in a loop simulating group iteration.
 
     Creates num_groups sets of A, B tensors with distinct data.
@@ -282,22 +286,19 @@ def test_grouped_tensormap_update[
     a_ptrs_host[0, 0] = ptr_a0
     b_ptrs_host[0, 0] = ptr_b0
 
-    @parameter
-    if num_groups >= 2:
+    comptime if num_groups >= 2:
         var ptr_a1 = UInt64(Int(src_a1.device_tensor().ptr))
         var ptr_b1 = UInt64(Int(src_b1.device_tensor().ptr))
         a_ptrs_host[1, 0] = ptr_a1
         b_ptrs_host[1, 0] = ptr_b1
 
-    @parameter
-    if num_groups >= 3:
+    comptime if num_groups >= 3:
         var ptr_a2 = UInt64(Int(src_a2.device_tensor().ptr))
         var ptr_b2 = UInt64(Int(src_b2.device_tensor().ptr))
         a_ptrs_host[2, 0] = ptr_a2
         b_ptrs_host[2, 0] = ptr_b2
 
-    @parameter
-    if num_groups >= 4:
+    comptime if num_groups >= 4:
         var ptr_a3 = UInt64(Int(src_a3.device_tensor().ptr))
         var ptr_b3 = UInt64(Int(src_b3.device_tensor().ptr))
         a_ptrs_host[3, 0] = ptr_a3
@@ -322,49 +323,54 @@ def test_grouped_tensormap_update[
     )
 
     # Create GMEM tensormap arrays (one entry per block)
-    var device_tensormaps_a = ctx.enqueue_create_buffer[DType.uint8](
-        128 * num_blocks
+    comptime tensormap_layout = Layout.row_major(128 * num_blocks)
+    var device_tensormaps_a = ManagedLayoutTensor[
+        DType.uint8, tensormap_layout
+    ](
+        ctx,
     )
-    var device_tensormaps_b = ctx.enqueue_create_buffer[DType.uint8](
-        128 * num_blocks
+    var device_tensormaps_b = ManagedLayoutTensor[
+        DType.uint8, tensormap_layout
+    ](
+        ctx,
     )
 
     var tma_array_a = TMATensorTileArray[
         num_blocks,
         type_of(template_tma_a).dtype,
-        type_of(template_tma_a).layout,
-        type_of(template_tma_a).desc_layout,
-    ](device_tensormaps_a)
+        type_of(template_tma_a).rank,
+        type_of(template_tma_a).tile_shape,
+        type_of(template_tma_a).desc_shape,
+    ](device_tensormaps_a.device_data.value())
 
     var tma_array_b = TMATensorTileArray[
         num_blocks,
         type_of(template_tma_b).dtype,
-        type_of(template_tma_b).layout,
-        type_of(template_tma_b).desc_layout,
-    ](device_tensormaps_b)
+        type_of(template_tma_b).rank,
+        type_of(template_tma_b).tile_shape,
+        type_of(template_tma_b).desc_shape,
+    ](device_tensormaps_b.device_data.value())
 
     # Initialize all block tensormaps from templates
-    var tensormaps_host_a = stack_allocation[num_blocks * 128, UInt8]()
-    var tensormaps_host_b = stack_allocation[num_blocks * 128, UInt8]()
+    var tensormaps_host_a = device_tensormaps_a.tensor[update=False]()
+    var tensormaps_host_b = device_tensormaps_b.tensor[update=False]()
 
-    @parameter
-    for blk in range(num_blocks):
+    comptime for blk in range(num_blocks):
         for j in range(128):
             tensormaps_host_a[blk * 128 + j] = template_tma_a.descriptor.data[j]
             tensormaps_host_b[blk * 128 + j] = template_tma_b.descriptor.data[j]
 
-    ctx.enqueue_copy(device_tensormaps_a, tensormaps_host_a)
-    ctx.enqueue_copy(device_tensormaps_b, tensormaps_host_b)
-
-    ctx.synchronize()
+    _ = device_tensormaps_a.device_tensor()
+    _ = device_tensormaps_b.device_tensor()
 
     # Launch kernel
     comptime kernel = test_grouped_tensormap_update_kernel[
         DType.float32,
         num_groups,
         num_blocks,
-        type_of(template_tma_a).layout,
-        type_of(template_tma_a).desc_layout,
+        type_of(template_tma_a).rank,
+        type_of(template_tma_a).tile_shape,
+        type_of(template_tma_a).desc_shape,
         tile_layout,  # thread_layout for copy
     ]
 
@@ -440,21 +446,9 @@ def test_grouped_tensormap_update[
         print("  FAILED:", errors, "mismatches")
 
     # Cleanup
-    _ = dst_a^
-    _ = dst_b^
-    _ = a_ptrs^
-    _ = b_ptrs^
-    _ = src_a0^
-    _ = src_b0^
-    _ = src_a1^
-    _ = src_b1^
-    _ = src_a2^
-    _ = src_b2^
-    _ = src_a3^
-    _ = src_b3^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("=" * 60)
         print("Test: Grouped TensorMap Update Pattern")
@@ -471,28 +465,28 @@ def main():
         print("Test 0: 1 group, 8x4 tiles (sanity check)")
         test_grouped_tensormap_update[
             num_groups=1,
-            tile_shape = Index(8, 4),
+            tile_shape=Index(8, 4),
         ](ctx)
 
         print()
         print("Test 1: 2 groups, 8x4 tiles")
         test_grouped_tensormap_update[
             num_groups=2,
-            tile_shape = Index(8, 4),
+            tile_shape=Index(8, 4),
         ](ctx)
 
         print()
         print("Test 2: 4 groups, 8x4 tiles")
         test_grouped_tensormap_update[
             num_groups=4,
-            tile_shape = Index(8, 4),
+            tile_shape=Index(8, 4),
         ](ctx)
 
         print()
         print("Test 3: 4 groups, 16x4 tiles")
         test_grouped_tensormap_update[
             num_groups=4,
-            tile_shape = Index(16, 4),
+            tile_shape=Index(16, 4),
         ](ctx)
 
         print()

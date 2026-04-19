@@ -12,11 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
-from layout._coord import Coord, Idx, coord
-from layout._layout import Layout, row_major
-from layout._tile_tensor import TileTensor
+from layout import Coord, TileTensor, row_major
 from nn.rope import rope_ragged
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
@@ -24,10 +22,10 @@ from testdata.fused_qk_rope_goldens import (
     q_out_golden,
 )
 
-from utils import IndexList
+from std.utils import IndexList
 
 
-def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
+def test_rope_ragged[rope_dim: Int, dtype: DType]() raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
     comptime assert (
         dtype == DType.float32
@@ -41,8 +39,8 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
     comptime max_seq_len = 16
     comptime num_layers = 1
 
-    fn _max[dtype: DType](items: List[Scalar[dtype]]) -> Scalar[dtype]:
-        debug_assert(len(items) > 0, "empty list in _max")
+    def _max[dtype: DType](items: List[Scalar[dtype]]) -> Scalar[dtype]:
+        assert len(items) > 0, "empty list in _max"
         var max_item = items[0]
 
         for i in range(1, len(items)):
@@ -50,10 +48,9 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
                 max_item = items[i]
         return max_item
 
-    debug_assert(
-        max_seq_len > (seq_len + Int(_max[DType.uint32](start_positions))),
-        "KV cache size smaller than sum of sequence length and start pos",
-    )
+    assert max_seq_len > (
+        seq_len + Int(_max[DType.uint32](start_positions))
+    ), "KV cache size smaller than sum of sequence length and start pos"
     comptime num_heads = 2
     comptime dim = 16
     comptime head_dim = dim // num_heads
@@ -73,9 +70,7 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
     )
     ctx.synchronize()
     q_buffer = q_input[dtype]()
-    debug_assert(
-        len(q_buffer) == batch_size * seq_len * dim, "invalid q_buffer init"
-    )
+    assert len(q_buffer) == batch_size * seq_len * dim, "invalid q_buffer init"
 
     # Copy data from golden buffer to host buffer
     for i in range(len(q_buffer)):
@@ -100,10 +95,9 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
     )
     ctx.synchronize()
     freqs_cis_table_buffer = freqs_cis_table_input[dtype]()
-    debug_assert(
-        len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim,
-        "invalid freqs_cis_table init",
-    )
+    assert (
+        len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim
+    ), "invalid freqs_cis_table init"
 
     # Copy the roped dimensions from the buffer to the host buffer
     for seq_idx in range(max_seq_len):
@@ -123,10 +117,9 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
     )
     ctx.synchronize()
     expected_q_out_buffer = q_out_golden[dtype]()
-    debug_assert(
-        len(expected_q_out_buffer) == len(q_buffer),
-        "invalid expected q out init",
-    )
+    assert len(expected_q_out_buffer) == len(
+        q_buffer
+    ), "invalid expected q out init"
     for i in range(len(expected_q_out_buffer)):
         expected_q_out_host_buffer[i] = expected_q_out_buffer[i]
     var expected_q_out_tensor = TileTensor(expected_q_out_host_buffer, q_layout)
@@ -151,7 +144,7 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
     var start_pos_tensor = TileTensor(start_pos_host_buffer, start_pos_layout)
 
     @always_inline
-    fn output_fn[
+    def output_fn[
         width: Int, alignment: Int
     ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
         q_out_tensor.store[width=width](Coord(idx), val)
@@ -160,7 +153,7 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
         dtype,
         dtype,
         interleaved=True,
-        target = StaticString("cpu"),
+        target=StaticString("cpu"),
         output_fn=output_fn,
     ](
         x=q_tensor,
@@ -181,22 +174,29 @@ def test_rope_ragged[rope_dim: Int, dtype: DType]() -> None:
                     + head_idx * head_dim  # head offset
                 )
                 # Verify unroped region: First (head_dim - rope_dim) elements should remain unchanged
+                var unroped_len = head_dim - rope_dim
                 assert_almost_equal(
-                    q_out_host_buffer.unsafe_ptr() + base_offset,
-                    q_host_buffer.unsafe_ptr() + base_offset,
-                    head_dim - rope_dim,
+                    q_out_host_buffer.as_span()[
+                        base_offset : base_offset + unroped_len
+                    ],
+                    q_host_buffer.as_span()[
+                        base_offset : base_offset + unroped_len
+                    ],
                 )
 
                 # Verify roped region: Last rope_dim elements should match expected output
                 roped_offset = base_offset + (head_dim - rope_dim)
                 assert_almost_equal(
-                    q_out_host_buffer.unsafe_ptr() + roped_offset,
-                    expected_q_out_host_buffer.unsafe_ptr() + roped_offset,
-                    rope_dim,
+                    q_out_host_buffer.as_span()[
+                        roped_offset : roped_offset + rope_dim
+                    ],
+                    expected_q_out_host_buffer.as_span()[
+                        roped_offset : roped_offset + rope_dim
+                    ],
                 )
 
 
-def main() -> None:
+def main() raises -> None:
     # Full head RoPE - this works correctly and is production ready
     print("Full head RoPE")
     test_rope_ragged[8, DType.float32]()

@@ -10,14 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides mathematical helper functions for numerical testing."""
 
 
-from builtin.dtype import _integral_type_of
-from memory import bitcast
-from sys import bit_width_of
+from std.builtin.dtype import _integral_type_of
+from std.memory import bitcast
+from std.sys import bit_width_of
 
 
-fn ulp_distance[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Int:
+def ulp_distance[dtype: DType](a: Scalar[dtype], b: Scalar[dtype]) -> Int:
     """Computes the distance between two floating-point values in ULPs.
 
     ULP (Unit in the Last Place) distance measures how many representable

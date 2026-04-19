@@ -20,7 +20,7 @@ from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.kernels import (
+from max.nn.kernels import (
     sgmv_kernel,
 )
 from torch.utils.dlpack import from_dlpack

@@ -36,14 +36,14 @@ var runtime_value = comptime_value
 ```
 
 This process of moving a compile-time value to a run-time variable is called
-_materialization_. If the value is implicitly copyable, like an `Int` or `Bool`,
-Mojo treats it as _implicitly materializable_ as well.
+*materialization*. If the value is implicitly copyable, like an `Int` or `Bool`,
+Mojo treats it as *implicitly materializable* as well.
 
 But types that **aren't** implicitly copyable present other challenges. Consider
 the following code:
 
 ```mojo
-fn lookup_fn(count: Int):
+def lookup_fn(count: Int):
     comptime list_of_values = [1, 3, 5, 7]
 
     for i in range(count):
@@ -68,7 +68,7 @@ cannot materialize comptime value of type 'List[Int]' to runtime
 because it is not 'ImplicitlyCopyable'
 ```
 
-Just like Mojo forces you to explicitly `copy()` a value that's expensive to
+Just like Mojo forces you to explicitly copy a value that's expensive to
 copy, it forces you to explicitly materialize values that are expensive to
 materialize, by calling the
 [`materialize()`](/mojo/std/builtin/value/materialize/) function.
@@ -76,7 +76,7 @@ materialize, by calling the
 Here's the code above with explicit materialization added:
 
 ```mojo
-fn lookup_fn(count: Int):
+def lookup_fn(count: Int):
     comptime list_of_values = [1, 3, 5, 7]
 
     for i in range(count):
@@ -99,7 +99,7 @@ every iteration of the loop, which is clearly wasteful.
 A more efficient version would materialize the list *outside* of the loop:
 
 ```mojo
-fn lookup_fn(count: Int):
+def lookup_fn(count: Int):
     comptime list_of_values = [1, 3, 5, 7]
 
     var list = materialize[list_of_values]()
@@ -111,7 +111,6 @@ fn lookup_fn(count: Int):
         process(lookup)
     # materialized list is destroyed here
 ```
-
 
 This is why Mojo requires you to explicitly materialize non-trivial values; it
 puts you in control of when your program allocates resources.
@@ -135,10 +134,10 @@ The easiest way to use `global_constant()` is with
 allocates a statically sized array of elements on the stack. The following code
 uses `global_constant()` to create a static lookup table.
 
-```
-from builtin.globals import global_constant
+```mojo
+from std.builtin.globals import global_constant
 
-fn use_lookup(idx: Int) -> Int64:
+def use_lookup(idx: Int) -> Int64:
     comptime numbers: InlineArray[Int64, 10] = [
         1, 3, 14, 34, 63, 101, 148, 204, 269, 343
     ]
@@ -153,10 +152,10 @@ def main():
 ```
 
 At compile time, Mojo allocates the `numbers` array, and then the
-`global_constant()` method copies it into static constant memory, where the code
-can reference it without requiring any dynamic logic to create or populate the
-array. At run time, the `lookup_table` identifier receives an
-immutable reference to this memory.
+`global_constant()` function copies it into static constant memory, where the
+code can reference it without requiring any dynamic logic to create or populate
+the array. At run time, the `lookup_table` identifier receives an immutable
+reference to this memory.
 
 Note the use of `ref lookup_table` to bind the reference returned by
 `global_constant()`. Using `var lookup_table` would cause a compiler error,
@@ -234,9 +233,3 @@ var static_str: StaticString = str_literal  # or a StaticString
 Both `String` and `StaticString` can be implicitly created from a
 `StringLiteral`, but without a type annotation, Mojo defaults to materializing
 `StringLiteral` as a `String`.
-
-You can define a "nonmaterializable" struct that can only exist at compile time,
-and which is replaced by a different type at run time. For example, the standard
-library `IntLiteral` type supports arbitrary-precision math at compile time, but
-materializes as a standard `Int` in run-time code. For more information, see the
-[`@nonmaterializable`](/mojo/manual/decorators/nonmaterializable) decorator.

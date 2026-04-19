@@ -11,12 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import gpu.primitives.warp as warp
-from bit import log2_floor
-from gpu import WARP_SIZE, barrier, lane_id, thread_idx, warp_id as get_warp_id
-from layout import Layout, LayoutTensor
+import std.gpu.primitives.warp as warp
+from std.math.uutils import umod
+from std.bit import log2_floor
+from std.gpu import barrier, lane_id, warp_id as get_warp_id
+from layout import (
+    Layout,
+    TileTensor,
+    row_major as tt_row_major,
+    stack_allocation as tt_stack_allocation,
+)
 from layout._utils import idx2crd
-from layout.layout_tensor import LayoutTensor
 from nn.softmax import _exp2_concrete, _exp_concrete
 
 
@@ -38,9 +43,6 @@ struct Softmax[
 
     comptime exp_function = _exp2_concrete if Self.use_exp2 else _exp_concrete
     comptime num_m_mmas = Self.score_layout_by_mma_unit.shape[0].value()
-    comptime row_layout = Layout.row_major(
-        Self.num_m_mmas, Self.fragment_layout.shape[0].value()
-    )
     comptime num_colwise_warps = Self.block_layout_by_warp.shape[0].value()
     comptime num_rowwise_warps = Self.block_layout_by_warp.shape[1].value()
 
@@ -53,6 +55,7 @@ struct Softmax[
     comptime frag_num_cols = Self.fragment_layout.shape[1].value()
 
     comptime frag_is_row_vector = Self.frag_num_rows == 1
+    comptime frag_size = Self.frag_num_rows * Self.frag_num_cols
 
     # Number of mma unit tiles in the score matrix.
     # 2*num_m_mmas
@@ -62,11 +65,15 @@ struct Softmax[
     # The online softmax attributes for each thread's elements (fragments).
     comptime num_rows_per_thread = Self.num_colwise_tiles * Self.frag_num_rows
 
-    comptime RowMaxTensorType = LayoutTensor[
+    comptime row_layout = tt_row_major[
+        Self.num_m_mmas, Self.fragment_layout.shape[0].value()
+    ]()
+
+    comptime RowMaxTensorType = TileTensor[
         Self.dtype,
-        Self.row_layout,
-        MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        type_of(Self.row_layout),
+        MutExternalOrigin,
+        address_space=AddressSpace.LOCAL,
     ]
 
     comptime RowSumTensorType = Self.RowMaxTensorType
@@ -74,308 +81,222 @@ struct Softmax[
     var rowmax_tensor: Self.RowMaxTensorType
     var rowsum_tensor: Self.RowSumTensorType
 
-    var score_frag_rowmax: LayoutTensor[
+    comptime score_frag_layout = tt_row_major[
+        Self.num_colwise_tiles, Self.frag_num_rows
+    ]()
+
+    comptime ScoreFragTensorType = TileTensor[
         Self.dtype,
-        Layout.row_major(Self.num_colwise_tiles, Self.frag_num_rows),
-        MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ]
-    var score_frag_rowsum: LayoutTensor[
-        Self.dtype,
-        Layout.row_major(Self.num_colwise_tiles, Self.frag_num_rows),
-        MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
-    ]
-    var correction: LayoutTensor[
-        Self.dtype,
-        Layout.row_major(Self.num_colwise_tiles, Self.frag_num_rows),
-        MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        type_of(Self.score_frag_layout),
+        MutExternalOrigin,
+        address_space=AddressSpace.LOCAL,
     ]
 
+    var score_frag_rowmax: Self.ScoreFragTensorType
+    var score_frag_rowsum: Self.ScoreFragTensorType
+    var correction: Self.ScoreFragTensorType
+
     @always_inline
-    fn __init__(out self):
-        self.rowmax_tensor = Self.RowMaxTensorType.stack_allocation()
-        self.rowsum_tensor = Self.RowSumTensorType.stack_allocation()
-        self.score_frag_rowmax = type_of(
-            self.score_frag_rowmax
-        ).stack_allocation()
-        self.score_frag_rowsum = (
-            type_of(self.score_frag_rowsum).stack_allocation().fill(0)
+    def __init__(out self):
+        self.rowmax_tensor = tt_stack_allocation[
+            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+        ](Self.row_layout)
+        self.rowsum_tensor = tt_stack_allocation[
+            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+        ](Self.row_layout)
+        self.score_frag_rowmax = tt_stack_allocation[
+            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+        ](Self.score_frag_layout)
+        self.score_frag_rowsum = tt_stack_allocation[
+            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+        ](Self.score_frag_layout).fill(0)
+        self.correction = tt_stack_allocation[
+            dtype=Self.dtype, address_space=AddressSpace.LOCAL
+        ](Self.score_frag_layout).fill(1)
+
+    @always_inline
+    def _score_row_idx[col_tile: Int, row: Int](self, lane_row: Int) -> UInt32:
+        """Map (col_tile, lane_row, row) to a linear score matrix row index."""
+        return (
+            UInt32(col_tile)
+            * Self.num_colwise_lanes
+            * UInt32(Self.frag_num_rows)
+            + UInt32(lane_row * Self.frag_num_rows)
+            + UInt32(row)
         )
-        self.correction = type_of(self.correction).stack_allocation().fill(1)
 
     @always_inline
-    fn calculate_qk_max(
+    def _reduce_rows[
+        is_max: Bool
+    ](
         self,
-        score_reg_tile: LayoutTensor[Self.dtype, ...],
-        warp_scratch: LayoutTensor[mut=True, Self.dtype, ...],
+        score: TileTensor[Self.dtype, ...],
+        warp_scratch: TileTensor[mut=True, Self.dtype, ...],
     ):
-        @parameter
-        for col_tile in range(Self.num_colwise_tiles):
+        """Reduce score rows to per-thread scalars (max or sum).
 
-            @parameter
-            for row in range(Self.frag_num_rows):
-                self.score_frag_rowmax[col_tile, row] = self.rowmax_tensor[
-                    col_tile, row
-                ]
+        Vectorizes the score tile, reduces within each warp via lane
+        shuffles, then (if rows span multiple warps) communicates via
+        shared memory to produce a single value per row.
 
-        var warp_x = get_warp_id() % UInt(Self.num_rowwise_warps)
+        Parameters:
+            is_max: True for rowwise max, False for rowwise sum.
 
-        @parameter
-        for col_tile in range(Self.num_colwise_tiles):
+        Args:
+            score: Score tile in registers.
+            warp_scratch: Shared memory scratch for cross-warp reduce.
+        """
+        var score_reg_tile = score.to_layout_tensor().vectorize[
+            1, Self.frag_size
+        ]()
+        var scratch_lt = warp_scratch.to_layout_tensor()
 
-            @parameter
-            for row_tile in range(Self.num_rowwise_tiles):
-                comptime tile_id = col_tile + row_tile * Self.num_colwise_tiles
+        # Init accumulator: copy current max (for max) or zero (for sum).
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row in range(Self.frag_num_rows):
+                comptime if is_max:
+                    self.score_frag_rowmax[col_tile, row] = self.rowmax_tensor[
+                        col_tile, row
+                    ]
+                else:
+                    self.score_frag_rowsum[col_tile, row] = 0
 
-                # Assume this is a rowwise vector for now see above constraint.
-                var frag = score_reg_tile[tile_id, 0]
-
-                @parameter
-                for row in range(Self.frag_num_rows):
-
-                    @parameter
-                    for col in range(Self.frag_num_cols):
-                        self.score_frag_rowmax[col_tile, row] = max(
-                            self.score_frag_rowmax[col_tile, row],
-                            frag[col if Self.frag_is_row_vector else row],
-                        )
-
-            # Every four threads have elements on the same row.
-            # Reduce max for T0-T3, T4-T7, etc for nvidia
-            #                T0-T15, T16-T31, etc for amd
-            @parameter
-            for row in range(Self.frag_num_rows):
-                self.score_frag_rowmax[
-                    col_tile, row
-                ] = warp.lane_group_max_and_broadcast[
-                    Int(Self.num_rowwise_lanes),
-                    stride = Int(Self.rowwise_lanes_stride),
-                ](
-                    self.score_frag_rowmax[col_tile, row]
-                )
-
-        var coords = idx2crd[Self.warp_layout](Int(lane_id()))
+        var warp_x = umod(get_warp_id[broadcast=True](), Self.num_rowwise_warps)
+        var coords = idx2crd[Self.warp_layout](lane_id())
         var lane_contains_first_column = coords[1] == 0
         var lane_row = coords[0]
 
-        # If a row is split across multiple warps, communicate via shared memory
-        # to achieve the rowwise max.
-        @parameter
-        if Self.num_rowwise_warps > 1:
-            # Write per warp rowmax to shared memory.
-            if lane_contains_first_column:
+        # Per-thread fragment reduction + warp-level lane shuffle.
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row_tile in range(Self.num_rowwise_tiles):
+                comptime tile_id = (
+                    col_tile + row_tile * Self.num_colwise_tiles
+                )
+                var frag = score_reg_tile[tile_id, 0]
 
-                @parameter
-                for col_tile in range(Self.num_colwise_tiles):
-
-                    @parameter
-                    for row in range(Self.frag_num_rows):
-                        var score_row_idx = (
-                            UInt32(col_tile)
-                            * Self.num_colwise_lanes
-                            * UInt32(Self.frag_num_rows)
-                            + UInt32(lane_row * Self.frag_num_rows)
-                            + UInt32(row)
-                        )
-
-                        # warp scratch has layout row_major(num_warps, num_rows). The
-                        # "score_row_idx" is the idx-th row in the score matrix.
-                        warp_scratch[
-                            Int(warp_x), Int(score_row_idx)
-                        ] = self.score_frag_rowmax[col_tile, row][0]
-
-            barrier()
-
-            # Reduce the warpwise rowmax.
-            if lane_contains_first_column:
-
-                @parameter
-                for col_tile in range(Self.num_colwise_tiles):
-
-                    @parameter
-                    for row in range(Self.frag_num_rows):
-                        var score_row_idx = (
-                            UInt32(col_tile)
-                            * Self.num_colwise_lanes
-                            * UInt32(Self.frag_num_rows)
-                            + UInt32(lane_row * Self.frag_num_rows)
-                            + UInt32(row)
-                        )
-
-                        @parameter
-                        for row_warp in range(Self.num_rowwise_warps):
+                comptime for row in range(Self.frag_num_rows):
+                    comptime for col in range(Self.frag_num_cols):
+                        comptime if is_max:
                             self.score_frag_rowmax[col_tile, row] = max(
-                                rebind[Scalar[Self.dtype]](
-                                    self.score_frag_rowmax[col_tile, row]
-                                ),
-                                rebind[Scalar[Self.dtype]](
-                                    warp_scratch[row_warp, Int(score_row_idx)]
-                                ),
+                                self.score_frag_rowmax[col_tile, row],
+                                frag[col if Self.frag_is_row_vector else row],
                             )
+                        else:
+                            self.score_frag_rowsum[col_tile, row] += frag[
+                                col if Self.frag_is_row_vector else row
+                            ]
 
-        # TODO: We can let all threads read shared memory in the above so that
-        # we don't need to use warp shuffling.
-        @parameter
-        for col_tile in range(Self.num_colwise_tiles):
-            # Broadcast to 4 threads in the same row.
-            @parameter
-            if Self.num_rowwise_warps > 1:
-
-                @parameter
-                for row in range(Self.frag_num_rows):
-                    self.score_frag_rowmax[
-                        col_tile, row
-                    ] = warp.lane_group_max_and_broadcast[
+            comptime for row in range(Self.frag_num_rows):
+                comptime if is_max:
+                    self.score_frag_rowmax[col_tile, row] = warp.lane_group_max[
                         Int(Self.num_rowwise_lanes),
-                        stride = Int(Self.rowwise_lanes_stride),
-                    ](
-                        self.score_frag_rowmax[col_tile, row]
-                    )
+                        stride=Int(Self.rowwise_lanes_stride),
+                    ](self.score_frag_rowmax[col_tile, row])
+                else:
+                    self.score_frag_rowsum[col_tile, row] = warp.lane_group_sum[
+                        Int(Self.num_rowwise_lanes),
+                        stride=Int(Self.rowwise_lanes_stride),
+                    ](self.score_frag_rowsum[col_tile, row])
 
-    @always_inline
-    fn calculate_qk_sum(
-        self,
-        score_reg_tile: LayoutTensor[Self.dtype, ...],
-        warp_scratch: LayoutTensor[mut=True, Self.dtype, ...],
-    ):
-        @parameter
-        for col_tile in range(Self.num_colwise_tiles):
+        # Cross-warp reduce via shared memory (if rows span multiple warps).
+        comptime if Self.num_rowwise_warps > 1:
+            # SMEM offset: max uses rows [0, N), sum uses rows [N, 2N).
+            comptime smem_row_offset = 0 if is_max else Self.num_rowwise_warps
 
-            @parameter
-            for row in range(Self.frag_num_rows):
-                self.score_frag_rowsum[col_tile, row] = 0
-
-        var tid = thread_idx.x
-        var lane = lane_id()
-        var warp_x = warp.broadcast(tid // UInt(WARP_SIZE)) % UInt(
-            Self.num_rowwise_warps
-        )
-
-        var coords = idx2crd[Self.warp_layout](Int(lane_id()))
-        var lane_contains_first_column = coords[1] == 0
-        var lane_row = coords[0]
-
-        @parameter
-        for col_tile in range(Self.num_colwise_tiles):
-            # Sum softmax numerator from a thread's fragments.
-            @parameter
-            for row_tile in range(Self.num_rowwise_tiles):
-                comptime tile_id = col_tile + Self.num_colwise_tiles * row_tile
-                var frag = score_reg_tile[tile_id, 0]
-
-                @parameter
-                for row in range(Self.frag_num_rows):
-
-                    @parameter
-                    for col in range(Self.frag_num_cols):
-                        self.score_frag_rowsum[col_tile, row] += frag[
-                            col if Self.frag_is_row_vector else row
-                        ]
-
-            @parameter
-            for row in range(Self.frag_num_rows):
-                self.score_frag_rowsum[
-                    col_tile, row
-                ] = warp.lane_group_sum_and_broadcast[
-                    Int(Self.num_rowwise_lanes),
-                    stride = Int(Self.rowwise_lanes_stride),
-                ](
-                    self.score_frag_rowsum[col_tile, row]
-                )
-
-        # Reduce rowsum via shared memory.
-
-        @parameter
-        if Self.num_rowwise_warps > 1:
-            # Write per warp rowmax to shared memory.
             if lane_contains_first_column:
+                comptime for col_tile in range(Self.num_colwise_tiles):
+                    comptime for row in range(Self.frag_num_rows):
+                        var sri = self._score_row_idx[col_tile, row](lane_row)
+                        comptime if is_max:
+                            scratch_lt[
+                                warp_x, Int(sri)
+                            ] = self.score_frag_rowmax[col_tile, row][0]
+                        else:
+                            scratch_lt[
+                                warp_x + smem_row_offset, Int(sri)
+                            ] = self.score_frag_rowsum[col_tile, row][0]
 
-                @parameter
-                for col_tile in range(Self.num_colwise_tiles):
-
-                    @parameter
-                    for row in range(Self.frag_num_rows):
-                        # Each thread handle two rows in the mma output.
-                        var score_row_idx = (
-                            UInt32(col_tile)
-                            * Self.num_colwise_lanes
-                            * UInt32(Self.frag_num_rows)
-                            + UInt32(lane_row * Self.frag_num_rows)
-                            + UInt32(row)
-                        )
-
-                        warp_scratch[
-                            warp_x + UInt(Self.num_rowwise_warps),
-                            Int(score_row_idx),
-                        ] = self.score_frag_rowsum[col_tile, row][0]
-
-            # Guard writing warp_scratch
             barrier()
 
-            # Reduce the warpwise rowsum.
             if lane_contains_first_column:
+                comptime for col_tile in range(Self.num_colwise_tiles):
+                    comptime for row in range(Self.frag_num_rows):
+                        var sri = self._score_row_idx[col_tile, row](lane_row)
 
-                @parameter
-                for col_tile in range(Self.num_colwise_tiles):
+                        comptime if is_max:
+                            comptime for rw in range(Self.num_rowwise_warps):
+                                self.score_frag_rowmax[col_tile, row] = max(
+                                    rebind[Scalar[Self.dtype]](
+                                        self.score_frag_rowmax[col_tile, row]
+                                    ),
+                                    rebind[Scalar[Self.dtype]](
+                                        scratch_lt[rw, Int(sri)]
+                                    ),
+                                )
+                        else:
+                            self.score_frag_rowsum[col_tile, row] = 0
+                            comptime for rw in range(Self.num_rowwise_warps):
+                                self.score_frag_rowsum[col_tile, row] += rebind[
+                                    Scalar[Self.dtype]
+                                ](scratch_lt[rw + smem_row_offset, Int(sri)])
 
-                    @parameter
-                    for row in range(Self.frag_num_rows):
-                        var score_row_idx = (
-                            UInt32(col_tile)
-                            * Self.num_colwise_lanes
-                            * UInt32(Self.frag_num_rows)
-                            + UInt32(lane_row * Self.frag_num_rows)
-                            + UInt32(row)
+            # Broadcast reduced value to all lanes in the row.
+            comptime for col_tile in range(Self.num_colwise_tiles):
+                comptime for row in range(Self.frag_num_rows):
+                    comptime if is_max:
+                        self.score_frag_rowmax[
+                            col_tile, row
+                        ] = warp.lane_group_max[
+                            Int(Self.num_rowwise_lanes),
+                            stride=Int(Self.rowwise_lanes_stride),
+                        ](
+                            self.score_frag_rowmax[col_tile, row]
+                        )
+                    else:
+                        # lane_group_max acts as broadcast (all lanes hold
+                        # the same value after reduction).
+                        self.score_frag_rowsum[
+                            col_tile, row
+                        ] = warp.lane_group_max[
+                            Int(Self.num_rowwise_lanes),
+                            stride=Int(Self.rowwise_lanes_stride),
+                        ](
+                            self.score_frag_rowsum[col_tile, row]
                         )
 
-                        self.score_frag_rowsum[col_tile, row] = 0
-
-                        # Reduce rowmax. Warps in the same row do the same reduction.
-                        @parameter
-                        for row_warp in range(Self.num_rowwise_warps):
-                            self.score_frag_rowsum[col_tile, row] += rebind[
-                                Scalar[Self.dtype]
-                            ](
-                                warp_scratch[
-                                    row_warp + Self.num_rowwise_warps,
-                                    Int(score_row_idx),
-                                ]
-                            )
-
-                # Broadcast to 4 threads in the same row e.g. T0 -> T0-T3.
-
-            @parameter
-            for col_tile in range(Self.num_colwise_tiles):
-
-                @parameter
-                for row in range(Self.frag_num_rows):
-                    # Broadcast to 4 threads in the same row.
-                    self.score_frag_rowsum[
-                        col_tile, row
-                    ] = warp.lane_group_max_and_broadcast[
-                        Int(Self.num_rowwise_lanes),
-                        stride = Int(Self.rowwise_lanes_stride),
-                    ](
-                        self.score_frag_rowsum[col_tile, row]
-                    )
+    @always_inline
+    def calculate_qk_max(
+        self,
+        score: TileTensor[Self.dtype, ...],
+        warp_scratch: TileTensor[mut=True, Self.dtype, ...],
+    ):
+        self._reduce_rows[is_max=True](score, warp_scratch)
 
     @always_inline
-    fn exp[
+    def calculate_qk_sum(
+        self,
+        score: TileTensor[Self.dtype, ...],
+        warp_scratch: TileTensor[mut=True, Self.dtype, ...],
+    ):
+        self._reduce_rows[is_max=False](score, warp_scratch)
+
+    @always_inline
+    def exp[
         start: Int = 0, stride: Int = 1
-    ](self, score_reg_tile: LayoutTensor[mut=True, Self.dtype, ...]):
+    ](self, score: TileTensor[mut=True, Self.dtype, ...]):
+        var score_reg_tile = score.to_layout_tensor().vectorize[
+            1, Self.frag_size
+        ]()
         comptime frag_type = score_reg_tile.element_type
 
-        @parameter
-        for col_tile in range(Self.num_colwise_tiles):
+        comptime for col_tile in range(Self.num_colwise_tiles):
             # Softmax numerator based on mma results.
-            @parameter
-            for row_tile in range(start, Self.num_rowwise_tiles, stride):
+            comptime for row_tile in range(
+                start, Self.num_rowwise_tiles, stride
+            ):
                 comptime tile_id = col_tile + Self.num_colwise_tiles * row_tile
 
-                @parameter
-                if Self.frag_is_row_vector:
+                comptime if Self.frag_is_row_vector:
                     score_reg_tile[tile_id, 0] = Self.exp_function(
                         score_reg_tile[tile_id, 0]
                         - rebind[frag_type](
@@ -385,77 +306,115 @@ struct Softmax[
                         )
                     )
                 else:
-
-                    @parameter
-                    for row in range(Self.frag_num_rows):
+                    comptime for row in range(Self.frag_num_rows):
                         score_reg_tile[tile_id, 0][row] = Self.exp_function(
                             score_reg_tile[tile_id, 0][row]
                             - self.score_frag_rowmax[col_tile, row][0]
                         )
 
     @always_inline
-    fn calculate_correction(self):
-        @parameter
-        for col_tile in range(Self.num_colwise_tiles):
-            # Corrention since previous max may be updated.
-            @parameter
-            for row in range(Self.frag_num_rows):
+    def scale_rowmax(self, scale: Scalar[Self.dtype]):
+        """Scale score_frag_rowmax by scale factor (e.g. scale * log2e).
+
+        Must be called after exp_scaled so that score_frag_rowmax is in the
+        same units as rowmax_tensor for calculate_correction.
+        """
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row in range(Self.frag_num_rows):
+                self.score_frag_rowmax[col_tile, row] *= scale
+
+    @always_inline
+    def exp_scaled[
+        start: Int = 0, stride: Int = 1
+    ](
+        self,
+        score: TileTensor[mut=True, Self.dtype, ...],
+        scale: Scalar[Self.dtype],
+    ):
+        """Numerically stable scaled exp: exp2((score - max) * scale).
+
+        Subtracts the unscaled max before scaling, so the subtraction is exact
+        for the maximum element (IEEE 754 guarantees a - a == 0). This avoids
+        the precision gap in exp_fma where fma(score, scale, -scaled_max) can
+        produce nonzero results when score == max due to independent rounding
+        of scaled_max.
+        """
+        var score_reg_tile = score.to_layout_tensor().vectorize[
+            1, Self.frag_size
+        ]()
+        comptime frag_type = score_reg_tile.element_type
+
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row_tile in range(
+                start, Self.num_rowwise_tiles, stride
+            ):
+                comptime tile_id = col_tile + Self.num_colwise_tiles * row_tile
+
+                comptime if Self.frag_is_row_vector:
+                    var neg_max = rebind[frag_type](
+                        SIMD[Self.dtype, Self.frag_num_cols](
+                            -self.score_frag_rowmax[col_tile, 0][0]
+                        )
+                    )
+                    var scale_vec = rebind[frag_type](
+                        SIMD[Self.dtype, Self.frag_num_cols](scale)
+                    )
+                    score_reg_tile[tile_id, 0] = Self.exp_function(
+                        (score_reg_tile[tile_id, 0] + neg_max) * scale_vec
+                    )
+                else:
+                    comptime for row in range(Self.frag_num_rows):
+                        var neg_max = -self.score_frag_rowmax[col_tile, row][0]
+                        score_reg_tile[tile_id, 0][row] = Self.exp_function(
+                            (score_reg_tile[tile_id, 0][row] + neg_max) * scale
+                        )
+
+    @always_inline
+    def calculate_correction(self):
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            # Correction since previous max may be updated.
+            comptime for row in range(Self.frag_num_rows):
                 self.correction[col_tile, row] = Self.exp_function(
                     self.rowmax_tensor[col_tile, row]
                     - self.score_frag_rowmax[col_tile, row]
                 )
 
     @always_inline
-    fn update_output(
-        self, output_reg_tile: LayoutTensor[mut=True, Self.dtype, ...]
-    ):
+    def update_output(self, output: TileTensor[mut=True, Self.dtype, ...]):
+        var output_reg_tile = output.to_layout_tensor().vectorize[
+            1, Self.frag_size
+        ]()
         comptime num_output_replications = output_reg_tile.layout.shape[
             0
         ].value() // (Self.num_colwise_tiles * Self.num_rowwise_tiles)
-        # if num_output_replications != 1, then `warp_split_k` and it must equal `num_warps_n`.
-        # FIXME: require `warp_split_k` when delaying inter-warp communication.
-        comptime assert (
-            num_output_replications == 1
-            or num_output_replications % Self.num_rowwise_warps == 0
-        )
 
         # if num_output_replications
-        @parameter
-        for k in range(num_output_replications):
+        comptime for k in range(num_output_replications):
             # Correct previous result
-            @parameter
-            for col_tile in range(Self.num_colwise_tiles):
-
-                @parameter
-                for row_tile in range(Self.num_rowwise_tiles):
+            comptime for col_tile in range(Self.num_colwise_tiles):
+                comptime for row_tile in range(Self.num_rowwise_tiles):
                     comptime tile_id = col_tile + row_tile * Self.num_colwise_tiles + k * Self.num_colwise_tiles * Self.num_rowwise_tiles
 
                     comptime output_frag_type = type_of(
                         output_reg_tile
                     ).element_type
 
-                    @parameter
-                    if Self.frag_is_row_vector:
+                    comptime if Self.frag_is_row_vector:
                         output_reg_tile[tile_id, 0] = output_reg_tile[
                             tile_id, 0
                         ] * output_frag_type(self.correction[col_tile, 0][0])
                     else:
-
-                        @parameter
-                        for row in range(Self.frag_num_rows):
+                        comptime for row in range(Self.frag_num_rows):
                             output_reg_tile[tile_id, 0][row] = (
                                 output_reg_tile[tile_id, 0][row]
                                 * self.correction[col_tile, row][0]
                             )
 
     @always_inline
-    fn update_sum(self):
+    def update_sum(self):
         # Save current rowmax and rowsum
-        @parameter
-        for col_tile in range(Self.num_colwise_tiles):
-
-            @parameter
-            for row in range(Self.frag_num_rows):
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row in range(Self.frag_num_rows):
                 self.rowsum_tensor[col_tile, row] = (
                     self.rowsum_tensor[col_tile, row]
                     * self.correction[col_tile, row]
@@ -463,21 +422,43 @@ struct Softmax[
                 )
 
     @always_inline
-    fn update_max(self):
-        # Save current rowmax and rowsum
-        self.rowmax_tensor.copy_from(self.score_frag_rowmax)
+    def apply_sum_correction(self):
+        """Apply rowsum *= correction (deferred sum rescale pattern)."""
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row in range(Self.frag_num_rows):
+                self.rowsum_tensor[col_tile, row] = (
+                    self.rowsum_tensor[col_tile, row]
+                    * self.correction[col_tile, row]
+                )
 
     @always_inline
-    fn full(
+    def update_sum_additive(self):
+        """Additive rowsum update: rowsum += new_sum (no correction)."""
+        comptime for col_tile in range(Self.num_colwise_tiles):
+            comptime for row in range(Self.frag_num_rows):
+                self.rowsum_tensor[col_tile, row] = (
+                    self.rowsum_tensor[col_tile, row]
+                    + self.score_frag_rowsum[col_tile, row]
+                )
+
+    @always_inline
+    def update_max(self):
+        # Save current rowmax and rowsum
+        comptime for i in range(Self.num_colwise_tiles):
+            comptime for j in range(Self.frag_num_rows):
+                self.rowmax_tensor[i, j] = self.score_frag_rowmax[i, j]
+
+    @always_inline
+    def full(
         self,
-        output_reg_tile: LayoutTensor[mut=True, Self.dtype, ...],
-        score_reg_tile: LayoutTensor[mut=True, Self.dtype, ...],
-        warp_scratch: LayoutTensor[mut=True, Self.dtype, ...],
+        output: TileTensor[mut=True, Self.dtype, ...],
+        score: TileTensor[mut=True, Self.dtype, ...],
+        warp_scratch: TileTensor[mut=True, Self.dtype, ...],
     ):
-        self.calculate_qk_max(score_reg_tile, warp_scratch)
-        self.exp(score_reg_tile)
-        self.calculate_qk_sum(score_reg_tile, warp_scratch)
+        self.calculate_qk_max(score, warp_scratch)
+        self.exp(score)
+        self.calculate_qk_sum(score, warp_scratch)
         self.calculate_correction()
-        self.update_output(output_reg_tile)
+        self.update_output(output)
         self.update_max()
         self.update_sum()

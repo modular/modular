@@ -20,10 +20,10 @@
 # RUN: not not %t 7 2>&1 | FileCheck --check-prefix CHECK_7 %s
 
 
-from sys.arg import argv
+from std.sys.arg import argv
 
 
-def main():
+def main() raises:
     if len(argv()) <= 1:
         return
     var test = argv()[1]
@@ -56,8 +56,8 @@ def main():
     elif test == "6":
         var s = String("😌😃")
         # CHECK_6: does not lie on a codepoint boundary.
-        var y = s[byte=1]
+        var _y = s[byte=1]
     elif test == "7":
         var s = String("😌😃")
         # CHECK_7: is not a codepoint boundary.
-        var y = s[0:5]
+        var _y = s[byte=0:5]

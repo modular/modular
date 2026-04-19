@@ -10,4 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""AMD GPU attention operations."""
+"""AMD CDNA GPU attention kernels for GFX942/GFX950 architectures.
+
+Includes MHA prefill/decode, MLA, matrix-multiply-accumulate primitives,
+shared-memory buffers, and softmax helpers. RDNA kernels are in amd_rdna/.
+"""

@@ -11,10 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import barrier, warp_id, lane_id
-from gpu.host import DeviceContext
-from gpu import thread_idx, warp_id, lane_id
-from gpu.compute.mma import (
+from std.gpu import barrier, thread_idx, warp_id, lane_id
+from std.gpu.host import DeviceContext
+from std.gpu.compute.mma import (
     WGMMADescriptor,
     wgmma_async,
     wgmma_commit_group_sync,
@@ -30,13 +29,13 @@ from layout.tensor_core_async import (
     tile_layout_k_major,
     tile_layout_mn_major,
 )
-from memory import bitcast
+from std.memory import bitcast
 
 
 # We have a hard code 2D path in `arange` and it's row-major.
 # Add the col-major version as a work-around. Generalizing the above
 # may touch too many places.
-fn _arange_2d_col_major_tensor(t: LayoutTensor[mut=True, ...]):
+def _arange_2d_col_major_tensor(t: LayoutTensor[mut=True, ...]):
     var layout = materialize[t.layout]()
     var size = layout.size()
 
@@ -45,7 +44,7 @@ fn _arange_2d_col_major_tensor(t: LayoutTensor[mut=True, ...]):
         t.ptr[idx] = Scalar[t.dtype](i)
 
 
-fn wgmma_tf32_tf32_f32_kernel[
+def wgmma_tf32_tf32_f32_kernel[
     M: Int,
     N: Int,
     K: Int,
@@ -63,14 +62,14 @@ fn wgmma_tf32_tf32_f32_kernel[
         DType.float32,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.float32,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var c_reg = SIMD[DType.float32, 4](0)
@@ -94,8 +93,8 @@ fn wgmma_tf32_tf32_f32_kernel[
             WMMA_M,
             WMMA_N,
             WMMA_K,
-            a_type = DType.float32,
-            b_type = DType.float32,
+            a_type=DType.float32,
+            b_type=DType.float32,
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
@@ -106,7 +105,7 @@ fn wgmma_tf32_tf32_f32_kernel[
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
     var th_local_res = (
-        result_c.tile[16, 8](Int(warp_id()), 0)
+        result_c.tile[16, 8](warp_id(), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lane_id())
     )
@@ -181,7 +180,7 @@ fn wgmma_tf32_tf32_f32_kernel[
 # CHECK: 110432.0 114364.0 118296.0 122228.0 126160.0 130092.0 134024.0 137956.0
 # CHECK: 112224.0 116220.0 120216.0 124212.0 128208.0 132204.0 136200.0 140196.0
 # CHECK: 114016.0 118076.0 122136.0 126196.0 130256.0 134316.0 138376.0 142436.0
-def wgmma_tf32_tf32_f32_64x8x8(ctx: DeviceContext):
+def wgmma_tf32_tf32_f32_64x8x8(ctx: DeviceContext) raises:
     print("== wgmma_tf32_tf32_f32_64x8x8")
     comptime M = 64
     comptime N = 8
@@ -295,7 +294,7 @@ def wgmma_tf32_tf32_f32_64x8x8(ctx: DeviceContext):
 # CHECK: 977600.0 993848.0 1010096.0 1026344.0 1042592.0 1058840.0 1075088.0 1091336.0
 
 
-def wgmma_tf32_tf32_f32_64x8x8_inst_64x8x16(ctx: DeviceContext):
+def wgmma_tf32_tf32_f32_64x8x8_inst_64x8x16(ctx: DeviceContext) raises:
     print("== wgmma_tf32_tf32_f32_64x8x8_inst_64x8x16")
     comptime M = 64
     comptime N = 8
@@ -344,7 +343,7 @@ def wgmma_tf32_tf32_f32_64x8x8_inst_64x8x16(ctx: DeviceContext):
     _ = res^
 
 
-fn wgmma_bf16_bf16_f32_kernel[
+def wgmma_bf16_bf16_f32_kernel[
     M: Int,
     N: Int,
     K: Int,
@@ -362,14 +361,14 @@ fn wgmma_bf16_bf16_f32_kernel[
         DType.bfloat16,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var c_reg = SIMD[DType.float32, 4](0)
@@ -393,8 +392,8 @@ fn wgmma_bf16_bf16_f32_kernel[
             WMMA_M,
             WMMA_N,
             WMMA_K,
-            a_type = DType.bfloat16,
-            b_type = DType.bfloat16,
+            a_type=DType.bfloat16,
+            b_type=DType.bfloat16,
             layout_b="row",
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
@@ -406,7 +405,7 @@ fn wgmma_bf16_bf16_f32_kernel[
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
     var th_local_res = (
-        result_c.tile[16, 8](Int(warp_id()), 0)
+        result_c.tile[16, 8](warp_id(), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lane_id())
     )
@@ -481,7 +480,7 @@ fn wgmma_bf16_bf16_f32_kernel[
 # CHECK: 947072.0 962808.0 978544.0 994280.0 1010016.0 1025752.0 1041488.0 1057224.0
 # CHECK: 962432.0 978424.0 994416.0 1010408.0 1026400.0 1042392.0 1058384.0 1074376.0
 # CHECK: 977792.0 994040.0 1010288.0 1026536.0 1042784.0 1059032.0 1075280.0 1091528.0
-def wgmma_bf16_bf16_f32_64x8x16(ctx: DeviceContext):
+def wgmma_bf16_bf16_f32_64x8x16(ctx: DeviceContext) raises:
     print("== wgmma_bf16_bf16_f32_64x8x16")
     comptime M = 64
     comptime N = 8
@@ -591,7 +590,7 @@ def wgmma_bf16_bf16_f32_64x8x16(ctx: DeviceContext):
 # CHECK: 7830016.0 7892976.0 7955936.0 8018896.0 8081856.0 8144816.0 8207776.0 8270736.0
 # CHECK: 7956992.0 8020976.0 8084960.0 8148944.0 8212928.0 8276912.0 8340896.0 8404880.0
 # CHECK: 8083968.0 8148976.0 8213984.0 8278992.0 8344000.0 8409008.0 8474016.0 8539024.0
-def wgmma_bf16_bf16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext):
+def wgmma_bf16_bf16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext) raises:
     print("== wgmma_bf16_bf16_f32_64x8x16_inst_64x8x32")
     comptime M = 64
     comptime N = 8
@@ -636,7 +635,7 @@ def wgmma_bf16_bf16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext):
     _ = res^
 
 
-fn wgmma_f16_f16_f32_kernel[
+def wgmma_f16_f16_f32_kernel[
     M: Int,
     N: Int,
     K: Int,
@@ -654,14 +653,14 @@ fn wgmma_f16_f16_f32_kernel[
         DType.float16,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.float16,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var c_reg = SIMD[DType.float32, 4](0)
@@ -685,8 +684,8 @@ fn wgmma_f16_f16_f32_kernel[
             WMMA_M,
             WMMA_N,
             WMMA_K,
-            a_type = DType.float16,
-            b_type = DType.float16,
+            a_type=DType.float16,
+            b_type=DType.float16,
             layout_b="row",
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
@@ -698,7 +697,7 @@ fn wgmma_f16_f16_f32_kernel[
     # every thread updates a 1x2 vector. The resulting distribution layout
     # is as follows:
     var th_local_res = (
-        result_c.tile[16, 8](Int(warp_id()), 0)
+        result_c.tile[16, 8](warp_id(), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lane_id())
     )
@@ -773,7 +772,7 @@ fn wgmma_f16_f16_f32_kernel[
 # CHECK: 946880.0 962616.0 978352.0 994088.0 1009824.0 1025560.0 1041296.0 1057032.0
 # CHECK: 962240.0 978232.0 994224.0 1010216.0 1026208.0 1042200.0 1058192.0 1074184.0
 # CHECK: 977600.0 993848.0 1010096.0 1026344.0 1042592.0 1058840.0 1075088.0 1091336.0
-def wgmma_f16_f16_f32_64x8x16(ctx: DeviceContext):
+def wgmma_f16_f16_f32_64x8x16(ctx: DeviceContext) raises:
     print("== wgmma_f16_f16_f32_64x8x16")
     comptime M = 64
     comptime N = 8
@@ -883,7 +882,7 @@ def wgmma_f16_f16_f32_64x8x16(ctx: DeviceContext):
 # CHECK: 7828864.0 7891824.0 7954784.0 8017744.0 8080704.0 8143664.0 8206624.0 8269584.0
 # CHECK: 7955840.0 8019824.0 8083808.0 8147792.0 8211776.0 8275760.0 8339744.0 8403728.0
 # CHECK: 8082816.0 8147824.0 8212832.0 8277840.0 8342848.0 8407856.0 8472864.0 8537872.0
-def wgmma_f16_f16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext):
+def wgmma_f16_f16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext) raises:
     print("== wgmma_f16_f16_f32_64x8x16_inst_64x8x32")
     comptime M = 64
     comptime N = 8
@@ -928,7 +927,7 @@ def wgmma_f16_f16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext):
     _ = res^
 
 
-fn wgmma_f16_f16_f16_kernel[
+def wgmma_f16_f16_f16_kernel[
     M: Int,
     N: Int,
     K: Int,
@@ -946,14 +945,14 @@ fn wgmma_f16_f16_f16_kernel[
         DType.float16,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.float16,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var c_reg = SIMD[DType.uint32, 2](0)
@@ -977,9 +976,9 @@ fn wgmma_f16_f16_f16_kernel[
             WMMA_M,
             WMMA_N,
             WMMA_K,
-            a_type = DType.float16,
-            b_type = DType.float16,
-            accum_type = DType.float16,
+            a_type=DType.float16,
+            b_type=DType.float16,
+            accum_type=DType.float16,
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
@@ -991,7 +990,7 @@ fn wgmma_f16_f16_f16_kernel[
     # is as follows:
     c0 = bitcast[DType.float16, 4](c_reg)
     var th_local_res = (
-        result_c.tile[16, 8](Int(warp_id()), 0)
+        result_c.tile[16, 8](warp_id(), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lane_id())
     )
@@ -1066,7 +1065,7 @@ fn wgmma_f16_f16_f16_kernel[
 # CHECK: 397.0 415.0 498.0 477.0 521.0 487.0 492.0 562.0
 # CHECK: 457.0 402.0 412.0 461.0 432.0 403.0 478.0 475.0
 # CHECK: 517.0 554.0 513.0 511.0 574.0 429.0 453.0 542.0
-def wgmma_f16_f16_f16_64x8x16(ctx: DeviceContext):
+def wgmma_f16_f16_f16_64x8x16(ctx: DeviceContext) raises:
     print("== wgmma_f16_f16_f16_64x8x16")
     comptime M = 64
     comptime N = 8
@@ -1178,7 +1177,7 @@ def wgmma_f16_f16_f16_64x8x16(ctx: DeviceContext):
 # CHECK: 1728.0 1661.0 1711.0 1800.0 1785.0 1679.0 1586.0 1597.0
 # CHECK: 1672.0 1725.0 1713.0 1688.0 1793.0 1859.0 1886.0 1835.0
 # CHECK: 1436.0 1537.0 1391.0 1414.0 1567.0 1499.0 1574.0 1389.0
-def wgmma_f16_f16_f16_64x8x16_inst_64x8x32(ctx: DeviceContext):
+def wgmma_f16_f16_f16_64x8x16_inst_64x8x32(ctx: DeviceContext) raises:
     print("== wgmma_f16_f16_f16_64x8x16_inst_64x8x32")
     comptime M = 64
     comptime N = 8
@@ -1224,7 +1223,7 @@ def wgmma_f16_f16_f16_64x8x16_inst_64x8x32(ctx: DeviceContext):
     _ = res^
 
 
-fn wgmma_kernel[
+def wgmma_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -1246,14 +1245,14 @@ fn wgmma_kernel[
         DType.bfloat16,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var c_reg = SIMD[DType.float32, 4](0)
@@ -1289,14 +1288,14 @@ fn wgmma_kernel[
             WMMA_M,
             WMMA_N,
             WMMA_K,
-            a_type = DType.bfloat16,
-            b_type = DType.bfloat16,
+            a_type=DType.bfloat16,
+            b_type=DType.bfloat16,
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
 
     var th_local_res = (
-        c_gmem.tile[16, 8](Int(warp_id()), 0)
+        c_gmem.tile[16, 8](warp_id(), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lane_id())
     )
@@ -1373,7 +1372,7 @@ fn wgmma_kernel[
 # CHECK: 1011712.0 3096576.0 5177344.0 7241728.0 9306112.0 11403264.0 13500416.0 15597568.0
 
 
-def wgmma_bf16_bf16_f32_64x8x16_transb_64x8x32(ctx: DeviceContext):
+def wgmma_bf16_bf16_f32_64x8x16_transb_64x8x32(ctx: DeviceContext) raises:
     print("== wgmma_bf16_bf16_f32_64x8x16_transb_64x8x32")
     comptime M = 64
     comptime N = 8
@@ -1427,7 +1426,7 @@ def wgmma_bf16_bf16_f32_64x8x16_transb_64x8x32(ctx: DeviceContext):
     _ = res^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         wgmma_tf32_tf32_f32_64x8x8(ctx)
         wgmma_tf32_tf32_f32_64x8x8_inst_64x8x16(ctx)

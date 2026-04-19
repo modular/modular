@@ -13,7 +13,7 @@
 """Inverse real FFT kernel using cuFFT."""
 
 
-from ffi import external_call
+from std.ffi import external_call, _get_global_or_null
 
 from _cufft.cufft import (
     cufftCreate,
@@ -28,31 +28,21 @@ from _cufft.cufft import (
 )
 from _cufft.types import Type
 from _cufft.utils import check_error
-from complex import ComplexFloat32
-from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import CUDA
-from layout._coord import coord_to_index_list
-from layout._tile_tensor import TileTensor
-
-
-# This should eventually be moved to ffi.mojo with a more general global cache method
-# cache key is a string and cache value is a pointer.
-@always_inline
-fn global_cache_lookup(key: String) -> OpaquePointer[MutExternalOrigin]:
-    return external_call[
-        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer[MutExternalOrigin]
-    ](key.unsafe_ptr(), key.byte_length())
+from std.complex import ComplexFloat32
+from std.gpu.host import DeviceContext
+from std.gpu.host._nvidia_cuda import CUDA
+from layout import TileTensor, coord_to_index_list
 
 
 @always_inline
-fn global_cache_insert(key: String, value: OpaquePointer):
+def global_cache_insert(key: String, value: OpaquePointer):
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(key),
         value,
     )
 
 
-fn _get_fft_workarea(
+def _get_fft_workarea(
     buffer_size: Int, ctx: DeviceContext
 ) raises -> OpaquePointer[MutExternalOrigin]:
     # Include device ID in cache key to ensure per-device workspace buffers.
@@ -60,9 +50,9 @@ fn _get_fft_workarea(
         "CUFFT_BUFFER_PTR_", buffer_size, "_DEV_", ctx.id()
     )
 
-    if lookup := global_cache_lookup(fft_buffer_key):
+    if lookup := _get_global_or_null(fft_buffer_key):
         # we found the allocated device buffer
-        return lookup
+        return lookup.unsafe_value()
 
     # manually allocate the memory on the device, and cache the pointer
     var work_space = ctx.enqueue_create_buffer[DType.uint8](buffer_size)
@@ -79,7 +69,7 @@ fn _get_fft_workarea(
     ]()
 
 
-fn _get_fft_plan[
+def _get_fft_plan[
     create_if_not_found: Bool = True
 ](
     output_size: Int,
@@ -92,12 +82,11 @@ fn _get_fft_plan[
         "CUFFT_PLAN_", output_size, ",", batch_size, "_DEV_", ctx.id()
     )
 
-    if lookup := global_cache_lookup(cached_plan_key):
+    if lookup := _get_global_or_null(cached_plan_key):
         # We found the plan in the cache, so just return it
-        return cufftHandle(Int(lookup))
+        return cufftHandle(Int(lookup.unsafe_value()))
 
-    @parameter
-    if not create_if_not_found:
+    comptime if not create_if_not_found:
         # a valid cufft handle is always non-zero
         return cufftHandle(0)
 
@@ -142,19 +131,19 @@ fn _get_fft_plan[
     return plan
 
 
-fn _irfft[
+def _irfft[
     input_type: DType,
     output_type: DType,
 ](
     input: TileTensor[
         input_type,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
     output: TileTensor[
         mut=True,
         output_type,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
     n: Int,
@@ -310,19 +299,19 @@ fn _irfft[
             )
 
 
-fn irfft[
+def irfft[
     input_type: DType,
     output_type: DType,
 ](
     input: TileTensor[
         input_type,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
     output: TileTensor[
         mut=True,
         output_type,
-        address_space = AddressSpace.GENERIC,
+        address_space=AddressSpace.GENERIC,
         ...,
     ],
     n: Int,

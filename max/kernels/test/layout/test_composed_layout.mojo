@@ -12,18 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import *
-from layout.layout import Layout
 from layout.swizzle import ComposedLayout, Swizzle
-from testing import assert_equal
+from std.testing import assert_equal
 
 
-fn test_composed_layout() raises:
+def test_composed_layout() raises:
     print("== test_composed_layout")
 
     comptime layout_a = Layout(IntTuple(6, 2), IntTuple(8, 2))
     comptime layout_b = Layout(IntTuple(4, 3), IntTuple(3, 1))
 
-    comptime comp_layout = ComposedLayout[Layout, Layout, 0](layout_b, layout_a)
+    comptime comp_layout = composition(layout_a, layout_b)
 
     assert_equal(comptime (comp_layout(0)), 0)
     assert_equal(comptime (comp_layout(1)), 24)
@@ -39,13 +38,13 @@ fn test_composed_layout() raises:
     assert_equal(comptime (comp_layout(11)), 42)
 
 
-fn test_composed_layout_swizzle() raises:
+def test_composed_layout_swizzle() raises:
     print("== test_composed_layout_swizzle")
 
     var swizzle = Swizzle(1, 0, 2)
     var layout = Layout(IntTuple(6, 2), IntTuple(8, 2))
 
-    var comp_layout = ComposedLayout[Layout, Swizzle, 0](layout^, swizzle)
+    var comp_layout = ComposedLayout(layout^, swizzle)
 
     assert_equal(comp_layout(0), 0)
     assert_equal(comp_layout(1), 8)
@@ -55,13 +54,13 @@ fn test_composed_layout_swizzle() raises:
     assert_equal(comp_layout(5), 40)
 
 
-fn test_composed_layout_swizzle_rt() raises:
+def test_composed_layout_swizzle_rt() raises:
     print("== test_composed_layout_swizzle_rt")
 
     var swizzle = Swizzle(1, 0, 2)
     var layout = Layout(IntTuple(6, 2), IntTuple(8, 2))
 
-    var comp_layout = ComposedLayout[Layout, Swizzle, 0](layout^, swizzle)
+    var comp_layout = ComposedLayout(layout^, swizzle)
 
     assert_equal(comp_layout(0), 0)
     assert_equal(comp_layout(1), 8)
@@ -71,7 +70,7 @@ fn test_composed_layout_swizzle_rt() raises:
     assert_equal(comp_layout(5), 40)
 
 
-def main():
+def main() raises:
     test_composed_layout()
     test_composed_layout_swizzle()
     test_composed_layout_swizzle_rt()

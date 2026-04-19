@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import Python, PythonObject
-from testing import assert_equal, assert_raises, TestSuite
+from std.python import Python, PythonObject
+from std.testing import assert_equal, assert_raises, TestSuite
 
 
-fn test_python_exception_import() raises:
+def test_python_exception_import() raises:
     try:
         var _sys = Python.import_module("my_uninstalled_module")
     except e:
         assert_equal(String(e), "No module named 'my_uninstalled_module'")
 
 
-fn test_python_exception_getattr() raises:
+def test_python_exception_getattr() raises:
     try:
         var my_module: PythonObject = Python.import_module("my_module")
         if my_module:
@@ -32,7 +32,7 @@ fn test_python_exception_getattr() raises:
         assert_equal(String(e), "'Person' object has no attribute 'undefined'")
 
 
-fn test_python_exception_getitem() raises:
+def test_python_exception_getitem() raises:
     try:
         var list: PythonObject = [1, 2, 3]
         var _should_fail = list[13]
@@ -40,7 +40,7 @@ fn test_python_exception_getitem() raises:
         assert_equal(String(e), "list index out of range")
 
 
-fn test_python_exception_call() raises:
+def test_python_exception_call() raises:
     with assert_raises(
         contains="Can't instantiate abstract class AbstractPerson"
     ):
@@ -49,5 +49,5 @@ fn test_python_exception_call() raises:
             _ = my_module.AbstractPerson()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

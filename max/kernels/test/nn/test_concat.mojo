@@ -12,15 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout._coord import Coord, CoordLike, Idx
-from layout._layout import TensorLayout, row_major
-from layout._tile_tensor import TileTensor
+from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from nn.concat import _concat_parallel, _concat_serial, concat
 
-from utils import Index, IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 
-fn _tuple_to_list[
+def _tuple_to_list[
     LayoutType: TensorLayout,
     //,
     dtype: DType,
@@ -38,7 +36,7 @@ fn _tuple_to_list[
     return output^
 
 
-def test_concat():
+def test_concat() raises:
     print("== test_concat")
 
     comptime dtype = DType.float32
@@ -73,11 +71,11 @@ def test_concat():
 
     @parameter
     @always_inline
-    fn epilogue_plus_one[
+    def epilogue_plus_one[
         c_type: DType, _rank: Int, width: Int, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
-        comptime assert coord.rank == output.rank
+        comptime assert output.flat_rank >= coord.flat_rank
         output.store[width=width](
             coord,
             rebind[SIMD[dtype, width]](val + 1),
@@ -99,13 +97,13 @@ def test_concat():
     # CHECK-COUNT-6: 3.0
     var output_flat = TileTensor(
         output.ptr,
-        row_major(Coord(Idx(output.numel()))),
+        row_major(Coord(Idx(output.num_elements()))),
     )
     for i in range(output.layout.product()):
         print(output_flat.load[1]((Idx(i),)))
 
 
-def test_concat_parallel():
+def test_concat_parallel() raises:
     print("== test_concat_parallel")
 
     comptime dtype = DType.float32
@@ -143,11 +141,11 @@ def test_concat_parallel():
 
     @parameter
     @always_inline
-    fn epilogue_plus_one[
+    def epilogue_plus_one[
         c_type: DType, _rank: Int, width: Int, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
-        comptime assert coord.rank == output.rank
+        comptime assert output.flat_rank >= coord.flat_rank
         output.store[width=width](
             coord,
             rebind[SIMD[dtype, width]](val + 1),
@@ -170,14 +168,14 @@ def test_concat_parallel():
     # CHECK-COUNT-6: 3.0
     var output_flat = TileTensor(
         output.ptr,
-        row_major(Coord(Idx(output.numel()))),
+        row_major(Coord(Idx(output.num_elements()))),
     )
     for i in range(output.layout.product()):
         print(output_flat.load[1]((Idx(i),)))
 
 
 # CHECK-LABEL: test_concat_inner
-def test_concat_inner():
+def test_concat_inner() raises:
     print("== test_concat_inner")
 
     comptime dtype = DType.float32
@@ -217,11 +215,11 @@ def test_concat_inner():
 
     @parameter
     @always_inline
-    fn epilogue_plus_one[
+    def epilogue_plus_one[
         c_type: DType, _rank: Int, width: Int, *, alignment: Int
     ](indices: IndexList[_rank], val: SIMD[c_type, width]):
         var coord = Coord(indices)
-        comptime assert coord.rank == output.rank
+        comptime assert output.flat_rank >= coord.flat_rank
         output.store[width=width](
             coord,
             rebind[SIMD[dtype, width]](val + 1),
@@ -236,13 +234,13 @@ def test_concat_inner():
     # CHECK-COUNT-12: 3.0
     var output_flat = TileTensor(
         output.ptr,
-        row_major(Coord(Idx(output.numel()))),
+        row_major(Coord(Idx(output.num_elements()))),
     )
     for i in range(output.layout.product()):
         print(output_flat.load[1]((Idx(i),)))
 
 
-def main():
+def main() raises:
     test_concat()
     test_concat_parallel()
     test_concat_inner()

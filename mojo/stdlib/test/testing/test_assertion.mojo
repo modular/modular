@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from reflection import SourceLocation
-from python import PythonObject
-from testing import (
+from std.reflection import SourceLocation
+from std.python import PythonObject
+from std.testing import (
     assert_almost_equal,
     assert_equal,
     assert_false,
@@ -23,10 +23,10 @@ from testing import (
     TestSuite,
 )
 
-from utils.numerics import inf, nan
+from std.utils.numerics import inf, nan
 
 
-def test_assert_messages():
+def test_assert_messages() raises:
     assertion = "test_assertion.mojo:"
     assertion_error = ": AssertionError:"
     try:
@@ -51,40 +51,36 @@ def test_assert_messages():
 
 
 @fieldwise_init
-struct DummyStruct(Equatable, Stringable):
+struct DummyStruct(Equatable, Writable):
     """Test struct using default reflection-based __eq__."""
 
     var value: Int
 
     # Uses default reflection-based __eq__ from Equatable trait
 
-    @no_inline
-    fn __str__(self) -> String:
-        return "Dummy"  # Can't be used for equality
 
-
-def test_assert_equal_is_generic():
+def test_assert_equal_is_generic() raises:
     assert_equal(DummyStruct(1), DummyStruct(1))
 
     with assert_raises():
         assert_equal(DummyStruct(1), DummyStruct(2))
 
 
-def test_assert_not_equal_is_generic():
+def test_assert_not_equal_is_generic() raises:
     assert_not_equal(DummyStruct(1), DummyStruct(2))
 
     with assert_raises():
         assert_not_equal(DummyStruct(1), DummyStruct(1))
 
 
-def test_assert_equal_with_simd():
+def test_assert_equal_with_simd() raises:
     assert_equal(SIMD[DType.uint8, 2](1, 1), SIMD[DType.uint8, 2](1, 1))
 
     with assert_raises():
         assert_equal(SIMD[DType.uint8, 2](1, 1), SIMD[DType.uint8, 2](1, 2))
 
 
-def test_assert_equal_with_list():
+def test_assert_equal_with_list() raises:
     assert_equal(
         ["This", "is", "Mojo"],
         List[String](["This", "is", "Mojo"]),
@@ -97,21 +93,21 @@ def test_assert_equal_with_list():
         )
 
 
-def test_assert_not_equal_with_list():
+def test_assert_not_equal_with_list() raises:
     assert_not_equal([3, 2, 1], [3, 1, 0])
 
     with assert_raises():
         assert_not_equal([3, 2, 1], [3, 2, 1])
 
 
-def test_assert_almost_equal():
+def test_assert_almost_equal() raises:
     comptime float_type = DType.float32
     comptime _inf = inf[float_type]()
     comptime _nan = nan[float_type]()
 
     @parameter
     def _should_succeed[
-        dtype: DType, size: Int
+        dtype: DType, size: SIMDSize
     ](
         lhs: SIMD[dtype, size],
         rhs: SIMD[dtype, size],
@@ -119,7 +115,7 @@ def test_assert_almost_equal():
         atol: Float64 = 0,
         rtol: Float64 = 0,
         equal_nan: Bool = False,
-    ):
+    ) raises:
         var msg = "`test_assert_almost_equal` should have succeeded"
         assert_almost_equal(
             lhs, rhs, msg=msg, atol=atol, rtol=rtol, equal_nan=equal_nan
@@ -146,7 +142,7 @@ def test_assert_almost_equal():
 
     @parameter
     def _should_fail[
-        dtype: DType, size: Int
+        dtype: DType, size: SIMDSize
     ](
         lhs: SIMD[dtype, size],
         rhs: SIMD[dtype, size],
@@ -154,7 +150,7 @@ def test_assert_almost_equal():
         atol: Float64 = 0,
         rtol: Float64 = 0,
         equal_nan: Bool = False,
-    ):
+    ) raises:
         var msg = "`test_assert_almost_equal` should have failed"
         with assert_raises(contains=msg):
             assert_almost_equal(
@@ -198,19 +194,19 @@ def test_assert_almost_equal():
     )
 
 
-def test_assert_is():
+def test_assert_is() raises:
     var a = PythonObject("mojo")
     var b = a
     assert_true(a is b)
 
 
-def test_assert_is_not():
+def test_assert_is_not() raises:
     var a = PythonObject("mojo")
     var b = PythonObject("mojo")
     assert_true(a is not b)
 
 
-def test_assert_custom_location():
+def test_assert_custom_location() raises:
     var location = SourceLocation(2, 0, "my_file_location.mojo")
     try:
         assert_true(
@@ -223,18 +219,18 @@ def test_assert_custom_location():
         assert_true("always_false" in String(e))
 
 
-def test_assert_equal_stringslice():
+def test_assert_equal_stringslice() raises:
     str1 = StaticString("This is Mojo")
     str2 = "This is Mojo"
     str3 = StaticString("This is mojo")
 
-    fn _build(value: StaticString, start: Int, end: Int) -> StaticString:
+    def _build(value: StaticString, start: Int, end: Int) -> StaticString:
         return StaticString(
             ptr=value.unsafe_ptr() + start,
             length=end - start,
         )
 
-    fn _build(
+    def _build(
         read value: String, start: Int, end: Int
     ) -> StringSlice[origin_of(value)]:
         return StringSlice[origin_of(value)](
@@ -261,19 +257,19 @@ struct SomeWritable(Equatable, Writable):
     var value: Int
 
 
-def test_assert_equal_with_writable():
+def test_assert_equal_with_writable() raises:
     assert_equal(SomeWritable(1), SomeWritable(1))
     with assert_raises():
         assert_equal(SomeWritable(1), SomeWritable(2))
 
 
-def test_assert_not_equal_with_writable():
+def test_assert_not_equal_with_writable() raises:
     assert_not_equal(SomeWritable(1), SomeWritable(2))
     with assert_raises():
         assert_not_equal(SomeWritable(1), SomeWritable(1))
 
 
-def test_assert_equal_with_unicode():
+def test_assert_equal_with_unicode() raises:
     # Verify assert_equal works correctly with multi-byte Unicode codepoints.
 
     # Emoji (4 bytes each in UTF-8)
@@ -295,5 +291,5 @@ def test_assert_equal_with_unicode():
         assert_equal("abc中文def", "abc英文def")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -19,7 +19,7 @@ from max.driver import Buffer
 from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import PagedCacheValues
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 
 from ..llama3.model import LlamaModelBase
 from .model_config import Olmo2Config
@@ -52,10 +52,10 @@ class Olmo2Model(LlamaModelBase):
     ) -> Graph:
         """Override to use Olmo2Config and Olmo2 model instead of Llama3."""
 
-        device0 = self.devices[0]
-
         # Retrieve config using Olmo2Config instead of Llama3Config
-        state_dict = self._get_state_dict(weights, adapter)
+        state_dict = parse_state_dict_from_weights(
+            self.pipeline_config, weights, adapter
+        )
         model_config = Olmo2Config.initialize(self.pipeline_config)
         model_config.finalize(
             huggingface_config=self.huggingface_config,
@@ -90,15 +90,10 @@ class Olmo2Model(LlamaModelBase):
             tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
                 graph.inputs
             )
-            kv_collection = PagedCacheValues(
-                kv_blocks=kv_cache_inputs[0].buffer,
-                cache_lengths=kv_cache_inputs[1].tensor,
-                lookup_table=kv_cache_inputs[2].tensor,
-                max_lengths=kv_cache_inputs[3].tensor,
-            )
+            kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
             outputs = nn_model(
                 tokens.tensor,
-                kv_collection,
+                kv_collections[0],
                 input_row_offsets=input_row_offsets.tensor,
                 return_n_logits=return_n_logits.tensor,
             )

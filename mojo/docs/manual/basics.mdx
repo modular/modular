@@ -69,7 +69,6 @@ var x = 10
 When declaring a variable with `var`, you can also declare a variable type, with
 or without an assignment:
 
-
 ```mojo
 def main():
     var x: Int = 10
@@ -129,18 +128,14 @@ For more information on loops and conditional statements, see
 
 ## Functions
 
-You can define a Mojo function using either the `def` or `fn` keyword. For
-example, the following uses the `def` keyword to define a function named
-`greet` that requires a single `String` argument and returns a `String`:
+You define Mojo functions with the `def` keyword. For example, the
+following uses the `def` keyword to define a function named `greet`
+that requires a single `String` argument and returns a `String`:
 
 ```mojo
 def greet(name: String) -> String:
     return "Hello, " + name + "!"
 ```
-
-Where `def` and `fn` differ is error handling and argument mutability defaults.
-Refer to the [Functions](/mojo/manual/functions) page for more details on
-defining and calling functions.
 
 ## Code comments
 
@@ -159,7 +154,7 @@ var message = "Hello, World!" # This is also a valid comment
 API documentation comments are enclosed in triple quotes. For example:
 
 ```mojo
-fn print(x: String):
+def print(x: String):
     """Prints a string.
 
     Args:
@@ -198,13 +193,13 @@ struct MyPair(Copyable):
     var first: Int
     var second: Int
 
-    fn __init__(out self, first: Int, second: Int):
+    def __init__(out self, first: Int, second: Int):
         self.first = first
         self.second = second
 
-    fn __copyinit__(out self, existing: Self):
-        self.first = existing.first
-        self.second = existing.second
+    def __init__(out self, *, copy: Self):
+        self.first = copy.first
+        self.second = copy.second
 
     def dump(self):
         print(self.first, self.second)
@@ -218,13 +213,10 @@ def use_mypair():
     mine.dump()
 ```
 
-Note that some functions are declared with `fn` function, while the `dump()`
-function is declared with `def`. In general, you can use either form in a
-struct.
-
 The `MyPair` struct contains two special methods, `__init__()`, the constructor,
-and `__copyinit__()`, the copy constructor. _Lifecycle methods_ like this
-control how a struct is created, copied, moved, and destroyed.
+and `__init__(out self, *, copy: Self)`, the copy constructor.
+_Lifecycle methods_ like this control how a struct is created, copied, moved,
+and destroyed.
 
 For most simple types, you don't need to write the lifecycle methods. You can
 use the `@fieldwise_init` decorator to generate the boilerplate field-wise
@@ -260,7 +252,7 @@ For example, here's how you can create a trait:
 
 ```mojo
 trait SomeTrait:
-    fn required_method(self, x: Int): ...
+    def required_method(self, x: Int): ...
 ```
 
 The three dots following the method signature are Mojo syntax indicating that
@@ -271,7 +263,7 @@ Here's a struct that conforms to `SomeTrait`:
 ```mojo
 @fieldwise_init
 struct SomeStruct(SomeTrait):
-    fn required_method(self, x: Int):
+    def required_method(self, x: Int):
         print("hello traits", x)
 ```
 
@@ -279,10 +271,10 @@ Then, here's a function that uses the trait as an argument type (instead of the
 struct type):
 
 ```mojo
-fn fun_with_traits[T: SomeTrait](x: T):
+def fun_with_traits[T: SomeTrait](x: T):
     x.required_method(42)
 
-fn use_trait_function():
+def use_trait_function():
     var thing = SomeStruct()
     fun_with_traits(thing)
 ```
@@ -299,8 +291,8 @@ my_list = List[Float64]()
 :::note
 
 You're probably wondering about the square brackets on `fun_with_traits()`.
-These aren't function *arguments* (which go in parentheses); these are function
-*parameters*, which we'll explain next.
+These aren't function _arguments_ (which go in parentheses); these are function
+_parameters_, which we'll explain next.
 
 :::
 
@@ -309,7 +301,7 @@ specific type that implements `required_method()`, such as `SomeStruct`
 (but then the function would accept only that type). With traits, the function
 can accept any type for `x` as long as it conforms to (it "implements")
 `SomeTrait`. Thus, `fun_with_traits()` is known as a "generic function" because
-it accepts a *generalized* type instead of a specific type.
+it accepts a _generalized_ type instead of a specific type.
 
 For more details, see the page about [traits](/mojo/manual/traits).
 
@@ -332,8 +324,8 @@ function:
 
 ```mojo
 def repeat[count: Int](msg: String):
-    @parameter # evaluate the following for loop at compile time
-    for i in range(count):
+    # evaluate the following for loop at compile time
+    comptime for i in range(count):
         print(msg)
 ```
 
@@ -349,7 +341,7 @@ def call_repeat():
 
 By specifying `count` as a parameter, the Mojo compiler is able to optimize the
 function because this value is guaranteed to not change at runtime. And the
-`@parameter` decorator in the code tells the compiler to evaluate the `for` loop
+`comptime` keyword in the code tells the compiler to evaluate the `for` loop
 at compile time, not runtime.
 
 The compiler effectively generates a unique version of the `repeat()` function
@@ -365,14 +357,15 @@ For more detail on parameters, see the section on
 
 ## Python integration
 
-Mojo supports the ability to import Python modules as-is, so you can leverage existing Python code right away.
+Mojo supports the ability to import Python modules as-is, so you can leverage
+existing Python code right away.
 
 For example, here's how you can import and use NumPy:
 
 ```mojo
-from python import Python
+from std.python import Python
 
-def main():
+def main() raises:
     var np = Python.import_module("numpy")
     var ar = np.arange(15).reshape(3, 5)
     print(ar)
@@ -395,10 +388,10 @@ Mojo Manual—the next page from here is [Functions](/mojo/manual/functions).
 
 Otherwise, here are some other resources to check out:
 
-* See [Get started with Mojo](/mojo/manual/get-started) for a hands-on
+- See [Get started with Mojo](/mojo/manual/get-started) for a hands-on
   tutorial that will get you up and running with Mojo.
 
-* If you want to experiment with some code, clone [our GitHub
+- If you want to experiment with some code, clone [our GitHub
   repo](https://github.com/modular/modular/) to try our code examples:
 
   ```sh
@@ -409,5 +402,5 @@ Otherwise, here are some other resources to check out:
   cd max/examples/mojo
   ```
 
-* To see all the available Mojo APIs, check out the [Mojo standard library
+- To see all the available Mojo APIs, check out the [Mojo standard library
   reference](/mojo/lib).

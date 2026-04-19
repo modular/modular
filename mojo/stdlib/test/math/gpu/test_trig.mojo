@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import cos, sin
+from std.math import cos, sin
 
-from gpu.host import DeviceContext
-from testing import assert_almost_equal, TestSuite
+from std.gpu.host import DeviceContext
+from std.testing import assert_almost_equal, TestSuite
 
 
-fn run_func[
-    dtype: DType, kernel_fn: fn(Scalar[dtype]) capturing -> Scalar[dtype]
+def run_func[
+    dtype: DType, kernel_fn: def(Scalar[dtype]) capturing -> Scalar[dtype]
 ](
     out_prefix: String,
     val: Scalar[dtype],
@@ -30,7 +30,7 @@ fn run_func[
     var out = ctx.enqueue_create_buffer[dtype](1)
 
     @parameter
-    fn kernel(
+    def kernel(
         out_dev: UnsafePointer[Scalar[dtype], MutAnyOrigin], lhs: Scalar[dtype]
     ):
         var result = kernel_fn(lhs)
@@ -46,21 +46,21 @@ fn run_func[
         )
 
 
-def test_trig():
+def test_trig() raises:
     @parameter
-    fn cos_fn(val: Float16) -> Float16:
+    def cos_fn(val: Float16) -> Float16:
         return cos(val)
 
     @parameter
-    fn cos_fn(val: Float32) -> Float32:
+    def cos_fn(val: Float32) -> Float32:
         return cos(val)
 
     @parameter
-    fn sin_fn(val: Float16) -> Float16:
+    def sin_fn(val: Float16) -> Float16:
         return sin(val)
 
     @parameter
-    fn sin_fn(val: Float32) -> Float32:
+    def sin_fn(val: Float32) -> Float32:
         return sin(val)
 
     with DeviceContext() as ctx:
@@ -70,5 +70,5 @@ def test_trig():
         run_func[DType.float16, sin_fn]("sin", 10, -0.5439453125, ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -28,12 +28,13 @@ from .pixel_generation import (
     PixelGenerationContext,
     PixelGenerationContextType,
     PixelGenerationInputs,
-    PixelGenerationOutput,
 )
 from .text_generation import (
     BatchType,
     ImageContentPart,
     ImageMetadata,
+    MessageContent,
+    SpecDecodingState,
     TextContentPart,
     TextGenerationContext,
     TextGenerationContextType,
@@ -44,6 +45,8 @@ from .text_generation import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
+    VideoContentPart,
+    VLMContextType,
     VLMTextGenerationContext,
 )
 
@@ -60,10 +63,11 @@ __all__ = [
     "EmbeddingsGenerationOutput",
     "ImageContentPart",
     "ImageMetadata",
+    "MessageContent",
     "PixelGenerationContext",
     "PixelGenerationContextType",
     "PixelGenerationInputs",
-    "PixelGenerationOutput",
+    "SpecDecodingState",
     "TextContentPart",
     "TextGenerationContext",
     "TextGenerationContextType",
@@ -74,5 +78,7 @@ __all__ = [
     "TextGenerationRequestMessage",
     "TextGenerationRequestTool",
     "TextGenerationResponseFormat",
+    "VLMContextType",
     "VLMTextGenerationContext",
+    "VideoContentPart",
 ]

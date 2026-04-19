@@ -12,25 +12,25 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor, foreach
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 @compiler.register("add_constant_custom")
 struct AddConstantCustom[value: Int]:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         outp: OutputTensor,
-        x: InputTensor[dtype = outp.dtype, rank = outp.rank],
+        x: InputTensor[dtype=outp.dtype, rank=outp.rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
-        fn add_constant[
+        def add_constant[
             width: Int
         ](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + Scalar[outp.dtype](Self.value)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,8 +17,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from max.driver import Buffer
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.kv_cache.metrics import KVCacheMetrics
 
 if TYPE_CHECKING:
     from max.interfaces import RequestID, TextGenerationContext
@@ -32,9 +31,11 @@ class KVConnector(Protocol):
     cache. Connectors handle external tier operations (e.g., host memory)
     via lookup/load/save methods.
 
-    Async coordination:
-    - sync(): Wait for pending loads before model execution
-    - flush(): Initiate async saves after get_runtime_inputs()
+    Required call ordering per inference step:
+      1. connector.sync()   — wait for H2D loads before model execution
+      2. [model executes]
+      3. connector.flush()  — initiate D2H saves after execution
+      connector.save() is called by BlockManager between steps.
     """
 
     @property
@@ -62,14 +63,12 @@ class KVConnector(Protocol):
         self,
         ctx: TextGenerationContext,
         target_block_ids: list[int],
-        device_tensors: list[Buffer],
     ) -> list[int]:
         """Load data from external cache into device blocks.
 
         Args:
             ctx: The request context.
             target_block_ids: Device block IDs to load data into.
-            device_tensors: Device KV cache tensors to copy into.
 
         Returns:
             List of block hashes for the loaded blocks, in the same order
@@ -121,19 +120,9 @@ class KVConnector(Protocol):
         """Number of used host blocks. Returns 0 if not applicable."""
         return 0
 
-    @property
-    def host_tensors(self) -> list[Buffer] | None:
-        """Host tensors, or None if not applicable."""
-        return None
-
-    @property
-    def host_scale_tensors(self) -> list[Buffer] | None:
-        """Host scale tensors, or None if not applicable."""
-        return None
-
     def reset_prefix_cache(self) -> None:
         """Reset prefix cache. No-op by default."""
-        ...
+        return None
 
     @property
     def metrics(self) -> KVCacheMetrics:

@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
-from max.nn.legacy.layer import LayerList, Module
-from max.nn.legacy.linear import Linear
-from max.nn.legacy.norm import RMSNorm
+from max.nn.layer import LayerList, Module
+from max.nn.linear import Linear
+from max.nn.norm import RMSNorm
 
 from .attention import Attention
 
