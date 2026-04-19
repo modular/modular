@@ -417,7 +417,7 @@ def shmem_n_pes() -> c_int:
 
 def shmem_malloc[
     dtype: DType
-](size: UInt) raises -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
+](size: Int) raises -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
     """Collectively allocate symmetric memory.
 
     Parameters:
@@ -448,9 +448,9 @@ def shmem_malloc[
     """
 
     comptime if has_nvidia_gpu_accelerator():
-        return nvshmem_malloc[dtype](UInt(size_of[dtype]() * Int(size)))
+        return nvshmem_malloc[dtype](c_size_t(size_of[dtype]() * size))
     elif has_amd_gpu_accelerator():
-        return rocshmem_malloc[dtype](UInt(size_of[dtype]() * Int(size)))
+        return rocshmem_malloc[dtype](c_size_t(size_of[dtype]() * size))
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
@@ -459,7 +459,7 @@ def shmem_malloc[
 
 def shmem_calloc[
     dtype: DType
-](count: UInt, size: UInt = UInt(size_of[dtype]())) raises -> UnsafePointer[
+](count: Int, size: Int = Int(size_of[dtype]())) raises -> UnsafePointer[
     Scalar[dtype], MutExternalOrigin
 ]:
     """Collectively allocate a zeroed block of symmetric memory.
@@ -494,9 +494,9 @@ def shmem_calloc[
     """
 
     comptime if has_nvidia_gpu_accelerator():
-        return nvshmem_calloc[dtype](count, size)
+        return nvshmem_calloc[dtype](c_size_t(count), c_size_t(size))
     elif has_amd_gpu_accelerator():
-        return rocshmem_calloc[dtype](count, size)
+        return rocshmem_calloc[dtype](c_size_t(count), c_size_t(size))
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),

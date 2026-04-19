@@ -35,12 +35,11 @@ from max.nn.kernels import (
     eagle_prefill_shift_tokens,
 )
 from max.nn.kv_cache import (
-    AttentionDispatchMetadata,
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.kv_cache.input_types import PagedCacheInputSymbols
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
     _reshape_target_logits,
@@ -183,6 +182,14 @@ class Eagle3KimiK25Unified(Module):
         device0 = devices[0]
         hidden_dim = self.draft.config.hidden_size
 
+        # In TP mode each device processes a subset of attention heads.
+        use_tp_ep = self.draft.config.data_parallel_degree == 1 and n_devs > 1
+        num_heads_per_dev = (
+            self.draft.config.num_attention_heads // n_devs
+            if use_tp_ep
+            else self.draft.config.num_attention_heads
+        )
+
         last_idx = merged_offsets[1:] - 1
         num_draft_sentinel_gpu = (
             ops.shape_to_tensor([draft_tokens.shape[1]])
@@ -245,7 +252,9 @@ class Eagle3KimiK25Unified(Module):
 
             step_kv: list[PagedCacheValues] = []
             for i in range(n_devs):
-                orig_metadata = draft_kv_collections[i].dispatch_metadata
+                orig_metadata = draft_kv_collections[
+                    i
+                ].attention_dispatch_metadata
                 assert orig_metadata is not None
                 dev_batch_size = (
                     orig_metadata.tensor[0].reshape([1]).to(DeviceRef.CPU())
@@ -258,7 +267,7 @@ class Eagle3KimiK25Unified(Module):
                     q_max_seq_len=ops.constant(
                         1, DType.int64, DeviceRef.CPU()
                     ).broadcast_to([1]),
-                    num_heads=self.draft.config.num_attention_heads,
+                    num_heads=num_heads_per_dev,
                     device=devices[i],
                 ).to(devices[i])
 
@@ -268,9 +277,7 @@ class Eagle3KimiK25Unified(Module):
                         cache_lengths=cache_lengths_per_dev[i],
                         lookup_table=draft_kv_collections[i].lookup_table,
                         max_lengths=step_max_lengths,
-                        dispatch_metadata=AttentionDispatchMetadata(
-                            dev_metadata
-                        ),
+                        attention_dispatch_metadata=dev_metadata,
                     )
                 )
 
@@ -377,8 +384,8 @@ class Eagle3KimiK25Unified(Module):
 
         all_input_types.append(draft_tokens_type)
         if draft_kv_params is not None:
-            for sym in draft_kv_params.get_symbolic_inputs():
-                assert isinstance(sym, PagedCacheInputSymbols)
+            for sym in draft_kv_params.get_symbolic_inputs().inputs:
+                assert isinstance(sym, KVCacheInputsPerDevice)
                 all_input_types.append(sym.kv_blocks)
 
         return tuple(all_input_types)

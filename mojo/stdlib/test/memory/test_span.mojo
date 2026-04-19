@@ -405,11 +405,11 @@ def test_reverse() raises:
 
 def test_apply() raises:
     @parameter
-    def _twice[D: DType, w: Int](x: SIMD[D, w]) -> SIMD[D, w]:
+    def _twice[D: DType, w: SIMDSize](x: SIMD[D, w]) -> SIMD[D, w]:
         return x * 2
 
     @parameter
-    def _where[D: DType, w: Int](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
+    def _where[D: DType, w: SIMDSize](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
         return (x % 2).eq(0)
 
     def _test[D: DType]() raises:
@@ -464,7 +464,9 @@ def test_apply() raises:
 
 
 def test_count_func() raises:
-    def is_2[w: Int](v: SIMD[DType.uint8, w]) unified {} -> SIMD[DType.bool, w]:
+    def is_2[
+        w: SIMDSize
+    ](v: SIMD[DType.uint8, w]) unified {} -> SIMD[DType.bool, w]:
         return v.eq(2)
 
     var data = Span[Byte]([Byte(0), 1, 2, 1, 2, 1, 2])

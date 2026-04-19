@@ -89,7 +89,7 @@ comptime AnyOpaquePointer = OpaquePointer[AnyOrigin[mut=True]]
 # `type` doesn't do anything here, it's just for descriptive purposes, allowing
 # the ability to pass the descriptive pointer names below
 comptime DoubleNestedPointer[type: AnyType] = UnsafePointer[
-    UnsafePointer[AnyOpaquePointer, AnyOrigin[mut=True]], _
+    Optional[UnsafePointer[AnyOpaquePointer, AnyOrigin[mut=True]]], _
 ]
 
 comptime cudnnContext = AnyOpaquePointer
