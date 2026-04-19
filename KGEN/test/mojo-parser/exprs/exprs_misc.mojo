@@ -578,8 +578,6 @@ def test_if_else_move(r: Bool, var a: MoveOnly, var b: MoveOnly):
     # CHECK-NEXT: hlcf.yield
     # CHECK-NEXT: }
 
-def test_contextual_if[cond: Bool]():
-    comptime some_type: Movable = Int if cond else String
 
 ##===----------------------------------------------------------------------===##
 # comptime expression

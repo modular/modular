@@ -3644,15 +3644,10 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   // things like "Int() if cond else {}".
   auto emitToCValueInferringType = [&](ASTExprAnd<AnyValue> value,
                                        AnyValue otherValue) -> CValue {
-    // If we have a contextual type, use it.
-    if (auto expectedType = dest.getExpectedTypeIfSpecified())
-      return emitter.emitCValue(value, EC_CondExpr, expectedType);
-
     // If we already have a CValue, leave it alone so we get coercion between
     // two concrete types.
     if (auto cVal = value.ir.getIfCValue())
       return cVal;
-
     // If the other operand is a CValue, use its type.
     if (auto otherCVal = otherValue.getIfCValue())
       return emitter.emitCValue(value, EC_CondExpr, otherCVal.getRValueType());
