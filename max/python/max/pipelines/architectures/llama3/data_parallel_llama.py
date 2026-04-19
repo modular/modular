@@ -28,10 +28,7 @@ from max.graph import (
     ops,
 )
 from max.nn.data_parallelism import split_batch
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-    unflatten_ragged_attention_inputs,
-)
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.layer import Module
 from max.pipelines.lib.lora import LoRAManager
 
@@ -130,7 +127,9 @@ class DataParallelLlama(Module):
         ]
         return tuple(inputs)
 
-    def _call_flat(self, *args: Value[Any]) -> tuple[TensorValue, ...]:
+    def _call_flat(
+        self, kv_params: KVCacheParamInterface, *args: Value[Any]
+    ) -> tuple[TensorValue, ...]:
         (
             tokens,
             input_row_offsets,
@@ -148,8 +147,10 @@ class DataParallelLlama(Module):
 
         all_model_args = []
 
-        kv_collections = unflatten_ragged_attention_inputs(
-            all_kv_cache_inputs, n_devices=len(self.config.devices)
+        kv_collections = (
+            kv_params.get_symbolic_inputs()
+            .unflatten(iter(all_kv_cache_inputs))
+            .inputs
         )
 
         for i in range(len(self.config.devices)):
@@ -195,6 +196,6 @@ def create_graph(
     )
     inputs = model.input_types(kv_params, None)
     with Graph("llama3", input_types=inputs) as graph:
-        outputs = model._call_flat(*graph.inputs)
+        outputs = model._call_flat(kv_params, *graph.inputs)
         graph.output(*outputs)
         return graph, model.state_dict()

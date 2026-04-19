@@ -32,6 +32,7 @@ vision and language keys in a single loop over the raw checkpoint.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 
 from max.dtype import DType
@@ -172,7 +173,11 @@ def _convert_merged_state_dict(
         ):
             continue
 
-        result[name] = weight.data()
+        data = weight.data()
+        # Safetensors stores E8M0 scales as uint8; reinterpret.
+        if name.endswith(".weight_scale") and data.dtype == DType.uint8:
+            data = dataclasses.replace(data, dtype=DType.float8_e8m0fnu)
+        result[name] = data
 
     return result
 

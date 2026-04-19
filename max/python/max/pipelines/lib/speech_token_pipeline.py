@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, final
 
 import numpy as np
-from max.driver import DeviceStream
+from max.driver import Buffer, DeviceStream
 from max.engine import Model
 from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.interfaces import (
@@ -57,6 +57,9 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
             tokenizer,
         )
         self.d2h_stream = DeviceStream(self._devices[0])
+        # Speech pipeline doesn't use structured output, so no pinned buffer
+        # needed for async token transfers.
+        self._pinned_new_tokens: Buffer | None = None
 
     @traced
     def next_speech_token(
@@ -105,6 +108,7 @@ class SpeechTokenGenerationPipeline(TextGenerationPipeline[TTSContext]):
             context_batch=context_batch,
             num_steps=num_steps,
             device=self._devices[0],
+            pinned_new_tokens=self._pinned_new_tokens,
             bitmask=bitmask,
             vocab_size=self.vocab_size,
         )

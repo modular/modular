@@ -215,9 +215,9 @@ def test[
 
         var k_operand = LayoutTensorMHAOperand(k_device.to_layout_tensor())
         var null_valid_length = LayoutTensor[
-            DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
         ](
-            UnsafePointer[UInt32, MutAnyOrigin](),
+            None,
             RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
         )
         mha_gpu_naive[_is_cache_length_accurate=True,](
@@ -590,9 +590,9 @@ def test_prefill[
     ctx.enqueue_copy(v_ref_device_ptr, v_ref_ptr)
 
     var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ](
-        UnsafePointer[UInt32, MutAnyOrigin](),
+        None,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 

@@ -16,7 +16,7 @@ from std.gpu.host import DeviceContext
 from std.gpu.memory import AddressSpace
 from std.memory import stack_allocation
 from std.math import ceildiv
-from std.os import Atomic
+from std.atomic import Atomic
 from std.random import random_ui64
 
 # ========================== CONFIGURATION ==========================

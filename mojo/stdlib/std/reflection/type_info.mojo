@@ -159,6 +159,7 @@ def get_base_type_name[T: AnyType]() -> StaticString:
     Example:
         ```mojo
         from std.collections import List, Dict
+        from std.reflection.type_info import get_base_type_name
 
         def main():
             print(get_base_type_name[List[Int]]())  # "List"

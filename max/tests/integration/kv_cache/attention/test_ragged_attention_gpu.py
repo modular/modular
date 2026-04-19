@@ -36,8 +36,7 @@ from max.nn.kernels import (
     flash_attention_gpu,
     flash_attention_ragged_gpu,
 )
-from max.nn.kv_cache.cache_params import KVCacheParams
-from max.nn.kv_cache.input_types import PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from modular_graph_test import are_all_tensor_values
 from torch.nn.functional import scaled_dot_product_attention
 

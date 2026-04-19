@@ -67,10 +67,10 @@ def execute_ragged_flash_attention[
     comptime row_offsets_layout = Layout(UNKNOWN_VALUE)
     comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
     comptime q_ragged_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+        UNKNOWN_VALUE, num_q_heads, kv_params.head_size
     )
     comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+        UNKNOWN_VALUE, num_q_heads, kv_params.head_size
     )
     comptime lookup_table_layout = Layout(UNKNOWN_VALUE)
     comptime paged_lut_layout = Layout.row_major[2]()
@@ -80,10 +80,10 @@ def execute_ragged_flash_attention[
     var row_offsets_shape = IndexList[1](batch_size + 1)
     var cache_lengths_shape = IndexList[1](batch_size)
     var q_ragged_shape = IndexList[3](
-        total_length, num_q_heads, Int(kv_params.head_size)
+        total_length, num_q_heads, kv_params.head_size
     )
     var output_shape = IndexList[3](
-        total_length, num_q_heads, Int(kv_params.head_size)
+        total_length, num_q_heads, kv_params.head_size
     )
 
     # Create runtime layouts
@@ -152,16 +152,16 @@ def execute_ragged_flash_attention[
         2,
         num_layers,
         max_full_context_length,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var kv_block_paged_shape = IndexList[6](
         num_paged_blocks,
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var paged_lut_shape = IndexList[2](
         batch_size, ceildiv(max_full_context_length, page_size)
@@ -290,9 +290,7 @@ def execute_ragged_flash_attention[
                     * kv_block_continuous_shape[4]
                     * kv_block_continuous_shape[5]
                 )
-                var n_cpy = block_sz * Int(
-                    kv_params.num_heads * kv_params.head_size
-                )
+                var n_cpy = block_sz * kv_params.num_heads * kv_params.head_size
                 memcpy(
                     dest=kv_block_paged_tensor.ptr + paged_offset,
                     src=kv_block_continuous_tensor.ptr + continuous_offset,
@@ -302,7 +300,8 @@ def execute_ragged_flash_attention[
                     memset_zero(
                         kv_block_paged_tensor.ptr + paged_offset + n_cpy,
                         (page_size - block_sz)
-                        * Int(kv_params.num_heads * kv_params.head_size),
+                        * kv_params.num_heads
+                        * kv_params.head_size,
                     )
 
     # Create LayoutTensors for paged KV collection
@@ -360,8 +359,8 @@ def execute_ragged_flash_attention[
                 for hd in range(kv_params.head_size):
                     try:
                         assert_almost_equal(
-                            ref_out[ragged_offset + s, h, Int(hd)],
-                            test_out[ragged_offset + s, h, Int(hd)],
+                            ref_out[ragged_offset + s, h, hd],
+                            test_out[ragged_offset + s, h, hd],
                             atol=1e-2,
                         )
                     except e:
@@ -371,8 +370,8 @@ def execute_ragged_flash_attention[
                             s,
                             h,
                             hd,
-                            ref_out[ragged_offset + s, h, Int(hd)],
-                            test_out[ragged_offset + s, h, Int(hd)],
+                            ref_out[ragged_offset + s, h, hd],
+                            test_out[ragged_offset + s, h, hd],
                         )
                         raise e^
 
@@ -396,12 +395,12 @@ def execute_ragged_flash_attention[
             for s in range(prompt_len):
                 for h in range(num_q_heads):
                     for d in range(kv_params.head_size):
-                        rep = ref_out[ragged_offset + s, h, Int(d)]
-                        orig = test_out[ragged_offset + s, h, Int(d)]
+                        rep = ref_out[ragged_offset + s, h, d]
+                        orig = test_out[ragged_offset + s, h, d]
                         if rep != orig:
                             print("repeat s h d =", repeat, s, h, d)
                         assert_equal(rep, orig)
-                        ref_out[ragged_offset + s, h, Int(d)] = 123.4567
+                        ref_out[ragged_offset + s, h, d] = 123.4567
 
 
 def execute_flash_attention_suite[
@@ -445,23 +444,27 @@ def execute_flash_attention_suite[
                 tg_seq_lens, tg_cache_sizes, 2, 0, ctx
             )
 
-            comptime if has_nvidia_gpu_accelerator():
-                print("TG", bs, type, "q_heads//kv_heads = 16//1")
-                execute_ragged_flash_attention[
-                    16,
-                    type,
-                    KVCacheStaticParams(
-                        num_heads=1, head_size=kv_params.head_size
-                    ),
-                ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
-                print("TG", bs, type, "q_heads//kv_heads = 32//2")
-                execute_ragged_flash_attention[
-                    32,
-                    type,
-                    KVCacheStaticParams(
-                        num_heads=2, head_size=kv_params.head_size
-                    ),
-                ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
+            # GQA group=16 (405B TP=8 shape)
+            print(
+                "TG",
+                bs,
+                type,
+                "q_heads//kv_heads = 16//1",
+                "cache_sizes=",
+                tg_cache_sizes,
+            )
+            execute_ragged_flash_attention[
+                16,
+                type,
+                KVCacheStaticParams(num_heads=1, head_size=kv_params.head_size),
+            ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
+            # GQA group=16 (32Q/2KV variant)
+            print("TG", bs, type, "q_heads//kv_heads = 32//2")
+            execute_ragged_flash_attention[
+                32,
+                type,
+                KVCacheStaticParams(num_heads=2, head_size=kv_params.head_size),
+            ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
 
     # edge cases
     print("CE", 1, DType.bfloat16, "depth=", kv_params.head_size)
@@ -481,17 +484,40 @@ def execute_flash_attention_suite[
 
 
 def main() raises:
-    seed(42)
     with DeviceContext() as ctx:
-        # depth=64 (llama-3.2 1B config: 32 Q heads, 8 KV heads)
+        # Stress test group=16 paged decode with many seeds
+        var fail_count = 0
+        for s in range(20):
+            seed(s)
+            tg_cache_sizes = List[Int]()
+            tg_seq_lens = List[Int]()
+            for _ in range(4):
+                tg_seq_lens.append(1)
+                tg_cache_sizes.append(Int(random_ui64(1, 1024)))
+            try:
+                execute_ragged_flash_attention[
+                    16,
+                    DType.bfloat16,
+                    KVCacheStaticParams(num_heads=1, head_size=128),
+                ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
+            except e:
+                print("FAIL seed=", s, "caches=", tg_cache_sizes)
+                fail_count += 1
+        print("Results:", fail_count, "failures out of 20 seeds")
+        if fail_count > 0:
+            raise Error(String(fail_count) + " failures")
+
+        # Then run the full suite
+        seed(42)
+        # depth=64
         execute_flash_attention_suite[
             32, KVCacheStaticParams(num_heads=8, head_size=64)
         ](ctx)
-        # depth=128 (llama-3.1 config: 32 Q heads, 8 KV heads)
+        # depth=128
         execute_flash_attention_suite[
             32, KVCacheStaticParams(num_heads=8, head_size=128)
         ](ctx)
-        # depth=256 (gemma-3 config: 8 Q heads, 4 KV heads)
+        # depth=256
         execute_flash_attention_suite[
             8, KVCacheStaticParams(num_heads=4, head_size=256)
         ](ctx)

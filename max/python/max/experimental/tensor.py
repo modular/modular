@@ -608,7 +608,7 @@ class Tensor(DLPackArray, HasTensorValue):
         if self.is_distributed:
             raise ValueError(
                 f"Cannot call {op!r} on a sharded tensor distributed over "
-                f"{self._mapping}. Use per-shard access or redistribute first."
+                f"{self._mapping}. Use per-shard access or transfer_to first."
             )
 
     # ─── Backward-compatible singular storage/state properties ───────
@@ -779,6 +779,50 @@ class Tensor(DLPackArray, HasTensorValue):
         if not isinstance(value, GraphValue):
             raise TypeError(f"{value=} must be a tensor or buffer value")
         return current_realization_context().create_unrealized((value,))
+
+    @classmethod
+    def from_shard_values(
+        cls,
+        shard_values: Sequence[GraphValue],
+        mapping: DeviceMapping | None = None,
+    ) -> Tensor:
+        """Creates a tensor from one or more per-shard graph values.
+
+        For a single shard value with no mapping, behaves like
+        :meth:`from_graph_value`. For multiple shard values, a
+        :class:`~max.experimental.sharding.DeviceMapping` is required
+        and the result is a distributed tensor.
+
+        Args:
+            shard_values: Per-device graph values (TensorValue or
+                BufferValue). One per device in the mesh.
+            mapping: Device mapping describing how shards map to mesh
+                devices and their placements. Required when
+                ``len(shard_values) > 1``.
+
+        Returns:
+            A tensor backed by the provided shard values.
+
+        Raises:
+            ValueError: If multiple shard values are given without a mapping.
+            TypeError: If any shard value is not a graph value.
+        """
+        if len(shard_values) > 1 and mapping is None:
+            raise ValueError(
+                "DeviceMapping is required when providing multiple "
+                "shard values. Pass a PlacementMapping describing how "
+                "shards map to mesh devices."
+            )
+        for v in shard_values:
+            if not isinstance(v, GraphValue):
+                raise TypeError(f"{v=} must be a tensor or buffer value")
+        if mapping is None:
+            return current_realization_context().create_unrealized(
+                (shard_values[0],)
+            )
+        return current_realization_context().create_unrealized(
+            tuple(shard_values), mapping=mapping
+        )
 
     @classmethod
     def from_dlpack(cls, array: DLPackArray) -> Tensor:
@@ -1682,6 +1726,27 @@ class Tensor(DLPackArray, HasTensorValue):
             return Tensor(storage=self.driver_tensor.to(device))
         return F.transfer_to(self, device)
 
+    def materialize(self) -> Tensor:
+        """Gather a distributed tensor into a single local tensor.
+
+        Allreduces Partial axes, allgathers Sharded axes, and transfers
+        the result to CPU.  Returns ``self`` unchanged for non-distributed
+        tensors.
+        """
+        if not self.is_distributed:
+            return self
+        return _transfer_to(self, CPU())
+
+    def to_numpy(self) -> np.ndarray[Any, Any]:
+        """Convert this tensor to a NumPy array.
+
+        Materializes distributed tensors and transfers to CPU if needed.
+        """
+        t = _transfer_to(self, CPU()) if self.is_distributed else self
+        if t.device != CPU():
+            t = t.to(CPU())
+        return np.from_dlpack(t)
+
     def argmax(self, axis: int | None = -1) -> Tensor:
         """Finds the indices of the maximum values along an axis.
 
@@ -2218,6 +2283,26 @@ class Tensor(DLPackArray, HasTensorValue):
     def __getitem__(self, idx):  # noqa: ANN001
         return F.functional(graph.TensorValue.__getitem__)(self, idx)
 
+    def __setitem__(self, idx, val) -> None:  # noqa: ANN001
+        """Write into a slice of this tensor in-place.
+
+        Delegates to :func:`distributed_functional.buffer_store_slice`
+        which handles both single-device and distributed tensors.
+
+        Args:
+            idx: Index or slice specification (same syntax as
+                ``__getitem__``).
+            val: A ``Tensor`` whose data is copied into the selected
+                region.
+        """
+        if not isinstance(val, Tensor):
+            raise TypeError(
+                "__setitem__ requires a Tensor value; "
+                "use Buffer indexing for scalar writes."
+            )
+        indices = idx if isinstance(idx, tuple) else (idx,)
+        _buffer_store_slice(self, val, indices)
+
     def __abs__(self) -> Tensor:
         return F.abs(self)
 
@@ -2323,4 +2408,10 @@ class Tensor(DLPackArray, HasTensorValue):
 
 # Import functional at module end to avoid circular import.
 # This works because method bodies are evaluated at call time, not definition time.
-from max.experimental import functional as F
+import numpy as np  # isort: skip
+
+from max.experimental import functional as F  # isort: skip
+from max.experimental.distributed_functional import (  # isort: skip
+    buffer_store_slice as _buffer_store_slice,
+    transfer_to as _transfer_to,
+)

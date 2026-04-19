@@ -177,6 +177,7 @@ class UniPCMultistepScheduler:
         image_seq_len: int,
         num_inference_steps: int,
         reverse: bool = False,
+        sigma_min: float | None = None,
     ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
         """Build timestep/sigma schedule, with flow-matching support.
 
@@ -186,11 +187,13 @@ class UniPCMultistepScheduler:
             image_seq_len: Sequence length (unused for flow-matching).
             num_inference_steps: Number of denoising steps.
             reverse: Whether to reverse timesteps (non-flow only).
+            sigma_min: Unused. Accepted for interface compatibility with
+                other schedulers.
 
         Returns:
             Tuple of (timesteps, sigmas) as float32 arrays.
         """
-        del image_seq_len
+        del image_seq_len, sigma_min
         self.set_timesteps(num_inference_steps)
         assert self.timesteps is not None
         assert self.sigmas is not None

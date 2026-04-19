@@ -1253,8 +1253,8 @@ def test_sparse_paged_mma_ws_ts[
 
     # ---- Construct PagedKVCacheCollection and extract key cache ----
     comptime kv_params = KVCacheStaticParams(
-        num_heads=UInt(num_heads),
-        head_size=UInt(head_size),
+        num_heads=num_heads,
+        head_size=head_size,
     )
     var collection = PagedKVCacheCollection[op_type, kv_params, page_size](
         blocks.device_tensor(),

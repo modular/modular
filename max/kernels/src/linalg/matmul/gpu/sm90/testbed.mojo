@@ -184,10 +184,10 @@ def test_matmul_sm90[
         block_tile_shape=block_tile_shape,
         mma_shape=wgmma_shape,
         cluster_shape=cluster_shape,
-        num_pipeline_stages=UInt(num_pipeline_stages),
-        num_consumer=UInt(num_consumer),
+        num_pipeline_stages=num_pipeline_stages,
+        num_consumer=num_consumer,
         partitioned_multicast=partitioned_multicast,
-        k_group_size=UInt(k_group_size),
+        k_group_size=k_group_size,
     )
 
     warp_specialize_gemm_with_multicasting[

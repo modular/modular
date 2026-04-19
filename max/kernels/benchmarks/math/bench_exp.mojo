@@ -46,7 +46,7 @@ def apply[
     input: TileTensor[mut=False, dtype, ...],
     output: TileTensor[mut=True, dtype, ...],
 ):
-    def _func[width: Int](idx: Int) unified {mut}:
+    def _func[width: Int](idx: Int) unified {read}:
         output.store_linear[width=width](
             IndexList[1](idx),
             func(input.load_linear[width=width](IndexList[1](idx))),

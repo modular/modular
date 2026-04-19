@@ -13,7 +13,7 @@
 
 from std.collections import OptionalReg
 
-from std.os.atomic import Atomic
+from std.atomic import Atomic
 
 import std.gpu.primitives.warp as warp
 from std.builtin.device_passable import DevicePassable
