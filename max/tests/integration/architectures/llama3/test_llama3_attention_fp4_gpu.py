@@ -29,7 +29,7 @@ from max.graph.weights import WeightData
 from max.interfaces import TextGenerationContext
 from max.kv_cache import PagedKVCacheManager
 from max.nn import AttentionWithRope, Linear, RotaryEmbedding
-from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.llama3.model_config import (
     create_rope_embedding,
@@ -97,22 +97,23 @@ def attention_weights_and_scales(
         outdim = config.num_attention_heads * config.head_dim
         if key in "kv":
             outdim = config.head_dim * config.num_key_value_heads
-            # state_dict.update({f"{key}_proj.{key}_scale": torch.randn(1, dtype=torch.bfloat16).abs()})
 
+        # QKV projections use StackedLinear namespace; o_proj stays as-is.
+        prefix = f"qkv_proj.{key}" if key in "qkv" else "o_proj"
         state_dict.update(
             {
-                f"{key}_proj.input_scale": torch.tensor(
+                f"{prefix}.input_scale": torch.tensor(
                     [0.0015], dtype=torch.float32
                 ),
-                f"{key}_proj.weight": torch.randint(
+                f"{prefix}.weight": torch.randint(
                     255, (outdim, hidden_size // 2), dtype=torch.uint8
                 ),
-                f"{key}_proj.weight_scale": torch.randn(
+                f"{prefix}.weight_scale": torch.randn(
                     outdim, hidden_size // block_size
                 )
                 .abs()
                 .to(torch.float8_e4m3fn),
-                f"{key}_proj.weight_scale_2": torch.tensor(
+                f"{prefix}.weight_scale_2": torch.tensor(
                     [0.0002], dtype=torch.float32
                 ),
             }
@@ -254,9 +255,9 @@ def generate_max_outputs_fp4(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = unflatten_ragged_attention_inputs(
-            kv_cache, n_devices=1
-        )[0]
+        kv_collection: PagedCacheValues = (
+            kv_params.get_symbolic_inputs().unflatten(iter(kv_cache)).inputs[0]
+        )
 
         # Create layer_idx constant
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
@@ -290,7 +291,7 @@ def generate_max_outputs_fp4(
     out = compiled.execute(
         Buffer.from_dlpack(input_tensor_flat).to(device),
         Buffer.from_numpy(input_row_offsets_input).to(device),
-        kv_runtime_inputs.blocks.to(device),
+        kv_runtime_inputs.kv_blocks.to(device),
         kv_runtime_inputs.cache_lengths.to(device),
         kv_runtime_inputs.lookup_table.to(device),
         kv_runtime_inputs.max_lengths,

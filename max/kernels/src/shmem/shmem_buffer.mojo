@@ -50,7 +50,7 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
         size: Int,
     ) raises:
         comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
-            self._data = shmem_malloc[Self.dtype](UInt(size))
+            self._data = shmem_malloc[Self.dtype](size)
             self._ctx_ptr = ctx._handle
             self._size = size
         else:
@@ -124,15 +124,11 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
             external_call[
                 "AsyncRT_DeviceContext_DtoH_async_sized",
                 _CString[],
-                _DeviceContextPtr[mut=True],
-                UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
-                UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
-                Int,
             ](
                 self._ctx_ptr,
                 dst.unsafe_ptr(),
                 self._data,
-                self._size * size_of[Self.dtype](),
+                Int(self._size * size_of[Self.dtype]()),
             )
         )
 
@@ -184,14 +180,10 @@ struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
             external_call[
                 "AsyncRT_DeviceContext_HtoD_async_sized",
                 _CString[],
-                _DeviceContextPtr[mut=True],
-                UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
-                UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
-                Int,
             ](
                 self._ctx_ptr,
                 self._data,
                 src.unsafe_ptr(),
-                self._size * size_of[Self.dtype](),
+                Int(self._size * size_of[Self.dtype]()),
             )
         )

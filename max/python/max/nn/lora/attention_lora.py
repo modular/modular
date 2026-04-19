@@ -138,12 +138,14 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
                 "'set_lora_batch_info' not called before executing forward pass."
             )
 
-        wqkv = self.wqkv.to(x.device)
-        wqkv_bias = (
-            self.wqkv_bias.to(x.device) if self.wqkv_bias is not None else None
-        )
+        wqkv = self.qkv_proj.stacked_weight.to(x.device)
+        wqkv_bias = self.qkv_proj.stacked_bias
+        if wqkv_bias is not None:
+            wqkv_bias = wqkv_bias.to(x.device)
 
         if self.quant_config:
+            weight_scale = self.qkv_proj.stacked_weight_scale
+            assert weight_scale is not None
             xq_matmul = quantized_fused_qkv_matmul(
                 kv_params=self.kv_params,
                 x=x,
@@ -153,8 +155,8 @@ class AttentionWithRopeAndLoRA(AttentionWithRope):
                 input_row_offsets=input_row_offsets,
                 n_heads=self.n_heads,
                 quant_config=self.quant_config,
-                weight_scale=self.qkv_weight_scale,
-                input_scale=self.qkv_input_scale,
+                weight_scale=weight_scale,
+                input_scale=self.qkv_proj.stacked_input_scale,
                 bias=wqkv_bias,
             )
         else:

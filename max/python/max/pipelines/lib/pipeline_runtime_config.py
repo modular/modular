@@ -117,7 +117,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "The number of steps to run for multi-step scheduling. -1 specifies "
             "a default value based on configuration and platform. Ignored for "
-            "models which are not auto-regressive (e.g. embedding models)."
+            "models which are not auto-regressive (for example, embedding models)."
         ),
     )
 

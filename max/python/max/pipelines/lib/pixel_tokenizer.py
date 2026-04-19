@@ -143,6 +143,8 @@ class PipelineClassName(str, Enum):
     FLUX2 = "Flux2Pipeline"
     FLUX2_KLEIN = "Flux2KleinPipeline"
     ZIMAGE = "ZImagePipeline"
+    WAN = "WanPipeline"
+    WAN_I2V = "WanImageToVideoPipeline"
 
     @classmethod
     def from_class_name(cls, class_name: str) -> PipelineClassName:
@@ -283,7 +285,12 @@ class PixelGenerationTokenizer(
         if self._pipeline_class_name == PipelineClassName.ZIMAGE:
             self._num_channels_latents = transformer_config["in_channels"]
         else:
-            self._num_channels_latents = transformer_config["in_channels"] // 4
+            out_channels = transformer_config.get("out_channels")
+            self._num_channels_latents = (
+                out_channels
+                if out_channels is not None
+                else transformer_config["in_channels"] // 4
+            )
 
         # Create scheduler from its component config.
         scheduler_config = models["scheduler"].huggingface_config
@@ -382,6 +389,16 @@ class PixelGenerationTokenizer(
     def _resize_with_center_crop(
         image: PIL.Image.Image, target_width: int, target_height: int
     ) -> PIL.Image.Image:
+        # When the source is already at or above the target on both dims,
+        # do a pure PIL center crop to match the reference behavior.
+        # See `Flux2ImageProcessor._resize_and_crop` in `diffusers`.
+        w, h = image.size
+        if w >= target_width and h >= target_height:
+            left = (w - target_width) // 2
+            top = (h - target_height) // 2
+            return image.crop(
+                (left, top, left + target_width, top + target_height)
+            )
         ratio = target_width / target_height
         src_ratio = image.width / image.height
 
@@ -824,7 +841,7 @@ class PixelGenerationTokenizer(
         self,
         output: Any,
     ) -> Any:
-        """Post-process pipeline output.
+        """Post-processes pipeline output.
 
         Accepts either a raw numpy array or a GenerationOutput.
         For raw numpy arrays, denormalizes from [-1, 1] to [0, 1].
@@ -941,7 +958,7 @@ class PixelGenerationTokenizer(
         request: OpenResponsesRequest,
         input_image: PIL.Image.Image | None = None,
     ) -> PixelContext:
-        """Create a new PixelContext object, leveraging necessary information from OpenResponsesRequest."""
+        """Creates a new :class:`PixelContext` object, leveraging necessary information from :class:`OpenResponsesRequest`."""
         # Extract prompt from request using the helper method
         prompt = self._retrieve_prompt(request)
         if not prompt:
@@ -968,9 +985,17 @@ class PixelGenerationTokenizer(
                 " but may produce lower quality or unexpected results."
             )
 
+        # Resolve negative_prompt: prefer video options for video pipelines.
+        video_options = request.body.provider_options.video
+        negative_prompt_resolved = (
+            video_options.negative_prompt
+            if video_options and video_options.negative_prompt
+            else None
+        ) or image_options.negative_prompt
+
         if (
             image_options.true_cfg_scale > 1.0
-            and image_options.negative_prompt is None
+            and negative_prompt_resolved is None
         ):
             logger.warning(
                 f"true_cfg_scale={image_options.true_cfg_scale} is set, but no negative_prompt "
@@ -994,7 +1019,7 @@ class PixelGenerationTokenizer(
         else:
             do_true_cfg = (
                 image_options.true_cfg_scale > 1.0
-                and image_options.negative_prompt is not None
+                and negative_prompt_resolved is not None
             )
 
         # 1. Tokenize prompts
@@ -1019,7 +1044,7 @@ class PixelGenerationTokenizer(
         ) = await self._generate_tokens_ids(
             prompt,
             image_options.secondary_prompt,
-            image_options.negative_prompt,
+            negative_prompt_resolved,
             image_options.secondary_negative_prompt,
             do_true_cfg or do_zimage_cfg,
             images=images_for_tokenization,

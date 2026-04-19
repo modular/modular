@@ -71,7 +71,7 @@ def layer_norm(
     input, gamma = dtype_promotion._promote_weak_dtypes(input, gamma)
     input, beta = dtype_promotion._promote_weak_dtypes(input, beta)
     return Graph.current._add_op_generated(
-        mo.LayerNormOp,
+        mo.ReduceLayerNormOp,
         input._mlir_value.type,
         input,
         gamma,

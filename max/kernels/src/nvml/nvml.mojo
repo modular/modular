@@ -17,7 +17,6 @@ from std.os import abort
 from std.pathlib import Path
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle, _try_find_dylib, c_char
-from std.memory._nonnull import NonNullUnsafePointer
 
 from std.memory import stack_allocation
 
@@ -338,7 +337,7 @@ struct ClockType(Equatable, TrivialRegisterPassable):
 
 @fieldwise_init
 struct _DeviceImpl(Defaultable, ImplicitlyCopyable, RegisterPassable):
-    var handle: Optional[NonNullUnsafePointer[NoneType, MutAnyOrigin]]
+    var handle: Optional[UnsafePointer[NoneType, MutAnyOrigin]]
 
     @always_inline
     def __init__(out self):
@@ -412,12 +411,12 @@ struct Device(Writable):
             def(
                 _DeviceImpl,
                 UnsafePointer[UInt32, MutAnyOrigin],
-                UnsafePointer[UInt32, MutAnyOrigin],
-            ) thin -> Result,
+                Optional[UnsafePointer[UInt32, MutAnyOrigin]],
+            ) thin abi("C") -> Result,
         ]()(
             self.device,
             UnsafePointer(to=num_clocks),
-            UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
+            None,
         )
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
@@ -450,13 +449,13 @@ struct Device(Writable):
                 _DeviceImpl,
                 UInt32,
                 UnsafePointer[UInt32, MutAnyOrigin],
-                UnsafePointer[UInt32, MutAnyOrigin],
-            ) thin -> Result,
+                Optional[UnsafePointer[UInt32, MutAnyOrigin]],
+            ) thin abi("C") -> Result,
         ]()(
             self.device,
             UInt32(memory_clock_mhz),
             UnsafePointer(to=num_clocks),
-            UnsafePointer[UInt32, MutAnyOrigin](_unsafe_null=()),
+            None,
         )
 
         if result == Result.SUCCESS:
