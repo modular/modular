@@ -61,9 +61,9 @@ struct CodepointSliceIter[
     def __init__(out self, str_slice: StringSlice[Self.origin]):
         self._slice = str_slice
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Trait implementations
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the `StringSlice` yielding individual characters.
@@ -115,9 +115,9 @@ struct CodepointSliceIter[
         """
         return self._slice.count_codepoints()
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Methods
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     def peek_next(self) -> Optional[StringSlice[Self.origin]]:
         """Check what the next single-codepoint slice in this iterator is,
@@ -297,9 +297,9 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
     def __init__(out self, str_slice: StringSlice[Self.origin]):
         self._slice = str_slice
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Trait implementations
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     @doc_hidden
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -333,9 +333,9 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return self._slice.count_codepoints()
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Methods
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     def peek_next(self) -> Optional[Codepoint]:
         """Check what the next codepoint in this iterator is, without advancing

@@ -210,9 +210,9 @@ struct Context[device_origin: MutOrigin, device_spec: DeviceSpec](Movable):
             compiled_info.function_name,
         )
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Queue operations
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     def create_queue(
         mut self,
@@ -223,9 +223,9 @@ struct Context[device_origin: MutOrigin, device_spec: DeviceSpec](Movable):
             self
         )
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Memory operations
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     def alloc_sync(mut self, byte_size: UInt64) raises HALError -> Buffer:
         return Buffer(
@@ -239,9 +239,9 @@ struct Context[device_origin: MutOrigin, device_spec: DeviceSpec](Movable):
         """Get the GPU address of a device memory allocation."""
         return self._raw[].get_memory_property["address", UInt64](mem._handle)
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Function execution
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     def load_function(
         mut self, bundle: RuntimeBundle, var name: String

@@ -27,9 +27,9 @@ import std.format._utils as fmt
 from std.hashlib import Hasher
 from std.collections import check_bounds
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Deque
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 struct Deque[ElementType: Copyable & ImplicitlyDestructible](
@@ -65,16 +65,16 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     comptime IteratorOwnedType: Iterator = _DequeIterOwned[Self.ElementType]
     """The owned iterator type for this deque."""
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Aliases
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     comptime default_capacity: Int = 64
     """The default capacity of the deque: must be the power of 2."""
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Fields
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     var _data: UnsafePointer[Self.ElementType, MutExternalOrigin]
     """The underlying storage for the deque."""
@@ -101,9 +101,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     var _shrink: Bool
     """ Indicates whether the deque's storage is re-allocated to a smaller size when possible."""
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Life cycle methods
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     def __init__(
         out self,
@@ -206,9 +206,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             (self._data + offset).destroy_pointee()
         self._data.free()
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Operator dunders
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     def __add__(self, other: Self) -> Self:
         """Concatenates self with other and returns the result as a new deque.
@@ -355,9 +355,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """
         return _DequeIter[forward=False](len(self), Pointer(to=self))
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Trait implementations
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     @always_inline
     def __bool__(self) -> Bool:
@@ -454,9 +454,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             fmt.TypeNames[Self.ElementType](),
         ).fields[FieldsFn=write_fields]()
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Methods
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     def append(mut self, var value: Self.ElementType):
         """Appends a value to the right side of the deque.

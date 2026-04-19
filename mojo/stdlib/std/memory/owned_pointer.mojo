@@ -48,9 +48,9 @@ struct OwnedPointer[T: AnyType](
 
     var _inner: UnsafePointer[Self.T, MutExternalOrigin]
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Life cycle methods
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     def __init__[_T: Movable](out self: OwnedPointer[_T], var value: _T):
         """Construct a new `OwnedPointer` by moving the passed value into a new backing allocation.
@@ -161,9 +161,9 @@ struct OwnedPointer[T: AnyType](
         self._inner.bitcast[TDestructible]().destroy_pointee()
         self._inner.free()
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Operator dunders
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     def __getitem__(
         ref[AddressSpace.GENERIC] self,
@@ -180,9 +180,9 @@ struct OwnedPointer[T: AnyType](
         # All of the magic happens above in the function signature
         return self._inner[]
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Methods
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     def unsafe_ptr[
         mut: Bool,

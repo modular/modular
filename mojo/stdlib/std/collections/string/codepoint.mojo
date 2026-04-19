@@ -100,9 +100,9 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     var _scalar_value: UInt32
     """The Unicode scalar value represented by this type."""
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Life cycle methods
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     @always_inline
     def __init__(out self, *, unsafe_unchecked_codepoint: UInt32):
@@ -136,9 +136,9 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         """
         self._scalar_value = UInt32(Int(codepoint))
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Factory methods
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     @staticmethod
     def from_u32(codepoint: UInt32) -> Optional[Self]:
@@ -260,9 +260,9 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         var char = Codepoint(unsafe_unchecked_codepoint=UInt32(result))
         return char, Int(num_bytes)
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Operator dunders
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     def __lt__(self, other: Self) -> Bool:
         """Return True if this character is less than a different codepoint value from
@@ -277,9 +277,9 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         """
         return self.to_u32() < other.to_u32()
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Trait implementations
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     @always_inline
     def __int__(self) -> Int:
@@ -314,9 +314,9 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         """
         fmt.FormatStruct(writer, "Codepoint").fields(self._scalar_value)
 
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
     # Methods
-    # ===-------------------------------------------------------------------===#
+    # ===------------------------------------------------------------------=== #
 
     @always_inline
     def is_ascii(self) -> Bool:

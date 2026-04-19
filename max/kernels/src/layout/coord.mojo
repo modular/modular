@@ -346,9 +346,9 @@ def Idx(
     return RuntimeInt[value.dtype](value)
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # _All — "keep this dimension" marker for TileTensor.__getitem__
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 struct _All(CoordLike, TrivialRegisterPassable):
@@ -533,7 +533,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return Self.__len__()
 
     @always_inline("nodebug")
-    def __init__(out self, var *args: *Self.element_types):
+    def __init__(out self, var *args: * Self.element_types):
         """Construct tuple from variadic arguments.
 
         Args:
@@ -1665,9 +1665,9 @@ Example:
 """
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # CoordLike to Dynamic conversion
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 comptime _CoordToDynamicMapper[
@@ -1707,9 +1707,9 @@ Example:
 """
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Nested dynamic coord type computation
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 comptime _NestedDynamicCoordMapper[
@@ -1758,9 +1758,9 @@ Example:
 """
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Deep nested dynamic coord type computation (depth 2 and 3)
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # These extend _NestedDynamicCoord (depth 1) to support deeper nesting.
 # Each level uses the previous level for its nested elements:
 #   depth 1: _NestedDynamicCoord — tuples become Coord[RuntimeInt, ...]
@@ -1842,9 +1842,9 @@ comptime _DeepDynamicCoord4[dtype: DType, *element_types: CoordLike] = TypeList[
 """Converts CoordLike types to dynamic types preserving up to 4 levels of nesting."""
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # idx2crd result type computation
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 comptime _Idx2CrdResultMapper[
@@ -1949,7 +1949,7 @@ struct _RegTuple[*element_types: CoordLike](
         )
 
     @always_inline("nodebug")
-    def __init__(out self, var *args: *Self.element_types):
+    def __init__(out self, var *args: * Self.element_types):
         """Construct the tuple.
 
         Args:

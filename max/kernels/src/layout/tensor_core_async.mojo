@@ -62,9 +62,9 @@ from layout.tile_layout import Layout as TileLayout
 
 from std.utils import IndexList, StaticTuple
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # WGMMA shared memory layout                                                   #
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 #
 # TODO: add more context for WGMMA, core matrix. Assuming reader know them for now
 #

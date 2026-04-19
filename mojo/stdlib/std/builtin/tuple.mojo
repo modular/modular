@@ -37,9 +37,9 @@ from std.reflection.type_info import _unqualified_type_name
 
 from std.utils._visualizers import lldb_formatter_wrapping_type
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Tuple
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 @lldb_formatter_wrapping_type
@@ -115,7 +115,7 @@ struct Tuple[*element_types: Movable](
             ).init_pointee_move({})
 
     @always_inline("nodebug")
-    def __init__(out self, var *args: *Self.element_types):
+    def __init__(out self, var *args: * Self.element_types):
         """Construct the tuple.
 
         Args:

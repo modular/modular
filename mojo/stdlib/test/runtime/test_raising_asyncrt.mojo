@@ -21,9 +21,9 @@ from std.runtime.asyncrt import create_task, create_raising_task
 from std.testing import assert_equal, assert_true
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Raising async functions used by the tests
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 async def add_async(a: Int, b: Int) raises -> Int:
@@ -43,11 +43,11 @@ async def conditional_raise(should_fail: Bool) raises -> Int:
     return 42
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Phase 1: Use non-raising wrappers to catch errors from raising
 # async functions. This tests that try/except works within async functions
 # when awaiting RaisingCoroutines.
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 def test_raising_async_success_via_wrapper() raises:
@@ -120,10 +120,10 @@ def test_raising_async_conditional_via_wrapper() raises:
     assert_equal(t_fail.wait(), -1)
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Phase 2: Direct raising task support via create_raising_task.
 # RaisingTask.wait() takes `deinit self`, so we transfer with `^`.
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 def test_raising_task_success() raises:
@@ -169,11 +169,11 @@ def test_raising_task_multiple_success() raises:
     assert_equal(r2, 7)
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Phase 3: Await RaisingTask inside async functions via __await__.
 # This uses non-raising wrappers so we can collect the results with
 # regular Tasks.
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 def test_raising_task_await_success() raises:

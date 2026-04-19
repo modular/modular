@@ -19,9 +19,9 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.utils.index import Index, IndexList
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Benchmark elementwise
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 @parameter
 def bench_elementwise[n: Int](mut b: Bencher) raises:
     var vector = InlineArray[Scalar[DType.int], n](fill=-1)

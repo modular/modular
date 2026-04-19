@@ -38,7 +38,7 @@ warnings.filterwarnings("ignore")
 LINE = 80 * "-"
 
 
-HEADER = """##===----------------------------------------------------------------------===##
+HEADER = """# ===----------------------------------------------------------------------=== #
 # Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
@@ -49,7 +49,7 @@ HEADER = """##===---------------------------------------------------------------
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-##===----------------------------------------------------------------------===##
+# ===----------------------------------------------------------------------=== #
 """
 
 
@@ -75,7 +75,9 @@ def specs_to_df(specs: list[str]) -> pd.DataFrame:
     return df
 
 
-def extract_pivots_df(df: pd.DataFrame, exclude: list[str] | None = None):  # noqa: ANN201
+def extract_pivots_df(
+    df: pd.DataFrame, exclude: list[str] | None = None
+):  # noqa: ANN201
     if exclude is None:
         exclude = []
     # df = specs_to_df(x_labels)
@@ -94,7 +96,9 @@ def extract_pivots_df(df: pd.DataFrame, exclude: list[str] | None = None):  # no
     return pivot_columns, non_pivot_columns
 
 
-def extract_pivots(x_labels: list[str], exclude: list[str] | None = None):  # noqa: ANN201
+def extract_pivots(
+    x_labels: list[str], exclude: list[str] | None = None
+):  # noqa: ANN201
     df = specs_to_df(x_labels)
     return extract_pivots_df(df=df, exclude=exclude)
 
@@ -207,9 +211,9 @@ class KbenchPKL:
                     break
         assert valid_metric, f"ERROR: metric [{metric}] is not valid!"
         self.metric = metric
-        assert is_numeric_dtype(self.merged_df[metric]), (
-            f"ERROR: metric [{metric}] is not numeric!"
-        )
+        assert is_numeric_dtype(
+            self.merged_df[metric]
+        ), f"ERROR: metric [{metric}] is not numeric!"
         # Setting the sort order based on the metric
         # TODO: move this dict to a global variable or singleton.
         ascending_sort = {

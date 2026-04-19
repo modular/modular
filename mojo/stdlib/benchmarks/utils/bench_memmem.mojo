@@ -19,9 +19,9 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from std.bit import count_trailing_zeros
 from std.memory import memcmp, pack_bits
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Benchmark Data
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 comptime haystack = """Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer sed dictum est, et finibus ipsum. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Nam tincidunt vel lacus vitae pulvinar. Donec ac ligula elementum, mollis purus a, lacinia quam. Maecenas vulputate mauris quis sem euismod sollicitudin. Proin accumsan nulla vel nisl congue varius. Morbi a erat dui. Aliquam maximus interdum orci, vitae pretium lorem bibendum non. Vestibulum eu lacus ullamcorper, egestas dui vel, pharetra ipsum. Pellentesque sagittis, urna a tincidunt sodales, leo sem placerat eros, vitae molestie felis diam at dolor.
 
@@ -142,9 +142,9 @@ comptime needle = "school"  # a word intentionally not in the test data
 from std.benchmark import black_box, keep
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Baseline `_memmem` implementation
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 @always_inline
 def _memmem_baseline[
     dtype: DType
@@ -200,9 +200,9 @@ def _memmem_baseline[
     return {}
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Benchmarks
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 @parameter
 def bench_find_baseline(mut b: Bencher) raises:
     # Make sure comptime materialization happens before the benchmark starts.
@@ -241,9 +241,9 @@ def bench_find_optimized(mut b: Bencher) raises:
     b.iter[call_fn]()
 
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # Benchmark Main
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
     m.bench_function[bench_find_baseline](BenchId("find_baseline"))

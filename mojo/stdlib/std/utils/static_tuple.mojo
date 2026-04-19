@@ -22,9 +22,9 @@ from std.utils import StaticTuple
 from std.builtin.device_passable import DevicePassable
 from std.compile import get_type_name
 
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # StaticTuple
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 comptime _StaticTupleTraits = ImplicitlyCopyable & ImplicitlyDestructible & RegisterPassable
 """The required trait conformances for a StaticTuple's element type."""
