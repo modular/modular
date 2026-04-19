@@ -3648,6 +3648,11 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     // two concrete types.
     if (auto cVal = value.ir.getIfCValue())
       return cVal;
+
+    // If we have a contextual type, use it.
+    if (auto expectedType = dest.getExpectedTypeIfSpecified())
+      return emitter.emitCValue(value, EC_CondExpr, expectedType);
+
     // If the other operand is a CValue, use its type.
     if (auto otherCVal = otherValue.getIfCValue())
       return emitter.emitCValue(value, EC_CondExpr, otherCVal.getRValueType());
@@ -3821,7 +3826,8 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
         emitToCValueInferringType({falseRawVal, falseExpr}, trueRawVal);
     // Coerce the types to each other if they disagree.
     if (emitter.coerceTypesToEachOther(getLoc(), trueVal, trueExpr, falseVal,
-                                       falseExpr, {}))
+                                       falseExpr, {},
+                                       dest.getExpectedTypeIfSpecified()))
       return {};
 
     PValue truePVal = emitter.emitPValue({trueVal, trueExpr}, EC_CondExpr);
@@ -3885,7 +3891,8 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
       emitter.builder->setInsertionPointToEnd(&b);
     };
     if (emitter.coerceTypesToEachOther(getLoc(), trueVal, trueExpr, falseVal,
-                                       falseExpr, configEmitter)) {
+                                       falseExpr, configEmitter,
+                                       dest.getExpectedTypeIfSpecified())) {
       dest.resetForError(emitter);
       return {};
     }
@@ -3954,7 +3961,8 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
     emitter.builder->setInsertionPointToEnd(&b);
   };
   if (emitter.coerceTypesToEachOther(getLoc(), trueVal, trueExpr, falseVal,
-                                     falseExpr, configEmitter)) {
+                                     falseExpr, configEmitter,
+                                     dest.getExpectedTypeIfSpecified())) {
     dest.resetForError(emitter);
     return {};
   }

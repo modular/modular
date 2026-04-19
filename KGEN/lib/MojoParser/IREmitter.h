@@ -392,10 +392,14 @@ public:
   ///
   /// The 'configEmitter' function is called to set the insertion point of the
   /// emitter for the true/false branches of the conditional.
+  ///
+  /// The 'contextualType' (if specified) is the type the expression is being
+  /// emitted into.
   ParseResult
   coerceTypesToEachOther(SMLoc loc, CValue &lhs, const ExprNode *lhsExpr,
                          CValue &rhs, const ExprNode *rhsExpr,
-                         std::function<void(bool isLHS)> configEmitter);
+                         std::function<void(bool isLHS)> configEmitter,
+                         ASTType contextualType = {});
 
   /// If there is a common type shared between the two reference types, return
   /// it. Otherwise return null.

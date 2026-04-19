@@ -992,7 +992,7 @@ enum CommonTypeResult {
 
 static std::tuple<CommonTypeResult, PValue, PValue>
 findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
-               ASTType &result, IREmitter &emitter) {
+               ASTType &result, IREmitter &emitter, ASTType contextualType) {
 
   // If the types already match, then we're done.
   ASTType type1 = val1.ir.getRValueType();
@@ -1057,8 +1057,17 @@ findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
     return {CTR_MergeWithConvertFail, PValue(), rhsMWPV};
   }
 
-  // Otherwise, we have no __merge_with__ method, check out implicit
-  // conversions.
+  // Otherwise, we have no __merge_with__ method, see if there is a contextual
+  // type.  If so, convert to that.
+  if (contextualType) {
+    if (IREmitter::canImplicitlyConvertToType(val1, contextualType,
+                                              emitter.declScope) &&
+        IREmitter::canImplicitlyConvertToType(val2, contextualType,
+                                              emitter.declScope))
+      return succeed(contextualType);
+  }
+
+  // Otherwise, check out implicit conversions from one value to the other.
 
   // If one type implicit converts to the other, then the other is a common
   // type.  Don't do this if both convert to each other, this would be
@@ -1109,7 +1118,8 @@ findCommonType(ASTExprAnd<CValue> val1, ASTExprAnd<CValue> val2,
 /// emitter for the true/false branches of the conditional.
 ParseResult IREmitter::coerceTypesToEachOther(
     SMLoc loc, CValue &lhs, const ExprNode *lhsExpr, CValue &rhs,
-    const ExprNode *rhsExpr, std::function<void(bool isLHS)> configEmitter) {
+    const ExprNode *rhsExpr, std::function<void(bool isLHS)> configEmitter,
+    ASTType contextualType) {
   if (!configEmitter)
     configEmitter = [&](bool isLHS) {};
 
@@ -1119,8 +1129,8 @@ ParseResult IREmitter::coerceTypesToEachOther(
   // If they are the same or if there is a common type between these, convert
   // them to it.
   ASTType commonType;
-  auto [commonTypeResult, lhsMWPV, rhsMWPV] =
-      findCommonType({lhs, lhsExpr}, {rhs, rhsExpr}, commonType, *this);
+  auto [commonTypeResult, lhsMWPV, rhsMWPV] = findCommonType(
+      {lhs, lhsExpr}, {rhs, rhsExpr}, commonType, *this, contextualType);
 
   // If we failed and have no source location, we just return failure without
   // returning an error.
