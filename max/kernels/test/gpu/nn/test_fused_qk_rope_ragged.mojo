@@ -96,16 +96,14 @@ def execute_fused_qk_rope_ragged(
         2,
         UNKNOWN_VALUE,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     comptime paged_lut_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     # Define TileTensor layouts (compile-time static where possible)
     var row_offsets_tile_layout = row_major(Idx(batch_size + 1))
-    comptime freqs_tile_layout = row_major[
-        max_seq_len, Int(kv_params.head_size)
-    ]()
+    comptime freqs_tile_layout = row_major[max_seq_len, kv_params.head_size]()
 
     # Create shapes
     var true_ce_row_offsets_shape = Index(batch_size + 1)
@@ -113,29 +111,29 @@ def execute_fused_qk_rope_ragged(
     var true_ce_cache_lengths_shape = Index(batch_size)
     var mixed_ce_cache_lengths_shape = Index(batch_size)
     var true_ce_q_ragged_shape = IndexList[3](
-        true_ce_total_length, num_q_heads, Int(kv_params.head_size)
+        true_ce_total_length, num_q_heads, kv_params.head_size
     )
     var mixed_ce_q_ragged_shape = IndexList[3](
-        mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
+        mixed_ce_total_length, num_q_heads, kv_params.head_size
     )
     var true_ce_output_shape = IndexList[3](
-        true_ce_total_length, num_q_heads, Int(kv_params.head_size)
+        true_ce_total_length, num_q_heads, kv_params.head_size
     )
     var mixed_ce_output_shape = IndexList[3](
-        mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
+        mixed_ce_total_length, num_q_heads, kv_params.head_size
     )
     var kv_block_shape = IndexList[6](
         num_paged_blocks,
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var paged_lut_shape = IndexList[2](
         batch_size, ceildiv(true_ce_max_full_context_length, page_size)
     )
-    var freqs_shape = IndexList[2](max_seq_len, Int(kv_params.head_size))
+    var freqs_shape = IndexList[2](max_seq_len, kv_params.head_size)
 
     # Create runtime layouts for LayoutTensor
     var true_ce_cache_lengths_runtime_layout = RuntimeLayout[
@@ -219,10 +217,10 @@ def execute_fused_qk_rope_ragged(
 
     # Define runtime layouts for q_ragged and output (these have UNKNOWN_VALUE dims)
     comptime q_ragged_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+        UNKNOWN_VALUE, num_q_heads, kv_params.head_size
     )
     comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
+        UNKNOWN_VALUE, num_q_heads, kv_params.head_size
     )
     var true_ce_q_ragged_runtime_layout = RuntimeLayout[
         q_ragged_layout
@@ -258,10 +256,10 @@ def execute_fused_qk_rope_ragged(
                 true_ce_src_offset = (
                     (true_ce_row_offset + mixed_ce_cache_len)
                     * num_q_heads
-                    * Int(kv_params.head_size)
+                    * kv_params.head_size
                 )
                 mixed_ce_dest_offset = (
-                    mixed_ce_row_offset * num_q_heads * Int(kv_params.head_size)
+                    mixed_ce_row_offset * num_q_heads * kv_params.head_size
                 )
 
                 memcpy(
@@ -269,7 +267,7 @@ def execute_fused_qk_rope_ragged(
                     src=true_ce_q_ragged_tensor.ptr + true_ce_src_offset,
                     count=mixed_ce_prompt_len
                     * num_q_heads
-                    * Int(kv_params.head_size),
+                    * kv_params.head_size,
                 )
 
     # Initialize freqs_cis_table with golden values
@@ -324,7 +322,7 @@ def execute_fused_qk_rope_ragged(
             (
                 Idx(true_ce_total_length),
                 Idx[num_q_heads](),
-                Idx[Int(kv_params.head_size)](),
+                Idx[kv_params.head_size](),
             )
         ),
     )
@@ -334,7 +332,7 @@ def execute_fused_qk_rope_ragged(
             (
                 Idx(mixed_ce_total_length),
                 Idx[num_q_heads](),
-                Idx[Int(kv_params.head_size)](),
+                Idx[kv_params.head_size](),
             )
         ),
     )
@@ -344,7 +342,7 @@ def execute_fused_qk_rope_ragged(
             (
                 Idx(true_ce_total_length),
                 Idx[num_q_heads](),
-                Idx[Int(kv_params.head_size)](),
+                Idx[kv_params.head_size](),
             )
         ),
     )
@@ -354,7 +352,7 @@ def execute_fused_qk_rope_ragged(
             (
                 Idx(mixed_ce_total_length),
                 Idx[num_q_heads](),
-                Idx[Int(kv_params.head_size)](),
+                Idx[kv_params.head_size](),
             )
         ),
     )
@@ -483,14 +481,14 @@ def execute_fused_qk_rope_ragged(
                                 mixed_ce_out_tensor[
                                     mixed_ce_batch_start_idx + tok_idx,
                                     head_idx,
-                                    Int(head_dim),
+                                    head_dim,
                                 ],
                                 true_ce_out_tensor[
                                     true_ce_batch_start_idx
                                     + mixed_ce_cache_len
                                     + tok_idx,
                                     head_idx,
-                                    Int(head_dim),
+                                    head_dim,
                                 ],
                             )
 
@@ -580,15 +578,15 @@ def execute_fused_qk_rope_ragged(
                     assert_almost_equal(
                         true_ce_k_cache.load[width=1](
                             bs_idx,
-                            Int(head_idx),
+                            head_idx,
                             mixed_ce_cache_len + tok_idx,
-                            Int(head_dim),
+                            head_dim,
                         ),
                         mixed_ce_k_cache.load[width=1](
                             bs_idx,
-                            Int(head_idx),
+                            head_idx,
                             mixed_ce_cache_len + tok_idx,
-                            Int(head_dim),
+                            head_dim,
                         ),
                     )
 
@@ -644,15 +642,15 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     comptime kv_block_64_layout = Layout.row_major(
         num_paged_blocks,
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
+        kv_params.num_heads,
         rope_dim,
     )
     comptime paged_lut_layout = Layout.row_major(batch_size, 2)
@@ -678,15 +676,15 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var kv_block_64_shape = IndexList[6](
         num_paged_blocks,
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
+        kv_params.num_heads,
         rope_dim,
     )
     var freqs_shape = IndexList[2](max_seq_len, rope_dim)
@@ -813,22 +811,22 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
                                 * 2
                                 * num_layers
                                 * page_size
-                                * Int(kv_params.num_heads)
+                                * kv_params.num_heads
                                 * Int(kv_params.head_size)
                                 + kv_idx
                                 * num_layers
                                 * page_size
-                                * Int(kv_params.num_heads)
-                                * Int(kv_params.head_size)
+                                * kv_params.num_heads
+                                * kv_params.head_size
                                 + layer_idx
                                 * page_size
-                                * Int(kv_params.num_heads)
-                                * Int(kv_params.head_size)
+                                * kv_params.num_heads
+                                * kv_params.head_size
                                 + tok_idx
-                                * Int(kv_params.num_heads)
-                                * Int(kv_params.head_size)
-                                + Int(head_idx) * Int(kv_params.head_size)
-                                + Int(kv_params.head_size)
+                                * kv_params.num_heads
+                                * kv_params.head_size
+                                + head_idx * kv_params.head_size
+                                + kv_params.head_size
                                 - rope_dim
                             )
                             var dest_offset = (
@@ -836,19 +834,19 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
                                 * 2
                                 * num_layers
                                 * page_size
-                                * Int(kv_params.num_heads)
+                                * kv_params.num_heads
                                 * rope_dim
                                 + kv_idx
                                 * num_layers
                                 * page_size
-                                * Int(kv_params.num_heads)
+                                * kv_params.num_heads
                                 * rope_dim
                                 + layer_idx
                                 * page_size
-                                * Int(kv_params.num_heads)
+                                * kv_params.num_heads
                                 * rope_dim
-                                + tok_idx * Int(kv_params.num_heads) * rope_dim
-                                + Int(head_idx) * rope_dim
+                                + tok_idx * kv_params.num_heads * rope_dim
+                                + head_idx * rope_dim
                             )
                             memcpy(
                                 dest=kv_block_64_tensor.ptr + dest_offset,
@@ -1054,16 +1052,16 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
                                         kv_idx,
                                         layer_idx,
                                         tok_idx,
-                                        Int(head_idx),
-                                        Int(head_dim_idx),
+                                        head_idx,
+                                        head_dim_idx,
                                     ],
                                     kv_block_host_tensor[
                                         page_idx,
                                         kv_idx,
                                         layer_idx,
                                         tok_idx,
-                                        Int(head_idx),
-                                        Int(head_dim_idx),
+                                        head_idx,
+                                        head_dim_idx,
                                     ],
                                 )
                             # Last 64 elements should match reference
@@ -1074,19 +1072,17 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
                                         kv_idx,
                                         layer_idx,
                                         tok_idx,
-                                        Int(head_idx),
-                                        Int(
-                                            kv_params.head_size
-                                            - rope_dim
-                                            + UInt(head_dim_idx)
-                                        ),
+                                        head_idx,
+                                        kv_params.head_size
+                                        - rope_dim
+                                        + head_dim_idx,
                                     ],
                                     kv_block_64_out_tensor[
                                         page_idx,
                                         kv_idx,
                                         layer_idx,
                                         tok_idx,
-                                        Int(head_idx),
+                                        head_idx,
                                         head_dim_idx,
                                     ],
                                 )

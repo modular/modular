@@ -114,7 +114,7 @@ class CompilationTimer:
         ) = None
 
     def mark_build_complete(self) -> None:
-        """Mark the end of the build phase and log build time."""
+        """Marks the end of the build phase and logs build time."""
         assert self._start_time is not None
         self._build_end_time = time.perf_counter()
         logger.info(

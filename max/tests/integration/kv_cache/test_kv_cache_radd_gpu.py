@@ -21,10 +21,7 @@ from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.buffer_utils import cast_tensor_to
 from max.kv_cache import PagedKVCacheManager
 from max.nn.kernels import kv_cache_ragged_radd
-from max.nn.kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from test_common.context_utils import create_text_context
 
 
@@ -115,7 +112,7 @@ def test_kv_cache_radd_basic() -> None:
             a_type,
             input_row_offsets_type,
             batch_offset_type,
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs().flatten(),
         ],
     )
 
@@ -130,7 +127,7 @@ def test_kv_cache_radd_basic() -> None:
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
 
-    kv_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    kv_inputs = kv_manager.runtime_inputs([batch]).flatten()
 
     a_np = np.ones(
         (a_length, kv_params.n_kv_heads * kv_params.head_dim * 2),

@@ -29,8 +29,10 @@ import subprocess
 import sys
 import time
 import warnings
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Iterator, Sequence
+from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, TypeGuard
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -53,6 +55,7 @@ if TYPE_CHECKING:
     from max.diagnostics.gpu import GPUStats
 
 from max.benchmark.benchmark_shared.config import (
+    CACHE_RESET_ENDPOINT_MAP,
     PIXEL_GEN_DEFAULT_ENDPOINT,
     PIXEL_GENERATION_ENDPOINTS,
     PIXEL_GENERATION_TASKS,
@@ -119,7 +122,11 @@ from max.benchmark.benchmark_shared.server_metrics import (
 )
 from max.benchmark.benchmark_shared.steady_state import detect_steady_state
 from max.benchmark.benchmark_shared.utils import (
+    argmedian,
     get_tokenizer,
+    int_or_none,
+    is_castable_to_int,
+    parse_comma_separated,
     print_section,
     set_ulimit,
 )
@@ -137,7 +144,7 @@ BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
     " before running this command."
 )
 
-logger = logging.getLogger("benchmark_serving")
+logger = logging.getLogger(__name__)
 
 
 def compute_output_len(
@@ -197,6 +204,46 @@ def _prepend_run_prefix_to_formatted_prompt(
             "run_prefix: unsupported prompt shape for first message"
         )
     return [new_msg, *prompt[1:]]
+
+
+def parse_response_format(
+    response_format_arg: str | None,
+) -> dict[str, Any] | None:
+    """Parse response format from CLI arg (inline JSON or @filepath).
+
+    Args:
+        response_format_arg: Either a JSON string or '@path/to/schema.json' to load
+            from file. If None, returns None.
+
+    Returns:
+        Parsed response format dictionary, or None if input is None.
+
+    Raises:
+        ValueError: If the JSON is invalid or the file cannot be read.
+    """
+    if response_format_arg is None:
+        return None
+
+    if response_format_arg.startswith("@"):
+        # Load from file
+        file_path = response_format_arg[1:]
+        try:
+            with open(file_path) as f:
+                return json.load(f)
+        except FileNotFoundError as e:
+            raise ValueError(
+                f"Response format file not found: {file_path}"
+            ) from e
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Invalid JSON in response format file {file_path}: {e}"
+            ) from e
+
+    # Parse inline JSON
+    try:
+        return json.loads(response_format_arg)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in response format: {e}") from e
 
 
 def get_default_trace_path() -> str:
@@ -341,6 +388,7 @@ def build_single_turn_request_input(
             prompt_len=prompt_len,
             max_tokens=max_tokens,
             ignore_eos=request.ignore_eos,
+            response_format=request.response_format,
         )
     if benchmark_task in PIXEL_GENERATION_TASKS:
         if not isinstance(request, PixelGenerationSampledRequest):
@@ -1967,6 +2015,99 @@ def _add_steady_state_result(
         logger.warning(f"Steady-state detection: {steady.warning}")
 
 
+async def prime_shared_contexts(
+    model_id: str,
+    api_url: str,
+    samples: Samples,
+    request_driver: RequestDriver,
+    temperature: float | None,
+    top_p: float | None,
+    top_k: int | None,
+    run_prefix: str | None = None,
+    run_prefix_len: int = 0,
+) -> None:
+    """Warm up prefix caching by sending each shared context for prefilling."""
+    warmup_entries = samples.shared_contexts
+
+    if not warmup_entries:
+        logger.warning(
+            "shared_contexts is empty; the prefix cache could not be primed."
+            " Check that --random-sys-prompt-ratio > 0 and input lengths are"
+            " sufficient to produce a non-trivial shared context."
+        )
+        return
+
+    logger.info(
+        f"Warming prefix cache with {len(warmup_entries)}"
+        " unique shared context(s)..."
+    )
+
+    is_chat = isinstance(samples, ChatSamples)
+    warmup_inputs: list[RequestFuncInput] = []
+    for entry in warmup_entries:
+        warmup_prompt: str | list[dict[str, Any]]
+        if is_chat:
+            warmup_prompt = [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": entry.text}],
+                }
+            ]
+        else:
+            warmup_prompt = entry.text
+
+        if run_prefix:
+            warmup_prompt = _prepend_run_prefix_to_formatted_prompt(
+                warmup_prompt, run_prefix
+            )
+
+        warmup_inputs.append(
+            RequestFuncInput(
+                model=model_id,
+                session_id=None,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                prompt=warmup_prompt,
+                images=[],
+                api_url=api_url,
+                prompt_len=entry.num_tokens + run_prefix_len,
+                max_tokens=1,
+                ignore_eos=True,
+            )
+        )
+
+    warmup_results: list[BaseRequestFuncOutput | None] = [None] * len(
+        warmup_inputs
+    )
+
+    async def _run_warmup_index(idx: int, inp: RequestFuncInput) -> None:
+        warmup_results[idx] = await request_driver.request(inp)
+
+    warmup_start = time.perf_counter()
+    async with TaskGroup() as tg:
+        for idx, inp in enumerate(warmup_inputs):
+            tg.create_task(_run_warmup_index(idx, inp))
+    warmup_elapsed_s = time.perf_counter() - warmup_start
+    for sys_idx, inp in enumerate(warmup_inputs):
+        result = warmup_results[sys_idx]
+        if result is None:
+            raise RuntimeError(
+                f"Warmup task {sys_idx} did not produce a result (this is a bug)"
+            )
+        if not result.success:
+            raise ValueError(
+                f"Shared context warmup request failed at index {sys_idx}:"
+                f" (prompt: (SKIPPED), prompt_len: {inp.prompt_len}),"
+                f" error: {result.error}"
+            )
+
+    logger.info(
+        "Prefix cache warmup completed and took %.2f seconds.",
+        warmup_elapsed_s,
+    )
+
+
 async def benchmark(
     backend: Backend,
     benchmark_task: BenchmarkTask,
@@ -1981,6 +2122,7 @@ async def benchmark(
     max_concurrent_conversations: int | None,
     disable_tqdm: bool,
     do_test_prompt: bool,
+    warm_shared_prefix: bool,
     collect_gpu_stats: bool,
     collect_cpu_stats: bool,
     collect_server_stats: bool,
@@ -2050,6 +2192,19 @@ async def benchmark(
     test_request_driver: RequestDriver = request_driver_class(
         tokenizer=tokenizer
     )
+
+    if warm_shared_prefix:
+        await prime_shared_contexts(
+            model_id=model_id,
+            api_url=api_url,
+            samples=samples,
+            request_driver=test_request_driver,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            run_prefix=run_prefix,
+            run_prefix_len=run_prefix_len,
+        )
 
     if do_test_prompt:
         await run_single_test_prompt(
@@ -2397,19 +2552,10 @@ async def benchmark(
     return result, metrics
 
 
-# Backends that only support pixel generation, not text generation.
-PIXEL_GEN_ONLY_BACKENDS: frozenset[str] = frozenset({"vllm-omni"})
-
-
 def validate_task_and_endpoint(
     benchmark_task: BenchmarkTask, endpoint: Endpoint, backend: str
 ) -> None:
     if benchmark_task == "text-generation":
-        if backend in PIXEL_GEN_ONLY_BACKENDS:
-            raise ValueError(
-                f"Backend {backend!r} only supports pixel generation"
-                f" tasks, not --benchmark-task text-generation."
-            )
         if endpoint in ("/v1/responses", "/v1/images/generations"):
             raise ValueError(
                 f"--benchmark-task text-generation does not support "
@@ -2427,9 +2573,299 @@ def validate_task_and_endpoint(
 ServingBenchmarkMetrics = BenchmarkMetrics | PixelGenerationBenchmarkMetrics
 
 
+def _apply_workload_to_config(
+    config: ServingBenchmarkConfig,
+    workload: dict[str, Any],
+) -> None:
+    """Set workload YAML values as fields on *config*.
+
+    Keys are converted from kebab-case to snake_case.  Path objects are
+    stringified and env vars in string values are expanded.
+
+    Fields already in `config.model_fields_set` (i.e. explicitly provided
+    by the caller, whether via CLI args or direct construction) are left
+    unchanged so that CLI values always take precedence over workload YAML.
+    """
+    for k, v in workload.items():
+        field_name = k.replace("-", "_")
+        if field_name not in ServingBenchmarkConfig.model_fields:
+            logger.warning(f"Ignoring unknown workload key: {k}")
+            continue
+        if field_name in config.model_fields_set:
+            logger.info(
+                f"CLI flag --{k} takes precedence over workload YAML"
+                f" (CLI: {getattr(config, field_name)!r},"
+                f" workload: {v!r})"
+            )
+            continue
+        if isinstance(v, Path):
+            v = str(v)
+        elif isinstance(v, str):
+            v = os.path.expandvars(v)
+        logger.info(f"Applying workload YAML value: --{k}={v!r}")
+        setattr(config, field_name, v)
+
+
+def flush_prefix_cache(
+    backend: Backend, host: str, port: int, dry_run: bool
+) -> None:
+    """Flush the serving engine's prefix cache via HTTP POST."""
+    if backend not in CACHE_RESET_ENDPOINT_MAP:
+        raise ValueError(
+            f"Cannot flush prefix cache for {backend} backend: this backend"
+            " does not support prefix cache flush."
+        )
+    import requests as _http_requests  # lazy - avoid hard dep for non-sweep use
+
+    api_url = f"http://{host}:{port}{CACHE_RESET_ENDPOINT_MAP[backend]}"
+    if dry_run:
+        logger.info(f"Dry-run flush: POST {api_url}")
+        return
+    response = _http_requests.post(api_url)
+    if response.status_code == 400:
+        logger.warning(
+            f"Prefix caching is not enabled on backend {backend} at {api_url};"
+            " skipping cache flush."
+        )
+    elif response.status_code == 404:
+        logger.warning(
+            f"Prefix cache reset is not supported at {api_url} (HTTP 404);"
+            " skipping cache flush."
+        )
+    elif response.status_code != 200:
+        raise RuntimeError(
+            f"Failed to flush prefix cache for backend {backend} at {api_url}: "
+            f"status={response.status_code} body={response.text}"
+        )
+
+
+@dataclass
+class BenchmarkRunResult:
+    """Result of one (max_concurrency, request_rate) benchmark configuration.
+
+    Yielded by :func:`main_with_parsed_args` — one entry per (mc, rr) combo
+    after median selection across ``num_iters`` iterations.
+    """
+
+    max_concurrency: int | None
+    request_rate: float
+    num_prompts: int
+    metrics: ServingBenchmarkMetrics | None = None
+    result_dict: dict[str, Any] | None = None
+
+
+@dataclass
+class BenchmarkSession:
+    """Resolved, session-level state shared across all sweep iterations.
+
+    Created once after argument parsing / dataset loading in
+    :func:`main_with_parsed_args` and threaded into each
+    :func:`_execute_benchmark` call.
+    """
+
+    benchmark_task: BenchmarkTask
+    endpoint: Endpoint
+    api_url: str
+    base_url: str
+    model_id: str
+    tokenizer_id: str
+    tokenizer: PreTrainedTokenizerBase | None
+    samples: Samples
+    lora_manager: LoRABenchmarkManager | None
+    trace_path: str | None
+    orig_skip_first: int | None
+    orig_skip_last: int | None
+
+
+def _execute_benchmark(
+    args: ServingBenchmarkConfig,
+    session: BenchmarkSession,
+    max_concurrency: int | None,
+    request_rate: float,
+) -> tuple[dict[str, Any], ServingBenchmarkMetrics]:
+    """Run a single benchmark invocation and return *(result_dict, metrics)*.
+
+    ``session.orig_skip_first`` / ``session.orig_skip_last`` are the
+    user-supplied values (``None`` = auto-derive from *max_concurrency*).
+    """
+    backend: Backend = args.backend
+
+    skip_first = session.orig_skip_first
+    skip_last = session.orig_skip_last
+    if request_rate != float("inf"):
+        # Finite rate → steady drip with no ramp-up / ramp-down artifacts,
+        # so skip nothing (PERF-878).
+        if skip_first is None:
+            skip_first = 0
+        if skip_last is None:
+            skip_last = 0
+    elif max_concurrency is not None:
+        if skip_first is None:
+            skip_first = max_concurrency
+            logger.info(
+                f"Auto-setting skip_first_n_requests={skip_first}"
+                f" (max_concurrency={max_concurrency})"
+            )
+        if skip_last is None:
+            skip_last = max_concurrency
+            logger.info(
+                f"Auto-setting skip_last_n_requests={skip_last}"
+                f" (max_concurrency={max_concurrency})"
+            )
+    if skip_first is None:
+        skip_first = 0
+    if skip_last is None:
+        skip_last = 0
+
+    if args.warm_shared_prefix:
+        if args.dataset_name not in ("random", "synthetic"):
+            raise ValueError(
+                f"--warm-shared-prefix is not supported for dataset"
+                f" '{args.dataset_name}'. Only random/synthetic datasets have a"
+                " defined shared prefix to cache."
+            )
+        if args.random_sys_prompt_ratio <= 0:
+            raise ValueError(
+                "--warm-shared-prefix requires --random-sys-prompt-ratio > 0."
+            )
+
+    logger.info("Starting benchmark run")
+    assert args.num_prompts is not None
+    benchmark_result, benchmark_metrics = asyncio.run(
+        benchmark(
+            backend=backend,
+            benchmark_task=session.benchmark_task,
+            api_url=session.api_url,
+            base_url=session.base_url,
+            model_id=session.model_id,
+            tokenizer=session.tokenizer,
+            samples=session.samples,
+            request_rate=request_rate,
+            burstiness=args.burstiness,
+            max_concurrency=max_concurrency,
+            max_concurrent_conversations=args.max_concurrent_conversations,
+            disable_tqdm=args.disable_tqdm,
+            do_test_prompt=not args.skip_test_prompt,
+            warm_shared_prefix=args.warm_shared_prefix,
+            collect_gpu_stats=args.collect_gpu_stats,
+            collect_cpu_stats=args.collect_cpu_stats,
+            collect_server_stats=args.collect_server_stats,
+            print_inputs_and_outputs=args.print_inputs_and_outputs,
+            max_requests=args.num_prompts,
+            skip_first_n_requests=skip_first,
+            skip_last_n_requests=skip_last,
+            max_output_len=args.max_output_len,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            top_k=args.top_k,
+            max_benchmark_duration_s=args.max_benchmark_duration_s,
+            warmup_delay_ms=args.chat_warmup_delay_ms,
+            ignore_first_turn_stats=args.ignore_first_turn_stats,
+            randomize_session_start=args.randomize_session_start,
+            timing_data=None,
+            lora_manager=session.lora_manager,
+            trace_path=session.trace_path,
+            trace_session=args.trace_session,
+            force_unique_runs=args.force_unique_runs,
+        )
+    )
+
+    ok, validation_errors = benchmark_metrics.validate()
+    if not ok:
+        for err in validation_errors:
+            logger.error(f"Benchmark result validation failed: {err}")
+        logger.info("finished benchmark run: Failed.")
+        sys.exit(1)
+
+    logger.info("finished benchmark run: Success.")
+    return benchmark_result, benchmark_metrics
+
+
+def save_result_json(
+    args: ServingBenchmarkConfig,
+    benchmark_result: dict[str, Any],
+    benchmark_metrics: ServingBenchmarkMetrics,
+    *,
+    benchmark_task: BenchmarkTask,
+    model_id: str,
+    tokenizer_id: str,
+    request_rate: float,
+) -> None:
+    """Persist benchmark results to the JSON file at *args.result_filename*."""
+    if not args.result_filename:
+        return
+    backend: Backend = args.backend
+    client_args = args.model_dump()
+    client_args["request_rate"] = str(client_args["request_rate"])
+    result_json: dict[str, Any] = {
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "backend": backend,
+        "benchmark_task": benchmark_task,
+        "model_id": model_id,
+        "tokenizer_id": tokenizer_id,
+        "num_prompts": benchmark_metrics.completed,
+        "dataset_name": args.dataset_name,
+        "client_args": client_args,
+        "request_rate": (
+            request_rate if request_rate < float("inf") else "inf"
+        ),
+        "burstiness": args.burstiness,
+        "max_concurrency": args.max_concurrency,
+        "max_concurrent_conversations": args.max_concurrent_conversations,
+        **_parse_metadata(args.metadata),
+        **benchmark_result,
+    }
+    file_name = args.result_filename
+    logger.info(f"Writing file: {file_name}")
+    if os.path.isfile(file_name):
+        logger.warning(
+            "This is going to overwrite an existing file.  "
+            f"The existing file will be moved to {file_name}.orig."
+        )
+        os.rename(file_name, f"{file_name}.orig")
+    with open(file_name, "w") as outfile:
+        json.dump(result_json, outfile)
+
+
+def _save_output_lengths(
+    args: ServingBenchmarkConfig,
+    benchmark_result: dict[str, Any],
+    benchmark_task: BenchmarkTask,
+) -> None:
+    """Save output lengths to a YAML file if configured."""
+    if not args.record_output_lengths:
+        return
+    if benchmark_task != "text-generation":
+        logger.warning(
+            "--record-output-lengths is only supported for text-generation"
+        )
+        return
+    args_to_save = (
+        "backend",
+        "burstiness",
+        "dataset_name",
+        "dataset_path",
+        "endpoint",
+        "max_concurrency",
+        "max_output_len",
+        "model",
+        "request_rate",
+        "seed",
+        "temperature",
+        "top_k",
+        "top_p",
+    )
+    output_lens_dict: dict[str, object] = {}
+    args_dict = args.model_dump()
+    output_lens_dict["args"] = {x: args_dict[x] for x in args_to_save}
+    output_lens_dict["output_lengths"] = benchmark_result["output_lens"]
+    with open(args.record_output_lengths, "w") as f:
+        yaml.dump(output_lens_dict, f)
+
+
 def main_with_parsed_args(
     args: ServingBenchmarkConfig,
-) -> ServingBenchmarkMetrics | None:
+) -> Iterator[BenchmarkRunResult]:
     logging.basicConfig(
         format="%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
         datefmt="%H:%M:%S",
@@ -2437,14 +2873,99 @@ def main_with_parsed_args(
     )
 
     logger.info(args)
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    # benchmarks can create a large number of concurrent in-flight requests
-    # so bump the file limit to make room for them
-    set_ulimit()
 
     if args.model is None:
         raise ValueError("--model is required when running benchmark")
+
+    # ---- Workload YAML ----
+    if args.workload_config:
+        with open(args.workload_config) as workload_file:
+            workload = yaml.safe_load(workload_file)
+        # Resolve relative paths against the YAML's directory.
+        for key in ("dataset-path", "output-lengths"):
+            if workload.get(key) is not None:
+                if is_castable_to_int(str(workload[key])):
+                    continue
+                path = Path(os.path.expandvars(workload[key]))
+                if not path.is_absolute():
+                    path = Path(args.workload_config).parent / path
+                workload[key] = path
+        # CLI max_concurrency always takes precedence over the YAML.
+        workload.pop("max-concurrency", None)
+        # Resolve num_prompts: CLI > YAML > default (deferred).
+        cli_num_prompts = args.num_prompts is not None
+        yaml_num_prompts = workload.pop("num-prompts", None)
+        if not cli_num_prompts:
+            if yaml_num_prompts is not None:
+                args.num_prompts = int(yaml_num_prompts)
+        # Resolve max_benchmark_duration_s: CLI > YAML.
+        w_duration = workload.pop("max-benchmark-duration-s", None)
+        if w_duration is not None and args.max_benchmark_duration_s is None:
+            args.max_benchmark_duration_s = int(w_duration)
+        _apply_workload_to_config(args, workload)
+        args.skip_test_prompt = True
+
+    # Warn + default when nothing constrains run length (common to both paths).
+    has_prompts = args.num_prompts is not None
+    has_duration = args.max_benchmark_duration_s is not None
+    has_multiplier = args.num_prompts_multiplier is not None
+    # The multiplier dynamically computes num_prompts per-mc, but only
+    # when no explicit duration also constrains the run.
+    multiplier_will_resolve = has_multiplier and not has_duration
+    if not has_prompts and not has_duration and not has_multiplier:
+        logger.warning(
+            "Neither --num-prompts nor --max-benchmark-duration-s is"
+            " specified. Defaulting to --num-prompts 1000 and"
+            " --max-benchmark-duration-s 300"
+        )
+        args.num_prompts = 1000
+        args.max_benchmark_duration_s = 300
+    elif not has_prompts and not multiplier_will_resolve:
+        args.num_prompts = 1000
+
+    # ---- Parse sweep ranges ----
+    concurrency_range = parse_comma_separated(args.max_concurrency, int_or_none)
+    request_rate_range = parse_comma_separated(args.request_rate, float)
+
+    # When num_prompts_multiplier is active AND no explicit num_prompts or
+    # duration constrains the run, dynamically compute num_prompts per
+    # concurrency level.
+    use_dynamic_num_prompts = (
+        args.num_prompts_multiplier is not None
+        and args.num_prompts is None
+        and args.max_benchmark_duration_s is None
+    )
+    if use_dynamic_num_prompts:
+        assert args.num_prompts_multiplier is not None
+        max_mc = max(
+            (mc for mc in concurrency_range if mc is not None), default=1
+        )
+        args.num_prompts = args.num_prompts_multiplier * max_mc
+
+    # ---- Dry run ----
+    if args.dry_run:
+        for mc in concurrency_range:
+            for rr in request_rate_range:
+                print(
+                    f"Dry run: model={args.model}"
+                    f" host={args.host} port={args.port}"
+                    f" endpoint={args.endpoint}"
+                    f" max_concurrency={mc}"
+                    f" request_rate={rr}"
+                    f" num_prompts={args.num_prompts}"
+                    f" max_benchmark_duration_s="
+                    f"{args.max_benchmark_duration_s}"
+                )
+                yield BenchmarkRunResult(
+                    max_concurrency=mc,
+                    request_rate=rr,
+                    num_prompts=args.num_prompts or 0,
+                )
+        return
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    set_ulimit()
     model_id = args.model
     tokenizer_id = args.tokenizer if args.tokenizer is not None else args.model
     benchmark_task: BenchmarkTask = args.benchmark_task
@@ -2452,7 +2973,7 @@ def main_with_parsed_args(
 
     # Auto-select the correct endpoint for pixel generation based on the
     # backend. Each pixel-gen backend requires a specific endpoint (e.g.,
-    # sglang needs /v1/images/generations, vllm-omni needs
+    # sglang needs /v1/images/generations, vllm needs
     # /v1/chat/completions). We auto-select when the current endpoint
     # doesn't match this backend's expected pixel-gen endpoint.
     if benchmark_task in PIXEL_GENERATION_TASKS:
@@ -2477,7 +2998,7 @@ def main_with_parsed_args(
     validate_task_and_endpoint(benchmark_task, endpoint, args.backend)
     # chat is only meaningful for text-generation (enables chat template
     # formatting). For pixel generation via /v1/chat/completions
-    # (vllm-omni), the pixel-gen code path ignores this flag.
+    # (vllm pixel gen), the pixel-gen code path ignores this flag.
     chat = endpoint == "/v1/chat/completions"
 
     if args.base_url is not None:
@@ -2803,6 +3324,21 @@ def main_with_parsed_args(
     else:
         raise ValueError(f"Unsupported benchmark task: {benchmark_task}")
 
+    # Inject response_format into all sampled requests if specified
+    if args.response_format:
+        response_format = parse_response_format(args.response_format)
+        if isinstance(samples, RequestSamples):
+            for request in samples.requests:
+                request.response_format = response_format
+            logger.info(
+                f"Injected response_format into {len(samples.requests)} requests"
+            )
+        else:
+            logger.warning(
+                "response_format is only supported for single-turn benchmarks, "
+                "ignoring for multi-turn chat sessions"
+            )
+
     if args.print_workload_stats:
         print_workload_stats(samples)
 
@@ -2829,24 +3365,7 @@ def main_with_parsed_args(
         )
         lora_manager.log_traffic_distribution()
 
-    max_concurrency: int | None = None
-    if args.max_concurrency is not None:
-        try:
-            max_concurrency = int(args.max_concurrency)
-        except ValueError as e:
-            raise ValueError(
-                f"Expected a single integer value for max_concurrency, got {args.max_concurrency}"
-            ) from e
-    try:
-        request_rate = float(args.request_rate)
-    except ValueError as e:
-        raise ValueError(
-            f"Expected a single float value for request_rate, got {args.request_rate}"
-        ) from e
-
-    backend: Backend = args.backend
-
-    # Handle trace flag
+    # Handle trace flag (once, before loop)
     trace_path = None
     if args.trace:
         assert_nvidia_gpu()
@@ -2855,141 +3374,84 @@ def main_with_parsed_args(
         )
         logger.info(f"Tracing enabled, output: {trace_path}")
 
-    # Auto-default skip counts to max_concurrency when not explicitly set.
-    # None means "auto" (user did not pass the flag); 0 means "explicitly
-    # no skipping" (user passed --skip-first-n-requests 0).
-    skip_first_n_requests = args.skip_first_n_requests
-    skip_last_n_requests = args.skip_last_n_requests
-    if max_concurrency is not None:
-        if skip_first_n_requests is None:
-            skip_first_n_requests = max_concurrency
-            logger.info(
-                f"Auto-setting skip_first_n_requests={skip_first_n_requests}"
-                f" (max_concurrency={max_concurrency})"
-            )
-        if skip_last_n_requests is None:
-            skip_last_n_requests = max_concurrency
-            logger.info(
-                f"Auto-setting skip_last_n_requests={skip_last_n_requests}"
-                f" (max_concurrency={max_concurrency})"
-            )
-    if skip_first_n_requests is None:
-        skip_first_n_requests = 0
-    if skip_last_n_requests is None:
-        skip_last_n_requests = 0
-
-    logger.info("Starting benchmark run")
-    assert args.num_prompts is not None
-    benchmark_result, benchmark_metrics = asyncio.run(
-        benchmark(
-            backend=backend,
-            benchmark_task=benchmark_task,
-            api_url=api_url,
-            base_url=base_url,
-            model_id=model_id,
-            tokenizer=tokenizer,
-            samples=samples,
-            request_rate=request_rate,
-            burstiness=args.burstiness,
-            max_concurrency=max_concurrency,
-            max_concurrent_conversations=args.max_concurrent_conversations,
-            disable_tqdm=args.disable_tqdm,
-            do_test_prompt=not args.skip_test_prompt,
-            collect_gpu_stats=args.collect_gpu_stats,
-            collect_cpu_stats=args.collect_cpu_stats,
-            collect_server_stats=args.collect_server_stats,
-            print_inputs_and_outputs=args.print_inputs_and_outputs,
-            max_requests=args.num_prompts,
-            skip_first_n_requests=skip_first_n_requests,
-            skip_last_n_requests=skip_last_n_requests,
-            max_output_len=args.max_output_len,
-            temperature=args.temperature,
-            top_p=args.top_p,
-            top_k=args.top_k,
-            max_benchmark_duration_s=args.max_benchmark_duration_s,
-            warmup_delay_ms=args.chat_warmup_delay_ms,
-            ignore_first_turn_stats=args.ignore_first_turn_stats,
-            randomize_session_start=args.randomize_session_start,
-            timing_data=None,
-            lora_manager=lora_manager,
-            trace_path=trace_path,
-            trace_session=args.trace_session,
-            force_unique_runs=args.force_unique_runs,
-        )
+    session = BenchmarkSession(
+        benchmark_task=benchmark_task,
+        endpoint=endpoint,
+        api_url=api_url,
+        base_url=base_url,
+        model_id=model_id,
+        tokenizer_id=tokenizer_id,
+        tokenizer=tokenizer,
+        samples=samples,
+        lora_manager=lora_manager,
+        trace_path=trace_path,
+        orig_skip_first=args.skip_first_n_requests,
+        orig_skip_last=args.skip_last_n_requests,
     )
 
-    # Validate that metrics are meaningful (no failures, not 0 or NaN)
-    ok, validation_errors = benchmark_metrics.validate()
-    if not ok:
-        for err in validation_errors:
-            logger.error(f"Benchmark result validation failed: {err}")
-        logger.info("finished benchmark run: Failed.")
-        sys.exit(1)
-
-    # Optionally persist to file (used by the standalone CLI entry point
-    # and BigQuery upload in the sweep harness).
-    if args.result_filename:
-        client_args = args.model_dump()
-        client_args["request_rate"] = str(client_args["request_rate"])
-        result_json: dict[str, Any] = {
-            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "backend": backend,
-            "benchmark_task": benchmark_task,
-            "model_id": model_id,
-            "tokenizer_id": tokenizer_id,
-            "num_prompts": benchmark_metrics.completed,
-            "dataset_name": args.dataset_name,
-            "client_args": client_args,
-            "request_rate": (
-                request_rate if request_rate < float("inf") else "inf"
-            ),
-            "burstiness": args.burstiness,
-            "max_concurrency": args.max_concurrency,
-            "max_concurrent_conversations": args.max_concurrent_conversations,
-            **_parse_metadata(args.metadata),
-            **benchmark_result,
-        }
-        file_name = args.result_filename
-        logger.info(f"Writing file: {file_name}")
-        if os.path.isfile(file_name):
-            logger.warning(
-                "This is going to overwrite an existing file.  "
-                f"The existing file will be moved to {file_name}.orig."
+    # ---- Sweep loop ----
+    for mc in concurrency_range:
+        if use_dynamic_num_prompts:
+            assert args.num_prompts_multiplier is not None
+            assert mc is not None
+            args.num_prompts = args.num_prompts_multiplier * mc
+            logger.info(
+                f"Using num_prompts = {args.num_prompts_multiplier}"
+                f" * {mc} = {args.num_prompts}"
             )
-            os.rename(file_name, f"{file_name}.orig")
-        with open(file_name, "w") as outfile:
-            json.dump(result_json, outfile)
 
-    # Save output lengths if requested
-    if args.record_output_lengths and benchmark_task == "text-generation":
-        args_to_save = (
-            "backend",
-            "burstiness",
-            "dataset_name",
-            "dataset_path",
-            "endpoint",
-            "max_concurrency",
-            "max_output_len",
-            "model",
-            "request_rate",
-            "seed",
-            "temperature",
-            "top_k",
-            "top_p",
-        )
-        output_lens_dict: dict[str, object] = {}
-        args_dict = args.model_dump()
-        output_lens_dict["args"] = {x: args_dict[x] for x in args_to_save}
-        output_lens_dict["output_lengths"] = benchmark_result["output_lens"]
-        with open(args.record_output_lengths, "w") as f:
-            yaml.dump(output_lens_dict, f)
-    elif args.record_output_lengths:
-        logger.warning(
-            "--record-output-lengths is only supported for text-generation"
-        )
+        for rr in request_rate_range:
+            # Temporarily write the per-iteration values so that downstream
+            # code reading args.max_concurrency / args.request_rate sees the
+            # correct scalar value.
+            args.max_concurrency = str(mc) if mc is not None else None
+            args.request_rate = str(rr)
 
-    logger.info("finished benchmark run: Success.")
-    return benchmark_metrics
+            iteration_results: list[
+                tuple[dict[str, Any], ServingBenchmarkMetrics]
+            ] = []
+            for _iteration in range(args.num_iters):
+                if args.flush_prefix_cache:
+                    flush_prefix_cache(
+                        args.backend, args.host, args.port, args.dry_run
+                    )
+
+                args.seed = int(np.random.randint(0, 10000))
+
+                result_dict, metrics = _execute_benchmark(args, session, mc, rr)
+                iteration_results.append((result_dict, metrics))
+
+            # Median selection when running multiple iterations.
+            if len(iteration_results) > 1:
+                throughputs = np.asarray(
+                    [m.request_throughput for _, m in iteration_results]
+                )
+                idx = argmedian(throughputs)
+            else:
+                idx = 0
+            best_result, best_metrics = iteration_results[idx]
+
+            # JSON result file (for the median iteration).
+            save_result_json(
+                args,
+                best_result,
+                best_metrics,
+                benchmark_task=session.benchmark_task,
+                model_id=session.model_id,
+                tokenizer_id=session.tokenizer_id,
+                request_rate=rr,
+            )
+
+            # Output lengths recording (for the median iteration).
+            _save_output_lengths(args, best_result, session.benchmark_task)
+
+            yield BenchmarkRunResult(
+                mc,
+                rr,
+                args.num_prompts or 0,
+                best_metrics,
+                best_result,
+            )
 
 
 def _extract_metadata_args(
@@ -3024,57 +3486,45 @@ def _extract_metadata_args(
     return clean_args, metadata_values
 
 
-def parse_args(args: Sequence[str] | None = None) -> ServingBenchmarkConfig:
-    """Parse command line arguments into a ServingBenchmarkConfig using cyclopts.
+def parse_args(
+    args: Sequence[str] | None = None,
+    *,
+    app_name: str = "benchmark_serving",
+    description: str = BENCHMARK_SERVING_ARGPARSER_DESCRIPTION,
+) -> ServingBenchmarkConfig:
+    """Parse command line arguments into a ServingBenchmarkConfig.
 
     Args:
         args: Command line arguments to parse. If None, parse from sys.argv.
+        app_name: Name shown in --help output.
+        description: Description shown in --help output.
     """
     raw_args = list(sys.argv[1:] if args is None else args)
 
-    # Pre-extract --metadata values because cyclopts interprets bare key=value
-    # tokens as keyword assignments. Tokens matching real model field names
-    # (e.g. enable_prefix_caching=True) would be routed to those fields
-    # instead of being consumed as --metadata list items.
     clean_args, metadata_values = _extract_metadata_args(raw_args)
 
-    result: list[ServingBenchmarkConfig] = []
+    parsed_configs: list[ServingBenchmarkConfig] = []
 
     app = App(
-        name="benchmark_serving",
-        help=BENCHMARK_SERVING_ARGPARSER_DESCRIPTION,
+        name=app_name,
+        help=description,
         help_formatter="plain",
         config=[Env(prefix="MODULAR_")],
         result_action="return_value",
     )
 
-    # TODO: Parameter(name="*") flattens flags to match legacy argparse
-    # behavior (e.g. --dataset-name instead of --config.dataset-name).
-    # Remove this once callers are migrated to use the dotted names.
     @app.default
     def _capture(
         config: Annotated[
             ServingBenchmarkConfig, Parameter(name="*")
         ] = ServingBenchmarkConfig(),
     ) -> None:
-        result.append(config)
+        parsed_configs.append(config)
 
     app(clean_args)
-    if not result:
-        # --help was requested: cyclopts printed help and returned without
-        # invoking the handler.  (Parse errors still raise SystemExit(1)
-        # via cyclopts' exit_on_error, so they never reach here.)
+    if not parsed_configs:
         raise SystemExit(0)
-    config = result[0]
+    config = parsed_configs[0]
     if metadata_values:
         config.metadata = metadata_values
     return config
-
-
-def main(args: Sequence[str] | None = None) -> None:
-    parsed_args = parse_args(args)
-    main_with_parsed_args(parsed_args)
-
-
-if __name__ == "__main__":
-    main()

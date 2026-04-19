@@ -275,12 +275,14 @@ struct PythonModuleBuilder:
 
     Example:
         ```mojo
+        from std.python import PythonObject
         from std.python.bindings import PythonModuleBuilder
+
+        def my_func(arg: PythonObject) -> PythonObject:
+            return arg
 
         var builder = PythonModuleBuilder("my_module")
         builder.def_function[my_func]("my_func", "Documentation for my_func")
-
-        _ = builder.add_type[MyType]("MyType").def_method[my_method]("my_method")
 
         var module = builder.finalize()
         ```
@@ -439,6 +441,9 @@ struct PythonModuleBuilder:
 
         Example signatures:
         ```mojo
+        from std.python import PythonObject
+        from std.collections.dict import OwnedKwargsDict
+
         def func(arg1: PythonObject) -> PythonObject: ...
         def func(arg1: PythonObject, arg2: PythonObject) raises: ...
         def func(kwargs: OwnedKwargsDict[PythonObject]) -> PythonObject: ...
@@ -889,6 +894,8 @@ struct PythonTypeBuilder(Copyable):
 
         Example signatures:
         ```mojo
+        from std.python import PythonObject
+
         def method(mut self: PythonObject) -> PythonObject: ...
         def method(mut self: PythonObject, arg1: PythonObject) raises: ...
         ```
@@ -928,6 +935,8 @@ struct PythonTypeBuilder(Copyable):
 
         Example signatures:
         ```mojo
+        from std.python import PythonObject
+
         def static_method(arg1: PythonObject) -> PythonObject: ...
         def static_method(arg1: PythonObject, arg2: PythonObject) raises: ...
         ```

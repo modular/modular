@@ -26,7 +26,7 @@ underlying GPU architecture.
 """
 
 from std.collections.string.string_slice import get_static_string
-from std.os.atomic import Consistency
+from std.atomic import Ordering
 from std.ffi import external_call
 from std.sys import (
     is_amd_gpu,
@@ -804,8 +804,8 @@ def store_release[
         ](value, ptr)
     elif is_amd_gpu():
         __mlir_op.`pop.store`[
-            alignment=alignment._mlir_value,
-            ordering=Consistency.RELEASE.__mlir_attr(),
+            alignment=alignment._int_mlir_index(),
+            ordering=Ordering.RELEASE.__mlir_attr(),
         ](value, ptr.address)
     elif is_apple_gpu():
         comptime mem_flags = _AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else _AirMemFlags.Device
@@ -875,8 +875,8 @@ def store_relaxed[
         ](value, ptr)
     elif is_amd_gpu():
         __mlir_op.`pop.store`[
-            alignment=alignment._mlir_value,
-            ordering=Consistency.MONOTONIC.__mlir_attr(),
+            alignment=alignment._int_mlir_index(),
+            ordering=Ordering.RELAXED.__mlir_attr(),
         ](value, ptr.address)
     else:
         CompilationTarget.unsupported_target_error[
@@ -939,8 +939,8 @@ def load_acquire[
         return result
     elif is_amd_gpu():
         var result = __mlir_op.`pop.load`[
-            alignment=alignment._mlir_value,
-            ordering=Consistency.ACQUIRE.__mlir_attr(),
+            alignment=alignment._int_mlir_index(),
+            ordering=Ordering.ACQUIRE.__mlir_attr(),
         ](ptr.address)
         comptime if dtype.is_floating_point():
             _check_not_poison[dtype, 1](result)
@@ -1020,8 +1020,8 @@ def load_relaxed[
         return result
     elif is_amd_gpu():
         var result = __mlir_op.`pop.load`[
-            alignment=alignment._mlir_value,
-            ordering=Consistency.MONOTONIC.__mlir_attr(),
+            alignment=alignment._int_mlir_index(),
+            ordering=Ordering.RELAXED.__mlir_attr(),
         ](ptr.address)
         comptime if dtype.is_floating_point():
             _check_not_poison[dtype, 1](result)
@@ -1293,7 +1293,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
     @always_inline("nodebug")
     def store[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         cache_policy: CacheOperation = CacheOperation.ALWAYS,
     ](
@@ -1448,6 +1448,56 @@ def ds_read_tr16_b64[
     ](shared_ptr)
 
 
+@always_inline
+def ds_read_tr8_b64[
+    dtype: DType,
+    //,
+](
+    shared_ptr: UnsafePointer[
+        mut=False, Scalar[dtype], _, address_space=AddressSpace.SHARED
+    ]
+) -> SIMD[dtype, 8]:
+    """Reads a 64-bit LDS transpose block using TR8 layout and returns SIMD[dtype, 8] of 8-bit types.
+
+    Each 16-lane row reads 16x8 bytes from LDS and performs two interleaved
+    8x8 byte transposes, producing 8 transposed bytes per lane.
+
+    Parameters:
+        dtype: Data type of the elements (must be 8-bit type).
+
+    Args:
+        shared_ptr: Pointer to the LDS transpose block.
+
+    Returns:
+        SIMD[dtype, 8] of 8-bit types.
+
+    Notes:
+        - Only supported on AMD GPUs (CDNA4+).
+        - Maps directly to llvm.amdgcn.ds.read.tr8.b64 intrinsic.
+        - Return type must use v2i32 intermediate to avoid LLVM type legalizer crash.
+    """
+
+    comptime assert (
+        is_amd_gpu()
+    ), "The ds_read_tr8_b64 function is only applicable on AMDGPU hardware."
+
+    comptime assert (
+        size_of[dtype]() == 1
+    ), "ds_read_tr8_b64 supports 8-bit dtypes."
+
+    comptime assert (
+        _cdna_4_or_newer()
+    ), "ds_read_tr8_b64 is only supported on CDNA4+"
+
+    # Must use v2i32 return type; v8i8 crashes LLVM type legalizer.
+    var raw = llvm_intrinsic[
+        "llvm.amdgcn.ds.read.tr8.b64",
+        SIMD[DType.uint32, 2],
+        has_side_effect=True,
+    ](shared_ptr)
+    return bitcast[dtype, 8](raw)
+
+
 # ===-----------------------------------------------------------------------===#
 # AMD permlane shuffle
 # ===-----------------------------------------------------------------------===#
@@ -1496,7 +1546,7 @@ def permlane_swap[
 
 
 def permlane_shuffle[
-    dtype: DType, simd_width: Int, //, stride: Int
+    dtype: DType, simd_width: SIMDSize, //, stride: Int
 ](val: SIMD[dtype, simd_width], out res: type_of(val)):
     """Shuffles SIMD values across lanes using AMD permlane operations.
 

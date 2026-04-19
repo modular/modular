@@ -66,7 +66,11 @@ class Llama3Inputs(ModelInputs):
             self.tokens,
             self.return_n_logits,
             input_row_offsets,
-            *(self.kv_cache_inputs or ()),
+            *(
+                self.kv_cache_inputs.flatten()
+                if self.kv_cache_inputs is not None
+                else ()
+            ),
         )
 
 
@@ -230,7 +234,7 @@ class Llama3Model(LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         if len(replica_batches) > 1:

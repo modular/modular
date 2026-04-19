@@ -95,7 +95,7 @@ def bench_dispatch[
         (Idx[hidden_size // group_size](), Idx[max_recv_tokens]())
     )
 
-    var recv_count = shmem_malloc[DType.uint64](UInt(n_local_experts * n_ranks))
+    var recv_count = shmem_malloc[DType.uint64](n_local_experts * n_ranks)
     var recv_count_buf = DeviceBuffer(
         ctx, recv_count, n_local_experts * n_ranks, owning=False
     )
@@ -197,11 +197,9 @@ def bench_dispatch[
     ) raises:
         var msg_bytes = TokenFmtType.msg_size()
 
-        var send_buf = shmem_malloc[DType.uint8](
-            UInt(n_tokens_per_rank * msg_bytes)
-        )
+        var send_buf = shmem_malloc[DType.uint8](n_tokens_per_rank * msg_bytes)
         var recv_buf = shmem_malloc[DType.uint8](
-            UInt(n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes)
+            n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes
         )
 
         comptime dispatch_async = dispatch_async_kernel[
@@ -238,14 +236,12 @@ def bench_dispatch[
         @parameter
         def run_dispatch_async(ctx: DeviceContext) raises:
             # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
-            var recv_buf_ptrs = InlineArray[
+            var recv_buf_ptrs: InlineArray[
                 UnsafePointer[UInt8, MutAnyOrigin], 1
-            ](fill={})
-            var recv_count_ptrs = InlineArray[
+            ] = [recv_buf]
+            var recv_count_ptrs: InlineArray[
                 UnsafePointer[UInt64, MutAnyOrigin], 1
-            ](fill={})
-            recv_buf_ptrs[0] = recv_buf
-            recv_count_ptrs[0] = recv_count
+            ] = [recv_count]
 
             ctx.enqueue_function(
                 func,

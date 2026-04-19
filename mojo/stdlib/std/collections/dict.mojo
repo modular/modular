@@ -699,7 +699,7 @@ struct Dict[
       ```mojo
       var string_to_int = {"count": 42}     # Dict[String, Int]
       var int_to_string = {1: "one"}        # Dict[Int, String]
-      var mixed = {"key": 1, 2: "val"}      # Error! Keys must be same type
+      # var mixed = {"key": 1, 2: "val"}   # Error! Keys must be same type
       ```
 
       However, you can get around this by defining your dictionary key and/or
@@ -735,9 +735,9 @@ struct Dict[
       ```mojo
       var inventory = {"apples": 10, "bananas": 5}
 
-      # Default behavior creates immutable (read-only) references
-      for value in inventory.values():
-          value += 1  # error: expression must be mutable
+      # Default behavior creates immutable (read-only) references:
+      # for value in inventory.values():
+      #     value += 1  # error: expression must be mutable
 
       # Using `ref` gets mutable (read-write) references
       for ref value in inventory.values():
@@ -761,7 +761,7 @@ struct Dict[
 
       ```mojo
       var phonebook = {"Alice": "555-0101", "Bob": "555-0102"}
-      print(phonebook["Charlie"])  # => DictKeyError
+      # print(phonebook["Charlie"])  # => DictKeyError
       ```
 
       For safe access, you should instead use `get()`:

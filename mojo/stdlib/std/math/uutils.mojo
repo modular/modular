@@ -38,6 +38,27 @@ def ufloordiv(a: Int, b: Int) -> Int:
     return Int(UInt(a) // UInt(b))
 
 
+@always_inline("nodebug")
+def udiv_unchecked(a: Int, b: Int) -> Int:
+    """Unsigned division without zero-guard.
+
+    Unlike `ufloordiv`, this uses `UInt.__truediv__` (`pop.div`) which emits
+    a raw unsigned division without the zero-guard that `UInt.__floordiv__`
+    inserts. This produces tighter codegen on GPUs where the guard is
+    unnecessary overhead.
+
+    The caller must guarantee that `b > 0`. Behavior is undefined otherwise.
+
+    Args:
+        a: The dividend (must be non-negative).
+        b: The divisor (must be positive).
+
+    Returns:
+        The quotient of unsigned division.
+    """
+    return Int(UInt(a) / UInt(b))
+
+
 @always_inline
 def umod(a: Int, b: Int) -> Int:
     """Perform unsigned modulo (`%`) on Int arguments.

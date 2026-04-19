@@ -696,6 +696,7 @@ def concat[
             )
 
 
+@__name(t"concat_gpu_flat_{dtype}_ax{axis}_w{vec_width}", mangle=True)
 def _concat_gpu_flat_kernel[
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
@@ -756,6 +757,7 @@ def _concat_gpu_flat_kernel[
         acc += input_concat_dim
 
 
+@__name(t"concat_inner_most_single_dim_{dtype}", mangle=True)
 def _concat_inner_most_single_dim[
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
@@ -1089,6 +1091,7 @@ def _fused_concat_cpu[
 
 
 @always_inline
+@__name(t"fused_concat_inner_most_single_dim_{dtype}", mangle=True)
 def _fused_concat_inner_most_single_dim[
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
