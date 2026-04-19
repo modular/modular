@@ -46,7 +46,7 @@ class PipelineInputs:
 class PipelineOutput(Protocol):
     """Protocol representing the output of a pipeline operation.
 
-    Subclasses must implement the `is_done` property to indicate whether
+    Subclasses must implement the ``is_done`` property to indicate whether
     the pipeline operation has completed.
     """
 
@@ -55,7 +55,7 @@ class PipelineOutput(Protocol):
         """Indicates whether the pipeline operation has completed.
 
         Returns:
-            bool: True if the operation is done, False otherwise.
+            ``True`` if the operation is done, ``False`` otherwise.
         """
         ...
 
@@ -97,16 +97,13 @@ Bounds:
 
 
 class Pipeline(Generic[PipelineInputsType, PipelineOutputType], ABC):
-    """Abstract base class for pipeline operations.
+    """Defines the interface for pipeline operations.
 
     This generic abstract class defines the interface for pipeline operations that
-    transform inputs of type PipelineInputsType into outputs of type PipelineOutputsDict[PipelineOutputType].
-    All concrete pipeline implementations must inherit from this class and implement
-    the execute method.
-
-    Type Parameters:
-        PipelineInputsType: The type of inputs this pipeline accepts, must inherit from PipelineInputs
-        PipelineOutputType: The type of outputs this pipeline produces, must be a subclass of PipelineOutput
+    transform inputs of type ``PipelineInputsType`` into outputs of type
+    ``PipelineOutputsDict[PipelineOutputType]``. All concrete pipeline
+    implementations must inherit from this class and implement the
+    :meth:`execute` method.
 
     .. code-block:: python
 
@@ -120,26 +117,26 @@ class Pipeline(Generic[PipelineInputsType, PipelineOutputType], ABC):
     def execute(
         self, inputs: PipelineInputsType
     ) -> PipelineOutputsDict[PipelineOutputType]:
-        """Execute the pipeline operation with the given inputs.
+        """Executes the pipeline operation with the given inputs.
 
         This method must be implemented by all concrete pipeline classes.
         It takes inputs of the specified type and returns outputs according
         to the pipeline's processing logic.
 
         Args:
-            inputs: The input data for the pipeline operation, must be of type PipelineInputsType
+            inputs: The input data for the pipeline operation.
 
         Returns:
-            The results of the pipeline operation, as a dictionary mapping RequestID to PipelineOutputType
+            A dictionary mapping :class:`RequestID` to pipeline output objects.
 
         Raises:
-            NotImplementedError: If not implemented by a concrete subclass
+            NotImplementedError: If not implemented by a concrete subclass.
         """
         ...
 
     @abstractmethod
     def release(self, request_id: RequestID) -> None:
-        """Release any resources or state associated with a specific request.
+        """Releases any resources or state associated with a specific request.
 
         This method should be implemented by concrete pipeline classes to perform
         cleanup or resource deallocation for the given request ID. It is typically
@@ -147,10 +144,7 @@ class Pipeline(Generic[PipelineInputsType, PipelineOutputType], ABC):
         (such as memory, cache, or temporary files) are no longer needed.
 
         Args:
-            request_id (RequestID): The unique identifier of the request to release resources for.
-
-        Returns:
-            None
+            request_id: The unique identifier of the request to release resources for.
 
         Raises:
             NotImplementedError: If not implemented by a concrete subclass.

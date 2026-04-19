@@ -1,0 +1,27 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_rms_norm_rope
+file: $KERNEL_BENCHMARKS_ROOT/gpu/nn/bench_rms_norm_rope.mojo
+
+params:
+
+# JSC-18 shapes from mo.reduce.rms_norm.RoPE ops (batch=32, heads=12, head_dim=128)
+# query: [batch=32, seq=2048, heads=12, head_dim=128]
+- shape: 32x2048x12x128
+# key:   [batch=32, seq=2048+window=4096, heads=12, head_dim=128]
+- shape: 32x6144x12x128
+
+# Smaller reference shapes
+- shape: 4x128
+- shape: 1x512x128

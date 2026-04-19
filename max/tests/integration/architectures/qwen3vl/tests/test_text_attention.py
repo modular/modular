@@ -22,7 +22,7 @@ from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Dim, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager, load_kv_manager
-from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
+from max.nn.kv_cache import KVCacheParams
 from max.nn.linear import Linear
 from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.qwen3vl_moe.nn.text_attention import (
@@ -221,10 +221,20 @@ def generate_qwen3_max_outputs(
     head_dim = text_config["head_dim"]
     num_kv_heads = text_config["num_key_value_heads"]
 
-    state_dict = {
-        weight_name: value.to(max_dtype_to_torch(dtype)).cpu()
-        for weight_name, value in attention_weights.items()
+    # Remap HuggingFace weight names to MAX StackedLinear names.
+    _HF_TO_MAX = {
+        "q_proj.": "qkv_proj.q.",
+        "k_proj.": "qkv_proj.k.",
+        "v_proj.": "qkv_proj.v.",
     }
+    state_dict = {}
+    for weight_name, value in attention_weights.items():
+        max_name = weight_name
+        for hf, mx in _HF_TO_MAX.items():
+            if max_name.startswith(hf):
+                max_name = mx + max_name[len(hf) :]
+                break
+        state_dict[max_name] = value.to(max_dtype_to_torch(dtype)).cpu()
 
     kv_cache_config = KVCacheConfig()
     kv_params = KVCacheParams(
@@ -301,9 +311,9 @@ def generate_qwen3_max_outputs(
     ) as graph:
         x, input_row_offsets_input, *kv_cache = graph.inputs
 
-        kv_collection = unflatten_ragged_attention_inputs(
-            kv_cache, n_devices=1
-        )[0]
+        kv_collection = (
+            kv_params.get_symbolic_inputs().unflatten(iter(kv_cache)).inputs[0]
+        )
 
         output = attention(
             layer_idx=ops.constant(0, DType.uint32, DeviceRef.CPU()),
@@ -330,7 +340,7 @@ def generate_qwen3_max_outputs(
     result = compiled.execute(
         Buffer.from_dlpack(flat_input.to(torch_device)).to(device),
         Buffer.from_dlpack(input_row_offsets.to(torch_device)).to(device),
-        *kv_cache_runtime,
+        *kv_cache_runtime.flatten(),
     )
     max_tensor = result[0]
     return from_dlpack(max_tensor)

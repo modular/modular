@@ -23,6 +23,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValueLike, ops
+from max.kv_cache import PagedKVCacheManager
 from max.nn import (
     DynamicRotaryEmbedding,
     Llama3RopeScalingParams,
@@ -31,8 +32,15 @@ from max.nn import (
     LongRoPEScalingParams,
     RotaryEmbedding,
 )
-from max.nn.kernels import rope_ragged, rope_ragged_with_position_ids
+from max.nn.kernels import (
+    fused_qk_ragged_rope,
+    rope_ragged,
+    rope_ragged_with_position_ids,
+    rope_split_store_ragged,
+)
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from modular_graph_test import are_all_tensor_values, modular_graph_test
+from test_common.context_utils import create_text_context
 
 MAX_SEQ_LEN = 2**14
 ACCURACY_RTOL = 1e-2
@@ -546,13 +554,6 @@ def test_rope_ragged_with_position_ids(session: InferenceSession) -> None:
 def test_kv_cache_ragged_rope(
     session: InferenceSession, use_position_ids: bool
 ) -> None:
-    # These imports are deferred to avoid Mojo module import race conditions
-    # when running with pytest-xdist parallel workers.
-    from max.kv_cache import PagedKVCacheManager
-    from max.nn.kernels import fused_qk_ragged_rope
-    from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-    from test_common.context_utils import create_text_context
-
     num_q_heads = 32
     head_dim = 128
     kv_params = KVCacheParams(
@@ -604,7 +605,7 @@ def test_kv_cache_ragged_rope(
             input_type,
             input_row_offsets_type,
             freqs_cis_type,
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs().flatten(),
         ]
 
         if use_position_ids:
@@ -684,7 +685,176 @@ def test_kv_cache_ragged_rope(
     assert kv_runtime_inputs.attention_dispatch_metadata is not None
     provided_inputs = {
         1: input_row_offsets,
-        3 + offset: kv_runtime_inputs.blocks,
+        3 + offset: kv_runtime_inputs.kv_blocks,
+        4 + offset: kv_runtime_inputs.cache_lengths,
+        5 + offset: kv_runtime_inputs.lookup_table,
+        6 + offset: kv_runtime_inputs.max_lengths,
+        7 + offset: kv_runtime_inputs.attention_dispatch_metadata,
+    }
+
+    if use_position_ids:
+        position_ids_data = np.tile(
+            np.arange(total_seq_len, dtype=np.uint32), (num_sections, 1)
+        )
+        provided_inputs[3] = Buffer.from_numpy(position_ids_data)
+
+    @modular_graph_test(
+        session,
+        g,
+        static_dims={
+            "total_seq_len": total_seq_len,
+            "input_row_offsets_len": len(prompt_lens) + 1,
+        },
+        provided_inputs=provided_inputs,
+    )
+    @settings(max_examples=10)
+    def test_runs_without_nan(
+        execute: Callable[[Sequence[Buffer]], Buffer],
+        inputs: Sequence[Buffer],
+        torch_inputs: Sequence[torch.Tensor],
+    ) -> None:
+        result = execute(list(inputs)).to_numpy()
+        assert not np.any(np.isnan(result))
+        assert not np.any(np.isinf(result))
+
+
+@pytest.mark.parametrize("use_position_ids", [False, True])
+def test_rope_split_store_ragged(
+    session: InferenceSession, use_position_ids: bool
+) -> None:
+    """Tests rope_split_store_ragged compiles and produces valid output."""
+    num_q_heads = 32
+    head_dim = 128
+    kv_params = KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=8,
+        head_dim=head_dim,
+        num_layers=1,
+        page_size=128,
+        devices=[DeviceRef.CPU()],
+    )
+    prompt_lens = [10, 30]
+    batch_size = len(prompt_lens)
+    total_seq_len = sum(prompt_lens)
+    combined_dim = (num_q_heads + 2 * kv_params.n_kv_heads) * head_dim
+
+    qkv_type = TensorType(
+        DType.float32,
+        ["total_seq_len", combined_dim],
+        device=DeviceRef.CPU(),
+    )
+    input_row_offsets_type = TensorType(
+        DType.uint32, ["input_row_offsets_len"], device=DeviceRef.CPU()
+    )
+    freqs_cis_type = TensorType(
+        DType.float32,
+        [MAX_SEQ_LEN, head_dim],
+        device=DeviceRef.CPU(),
+    )
+
+    num_sections = 3
+    mrope_section = [16, 24, 24]
+    position_ids_type = None
+    if use_position_ids:
+        position_ids_type = TensorType(
+            DType.uint32,
+            [num_sections, "total_seq_len"],
+            device=DeviceRef.CPU(),
+        )
+
+    kv_manager = PagedKVCacheManager(
+        kv_params,
+        total_num_pages=8,
+        session=session,
+        max_batch_size=128,
+    )
+
+    def construct() -> Graph:
+        input_types = [
+            qkv_type,
+            input_row_offsets_type,
+            freqs_cis_type,
+            *kv_params.get_symbolic_inputs().flatten(),
+        ]
+
+        if use_position_ids:
+            assert position_ids_type is not None
+            input_types.insert(3, position_ids_type)
+
+        graph_name = (
+            "rope_split_store_with_position_ids"
+            if use_position_ids
+            else "rope_split_store"
+        )
+
+        with Graph(graph_name, input_types=input_types) as g:
+            qkv = g.inputs[0]
+            input_row_offsets = g.inputs[1]
+            freqs_cis = g.inputs[2]
+
+            kv_start = 4 if use_position_ids else 3
+            (
+                blocks,
+                cache_lengths,
+                lookup_table,
+                is_cache_empty,
+                _attention_dispatch_metadata,
+            ) = g.inputs[kv_start:]
+
+            layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
+
+            kv_collection = PagedCacheValues(
+                blocks.buffer,
+                cache_lengths.tensor,
+                lookup_table.tensor,
+                is_cache_empty.tensor,
+            )
+
+            position_ids = g.inputs[3].tensor if use_position_ids else None
+
+            result = rope_split_store_ragged(
+                kv_params,
+                qkv=qkv.tensor,
+                input_row_offsets=input_row_offsets.tensor,
+                freqs_cis=freqs_cis.tensor,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                n_heads=num_q_heads,
+                position_ids=position_ids,
+                mrope_section=mrope_section if use_position_ids else None,
+            )
+            g.output(result)
+        return g
+
+    g = construct()
+
+    batch = [
+        create_text_context(np.empty(prompt_lens[i], dtype=np.int64))
+        for i in range(batch_size)
+    ]
+
+    for context in batch:
+        kv_manager.claim(context.request_id, replica_idx=0)
+        assert isinstance(kv_manager, PagedKVCacheManager)
+        kv_manager.alloc(context, replica_idx=0, num_steps=1)
+
+    input_row_offsets = Buffer(
+        DType.uint32,
+        [batch_size + 1],
+    )
+    running_sum = 0
+    for i in range(batch_size):
+        input_row_offsets[i] = running_sum
+        running_sum += prompt_lens[i]
+    input_row_offsets[batch_size] = running_sum
+
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+
+    offset = 1 if use_position_ids else 0
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
+    provided_inputs = {
+        1: input_row_offsets,
+        3 + offset: kv_runtime_inputs.kv_blocks,
         4 + offset: kv_runtime_inputs.cache_lengths,
         5 + offset: kv_runtime_inputs.lookup_table,
         6 + offset: kv_runtime_inputs.max_lengths,

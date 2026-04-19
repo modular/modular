@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.os.path import realpath
-from std.ffi import ErrNo, get_errno, set_errno
+from std.ffi import ErrNo, RTLD, get_errno, set_errno
 from std.sys.info import CompilationTarget
 
 from std.testing import assert_equal, assert_raises
@@ -301,6 +301,19 @@ def test_errno() raises:
     set_errno(ErrNo.EPERM)
     if get_errno() != ErrNo.EPERM:
         raise Error("Failed to set errno to EPERM")
+
+
+def test_rtld_flags() raises:
+    assert_equal(RTLD.LAZY, 1)
+    assert_equal(RTLD.NOW, 2)
+    comptime if CompilationTarget.is_linux():
+        assert_equal(RTLD.LOCAL, 0)
+        assert_equal(RTLD.GLOBAL, 256)
+        assert_equal(RTLD.NODELETE, 4096)
+    elif CompilationTarget.is_macos():
+        assert_equal(RTLD.LOCAL, 4)
+        assert_equal(RTLD.GLOBAL, 8)
+        assert_equal(RTLD.NODELETE, 128)
 
 
 def main() raises:

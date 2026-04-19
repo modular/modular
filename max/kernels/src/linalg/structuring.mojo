@@ -58,7 +58,7 @@ struct ScatterGatherAmd[
             mut=True, address_space=AddressSpace.LOCAL, ...
         ],
         src_gmem_tile: LayoutTensor,
-        offset: Optional[UInt] = None,
+        offset: Optional[Int] = None,
     ):
         """Copy DRAM to registers.
 
