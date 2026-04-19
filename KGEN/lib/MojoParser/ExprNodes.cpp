@@ -4382,11 +4382,8 @@ AnyValue MagicFunctionNode::emitConformsTo(ValueDest &dest,
                                            IREmitter &emitter) const {
 
   // The first argument should be a type to check conformance for.
-  // Accept:
-  // 1. Types with metatype TraitType or StructMetaType (e.g., generic params,
-  //    concrete struct types)
-  // 2. Values of type !kgen.type (TypeType) - these come from reflection APIs
-  //    like struct_field_types[T]()[i] and will be resolved during elaboration
+  // Accept Types with metatype TraitType or StructMetaType (e.g., generic
+  // params, concrete struct types)
   PValue typeToCheck = emitter.emitExprPValue(subExprs[0], EC_ConformsTo);
   if (!typeToCheck) {
     emitter.emitError(subExprs[0]->getLoc(),
@@ -4395,13 +4392,8 @@ AnyValue MagicFunctionNode::emitConformsTo(ValueDest &dest,
     return {};
   }
 
-  // Check if this is a !kgen.type value (from reflection APIs).
-  // FIXME: make reflection API use AnyType.
-  bool isTypeTypeValue =
-      sugarIsaAndNonNull<KGEN::TypeType>(typeToCheck.getType());
-
-  // If not a !kgen.type value, check for metatype-based type expressions.
-  if (!isTypeTypeValue && !LIT::isFirstLevelTypeExpr(typeToCheck)) {
+  // If not a metatype-based type expression, reject.
+  if (!LIT::isFirstLevelTypeExpr(typeToCheck)) {
     // TODO: we should fold to constant when the metatype is `StructMetaType`,
     // that means we know the concrete type to check at parsing time:
     emitter.emitError(subExprs[0]->getLoc())
@@ -4413,10 +4405,12 @@ AnyValue MagicFunctionNode::emitConformsTo(ValueDest &dest,
 
   // The second operand must be a !lit.anytrait
   PValue traitToCheck = emitter.emitExprPValue(subExprs[1], EC_ConformsTo);
-  if (!traitToCheck ||
-      !sugarIsaAndNonNull<TraitType>(traitToCheck.getIfTypeValue())) {
+  if (!traitToCheck)
+    return {};
+
+  if (!sugarIsaAndNonNull<TraitType>(traitToCheck.getIfTypeValue())) {
     emitter.emitError(subExprs[1]->getLoc(),
-                      "expected a concrete trait for the second argument")
+                      "expected a trait for the second argument")
         << subExprs[1]->getRange();
     return {};
   }
@@ -4429,7 +4423,6 @@ AnyValue MagicFunctionNode::emitConformsTo(ValueDest &dest,
   canonicalizeTraitCompositionSymbols(emitter.shared, symbols);
 
   auto conformToI1 = TypeConformsToTraitAttr::get(typeToCheck, symbols);
-
   return emitter.emitBool({conformToI1, this}, dest);
 }
 
