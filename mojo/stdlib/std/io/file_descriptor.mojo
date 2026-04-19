@@ -17,8 +17,9 @@ These are Mojo built-ins, so you don't need to import them.
 For example, here's how to print to a file
 
 ```mojo
-var f = open("my_file.txt", "r")
-print("hello", file=f^)
+var f = open("my_file.txt", "w")
+var fd = FileDescriptor(f)
+print("hello", file=fd)
 f.close()
 ```
 
@@ -72,7 +73,9 @@ struct FileDescriptor(TrivialRegisterPassable, Writer):
             bytes: The byte span to write to this file.
         """
         written = external_call["write", c_ssize_t](
-            self.value, bytes.unsafe_ptr(), len(bytes)
+            self.value._int_mlir_index(),
+            bytes.unsafe_ptr(),
+            len(bytes)._int_mlir_index(),
         )
         assert written == len(bytes), "expected amount of bytes not written"
 

@@ -191,11 +191,11 @@ def main():
 Destroying 4 elements
 ```
 
-The destructor takes its `self` argument using the `deinit`
-[argument convention](/mojo/manual/values/ownership#argument-conventions), which
-grants exclusive ownership of the value and marks it as destroyed at the end of
-the function. (For more information on the `deinit` convention, see
-[Field lifetimes during move and destruction](#field-lifetimes-during-destruct-and-move)).
+The destructor takes its `self` argument using the `deinit` [argument
+convention](/mojo/manual/values/ownership#argument-conventions), which
+grants exclusive ownership of the value and marks it as destroyed at the
+end of the function. (For more information on the `deinit` convention, see
+[Instance initialization](/mojo/manual/lifecycle/initialization/)).
 
 Note that a pointer doesn't *own* any values in the memory it points to, so
 when a pointer is destroyed, Mojo doesn't call the destructors on those values.
@@ -509,59 +509,14 @@ it's likewise impossible to destroy an object by destroying only its fields.
 
 ### Field lifetimes during move and destruction {#field-lifetimes-during-destruct-and-move}
 
-Both the consuming move constructor and the destructor take their operand with
-the `deinit` argument convention. This grants exclusive ownership of the value
-and marks it as destroyed at the end of the function. Within the function body,
-Mojo's ASAP policy still applies to fields: each field is destroyed immediately
-after its last use.
+Both the consuming move constructor and the destructor take their operand
+with the `deinit` argument convention. This grants exclusive ownership of
+the value and marks it as destroyed at the end of the function. Within the
+function body, Mojo's ASAP policy still applies to fields: each field is
+destroyed immediately after its last use.
 
-Just to recap, the move constructor and destructor method signatures
-look like this:
-
-```mojo
-struct TwoStrings:
-    def __init__(out self, *, deinit take: Self):
-        # Initializes a new `self` by consuming the contents of `take`
-    def __del__(deinit self):
-        # Destroys all resources in `self`
-```
-
-Like the `var` argument convention, the `deinit` convention gives the argument
-exclusive ownership of a value. But unlike a `var` argument, Mojo doesn't
-insert a destructor call for the argument at the end of the function—because the
-`deinit` convention already marks it as a value that's in the process of being
-destroyed.
-
-For example, the following code shows how fields are destroyed inside a
-destructor.
-
-```mojo
-def consume(var str: String):
-    print("Consumed", str)
-
-@fieldwise_init
-struct TwoStrings(Copyable):
-    var str1: String
-    var str2: String
-
-    def __del__(deinit self):
-        # self value is whole at the beginning of the function
-        self.dump()
-        # After dump(): str2 is never used again, so str2.__del__() runs now
-
-        consume(self.str1^)
-        # self.str1 has been transferred so str1 becomes uninitialized, and
-        # no destructor is called for str1.
-        # self.__del__() is not called (avoiding an infinite loop).
-
-    def dump(mut self):
-        print("str1:", self.str1)
-        print("str2:", self.str2)
-
-
-def main():
-    var two_strings = TwoStrings("foo", "bar")
-```
+To read more about the `deinit` convention, see
+[Instance initialization](/mojo/manual/lifecycle/initialization/).
 
 ## Explicit lifetime extension
 

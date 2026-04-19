@@ -34,6 +34,10 @@ from max.profiler import traced
 
 from ..flux2 import Flux2Transformer2DModel
 from ..model_config import Flux2Config
+from ..weight_adapters import (
+    adapt_weights,
+    parse_nvfp4_quantization_metadata,
+)
 
 
 class DenoiseComputeStep(Module):
@@ -74,9 +78,11 @@ class DenoiseComputeStep(Module):
             [latent_image_ids, image_latent_ids], axis=1
         )
 
-        # Cast timestep and guidance to model dtype.
-        timestep = ops.cast(timestep, self._dtype)
-        guidance = ops.cast(guidance, self._dtype)
+        # Keep timestep and guidance as float32 here.  The transformer
+        # multiplies by 1000.0 *before* casting to model dtype
+        # (flux2.py:628-629), so leaving them in float32 avoids bf16
+        # rounding on the raw sigma — matching the diffusers precision
+        # path.
 
         # Transformer forward.
         (noise_pred,) = self.transformer(
@@ -124,9 +130,9 @@ class DenoiseComputeStep(Module):
                 shape=["batch", "text_seq_len", joint_attention_dim],
                 device=self._device,
             ),
-            # timestep: (B,) float32 — cast to model dtype in-graph
+            # timestep: (B,) float32 — transformer casts after x1000
             TensorType(DType.float32, shape=["batch"], device=self._device),
-            # guidance: (B,) float32 — cast to model dtype in-graph
+            # guidance: (B,) float32 — transformer casts after x1000
             TensorType(DType.float32, shape=["batch"], device=self._device),
             # latent_image_ids: (B, image_seq_len, 4)
             TensorType(
@@ -180,13 +186,23 @@ class DenoiseCompute(CompiledComponent):
         dtype = transformer_config.dtype
         device = transformer_config.device
 
-        # Load weights and detect guidance_embeds.
+        # Load weights and adapt for NVFP4 / stacked-QKV checkpoints.
         paths = config.resolved_weight_paths()
         weights = load_weights(paths)
+        raw_state_dict = {key: value.data() for key, value in weights.items()}
+        raw_state_dict = adapt_weights(
+            raw_state_dict, transformer_config.quant_config
+        )
+
+        nvfp4_layers_bfl = parse_nvfp4_quantization_metadata(paths)
+        if nvfp4_layers_bfl:
+            transformer_config = transformer_config.model_copy(
+                update={"nvfp4_layers_bfl": nvfp4_layers_bfl}
+            )
 
         has_guidance_embedder = any(
             "time_guidance_embed.guidance_embedder." in k
-            for k, _ in weights.items()
+            for k in raw_state_dict
         )
         if not has_guidance_embedder and transformer_config.guidance_embeds:
             transformer_config = transformer_config.model_copy(
@@ -201,9 +217,9 @@ class DenoiseCompute(CompiledComponent):
             device=device,
         )
 
-        # Adapt weights: prefix with "transformer." for the module.
+        # Prefix with "transformer." for the module hierarchy.
         state_dict: dict[str, Any] = {
-            f"transformer.{key}": value.data() for key, value in weights.items()
+            f"transformer.{key}": value for key, value in raw_state_dict.items()
         }
         compute.load_state_dict(state_dict, weight_alignment=1)
 

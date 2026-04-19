@@ -24,6 +24,7 @@ from layout import Coord, Idx, TensorLayout, TileTensor
 # ------------------------------------------------------------------------------
 
 
+@__name(t"tpool_patch_merger_{dtype}_w{vec_width}", mangle=True)
 def tpool_patch_merger_kernel[
     dtype: DType,
     XLayout: TensorLayout,

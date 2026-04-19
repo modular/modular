@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import MutableSequence
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 from max.driver import accelerator_architecture_name
@@ -39,12 +39,7 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.nn.quant_config import InputScaleSpec, QuantConfig, WeightScaleSpec
 
 from .attention.mask_config import AttentionMaskVariant, MHAMaskVariant
-from .kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-    attention_dispatch_metadata,
-)
-from .no_opaque_kernels import PagedKVCacheTensorsNoOpaque
+from .kv_cache import KVCacheParams, PagedCacheValues
 
 _MHA_MASK_VARIANT_TO_ATTENTION_MASK = {
     MHAMaskVariant.CAUSAL_MASK: AttentionMaskVariant.CAUSAL_MASK,
@@ -155,7 +150,7 @@ def fused_qkv_padded_matmul(
         values=[
             input,
             wqkv,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
             valid_lengths,
         ],
@@ -224,7 +219,13 @@ def fused_qkv_ragged_matmul(
         )
 
     op_name = "mo.fused_qkv_matmul.ragged.paged"
-    values = [input, input_row_offsets, wqkv, *kv_collection, layer_idx]
+    values = [
+        input,
+        input_row_offsets,
+        wqkv,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+    ]
 
     if bias is not None:
         op_name += ".bias"
@@ -257,6 +258,9 @@ def rope_split_store_ragged(
     layer_idx: TensorValue,
     n_heads: int,
     interleaved: bool = True,
+    position_ids: TensorValue | None = None,
+    mrope_section: list[int] | None = None,
+    fuse: bool = True,
 ) -> TensorValue:
     """Apply rope to Q and K from flat QKV buffer, store K/V to cache.
 
@@ -272,6 +276,15 @@ def rope_split_store_ragged(
         layer_idx: Layer index.
         n_heads: Number of query attention heads.
         interleaved: Whether freqs_cis uses interleaved (re, im) format.
+        position_ids: Optional ragged 2D array of position IDs. If None,
+            defaults to cache_length + token_idx for each token. When
+            ``num_sections > 1``, ``mrope_section`` must be provided.
+            Shape: [num_sections, total_seq_len].
+        mrope_section: Optional list of ints indicating the section of the
+            head_dim to apply RoPE to. Must be used with ``position_ids``.
+        fuse: If True (default), emit a single fused custom op. If False,
+            emit separate split, rope, and store ops for testing graph
+            compiler fusion.
 
     Returns:
         Roped Q output [total_seq_len, n_heads * head_dim].
@@ -300,16 +313,70 @@ def rope_split_store_ragged(
 
     output_dim = n_heads * kv_params.head_dim
 
-    return ops.inplace_custom(
-        "mo.rope_split_store.ragged.paged",
-        device=qkv.device,
-        values=[
+    if not fuse:
+        return _rope_split_store_ragged_unfused(
+            kv_params=kv_params,
+            qkv=qkv,
+            input_row_offsets=input_row_offsets,
+            freqs_cis=freqs_cis,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
+            n_heads=n_heads,
+            interleaved=interleaved,
+        )
+
+    parameters: dict[str, bool | int | str | DType] = {
+        "interleaved": interleaved,
+    }
+
+    if mrope_section is not None and position_ids is None:
+        raise ValueError("mrope_section requires position_ids to be provided")
+
+    if position_ids is not None:
+        if position_ids.dtype != DType.uint32:
+            raise ValueError(
+                f"expected position_ids to have dtype uint32, was {position_ids.dtype}"
+            )
+        if position_ids.rank != 2:
+            raise ValueError(
+                f"expected position_ids to be 2D, got rank {position_ids.rank}"
+            )
+        if mrope_section is not None:
+            if len(mrope_section) != position_ids.shape[0]:
+                raise ValueError(
+                    f"expected mrope_section to have length"
+                    f" {position_ids.shape[0]}, was {len(mrope_section)}"
+                )
+            scaled = [x * 2 for x in mrope_section]
+            prefix_sums = [sum(scaled[: i + 1]) for i in range(len(scaled))]
+            parameters["mrope_section"] = "_".join(str(x) for x in prefix_sums)
+        else:
+            parameters["mrope_section"] = ""
+
+    if position_ids is not None:
+        op_name = "mo.rope_split_store.ragged.paged.with_position_id"
+        values = [
             qkv,
             input_row_offsets,
             freqs_cis,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
+            position_ids,
             layer_idx,
-        ],
+        ]
+    else:
+        op_name = "mo.rope_split_store.ragged.paged"
+        values = [
+            qkv,
+            input_row_offsets,
+            freqs_cis,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
+            layer_idx,
+        ]
+
+    return ops.inplace_custom(
+        op_name,
+        device=qkv.device,
+        values=values,
         out_types=[
             TensorType(
                 dtype=qkv.dtype,
@@ -317,8 +384,121 @@ def rope_split_store_ragged(
                 device=qkv.device,
             )
         ],
-        parameters={"interleaved": interleaved},
+        parameters=parameters,
     )[0].tensor
+
+
+def store_k_scale_cache_ragged(
+    kv_collection: PagedCacheValues,
+    x_k_scale: TensorValue,
+    input_row_offsets: TensorValue,
+    layer_idx: TensorValue,
+    quantization_granularity: int,
+) -> None:
+    """Store key scale tensor into the paged KV cache."""
+    if kv_collection.kv_scales is None:
+        raise ValueError(
+            "kv_collection.kv_scales is None, expected a buffer value"
+        )
+    ops.inplace_custom(
+        "mo.kv_cache.store_k_scales.paged.ragged",
+        device=x_k_scale.device,
+        values=[
+            x_k_scale,
+            kv_collection.kv_blocks,
+            kv_collection.cache_lengths,
+            kv_collection.lookup_table,
+            input_row_offsets,
+            kv_collection.max_lengths,
+            kv_collection.kv_scales,
+            layer_idx,
+        ],
+        parameters={
+            "quantization_granularity": quantization_granularity,
+        },
+    )
+
+
+def _rope_split_store_ragged_unfused(
+    kv_params: KVCacheParams,
+    qkv: TensorValue,
+    input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    n_heads: int,
+    interleaved: bool,
+) -> TensorValue:
+    """Unfused rope + split + store for testing graph compiler fusion.
+
+    Emits separate slice, rope, and store ops instead of a single fused
+    custom op, so the graph compiler can attempt to fuse them.
+    """
+    head_dim = kv_params.head_dim
+    n_kv_heads = kv_params.n_kv_heads
+    q_dim = n_heads * head_dim
+    kv_dim = n_kv_heads * head_dim
+
+    # Split QKV into Q, K, V.
+    x_q, x_k, x_v = ops.split(qkv, [q_dim, kv_dim, kv_dim], axis=-1)
+
+    # Reshape to [total_seq_len, num_heads, head_dim] for rope.
+    x_q = x_q.reshape((-1, n_heads, head_dim))
+    x_k = x_k.reshape((-1, n_kv_heads, head_dim))
+    x_v = x_v.reshape((-1, n_kv_heads, head_dim))
+
+    # Apply RoPE to Q and K individually.
+    xq_rope = rope_ragged(
+        x_q,
+        input_row_offsets,
+        kv_collection.cache_lengths,
+        freqs_cis,
+        interleaved=interleaved,
+    )
+    xk_rope = rope_ragged(
+        x_k,
+        input_row_offsets,
+        kv_collection.cache_lengths,
+        freqs_cis,
+        interleaved=interleaved,
+    )
+
+    # Store K and V to cache individually.
+    kv_blocks = kv_collection.kv_blocks
+    cache_lengths = kv_collection.cache_lengths
+    lookup_table = kv_collection.lookup_table
+    max_lengths = kv_collection.max_lengths
+    ops.inplace_custom(
+        "mo.kv_cache.store.paged.ragged",
+        device=xk_rope.device,
+        values=[
+            xk_rope,
+            kv_blocks,
+            cache_lengths,
+            lookup_table,
+            input_row_offsets,
+            max_lengths,
+            layer_idx,
+        ],
+        parameters={"key_or_value": 0},
+    )
+    ops.inplace_custom(
+        "mo.kv_cache.store.paged.ragged",
+        device=x_v.device,
+        values=[
+            x_v,
+            kv_blocks,
+            cache_lengths,
+            lookup_table,
+            input_row_offsets,
+            max_lengths,
+            layer_idx,
+        ],
+        parameters={"key_or_value": 1},
+    )
+
+    # Return flat roped Q [total_seq_len, n_heads * head_dim].
+    return xq_rope.reshape((-1, q_dim))
 
 
 def _fused_qkv_ragged_matmul_scaled_float8(
@@ -453,7 +633,7 @@ def _fused_qkv_ragged_matmul_scaled_float8(
         wqkv,
         input_scale,
         weight_scale,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
     ]
     if bias is not None:
@@ -592,7 +772,7 @@ def _fused_qkv_ragged_matmul_scaled_float4(
         input_scale,
         weight_scale,
         tensor_sf,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
     ]
 
@@ -686,7 +866,7 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
             repack_gguf_quantized_weights(q_weight, quantization_encoding_q),
             repack_gguf_quantized_weights(k_weight, quantization_encoding_k),
             repack_gguf_quantized_weights(v_weight, quantization_encoding_v),
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ],
         out_types=[
@@ -778,7 +958,13 @@ def fused_qkv_ragged_matmul_quantized(
             ],
         )[0].tensor
 
-    args = [input, input_row_offsets, wqkv, *kv_collection, layer_idx]
+    args = [
+        input,
+        input_row_offsets,
+        wqkv,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+    ]
     if bias is not None:
         args.append(bias)
         bias_name_str = "bias."
@@ -844,7 +1030,7 @@ def matmul_kv_cache_ragged(
             hidden_states,
             input_row_offsets,
             weight,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ],
     )
@@ -892,7 +1078,7 @@ def matmul_k_cache_ragged(
             hidden_states,
             input_row_offsets,
             weight,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ],
     )
@@ -973,7 +1159,7 @@ def matmul_k_cache_ragged_scaled_float8(
             weight,
             input_scale,
             weight_scale,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ],
         parameters=parameters,
@@ -1067,7 +1253,7 @@ def fused_qk_ragged_rope(
         values = [
             input,
             input_row_offsets,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             freqs_cis,
             position_ids,
             layer_idx,
@@ -1077,7 +1263,7 @@ def fused_qk_ragged_rope(
         values = [
             input,
             input_row_offsets,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             freqs_cis,
             layer_idx,
         ]
@@ -1159,7 +1345,7 @@ def fused_qk_padded_rope(
         device=input.device,
         values=[
             input,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             freqs_cis,
             layer_idx,
             valid_lengths,
@@ -1696,7 +1882,7 @@ def flash_attention_padded_kv_cache(
         device=q.device,
         values=[
             q,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
             valid_lengths,
             ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -1739,7 +1925,7 @@ def mla_fp8_index_top_k(
     q: TensorValue,
     q_s: TensorValue,
     input_row_offsets: TensorValue,
-    k_collection: PagedKVCacheTensorsNoOpaque,
+    k_collection: PagedCacheValues,
     layer_idx: TensorValue,
     top_k: int,
     quantization_granularity: int,
@@ -1781,8 +1967,8 @@ def mla_fp8_index_top_k(
         device=q.device,
     )
     _validate_argument_tensor(
-        "k_collection.blocks",
-        k_collection.blocks,
+        "k_collection.kv_blocks",
+        k_collection.kv_blocks,
         dtype=DType.float8_e4m3fn,
         rank=6,
         device=q.device,
@@ -1821,7 +2007,7 @@ def mla_fp8_index_top_k(
             q,
             q_s,
             input_row_offsets,
-            *k_collection,
+            *k_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ],
         out_types=[
@@ -1973,8 +2159,7 @@ def masked_flash_attention_gpu(
 
     if mask.shape[0] != q.shape[0]:
         raise ValueError(
-            f"mask batch size ({mask.shape[0]}) must match q batch size "
-            f"({q.shape[0]})"
+            f"mask batch size ({mask.shape[0]}) must match q batch size ({q.shape[0]})"
         )
 
     if mask.shape[1] != q.shape[1]:
@@ -2067,7 +2252,11 @@ def flash_attention_ragged(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    dispatch_metadata = attention_dispatch_metadata(kv_collection)
+    dispatch_metadata = kv_collection.attention_dispatch_metadata
+    if dispatch_metadata is None:
+        raise ValueError(
+            "Expected attention_dispatch_metadata in kv_collection"
+        )
 
     if sink_weights is not None:
         if sink_weights.rank != 1:
@@ -2093,14 +2282,14 @@ def flash_attention_ragged(
     values: MutableSequence[Value[Any]] = [
         input,
         input_row_offsets,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         # NOTE: The scale argument to flash attention is constrained to float32.
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
     if sink_weights is not None:
         values.append(sink_weights)
-    values.append(cast(TensorValue, dispatch_metadata.tensor))
+    values.append(dispatch_metadata.tensor)
 
     return ops.inplace_custom(
         op_name,
@@ -2276,7 +2465,7 @@ def flare_mla_decode_ragged(
     input_values: MutableSequence[Value[Any]] = [
         input,
         input_row_offsets,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         # NOTE: The scale argument to flash attention is constrained to float32.
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -2354,8 +2543,7 @@ def flare_mla_decode_ragged_scaled(
 
     if input_row_offsets.dtype != DType.uint32:
         raise ValueError(
-            f"expected uint32 input_row_offsets but got"
-            f" {input_row_offsets.dtype}"
+            f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
     if kv_collection.kv_blocks.shape[1] != 1:
@@ -2385,7 +2573,7 @@ def flare_mla_decode_ragged_scaled(
         values=[
             input,
             input_row_offsets,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             kv_scales,
             q_scales,
             layer_idx,
@@ -2473,7 +2661,7 @@ def flare_mla_prefill_ragged(
         buffer_row_offsets,
         cache_offsets,
         input_row_offsets,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
@@ -2538,7 +2726,7 @@ def flare_mla_prefill_plan(
         device=input_row_offsets.device,
         values=[
             input_row_offsets,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
             buffer_size_tensor,
         ],
@@ -2696,7 +2884,7 @@ def mla_prefill_graph(
         buffer_length[0],  # one-shot prefill.
         w_k,
         w_uv,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
         ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -2892,7 +3080,7 @@ def mla_decode_graph(
         kv_norm_gamma,
         w_uk,
         w_uv,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
         ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -3007,7 +3195,7 @@ def mla_prefill_decode_graph(
         w_k,
         w_uk,
         w_uv,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
         ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -3084,7 +3272,7 @@ def flare_mla_decompress_k_cache(
             cache_offsets_1d,
             buffer_length,
             weight,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ],
         out_types=[
@@ -3167,7 +3355,7 @@ def cross_attention_ragged(
             # on the kv_collection, but that isn't the case for cross attention.
             q_max_seq_len,
             kv_input_row_offsets,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
             # NOTE: The scale argument to flash attention is constrained to float32.
             ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -3223,7 +3411,7 @@ def kv_cache_ragged_radd(
         device=input_row_offsets.device,
         values=[
             a,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             input_row_offsets,
             batch_offset,
             ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
@@ -3302,7 +3490,7 @@ def rms_norm_key_cache(
         "mo.rms_norm_kv_cache.ragged.paged",
         device=input_row_offsets.device,
         values=[
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             gamma,
             ops.constant(epsilon, gamma.dtype, device=DeviceRef.CPU()),
             layer_idx,
@@ -3364,7 +3552,7 @@ def rms_norm_value_cache(
         "mo.rms_norm_value_cache.ragged.paged",
         device=input_row_offsets.device,
         values=[
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             gamma,
             ops.constant(epsilon, gamma.dtype, device=DeviceRef.CPU()),
             layer_idx,
@@ -3596,7 +3784,7 @@ def grouped_matmul_ragged(
     return output
 
 
-def grouped_dynamic_scaled_nvfp4_matmul(
+def grouped_matmul_block_scaled(
     hidden_states: TensorValue,
     weight: TensorValue,
     a_scales: TensorValue,
@@ -3667,12 +3855,15 @@ def grouped_dynamic_scaled_nvfp4_matmul(
             f"{hidden_states.dtype}, {weight.dtype}"
         )
 
-    if (a_scales.dtype != b_scales.dtype) or (
-        a_scales.dtype != DType.float8_e4m3fn
-    ):
+    if a_scales.dtype != b_scales.dtype:
         raise TypeError(
-            "a_scales and b_scales dtypes must be float8_e4m3fn for NVFP4, "
+            "a_scales and b_scales dtypes must match, "
             f"but got {a_scales.dtype}, {b_scales.dtype}"
+        )
+    if a_scales.dtype not in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
+        raise TypeError(
+            "a_scales dtype must be float8_e4m3fn (NVFP4) or"
+            f" float8_e8m0fnu (MXFP4), but got {a_scales.dtype}"
         )
 
     if expert_ids.dtype != DType.int32:
@@ -3712,7 +3903,8 @@ def grouped_dynamic_scaled_nvfp4_matmul(
 
     SF_ATOM_M = [32, 4]
     SF_ATOM_K = 4
-    SF_VECTOR_SIZE = 16
+    # Infer SF_VECTOR_SIZE from scale dtype: NVFP4=16, MXFP4=32
+    SF_VECTOR_SIZE = 32 if a_scales.dtype == DType.float8_e8m0fnu else 16
     SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
     SF_K_GROUP_SIZE = SF_ATOM_K * SF_VECTOR_SIZE
 
@@ -4541,6 +4733,14 @@ def mxfp4_dequant(
     return result
 
 
+def _is_sm10x_gpu() -> bool:
+    """Checks if the current accelerator is NVIDIA SM100+ (Blackwell)."""
+    try:
+        return accelerator_architecture_name().startswith("sm_10")
+    except Exception:
+        return False
+
+
 def quantize_dynamic_block_scaled_fp4(
     input: TensorValue,
     tensor_sf: TensorValue | float,
@@ -4552,13 +4752,18 @@ def quantize_dynamic_block_scaled_fp4(
 
     Args:
         input: The input tensor to quantize. Shape: [seq_len, hidden_size]
-        tensor_sf: The tensor-wise scale factor (inverted as per quantization kernel requirement).
+        tensor_sf: The tensor-wise scale factor (inverted as per
+            quantization kernel requirement).
         sf_vector_size: The block size for the scaling factors.
+            16 for NVFP4, 32 for MXFP4.
         out_type: The type of the output tensor.
         scales_type: The type of the scales tensor.
+            ``float8_e4m3fn`` for NVFP4, ``float8_e8m0fnu`` for MXFP4.
 
     Returns:
-        The quantized tensor in [seq_len, hidden_size // 2] layout and the scales in [ceildiv(seq_len, 128), ceildiv(hidden_size, sf_vector_size * 4), 32, 4, 4] layout.
+        The quantized tensor and scales. Scales layout depends on hardware:
+        rank-5 interleaved on NVIDIA SM100, rank-2 ``[M, K // sf_vector_size]``
+        otherwise.
     """
     if input.rank != 2:
         raise ValueError("input tensor must be rank 2 tensor")
@@ -4569,28 +4774,44 @@ def quantize_dynamic_block_scaled_fp4(
     if out_type not in (DType.uint8,):
         raise ValueError("out_type must be uint8 (fp4-e2m1fnX2)")
 
-    if scales_type not in (DType.float8_e4m3fn,):
-        raise ValueError("scales_type must be float8_e4m3fn for NVFP4")
-
-    if sf_vector_size != 16:
-        raise ValueError("sf_vector_size must be 16 for NVFP4")
-
-    if int(input.shape[1]) % (sf_vector_size // 2) != 0:
+    if scales_type not in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
         raise ValueError(
-            "input.shape[1] must be a multiple of (sf_vector_size // 2)"
+            "scales_type must be float8_e4m3fn (NVFP4) or float8_e8m0fnu (MXFP4)"
         )
 
-    SF_ATOM_M = [32, 4]
-    SF_ATOM_K = 4
-    SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
-    SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
+    if sf_vector_size not in (16, 32):
+        raise ValueError("sf_vector_size must be 16 (NVFP4) or 32 (MXFP4)")
 
-    # scales tensor shape: [ceildiv(M, SF_MN_GROUP_SIZE), ceildiv(N, sf_vector_size * 4), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K]
-    scales_dim_0 = ceildiv(input.shape[0], Dim(SF_MN_GROUP_SIZE))
-    scales_dim_1 = ceildiv(input.shape[1], Dim(SF_K_GROUP_SIZE))
-    scales_dim_2 = SF_ATOM_M[0]
-    scales_dim_3 = SF_ATOM_M[1]
-    scales_dim_4 = SF_ATOM_K
+    # MXFP4 (sf_vector_size=32) requires K % 32 because the kernel's
+    # 4-thread cooperative scale reduction operates on 32-element groups.
+    # NVFP4 (sf_vector_size=16) only requires K % 8.
+    k_alignment = (
+        sf_vector_size if sf_vector_size == 32 else sf_vector_size // 2
+    )
+    if int(input.shape[1]) % k_alignment != 0:
+        raise ValueError(f"input.shape[1] must be a multiple of {k_alignment}")
+
+    if _is_sm10x_gpu():
+        # SM100 TCGEN05: rank-5 interleaved scales layout.
+        SF_ATOM_M = [32, 4]
+        SF_ATOM_K = 4
+        SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+        SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
+        scales_shape: list[Dim | int] = [
+            ceildiv(input.shape[0], Dim(SF_MN_GROUP_SIZE)),
+            ceildiv(input.shape[1], Dim(SF_K_GROUP_SIZE)),
+            SF_ATOM_M[0],
+            SF_ATOM_M[1],
+            SF_ATOM_K,
+        ]
+    else:
+        # Default: rank-2 scales [M, K // sf_vector_size].
+        # TODO: 2D is a proxy for CDNA4. The optimized layout is likely
+        # 6D (32x32 tiles) or 7D (16x16 tiles).
+        scales_shape = [
+            input.shape[0],
+            ceildiv(input.shape[1], Dim(sf_vector_size)),
+        ]
 
     tensor_sf_value: TensorValue
     if isinstance(tensor_sf, float):
@@ -4609,19 +4830,13 @@ def quantize_dynamic_block_scaled_fp4(
                 dtype=out_type,
                 shape=[
                     input.shape[0],
-                    input.shape[1] // 2,
-                ],  # each output element (uint8) is 2 fp4-e2m1fn values
+                    input.shape[1] // 2,  # each uint8 packs 2 fp4 values
+                ],
                 device=input.device,
             ),
             TensorType(
                 dtype=scales_type,
-                shape=[
-                    scales_dim_0,
-                    scales_dim_1,
-                    scales_dim_2,
-                    scales_dim_3,
-                    scales_dim_4,
-                ],
+                shape=scales_shape,
                 device=input.device,
             ),
         ],
@@ -4636,31 +4851,41 @@ def quantize_dynamic_block_scaled_fp4(
 def block_scales_interleave(
     scales: TensorValue,
     sf_vector_size: int = 16,
-    scales_type: DType = DType.float8_e4m3fn,
 ) -> TensorValue:
-    """Interleave the block scales tensor in [M, N] layout to [ceildiv(M, 128), ceildiv(N, sf_vector_size * 4), 32, 4, 4] layout.
+    """Interleaves rank-2 FP4 block scales into the rank-5 TCGEN layout.
 
     Args:
-        scales: The scales tensor to interleave in [M, N] layout.
-        sf_vector_size: The block size for the scaling factors.
+        scales: Rank-2 block scales in ``[M, K // sf_vector_size]`` layout.
+            Supported dtypes are ``float8_e4m3fn`` for NVFP4 and
+            ``float8_e8m0fnu`` for MXFP4.
+        sf_vector_size: Scale-factor vector size: 16 for NVFP4 or 32 for MXFP4.
 
     Returns:
-        The interleaved scales tensor in [ceildiv(M, 128), ceildiv(N, sf_vector_size * 4), 32, 4, 4] layout.
+        The interleaved scales tensor in
+        ``[ceildiv(M, 128), ceildiv(K // sf_vector_size, 4), 32, 4, 4]`` layout.
     """
     if scales.rank != 2:
-        raise ValueError("Both a and b must be rank 2 tensors")
+        raise ValueError("scales must be a rank 2 tensor")
 
-    if scales.dtype != DType.float8_e4m3fn:
-        raise ValueError("scales dtype must be float8_e4m3fn")
+    if scales.dtype not in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
+        raise ValueError(
+            "scales dtype must be float8_e4m3fn (NVFP4) or float8_e8m0fnu (MXFP4)"
+        )
 
-    if sf_vector_size != 16:
-        raise ValueError("sf_vector_size must be 16 for NVFP4")
+    expected_sf_vector_size = 32 if scales.dtype == DType.float8_e8m0fnu else 16
+    if sf_vector_size != expected_sf_vector_size:
+        raise ValueError(
+            "sf_vector_size must match scales dtype:"
+            " 16 for float8_e4m3fn (NVFP4),"
+            " 32 for float8_e8m0fnu (MXFP4)"
+        )
 
     SF_ATOM_M = [32, 4]
     SF_ATOM_K = 4
     SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
 
-    # scales tensor shape: [ceildiv(M, SF_MN_GROUP_SIZE), ceildiv(N, sf_vector_size * 4), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K]
+    # Interleaved scales shape:
+    # [ceildiv(M, 128), ceildiv(num_scale_cols, 4), 32, 4, 4].
     scales_dim_0 = ceildiv(scales.shape[0], Dim(SF_MN_GROUP_SIZE))
     scales_dim_1 = ceildiv(scales.shape[1], Dim(SF_ATOM_K))
     scales_dim_2 = SF_ATOM_M[0]
@@ -4673,7 +4898,7 @@ def block_scales_interleave(
         values=[scales],
         out_types=[
             TensorType(
-                dtype=scales_type,
+                dtype=scales.dtype,
                 shape=[
                     scales_dim_0,
                     scales_dim_1,
@@ -5741,7 +5966,7 @@ def kv_cache_ragged_2m_iadd(
         device=input_row_offsets.device,
         values=[
             a,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             input_row_offsets,
             lora_end_idx,
             batch_seq_len,

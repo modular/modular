@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Benchmark for MXFP4 dequant-then-FP8 matmul on AMD CDNA GPUs.
 
-Benchmarks the full mxfp4_matmul_amd pipeline:
+Benchmarks the full mxfp4_dequant_matmul_amd pipeline:
   1. Dequant MXFP4 packed uint8 weights + E8M0 scales to FP8
   2. Cast BF16 activations to FP8
   3. FP8 GEMM via _matmul_gpu
@@ -48,7 +48,9 @@ from internal_utils._utils import InitializationType, init_vector_launch
 from layout import Idx, Layout, LayoutTensor, TileTensor, row_major
 
 import linalg.matmul.vendor.blas as vendor_blas
-from linalg.matmul.gpu.amd.mxfp4_matmul_amd import mxfp4_matmul_amd
+from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import (
+    mxfp4_dequant_matmul_amd,
+)
 from linalg.mxfp4_dequant import dequant_mxfp4
 
 
@@ -88,7 +90,7 @@ def _fill_random_mxfp4_data[
         N * scale_K
     )
     for i in range(N * scale_K):
-        bs_hbuf.unsafe_ptr()[i] = bitcast[DType.float8_e8m0fnu](UInt8(127))
+        bs_hbuf[i] = bitcast[DType.float8_e8m0fnu](UInt8(127))
     ctx.enqueue_copy(b_scales_device, bs_hbuf)
     ctx.synchronize()
 
@@ -103,7 +105,7 @@ def verify_mxfp4_matmul[
     b_scales_device: DeviceBuffer[DType.float8_e8m0fnu],
     M: Int,
 ) raises:
-    """Verify mxfp4_matmul_amd output against vendor BLAS on dequanted FP8 data.
+    """Verify mxfp4_dequant_matmul_amd output against vendor BLAS on dequanted FP8 data.
     """
     comptime packed_K = K // 2
     comptime scale_K = ceildiv(K, 32)
@@ -118,7 +120,7 @@ def verify_mxfp4_matmul[
     var b_fp8_tt = TileTensor(b_fp8, row_major[N, K]())
     var a_fp8_tt = TileTensor(a_fp8, row_major((Idx(M), Idx[K]())))
 
-    from linalg.matmul.gpu.amd.mxfp4_matmul_amd import _cast_bf16_to_fp8
+    from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
 
     dequant_mxfp4(
         ctx,
@@ -153,8 +155,8 @@ def verify_mxfp4_matmul[
     var sum_abs_diff = Float64(0.0)
     var sum_abs_ref = Float64(0.0)
     for i in range(M * N):
-        var got = c_host.unsafe_ptr()[i].cast[DType.float64]()
-        var exp = c_ref_host.unsafe_ptr()[i].cast[DType.float64]()
+        var got = c_host[i].cast[DType.float64]()
+        var exp = c_ref_host[i].cast[DType.float64]()
         sum_abs_diff += abs(got - exp)
         sum_abs_ref += abs(exp)
 
@@ -190,7 +192,7 @@ def bench_dequant_mxfp4[
         N * scale_K
     )
     for i in range(N * scale_K):
-        bs_hbuf.unsafe_ptr()[i] = bitcast[DType.float8_e8m0fnu](UInt8(127))
+        bs_hbuf[i] = bitcast[DType.float8_e8m0fnu](UInt8(127))
     ctx.enqueue_copy(b_scales_device, bs_hbuf)
     ctx.synchronize()
 
@@ -247,7 +249,7 @@ def bench_cast_bf16_to_fp8[
     var a_tt = TileTensor(a_device, row_major((Idx(M), Idx[K]())))
     var a_fp8_tt = TileTensor(a_fp8_device, row_major((Idx(M), Idx[K]())))
 
-    from linalg.matmul.gpu.amd.mxfp4_matmul_amd import _cast_bf16_to_fp8
+    from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
 
     @__copy_capture(a_fp8_tt, a_tt)
     @parameter
@@ -299,7 +301,7 @@ def bench_fp8_matmul[
     var a_fp8_tt = TileTensor(a_fp8, row_major((Idx(M), Idx[K]())))
     var b_fp8_tt = TileTensor(b_fp8, row_major((Idx[N](), Idx[K]())))
 
-    from linalg.matmul.gpu.amd.mxfp4_matmul_amd import _cast_bf16_to_fp8
+    from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
 
     _cast_bf16_to_fp8(ctx, a_fp8_tt, a_bf16_tt, M, K)
     _cast_bf16_to_fp8(ctx, b_fp8_tt, b_bf16_tt, N, K)
@@ -363,7 +365,7 @@ def bench_mxfp4_matmul[
     @parameter
     @always_inline
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-        mxfp4_matmul_amd(c_tt, a_tt, b_packed_tt, b_scales_tt, ctx)
+        mxfp4_dequant_matmul_amd(c_tt, a_tt, b_packed_tt, b_scales_tt, ctx)
         ctx.synchronize()
 
     if run_benchmark:

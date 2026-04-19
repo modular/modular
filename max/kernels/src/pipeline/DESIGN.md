@@ -80,7 +80,7 @@ This structure is invisible to LLVM's instruction scheduler:
 ### The trait-based API is genuinely concise
 
 A complete schedule definition for the 24-op ping-pong kernel is ~150 lines
-(`pingpong_schedule.mojo`). The `PipelineSchedule` trait has 2 required
+(`amd_ping_pong_schedule.mojo`). The `PipelineSchedule` trait has 2 required
 methods:
 
 ```mojo
@@ -261,7 +261,7 @@ pipeline/
 ```
 
 Total: ~4500 lines across 9 files, plus ~300 lines for the ping-pong
-schedule consumer (`pingpong_schedule.mojo`).
+schedule consumer (`amd_ping_pong_schedule.mojo`).
 
 Import DAG (acyclic, leaves at top):
 

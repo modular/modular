@@ -24,7 +24,14 @@ from unittest.mock import MagicMock
 import numpy as np
 import numpy.typing as npt
 import pytest
-from max.driver import CPU
+from max.driver import (
+    CPU,
+    Accelerator,
+    Buffer,
+    DevicePinnedBuffer,
+    accelerator_count,
+)
+from max.dtype import DType
 from max.interfaces import SamplingParams, TokenBuffer
 from max.pipelines.core import TextContext
 from max.pipelines.lib.sampling.sampling_logits_processor import (
@@ -565,12 +572,212 @@ class TestFusedSamplingProcessorInit:
         config.sampling.enable_penalties = enable_penalties
         config.sampling.enable_min_tokens = False
 
+        device = CPU()
         processor = FusedSamplingProcessor(
             sampler=MagicMock(),
             pipeline_config=config,
             context_batch=[context],
             num_steps=1,
-            device=CPU(),
+            device=device,
         )
 
         assert (processor.penalty_inputs is not None) == expect_penalty_inputs
+
+
+class TestFusedSamplingProcessorAsyncCopy:
+    """Tests for async token copy methods in FusedSamplingProcessor."""
+
+    def _create_processor(
+        self, device: CPU, pinned_new_tokens: Buffer | None = None
+    ) -> FusedSamplingProcessor:
+        """Create a FusedSamplingProcessor for testing."""
+        context = TextContext(
+            max_length=100,
+            tokens=TokenBuffer(np.array([1, 2, 3], dtype=np.int64)),
+            sampling_params=SamplingParams(),
+        )
+        config = MagicMock()
+        config.sampling.enable_penalties = False
+        config.sampling.enable_min_tokens = False
+
+        return FusedSamplingProcessor(
+            sampler=MagicMock(),
+            pipeline_config=config,
+            context_batch=[context],
+            num_steps=1,
+            device=device,
+            pinned_new_tokens=pinned_new_tokens,
+        )
+
+    def test_cpu_device_no_pinned_buffers(self) -> None:
+        """On CPU device, no pinned buffers should be created."""
+        device = CPU()
+        processor = self._create_processor(device)
+
+        # CPU device should not create pinned buffers
+        assert processor._pinned_new_tokens is None
+        assert processor._d2h_copy_event is None
+
+    def test_get_new_tokens_numpy_fallback_on_cpu(self) -> None:
+        """On CPU, get_new_tokens_numpy falls back to synchronous copy."""
+
+        processor = self._create_processor(CPU())
+
+        # Simulate sampler output by setting new_tokens
+        # Shape is (batch_size,) = (1,) since we have 1 context
+        test_tokens = np.array([42], dtype=np.int64)
+        processor.new_tokens = Buffer.from_numpy(test_tokens)
+
+        # Should return the tokens via synchronous fallback
+        result = processor.get_new_tokens_numpy()
+
+        np.testing.assert_array_equal(result, test_tokens)
+
+    def test_start_async_then_get_tokens_on_cpu(self) -> None:
+        """Full round-trip test on CPU: start async copy, then get tokens."""
+
+        processor = self._create_processor(CPU())
+
+        # Simulate sampler output
+        # Shape is (batch_size,) = (1,) since we have 1 context
+        test_tokens = np.array([10], dtype=np.int64)
+        processor.new_tokens = Buffer.from_numpy(test_tokens)
+
+        # Start async copy (no-op on CPU since no pinned buffer)
+        processor.start_async_token_copy()
+
+        # _d2h_copy_event should remain None since no pinned buffer exists
+        assert processor._d2h_copy_event is None
+
+        # Get tokens (synchronous fallback on CPU)
+        result = processor.get_new_tokens_numpy()
+
+        np.testing.assert_array_equal(result, test_tokens)
+
+    def test_get_new_tokens_numpy_without_start_async(self) -> None:
+        """get_new_tokens_numpy works even if start_async_token_copy not called."""
+
+        processor = self._create_processor(CPU())
+
+        # Simulate sampler output
+        # Shape is (batch_size,) = (1,) since we have 1 context
+        test_tokens = np.array([99], dtype=np.int64)
+        processor.new_tokens = Buffer.from_numpy(test_tokens)
+
+        # Don't call start_async_token_copy, just get tokens directly
+        result = processor.get_new_tokens_numpy()
+
+        np.testing.assert_array_equal(result, test_tokens)
+
+    def test_start_async_noop_when_no_new_tokens(self) -> None:
+        """start_async_token_copy is a no-op when new_tokens is None."""
+        device = CPU()
+        processor = self._create_processor(device)
+
+        # new_tokens is None by default
+        assert processor.new_tokens is None
+
+        # Should not raise
+        processor.start_async_token_copy()
+        assert processor._d2h_copy_event is None
+
+
+@pytest.mark.skipif(accelerator_count() == 0, reason="No GPU available")
+class TestFusedSamplingProcessorAsyncCopyGPU:
+    """GPU-specific tests for async token copy methods."""
+
+    def _create_processor(
+        self, device: Accelerator, pinned_new_tokens: Buffer | None = None
+    ) -> FusedSamplingProcessor:
+        """Create a FusedSamplingProcessor for GPU testing."""
+        context = TextContext(
+            max_length=100,
+            tokens=TokenBuffer(np.array([1, 2, 3], dtype=np.int64)),
+            sampling_params=SamplingParams(),
+        )
+        config = MagicMock()
+        config.sampling.enable_penalties = False
+        config.sampling.enable_min_tokens = False
+
+        return FusedSamplingProcessor(
+            sampler=MagicMock(),
+            pipeline_config=config,
+            context_batch=[context],
+            num_steps=1,
+            device=device,
+            pinned_new_tokens=pinned_new_tokens,
+        )
+
+    def test_gpu_device_uses_pinned_buffer(self) -> None:
+        """On GPU device, processor uses provided pinned buffer."""
+        device = Accelerator()
+        pinned_new_tokens = DevicePinnedBuffer(
+            shape=(1,), dtype=DType.int64, device=device
+        )
+
+        # Processor should use the provided pinned buffer
+        processor = self._create_processor(device, pinned_new_tokens)
+        assert processor._pinned_new_tokens is not None
+
+    def test_async_token_copy_round_trip(self) -> None:
+        """Full async copy round-trip: GPU buffer -> pinned -> numpy."""
+
+        device = Accelerator()
+        pinned_new_tokens = DevicePinnedBuffer(
+            shape=(1,), dtype=DType.int64, device=device
+        )
+        processor = self._create_processor(device, pinned_new_tokens)
+
+        # Create test tokens on GPU (simulating sampler output)
+        # Shape must be (batch_size,) = (1,) since we have 1 context
+        test_tokens = np.array([42], dtype=np.int64)
+        processor.new_tokens = Buffer.from_numpy(test_tokens).to(device)
+
+        # Start D2H copy and record event
+        processor.start_async_token_copy()
+        assert processor._d2h_copy_event is not None
+
+        # Get tokens (waits for copy event)
+        result = processor.get_new_tokens_numpy()
+        assert processor._d2h_copy_event is None
+
+        np.testing.assert_array_equal(result, test_tokens)
+
+    def test_async_copy_multiple_calls(self) -> None:
+        """Multiple async copy cycles work correctly."""
+
+        device = Accelerator()
+        pinned_new_tokens = DevicePinnedBuffer(
+            shape=(1,), dtype=DType.int64, device=device
+        )
+        processor = self._create_processor(device, pinned_new_tokens)
+
+        # Each iteration simulates one sampling step
+        # Shape must be (batch_size,) = (1,) since we have 1 context
+        for i in range(3):
+            test_tokens = np.array([i * 10], dtype=np.int64)
+            processor.new_tokens = Buffer.from_numpy(test_tokens).to(device)
+
+            processor.start_async_token_copy()
+            result = processor.get_new_tokens_numpy()
+
+            np.testing.assert_array_equal(result, test_tokens)
+
+    def test_get_tokens_without_async_start_falls_back(self) -> None:
+        """On GPU, get_new_tokens_numpy works even without start_async_token_copy."""
+
+        device = Accelerator()
+        processor = self._create_processor(device)
+
+        # Create test tokens on GPU
+        # Shape must be (batch_size,) = (1,) since we have 1 context
+        test_tokens = np.array([99], dtype=np.int64)
+        processor.new_tokens = Buffer.from_numpy(test_tokens).to(device)
+
+        # Async token copy was never started
+        assert processor._d2h_copy_event is None
+
+        # Don't call start_async_token_copy - should fall back to sync copy
+        result = processor.get_new_tokens_numpy()
+
+        np.testing.assert_array_equal(result, test_tokens)

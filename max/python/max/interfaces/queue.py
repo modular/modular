@@ -64,7 +64,7 @@ class MAXPushQueue(Protocol, Generic[PushItemType]):
         enqueue immediately, rather than waiting for space.
 
         Args:
-            item (PushItemType): The item to be added to the queue.
+            item: The item to be added to the queue.
         """
         ...
 
@@ -89,7 +89,7 @@ class MAXPullQueue(Protocol, Generic[PullItemType]):
         to retrieve from the queue.
 
         Returns:
-            PullItemType: The item removed from the queue.
+            The item removed from the queue.
 
         Raises:
             queue.Empty: If the queue is empty and no item can be retrieved.

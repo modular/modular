@@ -70,7 +70,7 @@ from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
     multistage_gemm_split_k_kernel,
 )
-from .amd import gemm_kernel_amd, AMDPingPongMatmul, KernelConfig
+from .amd import AMDMatmul, AMDPingPongMatmul, KernelConfig
 from .amd_rdna import gemm_kernel_rdna
 from .sm80.dispatch import create_matmul_configs_ampere
 from .sm90.dispatch import matmul_dispatch_sm90
@@ -80,6 +80,7 @@ from .sm100_structured.default.matmul import matmul_sm100_fallback
 comptime logger = Logger()
 
 
+@__name(t"matmul_kernel_{c_type}_{a_type}_{b_type}_{tile_size}", mangle=True)
 def matmul_kernel[
     c_type: DType,
     a_type: DType,
@@ -203,6 +204,10 @@ def matmul_kernel[
             c[row, col] = result.cast[c_type]()
 
 
+@__name(
+    t"matmul_kernel_naive_{c_type}_{a_type}_{b_type}_{transpose_b}_{BLOCK_DIM}",
+    mangle=True,
+)
 def matmul_kernel_naive[
     c_type: DType,
     a_type: DType,
@@ -272,13 +277,13 @@ def _amdgpu_matmul_config_from_block_shape[
 ](block_shape: IndexList[2]) -> MatmulConfig[
     a_type, b_type, c_type, transpose_b
 ]:
-    comptime max_num_warps: UInt = 4
+    comptime max_num_warps: Int = 4
 
     var block_m = block_shape[0]
     var block_n = block_shape[1]
     var block_k = _bk_base[a_type, True]()
-    var num_warps: UInt = 1
-    var num_warp_k_partitions: UInt = 1
+    var num_warps: Int = 1
+    var num_warp_k_partitions: Int = 1
 
     # TODO(KERN-2432): Merge these configurations into the below logic.
     if block_m == 16 and a_type.is_float8() and transpose_b:
@@ -509,7 +514,7 @@ def _matmul_gpu[
         and a_type == DType.bfloat16
     )
     var amdgpu_matmul_cond = has_amd_gpu_accelerator() and n % 4 == 0
-    # gemm_kernel_amd requires K % BK == 0 and K >= 2*BK due to its
+    # AMD matmul kernels require K % BK == 0 and K >= 2*BK due to the
     # 2-deep software pipeline prologue.  BK = _bk_base (128 for FP8,
     # 64 for BF16 on AMD).  Use that as the minimum alignment/size gate
     # so unsupported K values fall through to vendor BLAS.
@@ -635,8 +640,8 @@ def _matmul_gpu[
                             block_m // 2, block_n // 2, _bk_base[a_type, True]()
                         ),
                         mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
-                        num_pipeline_stages=UInt(num_pipeline_stages),
-                        num_k_partitions=UInt(num_k_partitions),
+                        num_pipeline_stages=num_pipeline_stages,
+                        num_k_partitions=num_k_partitions,
                         pdl_level=pdl_level,
                     )
                     return _multistage_gemm[config]()
@@ -710,7 +715,7 @@ def _matmul_gpu[
                         ),
                         mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                         num_pipeline_stages=1,
-                        num_k_partitions=UInt(num_k_partitions),
+                        num_k_partitions=num_k_partitions,
                         pdl_level=pdl_level,
                     )
                     return _multistage_gemm[config]()
@@ -1086,143 +1091,129 @@ def multistage_gemm[
         and transpose_b
     ):
         comptime if a_type.is_float8():
+            # FP8 dispatch: ping-pong for large shapes, standard for small.
             comptime pingpong_config = KernelConfig(
                 block_shape=Index(256, 256, 128),
                 warp_shape=Index(128, 64, 128),
                 mma_shape=Index(16, 16, 128),
             )
-            comptime pingpong_kernel = AMDPingPongMatmul[
-                a_type,
-                b_type,
-                c_type,
-                a_layout,
-                b_layout,
-                tensor_c.layout,
-                pingpong_config,
-                enable_swizzle=True,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ].matmul_ping_pong[
-                a.LayoutType,
-                b.LayoutType,
-                c.LayoutType,
-            ]
-
             comptime skinny_config = KernelConfig(
                 block_shape=Index(128, 256, 128),
                 warp_shape=Index(64, 64, 128),
                 mma_shape=Index(16, 16, 128),
             )
-            comptime skinny_kernel = AMDPingPongMatmul[
+
+            @parameter
+            @always_inline
+            def _launch_pingpong() raises:
+                var pp_grid = (
+                    ceildiv(N, pingpong_config.block_shape[1]),
+                    ceildiv(M, pingpong_config.block_shape[0]),
+                )
+                var pp_threads = pingpong_config.num_threads()
+                comptime k = AMDPingPongMatmul[
+                    a_type,
+                    b_type,
+                    c_type,
+                    pingpong_config,
+                    enable_swizzle=True,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ].run[a.LayoutType, b.LayoutType, c.LayoutType]
+                ctx.enqueue_function[k, k](
+                    a,
+                    b,
+                    c,
+                    grid_dim=pp_grid,
+                    block_dim=pp_threads,
+                )
+
+            @parameter
+            @always_inline
+            def _launch_skinny() raises:
+                var sk_grid = (
+                    ceildiv(N, skinny_config.block_shape[1]),
+                    ceildiv(M, skinny_config.block_shape[0]),
+                )
+                var sk_threads = skinny_config.num_threads()
+                comptime k = AMDPingPongMatmul[
+                    a_type,
+                    b_type,
+                    c_type,
+                    skinny_config,
+                    enable_swizzle=True,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ].run[a.LayoutType, b.LayoutType, c.LayoutType]
+                ctx.enqueue_function[k, k](
+                    a,
+                    b,
+                    c,
+                    grid_dim=sk_grid,
+                    block_dim=sk_threads,
+                )
+
+            @parameter
+            @always_inline
+            def _launch_standard() raises:
+                comptime std_config = MatmulConfig[
+                    a_type, b_type, c_type, True
+                ](
+                    block_tile_shape=config.block_tile_shape,
+                    warp_tile_shape=config.warp_tile_shape,
+                    mma_shape=config.mma_shape,
+                    num_pipeline_stages=config.num_pipeline_stages,
+                )
+                comptime k = AMDMatmul[
+                    a_type,
+                    b_type,
+                    c_type,
+                    True,
+                    std_config,
+                    elementwise_lambda_fn,
+                ].run[c.LayoutType, a.LayoutType, b.LayoutType]
+                ctx.enqueue_function[k, k](
+                    c,
+                    a,
+                    b,
+                    grid_dim=std_config.grid_dim(M, N),
+                    block_dim=std_config.block_dim(),
+                )
+
+            # Dispatch heuristic (from Llama3-405B TP=4 benchmarks).
+            if N >= 4096:
+                if M >= 600:
+                    _launch_pingpong()
+                elif M >= 256:
+                    _launch_skinny()
+                else:
+                    _launch_standard()
+            else:
+                if M >= 750:
+                    _launch_skinny()
+                else:
+                    _launch_standard()
+        else:
+            # BF16 dispatch.
+            comptime bf16_config = MatmulConfig[a_type, b_type, c_type, True](
+                block_tile_shape=config.block_tile_shape,
+                warp_tile_shape=config.warp_tile_shape,
+                mma_shape=config.mma_shape,
+                num_pipeline_stages=config.num_pipeline_stages,
+                num_warp_k_partitions=config.num_warp_k_partitions,
+            )
+            comptime k = AMDMatmul[
                 a_type,
                 b_type,
                 c_type,
-                a_layout,
-                b_layout,
-                tensor_c.layout,
-                skinny_config,
-                enable_swizzle=True,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ].matmul_ping_pong[
-                a.LayoutType,
-                b.LayoutType,
-                c.LayoutType,
-            ]
-
-            comptime standard_kernel = gemm_kernel_amd[
-                CLT=c.LayoutType,
-                ALT=a.LayoutType,
-                BLT=b.LayoutType,
-                c_linear_idx_type=c.linear_idx_type,
-                a_linear_idx_type=a.linear_idx_type,
-                b_linear_idx_type=b.linear_idx_type,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ]
-
-            # Dispatch heuristic from Llama3-405B TP=4 benchmarks on MI355X.
-            #
-            # For N >= 4096:
-            #   M < 225:  autotuned standard GEMM (small-M configs handle 128-256)
-            #   225 <= M < 600: skinny pingpong (1.1-1.3x vs vendor BLAS)
-            #   M >= 600: pingpong 256x256 (~1.0x vs vendor, best custom)
-            #
-            # For N < 4096 (e.g. N=2304):
-            #   M < 750:  autotuned standard GEMM (1.4-2.2x vs vendor BLAS)
-            #   M >= 750: skinny pingpong (1.2-1.3x vs vendor BLAS)
-            if N >= 4096:
-                if M >= 600:
-                    logger.info("Executing: AMD ping-pong matmul (256x256)")
-                    ctx.enqueue_function[pingpong_kernel, pingpong_kernel](
-                        a,
-                        b,
-                        c,
-                        grid_dim=(
-                            ceildiv(N, pingpong_config.block_shape[1]),
-                            ceildiv(M, pingpong_config.block_shape[0]),
-                        ),
-                        block_dim=pingpong_config.num_threads(),
-                    )
-                elif M >= 256:
-                    logger.info("Executing: AMD skinny pingpong matmul")
-                    ctx.enqueue_function[skinny_kernel, skinny_kernel](
-                        a,
-                        b,
-                        c,
-                        grid_dim=(
-                            ceildiv(N, skinny_config.block_shape[1]),
-                            ceildiv(M, skinny_config.block_shape[0]),
-                        ),
-                        block_dim=skinny_config.num_threads(),
-                    )
-                else:
-                    logger.info("Executing: AMD standard GEMM")
-                    ctx.enqueue_function[standard_kernel, standard_kernel](
-                        c,
-                        a,
-                        b,
-                        grid_dim=config.grid_dim(UInt(M), UInt(N)),
-                        block_dim=config.block_dim(),
-                    )
-            else:
-                if M >= 750:
-                    logger.info("Executing: AMD skinny pingpong matmul")
-                    ctx.enqueue_function[skinny_kernel, skinny_kernel](
-                        a,
-                        b,
-                        c,
-                        grid_dim=(
-                            ceildiv(N, skinny_config.block_shape[1]),
-                            ceildiv(M, skinny_config.block_shape[0]),
-                        ),
-                        block_dim=skinny_config.num_threads(),
-                    )
-                else:
-                    logger.info("Executing: AMD standard GEMM")
-                    ctx.enqueue_function[standard_kernel, standard_kernel](
-                        c,
-                        a,
-                        b,
-                        grid_dim=config.grid_dim(UInt(M), UInt(N)),
-                        block_dim=config.block_dim(),
-                    )
-        else:
-            logger.info("Executing: AMD standard GEMM (no split-K)")
-            comptime gemm_kernel_type = gemm_kernel_amd[
-                CLT=c.LayoutType,
-                ALT=a.LayoutType,
-                BLT=b.LayoutType,
-                c_linear_idx_type=c.linear_idx_type,
-                a_linear_idx_type=a.linear_idx_type,
-                b_linear_idx_type=b.linear_idx_type,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ]
-            ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
+                True,
+                bf16_config,
+                elementwise_lambda_fn,
+            ].run[c.LayoutType, a.LayoutType, b.LayoutType]
+            ctx.enqueue_function[k, k](
                 c,
                 a,
                 b,
-                grid_dim=config.grid_dim(UInt(M), UInt(N)),
-                block_dim=config.block_dim(),
+                grid_dim=bf16_config.grid_dim(M, N),
+                block_dim=bf16_config.block_dim(),
             )
 
     else:
@@ -1241,7 +1232,7 @@ def multistage_gemm[
             c,
             a,
             b,
-            grid_dim=config.grid_dim(UInt(M), UInt(N)),
+            grid_dim=config.grid_dim(M, N),
             block_dim=config.block_dim(),
             shared_mem_bytes=config.shared_mem_usage(),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -1286,7 +1277,7 @@ def multistage_gemm[
         )
         comptime work_space_type = config.split_k_reduction_type
         var work_space_data = ctx.enqueue_create_buffer[work_space_type](
-            Int(runtime_config.num_k_partitions * UInt(M) * UInt(N))
+            runtime_config.num_k_partitions * M * N
         )
         comptime static_N = tensor_c.layout.shape[1].value()
         comptime work_space_layout = Layout.row_major(
@@ -1322,8 +1313,8 @@ def multistage_gemm[
                 tensor_a,
                 tensor_b,
                 tensor_work_space,
-                Int(runtime_config.num_k_partitions),
-                grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
+                runtime_config.num_k_partitions,
+                grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
             )
         else:
@@ -1332,8 +1323,8 @@ def multistage_gemm[
                 tensor_a,
                 tensor_b,
                 tensor_work_space,
-                Int(runtime_config.num_k_partitions),
-                grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
+                runtime_config.num_k_partitions,
+                grid_dim=runtime_config.grid_dim(M, N),
                 block_dim=runtime_config.block_dim(),
                 shared_mem_bytes=runtime_config.shared_mem_usage(),
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -1345,7 +1336,7 @@ def multistage_gemm[
             work_space_data,
             row_major(
                 Coord(
-                    Idx(Int(runtime_config.num_k_partitions)),
+                    Idx(runtime_config.num_k_partitions),
                     Idx(M),
                     Idx(N),
                 )
@@ -1365,133 +1356,129 @@ def multistage_gemm[
         and transpose_b
     ):
         comptime if a_type.is_float8():
+            # FP8 dispatch: ping-pong for large shapes, standard for small.
             comptime pingpong_config = KernelConfig(
                 block_shape=Index(256, 256, 128),
                 warp_shape=Index(128, 64, 128),
                 mma_shape=Index(16, 16, 128),
             )
-            comptime pingpong_kernel = AMDPingPongMatmul[
-                a_type,
-                b_type,
-                c_type,
-                tensor_a.layout,
-                tensor_b.layout,
-                tensor_c.layout,
-                pingpong_config,
-                enable_swizzle=True,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ].matmul_ping_pong[
-                a.LayoutType,
-                b.LayoutType,
-                c.LayoutType,
-            ]
-
             comptime skinny_config = KernelConfig(
                 block_shape=Index(128, 256, 128),
                 warp_shape=Index(64, 64, 128),
                 mma_shape=Index(16, 16, 128),
             )
-            comptime skinny_kernel = AMDPingPongMatmul[
+
+            @parameter
+            @always_inline
+            def _launch_pingpong() raises:
+                var pp_grid = (
+                    ceildiv(N, pingpong_config.block_shape[1]),
+                    ceildiv(M, pingpong_config.block_shape[0]),
+                )
+                var pp_threads = pingpong_config.num_threads()
+                comptime k = AMDPingPongMatmul[
+                    a_type,
+                    b_type,
+                    c_type,
+                    pingpong_config,
+                    enable_swizzle=True,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ].run[a.LayoutType, b.LayoutType, c.LayoutType]
+                ctx.enqueue_function[k, k](
+                    a,
+                    b,
+                    c,
+                    grid_dim=pp_grid,
+                    block_dim=pp_threads,
+                )
+
+            @parameter
+            @always_inline
+            def _launch_skinny() raises:
+                var sk_grid = (
+                    ceildiv(N, skinny_config.block_shape[1]),
+                    ceildiv(M, skinny_config.block_shape[0]),
+                )
+                var sk_threads = skinny_config.num_threads()
+                comptime k = AMDPingPongMatmul[
+                    a_type,
+                    b_type,
+                    c_type,
+                    skinny_config,
+                    enable_swizzle=True,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ].run[a.LayoutType, b.LayoutType, c.LayoutType]
+                ctx.enqueue_function[k, k](
+                    a,
+                    b,
+                    c,
+                    grid_dim=sk_grid,
+                    block_dim=sk_threads,
+                )
+
+            @parameter
+            @always_inline
+            def _launch_standard() raises:
+                comptime std_config = MatmulConfig[
+                    a_type, b_type, c_type, True
+                ](
+                    block_tile_shape=config.block_tile_shape,
+                    warp_tile_shape=config.warp_tile_shape,
+                    mma_shape=config.mma_shape,
+                    num_pipeline_stages=config.num_pipeline_stages,
+                )
+                comptime k = AMDMatmul[
+                    a_type,
+                    b_type,
+                    c_type,
+                    True,
+                    std_config,
+                    elementwise_lambda_fn,
+                ].run[c.LayoutType, a.LayoutType, b.LayoutType]
+                ctx.enqueue_function[k, k](
+                    c,
+                    a,
+                    b,
+                    grid_dim=std_config.grid_dim(M, N),
+                    block_dim=std_config.block_dim(),
+                )
+
+            # Dispatch heuristic (from Llama3-405B TP=4 benchmarks).
+            if N >= 4096:
+                if M >= 600:
+                    _launch_pingpong()
+                elif M >= 256:
+                    _launch_skinny()
+                else:
+                    _launch_standard()
+            else:
+                if M >= 750:
+                    _launch_skinny()
+                else:
+                    _launch_standard()
+        else:
+            # BF16 dispatch.
+            comptime bf16_config = MatmulConfig[a_type, b_type, c_type, True](
+                block_tile_shape=config.block_tile_shape,
+                warp_tile_shape=config.warp_tile_shape,
+                mma_shape=config.mma_shape,
+                num_pipeline_stages=config.num_pipeline_stages,
+                num_warp_k_partitions=config.num_warp_k_partitions,
+            )
+            comptime k = AMDMatmul[
                 a_type,
                 b_type,
                 c_type,
-                tensor_a.layout,
-                tensor_b.layout,
-                tensor_c.layout,
-                skinny_config,
-                enable_swizzle=True,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ].matmul_ping_pong[
-                a.LayoutType,
-                b.LayoutType,
-                c.LayoutType,
-            ]
-
-            comptime standard_kernel = gemm_kernel_amd[
-                CLT=c.LayoutType,
-                ALT=a.LayoutType,
-                BLT=b.LayoutType,
-                c_linear_idx_type=c.linear_idx_type,
-                a_linear_idx_type=a.linear_idx_type,
-                b_linear_idx_type=b.linear_idx_type,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ]
-
-            if N >= 4096:
-                if M >= 600:
-                    logger.info("Executing: AMD ping-pong matmul (256x256)")
-                    ctx.enqueue_function[pingpong_kernel, pingpong_kernel](
-                        a,
-                        b,
-                        c,
-                        grid_dim=(
-                            ceildiv(N, pingpong_config.block_shape[1]),
-                            ceildiv(M, pingpong_config.block_shape[0]),
-                        ),
-                        block_dim=pingpong_config.num_threads(),
-                    )
-                elif M >= 256:
-                    logger.info("Executing: AMD skinny pingpong matmul")
-                    ctx.enqueue_function[skinny_kernel, skinny_kernel](
-                        a,
-                        b,
-                        c,
-                        grid_dim=(
-                            ceildiv(N, skinny_config.block_shape[1]),
-                            ceildiv(M, skinny_config.block_shape[0]),
-                        ),
-                        block_dim=skinny_config.num_threads(),
-                    )
-                else:
-                    logger.info("Executing: AMD standard GEMM")
-                    ctx.enqueue_function[standard_kernel, standard_kernel](
-                        c,
-                        a,
-                        b,
-                        grid_dim=config.grid_dim(UInt(M), UInt(N)),
-                        block_dim=config.block_dim(),
-                    )
-            else:
-                if M >= 750:
-                    logger.info("Executing: AMD skinny pingpong matmul")
-                    ctx.enqueue_function[skinny_kernel, skinny_kernel](
-                        a,
-                        b,
-                        c,
-                        grid_dim=(
-                            ceildiv(N, skinny_config.block_shape[1]),
-                            ceildiv(M, skinny_config.block_shape[0]),
-                        ),
-                        block_dim=skinny_config.num_threads(),
-                    )
-                else:
-                    logger.info("Executing: AMD standard GEMM")
-                    ctx.enqueue_function[standard_kernel, standard_kernel](
-                        c,
-                        a,
-                        b,
-                        grid_dim=config.grid_dim(UInt(M), UInt(N)),
-                        block_dim=config.block_dim(),
-                    )
-        else:
-            logger.info("Executing: AMD standard GEMM (no split-K)")
-            comptime gemm_kernel_type = gemm_kernel_amd[
-                CLT=c.LayoutType,
-                ALT=a.LayoutType,
-                BLT=b.LayoutType,
-                c_linear_idx_type=c.linear_idx_type,
-                a_linear_idx_type=a.linear_idx_type,
-                b_linear_idx_type=b.linear_idx_type,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ]
-            ctx.enqueue_function[gemm_kernel_type, gemm_kernel_type](
+                True,
+                bf16_config,
+                elementwise_lambda_fn,
+            ].run[c.LayoutType, a.LayoutType, b.LayoutType]
+            ctx.enqueue_function[k, k](
                 c,
                 a,
                 b,
-                grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
-                block_dim=runtime_config.block_dim(),
+                grid_dim=bf16_config.grid_dim(M, N),
+                block_dim=bf16_config.block_dim(),
             )
 
     else:
@@ -1511,7 +1498,7 @@ def multistage_gemm[
             c,
             a,
             b,
-            grid_dim=runtime_config.grid_dim(UInt(M), UInt(N)),
+            grid_dim=runtime_config.grid_dim(M, N),
             block_dim=runtime_config.block_dim(),
             shared_mem_bytes=runtime_config.shared_mem_usage(),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(

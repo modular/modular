@@ -268,7 +268,7 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     else:
         workspace = {}
 
-    ctx.enqueue_function[kernel, kernel](
+    ctx.enqueue_function[kernel, kernel, dump_asm=False](
         a_tma_op,
         b_tma_op,
         c_tma_op,

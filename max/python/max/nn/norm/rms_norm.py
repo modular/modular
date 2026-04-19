@@ -21,7 +21,6 @@ from max.dtype import DType
 from max.graph import (
     DeviceRef,
     ShardingStrategy,
-    TensorType,
     TensorValue,
     Weight,
     ops,
@@ -86,20 +85,13 @@ class RMSNorm(Module, Shardable):
         if x.device:
             weight = weight.to(x.device)
 
-        return ops.custom(
-            "rms_norm",
-            x.device,
-            [
-                x,
-                weight,
-                ops.constant(self.eps, dtype=x.dtype, device=DeviceRef.CPU()),
-                ops.constant(
-                    self.weight_offset, dtype=x.dtype, device=DeviceRef.CPU()
-                ),
-            ],
-            [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
-            parameters={"multiply_before_cast": self.multiply_before_cast},
-        )[0].tensor
+        return ops.rms_norm(
+            x,
+            weight,
+            self.eps,
+            weight_offset=self.weight_offset,
+            multiply_before_cast=self.multiply_before_cast,
+        )
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:

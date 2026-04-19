@@ -1115,9 +1115,7 @@ class InternVisionEncoderLayer(Module):
         for i, norm_out in enumerate(norm1_outs):
             attn = self.attn_per_device[i]
             # Rowwise QKV projection - each device computes partial QKV
-            qkv = norm_out @ attn.wqkv.T
-            if attn.wqkv_bias is not None:
-                qkv += attn.wqkv_bias
+            qkv = attn.qkv_proj(norm_out)
             qkv_outs.append(qkv)
 
         # Split QKV into components per device
