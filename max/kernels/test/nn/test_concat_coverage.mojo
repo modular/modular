@@ -17,7 +17,7 @@ Comprehensive test coverage for CPU concat kernel.
 This file tests various code paths in nn/concat.mojo:
 1. Serial concat path (_concat_serial)
 2. Parallel concat path (_concat_parallel)
-3. Small concat path (_concat_small) 
+3. Small concat path (_concat_small)
 4. Inner concat path (_concat_inner)
 5. Fused concat with input/output lambdas
 6. Different axes, ranks, and tensor shapes
@@ -435,7 +435,7 @@ def test_fused_concat_cpu() raises:
     @parameter
     @always_inline
     def input_fn[
-        input_index: Int, width: Int, _rank: Int
+        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
     ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
         comptime if input_index == 0:
             return SIMD[dtype, width](

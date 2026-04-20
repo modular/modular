@@ -1054,7 +1054,7 @@ def _fused_concat_cpu[
     rank: Int,
     dtype: DType,
     single_thread_blocking_override: Bool,
-    input_fn: def[input_index: Int, width: Int, rank: Int](
+    input_fn: def[input_index: Int, width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
@@ -1082,7 +1082,7 @@ def _fused_concat_cpu[
 
             # Call the input/output lambda for fused concat kernel.
             output_0_fn[dtype, rank, width=_width, alignment=1](
-                c, input_fn[i, _width, rank](indices)
+                c, input_fn[i, _width, rank, alignment](indices)
             )
 
         # TODO: we can use simd_width > 0 if all inputs are aligned.
@@ -1104,7 +1104,7 @@ def _fused_concat_inner_most_single_dim[
     rank: Int,
     dtype: DType,
     block_size: Int,
-    input_fn: def[input_index: Int, width: Int, _rank: Int](
+    input_fn: def[input_index: Int, width: Int, _rank: Int, alignment: Int = 1](
         IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
@@ -1138,7 +1138,7 @@ def _fused_concat_gpu_elementwise[
     axis: Int,
     rank: Int,
     dtype: DType,
-    input_fn: def[input_index: Int, width: Int, _rank: Int](
+    input_fn: def[input_index: Int, width: Int, _rank: Int, alignment: Int = 1](
         IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
@@ -1163,9 +1163,13 @@ def _fused_concat_gpu_elementwise[
             var input_shape = input_shapes[i]
 
             if in_index[axis] < input_shape[axis]:
-                output_0_fn[dtype, _rank, width=simd_width](
+                output_0_fn[
+                    dtype, _rank, width=simd_width, alignment=alignment
+                ](
                     out_index,
-                    input_fn[i, simd_width, _rank](in_index),
+                    input_fn[i, simd_width, _rank, alignment=alignment](
+                        in_index
+                    ),
                 )
                 return
 
@@ -1206,7 +1210,7 @@ def _fused_concat_gpu_elementwise[
 def _fused_concat_gpu[
     rank: Int,
     dtype: DType,
-    input_fn: def[input_index: Int, width: Int, _rank: Int](
+    input_fn: def[input_index: Int, width: Int, _rank: Int, alignment: Int = 1](
         IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,
@@ -1273,7 +1277,7 @@ def fused_concat[
     dtype: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
-    input_fn: def[input_index: Int, width: Int, _rank: Int](
+    input_fn: def[input_index: Int, width: Int, _rank: Int, alignment: Int = 1](
         IndexList[_rank]
     ) capturing -> SIMD[dtype, width],
     output_0_fn: elementwise_epilogue_type,

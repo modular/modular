@@ -4554,16 +4554,14 @@ struct Concat:
         @always_inline
         @parameter
         def inputs_lambda[
-            input_index: Int,
-            width: Int,
-            _rank: Int,
+            input_index: Int, width: Int, _rank: Int, alignment: Int = 1
         ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
             comptime assert (
                 input_index < inputs.size
             ), "tensor index out of bounds"
-            return inputs[input_index]._lambda_load[width=width](
-                rebind[IndexList[rank]](indices)
-            )
+            return inputs[input_index]._lambda_load[
+                width=width, element_alignment=alignment
+            ](rebind[IndexList[rank]](indices))
 
         @always_inline
         @parameter
@@ -4626,13 +4624,14 @@ struct FusedConcatSlice:
             input_index: Int,
             width: Int,
             _rank: Int,
+            alignment: Int = 1,
         ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
             comptime assert (
                 input_index < inputs.size
             ), "tensor index out of bounds"
-            return inputs[input_index]._lambda_load[width=width](
-                rebind[IndexList[rank]](indices)
-            )
+            return inputs[input_index]._lambda_load[
+                width=width, element_alignment=alignment
+            ](rebind[IndexList[rank]](indices))
 
         @always_inline
         @parameter
