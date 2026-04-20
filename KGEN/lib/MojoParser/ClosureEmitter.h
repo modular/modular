@@ -84,6 +84,7 @@ public:
   ASTDecl *
   promoteStatelessClosure(ASTDecl &nestedFnDecl,
                           ArrayRef<ParamDeclRefAttr> paramCaptures = {});
+
   Value emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                       ArrayRef<Capture> captures, TraitDeclOp trait,
                       Location location, bool isCopyable,
@@ -105,6 +106,9 @@ public:
   /// parameters into parent-scope `kgen.param.declare` entries.
   FnTypeGeneratorType hoistParamExpressionsForClosureTrait(
       FnTypeGeneratorType sig, ASTDecl &closureDecl, Location insertLoc);
+  /// Return true if hoisting would change the signature (without mutating IR).
+  bool sigNeedsHoistForClosureTrait(FnTypeGeneratorType sig,
+                                    ASTDecl &closureDecl, Location insertLoc);
   /// Given a name and a trait decl, generate a struct that conforms to the
   /// trait and has a single field that also conforms to that same trait. For
   /// example, if the trait is:
@@ -130,6 +134,8 @@ public:
   ASTDecl *createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
                                  FnTypeGeneratorType signatureType,
                                  SMLoc location);
+  Type getConcreteClosureWrapperTypeForFnSymbol(ASTDecl &declScope, SMLoc loc,
+                                                PValue fnPValue);
 
 private:
   MLIRContext *ctx;

@@ -121,6 +121,19 @@ def definesParamRefClosure[T: Coordinate & ImplicitlyCopyable](value: T):
     usesParamRefClosure[T, type_of(closureImpl)](closureImpl, value)
 
 
+def takesThin[
+    T: ImplicitlyCopyable & Writable, FuncType: def(T) unified
+](impl: FuncType, x: T):
+    impl(x)
+
+
+def callTakesThin[T: ImplicitlyCopyable & Writable](x: T):
+    def takesItem(item: T) unified {}:
+        print(item)
+
+    takesThin[T, type_of(takesItem)](takesItem, x)
+
+
 def main() raises:
     var one = atol(argv()[1])
     var four = atol(argv()[2])
@@ -144,3 +157,7 @@ def main() raises:
     # COM: Test param ref matching: both trait and impl use param types.
     # CHECK: { 3 , 3 }
     definesParamRefClosure(Cartesian(one, four))
+
+    # COM: Test thin closure with captured type parameter.
+    # CHECK: 1
+    callTakesThin[Int](one)
