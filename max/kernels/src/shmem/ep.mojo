@@ -139,6 +139,14 @@ def ep_dispatch_async_kernel_api[
         send_ptrs.flat_rank == 1
     ), "Send pointers must be a 1D tensor."
 
+    debug_assert[assert_mode="safe"](
+        Int(input_tokens.dim(0)) <= max_token_per_rank,
+        "Cannot dispatch EP kernel with ",
+        input_tokens.dim(0),
+        " input tokens when the maximum tokens per rank is ",
+        max_token_per_rank,
+    )
+
     var gpu_ctx = context.get_device_context()
 
     comptime n_ranks = n_gpus_per_node * n_nodes
@@ -448,6 +456,14 @@ def ep_fused_dispatch_kernel_api[
     comptime assert (
         topk_ids.static_shape[1] == token_fmt_type.top_k
     ), "EP dispatch: topk ids shape doesn't match top k."
+
+    debug_assert[assert_mode="safe"](
+        Int(input_tokens.dim(0)) <= max_token_per_rank,
+        "Cannot dispatch EP kernel with ",
+        input_tokens.dim(0),
+        " input tokens when the maximum tokens per rank is ",
+        max_token_per_rank,
+    )
 
     var gpu_ctx = context.get_device_context()
     var gpu_id = Int(gpu_ctx.id())
