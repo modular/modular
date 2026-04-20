@@ -42,10 +42,11 @@ from max.nn.kv_cache import (
 )
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
+    AcceptanceSampler,
     _reshape_target_logits,
-    greedy_acceptance_sampler,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.lib.config import SpeculativeConfig
 from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
     RaggedTokenMerger,
 )
@@ -70,11 +71,23 @@ class Eagle3KimiK25Unified(Module):
         self,
         config: DeepseekV3Config,
         draft_config: DeepseekV3Config | None = None,
-        num_draft_steps: int = 1,
+        speculative_config: SpeculativeConfig | None = None,
     ) -> None:
         super().__init__()
         self.config = config
-        self.num_draft_steps = num_draft_steps
+        self.num_draft_steps = (
+            speculative_config.num_speculative_tokens
+            if speculative_config
+            else 1
+        )
+        self.acceptance_sampler = AcceptanceSampler(
+            synthetic_acceptance_rate=(
+                speculative_config.synthetic_acceptance_rate
+                if speculative_config
+                else None
+            ),
+            num_draft_steps=self.num_draft_steps,
+        )
         self.target = DeepseekV3(config)
         self.merger = RaggedTokenMerger(config.devices[0])
 
@@ -93,6 +106,7 @@ class Eagle3KimiK25Unified(Module):
         host_input_row_offsets: TensorValue,
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
+        seed: TensorValue,
         ep_inputs: list[Value[Any]] | None = None,
         draft_kv_collections: list[PagedCacheValues] | None = None,
     ) -> tuple[TensorValue, ...]:
@@ -120,8 +134,8 @@ class Eagle3KimiK25Unified(Module):
         devices = self.config.devices
         n_devs = len(devices)
 
-        first_rejected, recovered, bonus = greedy_acceptance_sampler(
-            draft_tokens, logits
+        first_rejected, recovered, bonus = self.acceptance_sampler(
+            draft_tokens, logits, seed=seed
         )
 
         # Compute next_tokens: target argmax at the first rejected position.
@@ -327,7 +341,7 @@ class Eagle3KimiK25Unified(Module):
         Order: tokens, device_offsets, host_offsets, draft_tokens,
                return_n_logits, data_parallel_splits, signal_buffers,
                target_kv_cache, draft_kv_blocks_per_device,
-               batch_context_lengths, target_ep_inputs.
+               batch_context_lengths, target_ep_inputs, seed.
         """
         devices = self.config.devices
         device_ref = devices[0]
@@ -387,5 +401,7 @@ class Eagle3KimiK25Unified(Module):
             for sym in draft_kv_params.get_symbolic_inputs().inputs:
                 assert isinstance(sym, KVCacheInputsPerDevice)
                 all_input_types.append(sym.kv_blocks)
+
+        all_input_types.append(ops.random.SeedType)
 
         return tuple(all_input_types)

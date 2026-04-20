@@ -37,6 +37,7 @@ from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib.sampling import (
     RejectionRunner,
+    SyntheticRunner,
     rejection_runner_registry,
 )
 from max.pipelines.lib.sampling.sampling import TokenSampler
@@ -242,11 +243,27 @@ class SpeculativeDecodingPipelineBase(
                 " rejection sampling strategy. Use 'greedy',"
                 " 'typical-acceptance', or 'logit-comparison' instead."
             )
-        logger.info(f"Using '{strategy}' rejection sampling strategy")
-        rejection_runner_type = rejection_runner_registry(strategy)
-        self._rejection_runner: RejectionRunner = rejection_runner_type(
-            self._session, device_refs[0]
-        )
+        self._rejection_runner: RejectionRunner
+        if self._speculative_config.synthetic_acceptance_rate is not None:
+            logger.info(
+                "Synthetic acceptance rate is enabled (rate=%.2f). "
+                "Overriding '%s' rejection sampling strategy. "
+                "Results are for benchmarking only.",
+                self._speculative_config.synthetic_acceptance_rate,
+                strategy,
+            )
+            self._rejection_runner = SyntheticRunner(
+                self._session,
+                device_refs[0],
+                synthetic_acceptance_rate=self._speculative_config.synthetic_acceptance_rate,
+                num_speculative_tokens=self._speculative_config.num_speculative_tokens,
+            )
+        else:
+            logger.info(f"Using '{strategy}' rejection sampling strategy")
+            rejection_runner_type = rejection_runner_registry(strategy)
+            self._rejection_runner = rejection_runner_type(
+                self._session, device_refs[0]
+            )
         self._needs_all_draft_logits = strategy == "residual"
 
         # Track draft model replica assignments per request

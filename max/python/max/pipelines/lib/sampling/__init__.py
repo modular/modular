@@ -14,8 +14,10 @@
 from .logits_processor import apply_logits_processors
 from .sampling import (
     RejectionRunner,
+    SyntheticRunner,
     build_greedy_acceptance_sampler_graph,
     build_stochastic_acceptance_sampler_graph,
+    build_synthetic_acceptance_sampler_graph,
     rejection_runner_registry,
     rejection_sampler,
     rejection_sampler_with_residuals,
@@ -34,9 +36,11 @@ __all__ = [
     "RejectionRunner",
     "SamplerInputs",
     "SamplingConfig",
+    "SyntheticRunner",
     "apply_logits_processors",
     "build_greedy_acceptance_sampler_graph",
     "build_stochastic_acceptance_sampler_graph",
+    "build_synthetic_acceptance_sampler_graph",
     "rejection_runner_registry",
     "rejection_sampler",
     "rejection_sampler_with_residuals",

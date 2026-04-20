@@ -58,6 +58,13 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
 
     draft_tokens: Buffer | None = None
     draft_kv_blocks: list[Buffer] | None = None
+    seed: Buffer | None = None
+    """Per-execute int64 scalar seed reserved for stochastic sub-modules.
+
+    Currently only consumed by synthetic acceptance sampling, but always
+    bound so the graph signature is stable and additional stochastic
+    paths can reuse the same input.
+    """
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -71,6 +78,8 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
             buffers += (self.draft_tokens,)
         if self.draft_kv_blocks is not None:
             buffers += tuple(self.draft_kv_blocks)
+        assert self.seed is not None
+        buffers += (self.seed,)
         return buffers
 
 
@@ -128,6 +137,12 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
             device=devices[0],
         )
+        self._seed_counter = 0
+
+    def _next_seed(self) -> Buffer:
+        """Monotonically advancing int64 scalar seed, fresh per execute."""
+        self._seed_counter += 1
+        return Buffer.from_numpy(np.array(self._seed_counter, dtype=np.int64))
 
     @classmethod
     def get_kv_params(
@@ -194,14 +209,11 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             )
 
             assert self.pipeline_config.speculative is not None
-            num_draft_steps = (
-                self.pipeline_config.speculative.num_speculative_tokens
-            )
 
             unified_config = UnifiedEagleLlama3Config(
                 target=target_config,
                 draft=draft_config,
-                num_draft_steps=num_draft_steps,
+                speculative_config=self.pipeline_config.speculative,
             )
 
             nn_model = UnifiedEagleLlama3Module(unified_config)
@@ -315,6 +327,7 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             input_row_offsets=persistent_input_row_offsets,
             return_n_logits=return_n_logits_buf,
             kv_cache_inputs=kv_cache_inputs,
+            seed=self._next_seed(),
         )
 
     def prepare_next_token_inputs(

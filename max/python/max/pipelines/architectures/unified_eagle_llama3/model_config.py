@@ -19,7 +19,11 @@ from dataclasses import dataclass
 from max.nn import ReturnHiddenStates
 from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
 from max.nn.transformer import ReturnLogits
-from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config import (
+    MAXModelConfig,
+    PipelineConfig,
+    SpeculativeConfig,
+)
 from typing_extensions import Self
 
 from ..llama3.model_config import ArchConfigWithKVCache, Llama3Config
@@ -29,7 +33,7 @@ from ..llama3.model_config import ArchConfigWithKVCache, Llama3Config
 class UnifiedEagleLlama3Config(ArchConfigWithKVCache):
     target: Llama3Config
     draft: Llama3Config
-    num_draft_steps: int
+    speculative_config: SpeculativeConfig
 
     def __post_init__(self) -> None:
         self.target.return_logits = ReturnLogits.VARIABLE
@@ -65,12 +69,11 @@ class UnifiedEagleLlama3Config(ArchConfigWithKVCache):
             pipeline_config.draft_model,
         )
         assert pipeline_config.speculative is not None
-        num_draft_steps = pipeline_config.speculative.num_speculative_tokens
 
         return cls(
             target=target_config,
             draft=draft_config,
-            num_draft_steps=num_draft_steps,
+            speculative_config=pipeline_config.speculative,
         )
 
     def get_max_seq_len(self) -> int:

@@ -10,10 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Unit tests for SpeculativeConfig."""
+"""Unit tests for SpeculativeConfig and synthetic acceptance sampling."""
 
 from __future__ import annotations
 
+import pytest
+from max.nn.sampling.rejection_sampler import (
+    AcceptanceSampler,
+    compute_synthetic_acceptance_base_rate,
+)
 from max.pipelines.lib.config.speculative_config import SpeculativeConfig
 
 
@@ -74,3 +79,71 @@ def test_uses_greedy_rejection() -> None:
         rejection_sampling_strategy="residual"
     ).uses_greedy_rejection()
     assert not SpeculativeConfig().uses_greedy_rejection()
+
+
+def test_synthetic_acceptance_rate_defaults_none() -> None:
+    assert SpeculativeConfig().synthetic_acceptance_rate is None
+
+
+def test_synthetic_acceptance_rate_valid() -> None:
+    assert (
+        SpeculativeConfig(
+            synthetic_acceptance_rate=0.8
+        ).synthetic_acceptance_rate
+        == 0.8
+    )
+    assert (
+        SpeculativeConfig(
+            synthetic_acceptance_rate=0.0
+        ).synthetic_acceptance_rate
+        == 0.0
+    )
+    assert (
+        SpeculativeConfig(
+            synthetic_acceptance_rate=1.0
+        ).synthetic_acceptance_rate
+        == 1.0
+    )
+
+
+def test_synthetic_acceptance_rate_invalid() -> None:
+    with pytest.raises(Exception):
+        SpeculativeConfig(synthetic_acceptance_rate=-0.1)
+    with pytest.raises(Exception):
+        SpeculativeConfig(synthetic_acceptance_rate=1.5)
+
+
+@pytest.mark.parametrize("num_steps", [1, 2, 3, 5, 7, 10])
+@pytest.mark.parametrize("rate", [0.0, 0.1, 0.3, 0.5, 0.7, 0.9, 0.99])
+def test_compute_synthetic_acceptance_base_rate(
+    num_steps: int, rate: float
+) -> None:
+    """Verify calibration produces a base_rate matching the target mean."""
+    tol = 1e-9
+    base_rate = compute_synthetic_acceptance_base_rate(rate, num_steps, tol=tol)
+
+    mean_joint = sum(base_rate ** (i + 1) for i in range(num_steps)) / num_steps
+
+    assert abs(rate - mean_joint) < 10 * tol
+    assert 0.0 <= base_rate <= 1.0
+
+
+def test_acceptance_sampler_greedy_by_default() -> None:
+    sampler = AcceptanceSampler()
+    assert sampler._base_rate is None
+
+
+def test_acceptance_sampler_synthetic() -> None:
+    """Calibration solves for base_rate so the mean joint acceptance
+    matches the target rate."""
+    rate = 0.8
+    num_steps = 5
+    sampler = AcceptanceSampler(
+        synthetic_acceptance_rate=rate, num_draft_steps=num_steps
+    )
+    assert sampler._base_rate is not None
+
+    mean_joint = (
+        sum(sampler._base_rate ** (i + 1) for i in range(num_steps)) / num_steps
+    )
+    assert abs(mean_joint - rate) < 1e-6

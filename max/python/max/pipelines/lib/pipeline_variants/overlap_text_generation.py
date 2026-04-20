@@ -1159,6 +1159,17 @@ class OverlapTextGenerationPipeline(
                 pipeline_config=self._pipeline_config,
             )
             self._kv_manager = self._spec_decode_state.target_kv_manager
+            if (
+                self._pipeline_config.speculative is not None
+                and self._pipeline_config.speculative.synthetic_acceptance_rate
+                is not None
+            ):
+                logger.info(
+                    "Synthetic acceptance rate is enabled (rate=%.2f). "
+                    "Actual model acceptance will be overridden. "
+                    "Results are for benchmarking only.",
+                    self._pipeline_config.speculative.synthetic_acceptance_rate,
+                )
 
         # Load sampler.
         self._sampler: Model | None = (

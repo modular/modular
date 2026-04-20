@@ -38,8 +38,8 @@ from max.nn.kernels import (
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
+    AcceptanceSampler,
     _reshape_target_logits,
-    greedy_acceptance_sampler,
 )
 from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
     RaggedTokenMerger,
@@ -59,6 +59,7 @@ class UnifiedEagleLlama3Values:
     return_n_logits: TensorValue
     kv_collection: PagedCacheValues
     draft_kv_blocks: BufferValue
+    seed: TensorValue
 
 
 class UnifiedEagleLlama3(Module):
@@ -68,6 +69,11 @@ class UnifiedEagleLlama3(Module):
         super().__init__()
 
         self.config = config
+        self.num_draft_steps = config.speculative_config.num_speculative_tokens
+        self.acceptance_sampler = AcceptanceSampler(
+            synthetic_acceptance_rate=config.speculative_config.synthetic_acceptance_rate,
+            num_draft_steps=self.num_draft_steps,
+        )
         self.num_devices = 1
 
         # TODO: support distributed llama3 model
@@ -96,6 +102,8 @@ class UnifiedEagleLlama3(Module):
             draft_tokens,
             # draft kvcache
             draft_kv_blocks,
+            # synthetic acceptance seed (scalar int64 on CPU)
+            seed,
         ) = inputs
 
         target_kv_collection = PagedCacheValues(
@@ -113,9 +121,18 @@ class UnifiedEagleLlama3(Module):
             return_n_logits=return_n_logits.tensor,
             kv_collection=target_kv_collection,
             draft_kv_blocks=draft_kv_blocks.buffer,
+            seed=seed.tensor,
         )
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
+        """Input types for the unified graph.
+
+        The trailing ``ops.random.SeedType`` is a scalar int64 reserved for
+        stochastic sub-modules. It is currently consumed only by synthetic
+        acceptance sampling, but is always present so the graph signature
+        is stable and additional stochastic paths can reuse the same
+        input. Bound per-execute to a fresh value by the pipeline model.
+        """
         device_ref = self.config.target.devices[0]
 
         tokens_type = TensorType(
@@ -146,6 +163,7 @@ class UnifiedEagleLlama3(Module):
             *target_kv_flat,
             draft_tokens_type,
             draft_kv_blocks,
+            ops.random.SeedType,
         )
 
     def __call__(
@@ -199,8 +217,8 @@ class UnifiedEagleLlama3(Module):
         # num_accepted_draft_tokens: [B]     (index of first rejected step, 0..K)
         # recovered                : [B, K]  (target argmax at each draft position)
         # bonus                    : [B, 1]  (target argmax at the +1 position)
-        num_accepted_draft_tokens, recovered, bonus = greedy_acceptance_sampler(
-            draft_tokens, logits
+        num_accepted_draft_tokens, recovered, bonus = self.acceptance_sampler(
+            draft_tokens, logits, seed=inputs.seed
         )
 
         # target_tokens: [B, K+1]
@@ -325,7 +343,7 @@ class UnifiedEagleLlama3(Module):
 
         # --- Draft steps 1..N-1 ---
         all_draft_tokens = [next_draft_tokens]
-        for _ in range(1, self.config.num_draft_steps):
+        for _ in range(1, self.num_draft_steps):
             next_draft_tokens = next_draft_tokens.rebind(["batch_size"])
             draft_hs = draft_hs.rebind(["batch_size", hidden_dim])
 
