@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 import numpy as np
-from max.driver import Buffer
+from max.driver import CPU, Buffer
 from max.interfaces import (
     BatchProcessorInputs,
     ProcessorInputs,
@@ -25,6 +25,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.pipelines import TextContext
+from max.pipelines.lib.sampling import SamplerInputs
 from max.pipelines.lib.sampling.logits_processor import apply_logits_processors
 
 
@@ -271,3 +272,25 @@ class TestApplyLogitsProcessors:
         expected_array[:] += 1
 
         assert np.all(final_array == expected_array)
+
+
+def test_sampler_inputs_extracts_min_p_cpu() -> None:
+    """Test SamplerInputs extracts per-request min_p values on CPU."""
+    context_batch = [
+        TextContext(
+            max_length=16,
+            tokens=TokenBuffer(np.array([1, 2, 3], dtype=np.int64)),
+            sampling_params=SamplingParams(min_p=0.05),
+        ),
+        TextContext(
+            max_length=16,
+            tokens=TokenBuffer(np.array([4, 5], dtype=np.int64)),
+            sampling_params=SamplingParams(min_p=0.3),
+        ),
+    ]
+
+    sampler_inputs = SamplerInputs.create(context_batch, device=CPU())
+    np.testing.assert_allclose(
+        sampler_inputs.min_p.to_numpy(),
+        np.array([0.05, 0.3], dtype=np.float32),
+    )

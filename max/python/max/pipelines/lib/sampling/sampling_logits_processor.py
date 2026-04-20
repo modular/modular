@@ -540,6 +540,7 @@ class SamplerInputs:
     temperature: Buffer
     top_p: Buffer
     min_top_p: Buffer
+    min_p: Buffer
     seed: Buffer
 
     def as_list(self) -> list[Buffer]:
@@ -550,6 +551,7 @@ class SamplerInputs:
             self.temperature,
             self.top_p,
             self.min_top_p,
+            self.min_p,
             self.seed,
         ]
 
@@ -562,11 +564,11 @@ class SamplerInputs:
         """Create sampling parameter tensors from context batch.
 
         Args:
-            batch: List of context objects containing sampling parameters
-            device: Device to place the tensors on
+            batch: List of context objects containing sampling parameters.
+            device: Device to place the tensors on.
 
         Returns:
-            SamplerInputs containing the sampling parameter tensors
+            SamplerInputs containing the sampling parameter tensors.
         """
         temperature_host = to_pinned_host_buffer(
             [context.sampling_params.temperature for context in batch],
@@ -599,6 +601,13 @@ class SamplerInputs:
         min_top_p_np = np.array(np.min(top_p_host.to_numpy()), dtype=np.float32)
         min_top_p = Buffer.from_numpy(min_top_p_np)
 
+        # min_p is a tensor of shape (batch_size,)
+        min_p_host = to_pinned_host_buffer(
+            [context.sampling_params.min_p for context in batch],
+            device=device,
+        )
+        min_p = min_p_host.to(device)
+
         # seed is a tensor of shape (batch_size,)
         seed_host = to_pinned_host_buffer(
             [
@@ -616,5 +625,6 @@ class SamplerInputs:
             temperature=temperature,
             top_p=top_p,
             min_top_p=min_top_p,
+            min_p=min_p,
             seed=seed,
         )

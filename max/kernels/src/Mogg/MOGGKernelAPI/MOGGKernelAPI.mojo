@@ -10163,6 +10163,7 @@ struct Struct_fused_token_sampling:
         temperature: InputTensor[dtype=DType.float32, rank=1, ...],
         top_p: InputTensor[dtype=DType.float32, rank=1, ...],
         min_top_p: Float32,
+        min_p: InputTensor[dtype=DType.float32, rank=1, ...],
         seed: InputTensor[dtype=DType.uint64, rank=1, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContextPtr,
@@ -10209,6 +10210,9 @@ struct Struct_fused_token_sampling:
                 .as_any_origin()
                 .as_immut(),
                 top_p=top_p.to_tile_tensor[DType.int64]()
+                .as_any_origin()
+                .as_immut(),
+                min_p=min_p.to_tile_tensor[DType.int64]()
                 .as_any_origin()
                 .as_immut(),
                 seed=seed.to_tile_tensor[DType.int64]()

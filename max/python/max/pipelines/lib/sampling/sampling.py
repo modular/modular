@@ -21,7 +21,14 @@ import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Dim, Graph, TensorType, ops
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Dim,
+    Graph,
+    TensorType,
+    ops,
+)
 from max.nn.kernels import (
     apply_penalties_to_logits,
     scatter_set_constant,
@@ -81,6 +88,9 @@ def _sampling_input_types(
 
     min_p_type = TensorType(DType.float32, [], device=DeviceRef.CPU())
     inputs["min_top_p"] = min_p_type
+
+    min_p_threshold_type = TensorType(DType.float32, ["batch"], device=device)
+    inputs["min_p"] = min_p_threshold_type
 
     seed_type = TensorType(DType.uint64, ["batch"], device=device)
     inputs["seed"] = seed_type
@@ -260,6 +270,7 @@ def token_sampler(
         max_k = graph.inputs[list(_input_dict).index("max_k")].tensor
         top_p = graph.inputs[list(_input_dict).index("top_p")].tensor
         min_top_p = graph.inputs[list(_input_dict).index("min_top_p")].tensor
+        min_p = graph.inputs[list(_input_dict).index("min_p")].tensor
         seed = graph.inputs[list(_input_dict).index("seed")].tensor
 
         tokens = topk_fused_sampling(
@@ -269,6 +280,7 @@ def token_sampler(
             temperature=temperature,
             top_p=top_p,
             min_top_p=min_top_p,
+            min_p=min_p,
             seed=seed,
         )
 

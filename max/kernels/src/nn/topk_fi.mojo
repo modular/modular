@@ -1012,6 +1012,49 @@ def topk_sampling_from_prob[
             dispatch_vec_size[False]()
 
 
+@__name(t"apply_min_p_mask_{dtype}_{block_size}", mangle=True)
+def apply_min_p_mask_kernel[
+    dtype: DType,
+    block_size: Int,
+](
+    probs: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    min_p_arr: UnsafePointer[Float32, ImmutExternalOrigin],
+    d: Int,
+):
+    """Zero out probabilities below the per-row min_p threshold.
+
+    Each block processes one batch row. Threads cooperatively find the
+    row-wise max probability via a block reduction, compute the threshold
+    as ``min_p * max_prob``, and then zero any element below it.
+
+    Args:
+        probs: Probability buffer [batch_size * d], modified in-place.
+        min_p_arr: Per-row min_p values [batch_size].
+        d: Vocabulary size (row length).
+    """
+    var tx = thread_idx.x
+    var bx = block_idx.x
+    var row_start = bx * d
+
+    var min_p_val = min_p_arr[bx]
+    if min_p_val == 0.0:
+        return
+
+    # Pass 1: find thread-local max.
+    var thread_max = Float32(-1e30)
+    for i in range(tx, d, block_size):
+        thread_max = max(thread_max, Float32(probs[row_start + i]))
+
+    # Block-level max reduction (broadcast result to all threads).
+    var row_max = block.max[block_size=block_size, broadcast=True](thread_max)
+    var threshold = min_p_val * row_max
+
+    # Pass 2: zero out below threshold.
+    for i in range(tx, d, block_size):
+        if Float32(probs[row_start + i]) < threshold:
+            probs[row_start + i] = Scalar[dtype](0)
+
+
 @__name(
     t"topk_topp_sampling_from_prob_{dtype}_{out_idx_type}_{deterministic}",
     mangle=True,

@@ -5402,6 +5402,7 @@ def topk_fused_sampling(
     max_k: TensorValueLike | None = None,
     min_top_p: TensorValueLike | None = None,
     top_p: TensorValueLike = 1.0,
+    min_p: TensorValueLike | None = None,
     seed: TensorValueLike = 0,
 ) -> TensorValue:
     """Performs top-k sampling with temperature scaling.
@@ -5409,10 +5410,15 @@ def topk_fused_sampling(
     Args:
         logits: Input logits tensor of shape [batch_size, vocab_size].
         top_k: Number of top tokens to consider for sampling. Can be a scalar
-            (which will be expanded to batch_size) or a tensor of shape [batch_size].
+            (which will be expanded to batch_size) or a tensor of shape
+            [batch_size].
         temperature: Temperature for scaling logits before sampling.
-        max_k: Maximum value of k across the batch. Required when top_k is a tensor.
+        max_k: Maximum value of k across the batch. Required when top_k is a
+            tensor.
         top_p: Top-p (nucleus) sampling threshold. Can be a scalar or tensor.
+        min_p: Per-row min_p probability filtering threshold of shape
+            [batch_size]. Tokens with probability below
+            ``min_p * max_prob`` are zeroed before sampling.
         seed: Seed for the random number generator. Can be a scalar or tensor.
 
     Returns:
@@ -5492,6 +5498,19 @@ def topk_fused_sampling(
             )
         min_top_p_tensor = TensorValue(min_top_p)
 
+    # Handle min_p parameter - per-row tensor
+    if min_p is None:
+        min_p_tensor = ops.broadcast_to(
+            ops.constant(0.0, dtype=DType.float32, device=device),
+            [batch_size],
+        )
+    else:
+        min_p_tensor = TensorValue(min_p)
+        if min_p_tensor.shape[0] != batch_size:
+            raise ValueError(
+                f"min_p tensor shape {min_p_tensor.shape} does not match batch_size {batch_size}"
+            )
+
     # Handle seed parameter - can be scalar or tensor
     if isinstance(seed, int):
         seed_tensor = ops.broadcast_to(
@@ -5515,6 +5534,7 @@ def topk_fused_sampling(
             temperature_tensor,
             top_p_tensor,
             min_top_p_tensor,
+            min_p_tensor,
             seed_tensor,
             logits,
         ],
