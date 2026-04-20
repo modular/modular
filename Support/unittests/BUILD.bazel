@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_test", "modular_python_binding_library_test")
+load("//bazel:api.bzl", "modular_cc_test")
 
 # gazelle:default_visibility //visibility:private
 
@@ -281,13 +281,4 @@ modular_cc_test(
     name = "DiagnosticsTests",
     srcs = glob(["Diagnostics/*.cpp"]),
     deps = ["//Support:Diagnostics"],
-)
-
-modular_python_binding_library_test(
-    name = "CPythonUtilTest",
-    srcs = ["CPython/UtilTest.cpp"],
-    deps = [
-        "//Support:CPython",
-        "@python_3_10//:python_headers",
-    ],
 )

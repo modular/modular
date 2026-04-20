@@ -981,18 +981,6 @@ modular_cc_library(
 )
 
 modular_cc_library(
-    name = "CPython",
-    srcs = glob(["lib/CPython/*.cpp"]),
-    hdrs = glob(["include/Support/CPython/*.h"]),
-    # Intentionally propagated so it cannot be used with nanobind
-    defines = ["Py_LIMITED_API=0x030A0000"],
-    deps = [
-        "@llvm-project//llvm:Support",
-        "@python_3_10//:python_headers",
-    ],
-)
-
-modular_cc_library(
     name = "Log",
     testonly = True,
     srcs = ["lib/Log.cpp"],
