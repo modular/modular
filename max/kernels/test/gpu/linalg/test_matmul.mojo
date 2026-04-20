@@ -18,6 +18,7 @@ from std.sys import (
     bit_width_of,
     has_nvidia_gpu_accelerator,
     simd_width_of,
+    size_of,
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -200,7 +201,7 @@ def test[
         comptime if lambda_fn:
             comptime func = lambda_fn.value()
             update_val = func(idx, (m, n), update_val)
-        c_device.store_linear[alignment=alignment](
+        c_device.store_linear[alignment=alignment * size_of[dtype]()](
             idx, rebind[SIMD[dtype, width]](update_val)
         )
 
@@ -278,7 +279,7 @@ def test[
             comptime element_lambda = lambda_fn.value()
             update_val = element_lambda(idx, (m, n), val)
 
-        c_device_ref.store_linear(
+        c_device_ref.store_linear[alignment=alignment * size_of[dtype]()](
             idx,
             update_val,
         )
