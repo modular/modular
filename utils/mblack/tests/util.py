@@ -93,11 +93,21 @@ def mojo_format_str(source: str, *, mode: mblack.Mode = MOJO_MODE) -> str:
 
 
 def assert_mojo_format(
-    source: str, expected: str, *, mode: mblack.Mode = MOJO_MODE
+    source: str,
+    expected: str,
+    *,
+    mode: mblack.Mode = MOJO_MODE,
+    fast: bool = False,
 ) -> None:
     """Convenience function to check that mblack formats mojo code as expected.
+
+    When the source is reformatted, also verify that re-formatting the output
+    is a no-op (idempotency).
     """
-    _assert_format_equal(expected, mojo_format_str(source, mode=mode))
+    actual = mojo_format_str(source, mode=mode)
+    _assert_format_equal(expected, actual)
+    if not fast and source != expected:
+        mblack.assert_stable(source, actual, mode=mode)
 
 
 def assert_format(
