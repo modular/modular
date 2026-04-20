@@ -1499,6 +1499,77 @@ def trigger_promoted_param_wrapper[n: Int]():
 
 # // -----
 
+# COM: Verify promoted closures keep captured params before implicit origins.
+
+# CHECK-LABEL: lit.fn @"trigger_dtype_implicit_origin{{.*}}"<n: !Int>() -> !kgen.none
+# CHECK: lit.alias.decl *"dtype{{.*}}": !DType = <apply(:!lit.generator<[1]("impl": !lit.ref<!String, imm #lit.comptime.origin> read_mem) -> !DType> rebind(:!lit.generator<[1]("impl": !lit.ref<!String, imm *[0,0]> read_mem) -> !DType> @{{.*}}::@"nonsense{{.*}}"<:!Int n, :!AnyType !String>)
+# CHECK-LABEL: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
+def trigger_dtype_implicit_origin[n: Int]():
+    def nonsense[U: AnyType, //](impl: U) unified {} -> DType:
+        if n >= 64:
+            return DType.int32
+        elif n >= 32:
+            return DType.uint32
+        else:
+            return DType.float32
+
+    comptime dtype = nonsense("here")
+    var x = SIMD[dtype, 1]()
+    _ = x
+
+# // -----
+#
+# COM: Verify promoted stateless unified closures can bind captured params
+# COM: before satisfying thin function generic constraints.
+
+# CHECK-LABEL: lit.fn @"trigger_promoted_params{{.*}}"<n: !Int>() -> !kgen.none
+# CHECK: lit.call tail @{{.*}}::@"takesThin{{.*}}"<:!lit.generator<<"U": !AnyType, +>[1]("impl": !lit.ref<:!AnyType *(0,0), imm *[0,0]> read_mem) -> !DType> @{{.*}}::@"nonsense{{.*}}"<:!Int n, :!AnyType ?>
+# CHECK-LABEL: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
+def takesThin[FuncType: def[U: AnyType, //](impl: U) thin -> DType]():
+    _ = FuncType("here")
+
+
+def trigger_promoted_params[n: Int]():
+    def nonsense[U: AnyType, //](impl: U) unified {} -> DType:
+        if n >= 64:
+            return DType.int32
+        elif n >= 32:
+            return DType.uint32
+        else:
+            return DType.float32
+
+    takesThin[nonsense]()
+
+# // -----
+
+# COM: Verify promoted stateless unified closures create a function wrapper
+# COM: when passed as a value to a thin-compatible parameter.
+
+# CHECK-LABEL: lit.fn @"trigger_promoted_param_wrapper{{.*}}"<n: !Int>() -> !kgen.none
+# CHECK: %[[WRAP:.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!lit.struct<#PtrWrapper
+# CHECK: lit.call @{{.*}}::@"def[U: AnyType{{.*}}_PtrWrapper"{{.*}}(%[[WRAP]])
+# CHECK: %[[WRAP_IMM:.*]] = lit.ref.immut %[[WRAP]]
+# CHECK: lit.call @{{.*}}::@"takesFatVale{{.*}}"{{.*}}(%[[WRAP_IMM]])
+# CHECK-LABEL: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
+def takesFatVale[FuncType: def[U: AnyType, //](impl: U) unified -> DType](
+    impl: FuncType
+):
+    _ = impl("here")
+
+
+def trigger_promoted_param_wrapper[n: Int]():
+    def nonsense[U: AnyType, //](impl: U) unified {} -> DType:
+        if n >= 64:
+            return DType.int32
+        elif n >= 32:
+            return DType.uint32
+        else:
+            return DType.float32
+
+    takesFatVale(nonsense)
+
+# // -----
+
 # COM: Verify comptime conversion of a promoted wrapper value constructs the
 # COM: concrete PtrWrapper via apply_result_slot before calling the closure
 # COM: parameter.
@@ -1509,13 +1580,110 @@ def take_closure_param[
     return impl[3](4)
 
 
-def trigger() -> Int:
+def trigger[func: def(Int) capturing -> Int, xx:Int]() -> Int:
     def wrapped_ok[n: Int](arg: Int) unified {} -> Int:
-        return n
+        return func(xx) + n
 
-    # CHECK-LABEL: lit.fn @"trigger()"
+    # CHECK-LABEL: lit.fn @"trigger
     # CHECK: lit.alias.decl *"X`": !Int1 = <apply(
     # CHECK-SAME: @"take_closure_param[def[n: Int](arg: Int) -> Int]($0)"
     # CHECK-SAME: store_to_mem(apply_result_slot(
-    # CHECK-SAME: @"def[n: Int](arg: Int) -> Int_PtrWrapper"::@"__init__()"
+    # CHECK-SAME: @"def[n: Int](arg: Int) capturing -> Int_PtrWrapper"::@"__init__()"
     comptime X = take_closure_param[type_of(wrapped_ok)](wrapped_ok)
+    # CHECK: lit.call @{{.*}}::@"take_closure_param
+    var Y = take_closure_param[type_of(wrapped_ok)](wrapped_ok)
+
+# // -----
+
+# COM: Verify promoted top-level unified functions with captured parameters
+# COM: build a wrapper whose Impl type is self-contained while preserving the
+# COM: promoted function symbol's native parameter ordering.
+
+# CHECK-LABEL: lit.struct.decl @"def[dtype: DType, +, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper"
+# CHECK: lit.alias.decl dtype: !DType = <__capture_dtype>
+# CHECK: lit.fn @"__call__[::Int,::DType](unified_closure::def[dtype: DType, +, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper[$0, $1])"
+# CHECK: {{.*}} = lit.call[!lit.generator<() -> !lit.struct<#SIMD <:!DType _dtype, :!Int simd_width>>>: bind_params(:!lit.generator<<"dtype": !DType, +, "simd_width": !Int>() -> !lit.struct<#SIMD <:!DType *(0,0), :!Int *(0,1)>>> Impl, :!DType _dtype, :!Int simd_width)]()
+# CHECK: kgen.witness "dtype" : !DType = __capture_dtype
+
+# CHECK-LABEL: lit.fn @"trigger[::Int,::DType]()"
+# CHECK: %[[WRAP:.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!lit.struct
+# CHECK-SAME: @{{.*}}::@"compute_init2[::Int]()`0x"<:!DType ?, :!Int ?>
+# CHECK: %[[INIT:.*]] = lit.call @{{.*}}::@"def[dtype: DType, +, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper"::@"__init__()"{{.*}}(%[[WRAP]])
+# CHECK: %[[IMM:.*]] = lit.ref.immut %[[WRAP]]
+# CHECK: lit.call @{{.*}}::@"local_higher_order
+
+def local_higher_order[
+    rank: Int,
+    dtype: DType,
+    compute_init: def[simd_width: Int]() unified -> SIMD[dtype, simd_width],
+](
+    compute_init_closure: compute_init,
+):
+    pass
+
+
+def trigger[rank: Int, dtype: DType]():
+    def compute_init2[
+        simd_width: Int
+    ]() unified {} -> SIMD[dtype, simd_width]:
+        return SIMD[dtype, simd_width](0)
+
+    local_higher_order[rank, dtype, type_of(compute_init2)](compute_init2)
+
+# // -----
+
+# COM: Ensure Proper Ordering Of Parameters In Promoted Functions
+
+struct MyList[T:AnyType]:
+    pass
+
+# CHECK: lit.fn @"thinClosure{{.*}}"<T: !AnyType, +, *"list`2x": !lit.struct<#MyList <:!AnyType T>>>() -> !Int
+def callIt[T:AnyType, list: MyList[T]]():
+    def thinClosure[list: MyList[T]]() unified {} -> Int:
+        return 1
+    comptime x = thinClosure[list]()
+
+
+# // -----
+
+
+# COM: Thin Closures With Concrete Captures Are Properly Lifted
+
+comptime SIMDSize = Int
+
+struct IndexList[r:Int]:
+    pass
+
+def target[
+    rank: Int,
+    dtype: DType,
+    ComputeFnType: def[simd_width: SIMDSize](
+        point: IndexList[rank],
+        val: SIMD[dtype, simd_width],
+        result: SIMD[dtype, simd_width],
+    ) unified -> SIMD[dtype, simd_width],
+](
+    compute_func: ComputeFnType,
+) raises:
+    pass
+
+
+# CHECK: lit.fn @"compute_gpu
+
+def repro_stencil_indirect_call[
+    dtype: DType,
+    num_channels: Int,
+]() raises:
+    comptime rank = 4
+
+    def compute_gpu[
+        simd_width: SIMDSize
+    ](
+        point: IndexList[rank],
+        val: SIMD[dtype, simd_width],
+        result: SIMD[dtype, simd_width],
+    ) unified {} -> SIMD[dtype, simd_width]:
+        _ = point
+        return val + result
+
+    target[rank, dtype, type_of(compute_gpu)](compute_gpu)

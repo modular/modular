@@ -1367,29 +1367,6 @@ static ASTDecl *getClosureTraitDecl(SharedState &shared,
   return nullptr;
 }
 
-/// Build the concrete closure-wrapper type instantiated with a function symbol.
-static Type getConcreteClosureWrapperTypeForFnSymbol(SharedState &shared,
-                                                     ASTDecl &declScope,
-                                                     SMLoc loc,
-                                                     PValue fnPValue) {
-  auto fnSig = cast<FnTypeGeneratorType>(fnPValue.getType());
-  ASTDecl &moduleDecl = *declScope.getNearestDeclOfType<FileModuleOp>();
-  auto &closureEmitter = shared.getClosureEmitter();
-  auto rvClosureTrait = shared.getOrCreateClosureTrait(loc, moduleDecl, fnSig);
-  ASTDecl *wrapper = closureEmitter.createFnStructWrapper(
-      moduleDecl, *rvClosureTrait, fnSig, loc);
-  assert(wrapper && "createFnStructWrapper must return a declaration");
-
-  auto structDeclOp = dyn_cast<StructDeclOp>(wrapper->getIfOperation());
-  assert(structDeclOp && "createFnStructWrapper must return a StructDeclOp");
-  assert(!structDeclOp.getInputParams().empty() &&
-         "closure wrapper must have an implementation parameter");
-
-  TypedAttr fnVal = ParamOperatorAttr::getRebind(
-      fnPValue.get(), structDeclOp.getInputParams().front().getType());
-  return structDeclOp.bindReference({fnVal});
-}
-
 // Returns true/false to indicate that whether a type value can be upcast to a
 // trait.
 // Returns failure when it is an non-applicable cases (i.e., `fromType` is not a
@@ -1449,8 +1426,9 @@ FailureOr<bool> IREmitter::canMetaTypeUpCastTo(SharedState &shared, SMLoc loc,
       TraitType closureTrait = anyTrait.getTraitType();
       if (auto traitDecl = getClosureTraitDecl(shared, closureTrait)) {
         TypedAttr fnPValue = fnGen.getType().getSymbolConstantAttr();
-        Type concreteWrapperType = getConcreteClosureWrapperTypeForFnSymbol(
-            shared, *declScope, loc, fnPValue);
+        Type concreteWrapperType =
+            shared.getClosureEmitter().getConcreteClosureWrapperTypeForFnSymbol(
+                *declScope, loc, fnPValue);
         return succeeded(shared.getClosureEmitter().isCompatibleWith(
             concreteWrapperType, traitDecl));
       }
@@ -1496,11 +1474,29 @@ static bool isClosureWrapperStruct(SharedState &shared, PValue value,
                                    LIT::StructType structTy) {
   if (!value)
     return false;
+  auto fnSig = dyn_cast<FnTypeGeneratorType>(value.getType());
+  if (!fnSig)
+    return false;
   ASTDecl &decl =
       shared.declResolver->getDeclForTypeSymbol(structTy.getSymbolRef());
   if (StructDeclOp structOp = dyn_cast<StructDeclOp>(decl.getIfOperation())) {
-    return structOp.getDefinesClosure() && !structTy.getParamValues().empty() &&
-           isEqualCanon(structTy.getParamValues().front(), value.get());
+    auto [capturedRefs, selfContainedSig] =
+        DeclResolver::createSelfContainedSignature(fnSig);
+    selfContainedSig =
+        cast<FnTypeGeneratorType>(getCanonicalType(selfContainedSig));
+    if (!structOp.getDefinesClosure() ||
+        structOp.getInputParams().size() != 1 + capturedRefs.size())
+      return false;
+    if (!isEqualCanon(structOp.getInputParams().back().getType(),
+                      selfContainedSig))
+      return false;
+    return llvm::all_of(
+        llvm::zip(capturedRefs,
+                  structOp.getInputParams().take_front(capturedRefs.size())),
+        [](auto it) {
+          auto [capture, param] = it;
+          return isEqualCanon(capture.getType(), param.getType());
+        });
   }
 
   return false;
@@ -1691,8 +1687,10 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
               sugarDynCastIfPresent<FnLiteralTypeGeneratorMetaType>(fromType)) {
         if (auto traitDecl = getClosureTraitDecl(shared, trait)) {
           TypedAttr fnPValue = fnGen.getType().getSymbolConstantAttr();
-          ASTType structWrapper = getConcreteClosureWrapperTypeForFnSymbol(
-              shared, declScope, valueExpr.expr->getLoc(), fnPValue);
+          ASTType structWrapper =
+              shared.getClosureEmitter()
+                  .getConcreteClosureWrapperTypeForFnSymbol(
+                      declScope, valueExpr.expr->getLoc(), fnPValue);
           (void)shared.getClosureEmitter().augmentWitnessTablesToConformTo(
               structWrapper, traitDecl);
           return emitMetaTypeToTraitConversion(

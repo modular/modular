@@ -2062,14 +2062,19 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   if (signature.isUnified()) {
     // Check if this is a stateless unified closure. This means it has:
     // - no captured values
-    // - no captured parameters in signature (TODO)
+    // - no explicit dynamic captures
     // - no default capture convention
+    // Captured parameter references are handled by rebinding the promoted
+    // symbol within the defining scope.
     if (closureExternalRefs.empty() &&
         captureSignature.parsedCaptures.empty() &&
         !captureSignature.captureAllByConvention) {
-      auto [capturedRefs, _] =
-          createSelfContainedSignature(funcOp.getFuncTypeGenerator());
-      if (capturedRefs.empty()) {
+      // TODO: Support stateless promotion for closures that need hoisting
+      Location hoistLoc = shared.translateLocation(decl.getLoc());
+      if (shared.diBuilder)
+        hoistLoc = shared.diBuilder->createScopedLoc(hoistLoc);
+      if (!shared.closureEmitter->sigNeedsHoistForClosureTrait(
+              funcOp.getFuncTypeGenerator(), decl, hoistLoc)) {
         // The closure body needs to be completely resolved before promotion to
         // sidestep an ordering issue.
         resolveAllWithin(decl);
