@@ -13,7 +13,14 @@
 #include "gtest/gtest.h"
 
 #ifdef LLVM_ON_UNIX
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
+#include <filesystem>
 #include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #endif // LLVM_ON_UNIX
 
 using namespace M;
@@ -147,6 +154,75 @@ malformed line here
 }
 
 #ifdef LLVM_ON_UNIX
+// Regression test for GEX-3526: mojo terminated with an uncaught
+// `std::filesystem::filesystem_error` when HOME was not traversable by the
+// running UID (the directory stat returned EACCES, and `getSearchPaths` used
+// the throwing overload of `std::filesystem::exists`). The entry points that
+// walk the search paths must swallow permission errors and fall through to the
+// next candidate rather than aborting the process.
+TEST(Configuration, SearchPathsSurvivesNonTraversableHome) {
+  // Create a directory and strip all permissions so that `stat` on any path
+  // inside returns EACCES for non-root UIDs. Root bypasses permission bits,
+  // so the assertion below only works from a non-root process — we fork and
+  // drop privileges in the child.
+  std::error_code ec;
+  auto lockedHome = std::filesystem::temp_directory_path(ec) /
+                    ("gex3526-locked-home-" + std::to_string(::getpid()));
+  ASSERT_FALSE(ec) << ec.message();
+  std::filesystem::create_directories(lockedHome, ec);
+  ASSERT_FALSE(ec) << "create_directories: " << ec.message();
+  auto cleanup = llvm::scope_exit([&] {
+    (void)::chmod(lockedHome.c_str(), 0700);
+    std::error_code rmEc;
+    std::filesystem::remove_all(lockedHome, rmEc);
+  });
+  ASSERT_EQ(::chmod(lockedHome.c_str(), 0), 0)
+      << "chmod 000: "
+      << std::error_code(errno, std::generic_category()).message();
+
+  // The child exercises the code path under test. We use distinct exit codes
+  // so the parent can tell "fix works" (0) from "couldn't drop privileges"
+  // (101) from "something else went wrong." An abort (signal) from the old
+  // bug would show up as `WIFSIGNALED`, not `WIFEXITED`.
+  pid_t pid = ::fork();
+  ASSERT_NE(pid, -1) << "fork: " << std::strerror(errno);
+  if (pid == 0) {
+    if (::geteuid() == 0) {
+      // Drop to nobody (65534). If we can't (user-namespace restrictions,
+      // etc.), skip — signal that via exit code 101.
+      if (::setuid(65534) != 0)
+        _exit(101);
+    }
+    // `getSearchPaths` consults MODULAR_HOME, MODULAR_DERIVED_PATH, and
+    // TEST_TMPDIR before HOME. Bazel sets TEST_TMPDIR, so we must clear it.
+    ::setenv("HOME", lockedHome.c_str(), 1);
+    ::unsetenv("MODULAR_HOME");
+    ::unsetenv("MODULAR_DERIVED_PATH");
+    ::unsetenv("TEST_TMPDIR");
+    // Before the fix, these calls aborted the child (std::terminate from an
+    // uncaught filesystem_error) and the parent saw SIGABRT.
+    auto folder = Config::getModularConfigFolderPath(/*create=*/false);
+    (void)folder;
+    auto configFile = Config::getConfigFilePath(/*create=*/false);
+    (void)configFile;
+    _exit(0);
+  }
+
+  int status = 0;
+  ASSERT_EQ(::waitpid(pid, &status, 0), pid)
+      << "waitpid: " << std::strerror(errno);
+  if (WIFSIGNALED(status)) {
+    FAIL() << "child was killed by signal " << WTERMSIG(status)
+           << " (regression: uncaught filesystem_error from getSearchPaths)";
+    return;
+  }
+  ASSERT_TRUE(WIFEXITED(status)) << "child did not exit normally";
+  int code = WEXITSTATUS(status);
+  if (code == 101)
+    GTEST_SKIP() << "unable to drop to a non-root UID in this sandbox";
+  EXPECT_EQ(code, 0) << "child exited with unexpected code " << code;
+}
+
 // Regression test for a bug in Configuration
 TEST(Configuration, PageBoundary) {
   auto pageSize = llvm::cantFail(llvm::sys::Process::getPageSize());

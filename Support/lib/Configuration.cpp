@@ -341,7 +341,13 @@ static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
   bool addedHome = false;
   if (homeDir) {
     auto path = std::filesystem::path(*homeDir) / ".modular";
-    if (std::filesystem::exists(path)) {
+    // Use the non-throwing overload: if HOME is not traversable by the running
+    // UID (e.g., running in a container where the image was built for a
+    // different UID), `stat` on this path returns EACCES, and the throwing
+    // overload would propagate `std::filesystem::filesystem_error` to
+    // `std::terminate`. Treat any error as "path is not usable, skip it".
+    std::error_code ec;
+    if (std::filesystem::exists(path, ec)) {
       if (type == FolderType::Cache)
         paths.push_back(path / ".cache" / "modular");
       else
@@ -410,13 +416,13 @@ static ErrorOr<std::filesystem::path> findBestPathForType(FolderType type,
   getSearchPaths(searchPaths, type);
 
   // Check each of the search paths for existence - if none of them exist
-  // return the first of the paths as MODULAR_HOME.
+  // return the first of the paths as MODULAR_HOME. An error (e.g. EACCES when
+  // a parent directory of the candidate is not traversable by the running UID)
+  // is treated as "not found" so we quietly move on to the next candidate.
   auto found =
       llvm::find_if(searchPaths, [&](const std::filesystem::path &path) {
         std::error_code ec;
-        bool exists = std::filesystem::exists(path, ec);
-        assert(!ec && "error checking for path existence");
-        return exists;
+        return std::filesystem::exists(path, ec);
       });
   if (found != searchPaths.end()) {
     MODULAR_CACHE_LOG("config")
@@ -511,13 +517,13 @@ std::optional<std::filesystem::path> M::findModularFile(StringRef fileName) {
   searchPaths.push_back(std::filesystem::path("/opt/homebrew/etc/modular"));
 #endif // __APPLE__
 
-  // Try to find the file in the provided paths.
+  // Try to find the file in the provided paths. Treat any error (e.g. EACCES
+  // when HOME is not traversable by the running UID) as "not found" and move
+  // on to the next candidate rather than aborting.
   auto found =
       llvm::find_if(searchPaths, [&](const std::filesystem::path &path) {
         std::error_code ec;
-        bool exists = std::filesystem::exists(path / fileName.str(), ec);
-        assert(!ec && "error checking for path existence");
-        return exists;
+        return std::filesystem::exists(path / fileName.str(), ec);
       });
 
   // Was not found, return nullopt.
