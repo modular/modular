@@ -444,7 +444,7 @@ def fused_token_sampling_cpu[
             bound_max_k,
             input,
             out_vals,
-            TileTensor(out_idxs.ptr.bitcast[Int64](), out_idxs.layout),
+            out_idxs.bitcast[DType.int64](),
             k,
             temperature,
             top_p,

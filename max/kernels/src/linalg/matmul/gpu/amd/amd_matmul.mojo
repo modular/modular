@@ -190,8 +190,8 @@ struct AMDMatmul[
         var warp_k, warp_m = divmod(warp_km, Self.num_warps_m)
 
         # === GMEM views ===
-        var a_gmem = TileTensor(a.ptr.bitcast[Scalar[Self.a_type]](), a.layout)
-        var b_gmem = TileTensor(b.ptr.bitcast[Scalar[Self.a_type]](), b.layout)
+        var a_gmem = a.bitcast[Self.a_type]()
+        var b_gmem = b.bitcast[Self.a_type]()
 
         # === SMEM: row_major tiles for the full BK-wide block ===
         comptime k_tile_size = Self.MMA_K * Self.k_group_size

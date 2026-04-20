@@ -831,6 +831,39 @@ struct TileTensor[
             alignment=alignment, non_temporal=non_temporal
         ](_index(offset), value)
 
+    @always_inline("nodebug")
+    def bitcast[
+        target_dtype: DType,
+    ](self) -> TileTensor[
+        target_dtype,
+        Self.LayoutType,
+        Self.origin,
+        address_space=Self.address_space,
+        linear_idx_type=Self.linear_idx_type,
+        element_size=Self.element_size,
+    ]:
+        """Reinterprets the tensor's element dtype, preserving layout.
+
+        Returns a new `TileTensor` that shares the same underlying storage
+        and layout as `self` but views elements as `target_dtype` rather
+        than `Self.dtype`.
+
+        Parameters:
+            target_dtype: The new element dtype to view the storage as.
+
+        Returns:
+            A `TileTensor[target_dtype, ...]` backed by the same pointer
+            and layout as `self`.
+        """
+        return TileTensor[
+            target_dtype,
+            Self.LayoutType,
+            Self.origin,
+            address_space=Self.address_space,
+            linear_idx_type=Self.linear_idx_type,
+            element_size=Self.element_size,
+        ](self.ptr.bitcast[Scalar[target_dtype]](), self.layout)
+
     @always_inline
     def ptr_at_offset(
         self, coords: Coord[...]
