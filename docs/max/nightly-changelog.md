@@ -265,6 +265,13 @@ This version is still a work in progress.
 
 ## 🛠️ Fixed {#26-3-fixed}
 
+- Fixed MAX tools aborting at startup with
+  `std::filesystem::filesystem_error` when `$HOME` is not traversable by the
+  running UID (common in containerized CI where the image's build-time UID
+  differs from the runtime UID). The config search now treats permission
+  errors as "not found" and falls through to the next candidate.
+  ([Issue #6412](https://github.com/modular/modular/issues/6412))
+
 - Fixed `enqueue_fill()` taking O(N) HIP API calls for `float64` buffers on
   AMD GPUs when the high and low 32-bit halves of the fill value differ (e.g.,
   `2.0`), reducing the call count to O(log N).

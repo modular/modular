@@ -421,6 +421,13 @@ This version is still a work in progress.
 
 ## 🛠️ Fixed
 
+- Fixed `mojo` aborting at startup with `std::filesystem::filesystem_error`
+  when `$HOME` is not traversable by the running UID (common in containerized
+  CI where the image's build-time UID differs from the runtime UID). The
+  config search now treats permission errors as "not found" and falls through
+  to the next candidate.
+  ([Issue #6412](https://github.com/modular/modular/issues/6412))
+
 - Fixed `libpython` auto-discovery failing for Python 3.14 free-threaded builds.
   The discovery script constructed the library filename without the ABI flags
   suffix (e.g. looked for `libpython3.14.dylib` instead of
