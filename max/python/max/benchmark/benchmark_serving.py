@@ -2888,8 +2888,10 @@ def main_with_parsed_args(
                 if not path.is_absolute():
                     path = Path(args.workload_config).parent / path
                 workload[key] = path
-        # CLI max_concurrency always takes precedence over the YAML.
-        workload.pop("max-concurrency", None)
+        # Resolve max_concurrency: CLI > YAML.
+        yaml_max_concurrency = workload.pop("max-concurrency", None)
+        if yaml_max_concurrency is not None and args.max_concurrency is None:
+            args.max_concurrency = str(yaml_max_concurrency)
         # Resolve num_prompts: CLI > YAML > default (deferred).
         cli_num_prompts = args.num_prompts is not None
         yaml_num_prompts = workload.pop("num-prompts", None)

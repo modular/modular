@@ -20,6 +20,7 @@ from typing import Any
 
 import pytest
 import yaml
+from max.benchmark.benchmark_serving import main_with_parsed_args
 from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
 
 
@@ -259,3 +260,47 @@ class TestServingConfigFileLoading:
         assert "host" in config.model_fields_set
         # The CLI value still wins over the file value.
         assert config.model == "cli/model"
+
+
+# ===----------------------------------------------------------------------=== #
+# Workload YAML max-concurrency Tests
+# ===----------------------------------------------------------------------=== #
+
+
+class TestWorkloadMaxConcurrency:
+    """Tests that max-concurrency from a workload YAML is applied correctly."""
+
+    def test_workload_max_concurrency_applied_when_cli_not_set(
+        self, tmp_path: Path
+    ) -> None:
+        """Workload YAML max-concurrency is used when the caller did not set one."""
+        workload = tmp_path / "workload.yaml"
+        workload.write_text("max-concurrency: 1\nnum-prompts: 10\n")
+
+        config = ServingBenchmarkConfig(
+            model="test/model",
+            workload_config=str(workload),
+            dry_run=True,
+        )
+
+        results = list(main_with_parsed_args(config))
+        assert len(results) == 1
+        assert results[0].max_concurrency == 1
+
+    def test_cli_max_concurrency_beats_workload_yaml(
+        self, tmp_path: Path
+    ) -> None:
+        """Explicitly supplied max_concurrency takes precedence over workload YAML."""
+        workload = tmp_path / "workload.yaml"
+        workload.write_text("max-concurrency: 1\nnum-prompts: 10\n")
+
+        config = ServingBenchmarkConfig(
+            model="test/model",
+            workload_config=str(workload),
+            max_concurrency="4",
+            dry_run=True,
+        )
+
+        results = list(main_with_parsed_args(config))
+        assert len(results) == 1
+        assert results[0].max_concurrency == 4
