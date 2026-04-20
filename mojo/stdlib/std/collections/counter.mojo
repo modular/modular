@@ -55,8 +55,8 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     In other languages, similar types to counters include bags, counted sets,
     and multisets, although their semantics are normally closer to sets (adding,
     removing, intersecting, unions, etc) rather than increasing and decreasing
-    counts. Mojo's `Counter` follows Python's model, and adds math versatility by
-    supporting negative counts.
+    counts. Mojo's `Counter` follows Python's model, and adds math versatility
+    by supporting negative counts.
 
     The value type must implement the `KeyElement` trait, as its values are
     stored in a dictionary as keys.
@@ -156,7 +156,8 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         Args:
             keys: The keys to create the `Counter` from.
-            value: The default value to associate with each key. Must be non-negative.
+            value: The default value to associate with each key. Must be
+                non-negative.
 
         Example:
 

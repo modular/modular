@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Unicode codepoint handling.
 
-This module provides the `Codepoint` type for representing single Unicode scalar values.
-A codepoint represents a single Unicode character, restricted to valid Unicode scalar
-values in the ranges `0` to `0xD7FF` and `0xE000` to `0x10FFFF` inclusive.
+This module provides the `Codepoint` type for representing single Unicode scalar
+values. A codepoint represents a single Unicode character, restricted to valid
+Unicode scalar values in the ranges `0` to `0xD7FF` and `0xE000` to `0x10FFFF`
+inclusive.
 """
 
 
@@ -49,8 +50,8 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     typically encoding a single user-recognizable character.
 
     All valid Unicode scalar values are in the range(s) `0` to `0xD7FF` and
-    `0xE000` to `0x10FFFF`, inclusive. This type guarantees that the stored integer
-    value falls in these ranges.
+    `0xE000` to `0x10FFFF`, inclusive. This type guarantees that the stored
+    integer value falls in these ranges.
 
     The `Codepoint` type provides functionality for:
     - Converting between codepoints and UTF-8 encoded bytes.
@@ -106,8 +107,8 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
 
     @always_inline
     def __init__(out self, *, unsafe_unchecked_codepoint: UInt32):
-        """Construct a `Codepoint` from a code point value without checking that it
-        falls in the valid range.
+        """Construct a `Codepoint` from a code point value without checking that
+        it falls in the valid range.
 
         Safety:
             The provided codepoint value MUST be a valid Unicode scalar value.
@@ -172,7 +173,8 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         returns a `Codepoint` instead of an `Int`.
 
         Args:
-            string: The input string, which must contain only a single character.
+            string: The input string, which must contain only a single
+                character.
 
         Returns:
             A `Codepoint` representing the codepoint of the given character.
@@ -265,15 +267,15 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     # ===-------------------------------------------------------------------===#
 
     def __lt__(self, other: Self) -> Bool:
-        """Return True if this character is less than a different codepoint value from
-        `other`.
+        """Return True if this character is less than a different codepoint
+        value from `other`.
 
         Args:
             other: The codepoint value to compare against.
 
         Returns:
-            True if this character's value is less than the other codepoint value;
-            False otherwise.
+            True if this character's value is less than the other codepoint
+            value; False otherwise.
         """
         return self.to_u32() < other.to_u32()
 
@@ -433,12 +435,12 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         )
 
     def is_posix_space(self) -> Bool:
-        """Returns True if this `Codepoint` is a **space** character according to the
-        [POSIX locale][1].
+        """Returns True if this `Codepoint` is a **space** character according
+        to the [POSIX locale][1].
 
-        The POSIX locale is also known as the C locale.
-
-        [1]: https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap07.html#tag_07_03_01
+        The [POSIX locale](
+        https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap07.html#tag_07_03_01
+        ) is also known as the C locale.
 
         This only respects the default "C" locale, i.e. returns True only if the
         character specified is one of " \\t\\n\\v\\f\\r". For semantics similar

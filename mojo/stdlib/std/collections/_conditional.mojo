@@ -15,7 +15,9 @@
 from std.builtin.device_passable import DevicePassable
 from std.utils.type_functions import ConditionalType
 
-comptime _ComptimeConditonalType = ImplicitlyCopyable & ImplicitlyDestructible & RegisterPassable
+comptime _ComptimeConditonalType = (
+    ImplicitlyCopyable & ImplicitlyDestructible & RegisterPassable
+)
 
 
 # TODO: If this ever goes public, there is likely a better name for this...

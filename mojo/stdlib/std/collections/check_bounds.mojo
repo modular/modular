@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Contains a bounds check which is on by default for CPU and off by default for GPU.
+"""Contains a bounds check which is on by default for CPU and off by default for
+GPU.
 """
 
 from std.reflection import SourceLocation
@@ -46,11 +47,12 @@ def check_bounds[
 
     Args:
         idx: The index for the bounds check.
-        size: The size of the container, and first index that would be out of range.
-        location: `SourceLocation` shown on assert error. Defaults to showing the callsite
-            two levels of function calls above this one. So if `check_bounds` is called
-            inside a `__getitem__` method, it will show the source location where
-            the incorrect index was provided.
+        size: The size of the container, and first index that would be out of
+            range.
+        location: `SourceLocation` shown on assert error. Defaults to showing
+            the callsite two levels of function calls above this one. So if
+            `check_bounds` is called inside a `__getitem__` method, it will show
+            the source location where the incorrect index was provided.
     """
     debug_assert[
         assert_mode="safe" if cpu_default and not is_gpu() else "none",

@@ -65,8 +65,8 @@ var s4 = "{!r}".format("test")  # "'test'"
 
 This module has no public API; its functionality is available through the
 [`String.format()`](/mojo/std/collections/string/string/String#format) and
-[`StringSlice.format()`](/mojo/std/collections/string/string_slice/StringSlice#format)
-methods.
+[`StringSlice.format()`](
+/mojo/std/collections/string/string_slice/StringSlice#format) methods.
 """
 
 
@@ -99,8 +99,10 @@ struct _PrecompiledEntries[
       provides a non-owning view of runtime-allocated entries via `Span`.
 
     Parameters:
-        format_origin: The origin of the format string data (can be static or runtime).
-        entry_origin: The origin of the entries array (can be static or runtime).
+        format_origin: The origin of the format string data (can be static or
+            runtime).
+        entry_origin: The origin of the entries array
+            (can be static or runtime).
         Ts: The types of the arguments that will be formatted.
     """
 
@@ -113,7 +115,8 @@ struct _PrecompiledEntries[
 struct _PrecompiledEntriesRuntime[
     format_origin: ImmutOrigin, //, *Ts: Writable
 ](Movable):
-    """Holds precompiled format string entries with owned runtime-allocated storage.
+    """Holds precompiled format string entries with owned runtime-allocated
+    storage.
 
     This struct is similar to `_PrecompiledEntries` but uses a `List` to own
     the dynamically-allocated entries. It's used by `compile_entries_runtime()`
@@ -158,7 +161,8 @@ struct _FormatUtils:
         compiled: _PrecompiledEntries[*Ts],
         *args: *Ts,
     ):
-        """Format the arguments using the given format string and precompiled entries.
+        """Format the arguments using the given format string and precompiled
+        entries.
         """
         var offset = 0
         var ptr = compiled.format.unsafe_ptr()

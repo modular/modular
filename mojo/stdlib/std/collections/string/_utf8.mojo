@@ -156,11 +156,12 @@ def _is_valid_utf8_runtime(span: Span[mut=False, Byte, ...]) -> Bool:
     Byte, Software: Practice and Experience 51 (5), 2021
     https://arxiv.org/abs/2010.03090
 
-    Blog post:
+    [Blog post](
     https://lemire.me/blog/2018/10/19/validating-utf-8-bytes-using-only-0-45-cycles-per-byte-avx-edition/
+    )
 
-    Code adapted from:
-    https://github.com/simdutf/SimdUnicode/blob/main/src/UTF8.cs
+    [Code adapted from](
+    https://github.com/simdutf/SimdUnicode/blob/main/src/UTF8.cs)
     """
 
     ptr = span.unsafe_ptr()

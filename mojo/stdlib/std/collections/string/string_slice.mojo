@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the `StringSlice` type and related utilities for efficient string operations."""
+"""Implements the `StringSlice` type and related utilities for efficient string
+operations."""
 
 from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.format_int import _write_int
@@ -136,11 +137,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     Related types:
 
     - [`String`](/mojo/std/collections/string/String): An owning,
-      mutable string that allocates and manages its own memory.
-    - [`StaticString`](/mojo/std/collections/string/string_slice/#StaticString): An
-      alias for an immutable constant `StringSlice`.
+        mutable string that allocates and manages its own memory.
+    - [`StaticString`](/mojo/std/collections/string/string_slice/#StaticString):
+        An alias for an immutable constant `StringSlice`.
     - [`StringLiteral`](/mojo/std/builtin/string_literal/StringLiteral/): A
-      string literal. String literals are compile-time values.
+        string literal. String literals are compile-time values.
 
     Parameters:
         mut: Whether the slice is mutable.
@@ -677,7 +678,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             rhs: The other String to compare against.
 
         Returns:
-            True if this String slice is greater than or equal to the RHS String.
+            True if this String slice is greater than or equal to the RHS
+            String.
         """
         return StringSlice(rhs) <= self
 
@@ -1086,13 +1088,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
     @always_inline
     def codepoints(self) -> CodepointsIter[Self.origin]:
-        """Returns an iterator over the `Codepoint`s encoded in this string slice.
+        """Returns an iterator over the `Codepoint`s encoded in this string
+        slice.
 
         Returns:
-            An iterator type that returns successive `Codepoint` values stored in
-            this string slice.
+            An iterator type that returns successive `Codepoint` values stored
+            in this string slice.
 
-        # Examples
+        Examples:
 
         Print the characters in a string:
 
@@ -1139,11 +1142,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     def codepoint_slices_reversed(
         self,
     ) -> CodepointSliceIter[Self.origin, False]:
-        """Iterates backwards over the string slice, returning single-character slices.
+        """Iterates backwards over the string slice, returning single-character
+        slices.
 
         Each returned slice points to a single Unicode codepoint encoded in the
-        underlying UTF-8 representation of this string slice, starting from the end
-        and moving towards the beginning.
+        underlying UTF-8 representation of this string slice, starting from the
+        end and moving towards the beginning.
 
         Returns:
             A reversed iterator of references to the string slice elements.
@@ -1244,7 +1248,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         A byte position is considered a codepoint boundary if a valid subslice
         of the string would end (noninclusive) at `index`.
 
-        Positions `0` and `self.byte_length()` are considered to be codepoint boundaries.
+        Positions `0` and `self.byte_length()` are considered to be codepoint
+        boundaries.
 
         Positions beyond the length of the string slice will return False.
 
@@ -1411,8 +1416,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             suffix: The suffix to remove from the string.
 
         Returns:
-            `string[:-suffix.byte_length()]` if the string ends with the suffix string,
-            or a copy of the original string otherwise.
+            `string[:-suffix.byte_length()]` if the string ends with the suffix
+            string, or a copy of the original string otherwise.
 
         Examples:
 
@@ -1493,8 +1498,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         return Int(loc.unsafe_value()) - Int(self.unsafe_ptr())
 
     def rfind(self, substr: StringSlice, start: Int = 0) -> Int:
-        """Finds the offset in bytes of the last occurrence of `substr` starting at
-        `start`. If not found, returns `-1`.
+        """Finds the offset in bytes of the last occurrence of `substr` starting
+        at `start`. If not found, returns `-1`.
 
         Args:
             substr: The substring to find.
@@ -1913,11 +1918,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         return True
 
     def ascii_rjust(self, width: Int, fillchar: StaticString = " ") -> String:
-        """Returns the string slice right justified in a string of specified width.
+        """Returns the string slice right justified in a string of specified
+        width.
 
         Pads the string slice on the left with the specified fill character so
-        that the total (byte) length of the resulting string equals `width`. If the
-        original string slice is already longer than or equal to `width`,
+        that the total (byte) length of the resulting string equals `width`. If
+        the original string slice is already longer than or equal to `width`,
         returns the string slice unchanged (as a `String`).
 
         Args:
@@ -1928,9 +1934,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 a single-byte character.
 
         Returns:
-            A right-justified string of (byte) length `width`, or the original string
-            slice (as a `String`) if its length is already greater than or
-            equal to `width`.
+            A right-justified string of (byte) length `width`, or the original
+            string slice (as a `String`) if its length is already greater than
+            or equal to `width`.
 
         Examples:
 
@@ -1944,11 +1950,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         return self._justify(width - self.byte_length(), width, fillchar)
 
     def ascii_ljust(self, width: Int, fillchar: StaticString = " ") -> String:
-        """Returns the string slice left justified in a string of specified width.
+        """Returns the string slice left justified in a string of specified
+        width.
 
         Pads the string slice on the right with the specified fill character so
-        that the total byte length of the resulting string equals `width`. If the
-        original string slice is already longer than or equal to `width`,
+        that the total byte length of the resulting string equals `width`. If
+        the original string slice is already longer than or equal to `width`,
         returns the string slice unchanged (as a `String`).
 
         Args:
@@ -1959,9 +1966,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
                 a single-byte character.
 
         Returns:
-            A left-justified string of (byte) length `width`, or the original string
-            slice (as a `String`) if its length is already greater than or
-            equal to `width`.
+            A left-justified string of (byte) length `width`, or the original
+            string slice (as a `String`) if its length is already greater than
+            or equal to `width`.
 
         Examples:
 
@@ -1975,12 +1982,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         return self._justify(0, width, fillchar)
 
     def ascii_center(self, width: Int, fillchar: StaticString = " ") -> String:
-        """Returns the string slice center justified in a string of specified width.
+        """Returns the string slice center justified in a string of specified
+        width.
 
         Pads the string slice on both sides with the specified fill character so
         that the total length of the resulting string equals `width`. If the
-        padding needed is odd, the extra character goes on the right side. If the
-        original string slice is already longer than or equal to `width`,
+        padding needed is odd, the extra character goes on the right side. If
+        the original string slice is already longer than or equal to `width`,
         returns the string slice unchanged (as a `String`).
 
         Args:
@@ -2019,8 +2027,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Args:
             start: The number of fill characters to add at the beginning (left
                 padding). For left justification this is 0, for right
-                justification this is `width - self.byte_length()`, and for center
-                justification this is `(width - self.byte_length()) >> 1`.
+                justification this is `width - self.byte_length()`, and for
+                center justification this is
+                `(width - self.byte_length()) >> 1`.
             width: The total width of the resulting string in bytes. If the
                 original string is already greater than or equal to this width,
                 no padding is added and the original string is returned.

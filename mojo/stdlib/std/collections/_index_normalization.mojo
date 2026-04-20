@@ -20,9 +20,11 @@ from std.sys.intrinsics import _type_is_eq
 def normalize_index[
     I: Indexer, //, container_name: StaticString, assert_always: Bool = True
 ](idx: I, length: UInt) -> UInt:
-    """Normalize the given index value to a valid index value for the given container length.
+    """Normalize the given index value to a valid index value for the given
+    container length.
 
-    If the provided value is negative, the `index + container_length` is returned.
+    If the provided value is negative, the `index + container_length` is
+    returned.
 
     Parameters:
         I: A type that can be used as an index.
@@ -98,9 +100,11 @@ def normalize_index[
 def normalize_index[
     I: Indexer, //, container_name: StaticString
 ](idx: I, length: Int) -> Int:
-    """Normalize the given index value to a valid index value for the given container length.
+    """Normalize the given index value to a valid index value for the given
+    container length.
 
-    If the provided value is negative, the `index + container_length` is returned.
+    If the provided value is negative, the `index + container_length` is
+    returned.
 
     Parameters:
         I: A type that can be used as an index.

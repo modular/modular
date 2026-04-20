@@ -399,7 +399,8 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
             other: The bitset to subtract from `self`.
 
         Returns:
-            A new bitset containing elements from `self` that are not in `other`.
+            A new bitset containing elements from `self` that are not in
+            `other`.
         """
 
         @parameter

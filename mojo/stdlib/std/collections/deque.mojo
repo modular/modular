@@ -99,7 +99,8 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     """
 
     var _shrink: Bool
-    """ Indicates whether the deque's storage is re-allocated to a smaller size when possible."""
+    """Indicates whether the deque's storage is re-allocated to a smaller size
+    when possible."""
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -119,7 +120,8 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Args:
             elements: The optional list of initial deque elements.
             capacity: The initial capacity of the deque.
-            min_capacity: The minimum allowed capacity of the deque when shrinking.
+            min_capacity: The minimum allowed capacity of the deque when
+                shrinking.
             maxlen: The maximum allowed capacity of the deque when growing.
             shrink: Should storage be de-allocated when not needed.
         """
@@ -214,7 +216,8 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """Concatenates self with other and returns the result as a new deque.
 
         Args:
-            other: Deque whose elements will be appended to the elements of self.
+            other: Deque whose elements will be appended to the elements of
+                self.
 
         Returns:
             The newly created deque with the properties of `self`.
@@ -364,7 +367,8 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """Checks whether the deque has any elements or not.
 
         Returns:
-            `False` if the deque is empty, `True` if there is at least one element.
+            `False` if the deque is empty, `True` if there is at least one
+            element.
         """
         return self._head != self._tail
 
@@ -527,10 +531,12 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         return count
 
     def extend(mut self, var values: List[Self.ElementType]):
-        """Extends the right side of the deque by consuming elements of the list argument.
+        """Extends the right side of the deque by consuming elements of the list
+        argument.
 
         Args:
-            values: List whose elements will be added at the right side of the deque.
+            values: List whose elements will be added at the right side of the
+                deque.
         """
         var n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values = self._compute_pop_and_move_counts(
             len(self), len(values)
@@ -562,12 +568,15 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         values_data.free()
 
     def extendleft(mut self, var values: List[Self.ElementType]):
-        """Extends the left side of the deque by consuming elements from the list argument.
+        """Extends the left side of the deque by consuming elements from the
+        list argument.
 
-        Acts as series of left appends resulting in reversed order of elements in the list argument.
+        Acts as series of left appends resulting in reversed order of elements
+        in the list argument.
 
         Args:
-            values: List whose elements will be added at the left side of the deque.
+            values: List whose elements will be added at the left side of the
+                deque.
         """
         var n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values = self._compute_pop_and_move_counts(
             len(self), len(values)
@@ -727,7 +736,8 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         raise "ValueError: Given element is not in deque"
 
     def peek(self) raises -> Self.ElementType:
-        """Inspect the last (rightmost) element of the deque without removing it.
+        """Inspect the last (rightmost) element of the deque without removing
+        it.
 
         Returns:
             The last (rightmost) element of the deque.
@@ -741,7 +751,8 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         return (self._data + self._physical_index(self._tail - 1))[].copy()
 
     def peekleft(self) raises -> Self.ElementType:
-        """Inspect the first (leftmost) element of the deque without removing it.
+        """Inspect the first (leftmost) element of the deque without removing
+        it.
 
         Returns:
             The first (leftmost) element of the deque.
@@ -840,22 +851,26 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     def _compute_pop_and_move_counts(
         self, len_self: Int, len_values: Int
     ) -> Tuple[Int, Int, Int, Int, Int]:
-        """
-        Calculates the number of elements to retain, move or discard in the deque and
-        in the list of the new values based on the current length of the deque,
-        the length of new values to add, and the maximum length constraint `_maxlen`.
+        """Calculates the number of elements to retain, move or discard in the
+        deque and in the list of the new values based on the current length of
+        the deque, the length of new values to add, and the maximum length
+        constraint `_maxlen`.
 
         Args:
             len_self: The current number of elements in the deque.
             len_values: The number of new elements to add to the deque.
 
         Returns:
-            A tuple: (n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values)
+            A tuple: (
+              n_move_total, n_move_self, n_move_values, n_pop_self, n_pop_values
+            )
                 n_move_total: Total final number of elements in the deque.
                 n_move_self: Number of existing elements to retain in the deque.
                 n_move_values: Number of new elements to add from `values`.
-                n_pop_self: Number of existing elements to remove from the deque.
-                n_pop_values: Number of new elements that don't fit and will be discarded.
+                n_pop_self: Number of existing elements to remove from the
+                    deque.
+                n_pop_values: Number of new elements that don't fit and will be
+                    discarded.
         """
         len_total = len_self + len_values
 
@@ -881,17 +896,19 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """Calculates the physical index in the circular buffer.
 
         Args:
-            logical_index: The logical index, which may fall outside the physical bounds
-                of the buffer and needs to be wrapped around.
+            logical_index: The logical index, which may fall outside the
+                physical bounds of the buffer and needs to be wrapped around.
 
-        The size of the underlying buffer is always a power of two, allowing the use of
-        the more efficient bitwise `&` operation instead of the modulo `%` operator.
+        The size of the underlying buffer is always a power of two, allowing the
+        use of the more efficient bitwise `&` operation instead of the modulo
+        `%` operator.
         """
         return logical_index & (self._capacity - 1)
 
     def _prepare_for_new_elements(mut self, n_total: Int, n_retain: Int):
-        """Prepares the deque’s internal buffer for adding new elements by
-        reallocating memory and retaining the specified number of existing elements.
+        """Prepares the deque's internal buffer for adding new elements by
+        reallocating memory and retaining the specified number of existing
+        elements.
 
         Args:
             n_total: The total number of elements the new buffer should support.

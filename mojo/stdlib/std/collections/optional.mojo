@@ -445,7 +445,8 @@ struct Optional[T: Movable](
         """Return the bounds of the `Optional`, which is 0 or 1.
 
         Returns:
-            A tuple containing the length (0 or 1) and an `Optional` containing the length.
+            A tuple containing the length (0 or 1) and an `Optional` containing
+            the length.
 
         Examples:
 
