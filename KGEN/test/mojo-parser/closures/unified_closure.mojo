@@ -1687,3 +1687,34 @@ def repro_stencil_indirect_call[
         return val + result
 
     target[rank, dtype, type_of(compute_gpu)](compute_gpu)
+
+# // -----
+
+# COM: Closures with non FnOp parents have their captures registered correctly.
+
+def _current_target() -> __mlir_type.`!kgen.target`:
+    return __mlir_attr.`#kgen.param.expr<current_target> : !kgen.target`
+
+
+def _align_of[dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()]() -> Int:
+    return 1
+
+@fieldwise_init
+struct LayoutTensor[dtype:DType, alignment: Int = _align_of[dtype, _current_target()]()](TrivialRegisterPassable):
+   pass
+
+# CHECK-LABEL: lit.fn @"outer
+def outer[
+    dtype: DType, valid: Bool
+](
+    a: LayoutTensor[dtype, ...]
+) raises:
+    comptime assert valid, "need float"
+
+    def inner(
+        buf: LayoutTensor[dtype, ...]
+    ) unified {} -> LayoutTensor[dtype]:
+        return LayoutTensor[dtype]()
+
+    # CHECK: :!DType dtype, :!Int E1>(%{{.*}}, %a)
+    var x = inner(a)

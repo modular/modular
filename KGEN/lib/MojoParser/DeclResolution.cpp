@@ -1546,7 +1546,8 @@ static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
   // Register captured external parameter references so that call sites can
   // pre-seed auxiliary parameters during overload fitness evaluation.
   if (!capturedRefs.empty()) {
-    ASTDecl *enclosingDecl = nestedFnDecl.getParentDecl();
+    ASTDecl *enclosingDecl =
+        nestedFnDecl.getParentDecl()->getNearestDeclOfType<FnOp>();
     if (enclosingDecl) {
       SmallVector<ClosureParamCapture> paramCaptures;
       for (ParamDeclRefAttr ref : capturedRefs)
