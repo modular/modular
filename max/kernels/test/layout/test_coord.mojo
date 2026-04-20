@@ -187,10 +187,12 @@ def test_idx2crd_no_static_1() raises:
 
 def test_idx2crd_result_types_runtime_idx() raises:
     """No shape-1 dims with runtime idx: all RuntimeInt."""
-    comptime shape = Variadic.types[T=CoordLike, ComptimeInt[3], ComptimeInt[4]]
-    comptime stride = Variadic.types[
-        T=CoordLike, ComptimeInt[4], ComptimeInt[1]
-    ]
+    comptime shape = TypeList.of[
+        Trait=CoordLike, ComptimeInt[3], ComptimeInt[4]
+    ]()
+    comptime stride = TypeList.of[
+        Trait=CoordLike, ComptimeInt[4], ComptimeInt[1]
+    ]()
     comptime types = _Idx2CrdResultTypes[
         DType.int64, RuntimeInt[DType.int64], stride, shape
     ]
@@ -200,10 +202,12 @@ def test_idx2crd_result_types_runtime_idx() raises:
 
 def test_idx2crd_result_types_shape_1() raises:
     """Shape dim of 1 produces ComptimeInt[0], others RuntimeInt."""
-    comptime shape = Variadic.types[T=CoordLike, ComptimeInt[1], ComptimeInt[4]]
-    comptime stride = Variadic.types[
-        T=CoordLike, ComptimeInt[4], ComptimeInt[1]
-    ]
+    comptime shape = TypeList.of[
+        Trait=CoordLike, ComptimeInt[1], ComptimeInt[4]
+    ]()
+    comptime stride = TypeList.of[
+        Trait=CoordLike, ComptimeInt[4], ComptimeInt[1]
+    ]()
     comptime types = _Idx2CrdResultTypes[
         DType.int64, RuntimeInt[DType.int64], stride, shape
     ]
@@ -213,10 +217,12 @@ def test_idx2crd_result_types_shape_1() raises:
 
 def test_idx2crd_result_types_all_shape_1() raises:
     """All shape dims are 1: all ComptimeInt[0]."""
-    comptime shape = Variadic.types[T=CoordLike, ComptimeInt[1], ComptimeInt[1]]
-    comptime stride = Variadic.types[
-        T=CoordLike, ComptimeInt[1], ComptimeInt[1]
-    ]
+    comptime shape = TypeList.of[
+        Trait=CoordLike, ComptimeInt[1], ComptimeInt[1]
+    ]()
+    comptime stride = TypeList.of[
+        Trait=CoordLike, ComptimeInt[1], ComptimeInt[1]
+    ]()
     comptime types = _Idx2CrdResultTypes[
         DType.int64, RuntimeInt[DType.int64], stride, shape
     ]
@@ -226,12 +232,12 @@ def test_idx2crd_result_types_all_shape_1() raises:
 
 def test_idx2crd_result_types_runtime_shape() raises:
     """RuntimeInt shape dims always produce RuntimeInt result."""
-    comptime shape = Variadic.types[
-        T=CoordLike, RuntimeInt[DType.int], RuntimeInt[DType.int]
-    ]
-    comptime stride = Variadic.types[
-        T=CoordLike, RuntimeInt[DType.int], RuntimeInt[DType.int]
-    ]
+    comptime shape = TypeList.of[
+        Trait=CoordLike, RuntimeInt[DType.int], RuntimeInt[DType.int]
+    ]()
+    comptime stride = TypeList.of[
+        Trait=CoordLike, RuntimeInt[DType.int], RuntimeInt[DType.int]
+    ]()
     comptime types = _Idx2CrdResultTypes[
         DType.int64, RuntimeInt[DType.int64], stride, shape
     ]
@@ -242,10 +248,12 @@ def test_idx2crd_result_types_runtime_shape() raises:
 def test_idx2crd_result_types_all_static() raises:
     """All three static (idx=5, shape=(3,4), stride=(4,1)): compile-time results.
     """
-    comptime shape = Variadic.types[T=CoordLike, ComptimeInt[3], ComptimeInt[4]]
-    comptime stride = Variadic.types[
-        T=CoordLike, ComptimeInt[4], ComptimeInt[1]
-    ]
+    comptime shape = TypeList.of[
+        Trait=CoordLike, ComptimeInt[3], ComptimeInt[4]
+    ]()
+    comptime stride = TypeList.of[
+        Trait=CoordLike, ComptimeInt[4], ComptimeInt[1]
+    ]()
     comptime types = _Idx2CrdResultTypes[
         DType.int64, ComptimeInt[5], stride, shape
     ]

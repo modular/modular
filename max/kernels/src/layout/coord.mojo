@@ -26,8 +26,11 @@ trait CoordLike(
 ):
     """Trait for unified layout handling of compile-time and runtime indices."""
 
-    comptime ParamListType: Variadic.TypesOfTrait[CoordLike]
-    """The variadic element types for tuple coordinates."""
+    comptime _ParamListType: Variadic.TypesOfTrait[CoordLike]
+    """The low-level parameter list of element types."""
+
+    comptime ParamListType: TypeList[Trait=CoordLike, Self._ParamListType]
+    """The type list of element types for coordinates."""
 
     comptime static_value: Int
     """The compile-time value if statically known, -1 otherwise."""
@@ -64,7 +67,7 @@ trait CoordLike(
         """
         ...
 
-    def tuple(var self) -> Coord[*TypeList[Self.ParamListType]()]:
+    def tuple(var self) -> Coord[*Self.ParamListType]:
         """Get this coordinate as a `Coord` tuple.
 
         Only valid for tuple types.
@@ -98,10 +101,13 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
         val: The compile-time integer value.
     """
 
-    comptime ParamListType: Variadic.TypesOfTrait[CoordLike] = Tuple[
-        Self
-    ].element_types.values
-    """The variadic element types (Self for scalar types)."""
+    comptime ParamListType = Coord[Self].element_types
+    """The element types (Self for scalar types)."""
+
+    comptime _ParamListType: Variadic.TypesOfTrait[
+        CoordLike
+    ] = Self.ParamListType.values
+    """The low-level parameter list of element types."""
 
     comptime static_value: Int = Self.val
     """The compile-time value."""
@@ -170,7 +176,7 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
         return Self.val
 
     @always_inline("nodebug")
-    def tuple(var self) -> Coord[*TypeList[Self.ParamListType]()]:
+    def tuple(var self) -> Coord[*Self.ParamListType]:
         """Get as a tuple (not valid for `ComptimeInt`).
 
         Returns:
@@ -186,10 +192,13 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
         dtype: The data type for the runtime integer value. Defaults to `DType.int`.
     """
 
-    comptime ParamListType: Variadic.TypesOfTrait[CoordLike] = Tuple[
-        Self
-    ].element_types.values
-    """The variadic element types (Self for scalar types)."""
+    comptime ParamListType = Coord[Self].element_types
+    """The element types (Self for scalar types)."""
+
+    comptime _ParamListType: Variadic.TypesOfTrait[
+        CoordLike
+    ] = Self.ParamListType.values
+    """The low-level parameter list of element types."""
 
     comptime static_value: Int = -1
     """Always -1 for runtime values (not statically known)."""
@@ -266,7 +275,7 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
         return Int(self._value)
 
     @always_inline("nodebug")
-    def tuple(var self) -> Coord[*TypeList[Self.ParamListType]()]:
+    def tuple(var self) -> Coord[*Self.ParamListType]:
         """Get as a tuple (not valid for `RuntimeInt`).
 
         Returns:
@@ -363,9 +372,13 @@ struct _All(CoordLike, TrivialRegisterPassable):
     ```
     """
 
-    comptime ParamListType: Variadic.TypesOfTrait[CoordLike] = Tuple[
-        Self
-    ].element_types.values
+    comptime ParamListType = Coord[Self].element_types
+    """The element types (Self for scalar types)."""
+
+    comptime _ParamListType: Variadic.TypesOfTrait[
+        CoordLike
+    ] = Self.ParamListType.values
+    """The low-level parameter list of element types."""
 
     comptime static_value: Int = -2
     """Sentinel value distinguishing `_All` from `RuntimeInt` (-1) and `ComptimeInt` (>=0)."""
@@ -401,7 +414,7 @@ struct _All(CoordLike, TrivialRegisterPassable):
         return -2
 
     @always_inline("nodebug")
-    def tuple(var self) -> Coord[*TypeList[Self.ParamListType]()]:
+    def tuple(var self) -> Coord[*Self.ParamListType]:
         comptime assert False, "_All is not a tuple type"
 
 
@@ -417,10 +430,13 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         element_types: The variadic pack of element types that implement `CoordLike`.
     """
 
-    comptime ParamListType: Variadic.TypesOfTrait[
+    comptime ParamListType = Self.element_types
+    """The element types of this `Coord`."""
+
+    comptime _ParamListType: Variadic.TypesOfTrait[
         CoordLike
     ] = Self.element_types.values
-    """The variadic element types of this `Coord`."""
+    """The element types (Self for scalar types)."""
 
     comptime static_value: Int = -1
     """Always -1 for tuple types (value not applicable)."""
@@ -746,13 +762,13 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return not self == other
 
     @always_inline("nodebug")
-    def tuple(var self) -> Coord[*TypeList[Self.ParamListType]()]:
+    def tuple(var self) -> Coord[*Self.ParamListType]:
         """Get this `Coord` as a tuple.
 
         Returns:
             This `Coord` (identity operation for tuple types).
         """
-        return rebind[Coord[*TypeList[Self.ParamListType]()]](self)
+        return rebind[Coord[*Self.ParamListType]](self)
 
     @always_inline("nodebug")
     def reverse(
@@ -1082,7 +1098,7 @@ def idx2crd[
         var stride_t = stride.tuple()
 
         comptime for i in range(shape_len):
-            comptime if TypeList[Shape.ParamListType]()[i].is_tuple:
+            comptime if Shape.ParamListType[i].is_tuple:
                 # Nested shape: recurse into sub-shape/sub-stride.
                 var nested = idx2crd[out_dtype=out_dtype](
                     idx, shape_t[i], stride_t[i]
@@ -1091,8 +1107,8 @@ def idx2crd[
                     rebind[ResultTypes[i]](nested)
                 )
             elif (
-                TypeList[Shape.ParamListType]()[i].is_static_value
-                and TypeList[Shape.ParamListType]()[i].static_value == 1
+                Shape.ParamListType[i].is_static_value
+                and Shape.ParamListType[i].static_value == 1
             ):
                 UnsafePointer(to=result[i]).init_pointee_copy(
                     rebind[ResultTypes[i]](ComptimeInt[0]())
@@ -1184,7 +1200,7 @@ def idx2crd[
         var stride_t = stride.tuple()
 
         comptime for i in range(shape_len):
-            comptime if TypeList[Shape.ParamListType]()[i].is_tuple:
+            comptime if Shape.ParamListType[i].is_tuple:
                 # Nested shape: recurse into sub-shape/sub-stride.
                 var nested = idx2crd[out_dtype=out_dtype](
                     idx.value(), shape_t[i], stride_t[i]
@@ -1193,16 +1209,16 @@ def idx2crd[
                     rebind[ResultTypes[i]](nested)
                 )
             elif (
-                TypeList[Shape.ParamListType]()[i].is_static_value
-                and TypeList[Shape.ParamListType]()[i].static_value == 1
+                Shape.ParamListType[i].is_static_value
+                and Shape.ParamListType[i].static_value == 1
             ):
                 UnsafePointer(to=result[i]).init_pointee_copy(
                     rebind[ResultTypes[i]](ComptimeInt[0]())
                 )
             elif (
                 Index.is_static_value
-                and TypeList[Shape.ParamListType]()[i].is_static_value
-                and TypeList[Stride.ParamListType]()[i].is_static_value
+                and Shape.ParamListType[i].is_static_value
+                and Stride.ParamListType[i].is_static_value
             ):
                 # All static: result is ComptimeInt, already default-initialized.
                 pass
@@ -1411,7 +1427,7 @@ comptime _FlattenReducer[
 ] = Variadic.concat_types[
     Prev,
     TypeList[From]()[idx]
-    .ParamListType if TypeList[From]()[idx]
+    ._ParamListType if TypeList[From]()[idx]
     .is_tuple else Variadic.types[T=CoordLike, TypeList[From]()[idx]],
 ]
 
@@ -1451,9 +1467,7 @@ comptime _NextOffset[
     prev_offset: Int,
     element_type: CoordLike,
 ] = prev_offset + (
-    1 if element_type.is_value else _Flattened[
-        *TypeList[element_type.ParamListType]()
-    ].size
+    1 if element_type.is_value else _Flattened[*element_type.ParamListType].size
 )
 
 
@@ -1499,7 +1513,7 @@ def _get_flattened_helper[
     comptime T = element_types[i]
 
     comptime if T.is_tuple:
-        comptime count = _Flattened[*TypeList[T.ParamListType]()].size
+        comptime count = _Flattened[*T.ParamListType].size
 
         comptime if flat_idx >= current_offset and flat_idx < current_offset + count:
             return _get_flattened[flat_idx - current_offset](tuple[i].tuple())
@@ -1664,7 +1678,7 @@ comptime _NestedDynamicCoordMapper[
     dtype: DType,
     coord: CoordLike,
 ]: CoordLike = Coord[
-    *_CoordToDynamic[dtype, TypeList[coord.ParamListType]()]
+    *_CoordToDynamic[dtype, coord.ParamListType]
 ] if coord.is_tuple else RuntimeInt[
     dtype
 ]
@@ -1709,7 +1723,7 @@ comptime _DeepDynamicCoordMapper2[
     dtype: DType,
     coord: CoordLike,
 ]: CoordLike = Coord[
-    *_NestedDynamicCoord[dtype, *TypeList[coord.ParamListType]()]
+    *_NestedDynamicCoord[dtype, *coord.ParamListType]
 ] if coord.is_tuple else RuntimeInt[
     dtype
 ]
@@ -1724,7 +1738,7 @@ comptime _DeepDynamicCoordMapper3[
     dtype: DType,
     coord: CoordLike,
 ]: CoordLike = Coord[
-    *_DeepDynamicCoord2[dtype, *TypeList[coord.ParamListType]()]
+    *_DeepDynamicCoord2[dtype, *coord.ParamListType]
 ] if coord.is_tuple else RuntimeInt[
     dtype
 ]
@@ -1739,7 +1753,7 @@ comptime _DeepDynamicCoordMapper4[
     dtype: DType,
     coord: CoordLike,
 ]: CoordLike = Coord[
-    *_DeepDynamicCoord3[dtype, *TypeList[coord.ParamListType]()]
+    *_DeepDynamicCoord3[dtype, *coord.ParamListType]
 ] if coord.is_tuple else RuntimeInt[
     dtype
 ]
@@ -1764,7 +1778,7 @@ comptime _Idx2CrdResultTabulator[
     shape_types: TypeList[Trait=CoordLike, ...],
     idx: Int,
 ]: CoordLike = Coord[
-    *_DeepDynamicCoord4[out_dtype, *TypeList[shape_types[idx].ParamListType]()]
+    *_DeepDynamicCoord4[out_dtype, *shape_types[idx].ParamListType]
 ] if shape_types[
     idx
 ].is_tuple else ComptimeInt[
@@ -1797,17 +1811,13 @@ Considers shape, stride, and index to determine the result type:
 comptime _Idx2CrdResultTypes[
     out_dtype: DType,
     idx_type: CoordLike,
-    stride_types: Variadic.TypesOfTrait[CoordLike],
-    shape_types: Variadic.TypesOfTrait[CoordLike],
+    stride_types: TypeList[Trait=CoordLike, ...],
+    shape_types: TypeList[Trait=CoordLike, ...],
 ] = TypeList.tabulate[
     Trait=CoordLike,
-    TypeList[shape_types]().size,
+    shape_types.size,
     _Idx2CrdResultTabulator[
-        out_dtype,
-        idx_type,
-        TypeList[stride_types](),
-        TypeList[shape_types](),
-        ...,
+        out_dtype, idx_type, stride_types, shape_types, ...
     ],
 ]()
 """Computes the result types for idx2crd based on shape, stride, and index.

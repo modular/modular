@@ -495,10 +495,10 @@ struct Layout[
                 var sub_stride = stride_t[i].tuple()
                 comptime for j in range(sub_rank):
                     var divided = _divide_by_stride[
-                        TypeList[Self.stride_types[i].ParamListType]()[j]
+                        Self.stride_types[i].ParamListType[j]
                     ](idx, sub_stride[j].value())
                     var coord_val = _mod_by_shape[
-                        TypeList[Self.shape_types[i].ParamListType]()[j]
+                        Self.shape_types[i].ParamListType[j]
                     ](divided, sub_shape[j].value())
                     UnsafePointer(to=sub_result[j]).init_pointee_copy(
                         rebind[SubResultType.element_types[j]](
@@ -728,7 +728,7 @@ def _type_to_int_tuple[T: CoordLike]() -> IntTuple:
     comptime if not T.is_tuple:
         return IntTuple(T.static_value)
     else:
-        return _types_to_int_tuple[TypeList[T.ParamListType]()]()
+        return _types_to_int_tuple[T.ParamListType]()
 
 
 def _types_to_int_tuple[Types: TypeList[Trait=CoordLike, ...]]() -> IntTuple:
@@ -783,7 +783,7 @@ comptime _RowMajor[*element_types: CoordLike] = TypeList[
 
 
 comptime _UnwrapSingleTuple[*element_types: CoordLike] = TypeList[
-    element_types[0].ParamListType if element_types.size == 1
+    element_types[0]._ParamListType if element_types.size == 1
     and element_types[0].is_tuple else element_types.values
 ]()
 
@@ -1983,7 +1983,7 @@ def coalesce[
 comptime _WCPair3[L: CoordLike, C: CoordLike] = (
     True if not C.is_tuple else (
         False if not L.is_tuple else (
-            TypeList[L.ParamListType].size == TypeList[C.ParamListType].size
+            L.ParamListType.size == C.ParamListType.size
         )
     )
 )
@@ -1998,10 +1998,12 @@ comptime _WCChecker3[pair: Variadic.TypesOfTrait[CoordLike]] = (
 comptime _WCPair2[L: CoordLike, C: CoordLike] = (
     True if not C.is_tuple else (
         False if not L.is_tuple else (
-            False if TypeList[L.ParamListType].size
-            != TypeList[C.ParamListType]
-            .size else Variadic.zip_types[L.ParamListType, C.ParamListType]()
-            .all_satisfies[_WCChecker3,]()
+            False if L.ParamListType.size
+            != C.ParamListType.size else Variadic.zip_types[
+                L._ParamListType, C._ParamListType
+            ]().all_satisfies[
+                _WCChecker3,
+            ]()
         )
     )
 )
@@ -2017,10 +2019,12 @@ comptime _WCChecker2[pair: Variadic.TypesOfTrait[CoordLike]] = (
 comptime _WCPair1[L: CoordLike, C: CoordLike] = (
     True if not C.is_tuple else (
         False if not L.is_tuple else (
-            False if TypeList[L.ParamListType].size
-            != TypeList[C.ParamListType]
-            .size else Variadic.zip_types[L.ParamListType, C.ParamListType]()
-            .all_satisfies[_WCChecker2,]()
+            False if L.ParamListType.size
+            != C.ParamListType.size else Variadic.zip_types[
+                L._ParamListType, C._ParamListType
+            ]().all_satisfies[
+                _WCChecker2,
+            ]()
         )
     )
 )
