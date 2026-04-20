@@ -6655,7 +6655,7 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
             return rope_split_store_paged_ragged_with_position_ids[
                 target=target,
                 interleaved=Self.interleaved,
-                mrope_types=mrope.element_types.values,
+                mrope_types=mrope.element_types,
                 mrope_section=mrope,
             ](
                 qkv.to_tile_tensor[DType.int64](),
@@ -6997,10 +6997,10 @@ def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     interleaved: Bool,
     has_position_ids: Bool,
     target: StaticString,
-    mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
-        CoordLike
-    ],
-    mrope_section: Optional[Coord[*TypeList[mrope_types]()]] = None,
+    mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
+        Trait=CoordLike
+    ](),
+    mrope_section: Optional[Coord[*mrope_types]] = None,
 ](
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3, ...],
     input_row_offsets: ManagedTensorSlice[dtype=DType.uint32, rank=1, ...],
@@ -7064,7 +7064,7 @@ struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
             interleaved=Self.interleaved,
             has_position_ids=True,
             target=target,
-            mrope_types=mrope.element_types.values,
+            mrope_types=mrope.element_types,
             mrope_section=mrope,
         ](
             q_proj,

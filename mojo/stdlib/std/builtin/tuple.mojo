@@ -508,10 +508,8 @@ struct Tuple[*element_types: Movable](
         deinit self,
         deinit other: Tuple[*other_element_types],
         out result: Tuple[
-            *TypeList[
-                Variadic.concat_types[
-                    Self.element_types.values, other_element_types.values
-                ]
+            *TypeList._concat[
+                Self.element_types.values, other_element_types.values
             ]()
         ],
     ):

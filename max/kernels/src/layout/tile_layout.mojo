@@ -775,7 +775,7 @@ comptime _StaticCosize[
 
 comptime _RowMajor[*element_types: CoordLike] = TypeList[
     _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
+        BaseVal=TypeList.of[Trait=CoordLike]().values,
         ParamListType=_UnwrapSingleTuple[*element_types].reverse().values,
         Reducer=_RowMajorMapper,
     ]
@@ -964,7 +964,7 @@ Parameters:
 
 comptime _ColMajor[*element_types: CoordLike] = TypeList[
     _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
+        BaseVal=TypeList.of[Trait=CoordLike]().values,
         ParamListType=_UnwrapSingleTuple[
             *element_types
         ].values,  # Process in forward order
@@ -1311,50 +1311,34 @@ comptime _CoalescedBlockedProductShapeTypes[
 ]()
 
 
-comptime _CoalescedBlockedStrideReducer[
+comptime _CoalescedBlockedStrideTabulator[
     BlockLayoutType: TensorLayout,
     TilerLayoutType: TensorLayout,
     block_cosize: Int,
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = Variadic.concat_types[
-    Prev,
+]: CoordLike = BlockLayoutType._stride_types[idx] if _can_coalesce_mode[
     # Coalesce: stride is the inner (block) stride.
-    Variadic.types[
-        T=CoordLike,
-        BlockLayoutType._stride_types[idx],
-    ] if _can_coalesce_mode[
-        BlockLayoutType._shape_types[idx].static_value,
-        BlockLayoutType._stride_types[idx].static_value,
-        block_cosize * TilerLayoutType._stride_types[idx].static_value,
-    ] else
+    BlockLayoutType._shape_types[idx].static_value,
+    BlockLayoutType._stride_types[idx].static_value,
+    block_cosize * TilerLayoutType._stride_types[idx].static_value,
+] else Coord[
     # No coalesce: keep nested Coord[*(block_d, outer_d)].
-    Variadic.types[
-        T=CoordLike,
-        Coord[
-            BlockLayoutType._stride_types[idx],
-            ComptimeInt[
-                block_cosize * TilerLayoutType._stride_types[idx].static_value
-            ],
-        ],
-    ],
+    BlockLayoutType._stride_types[idx],
+    ComptimeInt[block_cosize * TilerLayoutType._stride_types[idx].static_value],
 ]
 
 comptime _CoalescedBlockedProductStrideTypes[
     BlockLayoutType: TensorLayout,
     TilerLayoutType: TensorLayout,
-] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=BlockLayoutType._stride_types.values,
-        Reducer=_CoalescedBlockedStrideReducer[
-            BlockLayoutType,
-            TilerLayoutType,
-            Coord[*BlockLayoutType._shape_types].static_product,
-            ...,
-        ],
-    ]
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    BlockLayoutType._stride_types.size,
+    _CoalescedBlockedStrideTabulator[
+        BlockLayoutType,
+        TilerLayoutType,
+        Coord[*BlockLayoutType._shape_types].static_product,
+        ...,
+    ],
 ]()
 
 comptime BlockedProductLayout[
@@ -1873,43 +1857,27 @@ comptime _HalfSizeDriver[
 """A dummy variadic of size N//2 used to drive even/odd extraction."""
 
 
-comptime _ExtractEvenReducer[
+comptime _ExtractEvenTabulator[
     interleaved: TypeList[Trait=CoordLike, ...],
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[T=CoordLike, interleaved[idx * 2]],
-]
+]: CoordLike = interleaved[idx * 2]
 """Extracts even-indexed elements from interleaved given as parameter."""
 
 
-comptime _ExtractOddReducer[
+comptime _ExtractOddTabulator[
     interleaved: TypeList[Trait=CoordLike, ...],
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
     idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[T=CoordLike, interleaved[idx * 2 + 1]],
-]
+]: CoordLike = interleaved[idx * 2 + 1]
 """Extracts odd-indexed elements from interleaved given as parameter."""
 
 
 comptime _CoalescedShapeTypes[
     shape_types: TypeList[Trait=CoordLike, ...],
     stride_types: TypeList[Trait=CoordLike, ...],
-] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=_HalfSizeDriver[
-            _CoalescedInterleaved[shape_types, stride_types].size
-        ].values,
-        Reducer=_ExtractEvenReducer[
-            _CoalescedInterleaved[shape_types, stride_types], ...
-        ],
-    ]
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    _HalfSizeDriver[_CoalescedInterleaved[shape_types, stride_types].size].size,
+    _ExtractEvenTabulator[_CoalescedInterleaved[shape_types, stride_types], _],
 ]()
 """Coalesced shape types extracted from the interleaved result."""
 
@@ -1917,16 +1885,10 @@ comptime _CoalescedShapeTypes[
 comptime _CoalescedStrideTypes[
     shape_types: TypeList[Trait=CoordLike, ...],
     stride_types: TypeList[Trait=CoordLike, ...],
-] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=_HalfSizeDriver[
-            _CoalescedInterleaved[shape_types, stride_types].size
-        ].values,
-        Reducer=_ExtractOddReducer[
-            _CoalescedInterleaved[shape_types, stride_types], ...
-        ],
-    ]
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    _HalfSizeDriver[_CoalescedInterleaved[shape_types, stride_types].size].size,
+    _ExtractOddTabulator[_CoalescedInterleaved[shape_types, stride_types], _],
 ]()
 """Coalesced stride types extracted from the interleaved result."""
 

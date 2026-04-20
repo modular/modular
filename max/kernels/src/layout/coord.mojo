@@ -769,10 +769,8 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     def concat[
         *other_element_types: CoordLike
     ](var self, var other: Coord[*other_element_types]) -> Coord[
-        *TypeList[
-            Variadic.concat_types[
-                Self.element_types.values, other_element_types.values
-            ]
+        *TypeList._concat[
+            Self.element_types.values, other_element_types.values
         ]()
     ]:
         """Concatenate this `Coord` with another.
@@ -789,12 +787,10 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
         return {
             rebind[
                 _RegTuple[
-                    *TypeList[
-                        Variadic.concat_types[
-                            Self.element_types.values,
-                            other_element_types.values,
-                        ],
-                    ]()
+                    *TypeList._concat[
+                        Self.element_types.values,
+                        other_element_types.values,
+                    ](),
                 ]
             ](self._storage.concat(other._storage))
         }
@@ -1422,7 +1418,7 @@ comptime _FlattenReducer[
 
 comptime _FlattenOnce[*element_types: CoordLike] = TypeList[
     _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
+        BaseVal=TypeList.of[Trait=CoordLike]().values,
         ParamListType=element_types.values,
         Reducer=_FlattenReducer,
     ]
@@ -1483,7 +1479,7 @@ comptime _FlattenOffsetReducer[
 comptime _FlattenedOffsets[
     *element_types: CoordLike
 ] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal=Variadic.empty_of_trait[CoordLike],
+    BaseVal=TypeList.of[Trait=CoordLike]().values,
     ParamListType=element_types.values,
     Reducer=_FlattenOffsetReducer,
 ]
@@ -1759,43 +1755,25 @@ comptime _DeepDynamicCoord4[
 # idx2crd result type computation
 # ===-----------------------------------------------------------------------===#
 
+comptime _as_CoordLike[x: CoordLike] = x
 
 comptime _Idx2CrdResultMapper[
     out_dtype: DType,
     idx_type: CoordLike,
     stride_types: TypeList[Trait=CoordLike, ...],
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
+    shape_elt: CoordLike,
     i: Int,
-] = Variadic.concat_types[
-    Prev,
-    # nested shape: produce nested Coord with RuntimeInt leaves (up to depth 4
-    # inside, supporting total depth 4 from the outermost idx2crd call).
-    Variadic.types[
-        T=CoordLike,
-        Coord[
-            *_DeepDynamicCoord4[
-                out_dtype, *TypeList[TypeList[From]()[i].ParamListType]()
-            ]
-        ],
-    ] if TypeList[From]()[i].is_tuple
-    # shape == 1: always ComptimeInt[0]
-    else Variadic.types[T=CoordLike, ComptimeInt[0]] if TypeList[From]()[
-        i
-    ].is_static_value
-    and TypeList[From]()[i].static_value == 1
-    # all three (idx, shape, stride) static: compute at compile time
-    else Variadic.types[
-        T=CoordLike,
-        ComptimeInt[
-            (idx_type.static_value // stride_types[i].static_value)
-            % TypeList[From]()[i].static_value
-        ],
-    ] if idx_type.is_static_value
-    and TypeList[From]()[i].is_static_value
-    and stride_types[i].is_static_value
-    # otherwise: runtime
-    else Variadic.types[T=CoordLike, RuntimeInt[out_dtype]],
+] = Coord[
+    *_DeepDynamicCoord4[out_dtype, *TypeList[shape_elt.ParamListType]()]
+] if shape_elt.is_tuple else ComptimeInt[
+    0  # shape == 1: always ComptimeInt[0]
+] if shape_elt.is_static_value and shape_elt.static_value == 1 else ComptimeInt[
+    (idx_type.static_value // stride_types[i].static_value)
+    % shape_elt.static_value
+] if idx_type.is_static_value and shape_elt.is_static_value and stride_types[
+    i
+].is_static_value else _as_CoordLike[
+    RuntimeInt[out_dtype]
 ]
 """Maps a shape element type to an idx2crd result type.
 
@@ -1813,14 +1791,8 @@ comptime _Idx2CrdResultTypes[
     idx_type: CoordLike,
     stride_types: Variadic.TypesOfTrait[CoordLike],
     shape_types: Variadic.TypesOfTrait[CoordLike],
-] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[CoordLike],
-        ParamListType=shape_types,
-        Reducer=_Idx2CrdResultMapper[
-            out_dtype, idx_type, TypeList[stride_types](), ...
-        ],
-    ]
+] = TypeList[shape_types]().map_idx[
+    _Idx2CrdResultMapper[out_dtype, idx_type, TypeList[stride_types](), ...]
 ]()
 """Computes the result types for idx2crd based on shape, stride, and index.
 

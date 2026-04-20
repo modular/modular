@@ -151,9 +151,9 @@ def _shape_types_to_3d[
         T=CoordLike, RuntimeInt[dtype]
     ]
 
-    return Variadic.concat_types[
+    return TypeList._concat[
         _get_first_dim[DType.int64, *batch_dims], last_two_dims.values
-    ]
+    ]().values
 
 
 @always_inline

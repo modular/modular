@@ -56,15 +56,6 @@ struct Variadic:
     # Utils
     # ===-----------------------------------------------------------------------===#
 
-    comptime empty_of_trait[T: type_of(AnyType)] = __mlir_attr[
-        `#kgen.param_list<>: `, _MLIR.KGENTypeListType[T], `>`
-    ]
-    """Empty comptime variadic of type values.
-
-    Parameters:
-        T: The trait that types in the variadic sequence must conform to.
-    """
-
     comptime types[T: type_of(AnyType), //, *Ts: T] = Ts.values
     """Turn discrete type values (bound by `T`) into a single variadic.
 
@@ -96,18 +87,6 @@ struct Variadic:
 
     Parameters:
         T: The trait that types in the variadic sequences must conform to.
-        Ts: The variadic sequences to concatenate.
-    """
-
-    comptime concat_values[
-        T: AnyType, //, *Ts: Variadic.ValuesOfType[T]
-    ] = __mlir_attr[
-        `#kgen.param_list.concat<`, Ts.values, `> :`, Variadic.ValuesOfType[T]
-    ]
-    """Represents the concatenation of multiple variadic sequences of values.
-
-    Parameters:
-        T: The types of the values in the variadic sequences.
         Ts: The variadic sequences to concatenate.
     """
 
