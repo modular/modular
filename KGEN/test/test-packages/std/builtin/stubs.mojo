@@ -4,8 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from std.builtin.variadics import *
-
 # FIXME: "string" and "float" are not part of the standard library - they are
 # ancient relics of Mojo bringup. These should be removed from stubs.mojo and
 # the dependent tests should be migrated off of them.
@@ -934,6 +932,30 @@ trait ImplicitlyDestructible:
 # ===-----------------------------------------------------------------------===#
 # ParameterList
 # ===-----------------------------------------------------------------------===#
+
+
+struct Variadic:
+    comptime ValuesOfType[type: AnyType] = _MLIR.KGENParamListType[type]
+    comptime TypesOfTrait[T: type_of(AnyType)] = _MLIR.KGENTypeListType[T]
+
+    comptime size[T: AnyType, //, seq: Self.ValuesOfType[T]]: Int = Int(
+        mlir_value=__mlir_attr[
+            `#kgen.param_list.size<:`,
+            type_of(seq),
+            ` `,
+            +seq,
+            `> : index`,
+        ]
+    )
+
+    # ===-----------------------------------------------------------------------===#
+    # Utils
+    # ===-----------------------------------------------------------------------===#
+
+    comptime types[T: type_of(AnyType), //, *Ts: T] = Ts.values
+    comptime values[T: AnyType, //, *elts: T]: Variadic.ValuesOfType[
+        T
+    ] = elts.values
 
 
 struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
