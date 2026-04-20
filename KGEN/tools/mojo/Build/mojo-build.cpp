@@ -258,9 +258,13 @@ AMD (ROCm/HIP):
 
 Apple Silicon GPU:
   apple-m1         - Apple M1
+  apple-m1-metal4  - Apple M1 (Metal 4.0 / macOS 26)
   apple-m2         - Apple M2
+  apple-m2-metal4  - Apple M2 (Metal 4.0 / macOS 26)
   apple-m3         - Apple M3
+  apple-m3-metal4  - Apple M3 (Metal 4.0 / macOS 26)
   apple-m4         - Apple M4
+  apple-m4-metal4  - Apple M4 (Metal 4.0 / macOS 26)
   apple-m5         - Apple M5
   apple-m5-metal4  - Apple M5 (Metal 4.0 / macOS 26)
 
