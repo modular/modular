@@ -14,6 +14,7 @@
 #include "DLValues.h"
 #include "IREmitter.h"
 #include "KGEN/MojoParser/ASTDecl.h"
+#include "KGEN/MojoParser/Constraints.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/SharedState.h"
@@ -271,10 +272,7 @@ buildAttrCtorDeferredAttrFromMLIRAttr(const SubscriptNode &node,
 }
 
 #ifndef NDEBUG
-/// Return the string representation of the \p attr by concatenating strings it
-/// holds.
-/// Pass extra argument \p node to properly query how type information needs to
-/// be printed.
+/// Return the string representation of attr by concatenating held strings.
 static std::string getStringRepresentation(AttrCtorDeferredAttr attr) {
   std::string result;
   llvm::raw_string_ostream os(result);
@@ -886,6 +884,124 @@ diagnoseUnknownDeclaration(StringRef spelling, ASTDecl &lookupScope,
          << FixIt::replaceToken(loc, "origin_of");
   }
   return {};
+}
+
+/// Merge original declared bounds with comptime-assumption refinements.
+/// Returns the combined list of original + refined trait symbols, canonicalized
+/// to include ancestor traits. Returns empty if no refinement applies (i.e.,
+/// no new traits were added beyond the original bounds).
+static SmallVector<SymbolRefAttr>
+mergeOriginalAndRefinedBounds(TraitType origBound, TraitType refinedBound,
+                              SharedState &shared) {
+  // Canonicalize the original bounds so they include the full ancestor chain
+  // (e.g. a DowncastAttr holding `:trait<@Greetable>` omits the implied
+  // `@AnyType`). Without this the "no new traits" check below falsely fires,
+  // because `refinedBound` arrives already canonicalized from
+  // `getTraitBoundFromAssumptions`.
+  SmallVector<SymbolRefAttr> traitSymbols(origBound.getSymbols());
+  canonicalizeTraitCompositionSymbols(shared, traitSymbols);
+  size_t origCount = traitSymbols.size();
+
+  // Append refined symbols and fix up the ordering. Both sides are already
+  // ancestor-closed, so the union is too — we only need sort+dedup, not a
+  // second full canonicalize pass.
+  llvm::append_range(traitSymbols, refinedBound.getSymbols());
+  sortAndDeduplicateSymbols(traitSymbols);
+
+  // No new traits added — no refinement needed.
+  if (traitSymbols.size() == origCount)
+    return {};
+  return traitSymbols;
+}
+
+/// Refine a non-reference ParamType using assumptions in `declScope`.
+static Type maybeRefineParamType(Type varType, ParamType paramType,
+                                 ASTDecl &declScope) {
+  // Resolve the underlying ParamDeclRefAttr so assumption lookup matches
+  // against the plain type parameter. `extractParamDeclRef` peels UpcastAttr
+  // and TypeParamAttr; peel DowncastAttr here as well so that incoming
+  // already-refined types (from prior def-time refinement or an explicit
+  // user `downcast[T, Trait]`) still route through the main refinement path.
+  // Falls back to the raw paramRef for associated-type paths.
+  TypedAttr paramRef = paramType.getParam();
+  TypedAttr unwrapped = paramRef;
+  if (auto existingDowncast = dyn_cast<DowncastAttr>(unwrapped))
+    unwrapped = existingDowncast.getInputTypeValue();
+  ParamDeclRefAttr paramDeclRef = extractParamDeclRef(unwrapped);
+  TypedAttr lookupAttr = paramDeclRef ? TypedAttr(paramDeclRef) : paramRef;
+
+  SmallVector<ConstraintAttr> assumptions;
+  declScope.getKnownAssumptionsIncludingParents(assumptions);
+  if (assumptions.empty())
+    return varType;
+
+  TraitType refinedBound = getTraitBoundFromAssumptions(
+      lookupAttr, declScope.getShared(), assumptions);
+  if (!refinedBound)
+    return varType;
+
+  // Seed the merge from `paramRef` (not `lookupAttr`) so that any traits
+  // already present on the incoming type — including an existing DowncastAttr
+  // from prior refinement or an explicit user `downcast[T, Trait]` — are
+  // preserved. `DowncastAttr::get` canonicalizes `downcast(downcast(x))` to
+  // `downcast(x)`, so wrapping an already-refined paramRef stays flat.
+  //
+  // `paramRef` is type-valued (it came from a `ParamType`), and since we just
+  // proved a `conforms_to` assumption applies to it, its canonical metatype is
+  // always a `TraitType` (sugar forms like `AnyTraitType` are desugared by
+  // `getCanonicalAttr`).
+  TraitType origBound = cast<TraitType>(getCanonicalAttr(paramRef).getType());
+  SmallVector<SymbolRefAttr> traitSymbols = mergeOriginalAndRefinedBounds(
+      origBound, refinedBound, declScope.getShared());
+  if (traitSymbols.empty())
+    return varType;
+
+  MLIRContext *ctx = varType.getContext();
+  TraitType traitType = TraitType::get(ctx, traitSymbols);
+  TypedAttr downcast = DowncastAttr::get(traitType, paramRef);
+  return ParamType::get(downcast);
+}
+
+Type LIT::maybeRefineTypeWithAssumptions(Type varType, ASTDecl &declScope) {
+  // Handle RefType by unwrapping, refining the element, and re-wrapping.
+  // This is needed for tuple elements that are references (e.g., from zip()).
+  // Use sugarDynCast to see through type aliases like _ListIter[T].Element.
+  if (auto refType = sugarDynCast<RefType>(varType)) {
+    Type refinedElt =
+        maybeRefineTypeWithAssumptions(refType.getElementType(), declScope);
+    if (refinedElt != refType.getElementType())
+      return refType.getWithElement(refinedElt);
+    return varType;
+  }
+
+  // Check if the type is a parametric type.
+  // Use sugarDynCast to see through type aliases.
+  auto paramType = sugarDynCast<ParamType>(varType);
+  if (!paramType)
+    return varType;
+  return maybeRefineParamType(varType, paramType, declScope);
+}
+
+Value LIT::maybeEmitRefinementRebind(Value value, ASTDecl &declScope,
+                                     OpBuilder &builder, Location loc) {
+  Type refinedType = maybeRefineTypeWithAssumptions(value.getType(), declScope);
+  if (refinedType == value.getType())
+    return value;
+  return RebindOp::create(builder, loc, refinedType, value);
+}
+
+CValue LIT::maybeEmitRefinementRebind(ASTExprAnd<CValue> value,
+                                      IREmitter &emitter) {
+  if (!emitter.builder)
+    return value.ir;
+  Value ssa = value.ir.getMlirValue();
+  if (!ssa)
+    return value.ir;
+  Type refinedType =
+      maybeRefineTypeWithAssumptions(ssa.getType(), emitter.declScope);
+  if (refinedType == ssa.getType())
+    return value.ir;
+  return emitter.rebindValue(value, refinedType);
 }
 
 ExprNode::ELVIITResult
