@@ -6,7 +6,7 @@ numerical, machine learning, and other performance-critical workloads.
 
 This library includes production-grade kernel implementations for various CPUs
 and GPUs, including NVIDIA GPUs (T4, A10G, L40, A100, H100, RTX 40 series, and
-more) and AMD GPUs (MI300X, MI325X, Radeon RX 9000, and more).
+more) and AMD GPUs (MI355X, MI325X, Radeon RX 9000, and more).
 
 These kernels demonstrate powerful Mojo programming features such as
 fine-grained control over memory layout, parallelism, and hardware mapping.
