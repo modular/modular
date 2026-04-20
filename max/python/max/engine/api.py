@@ -591,9 +591,23 @@ class InferenceSession:
         from max.driver import is_virtual_device_mode
 
         if is_virtual_device_mode():
-            # In compile-only mode with virtual devices, skip initialization
-            # Initialization requires device memory allocation which virtual devices don't support
-            return [_model]
+            # In compile-only mode with virtual devices, skip initialization.
+            # Initialization requires device memory allocation which virtual
+            # devices don't support. Return one handle per top-level graph in
+            # the module (skipping subgraphs, which are inlined callees) so
+            # callers that unpack per-model
+            # (e.g. ``vision, language = session.load_all(...)``) still work.
+            # The MLIR attribute for subgraph GraphOps is stored as
+            # ``isSubgraph`` (camelCase matches the tablegen ODS).
+            if isinstance(model, Graph):
+                num_models = sum(
+                    1
+                    for op in model._module.body.operations
+                    if "isSubgraph" not in op.attributes
+                )
+            else:
+                num_models = 1
+            return [_model] * num_models
 
         return self._impl._load_all(_model, weights_registry_real)
 
