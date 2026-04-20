@@ -270,7 +270,6 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={
             "group": "Request Configuration",
             "group_description": "Parameters controlling request concurrency and processing",
-            "sweepable_type": "int",
         },
     )
 
@@ -422,7 +421,6 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={
             "group": "Traffic Control",
             "group_description": "Parameters controlling request rate and traffic patterns",
-            "sweepable_type": "float",
         },
     )
 
