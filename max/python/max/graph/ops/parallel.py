@@ -136,10 +136,6 @@ def parallel(
                 buffer_mlir_vals = [
                     _graph_val_to_mlir(v) for v in buffer_inputs
                 ]
-                buffer_mlir_types = [
-                    _graph_type_to_mlir(v) for v in buffer_inputs
-                ]
-                block_arg_types.append(buffer_mlir_types[0])
 
             parallel_result_types: list[mlir.Type] = [tensor_bundle_type]
             chain_mlir = (
@@ -163,7 +159,9 @@ def parallel(
             ]
 
             if buffer_inputs is not None:
-                body_result = body_fn(*block_args)
+                # Pass the tensor block arg + the first buffer input as
+                # a representative for the body_fn signature.
+                body_result = body_fn(block_args[0], buffer_inputs[0])
             else:
                 assert len(block_args) == 1
                 body_result = body_fn(block_args[0])
