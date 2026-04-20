@@ -904,7 +904,8 @@ def _topp_minp_sampling_gpu[
         # Copy output of sort & softmax back to original input tensor
         # for testing and debugging purposes
         ctx.enqueue_copy(
-            input_logits.ptr,
+            # TODO: properly propagate mutability to input_logits
+            input_logits.ptr.unsafe_mut_cast[True](),
             probs_buf.unsafe_ptr(),
             input_size,
         )
