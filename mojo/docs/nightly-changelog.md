@@ -393,6 +393,24 @@ This version is still a work in progress.
 - The deprecated `@doc_private` decorator has been removed. Use `@doc_hidden`
   instead.
 
+- Removed the `store_release`, `store_relaxed`, `load_acquire`, and
+  `load_relaxed` helpers from `std.gpu.intrinsics`. Use
+  [`Atomic[dtype, scope=...].store`](/mojo/std/atomic/atomic/Atomic/#store) and
+  [`Atomic[dtype, scope=...].load`](/mojo/std/atomic/atomic/Atomic/#load) with
+  the desired [`Ordering`](/mojo/std/atomic/atomic/Ordering/) instead:
+
+  ```mojo
+  # Before
+  from std.gpu.intrinsics import store_release, load_acquire
+  store_release[scope=Scope.GPU](ptr, value)
+  var v = load_acquire[scope=Scope.GPU](ptr)
+
+  # After
+  from std.atomic import Atomic, Ordering
+  Atomic[dtype, scope="device"].store[ordering=Ordering.RELEASE](ptr, value)
+  var v = Atomic[dtype, scope="device"].load[ordering=Ordering.ACQUIRE](ptr)
+  ```
+
 ## 🛠️ Fixed
 
 - Fixed `libpython` auto-discovery failing for Python 3.14 free-threaded builds.

@@ -559,8 +559,9 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                 ](local_elem, output_fp8)
 
     # Per-block barrier with fence: block B waits for block B on all GPUs.
-    # syncthreads + store_release + load_acquire ensures all of block B's
-    # Stage 1 writes on every GPU are visible before Stage 2 reads them.
+    # `syncthreads` plus the release/acquire atomics inside `_multi_gpu_barrier`
+    # ensure all of block B's Stage 1 writes on every GPU are visible before
+    # Stage 2 reads them.
     _multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
         rank_sigs, rank_sigs[my_rank], my_rank
     )
