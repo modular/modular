@@ -156,6 +156,10 @@ modular_py_test(
         "tests/test_timeout.yaml",
     ],
     env = {"KERNEL_BENCHMARKS_ROOT": "max/kernels/benchmarks/"},
+    ignore_extra_deps = [
+        # Used for `-n auto` above
+        requirement("pytest-xdist"),
+    ],
     mojo_deps = [
         "//max:internal_utils",
         "//max:kv_cache",
@@ -166,9 +170,6 @@ modular_py_test(
         "//max:register",
         "@mojo//:std",
     ],
-    tags = [
-        "no-pydeps",  # TODO: Fix and re-enable
-    ],
     target_compatible_with = select({
         # FIXME
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -178,8 +179,13 @@ modular_py_test(
         ":kbench",
         ":kplot",
         ":kprofile",
+        "//max/kernels/benchmarks/autotune:bencher_utils",
+        requirement("click"),
+        requirement("numpy"),
+        requirement("pandas"),
         requirement("pytest-mock"),
         requirement("pytest-xdist"),
+        requirement("rich"),
     ],
 )
 

@@ -54,6 +54,9 @@ def _pydeps_test_impl(ctx):
 
             fail("Error: Dependency {} has no source files.".format(dep.label))
 
+        # Whether we like it or not, //foo/bar:baz.py is always importable as foo.bar.baz
+        srcs = raw_sources
+
         # PyInfo doesn't give us the import paths directly, just a list of all of them. Try to
         # infer the correct one by looking for one that is a prefix of one of the source files.
         # NB: We assume there is only one import path.
@@ -69,15 +72,8 @@ def _pydeps_test_impl(ctx):
                         import_path = path
                 else:
                     import_path = path
-        if not import_path:
-            # FIXME: Can't find the import path. Many of these cases can likely be fixed internally. There is at least
-            # one case where this is intentional, in max/examples/internal/transfer_engine/send_recv.py, which expects
-            # to import a file from the repo root (`from max.examples.internal.transfer_engine.common import main`)
-            # For that case at least we can set the import path to `""`, we should resolve the other cases and only
-            # do this when necessary.
-            import_path = ""
-
-        srcs = [path.removeprefix(import_path + "/") for path in raw_sources]
+        if import_path:
+            srcs += [path.removeprefix(import_path + "/") for path in raw_sources]
 
         env["DEP_SOURCES"][label] = srcs
 
