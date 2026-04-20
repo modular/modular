@@ -3333,9 +3333,9 @@ def conv2d_gpu_naive_nhwc_rscf[
 
 
 @always_inline
-def check_cudnn_error(stat: cudnnStatus_t):
+def check_cudnn_error(stat: cudnnStatus_t) raises:
     if stat != cudnnStatus_t.CUDNN_STATUS_SUCCESS:
-        print(stat)
+        raise Error(t"cuDNN call failed with status {stat}")
 
 
 struct CuDNNConvMeta(ImplicitlyCopyable, RegisterPassable):
@@ -5412,7 +5412,7 @@ def _conv3d_cudnn[
         )
         workspace_size_var = 0
 
-        var find_status_val = rebind[Int8](find_status)
+        var find_status_val = rebind[Int32](find_status)
         if find_status_val == 0:  # CUDNN_STATUS_SUCCESS
             for i in range(returned_count):
                 var base = perf_bytes + i * C_PERF_STRUCT_SIZE
@@ -5513,6 +5513,58 @@ def _conv3d_cudnn[
     stride_a.free()
     dilation_a.free()
     output_dims.free()
+
+    # Retry with IMPLICIT_GEMM + zero workspace on allocation failures.
+    # cuDNN may allocate internal scratch beyond what GetWorkspaceSize
+    # reports (filter reorder, NHWC/tensor-op padding). When that trips at
+    # execute time, fall back to the zero-workspace algorithm and update
+    # the shape cache so we don't hit the same OOM on future calls.
+    comptime IMPLICIT_GEMM = (
+        cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM
+    )
+    if (
+        fwd_status == cudnnStatus_t.CUDNN_STATUS_ALLOC_FAILED
+        or fwd_status == cudnnStatus_t.CUDNN_STATUS_ALLOC_FAILED_V9
+        or fwd_status == cudnnStatus_t.CUDNN_STATUS_ALLOC_FAILED_DEVICE_MEMORY
+        or fwd_status == cudnnStatus_t.CUDNN_STATUS_ALLOC_FAILED_HOST_MEMORY
+    ) and algo != IMPLICIT_GEMM:
+        ctx.synchronize()  # Flush pending work and reclaim held memory.
+        algo = IMPLICIT_GEMM
+        workspace_size_var = 0
+
+        var retry_workspace = ctx.enqueue_create_buffer[DType.uint8](0)
+        fwd_status = cudnnConvolutionForward(
+            ptr_meta[].ptr_handle,
+            UnsafePointer(to=alpha).bitcast[NoneType](),
+            ptr_meta[].ptr_input_desc,
+            input.ptr.bitcast[NoneType](),
+            ptr_meta[].ptr_filter_desc,
+            filter.ptr.bitcast[NoneType](),
+            ptr_meta[].ptr_conv_desc,
+            algo,
+            retry_workspace.unsafe_ptr().bitcast[NoneType](),
+            0,
+            UnsafePointer(to=beta).bitcast[NoneType](),
+            ptr_meta[].ptr_output_desc,
+            output.ptr.bitcast[NoneType](),
+        )
+        _ = retry_workspace^
+
+        if fwd_status == cudnnStatus_t.CUDNN_STATUS_SUCCESS:
+            # Persist the safer algorithm for this shape so subsequent
+            # calls skip the OOM-prone pick. InsertGlobal overwrites the
+            # existing entry keyed by cache_key.
+            var retry_entry = alloc[_Conv3dAlgoCacheEntry](1)
+            retry_entry.init_pointee_move(
+                _Conv3dAlgoCacheEntry(
+                    algo_value=rebind[Int8](algo),
+                    workspace_size=0,
+                )
+            )
+            external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
+                StringSlice(cache_key),
+                retry_entry.bitcast[NoneType](),
+            )
 
     if fwd_status != cudnnStatus_t.CUDNN_STATUS_SUCCESS:
         # Synchronize device to flush any pending GPU operations and free

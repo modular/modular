@@ -18,6 +18,7 @@ from std.sys import align_of, simd_width_of
 from _cudnn.cnn_infer import (
     cudnnConvolutionBackwardData,
     cudnnConvolutionMode_t,
+    cudnnGetConvolutionBackwardDataWorkspaceSize,
     cudnnSetConvolution2dDescriptor,
 )
 from _cudnn.infer import (
@@ -1644,22 +1645,29 @@ def _conv_transposed_cudnn[
     # ---------------- Algorithm & workspace -------------------------------
     var algo = cudnnConvolutionBwdDataAlgo_t.CUDNN_CONVOLUTION_BWD_DATA_ALGO_0
 
+    # ALGO_0 is the implicit deconv formulation; cuDNN may still require a
+    # workspace for larger shapes. Query the exact size and allocate a
+    # per-call device buffer so we don't trip CUDNN_STATUS_NOT_SUPPORTED.
+    var workspace_size: Int = 0
+    check_cudnn_error(
+        cudnnGetConvolutionBackwardDataWorkspaceSize(
+            cudnn_handle[].ptr_handle,
+            cudnn_handle[].ptr_filter_desc,
+            cudnn_handle[].ptr_input_desc,
+            cudnn_handle[].ptr_conv_desc,
+            cudnn_handle[].ptr_output_desc,
+            algo,
+            UnsafePointer(to=workspace_size),
+        )
+    )
+
+    var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](
+        workspace_size
+    )
+
     var alpha = Float32(1.0)
     var beta = Float32(0.0)
 
-    # handle: UnsafePointer[cudnnContext],
-    # alpha: OpaquePointer,
-    # w_desc: UnsafePointer[cudnnFilterStruct],
-    # w: OpaquePointer,
-    # dy_desc: UnsafePointer[cudnnTensorStruct],
-    # dy: OpaquePointer,
-    # conv_desc: UnsafePointer[cudnnConvolutionStruct],
-    # algo: cudnnConvolutionBwdDataAlgo_t,
-    # work_space: OpaquePointer,
-    # work_space_size_in_bytes: Int,
-    # beta: OpaquePointer,
-    # dx_desc: UnsafePointer[cudnnTensorStruct],
-    # dx: OpaquePointer,
     check_cudnn_error(
         cudnnConvolutionBackwardData(
             cudnn_handle[].ptr_handle,
@@ -1670,13 +1678,14 @@ def _conv_transposed_cudnn[
             input.ptr.bitcast[NoneType](),
             cudnn_handle[].ptr_conv_desc,
             algo,
-            None,
-            0,
+            workspace_buffer.unsafe_ptr().bitcast[NoneType](),
+            workspace_size,
             UnsafePointer(to=beta).bitcast[NoneType](),
             cudnn_handle[].ptr_output_desc,
             output.ptr.bitcast[NoneType](),
         )
     )
+    _ = workspace_buffer^
 
 
 def conv_transposed_cudnn[
