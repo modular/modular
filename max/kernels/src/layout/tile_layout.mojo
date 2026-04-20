@@ -1235,65 +1235,67 @@ Parameters:
 # Blocked Product
 # ===----------------------------------------------------------------------=== #
 
-
-comptime _BlockedProductShapeMapper[
+comptime _BlockedProductShapeTabulator[
+    BlockLayoutType: TensorLayout,
     TilerLayoutType: TensorLayout,
-    block_layout_shape_element: CoordLike,
     idx: Int,
 ]: CoordLike = Coord[
-    block_layout_shape_element,
+    BlockLayoutType._shape_types[idx],
     TilerLayoutType._shape_types[idx],
 ]
 
 comptime _BlockedProductShapeTypes[
     BlockLayoutType: TensorLayout,
     TilerLayoutType: TensorLayout,
-] = BlockLayoutType._shape_types.map_idx[
-    _BlockedProductShapeMapper[
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    BlockLayoutType._stride_types.size,
+    _BlockedProductShapeTabulator[
+        BlockLayoutType,
         TilerLayoutType,
         ...,
-    ]
+    ],
 ]()
 
-
-comptime _BlockedProductStrideMapper[
+comptime _BlockedProductStrideTabulator[
+    BlockLayoutType: TensorLayout,
     TilerLayoutType: TensorLayout,
     block_cosize: Int,
-    block_layout_stride_element: CoordLike,
     idx: Int,
 ]: CoordLike = Coord[
-    block_layout_stride_element,
+    BlockLayoutType._stride_types[idx],
     ComptimeInt[block_cosize * TilerLayoutType._stride_types[idx].static_value],
 ]
 
 comptime _BlockedProductStrideTypes[
     BlockLayoutType: TensorLayout,
     TilerLayoutType: TensorLayout,
-] = BlockLayoutType._stride_types.map_idx[
-    _BlockedProductStrideMapper[
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    BlockLayoutType._stride_types.size,
+    _BlockedProductStrideTabulator[
+        BlockLayoutType,
         TilerLayoutType,
         Coord[*BlockLayoutType._shape_types].static_product,
         ...,
-    ]
+    ],
 ]()
 
-
-comptime _CoalescedBlockedShapeMapper[
+comptime _CoalescedBlockedShapeTabulator[
     BlockLayoutType: TensorLayout,
     TilerLayoutType: TensorLayout,
     block_cosize: Int,
-    block_layout_shape_element: CoordLike,
     idx: Int,
 ]: CoordLike = ComptimeInt[
     # Coalesce: merge into flat ComptimeInt[block_s * tiler_s].
-    block_layout_shape_element.static_value
+    BlockLayoutType._shape_types[idx].static_value
     * TilerLayoutType._shape_types[idx].static_value
 ] if _can_coalesce_mode[
-    block_layout_shape_element.static_value,
+    BlockLayoutType._shape_types[idx].static_value,
     BlockLayoutType._stride_types[idx].static_value,
     block_cosize * TilerLayoutType._stride_types[idx].static_value,
 ] else Coord[  # No coalesce: keep nested Coord[*(block_s, tiler_s)].
-    block_layout_shape_element,
+    BlockLayoutType._shape_types[idx],
     TilerLayoutType._shape_types[idx],
 ]
 
@@ -1301,13 +1303,15 @@ comptime _CoalescedBlockedShapeMapper[
 comptime _CoalescedBlockedProductShapeTypes[
     BlockLayoutType: TensorLayout,
     TilerLayoutType: TensorLayout,
-] = BlockLayoutType._shape_types.map_idx[
-    _CoalescedBlockedShapeMapper[
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    BlockLayoutType._shape_types.size,
+    _CoalescedBlockedShapeTabulator[
         BlockLayoutType,
         TilerLayoutType,
         Coord[*BlockLayoutType._shape_types].static_product,
         ...,
-    ]
+    ],
 ]()
 
 
@@ -1595,20 +1599,22 @@ comptime _UpcastStrideTypes[
 """The stride types after upcast by ``factor``."""
 
 
-comptime _UpcastShapeMapper[
+comptime _UpcastShapeTabulator[
     factor: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
     stride_types: TypeList[Trait=CoordLike, ...],
-    coord: CoordLike,
     idx: Int,
 ]: CoordLike = ComptimeInt[
     _comptime_shape_div(
-        coord.static_value,
+        shape_types[idx].static_value,
         _comptime_shape_div(factor, stride_types[idx].static_value),
     )
-] if coord.is_static_value and stride_types[
+] if shape_types[
+    idx
+].is_static_value and stride_types[
     idx
 ].is_static_value else RuntimeInt[
-    coord.DTYPE
+    shape_types[idx].DTYPE
 ]
 """Computes the type for each upcast shape dimension.
 
@@ -1622,7 +1628,11 @@ comptime _UpcastShapeTypes[
     factor: Int,
     shape_types: TypeList[Trait=CoordLike, ...],
     stride_types: TypeList[Trait=CoordLike, ...],
-] = shape_types.map_idx[_UpcastShapeMapper[factor, stride_types, ...]]()
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    shape_types.size,
+    _UpcastShapeTabulator[factor, shape_types, stride_types, ...],
+]()
 """The shape types after upcast by ``factor``."""
 
 

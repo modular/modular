@@ -682,19 +682,6 @@ def test_typelist_map() raises:
     comptime assert _type_is_eq[mapped[2], List[Float64]]()
 
 
-def test_typelist_map_idx() raises:
-    """Verifies `map_idx` supplies each element type and its list index to the mapper.
-    """
-    comptime TL = TypeList.of[
-        Trait=HasStaticValue, WithValue[10], WithValue[20], WithValue[30]
-    ]()
-    comptime mapped = TL.map_idx[_WithValuePlusIdx]()
-    assert_equal(mapped.size, 3)
-    assert_true(_type_is_eq[mapped[0], WithValue[10]]())
-    assert_true(_type_is_eq[mapped[1], WithValue[21]]())
-    assert_true(_type_is_eq[mapped[2], WithValue[32]]())
-
-
 def test_typelist_map_identity() raises:
     comptime TL = TypeList.of[Trait=AnyType, Int, Bool]()
 

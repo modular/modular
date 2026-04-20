@@ -1757,25 +1757,33 @@ comptime _DeepDynamicCoord4[
 
 comptime _as_CoordLike[x: CoordLike] = x
 
-comptime _Idx2CrdResultMapper[
+comptime _Idx2CrdResultTabulator[
     out_dtype: DType,
     idx_type: CoordLike,
     stride_types: TypeList[Trait=CoordLike, ...],
-    shape_elt: CoordLike,
-    i: Int,
-] = Coord[
-    *_DeepDynamicCoord4[out_dtype, *TypeList[shape_elt.ParamListType]()]
-] if shape_elt.is_tuple else ComptimeInt[
+    shape_types: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: CoordLike = Coord[
+    *_DeepDynamicCoord4[out_dtype, *TypeList[shape_types[idx].ParamListType]()]
+] if shape_types[
+    idx
+].is_tuple else ComptimeInt[
     0  # shape == 1: always ComptimeInt[0]
-] if shape_elt.is_static_value and shape_elt.static_value == 1 else ComptimeInt[
-    (idx_type.static_value // stride_types[i].static_value)
-    % shape_elt.static_value
-] if idx_type.is_static_value and shape_elt.is_static_value and stride_types[
-    i
+] if shape_types[
+    idx
+].is_static_value and shape_types[
+    idx
+].static_value == 1 else ComptimeInt[
+    (idx_type.static_value // stride_types[idx].static_value)
+    % shape_types[idx].static_value
+] if idx_type.is_static_value and shape_types[
+    idx
+].is_static_value and stride_types[
+    idx
 ].is_static_value else _as_CoordLike[
     RuntimeInt[out_dtype]
 ]
-"""Maps a shape element type to an idx2crd result type.
+"""Computes an idx2crd result type.
 
 Considers shape, stride, and index to determine the result type:
 - If shape is a nested tuple, produces a nested Coord with RuntimeInt leaves.
@@ -1791,8 +1799,16 @@ comptime _Idx2CrdResultTypes[
     idx_type: CoordLike,
     stride_types: Variadic.TypesOfTrait[CoordLike],
     shape_types: Variadic.TypesOfTrait[CoordLike],
-] = TypeList[shape_types]().map_idx[
-    _Idx2CrdResultMapper[out_dtype, idx_type, TypeList[stride_types](), ...]
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    TypeList[shape_types]().size,
+    _Idx2CrdResultTabulator[
+        out_dtype,
+        idx_type,
+        TypeList[stride_types](),
+        TypeList[shape_types](),
+        ...,
+    ],
 ]()
 """Computes the result types for idx2crd based on shape, stride, and index.
 
@@ -2027,26 +2043,32 @@ struct _RegTuple[*element_types: CoordLike](
         return False
 
 
-comptime _MultiplyReducer[
+comptime _MultiplyTabulator[
+    Lhs: TypeList[Trait=CoordLike, ...],
     Rhs: TypeList[Trait=CoordLike, ...],
-    coord: CoordLike,
     idx: Int,
 ]: CoordLike = ComptimeInt[
-    coord.static_value * Rhs[idx].static_value
-] if coord.is_static_value and Rhs[
+    Lhs[idx].static_value * Rhs[idx].static_value
+] if Lhs[
+    idx
+].is_static_value and Rhs[
     idx
 ].is_static_value else RuntimeInt[
-    coord.DTYPE
+    Lhs[idx].DTYPE
 ]
 
 
 comptime _Multiply[
     Lhs: TypeList[Trait=CoordLike, ...],
     Rhs: TypeList[Trait=CoordLike, ...],
-] = Lhs.map_idx[_MultiplyReducer[Rhs, ...]]()
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    Lhs.size,
+    _MultiplyTabulator[Lhs, Rhs, ...],
+]()
 
 
-comptime _MultiplyByScalarReducer[
+comptime _MultiplyByScalarMapper[
     scalar: Int,
     coord: CoordLike,
 ]: CoordLike = ComptimeInt[
@@ -2060,7 +2082,7 @@ comptime _MultiplyByScalar[
     Types: TypeList[Trait=CoordLike, ...],
     scalar: Int,
 ] = Types.map[
-    _MultiplyByScalarReducer[scalar=scalar, ...],
+    _MultiplyByScalarMapper[scalar=scalar, ...],
 ]()
 """Multiply each element in Types by a scalar value.
 
@@ -2073,40 +2095,52 @@ Returns:
 """
 
 
-comptime _DivideReducer[
+comptime _DivideTabulator[
+    Lhs: TypeList[Trait=CoordLike, ...],
     Rhs: TypeList[Trait=CoordLike, ...],
-    coord: CoordLike,
     idx: Int,
 ]: CoordLike = ComptimeInt[
-    coord.static_value // Rhs[idx].static_value
-] if coord.is_static_value and Rhs[
+    Lhs[idx].static_value // Rhs[idx].static_value
+] if Lhs[
+    idx
+].is_static_value and Rhs[
     idx
 ].is_static_value else RuntimeInt[
-    coord.DTYPE
+    Lhs[idx].DTYPE
 ]
-
 
 comptime _Divide[
     Lhs: TypeList[Trait=CoordLike, ...],
     Rhs: TypeList[Trait=CoordLike, ...],
-] = Lhs.map_idx[_DivideReducer[Rhs, ...]]()
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    Lhs.size,
+    _DivideTabulator[Lhs, Rhs, ...],
+]()
 
-comptime _CeilDivReducer[
+
+comptime _CeilDivTabulator[
+    Lhs: TypeList[Trait=CoordLike, ...],
     Rhs: TypeList[Trait=CoordLike, ...],
-    coord: CoordLike,
     idx: Int,
 ]: CoordLike = ComptimeInt[
-    (coord.static_value + Rhs[idx].static_value - 1) // Rhs[idx].static_value
-] if coord.is_static_value and Rhs[
+    (Lhs[idx].static_value + Rhs[idx].static_value - 1) // Rhs[idx].static_value
+] if Lhs[
+    idx
+].is_static_value and Rhs[
     idx
 ].is_static_value else RuntimeInt[
-    coord.DTYPE
+    Lhs[idx].DTYPE
 ]
 
 comptime _CeilDiv[
     Lhs: TypeList[Trait=CoordLike, ...],
     Rhs: TypeList[Trait=CoordLike, ...],
-] = Lhs.map_idx[_CeilDivReducer[Rhs, ...]]()
+] = TypeList.tabulate[
+    Trait=CoordLike,
+    Lhs.size,
+    _CeilDivTabulator[Lhs, Rhs, ...],
+]()
 
 
 @always_inline

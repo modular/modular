@@ -547,35 +547,6 @@ struct TypeList[
         ToTrait: The trait of the mapped output types.
     """
 
-    comptime _MapIdxTabulator[
-        ToTrait: type_of(AnyType),
-        Mapper: Self._TypeIndexToTypeGenerator[ToTrait],
-        idx: Int,
-    ]: ToTrait = Mapper[Self.__getitem_param__[idx], idx]
-
-    comptime map_idx[
-        ToTrait: type_of(AnyType),
-        //,
-        Mapper: Self._TypeIndexToTypeGenerator[ToTrait],
-    ] = TypeList.tabulate[
-        Trait=ToTrait,
-        Self.size,
-        Self._MapIdxTabulator[ToTrait, Mapper, idx=_],
-    ]
-    """Maps types to new types using an index-aware mapper.
-
-    Like `map`, but each step receives the element type and its index in this
-    list (from `0` through `size - 1`).
-
-    Parameters:
-        ToTrait: The trait that the output types conform to.
-        Mapper: A compile-time generator
-            `[element: Self.Trait, idx: Int] -> ToTrait`.
-
-    Returns:
-        A new `TypeList` with one output type per input element, in order.
-    """
-
     comptime _FilterIdxTabulator[
         Predicate: _TypeIndexPredicateGenerator[Self.Trait],
         idx: Int,
