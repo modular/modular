@@ -80,7 +80,7 @@ def fill_random[dtype: DType](mut buffer: TileTensor[mut=True, dtype, ...]):
     var total_elements = buffer.num_elements()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
-        buffer.ptr[i] = random_value.cast[dtype]()
+        buffer.flat_store(i, random_value.cast[dtype]())
 
 
 @parameter
@@ -101,9 +101,9 @@ def merge[
 
     # Copy data to temporary arrays
     for i in range(left_size):
-        left_ptr[i] = buf.ptr[start + i]
+        left_ptr[i] = buf.flat_load(start + i)
     for i in range(right_size):
-        right_ptr[i] = buf.ptr[mid + i]
+        right_ptr[i] = buf.flat_load(mid + i)
 
     # Merge back into original array
     var i = 0  # Index for left subarray
@@ -112,21 +112,21 @@ def merge[
 
     while i < left_size and j < right_size:
         if left_ptr[i] >= right_ptr[j]:  # Use >= for descending order
-            buf.ptr[k] = left_ptr[i]
+            buf.flat_store(k, left_ptr[i])
             i += 1
         else:
-            buf.ptr[k] = right_ptr[j]
+            buf.flat_store(k, right_ptr[j])
             j += 1
         k += 1
 
     # Copy remaining elements if any
     while i < left_size:
-        buf.ptr[k] = left_ptr[i]
+        buf.flat_store(k, left_ptr[i])
         i += 1
         k += 1
 
     while j < right_size:
-        buf.ptr[k] = right_ptr[j]
+        buf.flat_store(k, right_ptr[j])
         j += 1
         k += 1
 
@@ -184,9 +184,9 @@ def test_is_sorted_descending[
                         "][",
                         i,
                         "]: ",
-                        buf.ptr[offset + i],
+                        buf.flat_load(offset + i),
                         " < ",
-                        buf.ptr[offset + i + 1],
+                        buf.flat_load(offset + i + 1),
                     )
                     sorted_flag[batch_id] = False
                     break
@@ -265,7 +265,7 @@ def test_case_sampling[
     # Fill tensors
     fill_fn(in_logits)
     for i in range(batch_size):
-        p_thresholds.ptr[i] = p_threshold
+        p_thresholds.flat_store(i, p_threshold)
 
     # Create device buffers
     var device_in_buf = ctx.enqueue_create_buffer[dtype](
@@ -383,9 +383,9 @@ def test_case_sampling[
                 "i: ",
                 i,
                 "in_logits: ",
-                in_logits.ptr[i],
+                in_logits.flat_load(i),
                 "probs_cpu_test: ",
-                probs_cpu_test.ptr[i],
+                probs_cpu_test.flat_load(i),
             )
             raise e^
 

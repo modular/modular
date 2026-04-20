@@ -73,7 +73,7 @@ def fill_random[dtype: DType](mut buffer: TileTensor[mut=True, dtype, ...]):
     var total_elements = buffer.num_elements()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
-        buffer.ptr[i] = random_value.cast[dtype]()
+        buffer.flat_store(i, random_value.cast[dtype]())
 
 
 @parameter
@@ -105,9 +105,9 @@ def test_is_sorted_descending[
                         "][",
                         i,
                         "]: ",
-                        buf.ptr[offset + i],
+                        buf.flat_load(offset + i),
                         " < ",
-                        buf.ptr[offset + i + 1],
+                        buf.flat_load(offset + i + 1),
                     )
                     sorted_flag[batch_id] = False
                     break
@@ -186,7 +186,7 @@ def test_case_sampling[
     # Fill tensors
     fill_fn(in_logits)
     for i in range(batch_size):
-        p_thresholds.ptr[i] = p_threshold
+        p_thresholds.flat_store(i, p_threshold)
 
     comptime if DEBUG_BENCH:
 

@@ -143,7 +143,7 @@ def test_case_sampling[
     var _x_no_lifetimes = out_idxs
 
     for i in range(out_idxs.num_elements()):
-        print(out_idxs.ptr[i], end="")
+        print(out_idxs.flat_load(i), end="")
         print(",", end="")
     print("")
 
@@ -382,7 +382,7 @@ def main() raises:
         for i in range(
             coord_to_index_list(buf.layout.shape_coord()).flattened_length()
         ):
-            buf.ptr[i] = 1
+            buf.flat_store(i, 1)
 
     def test_1d_sorted_sampling_temp() raises:
         print("== test_1d_sorted_sampling_temp")

@@ -58,7 +58,7 @@ def _argsort_cpu[
     def fill_indices_iota[
         width: Int, rank: Int, alignment: Int = 1
     ](offset: IndexList[rank]):
-        indices.ptr.store(
+        indices.flat_store(
             offset[0],
             iota[indices.dtype, width](Scalar[indices.dtype](offset[0])),
         )
@@ -406,7 +406,7 @@ def _argsort_gpu[
         def fill_indices_iota_no_padding[
             width: Int, rank: Int, alignment: Int = 1
         ](offset: IndexList[rank]):
-            indices.ptr.store(
+            indices.flat_store(
                 offset[0],
                 iota[indices.dtype, width](Scalar[indices.dtype](offset[0])),
             )
@@ -447,20 +447,20 @@ def _argsort_gpu[
     ](offset: IndexList[rank]):
         var i = offset[0]
         if i < n:
-            padded_indices.ptr.store(
+            padded_indices.flat_store(
                 i, iota[padded_indices.dtype, width](Scalar[indices.dtype](i))
             )
-            padded_input.ptr.store[
+            padded_input.flat_store[
                 alignment=simd_width_of[padded_input.dtype]()
-            ](i, input.ptr.load[width=width](i))
+            ](i, input.flat_load[width=width](i))
             return
 
         # otherwise we pad with a sentinel value and the max/min value for the type.
         comptime UNKNOWN_VALUE = -1
-        padded_indices.ptr.store(
+        padded_indices.flat_store(
             i, SIMD[padded_indices.dtype, width](UNKNOWN_VALUE)
         )
-        padded_input.ptr.store(
+        padded_input.flat_store(
             i,
             SIMD[padded_input.dtype, width](
                 _sentinel_val[padded_input.dtype, ascending]()
@@ -485,8 +485,8 @@ def _argsort_gpu[
     def extract_indices[
         width: Int, rank: Int, alignment: Int = 1
     ](offset: IndexList[rank]):
-        indices.ptr.store(
-            offset[0], padded_indices.ptr.load[width=width](offset[0])
+        indices.flat_store(
+            offset[0], padded_indices.flat_load[width=width](offset[0])
         )
 
     # Extract the unpadded indices from the padded indices.

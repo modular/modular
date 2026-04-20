@@ -1474,7 +1474,7 @@ def conv_transposed_cpu[
 
                 var output_idx = output.layout(Coord(curr_coords))
 
-                var vec = output.ptr.load[width=width](output_idx)
+                var vec = output.flat_load[width=width](output_idx)
                 elementwise_lambda(curr_coords, vec)
 
             vectorize[simd_size](f_size, body)
@@ -1549,7 +1549,7 @@ def conv_transposed_gpu[
         ](coords: IndexList[_rank]):
             comptime align = align_of[SIMD[output_type, _width]]()
             var idx = output_tmp.layout((Coord(coords)))
-            vec = output_tmp.ptr.load[width=_width, alignment=align](idx)
+            vec = output_tmp.flat_load[width=_width, alignment=align](idx)
             epilogue(coords, vec)
 
         elementwise[

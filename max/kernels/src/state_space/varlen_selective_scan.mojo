@@ -100,7 +100,7 @@ def varlen_selective_state_update_gpu[
     # Determine state batch index
     var state_batch_idx = Int32(pid_b)
     if Bool(Int(has_state_batch_indices) != 0):
-        state_batch_idx = state_batch_indices.ptr[pid_b]
+        state_batch_idx = state_batch_indices.flat_load(pid_b)
         # Check for padding
         if state_batch_idx == pad_slot_id:
             return
@@ -138,7 +138,7 @@ def varlen_selective_state_update_gpu[
                 pid_h * dt_bias_strides[0] + m * dt_bias_strides[1]
             )
             var bias_val = Scalar[kernel_dtype](
-                dt_bias.ptr[dt_bias_offset]
+                dt_bias.flat_load(dt_bias_offset)
             ).cast[DType.float32]()
             dt_val += bias_val
 
@@ -189,8 +189,9 @@ def varlen_selective_state_update_gpu[
             state_val = state_val * dA + dB * x_val
 
             # Store updated state
-            state.ptr[state_offset] = Scalar[kernel_dtype](
-                state_val.cast[kernel_dtype]()
+            state.flat_store(
+                state_offset,
+                Scalar[kernel_dtype](state_val.cast[kernel_dtype]()),
             )
 
             # Load C value
@@ -228,8 +229,8 @@ def varlen_selective_state_update_gpu[
         var out_offset = UInt32(
             pid_b * out_strides[0] + pid_h * out_strides[1] + m * out_strides[2]
         )
-        output.ptr[out_offset] = Scalar[kernel_dtype](
-            out_val.cast[kernel_dtype]()
+        output.flat_store(
+            out_offset, Scalar[kernel_dtype](out_val.cast[kernel_dtype]())
         )
 
 
@@ -310,8 +311,8 @@ def varlen_selective_scan_fwd_gpu[
     var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
 
     # Get sequence start and length
-    var seq_start = Int(query_start_loc.ptr[b])
-    var seq_end = Int(query_start_loc.ptr[b + 1])
+    var seq_start = Int(query_start_loc.flat_load(b))
+    var seq_end = Int(query_start_loc.flat_load(b + 1))
     var seq_len = seq_end - seq_start
 
     if seq_len <= 0:
@@ -320,7 +321,7 @@ def varlen_selective_scan_fwd_gpu[
     # Get cache index for this sequence
     var cache_idx = b
     if has_cache_indices:
-        cache_idx = Int(cache_indices.ptr[b])
+        cache_idx = Int(cache_indices.flat_load(b))
         if cache_idx == Int(pad_slot_id):
             return
 
@@ -356,7 +357,7 @@ def varlen_selective_scan_fwd_gpu[
     # Load initial state if requested
     var use_initial_state = False
     if has_initial_state_tensor:
-        var init_state_val = has_initial_state.ptr[b]
+        var init_state_val = has_initial_state.flat_load(b)
         use_initial_state = Bool(init_state_val)
 
     if use_initial_state:
@@ -440,16 +441,17 @@ def varlen_selective_scan_fwd_gpu[
             output_val *= silu(z_val)
 
             # Write to z if z is present (vLLM convention: output written to z)
-            z.ptr[z_offset] = Scalar[kernel_dtype](
-                output_val.cast[kernel_dtype]()
+            z.flat_store(
+                z_offset, Scalar[kernel_dtype](output_val.cast[kernel_dtype]())
             )
         else:
             # Write to output (or delta in vLLM convention)
             var out_offset = UInt32(
                 d * out_strides[0] + global_t * out_strides[1]
             )
-            output.ptr[out_offset] = Scalar[kernel_dtype](
-                output_val.cast[kernel_dtype]()
+            output.flat_store(
+                out_offset,
+                Scalar[kernel_dtype](output_val.cast[kernel_dtype]()),
             )
 
     # Store final state to cache
@@ -459,8 +461,8 @@ def varlen_selective_scan_fwd_gpu[
             + d * ssm_states_strides[1]
             + n * ssm_states_strides[2]
         )
-        ssm_states.ptr[state_offset] = Scalar[kernel_dtype](
-            state[n].cast[kernel_dtype]()
+        ssm_states.flat_store(
+            state_offset, Scalar[kernel_dtype](state[n].cast[kernel_dtype]())
         )
 
 
@@ -515,7 +517,7 @@ def varlen_selective_state_update_cpu[
         # Determine state batch index
         var state_batch_idx = Int32(b)
         if has_state_batch_indices_bool:
-            state_batch_idx = state_batch_indices.ptr[b]
+            state_batch_idx = state_batch_indices.flat_load(b)
             if state_batch_idx == pad_slot_id:
                 return
 
@@ -541,7 +543,7 @@ def varlen_selective_state_update_cpu[
                 h * dt_bias_strides[0] + m * dt_bias_strides[1]
             )
             var bias_val = Scalar[kernel_dtype](
-                dt_bias.ptr[dt_bias_offset]
+                dt_bias.flat_load(dt_bias_offset)
             ).cast[DType.float32]()
             dt_val += bias_val
 
@@ -590,8 +592,9 @@ def varlen_selective_state_update_cpu[
             state_val = state_val * dA + dB * x_val
 
             # Store updated state
-            state.ptr[state_offset] = Scalar[kernel_dtype](
-                state_val.cast[kernel_dtype]()
+            state.flat_store(
+                state_offset,
+                Scalar[kernel_dtype](state_val.cast[kernel_dtype]()),
             )
 
             # Load C value
@@ -627,8 +630,8 @@ def varlen_selective_state_update_cpu[
         var out_offset = UInt32(
             b * out_strides[0] + h * out_strides[1] + m * out_strides[2]
         )
-        output.ptr[out_offset] = Scalar[kernel_dtype](
-            out_val.cast[kernel_dtype]()
+        output.flat_store(
+            out_offset, Scalar[kernel_dtype](out_val.cast[kernel_dtype]())
         )
 
     sync_parallelize[worker](batch * nheads * dim, ctx)
@@ -691,7 +694,7 @@ def varlen_selective_scan_fwd_cpu[
         if has_delta_bias:
             var bias_offset = UInt32(d * delta_bias_strides[0])
             delta_bias_val = Scalar[kernel_dtype](
-                delta_bias.ptr[bias_offset]
+                delta_bias.flat_load(bias_offset)
             ).cast[DType.float32]()
 
         # Pre-load A values for this dim and pre-multiply by LOG2E for faster exp2
@@ -708,8 +711,8 @@ def varlen_selective_scan_fwd_cpu[
 
         # Process each sequence
         for b in range(batch):
-            var seq_start = Int(query_start_loc.ptr[b])
-            var seq_end = Int(query_start_loc.ptr[b + 1])
+            var seq_start = Int(query_start_loc.flat_load(b))
+            var seq_end = Int(query_start_loc.flat_load(b + 1))
             var seq_len = seq_end - seq_start
 
             if seq_len <= 0:
@@ -717,7 +720,7 @@ def varlen_selective_scan_fwd_cpu[
 
             var cache_idx = b
             if has_cache_indices:
-                cache_idx = Int(cache_indices.ptr[b])
+                cache_idx = Int(cache_indices.flat_load(b))
                 if cache_idx == Int(pad_slot_id):
                     continue
 
@@ -726,7 +729,7 @@ def varlen_selective_scan_fwd_cpu[
 
             var use_initial_state = False
             if has_initial_state_tensor:
-                var init_state_val = has_initial_state.ptr[b]
+                var init_state_val = has_initial_state.flat_load(b)
                 use_initial_state = Bool(init_state_val)
 
             if use_initial_state:
@@ -737,7 +740,7 @@ def varlen_selective_scan_fwd_cpu[
                         + n * ssm_states_strides[2]
                     )
                     state[n] = Scalar[kernel_dtype](
-                        ssm_states.ptr[state_offset]
+                        ssm_states.flat_load(state_offset)
                     ).cast[DType.float32]()
 
             # Process sequence
@@ -758,7 +761,7 @@ def varlen_selective_scan_fwd_cpu[
                     d * out_strides[0] + global_t * out_strides[1]
                 )
                 var delta_val = Scalar[kernel_dtype](
-                    delta.ptr[delta_offset]
+                    delta.flat_load(delta_offset)
                 ).cast[DType.float32]()
 
                 if has_delta_bias:
@@ -810,8 +813,9 @@ def varlen_selective_scan_fwd_cpu[
                         DType.float32
                     ]()
                     output_val *= silu(z_val)
-                    z.ptr[z_offset] = Scalar[kernel_dtype](
-                        output_val.cast[kernel_dtype]()
+                    z.flat_store(
+                        z_offset,
+                        Scalar[kernel_dtype](output_val.cast[kernel_dtype]()),
                     )
                 else:
                     output.ptr[out_offset] = Scalar[kernel_dtype](

@@ -197,9 +197,9 @@ def selective_scan_fwd_gpu[
 
         # Always use strided access for delta tensor to handle different layouts
         for i in range(TILE_SIZE):
-            delta_vec[i] = delta.ptr[
+            delta_vec[i] = delta.flat_load(
                 curr_delta_offset + UInt32(i * delta_strides[2])
-            ]
+            )
 
         if has_z:
             # Always use strided access for z tensor to handle different layouts
@@ -221,7 +221,7 @@ def selective_scan_fwd_gpu[
 
             comptime for n in range(DSTATE):
                 B_tiles[n][i] = Scalar[kernel_dtype](
-                    B.ptr[b_base + UInt32(n * B_strides[2])]
+                    B.flat_load(b_base + UInt32(n * B_strides[2]))
                 ).cast[DType.float32]()
 
         # Load C tiles - always use scalar loads to handle different layouts from slicing/reshaping
@@ -230,7 +230,7 @@ def selective_scan_fwd_gpu[
 
             comptime for n in range(DSTATE):
                 C_tiles[n][i] = Scalar[kernel_dtype](
-                    C.ptr[c_base + UInt32(n * C_strides[2])]
+                    C.flat_load(c_base + UInt32(n * C_strides[2]))
                 ).cast[DType.float32]()
 
         # Buffer for output values to enable vector stores
@@ -300,11 +300,13 @@ def selective_scan_fwd_gpu[
                         + chunk_idx * x_strides[2]
                         + (n * 2 + 1) * x_strides[3]
                     )
-                    x.ptr[x_offset_a] = Scalar[kernel_dtype](
-                        cum_a[n].cast[kernel_dtype]()
+                    x.flat_store(
+                        x_offset_a,
+                        Scalar[kernel_dtype](cum_a[n].cast[kernel_dtype]()),
                     )
-                    x.ptr[x_offset_b] = Scalar[kernel_dtype](
-                        cum_b[n].cast[kernel_dtype]()
+                    x.flat_store(
+                        x_offset_b,
+                        Scalar[kernel_dtype](cum_b[n].cast[kernel_dtype]()),
                     )
                     cum_a[n] = 1.0
                     cum_b[n] = 0.0
@@ -319,9 +321,10 @@ def selective_scan_fwd_gpu[
                 output.ptr[curr_output_offset + UInt32(i)] = output_buffer[i]
         else:
             for i in range(TILE_SIZE):
-                output.ptr[
-                    curr_output_offset + UInt32(i * output_strides[2])
-                ] = output_buffer[i]
+                output.flat_store(
+                    curr_output_offset + UInt32(i * output_strides[2]),
+                    output_buffer[i],
+                )
 
         if has_z and has_out_z:
             if out_z_strides[2] == 1:
@@ -329,9 +332,10 @@ def selective_scan_fwd_gpu[
                     out_z.ptr[curr_out_z_offset + UInt32(i)] = out_z_buffer[i]
             else:
                 for i in range(TILE_SIZE):
-                    out_z.ptr[
-                        curr_out_z_offset + UInt32(i * out_z_strides[2])
-                    ] = out_z_buffer[i]
+                    out_z.flat_store(
+                        curr_out_z_offset + UInt32(i * out_z_strides[2]),
+                        out_z_buffer[i],
+                    )
 
         # Advance global offsets by TILE_SIZE
         curr_u_offset += UInt32(u_strides[2] * TILE_SIZE)
@@ -363,10 +367,10 @@ def selective_scan_fwd_gpu[
 
         comptime for n in range(DSTATE):
             B_vals[n] = Scalar[kernel_dtype](
-                B.ptr[curr_B_offset + UInt32(n * B_strides[2])]
+                B.flat_load(curr_B_offset + UInt32(n * B_strides[2]))
             ).cast[DType.float32]()
             C_vals[n] = Scalar[kernel_dtype](
-                C.ptr[curr_C_offset + UInt32(n * C_strides[2])]
+                C.flat_load(curr_C_offset + UInt32(n * C_strides[2]))
             ).cast[DType.float32]()
         var a_t = exp2(A_vals * delta_val)
         var b_t = B_vals * delta_u
@@ -376,8 +380,9 @@ def selective_scan_fwd_gpu[
         cum_a = cum_a * a_t
         if has_D:
             output_val += D_val * u_val
-        output.ptr[curr_output_offset] = Scalar[kernel_dtype](
-            output_val.cast[kernel_dtype]()
+        output.flat_store(
+            curr_output_offset,
+            Scalar[kernel_dtype](output_val.cast[kernel_dtype]()),
         )
         if has_z:
             var z_val = Scalar[kernel_dtype](z.ptr[curr_z_offset]).cast[
@@ -413,11 +418,13 @@ def selective_scan_fwd_gpu[
                     + chunk_idx * x_strides[2]
                     + (n * 2 + 1) * x_strides[3]
                 )
-                x.ptr[x_offset_a] = Scalar[kernel_dtype](
-                    cum_a[n].cast[kernel_dtype]()
+                x.flat_store(
+                    x_offset_a,
+                    Scalar[kernel_dtype](cum_a[n].cast[kernel_dtype]()),
                 )
-                x.ptr[x_offset_b] = Scalar[kernel_dtype](
-                    cum_b[n].cast[kernel_dtype]()
+                x.flat_store(
+                    x_offset_b,
+                    Scalar[kernel_dtype](cum_b[n].cast[kernel_dtype]()),
                 )
                 cum_a[n] = 1.0
                 cum_b[n] = 0.0
@@ -516,10 +523,10 @@ def selective_scan_fwd_gpu_minimal[
 
         comptime for n in range(DSTATE):
             B_vals[n] = Scalar[kernel_dtype](
-                B.ptr[curr_B_offset + UInt32(n * B_strides[2])]
+                B.flat_load(curr_B_offset + UInt32(n * B_strides[2]))
             ).cast[DType.float32]()
             C_vals[n] = Scalar[kernel_dtype](
-                C.ptr[curr_C_offset + UInt32(n * C_strides[2])]
+                C.flat_load(curr_C_offset + UInt32(n * C_strides[2]))
             ).cast[DType.float32]()
 
         var a_t = exp2(A_vals * delta_val)
@@ -529,8 +536,9 @@ def selective_scan_fwd_gpu_minimal[
         cum_b = cum_b * a_t + b_t
         cum_a = cum_a * a_t
         # No D skip connection in minimal version
-        output.ptr[curr_output_offset] = Scalar[kernel_dtype](
-            output_val.cast[kernel_dtype]()
+        output.flat_store(
+            curr_output_offset,
+            Scalar[kernel_dtype](output_val.cast[kernel_dtype]()),
         )
         # No z gating in minimal version
 
@@ -556,11 +564,13 @@ def selective_scan_fwd_gpu_minimal[
                     + chunk_idx * x_strides[2]
                     + (n * 2 + 1) * x_strides[3]
                 )
-                x.ptr[x_offset_a] = Scalar[kernel_dtype](
-                    cum_a[n].cast[kernel_dtype]()
+                x.flat_store(
+                    x_offset_a,
+                    Scalar[kernel_dtype](cum_a[n].cast[kernel_dtype]()),
                 )
-                x.ptr[x_offset_b] = Scalar[kernel_dtype](
-                    cum_b[n].cast[kernel_dtype]()
+                x.flat_store(
+                    x_offset_b,
+                    Scalar[kernel_dtype](cum_b[n].cast[kernel_dtype]()),
                 )
                 cum_a[n] = 1.0
                 cum_b[n] = 0.0
@@ -720,8 +730,9 @@ def selective_scan_update_gpu[
             + d * state_out_strides[1]
             + n * state_out_strides[2]
         )
-        state_out.ptr[state_offset] = Scalar[kernel_dtype](
-            state_vals[n].cast[kernel_dtype]()
+        state_out.flat_store(
+            state_offset,
+            Scalar[kernel_dtype](state_vals[n].cast[kernel_dtype]()),
         )
     # Load C values using group_id
     var C_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
@@ -860,7 +871,7 @@ def selective_scan_update_cpu[
                 + n * state_in_strides[2]
             )
             state_vals[n] = Scalar[kernel_dtype](
-                state_in.ptr[state_offset]
+                state_in.flat_load(state_offset)
             ).cast[DType.float32]()
 
         # Update state
@@ -873,8 +884,9 @@ def selective_scan_update_cpu[
                 + d * state_out_strides[1]
                 + n * state_out_strides[2]
             )
-            state_out.ptr[state_offset] = Scalar[kernel_dtype](
-                state_vals[n].cast[kernel_dtype]()
+            state_out.flat_store(
+                state_offset,
+                Scalar[kernel_dtype](state_vals[n].cast[kernel_dtype]()),
             )
 
         # Load C values using group_id
@@ -908,8 +920,8 @@ def selective_scan_update_cpu[
 
         # Store output
         var out_offset = UInt32(b * output_strides[0] + d * output_strides[1])
-        output.ptr[out_offset] = Scalar[kernel_dtype](
-            out_val.cast[kernel_dtype]()
+        output.flat_store(
+            out_offset, Scalar[kernel_dtype](out_val.cast[kernel_dtype]())
         )
 
     sync_parallelize[worker](batch * dim, ctx)
@@ -972,7 +984,7 @@ def selective_scan_fwd_cpu[
         if has_delta_bias:
             var bias_offset = UInt32(d * delta_bias_strides[0])
             delta_bias_val = Scalar[kernel_dtype](
-                delta_bias.ptr[bias_offset]
+                delta_bias.flat_load(bias_offset)
             ).cast[DType.float32]()
 
         var has_D = Int(D.dim[0]()) > 0
@@ -1019,27 +1031,27 @@ def selective_scan_fwd_cpu[
             var z_vec = SIMD[kernel_dtype, TILE_SIZE](0.0)
 
             if u_strides[2] == 1:
-                u_vec = u.ptr.load[width=TILE_SIZE](curr_u_offset)
+                u_vec = u.flat_load[width=TILE_SIZE](curr_u_offset)
             else:
                 for i in range(TILE_SIZE):
                     u_vec[i] = u.ptr[curr_u_offset + UInt32(i * u_strides[2])]
 
             if delta_strides[2] == 1:
-                delta_vec = delta.ptr.load[width=TILE_SIZE](curr_delta_offset)
+                delta_vec = delta.flat_load[width=TILE_SIZE](curr_delta_offset)
             else:
                 for i in range(TILE_SIZE):
-                    delta_vec[i] = delta.ptr[
+                    delta_vec[i] = delta.flat_load(
                         curr_delta_offset + UInt32(i * delta_strides[2])
-                    ]
+                    )
 
             if has_z:
                 if z_strides[2] == 1:
-                    z_vec = z.ptr.load[width=TILE_SIZE](curr_z_offset)
+                    z_vec = z.flat_load[width=TILE_SIZE](curr_z_offset)
                 else:
                     for i in range(TILE_SIZE):
-                        z_vec[i] = z.ptr[
+                        z_vec[i] = z.flat_load(
                             curr_z_offset + UInt32(i * z_strides[2])
-                        ]
+                        )
 
             for i in range(TILE_SIZE):
                 t_in_chunk += 1
@@ -1120,11 +1132,13 @@ def selective_scan_fwd_cpu[
                             + chunk_idx * x_strides[2]
                             + (n * 2 + 1) * x_strides[3]
                         )
-                        x.ptr[x_offset_a] = Scalar[kernel_dtype](
-                            cum_a[n].cast[kernel_dtype]()
+                        x.flat_store(
+                            x_offset_a,
+                            Scalar[kernel_dtype](cum_a[n].cast[kernel_dtype]()),
                         )
-                        x.ptr[x_offset_b] = Scalar[kernel_dtype](
-                            cum_b[n].cast[kernel_dtype]()
+                        x.flat_store(
+                            x_offset_b,
+                            Scalar[kernel_dtype](cum_b[n].cast[kernel_dtype]()),
                         )
                         cum_a[n] = 1.0
                         cum_b[n] = 0.0
@@ -1149,7 +1163,7 @@ def selective_scan_fwd_cpu[
                 DType.float32
             ]()
             var delta_val = Scalar[kernel_dtype](
-                delta.ptr[curr_delta_offset]
+                delta.flat_load(curr_delta_offset)
             ).cast[DType.float32]()
             if has_delta_bias:
                 delta_val += delta_bias_val
@@ -1211,11 +1225,13 @@ def selective_scan_fwd_cpu[
                         + chunk_idx * x_strides[2]
                         + (n * 2 + 1) * x_strides[3]
                     )
-                    x.ptr[x_offset_a] = Scalar[kernel_dtype](
-                        cum_a[n].cast[kernel_dtype]()
+                    x.flat_store(
+                        x_offset_a,
+                        Scalar[kernel_dtype](cum_a[n].cast[kernel_dtype]()),
                     )
-                    x.ptr[x_offset_b] = Scalar[kernel_dtype](
-                        cum_b[n].cast[kernel_dtype]()
+                    x.flat_store(
+                        x_offset_b,
+                        Scalar[kernel_dtype](cum_b[n].cast[kernel_dtype]()),
                     )
                     cum_a[n] = 1.0
                     cum_b[n] = 0.0
@@ -1299,7 +1315,7 @@ def selective_scan_fwd_cpu_minimal[
                 DType.float32
             ]()
             var delta_val = Scalar[kernel_dtype](
-                delta.ptr[curr_delta_offset]
+                delta.flat_load(curr_delta_offset)
             ).cast[DType.float32]()
             if delta_softplus_bool:
                 delta_val = softplus(delta_val)
@@ -1350,11 +1366,13 @@ def selective_scan_fwd_cpu_minimal[
                         + chunk_idx * x_strides[2]
                         + (n * 2 + 1) * x_strides[3]
                     )
-                    x.ptr[x_offset_a] = Scalar[kernel_dtype](
-                        cum_a[n].cast[kernel_dtype]()
+                    x.flat_store(
+                        x_offset_a,
+                        Scalar[kernel_dtype](cum_a[n].cast[kernel_dtype]()),
                     )
-                    x.ptr[x_offset_b] = Scalar[kernel_dtype](
-                        cum_b[n].cast[kernel_dtype]()
+                    x.flat_store(
+                        x_offset_b,
+                        Scalar[kernel_dtype](cum_b[n].cast[kernel_dtype]()),
                     )
                     cum_a[n] = 1.0
                     cum_b[n] = 0.0

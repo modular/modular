@@ -43,7 +43,9 @@ def assert_allclose[
     h_output_gpu: TileTensor[dtype=dtype, ...],
 ) raises:
     for i in range(h_output_ref.num_elements()):
-        assert_almost_equal(h_output_ref.ptr[i], h_output_gpu.ptr[i])
+        assert_almost_equal(
+            h_output_ref.flat_load(i), h_output_gpu.flat_load(i)
+        )
 
 
 def bench_stencil_avg_pool[
@@ -111,7 +113,7 @@ def bench_stencil_avg_pool[
 
     # Initialize input data
     for i in range(h_input.num_elements()):
-        h_input.ptr[i] = Scalar[dtype](i + 1)
+        h_input.flat_store(i, Scalar[dtype](i + 1))
     _ = h_output_ref.fill(Scalar[dtype](0))
     _ = h_output.fill(Scalar[dtype](0))
 
@@ -406,7 +408,7 @@ def bench_stencil_max_pool[
 
     # Initialize input data
     for i in range(h_input.num_elements()):
-        h_input.ptr[i] = Scalar[dtype](i + 1)
+        h_input.flat_store(i, Scalar[dtype](i + 1))
     _ = h_output_ref.fill(Scalar[dtype](0))
     _ = h_output.fill(Scalar[dtype](0))
 
@@ -690,7 +692,7 @@ def bench_stencil_avg_pool_padded[
 
     # Initialize input data
     for i in range(h_input.num_elements()):
-        h_input.ptr[i] = Scalar[dtype](i + 1)
+        h_input.flat_store(i, Scalar[dtype](i + 1))
     _ = h_output_ref.fill(Scalar[dtype](0))
     _ = h_output.fill(Scalar[dtype](0))
 

@@ -261,11 +261,11 @@ def merge[
 
     # Copy data to temporary arrays
     for i in range(left_size):
-        left_keys_ptr[i] = buf_keys.ptr[start + i]
-        left_ids_ptr[i] = buf_ids.ptr[start + i]
+        left_keys_ptr[i] = buf_keys.flat_load(start + i)
+        left_ids_ptr[i] = buf_ids.flat_load(start + i)
     for i in range(right_size):
-        right_keys_ptr[i] = buf_keys.ptr[mid + i]
-        right_ids_ptr[i] = buf_ids.ptr[mid + i]
+        right_keys_ptr[i] = buf_keys.flat_load(mid + i)
+        right_ids_ptr[i] = buf_ids.flat_load(mid + i)
 
     # Merge back into original array
     var i = 0  # Index for left subarray
@@ -274,25 +274,25 @@ def merge[
 
     while i < left_size and j < right_size:
         if left_keys_ptr[i] >= right_keys_ptr[j]:  # Use >= for descending order
-            buf_keys.ptr[k] = left_keys_ptr[i]
-            buf_ids.ptr[k] = left_ids_ptr[i]
+            buf_keys.flat_store(k, left_keys_ptr[i])
+            buf_ids.flat_store(k, left_ids_ptr[i])
             i += 1
         else:
-            buf_keys.ptr[k] = right_keys_ptr[j]
-            buf_ids.ptr[k] = right_ids_ptr[j]
+            buf_keys.flat_store(k, right_keys_ptr[j])
+            buf_ids.flat_store(k, right_ids_ptr[j])
             j += 1
         k += 1
 
     # Copy remaining elements if any
     while i < left_size:
-        buf_keys.ptr[k] = left_keys_ptr[i]
-        buf_ids.ptr[k] = left_ids_ptr[i]
+        buf_keys.flat_store(k, left_keys_ptr[i])
+        buf_ids.flat_store(k, left_ids_ptr[i])
         i += 1
         k += 1
 
     while j < right_size:
-        buf_keys.ptr[k] = right_keys_ptr[j]
-        buf_ids.ptr[k] = right_ids_ptr[j]
+        buf_keys.flat_store(k, right_keys_ptr[j])
+        buf_ids.flat_store(k, right_ids_ptr[j])
         j += 1
         k += 1
 

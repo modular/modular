@@ -620,7 +620,7 @@ def im2col[
                                 )
                                 output.store_linear(
                                     IndexList[2](m_idx, k_idx),
-                                    activation.ptr[in_idx],
+                                    activation.flat_load(in_idx),
                                 )
                             else:
                                 # Zero padding

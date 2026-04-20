@@ -1276,10 +1276,10 @@ def grouped_matmul_vendor[
         task_id=get_safe_task_id(ctx),
     ):
         for i in range(num_active_experts):
-            var expert_id = expert_ids.ptr[i]
+            var expert_id = expert_ids.flat_load(i)
 
-            var token_start = a_offsets.ptr[i]
-            var token_end = a_offsets.ptr[i + 1]
+            var token_start = a_offsets.flat_load(i)
+            var token_end = a_offsets.flat_load(i + 1)
             var num_tokens = Int(token_end - token_start)
 
             # Skip if no tokens for this expert

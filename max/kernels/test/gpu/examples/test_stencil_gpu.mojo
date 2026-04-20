@@ -24,7 +24,7 @@ from std.utils.numerics import min_or_neg_inf
 
 def fill_buffer[dtype: DType](buf: TileTensor[mut=True, dtype=dtype, ...]):
     for j in range(buf.num_elements()):
-        buf.ptr[j] = Scalar[dtype](j) + 1
+        buf.flat_store(j, Scalar[dtype](j) + 1)
 
 
 def assert_allclose[

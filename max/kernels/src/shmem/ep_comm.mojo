@@ -1496,7 +1496,7 @@ struct EPDispatchKernel[
 
         if expert_idx < Int32(Self.n_experts):
             for i in range(lane_id(), num_tokens * Self.top_k, WARP_SIZE):
-                if topk_ids.ptr[i] == expert_idx:
+                if topk_ids.flat_load(i) == expert_idx:
                     expert_count += 1
 
             expert_count = warp.sum(expert_count)

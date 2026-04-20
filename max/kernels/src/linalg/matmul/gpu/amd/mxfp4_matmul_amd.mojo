@@ -186,7 +186,7 @@ struct BlockScaledMmaOp[
         )
         comptime num_c = Self.num_m_mmas * Self.num_n_mmas * Self.c_frag_size
         comptime for i in range(num_c):
-            self._c_reg.ptr[i] = Scalar[DType.float32](0)
+            self._c_reg.flat_store(i, Scalar[DType.float32](0))
         self._a_scales = stack_allocation[DType.int32, AddressSpace.LOCAL](
             Self._a_scales_layout
         )
@@ -194,9 +194,9 @@ struct BlockScaledMmaOp[
             Self._b_scales_layout
         )
         comptime for i in range(Self._a_scales_count):
-            self._a_scales.ptr[i] = Scalar[DType.int32](0)
+            self._a_scales.flat_store(i, Scalar[DType.int32](0))
         comptime for i in range(Self._b_scales_count):
-            self._b_scales.ptr[i] = Scalar[DType.int32](0)
+            self._b_scales.flat_store(i, Scalar[DType.int32](0))
 
     @always_inline
     def accum_tile(self) -> ref[self._c_reg] type_of(self._c_reg):
@@ -232,7 +232,7 @@ struct BlockScaledMmaOp[
             var a_idx = k_tile_idx * Self.num_m_mmas + i
             var a_row = a_m_offset + i * Self.MMA_M + lane_row
             var a_off = a_row * a_stride + k_byte_offset + lane_chunk * frag_w
-            self._a_reg.ptr.store[width=frag_w](
+            self._a_reg.flat_store[width=frag_w](
                 a_idx * frag_w,
                 a_gmem_ptr.load[width=frag_w](a_off),
             )
@@ -241,7 +241,7 @@ struct BlockScaledMmaOp[
             var b_idx = k_tile_idx * Self.num_n_mmas + i
             var b_row = b_n_offset + i * Self.MMA_N + lane_row
             var b_off = b_row * b_stride + k_byte_offset + lane_chunk * frag_w
-            self._b_reg.ptr.store[width=frag_w](
+            self._b_reg.flat_store[width=frag_w](
                 b_idx * frag_w,
                 b_gmem_ptr.load[width=frag_w](b_off),
             )
@@ -329,10 +329,10 @@ struct BlockScaledMmaOp[
                     + n * Self.c_frag_size
                 )
 
-                var a_data = self._a_reg.ptr.load[width=Self.mma_frag_width](
+                var a_data = self._a_reg.flat_load[width=Self.mma_frag_width](
                     a_row * Self.mma_frag_width
                 )
-                var b_data = self._b_reg.ptr.load[width=Self.mma_frag_width](
+                var b_data = self._b_reg.flat_load[width=Self.mma_frag_width](
                     b_row * Self.mma_frag_width
                 )
 
@@ -342,7 +342,9 @@ struct BlockScaledMmaOp[
                 a_frag = a_frag.insert[offset=0](a_data)
                 b_frag = b_frag.insert[offset=0](b_data)
 
-                var c_frag = self._c_reg.ptr.load[width=Self.c_frag_size](c_off)
+                var c_frag = self._c_reg.flat_load[width=Self.c_frag_size](
+                    c_off
+                )
 
                 var a_scale = rebind[Int32](self._a_scales.ptr[m])
                 var b_scale = rebind[Int32](self._b_scales.ptr[n])
@@ -356,7 +358,7 @@ struct BlockScaledMmaOp[
                     CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
                 ](c_frag, b_frag, a_frag, b_scale, a_scale)
 
-                self._c_reg.ptr.store[width=Self.c_frag_size](c_off, c_frag)
+                self._c_reg.flat_store[width=Self.c_frag_size](c_off, c_frag)
 
 
 # ===----------------------------------------------------------------------=== #

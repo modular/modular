@@ -834,7 +834,7 @@ def pad_repeat[
         var output_idx = input_idx + pre_pads
         var in_idx = Int(input.layout(Coord(input_idx)))
         var out_idx = Int(output.layout(Coord(output_idx)))
-        output.ptr[out_idx] = input.ptr[in_idx]
+        output.flat_store(out_idx, input.ptr[in_idx])
 
     for axis in reversed(range(comptime (output.rank))):
         for i in range(axis):

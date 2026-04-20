@@ -459,7 +459,7 @@ struct TileTensor[
             )
 
         # Inline load logic to avoid constraint propagation issues
-        return self.ptr.load[
+        return self.flat_load[
             width=Self.element_size,
             alignment=align_of[
                 SIMD[Self.dtype, Self.element_size]
@@ -649,7 +649,7 @@ struct TileTensor[
         Returns:
             A SIMD vector containing the loaded elements.
         """
-        return self.ptr.load[
+        return self.flat_load[
             width=width,
             alignment=alignment,
             invariant=invariant,
@@ -736,7 +736,7 @@ struct TileTensor[
         Returns:
             A SIMD vector containing the loaded elements.
         """
-        return self.ptr.load[
+        return self.flat_load[
             width=width, alignment=alignment, invariant=invariant
         ](self._linear_offset(idx))
 
@@ -762,7 +762,74 @@ struct TileTensor[
             idx: The multi-dimensional index.
             value: The SIMD vector to store.
         """
-        self.ptr.store[alignment=alignment](self._linear_offset(idx), value)
+        self.flat_store[alignment=alignment](self._linear_offset(idx), value)
+
+    @always_inline("nodebug")
+    def flat_load[
+        width: Int = 1,
+        alignment: Int = align_of[Self.dtype](),
+        invariant: Bool = _default_invariant[Self.mut](),
+        non_temporal: Bool = False,
+    ](self, offset: Some[Indexer]) -> SIMD[Self.dtype, width]:
+        """Load `width` elements starting at `ptr[offset]`, bypassing the layout.
+
+        This is a raw flat read against the underlying storage: the caller
+        is responsible for ensuring `offset` is a valid linear index into
+        the backing buffer, independent of the tensor's layout. Useful for
+        kernels that treat the buffer as a flat array (copies, fills,
+        reductions over contiguous storage).
+
+        Parameters:
+            width: Number of elements to load.
+            alignment: Memory alignment for the load.
+            invariant: If True, enables load hoisting.
+            non_temporal: If True, indicates the data will not be reused
+                soon, allowing the hardware to bypass caches (e.g.,
+                streaming loads).
+
+        Args:
+            offset: Linear element offset into the underlying storage.
+
+        Returns:
+            A SIMD vector containing the loaded elements.
+        """
+        return self.ptr.load[
+            width=width,
+            alignment=alignment,
+            invariant=invariant,
+            non_temporal=non_temporal,
+        ](_index(offset))
+
+    @always_inline("nodebug")
+    def flat_store[
+        width: Int = 1,
+        alignment: Int = align_of[Self.dtype](),
+        non_temporal: Bool = False,
+    ](
+        self,
+        offset: Some[Indexer],
+        value: SIMD[Self.dtype, width],
+    ) where Self.mut:
+        """Store `width` elements at `ptr[offset]`, bypassing the layout.
+
+        This is a raw flat write against the underlying storage: the caller
+        is responsible for ensuring `offset` is a valid linear index into
+        the backing buffer, independent of the tensor's layout.
+
+        Parameters:
+            width: Number of elements to store.
+            alignment: Memory alignment for the store.
+            non_temporal: If True, indicates the data will not be reused
+                soon, allowing the hardware to bypass caches (e.g.,
+                streaming stores).
+
+        Args:
+            offset: Linear element offset into the underlying storage.
+            value: The SIMD vector to store.
+        """
+        self.ptr.unsafe_mut_cast[True]().store[
+            alignment=alignment, non_temporal=non_temporal
+        ](_index(offset), value)
 
     @always_inline
     def ptr_at_offset(

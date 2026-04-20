@@ -282,9 +282,9 @@ struct MLA_SM100_Decode_KV_FP8[
         comptime num_reg_correction = 72
         comptime num_reg_keep_mma_load_store = 72
         comptime num_reg_keep_fp8tofp16 = 184
-        var batch_size = Int(scalar_args.ptr[0])
-        var q_max_seq_len = Int(scalar_args.ptr[1])
-        var num_partitions = Int(scalar_args.ptr[2])
+        var batch_size = Int(scalar_args.flat_load(0))
+        var q_max_seq_len = Int(scalar_args.flat_load(1))
+        var num_partitions = Int(scalar_args.flat_load(2))
         mask = mla_decode_pack.mask
         valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
@@ -942,10 +942,10 @@ struct MLA_SM100_Decode_KV_FP8[
                     p1a = hmul2_bf16x8_by_scalar[Self.q_type](p1a, scale_bf16)
                     p1b = hmul2_bf16x8_by_scalar[Self.q_type](p1b, scale_bf16)
 
-                p0a_all.ptr.store(b * 4, p0a)
-                p0b_all.ptr.store(b * 4, p0b)
-                p1a_all.ptr.store(b * 4, p1a)
-                p1b_all.ptr.store(b * 4, p1b)
+                p0a_all.flat_store(b * 4, p0a)
+                p0b_all.flat_store(b * 4, p0b)
+                p1a_all.flat_store(b * 4, p1a)
+                p1b_all.flat_store(b * 4, p1b)
 
             # Single barrier. All 128 threads finish ALL reads before ANY writes
             named_barrier[Int32(WARPGROUP_SIZE)](3)
@@ -957,22 +957,22 @@ struct MLA_SM100_Decode_KV_FP8[
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     phys_bf16_0a,
-                    p0a_all.ptr.load[width=4](b * 4),
+                    p0a_all.flat_load[width=4](b * 4),
                 )
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     phys_bf16_0b,
-                    p0b_all.ptr.load[width=4](b * 4),
+                    p0b_all.flat_load[width=4](b * 4),
                 )
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     phys_bf16_1a,
-                    p1a_all.ptr.load[width=4](b * 4),
+                    p1a_all.flat_load[width=4](b * 4),
                 )
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     phys_bf16_1b,
-                    p1b_all.ptr.load[width=4](b * 4),
+                    p1b_all.flat_load[width=4](b * 4),
                 )
 
             fence_async_view_proxy()

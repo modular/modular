@@ -158,7 +158,7 @@ def _rms_norm_fused_residual_cpu_2d[
                 intermediate_type
             ]()
 
-            var gamma_val = gamma.ptr.load[width=sw](col)
+            var gamma_val = gamma.flat_load[width=sw](col)
             var norm_val: SIMD[dtype, sw]
 
             if multiply_before_cast:

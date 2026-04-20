@@ -83,9 +83,9 @@ def test_concat_small_last_axis_aligned() raises:
 
     # Fill inputs
     for i in range(l1.product()):
-        x1.ptr[i] = Float32(i)
+        x1.flat_store(i, Float32(i))
     for i in range(l2.product()):
-        x2.ptr[i] = Float32(i + 100)
+        x2.flat_store(i, Float32(i + 100))
 
     var x1_dyn = x1.make_dynamic[DType.int64]()
     var x2_dyn = x2.make_dynamic[DType.int64]()
@@ -145,9 +145,9 @@ def test_concat_small_last_axis_unaligned() raises:
     var output = TileTensor(out_stack, out_layout).fill(-1)
 
     for i in range(l1.product()):
-        x1.ptr[i] = Float32(i)
+        x1.flat_store(i, Float32(i))
     for i in range(l2.product()):
-        x2.ptr[i] = Float32(i + 200)
+        x2.flat_store(i, Float32(i + 200))
 
     var x1_dyn = x1.make_dynamic[DType.int64]()
     var x2_dyn = x2.make_dynamic[DType.int64]()
@@ -203,9 +203,9 @@ def test_concat_small_non_last_axis() raises:
     var output = TileTensor(out_stack, out_layout).fill(-1)
 
     for i in range(l1.product()):
-        x1.ptr[i] = Float32(i)
+        x1.flat_store(i, Float32(i))
     for i in range(l2.product()):
-        x2.ptr[i] = Float32(i + 300)
+        x2.flat_store(i, Float32(i + 300))
 
     var x1_dyn = x1.make_dynamic[DType.int64]()
     var x2_dyn = x2.make_dynamic[DType.int64]()
@@ -263,9 +263,9 @@ def test_concat_inner_all_outer_dims_singleton() raises:
     var output = TileTensor(out_stack, out_layout).fill(-1)
 
     for i in range(l1.product()):
-        x1.ptr[i] = Float32(i)
+        x1.flat_store(i, Float32(i))
     for i in range(l2.product()):
-        x2.ptr[i] = Float32(i + 400)
+        x2.flat_store(i, Float32(i + 400))
 
     var x1_dyn = x1.make_dynamic[DType.int64]()
     var x2_dyn = x2.make_dynamic[DType.int64]()
@@ -283,8 +283,8 @@ def test_concat_inner_all_outer_dims_singleton() raises:
         assert_equal(output.ptr[i], x1.ptr[i], msg="Mismatch in first input")
     for i in range(l2.product()):
         assert_equal(
-            output.ptr[l1.product() + i],
-            x2.ptr[i],
+            output.flat_load(l1.product() + i),
+            x2.flat_load(i),
             msg="Mismatch in second input",
         )
 
@@ -317,11 +317,11 @@ def test_concat_serial_general_case() raises:
     var output = TileTensor(out_stack, out_layout).fill(-1)
 
     for i in range(l1.product()):
-        x1.ptr[i] = Float32(i)
+        x1.flat_store(i, Float32(i))
     for i in range(l2.product()):
-        x2.ptr[i] = Float32(i + 500)
+        x2.flat_store(i, Float32(i + 500))
     for i in range(l3.product()):
-        x3.ptr[i] = Float32(i + 600)
+        x3.flat_store(i, Float32(i + 600))
 
     var x1_dyn = x1.make_dynamic[DType.int64]()
     var x2_dyn = x2.make_dynamic[DType.int64]()
@@ -554,9 +554,9 @@ def test_concat_with_epilogue() raises:
     var output = TileTensor(out_stack, out_layout).fill(-1)
 
     for i in range(l1.product()):
-        x1.ptr[i] = Float32(i)
+        x1.flat_store(i, Float32(i))
     for i in range(l2.product()):
-        x2.ptr[i] = Float32(i + 100)
+        x2.flat_store(i, Float32(i + 100))
 
     var x1_dyn = x1.make_dynamic[DType.int64]()
     var x2_dyn = x2.make_dynamic[DType.int64]()

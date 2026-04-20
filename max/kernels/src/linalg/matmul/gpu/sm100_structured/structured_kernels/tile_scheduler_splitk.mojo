@@ -473,7 +473,7 @@ struct TileScheduler[
     ) -> TileTensor[accum_type, Self.WorkspaceTileLayout, MutAnyOrigin]:
         var offset = reduction_tile_idx * UInt32(Self.BM) * UInt32(Self.MMA_N)
         return TileTensor[accum_type, Self.WorkspaceTileLayout, MutAnyOrigin](
-            UnsafePointer(to=reduction_workspace.ptr[Int(offset)]),
+            reduction_workspace.ptr + Int(offset),
             row_major[Self.BM, Self.MMA_N](),
         )
 
@@ -547,7 +547,7 @@ struct TileScheduler[
             ],
             MutAnyOrigin,
         ](
-            UnsafePointer(to=tensor.ptr[current_width]),
+            tensor.ptr + current_width,
             _strided_layout[
                 tile_layout.static_shape[0],
                 widths[curr_stage],

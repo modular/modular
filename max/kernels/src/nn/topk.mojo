@@ -289,7 +289,7 @@ def _top_k_cpu[
             def indices_to_val(idx: Int64) -> Scalar[dtype]:
                 indices[axis] = Int(idx)
                 var input_idx = input.layout(Coord(indices))
-                return input.ptr[input_idx]
+                return input.flat_load(input_idx)
 
             comptime if largest:
 
@@ -324,12 +324,12 @@ def _top_k_cpu[
                 while i < shape[axis] - 1:
                     indices[axis] = Int(idxs[i])
                     var input_idx = input.layout(Coord(indices))
-                    var curr = input.ptr[input_idx]
+                    var curr = input.flat_load(input_idx)
                     var num_equal = 1
                     for j in range(i + 1, shape[axis]):
                         indices[axis] = Int(idxs[j])
                         var input_idx = input.layout(Coord(indices))
-                        var next = input.ptr[input_idx]
+                        var next = input.flat_load(input_idx)
                         if curr != next:
                             break
                         num_equal += 1
@@ -345,11 +345,11 @@ def _top_k_cpu[
             for i in range(k_val):
                 indices[axis] = Int(idxs[i])
                 var input_idx = input.layout(Coord(indices))
-                var val = input.ptr[input_idx]
+                var val = input.flat_load(input_idx)
                 indices[axis] = i
                 var out_vals_idx = out_vals.layout(Coord(indices))
                 var out_idxs_idx = out_idxs.layout(Coord(indices))
-                out_vals.ptr[out_vals_idx] = val
+                out_vals.flat_store(out_vals_idx, val)
                 out_idxs.ptr[out_idxs_idx] = rebind[Scalar[out_idx_type]](
                     idxs[i]
                 )

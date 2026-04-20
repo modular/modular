@@ -59,8 +59,8 @@ def apply_mask_kernel[
     var seq_idx = block_idx.y * 16 + thread_idx.x
     var key_idx = block_idx.z * 16 + thread_idx.y
 
-    var start_of_seq = valid_length.ptr[batch_idx]
-    var end_of_seq = valid_length.ptr[batch_idx + 1]
+    var start_of_seq = valid_length.flat_load(batch_idx)
+    var end_of_seq = valid_length.flat_load(batch_idx + 1)
     var seq_len = end_of_seq - start_of_seq
 
     if seq_idx >= Int(seq_len) or key_idx >= Int(max_num_keys):
@@ -129,13 +129,13 @@ def fill_invalid_topk_kernel[
     var batch_idx = 0
     var batch_size = Int(input_row_offsets.dim[0]()) - 1
     for b in range(batch_size):
-        var q_end = Int(input_row_offsets.ptr[b + 1])
+        var q_end = Int(input_row_offsets.flat_load(b + 1))
         if token_idx < q_end:
             batch_idx = b
             break
 
-    var q_start = Int(input_row_offsets.ptr[batch_idx])
-    var q_end = Int(input_row_offsets.ptr[batch_idx + 1])
+    var q_start = Int(input_row_offsets.flat_load(batch_idx))
+    var q_end = Int(input_row_offsets.flat_load(batch_idx + 1))
     var seq_len = q_end - q_start
     var local_seq_idx = token_idx - q_start
 

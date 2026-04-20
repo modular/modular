@@ -45,7 +45,7 @@ def test_pad_constant_gpu[
     # Initialize input with sequential values
     for i in range(input_shape.flattened_length()):
         var idx = input.layout(Idx(i))
-        input.ptr[idx] = Scalar[dtype](i)
+        input.flat_store(idx, Scalar[dtype](i))
 
     if verbose:
         print(input)
