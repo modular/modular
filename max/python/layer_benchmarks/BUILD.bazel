@@ -151,6 +151,19 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "harness_text_encoder",
+    srcs = ["test_harness_text_encoder.py"],
+    # Production UMT5 (24-layer, d_model=4096) needs ~40GB for weights +
+    # activations. Default (10GB) suffices for the small smoke config.
+    exec_properties = {"test.resources:gpu-memory": "10"},
+    gpu_constraints = _GPU_CONSTRAINTS,
+    ignore_extra_deps = ["//max/python/max/interfaces"],
+    imports = ["."],
+    tags = ["gpu"],
+    deps = _HARNESS_TEST_DEPS + [":benchmark_utils"],
+)
+
+modular_py_test(
     name = "testbed_validation",
     srcs = ["test_testbed_validation.py"],
     exec_properties = {"test.resources:gpu-memory": "10"},

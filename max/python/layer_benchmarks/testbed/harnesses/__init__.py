@@ -22,3 +22,4 @@ import testbed.harnesses.olmo2_attention
 import testbed.harnesses.qwen2_5vl_attention
 import testbed.harnesses.qwen3_attention
 import testbed.harnesses.rms_norm
+import testbed.harnesses.text_encoder
