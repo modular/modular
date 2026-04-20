@@ -403,7 +403,7 @@ class Graph:
     These examples only use the :obj:`max.graph` package, but most models also
     use :class:`~max.nn.Module` and other building blocks from :obj:`max.nn`.
     To learn more, see `Build a model graph with Module
-    </max/develop/get-started-with-max-graph-in-python>_`.
+    </max/develop/modules>`_.
 
     Args:
         name: A name for the graph.
