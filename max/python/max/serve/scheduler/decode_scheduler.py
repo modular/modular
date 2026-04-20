@@ -108,6 +108,16 @@ class DecodeScheduler(Scheduler):
             total_num_pages=self.kv_cache.get_num_pages(replica_idx=0),
         )
 
+        # Register draft KV cache blocks for speculative decoding so that
+        # target and draft KV are bundled into a single NIXL transfer.
+        draft_kv_blocks = getattr(pipeline, "draft_kv_blocks", None)
+        if isinstance(draft_kv_blocks, list):
+            self.transfer_engine.register_tensor_group(
+                name="draft",
+                tensors=[[buf] for buf in draft_kv_blocks],
+                total_num_pages=self.kv_cache.get_num_pages(replica_idx=0),
+            )
+
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
             pipeline=pipeline,

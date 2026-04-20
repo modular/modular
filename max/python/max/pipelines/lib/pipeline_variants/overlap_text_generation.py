@@ -1846,6 +1846,16 @@ class OverlapTextGenerationPipeline(
         """Returns the KV cache manager for this pipeline."""
         return self._kv_manager
 
+    @property
+    def draft_kv_blocks(self) -> list[Buffer] | None:
+        """Returns the draft KV cache block buffers, one per DP replica.
+
+        Returns None when speculative decoding is not active.
+        """
+        if self._spec_decode_state is None:
+            return None
+        return self._spec_decode_state.draft_kv_blocks
+
     def spec_decode_metrics(self) -> SpeculativeDecodingMetrics | None:
         """Returns the draft token acceptance metrics for speculative decoding."""
         if self._spec_decode_state is None:

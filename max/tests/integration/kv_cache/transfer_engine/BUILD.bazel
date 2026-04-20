@@ -34,6 +34,7 @@ package(default_visibility = [
             "*_gpu.py",
             "test_read_transfer.py",
             "test_send_recv.py",
+            "test_send_recv_extra_group.py",
         ],
     )
 ]
@@ -41,6 +42,28 @@ package(default_visibility = [
 modular_py_test(
     name = "test_send_recv",
     srcs = ["test_send_recv.py"],
+    gpu_constraints = ["//:has_gpu"],
+    imports = ["."],
+    tags = [
+        "gpu",
+        "no-pydeps",
+    ],
+    # UCX currently only supports linux machines
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/engine",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_send_recv_extra_group",
+    srcs = ["test_send_recv_extra_group.py"],
     gpu_constraints = ["//:has_gpu"],
     imports = ["."],
     tags = [
