@@ -100,6 +100,7 @@ struct SharedMemoryManager[
     BK: Int,
     depth: Int,
     token_gen: Bool,
+    double_buffer_k_only: Bool = False,
 ]:
     var p_smem: UnsafePointer[
         Scalar[Self.dtype],
@@ -127,7 +128,7 @@ struct SharedMemoryManager[
     # depth // simd_width is the padding
     comptime k_smem_size = Self.BN * (
         Self.depth if Self.full_kv else Self.BK
-    ) * (2 if Self.double_buffer else 1)
+    ) * (2 if (Self.double_buffer or Self.double_buffer_k_only) else 1)
     comptime v_smem_size = (Self.BN if Self.full_kv else Self.BK) * (
         pad[
             Self.dtype, Self.depth, Self.depth
@@ -645,16 +646,21 @@ def load_b_tr[
 def copy_dram_to_sram_lds[
     swizzle: Optional[Swizzle] = Optional[Swizzle](),
 ](dst: LayoutTensor, src: LayoutTensor, lds_base_ptr: UInt32 = 0):
-    comptime thread_layout = Layout.row_major(16, 4)
+    # Thread layout: 16×4 normally. When N is large enough that each thread
+    # would load >16 bytes (buffer_load_dwordx4_lds max), widen the layout
+    # to reduce per-thread load. E.g. fp8 BK=128: 8×8 → 16 bytes/lane.
+    comptime raw_load_bytes = (
+        src.shape[1]() * size_of[src.dtype]()
+    ) // 4  # 4 cols in base layout
+    comptime thread_layout = Layout.row_major(
+        16, 4
+    ) if raw_load_bytes <= 16 else Layout.row_major(8, 8)
     var worker_idx = lane_id()
 
     var bc = make_amd_buffer_resource(src)
 
     comptime M = src.shape[0]()
     comptime N = src.shape[1]()
-    # We use 16×4 thread layout to load sub-tiles from DRAM to SRAM.
-    # BN matches the source column count so fp8 (BK=64) and bf16 (BK=32)
-    # both load full rows in one iteration.
     comptime BM = 32
     comptime BN = N
     comptime BM_SUB = thread_layout.shape[0].value()
@@ -692,11 +698,6 @@ def copy_dram_to_sram_lds[
         comptime dtype = src.dtype
         var ptr = dst_partitions.ptr
         var dst_ptr = ptr.address_space_cast[AddressSpace.SHARED]()
-        # bc.load_to_lds[width = simd_width_of[src.dtype]()](
-        #     Int32(src_offset + src_load_offset),
-        #     dst_ptr,
-        #     scalar_offset=0,
-        # )
 
         var desc_ptr_ = UnsafePointer[
             Scalar[DType.bfloat16],

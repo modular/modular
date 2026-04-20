@@ -65,6 +65,7 @@ struct MHAAttentionConfigRDNA[token_gen: Bool, config: MHAConfig, group: Int](
     comptime depth_padded = True
     # No double buffering for simpler memory management
     comptime double_buffer = False
+    comptime double_buffer_k_only = False
 
     @staticmethod
     @always_inline

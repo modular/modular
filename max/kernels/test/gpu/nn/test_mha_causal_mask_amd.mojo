@@ -304,64 +304,36 @@ comptime USE_FP8 = get_defined_bool["USE_FP8", False]()
 
 
 def test_helper[depth: Int](ctx: DeviceContext) raises:
-    comptime if USE_FP8:
-        # FP8 prefill-only tests (decode not yet supported).
-        test[DType.float8_e4m3fn, depth=depth, num_heads=1](128, 128, ctx)
-        test[DType.float8_e4m3fn, depth=depth, num_heads=1](384, 384, ctx)
-        test[DType.float8_e4m3fn, depth=depth, num_heads=24, group=3](
-            1024, 1024, ctx
-        )
-        test[DType.float8_e4m3fn, depth=depth, num_heads=3, group=3](
-            128, 128, ctx
-        )
-        test[DType.float8_e4m3fn, depth=depth, num_heads=3, group=3](
-            102, 102, ctx
-        )
-        test[DType.float8_e4m3fn, depth=depth, num_heads=1](14, 14, ctx)
-        test[DType.float8_e4m3fn, depth=depth, num_heads=1](528, 528, ctx)
-        test[DType.float8_e4m3fn, depth=depth, num_heads=16, group=16](
-            128, 128, ctx
-        )
-        test[DType.float8_e4m3fn, depth=depth, num_heads=16, group=16](
-            1024, 1024, ctx
-        )
-    else:
-        test[DType.bfloat16, depth=depth, num_heads=1](128, 128, ctx)
-        test[DType.bfloat16, depth=depth, num_heads=1](384, 384, ctx)
-        test[DType.bfloat16, depth=depth, num_heads=24, group=3](
-            1024, 1024, ctx
-        )
-        test[DType.bfloat16, depth=depth, num_heads=16, group=16](128, 128, ctx)
-        test[DType.bfloat16, depth=depth, num_heads=16, group=16](
-            1024, 1024, ctx
-        )
-        # BF16 with sequence length not multiple of 128
-        test[DType.bfloat16, depth=depth, num_heads=3, group=3](128, 128, ctx)
-        test[DType.bfloat16, depth=depth, num_heads=3, group=3](102, 102, ctx)
-        test[DType.bfloat16, depth=depth, num_heads=1](14, 14, ctx)
-        test[DType.bfloat16, depth=depth, num_heads=1](528, 528, ctx)
-        # BF16 token gen
-        test[DType.bfloat16, depth=depth, num_heads=32](
-            1, 512, ctx, is_benchmark()
-        )
-        test[DType.bfloat16, depth=depth, num_heads=11](1, 256, ctx)
-        test[DType.bfloat16, depth=depth, num_heads=1](1, 11, ctx)
-        test[DType.bfloat16, depth=depth, num_heads=2](1, 523, ctx)
-        test[DType.bfloat16, depth=depth, num_heads=24, group=3](1, 29, ctx)
-        test[DType.bfloat16, depth=depth, num_heads=3, group=3](1, 156, ctx)
-        test[DType.bfloat16, depth=depth, num_heads=3, group=3](1, 208, ctx)
-        test[DType.bfloat16, depth=depth, num_heads=32, group=4](1, 1208, ctx)
-        test[DType.bfloat16, depth=depth, num_heads=32, group=4](1, 2008, ctx)
-        test[DType.bfloat16, depth=depth, num_heads=32, group=4](1, 5000, ctx)
-        test[DType.bfloat16, depth=depth, num_heads=16, group=16](1, 128, ctx)
-        test[DType.bfloat16, depth=depth, num_heads=16, group=16](1, 1024, ctx)
-        test[DType.bfloat16, depth=depth, num_heads=16, group=16](1, 5000, ctx)
+    comptime dtype = DType.float8_e4m3fn if USE_FP8 else DType.bfloat16
+    test[dtype, depth=depth, num_heads=1](128, 128, ctx)
+    test[dtype, depth=depth, num_heads=1](384, 384, ctx)
+    test[dtype, depth=depth, num_heads=24, group=3](1024, 1024, ctx)
+    test[dtype, depth=depth, num_heads=16, group=16](128, 128, ctx)
+    test[dtype, depth=depth, num_heads=16, group=16](1024, 1024, ctx)
+    # Sequence length not multiple of 128
+    test[dtype, depth=depth, num_heads=3, group=3](128, 128, ctx)
+    test[dtype, depth=depth, num_heads=3, group=3](102, 102, ctx)
+    test[dtype, depth=depth, num_heads=1](14, 14, ctx)
+    test[dtype, depth=depth, num_heads=1](528, 528, ctx)
+    # Token gen
+    test[dtype, depth=depth, num_heads=32](1, 512, ctx, is_benchmark())
+    test[dtype, depth=depth, num_heads=11](1, 256, ctx)
+    test[dtype, depth=depth, num_heads=1](1, 11, ctx)
+    test[dtype, depth=depth, num_heads=2](1, 523, ctx)
+    test[dtype, depth=depth, num_heads=24, group=3](1, 29, ctx)
+    test[dtype, depth=depth, num_heads=3, group=3](1, 156, ctx)
+    test[dtype, depth=depth, num_heads=3, group=3](1, 208, ctx)
+    test[dtype, depth=depth, num_heads=32, group=4](1, 1208, ctx)
+    test[dtype, depth=depth, num_heads=32, group=4](1, 2008, ctx)
+    test[dtype, depth=depth, num_heads=32, group=4](1, 5000, ctx)
+    test[dtype, depth=depth, num_heads=16, group=16](1, 128, ctx)
+    test[dtype, depth=depth, num_heads=16, group=16](1, 1024, ctx)
+    test[dtype, depth=depth, num_heads=16, group=16](1, 5000, ctx)
 
 
 def main() raises:
     with DeviceContext() as ctx:
         comptime if USE_FP8:
-            # FP8 only validated for depth=128 and 256 so far.
             comptime for depth in [128, 256]:
                 test_helper[depth](ctx)
         else:

@@ -616,12 +616,23 @@ def flare_mla_decoding_dispatch[
         # only A100 or H100 have the enough smem to store the full BM * head_dim Q tensor.
         comptime has_enough_smem = ctx.default_device_info == A100 or ctx.default_device_info == H100
 
-        comptime preferred_BM = 16 if (
-            not has_enough_smem or has_amd_gpu_accelerator()
-        ) else 32
-        comptime BM = preferred_BM if preferred_BM <= num_heads else num_heads
+        # AMD FP8 MLA decode uses 32x32x64 MMA (depth=576 is not a multiple
+        # of 128, so the 16x16x128 path is unusable). That requires BM>=32
+        # and BK>=64. BF16 AMD MLA keeps BM=16, BK=32 (16x16x32 MMA).
+        # For amd_fp8 we always use BM=32 even when num_heads<32; the top
+        # num_heads rows of the tile carry real work and the bottom rows
+        # do wasted MMA work (OOB Q reads return 0 via AMD buffer_load).
+        comptime amd_fp8 = has_amd_gpu_accelerator() and q.dtype.is_float8()
+        comptime preferred_BM = 32 if amd_fp8 else (
+            16 if (not has_enough_smem or has_amd_gpu_accelerator()) else 32
+        )
+        comptime BM = preferred_BM if (
+            amd_fp8 or preferred_BM <= num_heads
+        ) else num_heads
         comptime BN = 64 if has_nvidia_gpu_accelerator() else 128
-        comptime BK = 64 if has_nvidia_gpu_accelerator() else 32  # need 8 mma_tile per row to resolve the bank conflict on nvidia
+        comptime BK = 64 if (
+            has_nvidia_gpu_accelerator() or amd_fp8
+        ) else 32  # need 8 mma_tile per row to resolve the bank conflict on nvidia
         comptime WM = BM
         comptime WN = 16 if has_nvidia_gpu_accelerator() else 32
         # num warps in M and N, multiplied by warp size.
@@ -646,7 +657,7 @@ def flare_mla_decoding_dispatch[
             shared_mem_bytes if has_nvidia_gpu_accelerator() else 0
         )
 
-        comptime num_blocks_y = num_heads // BM
+        comptime num_blocks_y = ceildiv(num_heads, BM)
 
         comptime kernel = mla_decoding[
             q.dtype,

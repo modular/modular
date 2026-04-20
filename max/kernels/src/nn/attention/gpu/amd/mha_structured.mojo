@@ -30,14 +30,14 @@ from std.memory import bitcast
 from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 
-from .mha_gfx950 import Attention
+from .mha import Attention
 from .kv_buffer import (
     KVBuffer as StructuredKVBuffer,
     KVCacheIterator,
 )
 
 
-# --- Synchronization primitives (same as mha_gfx950.mojo) ---
+# --- Synchronization primitives (same as amd/mha.mojo) ---
 
 
 @always_inline

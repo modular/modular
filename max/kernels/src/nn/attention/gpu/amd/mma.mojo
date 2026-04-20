@@ -81,10 +81,8 @@ struct TiledMmaOp[
 
             comptime for m_mma in range(num_m_mmas):
                 comptime for n_mma in range(num_n_mmas):
-                    # col_major(M, N): m + n*M; row_major(N, M): m*M + n.
-                    comptime c_idx = (
-                        m_mma * num_m_mmas + n_mma
-                    ) if swap_a_b else (m_mma + n_mma * num_m_mmas)
+                    # col_major(M, N): c_idx = m + n*M.
+                    comptime c_idx = m_mma + n_mma * num_m_mmas
                     # Tile to a single [1, c_frag] fragment, then
                     # vectorize to [1, 1] — provably rank-2.
                     var c_frag_vec = c.tile[1, c_frag](c_idx, 0).vectorize[

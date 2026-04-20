@@ -12,7 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.random import randn
-from std.sys import argv, has_nvidia_gpu_accelerator
+from std.sys import (
+    argv,
+    has_amd_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
+)
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
@@ -57,6 +61,7 @@ def test[
     batch_size: Int = 1,
     num_partitions: Optional[Int] = None,
     decoding_warp_split_k: Bool = False,
+    output_type: DType = qkv_type,
 ](
     seq_len: Int,
     num_keys: Int,
@@ -75,6 +80,14 @@ def test[
         num_keys,
         "qkv_type:",
         qkv_type,
+        "output_type:",
+        output_type,
+        "depth:",
+        depth,
+        "num_heads:",
+        num_heads,
+        "group:",
+        group,
     )
 
     # Query, key, value dimensions.
@@ -90,8 +103,8 @@ def test[
     # Allocate memory for all variables.
     var q_ptr = alloc[Scalar[qkv_type]](q_size)
     var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var output_ptr = alloc[Scalar[qkv_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[qkv_type]](o_size)
+    var output_ptr = alloc[Scalar[output_type]](o_size)
+    var flash_output_ptr = alloc[Scalar[output_type]](o_size)
 
     # Q, K, V are randomly initialized.
     if use_index_input:
@@ -99,15 +112,15 @@ def test[
         for i in range(seq_len):
             for h in range(num_heads):
                 for j in range(depth):
-                    q_ptr[(i * num_heads + h) * depth + j] = Scalar[qkv_type](
-                        i * depth + j
-                    )
+                    q_ptr[(i * num_heads + h) * depth + j] = Scalar[
+                        DType.float32
+                    ](i * depth + j).cast[qkv_type]()
         for i in range(num_keys):
             for h in range(kv_num_heads):
                 for j in range(depth):
                     k_ptr[(i * kv_num_heads + h) * depth + j] = Scalar[
-                        qkv_type
-                    ](i * depth + j)
+                        DType.float32
+                    ](i * depth + j).cast[qkv_type]()
 
     else:
         randn[qkv_type](q_ptr, q_size)
@@ -116,7 +129,7 @@ def test[
     # Device pointers
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
     var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
-    var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
+    var output_device_ptr = ctx.enqueue_create_buffer[output_type](o_size)
 
     # Copy from host to device
     ctx.enqueue_copy(q_device_ptr, q_ptr)
@@ -199,7 +212,9 @@ def test[
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
     comptime if against_gpu_naive:
-        var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
+        var output_ref_device_ptr = ctx.enqueue_create_buffer[output_type](
+            o_size
+        )
         var output_ref_device = TileTensor(
             output_ref_device_ptr,
             row_major(
@@ -290,6 +305,7 @@ def test_prefill[
     cache_num_heads: Int,
     batch_size: Int = 1,
     use_causal_mask: Bool = True,
+    output_type: DType = qkv_type,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     print(
         "test_mla_prefill",
@@ -303,6 +319,8 @@ def test_prefill[
         qkv_type,
         "k_rope_type:",
         k_rope_type,
+        "output_type:",
+        output_type,
         "depth:",
         depth,
         "kv_depth:",
@@ -325,7 +343,7 @@ def test_prefill[
     var k_ptr = alloc[Scalar[qkv_type]](k_size)
     var v_ptr = alloc[Scalar[qkv_type]](v_size)
     var cache_ptr = alloc[Scalar[k_rope_type]](cache_size)
-    var output_ptr = alloc[Scalar[qkv_type]](o_size)
+    var output_ptr = alloc[Scalar[output_type]](o_size)
 
     # Q, K, V, cache are randomly initialized.
     randn[qkv_type](q_ptr, q_size)
@@ -382,7 +400,7 @@ def test_prefill[
     var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
     var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
     var cache_device_ptr = ctx.enqueue_create_buffer[k_rope_type](cache_size)
-    var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
+    var output_device_ptr = ctx.enqueue_create_buffer[output_type](o_size)
     var input_row_offsets_device_ptr = ctx.enqueue_create_buffer[DType.uint32](
         batch_size + 1
     )
@@ -504,7 +522,7 @@ def test_prefill[
     var v_ref_ptr = alloc[Scalar[qkv_type]](
         batch_size * num_keys * num_heads * depth
     )
-    var output_ref_ptr = alloc[Scalar[qkv_type]](
+    var output_ref_ptr = alloc[Scalar[output_type]](
         batch_size * seq_len * num_heads * depth
     )
 
@@ -562,7 +580,7 @@ def test_prefill[
     var v_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](
         batch_size * num_keys * num_heads * depth
     )
-    var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](
+    var output_ref_device_ptr = ctx.enqueue_create_buffer[output_type](
         batch_size * seq_len * num_heads * depth
     )
     # create device TileTensors for K_ref and V_ref
@@ -634,20 +652,22 @@ def test_prefill[
     )
 
     # compare output with reference
+    comptime atol: Float64 = 2e-2
+    comptime rtol: Float64 = 2e-2 if has_nvidia_gpu_accelerator() else 3e-2
     for b in range(batch_size):
         for s in range(seq_len):
             for h in range(num_heads):
                 for d in range(kv_depth):
                     lhs = output_rank4[b, s, h, d]
                     rhs = output_ref[b, s, h, d]
-                    if abs((lhs - rhs)) > 2e-2:
+                    if abs((lhs - rhs)).cast[DType.float64]() > atol:
                         print(b, s, h, d, lhs, rhs)
                     # print(b, s, h, d, lhs, rhs)
                     assert_almost_equal(
                         lhs,
                         rhs,
-                        atol=2e-2,
-                        rtol=2e-2 if has_nvidia_gpu_accelerator() else 3e-2,
+                        atol=atol,
+                        rtol=rtol,
                     )
 
     _ = q_device_ptr
@@ -674,6 +694,7 @@ def test_decoding[
     num_partitions: Optional[Int],
     split_k: Bool,
     qkv_type: DType = DType.bfloat16,
+    output_type: DType = qkv_type,
 ](ctx: DeviceContext, use_index_input: Bool) raises:
     comptime if _is_sm10x_gpu(ctx.default_device_info):
         if batch_size <= 2:
@@ -686,6 +707,7 @@ def test_decoding[
                 batch_size=batch_size,
                 num_partitions=num_partitions,
                 decoding_warp_split_k=split_k,
+                output_type=output_type,
             ](1, 32768, ctx, use_index_input=use_index_input)
             test[
                 qkv_type,
@@ -696,6 +718,7 @@ def test_decoding[
                 batch_size=batch_size,
                 num_partitions=num_partitions,
                 decoding_warp_split_k=split_k,
+                output_type=output_type,
             ](1, 32768 * 2, ctx, use_index_input=use_index_input)
         else:
             for seq_len in range(1, 9):
@@ -709,6 +732,7 @@ def test_decoding[
                     batch_size=batch_size,
                     num_partitions=num_partitions,
                     decoding_warp_split_k=split_k,
+                    output_type=output_type,
                 ](seq_len, 50, ctx, use_index_input=use_index_input)
 
                 # BF16 token gen, with num_heads=16 (deepseek-v2 lite)
@@ -721,6 +745,7 @@ def test_decoding[
                     batch_size=batch_size,
                     num_partitions=num_partitions,
                     decoding_warp_split_k=split_k,
+                    output_type=output_type,
                 ](seq_len, 50, ctx, use_index_input=use_index_input)
 
             test[
@@ -732,6 +757,7 @@ def test_decoding[
                 batch_size=batch_size,
                 num_partitions=num_partitions,
                 decoding_warp_split_k=split_k,
+                output_type=output_type,
             ](1, 4096, ctx, use_index_input=use_index_input)
 
             test[
@@ -743,6 +769,7 @@ def test_decoding[
                 batch_size=batch_size,
                 num_partitions=num_partitions,
                 decoding_warp_split_k=split_k,
+                output_type=output_type,
             ](2, 4096, ctx, use_index_input=use_index_input)
 
             test[
@@ -754,6 +781,7 @@ def test_decoding[
                 batch_size=batch_size,
                 num_partitions=num_partitions,
                 decoding_warp_split_k=split_k,
+                output_type=output_type,
             ](3, 1024, ctx, use_index_input=use_index_input)
 
             test[
@@ -765,6 +793,7 @@ def test_decoding[
                 batch_size=batch_size,
                 num_partitions=num_partitions,
                 decoding_warp_split_k=split_k,
+                output_type=output_type,
             ](4, 1024, ctx, use_index_input=use_index_input)
 
     else:  # H100 AND AMD
@@ -778,6 +807,7 @@ def test_decoding[
             batch_size=batch_size,
             num_partitions=num_partitions,
             decoding_warp_split_k=split_k,
+            output_type=output_type,
         ](1, 50, ctx, use_index_input=use_index_input)
 
         test[
@@ -789,6 +819,7 @@ def test_decoding[
             batch_size=batch_size,
             num_partitions=num_partitions,
             decoding_warp_split_k=split_k,
+            output_type=output_type,
         ](1, 1024, ctx, use_index_input=use_index_input)
 
         test[
@@ -800,6 +831,7 @@ def test_decoding[
             batch_size=batch_size,
             num_partitions=num_partitions,
             decoding_warp_split_k=split_k,
+            output_type=output_type,
         ](1, 4096, ctx, use_index_input=use_index_input)
         # BF16 token gen, with num_heads=16 (deepseek-v2 lite)
         test[
@@ -811,6 +843,7 @@ def test_decoding[
             batch_size=batch_size,
             num_partitions=num_partitions,
             decoding_warp_split_k=split_k,
+            output_type=output_type,
         ](1, 50, ctx, use_index_input=use_index_input)
 
         test[
@@ -822,7 +855,45 @@ def test_decoding[
             batch_size=batch_size,
             num_partitions=num_partitions,
             decoding_warp_split_k=split_k,
+            output_type=output_type,
         ](1, 1024, ctx, use_index_input=use_index_input)
+
+        # BF16 token gen, with num_heads=64 (intermediate group size)
+        test[
+            qkv_type,
+            576,
+            64,
+            group=64,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+            output_type=output_type,
+        ](1, 50, ctx, use_index_input=use_index_input)
+
+        test[
+            qkv_type,
+            576,
+            64,
+            group=64,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+            output_type=output_type,
+        ](1, 1024, ctx, use_index_input=use_index_input)
+
+        test[
+            qkv_type,
+            576,
+            64,
+            group=64,
+            against_gpu_naive=True,
+            batch_size=batch_size,
+            num_partitions=num_partitions,
+            decoding_warp_split_k=split_k,
+            output_type=output_type,
+        ](1, 2048, ctx, use_index_input=use_index_input)
 
         test[
             qkv_type,
@@ -833,6 +904,7 @@ def test_decoding[
             batch_size=batch_size,
             num_partitions=num_partitions,
             decoding_warp_split_k=split_k,
+            output_type=output_type,
         ](1, 2048, ctx, use_index_input=use_index_input)
 
 
@@ -840,6 +912,7 @@ def test_mla_prefill[
     batch_size: Int,
     qkv_type: DType,
     k_rope_type: DType,
+    output_type: DType = qkv_type,
 ](ctx: DeviceContext) raises:
     test_prefill[
         qkv_type,
@@ -850,6 +923,7 @@ def test_mla_prefill[
         cache_depth=576,
         cache_num_heads=1,
         batch_size=batch_size,
+        output_type=output_type,
     ](120, 120, ctx)
     test_prefill[
         qkv_type,
@@ -860,6 +934,7 @@ def test_mla_prefill[
         cache_depth=576,
         cache_num_heads=1,
         batch_size=batch_size,
+        output_type=output_type,
     ](1179, 1179, ctx)
     test_prefill[
         qkv_type,
@@ -870,6 +945,7 @@ def test_mla_prefill[
         cache_depth=576,
         cache_num_heads=1,
         batch_size=batch_size,
+        output_type=output_type,
     ](700, 700, ctx)
     test_prefill[
         qkv_type,
@@ -880,6 +956,7 @@ def test_mla_prefill[
         cache_depth=576,
         cache_num_heads=1,
         batch_size=batch_size,
+        output_type=output_type,
     ](701, 701, ctx)
     test_prefill[
         qkv_type,
@@ -890,6 +967,7 @@ def test_mla_prefill[
         cache_depth=576,
         cache_num_heads=1,
         batch_size=batch_size,
+        output_type=output_type,
     ](12, 12, ctx)
     test_prefill[
         qkv_type,
@@ -900,6 +978,7 @@ def test_mla_prefill[
         cache_depth=576,
         cache_num_heads=1,
         batch_size=batch_size,
+        output_type=output_type,
     ](350, 700, ctx)
     test_prefill[
         qkv_type,
@@ -910,6 +989,7 @@ def test_mla_prefill[
         cache_depth=576,
         cache_num_heads=1,
         batch_size=batch_size,
+        output_type=output_type,
     ](120, 240, ctx)
 
 
@@ -919,6 +999,25 @@ def main() raises:
         test_decoding[27, 1, False](ctx, False)
         test_decoding[128, 1, False](ctx, False)
         test_decoding[0, 1, False](ctx, False)
+
+        # FP8 Q/K/V with BF16 output. AMD MLA FP8 decode uses 32x32x64 MMA
+        # with BM=32, BK=64 (depth=576 is not a multiple of 128, so the
+        # 16x16x128 path is not usable).
+        comptime if has_amd_gpu_accelerator():
+            test_decoding[
+                1,
+                1,
+                False,
+                qkv_type=DType.float8_e4m3fn,
+                output_type=DType.bfloat16,
+            ](ctx, False)
+            test_decoding[
+                27,
+                1,
+                False,
+                qkv_type=DType.float8_e4m3fn,
+                output_type=DType.bfloat16,
+            ](ctx, False)
 
         # test mla prefill
         test_mla_prefill[2, DType.bfloat16, DType.bfloat16](ctx)

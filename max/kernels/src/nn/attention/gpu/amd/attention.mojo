@@ -20,6 +20,7 @@ from std.sys.intrinsics import _type_is_eq, readfirstlane
 from std.sys._assembly import inlined_assembly
 from std.gpu import barrier, block_idx, lane_id, thread_idx
 from layout import Layout, LayoutTensor, TileTensor, UNKNOWN_VALUE
+from layout.swizzle import Swizzle
 from layout import row_major as tt_row_major
 from layout._utils import idx2crd
 from structured_kernels.amd_tile_io import RegTileWriter
@@ -88,6 +89,8 @@ trait AttentionConfig(ImplicitlyCopyable):
     comptime depth_padded: Bool
     # double buffer
     comptime double_buffer: Bool
+    # double buffer K only (V stays single-buffered)
+    comptime double_buffer_k_only: Bool
 
     @staticmethod
     @always_inline
@@ -193,7 +196,7 @@ def _mask_apply[
             comptime is_causal_mask = _type_is_eq[mask_t, CausalMask]()
 
             if masked:
-                comptime if is_causal_mask:
+                comptime if is_causal_mask and not token_gen:
                     var x_0 = Int32(
                         score_row_with_start_pos
                         - score_col_with_cache_start_pos
@@ -345,6 +348,21 @@ struct Attention[
         Self.output_frag_size,
     ]
 
+    # P swizzle for shared_memory_backed path (BN != WN, 16x16 MMA).
+    # Swizzle(3,0,3) XORs bits [5:3] into [2:0] of the 8-element group
+    # index, spreading rows across LDS bank groups. Achieves 0.93% bank
+    # conflict rate (P writes only — reads are conflict-free on MI355).
+    comptime _p_shared_memory_backed = Self.BN != Self.WN
+    comptime _p_swizzle = (
+        Swizzle(3, 0, 3) if (
+            Self._p_shared_memory_backed
+            and Self.mma_shape[0] == 16
+            # Disable for FP8 16x16x128: interleaved layout doesn't fit
+            # when BK=128 (4 warps × 2 n_mmas × 4 frag_w = 32 > simd_w=16).
+            and Self.mma_shape[2] <= 2 * Self.mma_shape[1]
+        ) else Optional[Swizzle](None)
+    )
+
     comptime PRegisterBufferType = PRegisterBuffer[
         Self.accum_type,
         Self.q_type,
@@ -356,13 +374,13 @@ struct Attention[
         Self.num_m_mmas,
         Self.num_n_mmas,
         Self.output_frag_size,
-        Self.BN != Self.WN,
+        Self._p_shared_memory_backed,
         Self.mma_shape,
         Self.k_group_size,
-        # use double buffer as proxy for experimental kernel
-        # need to find a better way to determine this
-        tr_load_enabled=Self.attention_config_t.double_buffer,
+        # full_kv=True means gfx950 kernel which needs tr_load for 32x32 MMA
+        tr_load_enabled=Self.attention_config_t.full_kv,
         num_stages=2 if Self.attention_config_t.double_buffer else 1,
+        p_swizzle=Self._p_swizzle,
     ]
 
     comptime GlobalMemoryManagerType = GlobalMemoryManager[
@@ -389,6 +407,7 @@ struct Attention[
         Self.BK,
         Self.depth,
         Self.token_gen,
+        double_buffer_k_only=Self.attention_config_t.double_buffer_k_only,
     ]
 
     comptime QRegisterBufferType = QRegisterBuffer[
@@ -744,8 +763,6 @@ struct Attention[
                 UInt32(self.cache_start_pos),
             )
 
-        # self.scale_p_reg[stage]()
-
         comptime if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
             var mask_status = self.mask_status(
                 kv_tile_start_row,
@@ -880,11 +897,10 @@ struct Attention[
         var warp_col = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[1]
 
         comptime if Self.token_gen and Self.mma_shape[0] != 32:
-            # Token-gen 16x16 MMA: use LayoutTensor copy_local_to_dram to
-            # match the LayoutTensor load_from_shared workaround in
-            # KVBufferImpl. RegTileWriter.store uses TileTensor
-            # distribute_with_offset which produces wrong output positions
-            # when group == mma_shape[0] (all MMA rows active).
+            # Token-gen 16x16 MMA: use LayoutTensor copy_local_to_dram.
+            # RegTileWriter.store uses TileTensor distribute_with_offset
+            # which produces wrong output positions when
+            # group == mma_shape[0] (all MMA rows active).
             var output_tensor = self.gmem_manager.get_output_tensor(
                 self.output_ptr
             )
