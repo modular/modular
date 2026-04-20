@@ -380,7 +380,7 @@ def _argsort_gpu[
     ascending: Bool = True,
 ](
     indices: TileTensor[mut=True, ...],
-    input: TileTensor[mut=True, ...],
+    input: TileTensor,
     ctx: DeviceContext,
 ) raises:
     """
@@ -400,25 +400,38 @@ def _argsort_gpu[
     var n = indices.num_elements()
 
     if n.is_power_of_two():
+        var input_copy_buffer = ctx.enqueue_create_buffer[input.dtype](n)
+        var input_copy = TileTensor(input_copy_buffer, row_major(Idx(n)))
+
         # Initialize indices with iota.
         @parameter
-        @__copy_capture(indices)
+        @__copy_capture(indices, input, input_copy)
         def fill_indices_iota_no_padding[
             width: Int, rank: Int, alignment: Int = 1
         ](offset: IndexList[rank]):
+            var i = offset[0]
+
             indices.flat_store(
-                offset[0],
-                iota[indices.dtype, width](Scalar[indices.dtype](offset[0])),
+                i,
+                iota[indices.dtype, width](Scalar[indices.dtype](i)),
+            )
+            input_copy.flat_store[alignment=simd_width_of[input_copy.dtype]()](
+                i, input.ptr.load[width=width](i)
             )
 
         elementwise[
             fill_indices_iota_no_padding,
-            simd_width=simd_width_of[indices.dtype, target=get_gpu_target()](),
+            simd_width=min(
+                simd_width_of[indices.dtype, target=get_gpu_target()](),
+                simd_width_of[input.dtype, target=get_gpu_target()](),
+            ),
             target="gpu",
             _trace_description="argsort_fill_indices",
         ](n, ctx)
 
-        return _argsort_gpu_impl[ascending=ascending](indices, input, ctx)
+        _argsort_gpu_impl[ascending=ascending](indices, input_copy, ctx)
+        _ = input_copy_buffer^
+        return
 
     var pow_2_length = next_power_of_two(n)
 
@@ -524,7 +537,7 @@ def argsort[
     target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    input: TileTensor[mut=True, ...],
+    input: TileTensor,
     ctx: DeviceContext,
 ) raises:
     """
