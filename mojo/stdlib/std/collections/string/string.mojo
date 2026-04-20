@@ -1358,29 +1358,31 @@ struct String(
         return substr in StringSlice(self)
 
     def find(self, substr: StringSlice, start: Int = 0) -> Int:
-        """Finds the offset of the first occurrence of `substr` starting at
-        `start`. If not found, returns -1.
+        """Finds the offset in bytes of the first occurrence of `substr`
+        starting at `start`. If not found, returns `-1`.
 
         Args:
           substr: The substring to find.
-          start: The offset from which to find.
+          start: The offset in bytes from which to find.
 
         Returns:
-          The offset of `substr` relative to the beginning of the string.
+          The offset in bytes of `substr` relative to the beginning of the
+          string.
         """
 
         return StringSlice(self).find(substr, start)
 
     def rfind(self, substr: StringSlice, start: Int = 0) -> Int:
-        """Finds the offset of the last occurrence of `substr` starting at
-        `start`. If not found, returns -1.
+        """Finds the offset in bytes of the last occurrence of `substr` starting
+        at `start`. If not found, returns `-1`.
 
         Args:
           substr: The substring to find.
-          start: The offset from which to find.
+          start: The offset in bytes from which to find.
 
         Returns:
-          The offset of `substr` relative to the beginning of the string.
+          The offset in bytes of `substr` relative to the beginning of the
+          string.
         """
 
         return StringSlice(self).rfind(substr, start=start)
@@ -1630,10 +1632,13 @@ struct String(
         """Checks if the string starts with the specified prefix between start
         and end positions. Returns True if found and False otherwise.
 
+        The `start` and `end` positions must be offsets given in bytes, and
+        must be codepoint boundaries.
+
         Args:
             prefix: The prefix to check.
-            start: The start offset from which to check.
-            end: The end offset from which to check.
+            start: The start offset in bytes from which to check.
+            end: The end offset in bytes from which to check.
 
         Returns:
             True if the `self[start:end]` is prefixed by the input prefix.
@@ -1646,10 +1651,13 @@ struct String(
         """Checks if the string end with the specified suffix between start
         and end positions. Returns True if found and False otherwise.
 
+        The `start` and `end` positions must be offsets given in bytes, and
+        must be codepoint boundaries.
+
         Args:
             suffix: The suffix to check.
-            start: The start offset from which to check.
-            end: The end offset from which to check.
+            start: The start offset in bytes from which to check.
+            end: The end offset in bytes from which to check.
 
         Returns:
             True if the `self[start:end]` is suffixed by the input suffix.
