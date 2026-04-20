@@ -560,7 +560,7 @@ def variadic_pack[*Ts: AnyType](*vals: *Ts):
     """Test variadic pack argument type printing.
 
     Parameters:
-        Ts: Variadic types.
+        Ts: The list of types.
 
     Args:
         vals: Variadic pack arguments.

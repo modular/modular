@@ -935,27 +935,13 @@ trait ImplicitlyDestructible:
 
 
 struct Variadic:
-    comptime ValuesOfType[type: AnyType] = _MLIR.KGENParamListType[type]
     comptime TypesOfTrait[T: type_of(AnyType)] = _MLIR.KGENTypeListType[T]
-
-    comptime size[T: AnyType, //, seq: Self.ValuesOfType[T]]: Int = Int(
-        mlir_value=__mlir_attr[
-            `#kgen.param_list.size<:`,
-            type_of(seq),
-            ` `,
-            +seq,
-            `> : index`,
-        ]
-    )
 
     # ===-----------------------------------------------------------------------===#
     # Utils
     # ===-----------------------------------------------------------------------===#
 
     comptime types[T: type_of(AnyType), //, *Ts: T] = Ts.values
-    comptime values[T: AnyType, //, *elts: T]: Variadic.ValuesOfType[
-        T
-    ] = elts.values
 
 
 struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
@@ -1002,7 +988,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
             `,`,
             _IndexToIntTabulateWrap[Mapper, ...],
             `> : `,
-            Variadic.ValuesOfType[type],
+            _MLIR.KGENParamListType[type],
         ],
     ]
 
@@ -1014,7 +1000,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
             `,`,
             _IndexToIntTabulateWrap[_SplatValueTabulator[value, _], ...],
             `> : `,
-            Variadic.ValuesOfType[T],
+            _MLIR.KGENParamListType[T],
         ],
     ]
 
