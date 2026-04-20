@@ -1,0 +1,197 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "pkg_files", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_binary(
+    name = "kbench",
+    srcs = [
+        "__init__.py",
+        "kbench.py",
+        "kbench_model.py",
+        "terminal_viz.py",
+        "utils.py",
+    ],
+    data = [
+        "@nvshmem_prebuilt//:device",
+        "@nvshmem_prebuilt//:host",
+    ],
+    env = {
+        "KERNEL_BENCHMARKS_ROOT": "$$BUILD_WORKSPACE_DIRECTORY/" + package_name() + "/..",
+        "BITCODE_LIBS_PATH": "$(rootpath @nvshmem_prebuilt//:device)",
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    imports = ["."],
+    main = "kbench.py",
+    mojo_deps = [
+        "//max:_cublas",
+        "//max:_cudnn",
+        "//max:_cufft",
+        "//max:_curand",
+        "//max:_rocblas",
+        "//max:comm",
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:layout",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "//max:register",
+        "//max:shmem",
+        "@mojo//:std",
+    ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    target_compatible_with = select({
+        # FIXME: PAQ-2245
+        "//:ubsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        requirement("click"),
+        requirement("numpy"),
+        requirement("pandas"),
+        requirement("pygments"),
+        requirement("pyyaml"),
+        requirement("rich"),
+        requirement("scipy"),
+        requirement("plotly"),
+        requirement("tabulate"),
+        requirement("torch"),
+        requirement("packaging"),
+        "//max/kernels/benchmarks/autotune:bencher_utils",
+    ] + select({
+        "//:nvidia_gpu": ["//max/kernels/benchmarks/misc/comparison:bench_baseline_lib"],
+        "//conditions:default": [],
+    }),
+)
+
+modular_py_binary(
+    name = "kprofile",
+    srcs = [
+        "kprofile.py",
+    ],
+    imports = ["."],
+    main = "kprofile.py",
+    mojo_deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:layout",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "//max:register",
+        "@mojo//:std",
+    ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    deps = [
+        ":kbench",
+        requirement("rich"),
+    ],
+)
+
+modular_py_binary(
+    name = "kplot",
+    srcs = [
+        "kplot.py",
+    ],
+    imports = ["."],
+    main = "kplot.py",
+    mojo_deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:layout",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "//max:register",
+        "@mojo//:std",
+    ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    deps = [
+        ":kbench",
+        ":kprofile",
+        requirement("plotly"),
+        requirement("kaleido"),
+    ],
+)
+
+modular_py_binary(
+    name = "kdiff",
+    srcs = [
+        "kdiff.py",
+    ],
+    imports = ["."],
+    main = "kdiff.py",
+    deps = [
+        requirement("click"),
+        requirement("pyyaml"),
+    ],
+)
+
+modular_py_library(
+    name = "bencher_utils",
+    srcs = [
+        "bencher_utils.py",
+    ],
+    imports = ["."],
+)
+
+modular_py_test(
+    name = "autotune_tests",
+    # test_kbench compiles multiple Mojo binaries which can be slow on CI.
+    size = "large",
+    srcs = glob(["tests/*.py"]),
+    args = [
+        "-n",
+        "auto",
+        "--dist",
+        "loadgroup",
+    ],
+    data = glob(["tests/*.csv"]) + [
+        "sample.mojo",
+        "sample.py",
+        "test.yaml",
+        "test_python.yaml",
+        "tests/sample_failure.mojo",
+        "tests/test_crash.yaml",
+        "tests/test_timeout.yaml",
+    ],
+    env = {"KERNEL_BENCHMARKS_ROOT": "max/kernels/benchmarks/"},
+    mojo_deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:layout",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "//max:register",
+        "@mojo//:std",
+    ],
+    tags = [
+        "no-pydeps",  # TODO: Fix and re-enable
+    ],
+    target_compatible_with = select({
+        # FIXME
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":kbench",
+        ":kplot",
+        ":kprofile",
+        requirement("pytest-mock"),
+        requirement("pytest-xdist"),
+    ],
+)
+
+# TODO: this probably can be removed safely.
+pkg_files(
+    name = "autotune_files",
+    srcs = [
+        "kbench.py",
+        "kplot.py",
+        "kprofile.py",
+        "pyproject.toml",
+        "utils.py",
+    ],
+    prefix = "kernel-benchmark/autotune",
+)

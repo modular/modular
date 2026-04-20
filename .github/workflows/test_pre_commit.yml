@@ -1,5 +1,5 @@
-# ===----------------------------------------------------------------------=== #
-# Copyright (c) 2024, Modular Inc. All rights reserved.
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -9,17 +9,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# ===----------------------------------------------------------------------=== #
+##===----------------------------------------------------------------------===##
 
 name: Run pre-commit
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
   contents: read
   pull-requests: read
+
+concurrency: # Only allow a single build/test run at a time for a PR.
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   lint:
@@ -36,17 +40,6 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Download Magic CLI
+      - name: Run lint
         run: |
-          curl -ssL https://magic.modular.com/cfba4c92-2390-4b86-93de-04b2f47114d5 | bash
-          # Add magic to PATH
-          echo "$HOME/.modular/bin" >> $GITHUB_PATH
-
-      - name: Install pre-commit
-        run: |
-          pip install pre-commit
-          pre-commit install
-      
-      - name: Run pre-commit
-        run: magic run pre-commit run --all-files
-
+          ./bazelw run //:lint

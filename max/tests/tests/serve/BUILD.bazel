@@ -1,0 +1,85 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+[
+    modular_py_test(
+        name = src.split(".")[0],
+        size = "large",
+        srcs = [
+            src,
+            "conftest.py",
+        ],
+        data = [
+            "//max/tests/tests/serve/testdata",
+        ],
+        env = {
+            "MAX_SERVE_DISABLE_TELEMETRY": "True",
+            "MAX_SERVE_TESTDATA": "max/tests/tests/serve/testdata",
+        },
+        imports = ["../.."],
+        tags = [
+            "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
+        ] + (["external-exclusive"] if src == "test_reset_prefix_cache.py" else []),  # This one test misbehaves when run in parallel with others
+        target_compatible_with = select({
+            "@platforms//os:macos": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        deps = [
+            "//max/python/max/nn",
+            "//max/python/max/serve",
+            "//max/python/max/serve/mocks",
+            "//max/python/max/serve/pipelines",
+            "//max/python/max/serve/router",
+            "//max/python/max/serve/scheduler",
+            "//max/python/max/serve/schemas",
+            "//max/python/max/serve/telemetry",
+            requirement("async-asgi-testclient"),
+            requirement("fastapi"),
+            requirement("gguf"),
+            requirement("hypothesis"),
+            requirement("opentelemetry-sdk"),
+            requirement("pytest-asyncio"),
+            requirement("sse-starlette"),
+            requirement("sseclient-py"),
+            requirement("torch"),
+            requirement("transformers"),
+            requirement("pillow"),
+            requirement("pyzmq"),
+        ],
+    )
+    for src in glob(
+        [
+            "*.py",
+            "pipelines/*.py",
+        ],
+        exclude = [
+            "conftest.py",
+        ],
+    )
+]
+
+modular_py_test(
+    name = "parser_tests",
+    srcs = glob(
+        [
+            "parser/*.py",
+        ],
+    ),
+    data = [],
+    env = {
+        "MAX_SERVE_DISABLE_TELEMETRY": "True",
+        "MAX_SERVE_TESTDATA": "max/tests/tests/serve/testdata",
+    },
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/serve/parser",
+        "//max/python/max/serve/router",
+        "//max/python/max/serve/schemas",
+    ],
+)

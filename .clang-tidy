@@ -1,0 +1,27 @@
+UseColor: true
+Checks: >
+        -*,
+        modernize-use-nullptr,
+        modernize-use-using,
+        readability-identifier-naming,
+        llvm-twine-local,
+        bugprone-assert-side-effect,
+        bugprone-reserved-identifier,
+        bugprone-unused-local-non-trivial-variable,
+        readability-redundant-control-flow
+CheckOptions:
+  # Namespace names should be CamelCase. Allow a few that we don't
+  # control, but use in our code base, to be different.
+  - key:             readability-identifier-naming.NamespaceCase
+    value:           CamelCase
+  - key:             readability-identifier-naming.NamespaceIgnoredRegexp
+    value:           'json|mlir|clang|lsp|llvm|index|nb'
+  - key:             readability-identifier-naming.LocalVariableCase
+    value:           camelBack
+  - key:             modernize-use-using.IgnoreExternC
+    value:           true
+  - key:             bugprone-reserved-identifier.AllowedIdentifiers
+    value:           '^(__|__asan_default_options)$'
+HeaderFilterRegex: '^(?!.*third-party).*'
+# Required since only failures are reported
+WarningsAsErrors: "*"

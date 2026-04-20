@@ -1,0 +1,42 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from std.sys.info import _accelerator_arch
+
+from std.testing import *
+
+
+def main() raises:
+    var accelerator_arch = _accelerator_arch()
+
+    assert_true(
+        # NVIDIA
+        accelerator_arch == "nvidia:sm_80"
+        or accelerator_arch == "nvidia:sm_84"
+        or accelerator_arch == "nvidia:sm_86"
+        or accelerator_arch == "nvidia:sm_89"
+        or accelerator_arch == "nvidia:sm_90"
+        or accelerator_arch == "nvidia:sm_90a"
+        or accelerator_arch == "nvidia:sm_100"
+        or accelerator_arch == "nvidia:sm_100a"
+        # AMD
+        or accelerator_arch == "amdgpu:gfx942"
+        or accelerator_arch == "amdgpu:gfx950"
+        or accelerator_arch == "amdgpu:gfx1101"
+        or accelerator_arch == "amdgpu:gfx1102"
+        or accelerator_arch == "amdgpu:gfx1103"
+        or accelerator_arch == "amdgpu:gfx1200"
+        or accelerator_arch == "amdgpu:gfx1201"
+        or accelerator_arch == "metal:3",
+        "Expected specific accelerator_archs, got: " + accelerator_arch,
+    )

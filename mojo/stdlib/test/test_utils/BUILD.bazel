@@ -1,0 +1,15 @@
+load("//bazel:api.bzl", "mojo_library")
+
+# gazelle:default_visibility @mojo//:__pkg__
+
+package(default_visibility = ["@mojo//:__pkg__"])
+
+mojo_library(
+    name = "test_utils",
+    testonly = True,
+    srcs = glob(["**/*.mojo"]),
+    validate_missing_docs = True,
+    deps = [
+        "@mojo//:std",
+    ],
+)

@@ -1,0 +1,293 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""Defines the :class:`Weights` protocol and :class:`WeightData` container for model weight management."""
+
+from __future__ import annotations
+
+import dataclasses
+from collections.abc import Callable, Iterator
+from typing import Any, Protocol, TypeVar, runtime_checkable
+
+import numpy.typing as npt
+from max.driver import CPU, Buffer, DLPackArray, is_virtual_device_mode
+from max.dtype import DType
+
+from ..buffer_utils import cast_dlpack_to
+from ..quantization import QuantizationEncoding
+from ..type import DeviceRef, Shape, ShapeLike
+from ..weight import Weight
+
+_Self = TypeVar("_Self", bound="Weights")
+
+
+@runtime_checkable
+class Weights(Protocol):
+    """Protocol for managing and accessing model weights hierarchically.
+
+    The Weights protocol provides a convenient interface for loading and organizing
+    neural network weights. It supports hierarchical naming through attribute and
+    index access, making it easy to work with complex model architectures.
+
+    Weights in MAX are tensors backed by external memory (buffers or memory-mapped
+    files) that remain separate from the compiled graph.
+
+    .. code-block:: python
+
+        from max.graph import Graph
+        from max.dtype import DType
+
+        # Create a graph and get its weights interface
+        graph = Graph("my_model")
+        weights = graph.weights()
+
+        # Allocate weights with hierarchical naming
+        attn_weight = weights.transformer.layers[0].attention.weight.allocate(
+            dtype=DType.float32,
+            shape=(768, 768)
+        )
+        # Creates weight named "transformer.layers.0.attention.weight"
+
+        # Check if a weight exists before allocating
+        if weights.transformer.layers[0].mlp.weight.exists():
+            mlp_weight = weights.transformer.layers[0].mlp.weight.allocate(
+                dtype=DType.float16,
+                shape=(768, 3072)
+            )
+    """
+
+    @property
+    def name(self) -> str:
+        """The current weight name or prefix.
+
+        Returns:
+            The hierarchical name built from attribute and index access.
+            For example, if accessed as ``weights.model.layers[0]``,
+            returns ``model.layers.0``.
+        """
+        ...
+
+    def __getattr__(self: _Self, attr: str) -> _Self: ...
+
+    def __getitem__(self: _Self, idx: int | str) -> _Self: ...
+
+    def exists(self) -> bool:
+        """Checks if a weight with this exact name exists.
+
+        .. code-block:: python
+
+            if weights.model.classifier.weight.exists():
+                classifier = weights.model.classifier.weight.allocate(...)
+            else:
+                print("Classifier weight not found")
+
+        Returns:
+            ``True`` if a weight with the current hierarchical name exists
+            in the loaded weights, ``False`` otherwise.
+        """
+        ...
+
+    def items(self: _Self) -> Iterator[tuple[str, _Self]]:
+        """Iterates through all weights that start with the current prefix.
+
+        .. code-block:: python
+
+            # Iterate through all weights in a specific layer
+            for name, weight in weights.transformer.layers[0].items():
+                print(f"Found weight: {name}")
+
+        Yields:
+            Tuples of (name, weight_accessor) for each weight under the
+            current prefix. The name is relative to the current prefix.
+        """
+        ...
+
+    def data(self) -> WeightData:
+        """Returns weight data with metadata.
+
+        .. code-block:: python
+
+            weight_data = weights.model.embeddings.weight.data()
+            print(f"Shape: {weight_data.shape}")
+            print(f"Dtype: {weight_data.dtype}")
+
+            # Convert to different dtype
+            fp16_data = weight_data.astype(DType.float16)
+
+        Returns:
+            A :class:`WeightData` object containing the tensor data along with
+            metadata like name, dtype, shape, and quantization encoding.
+
+        Raises:
+            KeyError: If no weight exists at the current hierarchical name.
+        """
+        ...
+
+    def allocate(
+        self,
+        dtype: DType | None = None,
+        shape: ShapeLike | None = None,
+        quantization_encoding: QuantizationEncoding | None = None,
+        device: DeviceRef = DeviceRef.CPU(),
+    ) -> Weight:
+        """Creates a :class:`Weight` object for this tensor.
+
+        .. code-block:: python
+
+            # Allocate a weight with specific configuration
+            weight = weights.model.layers[0].weight.allocate(
+                dtype=DType.float16,  # Convert to half precision
+                shape=(768, 768),
+                device=DeviceRef.GPU(0)  # Place on first GPU
+            )
+
+            # Add to graph
+            with graph:
+                weight_tensor = graph.add_weight(weight)
+
+        Args:
+            dtype: Data type for the weight. If ``None``, uses the original dtype.
+            shape: Shape of the weight tensor. If ``None``, uses the original shape.
+            quantization_encoding: Quantization scheme to apply (for example, ``Q4_K``, ``Q8_0``).
+            device: Target device for the weight (CPU or GPU).
+
+        Returns:
+            A :class:`Weight` object that can be added to a graph using
+            ``graph.add_weight()``.
+        """
+        ...
+
+    @property
+    def allocated_weights(self) -> dict[str, DLPackArray]:
+        """Returns all previously allocated weights.
+
+        This only includes weights that were explicitly allocated using
+        :meth:`Weights.allocate`, not all available weights.
+
+        Returns:
+            A dictionary mapping weight names to their numpy arrays for
+            all weights that have been allocated through this interface.
+        """
+        ...
+
+
+@dataclasses.dataclass
+class WeightData(DLPackArray):
+    """Container for weight tensor data with metadata.
+
+    ``WeightData`` encapsulates a weight tensor along with its metadata,
+    providing utilities for type conversion and format compatibility.
+    It supports the DLPack protocol for efficient tensor sharing between
+    frameworks.
+    """
+
+    data: DLPackArray
+    """The weight tensor as a DLPack array."""
+    name: str
+    """Hierarchical name of the weight (for example, ``model.layers.0.weight``)."""
+
+    dtype: DType
+    """Data type of the tensor (for example, ``DType.float32``, ``DType.uint8``)."""
+
+    shape: Shape
+    """Shape of the tensor as a Shape object."""
+
+    quantization_encoding: QuantizationEncoding | None = None
+    """Optional quantization scheme applied to the weight."""
+
+    def __dlpack__(self, *, stream: None = None) -> Any:
+        return self.data.__dlpack__(stream=stream)
+
+    def __dlpack_device__(self) -> Any:
+        return self.data.__dlpack_device__()
+
+    def to_buffer(self) -> Buffer:
+        """Mutates the data into a Buffer."""
+        # We store the result of Buffer.from_dlpack because it may copy the
+        # data.
+        if not isinstance(self.data, Buffer):
+            self.data = Buffer.from_dlpack(self.data)
+        return self.data
+
+    @classmethod
+    def from_numpy(cls, arr: npt.NDArray[Any], name: str) -> WeightData:
+        """Create WeightData from a numpy array.
+
+        Args:
+            arr: Numpy array containing the weight data.
+            name: Name to assign to this weight.
+
+        Returns:
+            A new WeightData instance with dtype and shape inferred
+            from the numpy array.
+        """
+        return cls(arr, name, DType.from_numpy(arr.dtype), Shape(arr.shape))
+
+    def astype(self, dtype: DType) -> WeightData:
+        """Convert the weight data to a different dtype.
+
+        This method performs actual data conversion of the underlying tensor
+        data. Special handling is provided for bfloat16 conversions using
+        PyTorch when available.
+
+        During cross-compilation (warm-cache) scenarios where no GPU is available,
+        this method skips the actual data conversion but still returns a WeightData
+        with the target dtype. This is safe because the weight data won't be used
+        for inference during compilation - only the dtype metadata matters for
+        graph construction.
+
+        .. code-block:: python
+
+            # Convert float32 weights to float16 for reduced memory
+            weight_data = weights.model.layer.weight.data()
+            fp16_data = weight_data.astype(DType.float16)
+
+        Args:
+            dtype: Target data type for conversion.
+
+        Returns:
+            A new WeightData instance with the converted data.
+        """
+        if self.dtype == dtype:
+            return self
+        # In virtual device mode (warm-cache/cross-compilation), skip actual
+        # data casting but update the dtype metadata. The weight data won't be
+        # used for inference - only the dtype matters for graph construction.
+        if is_virtual_device_mode():
+            return WeightData(
+                data=self.data,
+                name=self.name,
+                dtype=dtype,
+                shape=self.shape,
+                quantization_encoding=self.quantization_encoding,
+            )
+        data = cast_dlpack_to(self.data, self.dtype, dtype, CPU())
+        return WeightData(
+            data=data,
+            name=self.name,
+            dtype=dtype,
+            shape=Shape(data.shape),
+        )
+
+    def __repr__(self) -> str:
+        return f"WeightData({self.dtype}, {self.shape})"
+
+
+WeightsAdapter = Callable[..., dict[str, WeightData]]
+"""Type alias for functions that adapt weight formats to WeightData dictionaries.
+
+WeightsAdapter functions are used by pipeline architectures to convert between
+different checkpoint formats (for example, HuggingFace, PyTorch) and MAX's internal
+format. They take model configuration and return a dictionary mapping weight
+names to WeightData objects.
+"""

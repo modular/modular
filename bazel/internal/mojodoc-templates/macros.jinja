@@ -1,0 +1,13 @@
+{% macro escape_quotes(s) -%}
+  {{ s | replace('"', '\\"') }}
+{%- endmacro %}
+
+{% macro stability_marker(decl, header=False) -%}
+{% if decl.showStabilityMarker -%}
+{%- if decl.isStable -%}
+<div class="mojo-stability-side{% if header %} mojo-stability-header{% endif %}" title="Stable since {{ decl.sinceVersion }}">{{ decl.sinceVersion }}</div>
+{%- else -%}
+<div class="mojo-stability-side{% if header %} mojo-stability-header{% endif %}" title="Unstable or experimental API">Unstable</div>
+{%- endif -%}
+{%- endif %}
+{%- endmacro %}

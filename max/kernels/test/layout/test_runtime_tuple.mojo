@@ -1,0 +1,162 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from layout import IntTuple, RuntimeTuple, UNKNOWN_VALUE
+from layout.int_tuple import fill_like
+from layout.int_tuple import idx2crd as idx2crd_int_tuple
+from layout.int_tuple import shape_div as shape_div_int_tuple
+from layout.runtime_tuple import (
+    crd2idx,
+    idx2crd,
+    prefix_product,
+    shape_div,
+    coalesce_nested_tuple,
+)
+from std.testing import assert_equal
+
+
+def test_construct() raises:
+    print("== test_construct")
+    var t1 = RuntimeTuple[IntTuple(1, 44, IntTuple(1, 102))]()
+    assert_equal(String(t1), "(1, 44, (1, 102))")
+
+    var t2 = RuntimeTuple[IntTuple(33, IntTuple(44, IntTuple(55, 202)))]()
+    assert_equal(String(t2), "(33, (44, (55, 202)))")
+
+    var t3 = RuntimeTuple[IntTuple(UNKNOWN_VALUE, 1)]()
+    assert_equal(String(t3), "(-1, 1)")
+
+
+def test_concat() raises:
+    print("== test_concat")
+    var lhs = RuntimeTuple[
+        IntTuple(1, UNKNOWN_VALUE, IntTuple(1, UNKNOWN_VALUE))
+    ](1, 44, 1, 102)
+    var rhs = RuntimeTuple[
+        IntTuple(
+            UNKNOWN_VALUE, IntTuple(UNKNOWN_VALUE, IntTuple(UNKNOWN_VALUE, 202))
+        )
+    ](33, 44, 55, 202)
+    print(lhs.concat(rhs))
+
+
+def test_flatten() raises:
+    print("== test_flatten")
+    var t1 = RuntimeTuple[IntTuple(1, 44, IntTuple(1, 102))]()
+    assert_equal(String(t1.flatten()), "(1, 44, 1, 102)")
+
+
+def test_prefix_product() raises:
+    print("== test_prefix_product")
+    var t1 = RuntimeTuple[IntTuple(UNKNOWN_VALUE, IntTuple(2, 4))](8, 2, 4)
+    var t1_p = prefix_product(t1)
+    assert_equal(String(t1_p), "(1, (8, 16))")
+    assert_equal(String(t1_p.S), "(1, (-1, -1))")
+
+
+def test_idx2crd() raises:
+    print("== test_idx2crd")
+
+    comptime tuple = IntTuple(2, IntTuple(2, 4))
+
+    var r_tuple = RuntimeTuple[fill_like(tuple, UNKNOWN_VALUE)](2, 2, 4)
+
+    for i in range(16):
+        assert_equal(
+            String(idx2crd_int_tuple(i, tuple)),
+            String(idx2crd(RuntimeTuple[UNKNOWN_VALUE](i), r_tuple)),
+        )
+
+
+def test_crd2idx() raises:
+    print("== test_crd2idx")
+    comptime shape_t = IntTuple(4, 4)
+    comptime stride_t = IntTuple(4, 1)
+    comptime unk_r2_t = IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
+
+    for i in range(4):
+        for j in range(4):
+            # Test RuntimeTuple version
+            var rt_result = crd2idx(
+                RuntimeTuple[unk_r2_t](i, j),
+                RuntimeTuple[unk_r2_t](4, 4),
+                RuntimeTuple[unk_r2_t](4, 1),
+            )
+            # Compute expected result: i * stride[0] + j * stride[1] = i * 4 + j * 1
+            var expected = i * 4 + j
+            assert_equal(rt_result, UInt64(expected))
+
+
+def test_shape_div() raises:
+    print("== test_shape_div")
+    comptime shape_a_1 = IntTuple(4, 4)
+    comptime shape_b_1 = IntTuple(2, 1)
+    var shape_a_r_1 = RuntimeTuple[fill_like(shape_a_1, UNKNOWN_VALUE)](4, 4)
+    var shape_b_r_1 = RuntimeTuple[fill_like(shape_b_1, UNKNOWN_VALUE)](2, 1)
+    assert_equal(
+        String(shape_div(shape_a_r_1, shape_b_r_1)),
+        String(shape_div_int_tuple(shape_a_1, shape_b_1)),
+    )
+    assert_equal(String(shape_div(shape_a_r_1, shape_b_r_1).S), "(-1, -1)")
+
+    comptime shape_a_2 = IntTuple(3, 4)
+    comptime shape_b_2 = 6
+    var shape_a_r_2 = RuntimeTuple[fill_like(shape_a_2, UNKNOWN_VALUE)](3, 4)
+    var shape_b_r_2 = RuntimeTuple[fill_like(shape_b_2, UNKNOWN_VALUE)](6)
+    assert_equal(
+        String(shape_div(shape_a_r_2, shape_b_r_2)),
+        String(shape_div_int_tuple(shape_a_2, shape_b_2)),
+    )
+    assert_equal(String(shape_div(shape_a_r_2, shape_b_r_2).S), "(-1, -1)")
+
+
+def test_product_flatten() raises:
+    print("== test_product_flatten")
+    var t1 = RuntimeTuple[
+        IntTuple(4, UNKNOWN_VALUE, IntTuple(7, UNKNOWN_VALUE))
+    ](4, 44, 7, 11)
+
+    var t2 = RuntimeTuple[IntTuple(4, 44, IntTuple(444, 4444))]()
+
+    var t3 = RuntimeTuple[
+        IntTuple(
+            UNKNOWN_VALUE, UNKNOWN_VALUE, IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
+        )
+    ](1, 2, 3, 4)
+
+    var t4 = RuntimeTuple[
+        IntTuple(
+            IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE)
+        )
+    ](1, 2, 3, 4)
+
+    var t1_p = coalesce_nested_tuple(t1)
+    var t2_p = coalesce_nested_tuple(t2)
+    var t3_p = coalesce_nested_tuple(t3)
+    var t4_p = coalesce_nested_tuple(t4)
+
+    assert_equal(String(t2_p), "(4, 44, 1973136)")
+    assert_equal(String(t1_p), "(4, 44, 77)")
+    assert_equal(String(t3_p), "(1, 2, 12)")
+    assert_equal(String(t4_p), "24")
+
+
+def main() raises:
+    test_construct()
+    test_concat()
+    test_flatten()
+    test_prefix_product()
+    test_idx2crd()
+    test_crd2idx()
+    test_shape_div()
+    test_product_flatten()

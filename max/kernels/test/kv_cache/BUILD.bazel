@@ -1,0 +1,17 @@
+load("//bazel:api.bzl", "mojo_test")
+
+package(default_visibility = ["//max:consumers"])
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:nn",
+            "@mojo//:std",
+        ],
+    )
+    for src in glob(["**/*.mojo"])
+]

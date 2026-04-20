@@ -1,0 +1,20 @@
+load("//bazel:api.bzl", "modular_py_library")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "torch",
+    srcs = glob(["**/*.py"]),
+    ignore_unresolved_imports = [
+        # This dependency is intentionally excluded so that the MAX package does not depend on torch.
+        "torch",
+    ],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max:_mlir_context",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)

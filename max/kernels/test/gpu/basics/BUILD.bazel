@@ -1,0 +1,120 @@
+load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
+
+package(default_visibility = ["//max:consumers"])
+
+_LIT_TESTS = [
+    "test_accelerator_arch_cli.mojo",
+    "test_accelerator_arch_cli_kernels.mojo",
+]
+
+_FILECHECK_TESTS = [
+    "test_cluster_dims_attribute.mojo",
+    "test_cluster_sync.mojo",
+    "test_debug_assert_gpu_error.mojo",
+    "test_grid_dependence_control.mojo",
+    "test_kernel_with_list.mojo",
+    "test_metal_print.mojo",
+    "test_print.mojo",
+    "test_printf.mojo",
+    "test_producer_consumer.mojo",
+    "test_sync.mojo",
+    "test_tbc_launch_config.mojo",
+    "test_tensor_core_fp8_mma_sync.mojo",
+]
+
+_EXTRA_COPTS = {}
+
+_APPLE_GPU_INCOMPATIBLE = select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
+_EXTRA_CONSTRAINTS = {
+    "test_amd_format.mojo": ["//:amd_gpu"],  # FIXME: KERN-1377:["//:amd_gpu"], disabled
+    "test_cluster_dims_attribute.mojo": ["//:h100_gpu"],
+    "test_cluster_sync.mojo": ["//:h100_gpu"],
+    "test_sleep.mojo": ["//:nvidia_gpu"],  # Tests NVIDIA-specific sleep loop fix
+    "test_semaphore.mojo": ["//:nvidia_gpu"],
+    "test_constant_memory.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
+    "test_grid_dependence_control.mojo": ["//:h100_gpu"],
+    "test_has_amd_gpu.mojo": ["//:amd_gpu"],
+    "test_has_nvidia_gpu.mojo": ["//:nvidia_gpu"],
+    "test_kernel_with_list.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377 remove this
+    "test_producer_consumer.mojo": ["//:h100_gpu"],
+    "test_tbc_launch_config.mojo": ["//:h100_gpu"],
+    "test_tensor_core_fp8_mma_sync.mojo": ["//:h100_gpu"],
+    "test_wmma.mojo": ["//:nvidia_gpu"],
+    "test_wmma_amd.mojo": ["//:amd_gpu"],
+    "test_tcgen05.mojo": ["//:b200_gpu"],
+    "test_metal_print.mojo": ["//:apple_gpu"],  # Metal GPU print tests (Apple only)
+    "test_debug_assert_gpu_error.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
+    "test_print_elementwise.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2366
+    "test_print.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
+    "test_capture_trait_type.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
+    "test_printf.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
+    "test_launch_binary.mojo": _APPLE_GPU_INCOMPATIBLE,  # Requires metallib tool which may not be available on Mac
+    "test_init_vector_gpu.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2360 - MetalAIRPass address space propagation bug
+    "test_prefix_sum.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: llvm.ctlz intrinsic not evaluating at compile time on macOS
+    "test_shuffle.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: llvm.ctlz intrinsic not evaluating at compile time on macOS
+    "test_simd_reduction.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: llvm.ctlz intrinsic not evaluating at compile time on macOS
+    "test_verify_buffers_gpu.mojo": _APPLE_GPU_INCOMPATIBLE,  # Uses block.sum/block.max (llvm.ctlz issue)
+    "test_fast_div.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3587 — Metal compilation failure (originally wrong FastDiv remainder)
+}
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = _EXTRA_COPTS.get(src, []),
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
+            "@mojo//:std",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _LIT_TESTS + _FILECHECK_TESTS,
+    )
+]
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = _EXTRA_COPTS.get(src, []),
+        expect_crash = src == "test_debug_assert_gpu_error.mojo",
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
+            "@mojo//:std",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
+
+lit_tests(
+    name = "lit",
+    size = "large",
+    srcs = _LIT_TESTS,
+    gpu_constraints = ["//:has_gpu"],
+    mojo_deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "@mojo//:std",
+    ],
+    tags = ["gpu"],
+)

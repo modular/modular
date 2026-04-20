@@ -1,0 +1,50 @@
+load("//bazel:api.bzl", "modular_py_test", "mojo_shared_library")
+
+package(default_visibility = ["//visibility:private"])
+
+mojo_shared_library(
+    name = "mojo_module_a",
+    testonly = True,
+    srcs = [
+        "common.mojo",
+        "mojo_module_a.mojo",
+    ],
+    shared_lib_name = "mojo_module_a.so",
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//:ubsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+mojo_shared_library(
+    name = "mojo_module_b",
+    testonly = True,
+    srcs = [
+        "common.mojo",
+        "mojo_module_b.mojo",
+    ],
+    shared_lib_name = "mojo_module_b.so",
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//:ubsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+modular_py_test(
+    name = "main",
+    srcs = ["test_module.py"],
+    data = [
+        ":mojo_module_a",
+        ":mojo_module_b",
+    ],
+)
