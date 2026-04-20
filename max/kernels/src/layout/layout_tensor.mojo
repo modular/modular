@@ -5460,12 +5460,12 @@ struct LayoutTensor[
         performance.
 
         For optimal performance, you need to arrange the copy correctly. Use the
-        [`distribute()`](/mojo/kernels/layout/layout_tensor/LayoutTensor/#distribute)
+        [`distribute()`](/mojo/layout/layout_tensor/LayoutTensor/#distribute)
         method to create thread-local fragments of the source and
         destination tensors, assigning each thread one or more elements to copy.
 
         Optionally, use the
-        [`vectorize()`](/mojo/kernels/layout/layout_tensor/LayoutTensor/#vectorize)
+        [`vectorize()`](/mojo/layout/layout_tensor/LayoutTensor/#vectorize)
         method to get vectorized views of both tensors before calling
         `distribute()`. This allows each thread to copy multiple elements of the
         tensor. For example:
