@@ -21,6 +21,10 @@ from max.graph.weights import WeightData, Weights
 # HF "language_model.lm_head.X" → V3 "language_model.lm_head.X" (unchanged)
 GEMMA3_LANGUAGE_SAFETENSOR_MAP: dict[str, str] = {
     "language_model.model.": "language_model.",
+    # HuggingFace uses separate q/k/v_proj; StackedLinear expects qkv_proj.{q,k,v}.
+    "self_attn.q_proj.": "self_attn.qkv_proj.q.",
+    "self_attn.k_proj.": "self_attn.qkv_proj.k.",
+    "self_attn.v_proj.": "self_attn.qkv_proj.v.",
 }
 
 # V3 vision model mapping: compiled from root Gemma3VisionModel,

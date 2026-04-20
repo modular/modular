@@ -60,6 +60,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
 
         self.rope = rope
         self.n_heads = num_attention_heads
+        self.num_key_value_heads = num_key_value_heads
         self.kv_params = kv_params
         self.has_bias = has_bias
         self.hidden_size = hidden_size
@@ -135,7 +136,9 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
         """
         total_seq_len = x.shape[0]
         head_dim = self.kv_params.head_dim
-        n_kv_heads = self.kv_params.n_kv_heads
+        # Use per-module head counts so tensor-parallel shards match StackedLinear
+        # output widths (kv_params.n_kv_heads stays global for the KV cache).
+        n_kv_heads = self.num_key_value_heads
         q_dim = head_dim * self.n_heads
         kv_dim = head_dim * n_kv_heads
 
