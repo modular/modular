@@ -3140,7 +3140,6 @@ class DistributedEpDispatchMxfp4Op(max._core.Operation):
         output_tokens: Sequence[max._core.Type],
         output_scales: Sequence[max._core.Type],
         row_offsets: Sequence[max._core.Type],
-        scales_offsets: Sequence[max._core.Type],
         expert_ids: Sequence[max._core.Type],
         src_info: Sequence[max._core.Type],
         out_chain: ChainType,

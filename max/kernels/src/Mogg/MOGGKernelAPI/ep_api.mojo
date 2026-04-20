@@ -74,6 +74,7 @@ from shmem.ep_comm import (
     elementwise_epilogue_type,
     fused_silu_kernel,
     fused_silu_fp8_kernel,
+    fused_silu_mxfp4_kernel,
     fused_silu_nvfp4_kernel,
 )
 
@@ -159,6 +160,17 @@ struct Struct_ep_init:
                 output_layout=RT_LAYOUT_2D,
                 scales_layout=RT_LAYOUT_2D,
                 scales_offset_layout=RT_LAYOUT_2D,
+                hidden_size,
+                top_k,
+            ]
+            dispatch_msg_size = token_fmt_type.msg_size()
+
+        elif dispatch_fmt_str == "MXFP4":
+            comptime token_fmt_type = MXFP4TokenFormat[
+                fp4_dtype=dispatch_dtype,
+                scales_dtype=dispatch_scale_dtype,
+                output_layout=RT_LAYOUT_2D,
+                scales_layout=RT_LAYOUT_2D,
                 hidden_size,
                 top_k,
             ]
@@ -863,6 +875,7 @@ struct Struct_ep_dispatch_fp8:
         """
         var output_tokens_tensor = output_tokens.to_tile_tensor[DType.int64]()
         var output_scales_tensor = output_scales.to_tile_tensor[DType.int64]()
+
         var format_handler = BlockwiseFP8TokenFormat[hidden_size, top_k](
             output_tokens_tensor, output_scales_tensor
         )
@@ -1105,10 +1118,9 @@ struct DistributedEPDispatchMXFP4:
     ](
         output_tokens: OutputVariadicTensors[dtype=dispatch_dtype, rank=2, ...],
         output_scales: OutputVariadicTensors[
-            dtype=dispatch_scale_dtype, rank=5, ...
+            dtype=dispatch_scale_dtype, rank=2, ...
         ],
         row_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
-        scales_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
         expert_ids: OutputVariadicTensors[dtype=DType.int32, rank=1, ...],
         src_info: OutputVariadicTensors[dtype=DType.int32, rank=2, ...],
         input_tokens: InputVariadicTensors[dtype=input_dtype, rank=2, ...],
@@ -1150,7 +1162,6 @@ struct DistributedEPDispatchMXFP4:
             read output_tokens,
             read output_scales,
             read row_offsets,
-            read scales_offsets,
             read expert_ids,
             read src_info,
             read atomic_counters,
@@ -1163,10 +1174,10 @@ struct DistributedEPDispatchMXFP4:
         }:
             var out_tokens = output_tokens[index].to_tile_tensor[DType.int64]()
             var out_scales = output_scales[index].to_tile_tensor[DType.int64]()
-            var sc_offsets = scales_offsets[index].to_tile_tensor[DType.int64]()
 
             var format_handler = MXFP4TokenFormat[hidden_size, top_k](
-                out_tokens, out_scales, sc_offsets
+                out_tokens,
+                out_scales,
             )
 
             ep_fused_dispatch_kernel_api[
@@ -1924,6 +1935,85 @@ struct Struct_ep_fused_silu_fp8:
             task_id=get_safe_task_id(context),
         ):
             gpu_ctx.enqueue_function[fused_silu_fp8, fused_silu_fp8](
+                output_tensor,
+                scales_tensor,
+                input_tensor,
+                row_offsets_tensor,
+                grid_dim=hw_info.sm_count,
+                block_dim=hw_info.max_thread_block_size,
+                attributes=pdl_launch_attributes(PDLLevel(1)),
+            )
+
+
+@compiler.register("ep.fused_silu.mxfp4")
+struct Struct_ep_fused_silu_mxfp4:
+    @always_inline
+    @staticmethod
+    def execute[
+        fp4_dtype: DType,
+        scales_dtype: DType,
+        input_dtype: DType,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=fp4_dtype, rank=2, ...],
+        scales: OutputTensor[dtype=scales_dtype, rank=2, ...],
+        input: InputTensor[dtype=input_dtype, rank=2, ...],
+        row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the Expert Parallelism fused SILU kernel with MXFP4
+        quantization.
+
+        This function launches the fused_silu_mxfp4 kernel to perform the SILU
+        operation for all the MLPs in the EP MoE module.
+
+        This kernel will read the row offsets to determine the actual number of
+        received tokens in the input tensor, and then only perform the SILU
+        operation on the received tokens. Once the SILU operation is performed,
+        the output will be quantized to the MXFP4 format.
+        """
+        # Ensure this kernel only runs on GPU targets
+        comptime assert is_gpu[target](), "EP is only supported on GPU."
+
+        var output_tensor = output.to_tile_tensor[DType.int64]()
+        var scales_tensor = scales.to_tile_tensor[DType.int64]()
+        var input_tensor = input.to_tile_tensor[DType.int64]().as_immut()
+        var row_offsets_tensor = row_offsets.to_tile_tensor[
+            DType.int64
+        ]().as_immut()
+
+        var gpu_ctx = context.get_device_context()
+        comptime hw_info = gpu_ctx.default_device_info
+
+        comptime fused_silu_mxfp4 = fused_silu_mxfp4_kernel[
+            fp4_dtype,
+            scales_dtype,
+            input_dtype,
+            output_tensor.LayoutType,
+            scales_tensor.LayoutType,
+            input_tensor.LayoutType,
+            row_offsets_tensor.LayoutType,
+            hw_info.max_thread_block_size,
+            hw_info.sm_count,
+        ]
+
+        @always_inline
+        @parameter
+        def description_fn() -> String:
+            # fmt: off
+            return String(
+                "fp4_dtype=", fp4_dtype,
+                ";scales_dtype=", scales_dtype,
+                ";input_dtype=", input_dtype,
+            )
+            # fmt: on
+
+        with Trace[TraceLevel.OP, target=target](
+            "ep.fused_silu.mxfp4",
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            task_id=get_safe_task_id(context),
+        ):
+            gpu_ctx.enqueue_function[fused_silu_mxfp4, fused_silu_mxfp4](
                 output_tensor,
                 scales_tensor,
                 input_tensor,

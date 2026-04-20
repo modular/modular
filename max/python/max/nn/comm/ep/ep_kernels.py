@@ -719,7 +719,7 @@ def call_distributed_ep_dispatch(
 
     Returns:
         Per-device output tuples. The number of tensors per tuple depends on
-        the quantization format (4 for BF16, 5 for FP8, 6 for NVFP4/MXFP4).
+        the quantization format (4 for BF16, 5 for FP8/MXFP4, 6 for NVFP4).
     """
     num_devices = len(input_tokens)
     max_recv_tokens = config.max_tokens_per_rank * min(

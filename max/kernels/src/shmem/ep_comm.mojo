@@ -1046,7 +1046,6 @@ struct MXFP4TokenFormat[
     scales_dtype: DType,
     output_layout: TensorLayout,
     scales_layout: TensorLayout,
-    scales_offset_layout: TensorLayout,
     //,
     _hid_dim: Int,
     _top_k: Int,
@@ -1063,12 +1062,8 @@ struct MXFP4TokenFormat[
     comptime ScalesTensorType = TileTensor[
         Self.scales_dtype, Self.scales_layout, MutExternalOrigin
     ]
-    comptime ScalesOffsetTensorType = TileTensor[
-        DType.uint32, Self.scales_offset_layout, MutExternalOrigin
-    ]
     var output_tokens: Self.TensorType
     var output_scales: Self.ScalesTensorType
-    var output_scales_offset: Self.ScalesOffsetTensorType
 
     comptime device_type: AnyType = Self
 
@@ -1102,9 +1097,6 @@ struct MXFP4TokenFormat[
         out self,
         output_tokens: TileTensor[Self.fp4_dtype, Self.output_layout, ...],
         output_scales: TileTensor[Self.scales_dtype, Self.scales_layout, ...],
-        output_scales_offset: TileTensor[
-            DType.uint32, Self.scales_offset_layout, ...
-        ],
     ):
         self.output_tokens = {
             UnsafePointer[Scalar[Self.fp4_dtype], MutExternalOrigin](
@@ -1117,12 +1109,6 @@ struct MXFP4TokenFormat[
                 unsafe_from_address=Int(output_scales.ptr)
             ),
             output_scales.layout,
-        }
-        self.output_scales_offset = {
-            UnsafePointer[Scalar[DType.uint32], MutExternalOrigin](
-                unsafe_from_address=Int(output_scales_offset.ptr)
-            ),
-            output_scales_offset.layout,
         }
 
     @always_inline
@@ -1150,123 +1136,6 @@ struct MXFP4TokenFormat[
     @staticmethod
     def scales_offset() -> Int:
         return Self.fp4_quant_size()
-
-    @always_inline
-    def pad_expert_offsets[
-        n_groups: Int
-    ](self, row_offsets: UnsafePointer[mut=True, UInt32, ...]) -> None:
-        """
-        The mojo NVFP4 grouped matmul doesn't require padding for each group's
-        FP4 quants. However, it requires each group's scales to be aligned to
-        the SF_MN_GROUP_SIZE=128. This function updates the output_scales_offset
-        tensor to satisfy this requirement.
-
-        For example, if the row_offsets tensor is [0, 100, 300, 400], this
-        function will update the output_scales_offset tensor to [0, 1, 1]. The
-        formula is:
-            For group i, its first scales block index is row_offsets[i] //
-            SF_MN_GROUP_SIZE + output_scales_offset[i].
-        Group 0, 1 and 2 have 100, 200, 100 tokens respectively, so the number
-        of scales blocks are 1, 2, 1 respectively. The scales blocks for group 1
-        start at 100 // 128 + output_scales_offset[1] = 1, and the scales blocks
-        for group 2 start at 300 // 128 + output_scales_offset[2] = 3.
-        """
-        comptime assert (
-            Self.ScalesOffsetTensorType.flat_rank >= 1
-        ), "output_scales_offset expects rank >= 1"
-        var tid = thread_idx.x
-        comptime n_rounds = ceildiv(n_groups, WARP_SIZE)
-
-        if warp_id() == 0:
-            var prev_round_blocks_num: UInt32 = 0
-
-            comptime for round_i in range(n_rounds):
-                var per_expert_m: UInt32 = 0
-                var group_idx = round_i * WARP_SIZE + tid
-                if group_idx < n_groups:
-                    per_expert_m = (
-                        row_offsets[group_idx + 1] - row_offsets[group_idx]
-                    )
-
-                var scales_blocks = ceildiv(
-                    per_expert_m, UInt32(SF_MN_GROUP_SIZE)
-                )
-                var group_scales_start = (
-                    prev_round_blocks_num
-                    + warp.prefix_sum[exclusive=True](scales_blocks)
-                )
-
-                if group_idx < n_groups:
-                    self.output_scales_offset.store(
-                        (Idx(group_idx),),
-                        group_scales_start
-                        - row_offsets[group_idx] // UInt32(SF_MN_GROUP_SIZE),
-                    )
-
-                var group_scales_end = group_scales_start + scales_blocks
-                prev_round_blocks_num = warp.shuffle_idx(
-                    group_scales_end, UInt32(WARP_SIZE - 1)
-                )
-
-    @always_inline
-    def zero_pad_scales[
-        block_size: Int, n_sms: Int
-    ](self, row_offsets: UnsafePointer[UInt32, ...], sm_id: Int) -> None:
-        """
-        Zero pad the scales tensor to satisfy the grouped matmul requirement.
-        """
-        comptime n_groups = Self.ScalesOffsetTensorType.static_shape[0]
-        comptime n_sms_per_group = n_sms // n_groups
-
-        var tid = thread_idx.x
-        var group_id, sm_id_in_group = divmod(sm_id, n_sms_per_group)
-        var tid_in_group = sm_id_in_group * block_size + tid
-
-        if group_id >= n_groups:
-            return
-
-        comptime assert (
-            Self.ScalesOffsetTensorType.flat_rank == 1
-        ), "output_scales_offset expects rank == 1"
-        comptime assert (
-            Self.ScalesTensorType.flat_rank == 5
-        ), "output_scales expects rank == 5 for ptr_at_offset"
-        var per_expert_m = row_offsets[group_id + 1] - row_offsets[group_id]
-        if per_expert_m % UInt32(SF_MN_GROUP_SIZE) == 0:
-            return
-        var tokens_to_zero_pad = UInt32(SF_MN_GROUP_SIZE) - (
-            per_expert_m % UInt32(SF_MN_GROUP_SIZE)
-        )
-
-        var scales_block_id = (
-            row_offsets[group_id] // UInt32(SF_MN_GROUP_SIZE)
-            + self.output_scales_offset[group_id]
-        )
-        var _scales_tensor = Self.ScalesTensorType(
-            ptr=self.output_scales.ptr_at_offset(
-                (Idx(scales_block_id), Idx(0), Idx(0), Idx(0), Idx(0))
-            ),
-            layout=self.output_scales.layout,
-        )
-
-        comptime scales_simds_per_tok = Self.hid_dim // (
-            MXFP4_SF_VECTOR_SIZE * SF_ATOM_K
-        )
-        comptime assert (
-            Self.hid_dim % (MXFP4_SF_VECTOR_SIZE * SF_ATOM_K) == 0
-        ), "hid_dim must be divisible by (MXFP4_SF_VECTOR_SIZE * SF_ATOM_K)"
-        for i in range(
-            tid_in_group,
-            Int(UInt32(scales_simds_per_tok) * tokens_to_zero_pad),
-            block_size * n_sms_per_group,
-        ):
-            token_idx, scale_simd_idx = divmod(i, scales_simds_per_tok)
-            set_scale_factor[SF_VECTOR_SIZE=1](
-                _scales_tensor,
-                token_idx + Int(per_expert_m),
-                scale_simd_idx * SF_ATOM_K,
-                SIMD[Self.scales_dtype, SF_ATOM_K](0.0),
-            )
 
     @always_inline
     @staticmethod
@@ -1332,12 +1201,6 @@ struct MXFP4TokenFormat[
         comptime assert (
             Self.TensorType.flat_rank >= 2
         ), "output_tokens expects rank >= 2"
-        comptime assert (
-            Self.ScalesOffsetTensorType.flat_rank == 1
-        ), "output_scales_offset expects rank == 1"
-        comptime assert (
-            Self.ScalesTensorType.flat_rank == 5
-        ), "output_scales expects rank == 5 for ptr_at_offset"
         # First we copy the FP4 quants.
         comptime fp4_width = simd_width_of[Self.fp4_dtype]()
         comptime quant_bytes = Self.hid_dim // 2
@@ -1359,49 +1222,22 @@ struct MXFP4TokenFormat[
                 ),
             )
 
-        # The scales tensor is a 5D tensor.
-        var expert_start_index = token_index - expert_token_index
-        var output_scales_offset: UInt32 = 0
-        if expert_id != 0:
-            output_scales_offset = rebind[UInt32](
-                self.output_scales_offset[expert_id]
-            )
-        var scales_block_id = (
-            UInt32(expert_start_index // SF_MN_GROUP_SIZE)
-            + output_scales_offset
-        )
-
-        var _scales_tensor = Self.ScalesTensorType(
-            ptr=self.output_scales.ptr_at_offset(
-                (Idx(scales_block_id), Idx(0), Idx(0), Idx(0), Idx(0))
-            ),
-            layout=self.output_scales.layout,
-        )
-
-        comptime n_scales = Self.hid_dim // MXFP4_SF_VECTOR_SIZE
-        comptime n_scales_simd = n_scales // SF_ATOM_K
         comptime assert (
-            n_scales % SF_ATOM_K == 0
-        ), "n_scales must be divisible by SF_ATOM_K"
-        comptime scale_bytes = size_of[Self.scales_dtype]() * SF_ATOM_K
-        for i in range(lane_id(), n_scales_simd, WARP_SIZE):
-            var scale_factors = bitcast[Self.scales_dtype, SF_ATOM_K](
-                buf_p.load[
-                    width=scale_bytes,
-                    invariant=True,
-                    alignment=scale_bytes,
-                ](
-                    Self.scales_offset() + i * scale_bytes,
-                )
-            )
-
-            # Here we set SF_VECTOR_SIZE=1 because i is already the index
-            # of the scale factor (not the index of the fp4 elements).
-            set_scale_factor[SF_VECTOR_SIZE=1](
-                _scales_tensor,
-                expert_token_index,
-                i * SF_ATOM_K,
-                scale_factors,
+            Self.ScalesTensorType.flat_rank >= 2
+        ), "output_scales expects rank >= 2"
+        comptime scale_bytes = size_of[Self.scales_dtype]()
+        for i in range(lane_id(), Self.hid_dim // Self.group_size, WARP_SIZE):
+            self.output_scales.store(
+                (Idx(token_index), Idx(i)),
+                bitcast[Self.scales_dtype, 1](
+                    buf_p.load[
+                        width=scale_bytes,
+                        invariant=True,
+                        alignment=scale_bytes,
+                    ](
+                        Self.scales_offset() + i * scale_bytes,
+                    )
+                ),
             )
 
 
@@ -3900,3 +3736,115 @@ def fused_silu_nvfp4_kernel[
                     scale_simd_idx * SF_ATOM_K,
                     SIMD[scales_dtype, SF_ATOM_K](0.0),
                 )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(t"fused_silu_mxfp4_{input_dtype}_{fp4_dtype}", mangle=True)
+def fused_silu_mxfp4_kernel[
+    fp4_dtype: DType,
+    scales_dtype: DType,
+    input_dtype: DType,
+    output_layout: TensorLayout,
+    scales_layout: TensorLayout,
+    input_layout: TensorLayout,
+    offsets_layout: TensorLayout,
+    num_threads: Int,
+    num_sms: Int,
+](
+    output_tensor: TileTensor[fp4_dtype, output_layout, MutExternalOrigin],
+    scales_tensor: TileTensor[scales_dtype, scales_layout, MutExternalOrigin],
+    input_tensor: TileTensor[input_dtype, input_layout, ImmutExternalOrigin],
+    row_offsets: TileTensor[DType.uint32, offsets_layout, ImmutExternalOrigin],
+):
+    """
+    This kernel performs the SILU operation for all the MLPs in the EP MoE
+    module. We need to manually implement the kernel here is because after the
+    EP dispatch phase, the actual number of received tokens is not known to the
+    host. This kernel will read the row offsets to determine the actual number of
+    received tokens in the input tensor.
+
+    Once the SILU operation is performed, the output tensor will be quantized to
+    the NVFP4 format. The scales tensor will be padded and zero-filled.
+
+    Arguments:
+        output_tensor: The output tensor to store the result.
+        scales_tensor: The tensor to store the scales.
+        input_tensor: The input tensor to perform the SILU operation.
+        row_offsets: The row offsets to determine the actual number of received tokens.
+        scales_offsets: The offsets to determine the position of the scales tiles.
+        input_scales: Per-expert input scale factors.
+    """
+    comptime accum_dtype = DType.float32
+    comptime assert (
+        output_tensor.flat_rank >= 2
+    ), "output_tensor must be at least 2D"
+    comptime assert scales_tensor.flat_rank == 2, "scales_tensor must be 2D"
+    comptime assert (
+        input_tensor.flat_rank >= 2
+    ), "input_tensor must be at least 2D"
+    comptime assert row_offsets.flat_rank == 1, "row_offsets must be 1D"
+    comptime input_dim = input_tensor.static_shape[1]
+    comptime output_dim = output_tensor.static_shape[1]
+    comptime hidden_size = output_dim * 2
+    comptime src_width = 8
+    comptime byte_width = src_width // 2
+    comptime NUM_THREADS_PER_SF = MXFP4_SF_VECTOR_SIZE // src_width
+
+    comptime assert (
+        input_dim == hidden_size * 2
+    ), "Input dimension must be four times the packed output dimension."
+    comptime assert (
+        hidden_size % MXFP4_SF_VECTOR_SIZE == 0
+    ), "Hidden size must be divisible by MXFP4_SF_VECTOR_SIZE."
+
+    # Scatter processing of a single token across different thread blocks
+    # to improve the memory access performance.
+    var global_warp_id = block_idx.x + warp_id() * num_sms
+    var gid = lane_id() + global_warp_id * WARP_SIZE
+
+    with PDL():
+        var num_tokens = row_offsets[row_offsets.static_shape[0] - 1]
+        var num_elem = num_tokens * UInt32(output_dim)
+
+        for i in range(
+            gid,
+            Int(num_elem // UInt32(src_width)),
+            num_threads * num_sms,
+        ):
+            var m = (i * src_width) // output_dim
+            var k = (i * src_width) % output_dim
+
+            var gate_proj = input_tensor.load[width=src_width](
+                (Idx(m), Idx(k))
+            ).cast[accum_dtype]()
+            var up_proj = input_tensor.load[width=src_width](
+                (Idx(m), Idx(k + hidden_size))
+            ).cast[accum_dtype]()
+
+            gate_proj = gate_proj / (1.0 + exp(-gate_proj))
+            var output_val = gate_proj * up_proj
+
+            # Quantization logic (MXFP4).
+            var thread_max = abs(output_val).reduce_max().cast[DType.float32]()
+            var group_max = warp.lane_group_max[num_lanes=NUM_THREADS_PER_SF](
+                thread_max
+            )
+
+            # get the scale factor for these 32 elements by dividing it by the maximum value of fp4-e2m1
+            var scale_factor = group_max * recip(Float32(6.0))
+            var fp8_scale_factor = scale_factor.cast[scales_dtype]()
+
+            # The first thread in each group stores the scale factor.
+            if i % NUM_THREADS_PER_SF == 0:
+                scales_tensor.store(
+                    (Idx(m), Idx(k // MXFP4_SF_VECTOR_SIZE)), fp8_scale_factor
+                )
+
+            var output_vector = bitcast[fp4_dtype, byte_width](
+                cast_float_to_fp4e2m1_amd(
+                    output_val, fp8_scale_factor.cast[DType.float32]()
+                )
+            )
+            output_tensor.store((Idx(m), Idx(k // 2)), output_vector)

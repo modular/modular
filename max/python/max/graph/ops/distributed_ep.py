@@ -313,7 +313,7 @@ def dispatch_nvfp4(
 # MXFP4 Dispatch
 # ---------------------------------------------------------------------------
 
-_MXFP4_OUTPUT_GROUPS = 6
+_MXFP4_OUTPUT_GROUPS = 5
 
 
 def dispatch_mxfp4(
@@ -335,9 +335,8 @@ def dispatch_mxfp4(
 ) -> list[tuple[TensorValue, ...]]:
     """Multi-device EP MXFP4 dispatch.
 
-    Returns per-device tuples of 6 tensors:
-    (output_tokens, output_scales, row_offsets, scales_offsets,
-    expert_ids, src_info).
+    Returns per-device tuples of 5 tensors:
+    (output_tokens, output_scales, row_offsets, expert_ids, src_info).
     """
     num_devices = len(input_tokens)
     if num_devices == 0:
@@ -346,9 +345,8 @@ def dispatch_mxfp4(
     output_tokens_types = [t[0] for t in output_types_per_device]
     output_scales_types = [t[1] for t in output_types_per_device]
     row_offsets_types = [t[2] for t in output_types_per_device]
-    scales_offsets_types = [t[3] for t in output_types_per_device]
-    expert_ids_types = [t[4] for t in output_types_per_device]
-    src_info_types = [t[5] for t in output_types_per_device]
+    expert_ids_types = [t[3] for t in output_types_per_device]
+    src_info_types = [t[4] for t in output_types_per_device]
 
     counters = [BufferValue(c) for c in atomic_counters]
 
@@ -363,7 +361,6 @@ def dispatch_mxfp4(
         output_tokens_types,
         output_scales_types,
         row_offsets_types,
-        scales_offsets_types,
         expert_ids_types,
         src_info_types,
         _ChainType(),
