@@ -597,6 +597,19 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={"group": "Control Flags"},
     )
 
+    # `dict[str, str]` (not `Mapping`) so cyclopts 3.24 accepts the
+    # `--metrics-urls.<label>=<url>` syntax for nested keys.
+    metrics_urls: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Explicit Prometheus metrics endpoint URLs, keyed by label "
+            "(e.g. '--metrics-urls.orchestrator=http://host:8001/metrics "
+            "--metrics-urls.engine-0=http://host2:8001/metrics'). "
+            "When empty, a single endpoint is auto-derived from --host/--port."
+        ),
+        json_schema_extra={"group": "Control Flags"},
+    )
+
     print_workload_stats: bool = Field(
         default=False,
         description="Print workload distribution statistics (input/output lengths, num turns, delays).",

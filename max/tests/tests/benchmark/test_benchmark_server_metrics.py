@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
 import pytest
@@ -27,6 +27,7 @@ from max.benchmark.benchmark_shared.server_metrics import (
     HistogramData,
     ParsedMetrics,
     _format_metric_key,
+    collect_benchmark_metrics,
     collect_server_metrics,
     compute_metrics_delta,
     fetch_and_parse_metrics,
@@ -65,6 +66,35 @@ maxserve_batch_execution_time_milliseconds_bucket{batch_type="TG",le="+Inf"} 100
 maxserve_batch_execution_time_milliseconds_sum{batch_type="TG"} 2000.0
 maxserve_batch_execution_time_milliseconds_count{batch_type="TG"} 100.0
 """
+
+
+def _make_metrics(
+    metrics_by_endpoint: dict[str, ParsedMetrics],
+) -> BenchmarkMetrics:
+    """Minimal BenchmarkMetrics carrying only the fields under test."""
+    return BenchmarkMetrics(
+        duration=10.0,
+        completed=100,
+        failures=0,
+        total_input=1000,
+        total_output=500,
+        nonempty_response_chunks=500,
+        max_concurrency=10,
+        request_throughput=10.0,
+        input_throughput=ThroughputMetrics([1.0]),
+        output_throughput=ThroughputMetrics([1.0]),
+        ttft_ms=StandardPercentileMetrics([0.1]),
+        tpot_ms=StandardPercentileMetrics([0.01]),
+        itl_ms=StandardPercentileMetrics([0.01]),
+        latency_ms=StandardPercentileMetrics([1.0]),
+        max_input=100,
+        max_output=50,
+        max_total=150,
+        peak_gpu_memory_mib=[],
+        available_gpu_memory_mib=[],
+        gpu_utilization=[],
+        metrics_by_endpoint=metrics_by_endpoint,
+    )
 
 
 def test_get_histogram_truth() -> None:
@@ -384,35 +414,204 @@ def test_collect_server_metrics_raises_on_error(mock_fetch: MagicMock) -> None:
         collect_server_metrics("modular", "http://localhost:8000")
 
 
-def test_benchmark_metrics_server_metrics_defaults_to_none() -> None:
-    """Test BenchmarkMetrics.server_metrics defaults to None when not provided."""
-    metrics = BenchmarkMetrics(
-        duration=10.0,
-        completed=100,
-        failures=0,
-        total_input=1000,
-        total_output=500,
-        nonempty_response_chunks=500,
-        max_concurrency=10,
-        request_throughput=10.0,
-        input_throughput=ThroughputMetrics([1.0, 2.0, 3.0]),
-        output_throughput=ThroughputMetrics([1.0, 2.0, 3.0]),
-        ttft_ms=StandardPercentileMetrics([0.1, 0.2, 0.3]),
-        tpot_ms=StandardPercentileMetrics([0.01, 0.02, 0.03]),
-        itl_ms=StandardPercentileMetrics([0.01, 0.02, 0.03]),
-        latency_ms=StandardPercentileMetrics([1.0, 2.0, 3.0]),
-        max_input=100,
-        max_output=50,
-        max_total=150,
-        peak_gpu_memory_mib=[],
-        available_gpu_memory_mib=[],
-        gpu_utilization=[],
-        # Note: server_metrics not passed, should default to None
-    )
+def test_metrics_by_endpoint_defaults_to_empty() -> None:
+    """With no endpoints scraped, convenience batch-time properties return
+    safe defaults (None / 0) rather than raising."""
+    metrics = _make_metrics({})
 
-    assert metrics.server_metrics is None
-    # Convenience properties should return safe defaults
+    assert dict(metrics.metrics_by_endpoint) == {}
     assert metrics.mean_prefill_batch_time_ms is None
     assert metrics.mean_decode_batch_time_ms is None
     assert metrics.prefill_batch_count == 0
     assert metrics.decode_batch_count == 0
+
+
+class TestCollectBenchmarkMetrics:
+    """Exercises the single collection path: empty urls -> auto-derive one
+    endpoint; populated urls -> scrape each label as given."""
+
+    PROM = "# HELP r Total\n# TYPE r counter\nr 1.0\n"
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_empty_urls_synthesizes_default(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """Empty mapping -> one endpoint derived from backend + base_url."""
+        mock_fetch.return_value = self.PROM
+        result = collect_benchmark_metrics(
+            urls={}, backend="vllm", base_url="http://10.0.0.1:8000"
+        )
+        mock_fetch.assert_called_once_with("http://10.0.0.1:8000/metrics")
+        assert list(result.keys()) == ["server"]
+        assert result["server"].counters["r"] == 1.0
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_explicit_urls_used_as_is(self, mock_fetch: MagicMock) -> None:
+        """Populated mapping -> each label scraped from its exact URL."""
+        mock_fetch.return_value = self.PROM
+        result = collect_benchmark_metrics(
+            urls={"engine": "http://10.0.0.2:9090/metrics"},
+            backend="vllm",
+            base_url="http://10.0.0.1:8000",
+        )
+        mock_fetch.assert_called_once_with("http://10.0.0.2:9090/metrics")
+        assert list(result.keys()) == ["engine"]
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_baseline_computes_delta_per_label(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """Counter growing from baseline -> final must produce the delta, not
+        the raw final value. Baseline reads 10.0, final reads 35.0, delta=25.0."""
+        urls = {"eng": "http://10.0.0.2:9090/metrics"}
+        mock_fetch.return_value = "# TYPE r counter\nr 10.0\n"
+        baseline = collect_benchmark_metrics(
+            urls=urls, backend="vllm", base_url="http://10.0.0.1:8000"
+        )
+        assert baseline["eng"].counters["r"] == 10.0
+
+        mock_fetch.return_value = "# TYPE r counter\nr 35.0\n"
+        final = collect_benchmark_metrics(
+            urls=urls,
+            backend="vllm",
+            base_url="http://10.0.0.1:8000",
+            baseline=baseline,
+        )
+        assert final["eng"].counters["r"] == 25.0
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_partial_failure_does_not_drop_ok_endpoints(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """Exception on one endpoint's fetch is logged + skipped; the other
+        endpoints' results are still returned. Keyed by URL so the test isn't
+        coupled to dict iteration order."""
+        responses: dict[str, str | Exception] = {
+            "http://ok:8001/metrics": "# TYPE r counter\nr 7.0\n",
+            "http://bad:8001/metrics": ConnectionError("refused"),
+        }
+
+        def fake_fetch(url: str) -> str:
+            value = responses[url]
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+        mock_fetch.side_effect = fake_fetch
+        result = collect_benchmark_metrics(
+            urls={
+                "ok": "http://ok:8001/metrics",
+                "bad": "http://bad:8001/metrics",
+            },
+            backend="vllm",
+            base_url="http://10.0.0.1:8000",
+        )
+        assert set(result.keys()) == {"ok"}
+        assert result["ok"].counters["r"] == 7.0
+
+
+def test_batch_histograms_found_on_non_first_endpoint() -> None:
+    """`mean_prefill_batch_time_ms` scans across endpoints — it must find the
+    engine's MAX-serve histogram even when the orchestrator (no such
+    histogram) is listed first in the mapping."""
+    orchestrator = ParsedMetrics(
+        counters={"requests": 42.0}, gauges={}, histograms={}, raw_text=""
+    )
+    engine_prefill = HistogramData(
+        buckets=[("100", 10.0)], sum=500.0, count=10.0
+    )
+    engine_decode = HistogramData(
+        buckets=[("100", 80.0)], sum=2000.0, count=100.0
+    )
+    engine = ParsedMetrics(
+        counters={},
+        gauges={},
+        histograms={
+            'maxserve_batch_execution_time_milliseconds{batch_type="CE"}': engine_prefill,
+            'maxserve_batch_execution_time_milliseconds{batch_type="TG"}': engine_decode,
+        },
+        raw_text="",
+    )
+    metrics = _make_metrics({"orchestrator": orchestrator, "engine-0": engine})
+
+    assert metrics.mean_prefill_batch_time_ms == 50.0
+    assert metrics.mean_decode_batch_time_ms == 20.0
+    assert metrics.prefill_batch_count == 10
+    assert metrics.decode_batch_count == 100
+
+
+class TestMetricsResultOutput:
+    """E2E: Prometheus response -> collect_benchmark_metrics -> _add_optional_result JSON."""
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_single_endpoint_emits_both_keys_with_matching_content(
+        self, mock_fetch: MagicMock, sample_metrics: str
+    ) -> None:
+        """Auto-derive (urls={}) produces one endpoint labeled `server`.
+        Both `server_metrics` and `server_metrics_by_endpoint.server` appear
+        in the output JSON and carry the same counter/gauge/histogram data."""
+        from max.benchmark.benchmark_serving import _add_optional_result
+
+        mock_fetch.return_value = sample_metrics
+        final = collect_benchmark_metrics(
+            urls={}, backend="vllm", base_url="http://10.0.0.1:8000"
+        )
+        result: dict[str, Any] = {}
+        _add_optional_result(result, _make_metrics(final), lora_manager=None)
+
+        sm = result["server_metrics"]
+        by_ep = result["server_metrics_by_endpoint"]
+        assert set(by_ep.keys()) == {"server"}
+
+        assert sm["counters"] == by_ep["server"]["counters"]
+        assert sm["histograms"] == by_ep["server"]["histograms"]
+        assert set(sm.keys()) >= {
+            "prefill_batch_execution_time_ms",
+            "decode_batch_count",
+        }
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_multi_endpoint_attributes_per_label_and_mirrors_first(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """Orchestrator and engine expose different metric families.
+        Output must attribute each to its label, and `server_metrics` must
+        mirror the FIRST endpoint (orchestrator), not the engine."""
+        from max.benchmark.benchmark_serving import _add_optional_result
+
+        orch_prom = (
+            "# TYPE orchestrator_requests counter\norchestrator_requests 42.0\n"
+        )
+        engine_prom = (
+            "# TYPE engine_generation_tokens counter\n"
+            "engine_generation_tokens 1000.0\n"
+        )
+        responses = {
+            "http://orch:8001/metrics": orch_prom,
+            "http://engine:8001/metrics": engine_prom,
+        }
+        mock_fetch.side_effect = lambda url: responses[url]
+
+        final = collect_benchmark_metrics(
+            urls={
+                "orch": "http://orch:8001/metrics",
+                "engine-0": "http://engine:8001/metrics",
+            },
+            backend="vllm",
+            base_url="http://10.0.0.1:8000",
+        )
+        result: dict[str, Any] = {}
+        _add_optional_result(result, _make_metrics(final), lora_manager=None)
+
+        by_ep = result["server_metrics_by_endpoint"]
+        assert set(by_ep.keys()) == {"orch", "engine-0"}
+        assert by_ep["orch"]["counters"] == {"orchestrator_requests": 42.0}
+        assert by_ep["engine-0"]["counters"] == {
+            "engine_generation_tokens": 1000.0
+        }
+
+        # server_metrics mirrors the FIRST inserted endpoint (orch), which is
+        # how existing BigQuery/analysis consumers keep working.
+        sm = result["server_metrics"]
+        assert sm["counters"] == by_ep["orch"]["counters"]
+        assert sm["counters"] != by_ep["engine-0"]["counters"]
