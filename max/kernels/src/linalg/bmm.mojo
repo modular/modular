@@ -145,11 +145,11 @@ def _shape_types_to_3d[
     comptime last_two_dims = _slice_types[shape_types, 2]()
     comptime batch_dims = _slice_types[shape_types.reverse(), rank - 2]()
 
-    comptime _get_first_dim[dtype: DType, *coords: CoordLike] = Variadic.types[
-        T=CoordLike, ComptimeInt[Coord[*coords].static_product]
-    ] if Coord[*coords].all_dims_known else Variadic.types[
-        T=CoordLike, RuntimeInt[dtype]
-    ]
+    comptime _get_first_dim[dtype: DType, *coords: CoordLike] = TypeList.of[
+        Trait=CoordLike, ComptimeInt[Coord[*coords].static_product]
+    ]().values if Coord[*coords].all_dims_known else TypeList.of[
+        Trait=CoordLike, RuntimeInt[dtype]
+    ]().values
 
     return TypeList._concat[
         _get_first_dim[DType.int64, *batch_dims], last_two_dims.values

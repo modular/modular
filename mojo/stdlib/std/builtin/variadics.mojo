@@ -38,40 +38,11 @@ struct _MLIR:
 struct Variadic:
     """A namespace for variadic utilities."""
 
-    comptime ValuesOfType[type: AnyType] = _MLIR.KGENParamListType[type]
-    """Represents a raw variadic sequence of values of the specified type.
-
-    Parameters:
-        type: The type of values in the variadic sequence.
-    """
-
     comptime TypesOfTrait[T: type_of(AnyType)] = _MLIR.KGENTypeListType[T]
     """Represents a raw variadic sequence of types that satisfy the specified trait.
 
     Parameters:
         T: The trait that types in the variadic sequence must conform to.
-    """
-
-    # ===-----------------------------------------------------------------------===#
-    # Utils
-    # ===-----------------------------------------------------------------------===#
-
-    comptime types[T: type_of(AnyType), //, *Ts: T] = Ts.values
-    """Turn discrete type values (bound by `T`) into a single variadic.
-
-    Parameters:
-        T: The trait that the types must conform to.
-        Ts: The types to collect into a variadic sequence.
-    """
-
-    comptime values[T: AnyType, //, *values_: T]: Variadic.ValuesOfType[
-        T
-    ] = values_.values
-    """Turn discrete values (bound by `T`) into a single variadic.
-
-    Parameters:
-        T: The type of the values.
-        values_: The values to collect into a variadic sequence.
     """
 
     # ===-----------------------------------------------------------------------===#
@@ -109,13 +80,13 @@ struct Variadic:
     """
 
     comptime zip_values[
-        type: AnyType, //, *values: Variadic.ValuesOfType[type]
+        type: AnyType, //, *values: _MLIR.KGENParamListType[type]
     ] = ParameterList[
         __mlir_attr[
             `#kgen.param_list.zip<`,
             values.values,
             `> : `,
-            _MLIR.KGENParamListType[Variadic.ValuesOfType[type]],
+            _MLIR.KGENParamListType[_MLIR.KGENParamListType[type]],
         ]
     ]
     """
@@ -868,7 +839,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
             `,`,
             Self._IndexToIntTabulateWrap[Mapper, ...],
             `> : `,
-            Variadic.ValuesOfType[type],
+            _MLIR.KGENParamListType[type],
         ],
     ]
     """Builds a parameter list by applying an index-to-value mapper `count` times.
@@ -893,12 +864,12 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     """
 
     comptime _concat[
-        type: AnyType, //, *values: Variadic.ValuesOfType[type]
+        type: AnyType, //, *values: _MLIR.KGENParamListType[type]
     ] = __mlir_attr[
         `#kgen.param_list.concat<`,
         values.values,
         `> :`,
-        Variadic.ValuesOfType[type],
+        _MLIR.KGENParamListType[type],
     ]
     """Represents the concatenation of multiple variadic sequences of values.
 
@@ -1126,7 +1097,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         ref self,
     ) -> _ParameterListIter[
         *ParameterList[
-            rebind[Variadic.ValuesOfType[downcast[Self.type, Copyable]]](
+            rebind[_MLIR.KGENParamListType[downcast[Self.type, Copyable]]](
                 Self.values
             )
         ]()
@@ -1630,7 +1601,7 @@ struct VariadicPack[
 
     # FIXME: bound by AnyType
     comptime _kgen_element_types = rebind[
-        Variadic.ValuesOfType[__mlir_type.`!kgen.type`]
+        _MLIR.KGENParamListType[__mlir_type.`!kgen.type`]
     ](Self.element_types.values)
     """This is the element_types list lowered to `variadic<type>` type for kgen.
     """
@@ -1640,7 +1611,7 @@ struct VariadicPack[
         `#kgen.param.expr<variadic_ptr_map, `,
         Self._kgen_element_types,
         `, 0: index>: `,
-        Variadic.ValuesOfType[__mlir_type.`!kgen.type`],
+        _MLIR.KGENParamListType[__mlir_type.`!kgen.type`],
     ]
     """Use variadic_ptr_map to construct the type list of the !kgen.pack that
     the !lit.ref.pack will lower to.  It exposes the pointers introduced by the
@@ -1663,7 +1634,7 @@ struct VariadicPack[
         `#kgen.param.expr<variadic_ptrremove_map, `,
         Self._variadic_pointer_types,
         `>: `,
-        Variadic.ValuesOfType[__mlir_type.`!kgen.type`],
+        _MLIR.KGENParamListType[__mlir_type.`!kgen.type`],
     ]
     comptime _loaded_kgen_pack_type = __mlir_type[
         `!kgen.pack<:param_list<type> `,

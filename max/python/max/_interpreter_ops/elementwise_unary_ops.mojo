@@ -56,13 +56,13 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
 
 
 # Unary elementwise operations (all dtypes)
-comptime UNARY_ELEMENTWISE_OPS = Variadic.types[
-    T=ElementwiseUnaryOp, Negative, Abs, ReLU, Ceil, Floor, Round
-]
+comptime UNARY_ELEMENTWISE_OPS = TypeList.of[
+    Trait=ElementwiseUnaryOp, Negative, Abs, ReLU, Ceil, Floor, Round
+]()
 
 # Unary elementwise operations (float only)
-comptime UNARY_FLOAT_ONLY_OPS = Variadic.types[
-    T=ElementwiseUnaryOp,
+comptime UNARY_FLOAT_ONLY_OPS = TypeList.of[
+    Trait=ElementwiseUnaryOp,
     Exp,
     Log,
     Log1p,
@@ -74,12 +74,12 @@ comptime UNARY_FLOAT_ONLY_OPS = Variadic.types[
     Cos,
     Erf,
     Trunc,
-]
+]()
 
 # Unary mixed-type predicate operations (float input -> bool output)
-comptime UNARY_PREDICATE_OPS = Variadic.types[
-    T=ElementwiseUnaryMixedOp, IsNan, IsInf
-]
+comptime UNARY_PREDICATE_OPS = TypeList.of[
+    Trait=ElementwiseUnaryMixedOp, IsNan, IsInf
+]()
 
 # =============================================================================
 # GPU Support Configuration
@@ -129,7 +129,7 @@ def PyInit_elementwise_unary_ops() -> PythonObject:
         var b = PythonModuleBuilder("elementwise_unary_ops")
 
         # Unary elementwise operations
-        comptime for i in range(TypeList[UNARY_ELEMENTWISE_OPS].size):
+        comptime for i in range(UNARY_ELEMENTWISE_OPS.size):
             comptime op = UNARY_ELEMENTWISE_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString("Elementwise " + name)
@@ -138,7 +138,7 @@ def PyInit_elementwise_unary_ops() -> PythonObject:
             )
 
         # Unary float-only operations
-        comptime for i in range(TypeList[UNARY_FLOAT_ONLY_OPS].size):
+        comptime for i in range(UNARY_FLOAT_ONLY_OPS.size):
             comptime op = UNARY_FLOAT_ONLY_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(
@@ -154,7 +154,7 @@ def PyInit_elementwise_unary_ops() -> PythonObject:
         )
 
         # Unary predicate operations (float -> bool)
-        comptime for i in range(TypeList[UNARY_PREDICATE_OPS].size):
+        comptime for i in range(UNARY_PREDICATE_OPS.size):
             comptime op = UNARY_PREDICATE_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(

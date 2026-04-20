@@ -39,9 +39,9 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
 
 
 # Binary comparison operations
-comptime BINARY_COMPARISON_OPS = Variadic.types[
-    T=ElementwiseBinaryComparisonOp, Equal, Greater, GreaterEqual, NotEqual
-]
+comptime BINARY_COMPARISON_OPS = TypeList.of[
+    Trait=ElementwiseBinaryComparisonOp, Equal, Greater, GreaterEqual, NotEqual
+]()
 
 # =============================================================================
 # GPU Support Configuration
@@ -72,7 +72,7 @@ def PyInit_elementwise_comparison_ops() -> PythonObject:
         var b = PythonModuleBuilder("elementwise_comparison_ops")
 
         # Binary comparison operations
-        comptime for i in range(TypeList[BINARY_COMPARISON_OPS].size):
+        comptime for i in range(BINARY_COMPARISON_OPS.size):
             comptime op = BINARY_COMPARISON_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(

@@ -1428,7 +1428,8 @@ comptime _FlattenReducer[
     Prev,
     TypeList[From]()[idx]
     ._ParamListType if TypeList[From]()[idx]
-    .is_tuple else Variadic.types[T=CoordLike, TypeList[From]()[idx]],
+    .is_tuple else TypeList.of[Trait=CoordLike, TypeList[From]()[idx]]()
+    .values,
 ]
 
 
@@ -1477,8 +1478,8 @@ comptime _FlattenOffsetReducer[
     idx: Int,
 ] = Variadic.concat_types[
     Prev,
-    Variadic.types[
-        T=CoordLike,
+    TypeList.of[
+        Trait=CoordLike,
         ComptimeInt[
             0 if idx
             == 0 else _NextOffset[
@@ -1486,7 +1487,7 @@ comptime _FlattenOffsetReducer[
                 TypeList[From]()[idx - 1],
             ]
         ],
-    ],
+    ]().values,
 ]
 
 
@@ -1631,7 +1632,7 @@ Example:
     # Known values become ComptimeInt, UNKNOWN_VALUE becomes RuntimeInt
     comptime shape = IntTuple(3, -1, 5)
     comptime coord_types = _IntTupleToCoordLike[DType.int32, shape]
-    # coord_types is equivalent to Variadic.types[ComptimeInt[3], RuntimeInt, ComptimeInt[5]]
+    # coord_types is equivalent to TypeList.of[Trait=CoordLike, ComptimeInt[3], RuntimeInt, ComptimeInt[5]]()
 
     # Can be used to create a Coord type
     comptime my_coords = Coord[*coord_types]
@@ -1664,7 +1665,7 @@ Example:
     from layout.coord import _CoordToDynamic, ComptimeInt, RuntimeInt, Coord
     # All elements become RuntimeInt[DType.int64]
     comptime types = _CoordToDynamic[DType.int64, ComptimeInt[3], RuntimeInt[DType.int32], ComptimeInt[5]]
-    # types is equivalent to Variadic.types[RuntimeInt[DType.int64], RuntimeInt[DType.int64], RuntimeInt[DType.int64]]
+    # types is equivalent to TypeList.of[Trait=CoordLike, RuntimeInt[DType.int64], RuntimeInt[DType.int64], RuntimeInt[DType.int64]]()
     ```
 """
 
@@ -1831,8 +1832,8 @@ For each dimension:
 Example:
     ```mojo
     from layout.coord import _Idx2CrdResultTypes, ComptimeInt, RuntimeInt
-    comptime stride_t = Variadic.types[T=CoordLike, ComptimeInt[4], ComptimeInt[4], ComptimeInt[1]]
-    comptime shape_t = Variadic.types[T=CoordLike, ComptimeInt[3], ComptimeInt[1], ComptimeInt[4]]
+    comptime stride_t = TypeList.of[Trait=CoordLike, ComptimeInt[4], ComptimeInt[4], ComptimeInt[1]]().values
+    comptime shape_t = TypeList.of[Trait=CoordLike, ComptimeInt[3], ComptimeInt[1], ComptimeInt[4]]().values
     comptime types = _Idx2CrdResultTypes[DType.int64, RuntimeInt[DType.int64], stride_t, shape_t]
     ```
 """

@@ -245,18 +245,18 @@ def test_parameter_list_splat_zero() raises:
 
 
 def test_variadic_contains() raises:
-    comptime variadic = TypeList.of[Trait=Writable, Int, String, Float32]()
-    assert_equal(variadic.size, 3)
-    assert_true(variadic.contains[Int]())
-    assert_true(variadic.contains[String]())
-    assert_true(variadic.contains[Float32]())
-    assert_false(variadic.contains[Bool]())
+    comptime types = TypeList.of[Trait=Writable, Int, String, Float32]()
+    assert_equal(types.size, 3)
+    assert_true(types.contains[Int]())
+    assert_true(types.contains[String]())
+    assert_true(types.contains[Float32]())
+    assert_false(types.contains[Bool]())
 
 
 def test_variadic_contains_empty() raises:
-    comptime variadic = TypeList.of[Trait=Writable]()
-    assert_equal(variadic.size, 0)
-    assert_false(variadic.contains[Bool]())
+    comptime types = TypeList.of[Trait=Writable]()
+    assert_equal(types.size, 0)
+    assert_false(types.contains[Bool]())
 
 
 def test_variadic_contains_value() raises:
