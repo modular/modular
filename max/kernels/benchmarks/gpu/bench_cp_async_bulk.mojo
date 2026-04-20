@@ -52,7 +52,7 @@ from std.gpu.memory import (
     AddressSpace,
     cp_async_bulk_global_shared_cta,
     cp_async_bulk_prefetch,
-    cp_async_bulk_shared_cta_global,
+    cp_async_bulk_shared_cluster_global,
     external_memory,
     fence_mbarrier_init,
 )
@@ -143,7 +143,7 @@ def bulk_memcpy_kernel[
                 )
 
         mbar[].expect_bytes(Int32(BYTES_PER_COPY))
-        cp_async_bulk_shared_cta_global(
+        cp_async_bulk_shared_cluster_global(
             smem,
             src_g + (first + i * stride) * BYTES_PER_COPY,
             Int32(BYTES_PER_COPY),
@@ -169,7 +169,7 @@ def bulk_memcpy_kernel[
         var smem_new = _smem_ptr[BYTES_PER_COPY, S](smem_base, w, new_slot)
         var mbar_new = _mbar_ref[S](mbar_base, w, new_slot)
         mbar_new[].expect_bytes(Int32(BYTES_PER_COPY))
-        cp_async_bulk_shared_cta_global(
+        cp_async_bulk_shared_cluster_global(
             smem_new,
             src_g + (first + i * stride) * BYTES_PER_COPY,
             Int32(BYTES_PER_COPY),

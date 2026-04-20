@@ -17,7 +17,7 @@ from std.gpu import thread_idx, block_dim, barrier, warp_id
 from std.gpu.host import DeviceContext
 from std.gpu.memory import (
     AddressSpace,
-    cp_async_bulk_shared_cta_global,
+    cp_async_bulk_shared_cluster_global,
     cp_async_bulk_global_shared_cta,
     fence_mbarrier_init,
     fence_async_view_proxy,
@@ -61,7 +61,7 @@ def kernel_bulk_g2s[
 
         mbar[].expect_bytes(Int32(BYTES))
 
-        cp_async_bulk_shared_cta_global(
+        cp_async_bulk_shared_cluster_global(
             smem, src, Int32(BYTES), mbar[].unsafe_ptr()
         )
 
