@@ -114,6 +114,12 @@ modular_py_test(
     srcs = ["test_vision_rotary_embedding.py"],
     gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
+    # TODO(MODELS-1371): `test_compute_vision_freqs_cis_matches_hf_reference`
+    # hangs for >10 minutes on remote macOS workers.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
