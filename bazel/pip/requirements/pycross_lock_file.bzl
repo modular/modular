@@ -147,7 +147,6 @@ PINS = {
     "sphinx": "sphinx@8.1.3",
     "sqlalchemy": "sqlalchemy@2.0.44",
     "sse-starlette": "sse-starlette@2.1.2",
-    "sseclient-py": "sseclient-py@1.8.0",
     "starlette": "starlette@0.50.0",
     "tabulate": "tabulate@0.9.0",
     "taskgroup": "taskgroup@0.2.2",
@@ -9629,17 +9628,6 @@ def targets():
         deps = _sse_starlette_2_1_2_deps,
         wheel = ":_wheel_sse-starlette@2.1.2",
         testonly = "sse-starlette" in _TESTONLY_DEPS,
-    )
-
-    native.alias(
-        name = "_wheel_sseclient-py@1.8.0",
-        actual = "@pycross_lock_file_wheel_sseclient_py_1.8.0_py2.py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "sseclient-py@1.8.0",
-        wheel = ":_wheel_sseclient-py@1.8.0",
-        testonly = "sseclient-py" in _TESTONLY_DEPS,
     )
 
     _stack_data_0_6_3_deps = [
@@ -27803,16 +27791,6 @@ def repositories():
         ],
         sha256 = "af7fbd2b307befcf59130ab5b9a8ad67d06c4dd76cf98d0b46ec6500286bdc89",
         downloaded_file_path = "sse_starlette-2.1.2-py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
-        name = "pycross_lock_file_wheel_sseclient_py_1.8.0_py2.py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/49/58/97655efdfeb5b4eeab85b1fc5d3fa1023661246c2ab2a26ea8e47402d4f2/sseclient_py-1.8.0-py2.py3-none-any.whl",
-        ],
-        sha256 = "4ecca6dc0b9f963f8384e9d7fd529bf93dd7d708144c4fb5da0e0a1a926fee83",
-        downloaded_file_path = "sseclient_py-1.8.0-py2.py3-none-any.whl",
     )
 
     maybe(
