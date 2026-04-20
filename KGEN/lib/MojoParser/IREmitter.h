@@ -689,6 +689,25 @@ public:
                            ValueDest &dest);
 };
 
+//===----------------------------------------------------------------------===//
+// Type Refinement Utilities
+//===----------------------------------------------------------------------===//
+
+/// Refine a parametric type based on where-clause constraints in the scope.
+/// Returns the refined type if refinement applies, otherwise the original type.
+Type maybeRefineTypeWithAssumptions(Type varType, ASTDecl &declScope);
+
+/// Emit a `kgen.rebind` for `value` when type refinement applies in the
+/// current scope, otherwise return `value` unchanged. Use this overload when
+/// only a raw SSA `Value` is available (e.g., from a GEP or a block
+/// argument).
+Value maybeEmitRefinementRebind(Value value, ASTDecl &declScope,
+                                OpBuilder &builder, Location loc);
+
+/// CValue overload. Delegates to `IREmitter::rebindValue` so the returned
+/// CValue preserves its original kind (MLValue, MBValue, SBValue, etc.).
+CValue maybeEmitRefinementRebind(ASTExprAnd<CValue> value, IREmitter &emitter);
+
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_EXPREMITTER_H
