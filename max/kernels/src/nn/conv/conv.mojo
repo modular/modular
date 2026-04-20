@@ -360,6 +360,7 @@ def _reduce_output[
     F: Int,
     num_partitions: Int,
     num_threads: Int,
+    ctx: Optional[DeviceContext] = None,
 ):
     var num_rows = N * output_space_dims.flattened_length()
     var buf_size = num_rows * F
@@ -397,7 +398,7 @@ def _reduce_output[
                 epilogue(Index(nhowo[0], nhowo[1], nhowo[2], 0), F)
 
     # NOTE: _synchronous, so use of locally allocated output_ptr is safe.
-    sync_parallelize[reduce_task](num_threads)
+    sync_parallelize[reduce_task](num_threads, ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -471,6 +472,7 @@ struct ConvDirectNHWC[
             Self.filter_type, Self.filter_layout, Self.filter_origin
         ],
         conv_shape: ConvShape[Self.conv_attr_rank],
+        ctx: Optional[DeviceContext] = None,
     ) raises:
         comptime assert Self.conv_attr_rank == Self.input_layout.rank() - 2
         comptime simd_size = simd_width_of[Self.output_type]()
@@ -588,7 +590,7 @@ struct ConvDirectNHWC[
             instance._batch_group_loop()
 
         if num_partitions[1] > 1:
-            sync_parallelize[task_func](num_tasks)
+            sync_parallelize[task_func](num_tasks, ctx)
 
             # Reduce from the output scratch buffer to the actual output.
             _reduce_output[
@@ -604,11 +606,12 @@ struct ConvDirectNHWC[
                 conv_shape.f,
                 num_partitions[1],
                 num_threads,
+                ctx,
             )
             output_ptr.free()
         else:
             # Use sync to work around #12624
-            sync_parallelize[task_func](num_tasks)
+            sync_parallelize[task_func](num_tasks, ctx)
 
     def _batch_group_loop(self):
         """Loop over the batch and group dimensions. The two dimension are
@@ -3117,6 +3120,7 @@ def conv_nhwc_direct[
     pad_h: IndexList[2],
     pad_w: IndexList[2],
     num_groups: Int,
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     # Construct LayoutTensors with explicit Layouts passed by the caller,
     # using the TileTensor's pointer and runtime shape. The Layouts must come
@@ -3234,6 +3238,7 @@ def conv_nhwc_direct[
             input_lt,
             filter_lt,
             conv_shape,
+            ctx,
         )
 
 

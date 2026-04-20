@@ -757,6 +757,7 @@ def layer_norm_cpu[
     shape: IndexList[rank],
     beta: TileTensor[dtype, ...],
     epsilon: Scalar[dtype],
+    ctx: Optional[DeviceContext] = None,
 ):
     comptime assert beta.rank == 1, "beta must have rank 1"
     var last_dim = shape[rank - 1]
@@ -805,7 +806,7 @@ def layer_norm_cpu[
             chunk_rows, shape[rank - 1], beta, epsilon
         )
 
-    sync_parallelize[task_func](num_workers)
+    sync_parallelize[task_func](num_workers, ctx)
 
 
 @always_inline
@@ -853,6 +854,7 @@ def layer_norm[
                 shape.canonicalize(),
                 beta,
                 epsilon,
+                ctx.get_optional_device_context(),
             )
         elif is_gpu[target]():
             layer_norm_gpu[input_0_fn, input_1_fn, output_0_fn](
@@ -1430,6 +1432,7 @@ def rms_norm_cpu[
     gamma: TileTensor[dtype, ...],
     epsilon: Scalar[dtype],
     weight_offset: Scalar[dtype],
+    ctx: Optional[DeviceContext] = None,
 ):
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
@@ -1486,7 +1489,7 @@ def rms_norm_cpu[
             out_shape=IndexList[2](num_rows, last_dim),
         )
 
-    sync_parallelize[task_func](num_workers)
+    sync_parallelize[task_func](num_workers, ctx)
 
 
 @always_inline
@@ -1528,7 +1531,13 @@ def _rms_norm_impl[
     comptime if is_cpu[target]():
         rms_norm_cpu[
             input_0_fn, output_fn, multiply_before_cast=multiply_before_cast
-        ](shape, gamma, epsilon, weight_offset)
+        ](
+            shape,
+            gamma,
+            epsilon,
+            weight_offset,
+            ctx.get_optional_device_context(),
+        )
     elif is_gpu[target]():
         rms_norm_gpu[
             input_0_fn, output_fn, multiply_before_cast=multiply_before_cast

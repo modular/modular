@@ -58,6 +58,7 @@ Activation Support:
 from std.math import exp
 
 from std.algorithm import sync_parallelize
+from std.gpu.host import DeviceContext
 from std.gpu import (
     block_dim,
     block_idx,
@@ -121,6 +122,7 @@ def causal_conv1d_channel_first_fwd_cpu[
     out_l_stride: UInt32,
     bias_stride: UInt32,
     silu_activation: Bool,
+    ctx: Optional[DeviceContext] = None,
 ):
     """CPU implementation of causal conv1d for channel-first layout with bias.
 
@@ -147,6 +149,7 @@ def causal_conv1d_channel_first_fwd_cpu[
         out_l_stride: Stride for the sequence length dimension of the output tensor.
         bias_stride: Stride for the bias tensor.
         silu_activation: Whether to apply SiLU activation.
+        ctx: The context to execute the work on.
     """
     var width_minus_1: Int = width - 1
     var total_bc = batch * dim
@@ -233,7 +236,7 @@ def causal_conv1d_channel_first_fwd_cpu[
                     ]()
             output.ptr[out_offset] = out_val
 
-    sync_parallelize[process_bc](total_bc)
+    sync_parallelize[process_bc](total_bc, ctx)
 
 
 def causal_conv1d_channel_first_fwd_cpu_no_bias[
@@ -257,6 +260,7 @@ def causal_conv1d_channel_first_fwd_cpu_no_bias[
     out_c_stride: UInt32,
     out_l_stride: UInt32,
     silu_activation: Bool,
+    ctx: Optional[DeviceContext] = None,
 ):
     """CPU implementation of causal conv1d for channel-first layout without bias.
 
@@ -281,6 +285,7 @@ def causal_conv1d_channel_first_fwd_cpu_no_bias[
         out_c_stride: Stride for the channel dimension of the output tensor.
         out_l_stride: Stride for the sequence length dimension of the output tensor.
         silu_activation: Whether to apply SiLU activation.
+        ctx: The context to execute the work on.
     """
     var width_minus_1: Int = width - 1
     var total_bc = batch * dim
@@ -351,7 +356,7 @@ def causal_conv1d_channel_first_fwd_cpu_no_bias[
                     ]()
             output.ptr[out_offset] = out_val
 
-    sync_parallelize[process_bc](total_bc)
+    sync_parallelize[process_bc](total_bc, ctx)
 
 
 def causal_conv1d_channel_last_fwd_cpu[

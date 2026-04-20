@@ -147,7 +147,7 @@ def elementwise[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     _trace_description: StaticString = "elementwise",
-](shape: Int) raises:
+](shape: Int, ctx: Optional[DeviceContext] = None) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -161,6 +161,7 @@ def elementwise[
 
     Args:
         shape: The shape of the buffer.
+        ctx: The context to execute the work on.
 
     Raises:
         If the operation fails.
@@ -172,7 +173,7 @@ def elementwise[
         use_blocking_impl=use_blocking_impl,
         target=target,
         _trace_description=_trace_description,
-    ](Index(shape))
+    ](Index(shape), ctx)
 
 
 @always_inline
@@ -187,7 +188,7 @@ def elementwise[
     use_blocking_impl: Bool = False,
     target: StaticString = "cpu",
     _trace_description: StaticString = "elementwise",
-](shape: IndexList[rank, ...]) raises:
+](shape: IndexList[rank, ...], ctx: Optional[DeviceContext] = None) raises:
     """Executes `func[width, rank](indices)`, possibly as sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -202,6 +203,7 @@ def elementwise[
 
     Args:
         shape: The shape of the buffer.
+        ctx: The context to execute the work on.
 
     Raises:
         If the operation fails.
@@ -221,7 +223,7 @@ def elementwise[
         simd_width=simd_width,
         use_blocking_impl=use_blocking_impl,
         trace_description=_trace_description,
-    ](func_unified, shape=shape)
+    ](func_unified, shape=shape, ctx=ctx)
 
 
 @always_inline
@@ -390,7 +392,11 @@ def elementwise[
                 simd_width=simd_width,
                 use_blocking_impl=use_blocking_impl,
                 trace_description=_trace_description,
-            ](cpu_func_unified, shape=shape)
+            ](
+                cpu_func_unified,
+                shape=shape,
+                ctx=context.get_optional_device_context(),
+            )
 
 
 @always_inline
@@ -430,7 +436,7 @@ def _elementwise_impl[
                 simd_width=simd_width,
                 use_blocking_impl=use_blocking_impl,
                 trace_description=trace_description,
-            ](func, shape=shape)
+            ](func, shape=shape, ctx=Optional(context))
         else:
             _elementwise_impl_gpu[
                 simd_width=simd_width,

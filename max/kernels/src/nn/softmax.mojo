@@ -606,6 +606,7 @@ def _softmax_cpu[
     shape: IndexList[rank],
     output: TileTensor[mut=True, dtype, ...],
     axis: Int,
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     # TODO: Add rowwise generator to de-duplicate partitioning logic between
     # softmax and logsoftmax
@@ -652,7 +653,7 @@ def _softmax_cpu[
             ](output_buffer_view)
             _ = indices
 
-    sync_parallelize[task_func](num_workers)
+    sync_parallelize[task_func](num_workers, ctx)
 
 
 # Softmax (no input lambda)
@@ -909,7 +910,7 @@ def softmax[
                 origin_of()._mlir_origin,
                 input_fn,
                 logsoftmax=logsoftmax,
-            ](shape, output, axis)
+            ](shape, output, axis, context.get_optional_device_context())
         elif is_gpu[target]():
             _softmax_gpu[
                 dtype,

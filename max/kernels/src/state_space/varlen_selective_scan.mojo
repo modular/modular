@@ -21,6 +21,7 @@ from std.gpu import (
 from layout import TensorLayout, TileTensor
 from std.utils.index import IndexList
 from std.algorithm import sync_parallelize
+from std.gpu.host import DeviceContext
 import std.math
 from std.math import exp2
 from state_space.causal_conv1d import silu
@@ -497,6 +498,7 @@ def varlen_selective_state_update_cpu[
     D_strides: Strides2D,
     z_strides: Strides3D,
     out_strides: Strides3D,
+    ctx: Optional[DeviceContext] = None,
 ):
     """CPU kernel for varlen selective state update."""
     var has_dt_bias = Int(dt_bias.dim[0]()) > 0
@@ -629,7 +631,7 @@ def varlen_selective_state_update_cpu[
             out_val.cast[kernel_dtype]()
         )
 
-    sync_parallelize[worker](batch * nheads * dim)
+    sync_parallelize[worker](batch * nheads * dim, ctx)
 
 
 def varlen_selective_scan_fwd_cpu[
@@ -666,6 +668,7 @@ def varlen_selective_scan_fwd_cpu[
     delta_bias_strides: Strides1D,
     ssm_states_strides: Strides3D,
     out_strides: Strides2D,
+    ctx: Optional[DeviceContext] = None,
 ):
     """CPU kernel for variable-length selective scan."""
     var has_D = Int(D.dim[0]()) > 0
@@ -826,4 +829,4 @@ def varlen_selective_scan_fwd_cpu[
                     state[n].cast[kernel_dtype]()
                 )
 
-    sync_parallelize[worker](dim)
+    sync_parallelize[worker](dim, ctx)

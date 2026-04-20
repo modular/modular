@@ -2344,6 +2344,7 @@ struct ArgMax:
                 input.to_tile_tensor[DType.int64](),
                 axis_val,
                 output.to_tile_tensor[DType.int64](),
+                ctx.get_optional_device_context(),
             )
         else:
             if axis_val != rank - 1:
@@ -2380,6 +2381,7 @@ struct ArgMin:
                 input.to_tile_tensor[DType.int64](),
                 axis_val,
                 output.to_tile_tensor[DType.int64](),
+                ctx.get_optional_device_context(),
             )
         else:
             if axis_val != rank - 1:
@@ -3112,11 +3114,16 @@ struct Gather:
 @compiler.register("mo.gather_sum")
 struct GatherSum:
     @staticmethod
-    def execute(
+    def execute[
+        target: StaticString,
+    ](
         output: OutputTensor[...],
         input: InputTensor[dtype=output.dtype, ...],
         indices: InputTensor[dtype=DType.int32, ...],
+        ctx: DeviceContextPtr,
     ) raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
+
         def add[
             dtype: DType, simd_width: Int
         ](x: SIMD[dtype, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
@@ -3129,6 +3136,7 @@ struct GatherSum:
             input.to_tile_tensor[DType.int64](),
             indices.to_tile_tensor[DType.int64](),
             0,
+            ctx.get_optional_device_context(),
         )
 
 
@@ -4960,6 +4968,7 @@ struct Conv:
                 pad_h_tuple,
                 pad_w_tuple,
                 Int(num_groups),
+                ctx.get_optional_device_context(),
             )
         else:
             comptime assert (input.rank == 4 and filter.rank == 4) or (
@@ -5204,6 +5213,7 @@ struct ConvTranspose:
                 pad_d,
                 pad_h,
                 pad_w,
+                ctx.get_optional_device_context(),
             )
         else:
             comptime assert (
@@ -5770,13 +5780,17 @@ struct NoMaskFlashAttentionCPU:
     def execute[
         dtype: DType,
         rank: Int,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         q: InputTensor[dtype=dtype, rank=rank, ...],
         k: FusedInputTensor[dtype=dtype, rank=rank, ...],
         v: FusedInputTensor[dtype=dtype, rank=rank, ...],
         scale: Scalar[dtype=DType.float32],
+        ctx: DeviceContextPtr,
     ) capturing raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
+
         @parameter
         @always_inline
         def k_input_fn[
@@ -5809,6 +5823,7 @@ struct NoMaskFlashAttentionCPU:
             IndexList[0](),
             output.to_layout_tensor(),
             scale.cast[DType.float32](),
+            ctx=ctx.get_optional_device_context(),
         )
 
 
@@ -5818,6 +5833,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
     def execute[
         dtype: DType,
         rank: Int,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         q: InputTensor[dtype=dtype, rank=rank, ...],
@@ -5827,7 +5843,10 @@ struct WithMaskFlashAttentionSplitKVCPU:
         v_cache: FusedInputTensor[dtype=dtype, rank=rank + 1, ...],
         mask: FusedInputTensor[dtype=dtype, ...],
         scale: Scalar[dtype=DType.float32],
+        ctx: DeviceContextPtr,
     ) capturing raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
+
         @parameter
         @always_inline
         def k_input_fn[
@@ -5888,6 +5907,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
             mask.shape(),
             output.to_layout_tensor(),
             scale.cast[DType.float32](),
+            ctx=ctx.get_optional_device_context(),
         )
 
     @staticmethod
@@ -5912,6 +5932,7 @@ struct WithMaskFlashAttentionCPU:
     def execute[
         dtype: DType,
         rank: Int,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         q: InputTensor[dtype=dtype, rank=rank, ...],
@@ -5919,7 +5940,10 @@ struct WithMaskFlashAttentionCPU:
         v: FusedInputTensor[dtype=dtype, rank=rank, ...],
         mask: FusedInputTensor[dtype=dtype, ...],
         scale: Scalar[dtype=DType.float32],
+        ctx: DeviceContextPtr,
     ) capturing raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
+
         @parameter
         @always_inline
         def k_input_fn[
@@ -5954,6 +5978,7 @@ struct WithMaskFlashAttentionCPU:
             mask.shape(),
             output.to_layout_tensor(),
             scale.cast[DType.float32](),
+            ctx=ctx.get_optional_device_context(),
         )
 
 
@@ -6003,15 +6028,19 @@ struct VroomQ40Matmul:
     @always_inline
     def execute[
         _trace_name: StaticString,
+        target: StaticString,
     ](
         c: OutputTensor[dtype=DType.float32, rank=2, ...],
         a: InputTensor[dtype=DType.float32, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        ctx: DeviceContextPtr,
     ) raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
         matmul_qint4[32](
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             c.to_tile_tensor[DType.int64](),
+            ctx.get_optional_device_context(),
         )
 
     @staticmethod
@@ -6088,15 +6117,19 @@ struct VroomQ4KMatmul:
     @always_inline
     def execute[
         _trace_name: StaticString,
+        target: StaticString,
     ](
         c: OutputTensor[dtype=DType.float32, rank=2, ...],
         a: InputTensor[dtype=DType.float32, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        ctx: DeviceContextPtr,
     ) raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
         matmul_Q4_K(
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             c.to_tile_tensor[DType.int64](),
+            ctx.get_optional_device_context(),
         )
 
     @staticmethod
@@ -6178,15 +6211,19 @@ struct VroomQ6KMatmul:
     @always_inline
     def execute[
         _trace_name: StaticString,
+        target: StaticString,
     ](
         c: OutputTensor[dtype=DType.float32, rank=2, ...],
         a: InputTensor[dtype=DType.float32, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        ctx: DeviceContextPtr,
     ) raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
         matmul_Q6_K(
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             c.to_tile_tensor[DType.int64](),
+            ctx.get_optional_device_context(),
         )
 
     @staticmethod
@@ -10142,6 +10179,7 @@ struct Struct_fused_token_sampling:
                     input.to_tile_tensor[DType.int64](),
                     rank - 1,
                     out_idxs.to_tile_tensor[DType.int64](),
+                    ctx.get_optional_device_context(),
                 )
                 return
             _fused_token_sampling_cpu(

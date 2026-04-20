@@ -19,6 +19,7 @@ from std.sys import align_of, simd_width_of
 from std.sys.info import CompilationTarget
 
 from std.algorithm import sync_parallelize, tile, vectorize
+from std.gpu.host import DeviceContext
 from std.algorithm.reduction import (
     _simd_max,
     _simd_max_elementwise,
@@ -703,6 +704,7 @@ struct _FlashAttention[
                 Self.dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
             ]
         ] = None,
+        ctx: Optional[DeviceContext] = None,
     ):
         var kv_group_count = num_heads // num_kv_heads
 
@@ -937,7 +939,7 @@ struct _FlashAttention[
             if packed_ptr_allocated:
                 packed_ptr.free()
 
-        sync_parallelize[task_func](num_threads)
+        sync_parallelize[task_func](num_threads, ctx)
 
 
 @always_inline
@@ -971,6 +973,7 @@ def _flash_attention[
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
+    ctx: Optional[DeviceContext] = None,
 ):
     var num_batches = output.dim[0]()
     var max_seq_len = output.dim[1]()
@@ -1042,6 +1045,7 @@ def _flash_attention[
         max_seq_len,
         scale,
         sink_weights,
+        ctx,
     )
 
 
@@ -1075,6 +1079,7 @@ def flash_attention[
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
+    ctx: Optional[DeviceContext] = None,
 ):
     _flash_attention[input_k_fn, input_v_fn, input_mask_fn](
         q,
@@ -1084,6 +1089,7 @@ def flash_attention[
         output,
         scale,
         sink_weights,
+        ctx,
     )
 
 
@@ -1119,6 +1125,7 @@ def flash_attention_split_kv[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     scale: Float32,
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     """Variant of flash attention that takes the previous KV cache
     `input_{k,v}_cache_fn` and the current KV tensors `input_k_fn` and
@@ -1232,6 +1239,7 @@ def flash_attention_split_kv[
             mask_shape,
             output,
             scale,
+            ctx=ctx,
         )
 
 

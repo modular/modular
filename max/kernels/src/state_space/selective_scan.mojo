@@ -19,6 +19,7 @@ from std.gpu import (
 from layout import Layout, LayoutTensor, TensorLayout, TileTensor
 from std.utils.index import IndexList
 from std.algorithm import sync_parallelize
+from std.gpu.host import DeviceContext
 import std.math
 from std.math import ceildiv, exp, exp2, rsqrt
 from state_space.causal_conv1d import silu
@@ -785,6 +786,7 @@ def selective_scan_update_cpu[
     D_strides: Strides1D,
     z_strides: Strides2D,
     dt_bias_strides: Strides1D,
+    ctx: Optional[DeviceContext] = None,
 ):
     """CPU kernel for selective scan update (single step)."""
     var has_dt_bias = Int(dt_bias.dim[0]()) > 0
@@ -910,7 +912,7 @@ def selective_scan_update_cpu[
             out_val.cast[kernel_dtype]()
         )
 
-    sync_parallelize[worker](batch * dim)
+    sync_parallelize[worker](batch * dim, ctx)
 
 
 def selective_scan_fwd_cpu[
@@ -944,6 +946,7 @@ def selective_scan_fwd_cpu[
     D_strides: Strides1D,
     z_strides: Strides3D,
     delta_bias_strides: Strides1D,
+    ctx: Optional[DeviceContext] = None,
 ):
     """CPU kernel for selective scan forward pass."""
 
@@ -1221,7 +1224,7 @@ def selective_scan_fwd_cpu[
                     t_in_chunk = 0
             t += 1
 
-    sync_parallelize[worker](batch * dim)
+    sync_parallelize[worker](batch * dim, ctx)
 
 
 def selective_scan_fwd_cpu_minimal[
@@ -1247,6 +1250,7 @@ def selective_scan_fwd_cpu_minimal[
     A_strides: Strides2D,
     B_strides: Strides4D,
     C_strides: Strides4D,
+    ctx: Optional[DeviceContext] = None,
 ):
     """Minimal CPU kernel for selective scan forward - no D, z, or delta_bias.
     """
@@ -1358,7 +1362,7 @@ def selective_scan_fwd_cpu_minimal[
                     chunk_idx += 1
                     t_in_chunk = 0
 
-    sync_parallelize[worker](batch * dim)
+    sync_parallelize[worker](batch * dim, ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1827,6 +1831,7 @@ def ssd_combined_cpu[
     gamma: LayoutTensor[kernel_dtype, gamma_layout, MutAnyOrigin],
     epsilon: Scalar[kernel_dtype],
     weight_offset: Scalar[kernel_dtype],
+    ctx: Optional[DeviceContext] = None,
 ):
     """CPU kernel for SSD combined operation."""
     # Compute row-major strides from dimensions
@@ -2186,7 +2191,7 @@ def ssd_combined_cpu[
                     t_in_chunk = 0
             t += 1
 
-    sync_parallelize[worker](batch * dim)
+    sync_parallelize[worker](batch * dim, ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2281,6 +2286,7 @@ def mamba_split_conv1d_scan_combined_cpu[
         kernel_dtype, output_layout, MutAnyOrigin
     ],  # (batch, seqlen, dim) or (batch, seqlen, out_dim)
     epsilon: Scalar[kernel_dtype],
+    ctx: Optional[DeviceContext] = None,
 ):
     """CPU kernel for mamba_split_conv1d_scan_combined operation.
 
@@ -2704,7 +2710,7 @@ def mamba_split_conv1d_scan_combined_cpu[
                     chunk_idx += 1
                     t_in_chunk = 0
 
-    sync_parallelize[worker](batch * dim)
+    sync_parallelize[worker](batch * dim, ctx)
 
 
 def mamba_split_conv1d_scan_combined_gpu[

@@ -3722,7 +3722,9 @@ def kv_cache_store_ragged[
             cache_t.dtype, target=compile_target
         ]()
 
-        elementwise[write_to_cache, simd_width, target=target](input_shape)
+        elementwise[write_to_cache, simd_width, target=target](
+            input_shape, context
+        )
 
 
 def kv_cache_store_padded[
@@ -3787,7 +3789,9 @@ def kv_cache_store_padded[
             cache_t.dtype, target=compile_target
         ]()
 
-        elementwise[write_to_cache, simd_width, target=target](input_shape)
+        elementwise[write_to_cache, simd_width, target=target](
+            input_shape, context
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3907,4 +3911,4 @@ def kv_cache_2m_iadd_dispatch[
         comptime compile_target = _current_target()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-        elementwise[iadd, simd_width, target=target](elementwise_shape)
+        elementwise[iadd, simd_width, target=target](elementwise_shape, ctx)

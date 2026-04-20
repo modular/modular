@@ -457,6 +457,7 @@ struct ConvTransposedPacked[
             ...,
         ],
         conv_shape: ConvShape[Self.conv_attr_rank],
+        ctx: Optional[DeviceContext] = None,
     ) raises:
         comptime assert input.rank - 2 == Self.conv_attr_rank
         comptime simd_size = simd_width_of[Self.output_type]()
@@ -526,7 +527,7 @@ struct ConvTransposedPacked[
             )
             instance._batch_group_loop()
 
-        sync_parallelize[task_func](num_tasks)
+        sync_parallelize[task_func](num_tasks, ctx)
 
     @always_inline
     def _zero_output(self, n: Int, g: Int):
@@ -1389,6 +1390,7 @@ def conv_transposed_cpu[
     pad_d: IndexList[2],
     pad_h: IndexList[2],
     pad_w: IndexList[2],
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     @always_inline
     @parameter
@@ -1487,7 +1489,7 @@ def conv_transposed_cpu[
             Optional[elementwise_epilogue_type](
                 elementwise_epilogue
             ) if lambdas_have_fusion else None,
-        ].run(output, input, packed_filter, conv_shape)
+        ].run(output, input, packed_filter, conv_shape, ctx)
 
         comptime if not filter_packed:
             packed_filter_ptr.free()

@@ -17,6 +17,7 @@ from std.sys.info import simd_width_of, size_of
 from std.sys.intrinsics import strided_load, strided_store
 
 from std.algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
+from std.gpu.host import DeviceContext
 from layout import TileTensor
 from std.memory import memcpy
 from std.runtime.asyncrt import parallelism_level
@@ -630,6 +631,7 @@ def _transpose_2d_parallel_tiled[
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
+    ctx: Optional[DeviceContext] = None,
 ):
     comptime if rank < 2:
         return
@@ -681,7 +683,7 @@ def _transpose_2d_parallel_tiled[
                     input.ptr + offset,
                 )
 
-    sync_parallelize[_parallel_tile](num_tasks)
+    sync_parallelize[_parallel_tile](num_tasks, ctx)
 
 
 def transpose_2d[
@@ -697,6 +699,7 @@ def transpose_2d[
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
+    ctx: Optional[DeviceContext] = None,
 ):
     comptime if rank < 2:
         return
@@ -714,6 +717,7 @@ def transpose_2d[
             simplified_input_shape,
             simplified_rank,
             offset,
+            ctx,
         )
     else:
         _transpose_2d_serial_tiled(
@@ -737,6 +741,7 @@ def _transpose_4d_swap_middle_helper[
     M: Int,
     N: Int,
     K: Int,
+    ctx: Optional[DeviceContext] = None,
 ):
     var work = L * M * N
     var total_size = L * M * N * K
@@ -790,7 +795,7 @@ def _transpose_4d_swap_middle_helper[
                     count=K,
                 )
 
-        sync_parallelize[_parallel_copy](num_tasks)
+        sync_parallelize[_parallel_copy](num_tasks, ctx)
 
 
 def transpose_4d_swap_middle[
@@ -805,6 +810,7 @@ def transpose_4d_swap_middle[
     perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
+    ctx: Optional[DeviceContext] = None,
 ):
     comptime if rank < 4:
         return
@@ -817,7 +823,7 @@ def transpose_4d_swap_middle[
     var K = simplified_input_shape[simplified_rank - 1]
     var src_ptr = input.ptr
     var dst_ptr = output.ptr
-    _transpose_4d_swap_middle_helper(dst_ptr, src_ptr, L, M, N, K)
+    _transpose_4d_swap_middle_helper(dst_ptr, src_ptr, L, M, N, K, ctx)
 
 
 def transpose_3d_swap_outer[
@@ -933,6 +939,7 @@ def _copy_with_strides[
     output_strides: UnsafePointer[mut=False, Scalar[DType.int], _],
     input_offset: Int,
     output_offset: Int,
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     """
     Copy data from `input_ptr` to `output_ptr`, starting at corresponding
@@ -948,6 +955,7 @@ def _copy_with_strides[
         output_strides: The stride at each output axis.
         input_offset: The offset at which input data starts.
         output_offset: The offset at which output data starts.
+        ctx: The context to execute the work on.
     """
     if axis + 1 > rank:
         raise Error("out of range")
@@ -1006,6 +1014,7 @@ def _copy_with_strides[
                 output_strides,
                 next_input_offset,
                 next_output_offset,
+                ctx,
             )
             next_input_offset += input_axis_stride
             next_output_offset += output_axis_stride
@@ -1050,13 +1059,14 @@ def _copy_with_strides[
                     output_strides,
                     next_input_offset,
                     next_output_offset,
+                    ctx,
                 )
                 next_input_offset += input_axis_stride
                 next_output_offset += output_axis_stride
 
         # TODO: transpose_strided is using stack allocated structures and
         # so depends on us being synchronous. We need a better way to do this.
-        sync_parallelize[_parallel_copy](num_tasks)
+        sync_parallelize[_parallel_copy](num_tasks, ctx)
 
 
 def transpose_strided[
@@ -1070,6 +1080,7 @@ def transpose_strided[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     perms: UnsafePointer[Scalar[DType.int], _],
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     # Compute row-major strides for input.
     var input_strides_arr = InlineArray[Scalar[DType.int], rank](
@@ -1126,6 +1137,7 @@ def transpose_strided[
         output_strides_arr.unsafe_ptr(),
         0,  # input_offset
         0,  # output_offset
+        ctx,
     )
 
 
@@ -1142,6 +1154,7 @@ def transpose[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     perms: UnsafePointer[Scalar[DType.int], _],
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     """
     Permute the axis of `input` based on `perms`, and place the result in
@@ -1160,6 +1173,7 @@ def transpose[
         output: The output buffer.
         input: The input buffer.
         perms: Permutation of the input axes.
+        ctx: The context to execute the work on.
     """
     comptime assert (
         output.rank == input.rank
@@ -1247,7 +1261,8 @@ def transpose[
                 perms,
                 simplified_shape,
                 simplified_rank,
+                ctx,
             )
 
     # Fall back to the generic strided implementation.
-    transpose_strided[rank](output, input, perms)
+    transpose_strided[rank](output, input, perms, ctx)

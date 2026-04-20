@@ -251,6 +251,7 @@ def _batched_matmul_cpu[
     ],
     a_tile: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
     b_tile: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     comptime assert rank < 5, "max rank for batched matmul is currently 4"
 
@@ -474,7 +475,7 @@ def _batched_matmul_cpu[
                 )
             _ = batch_coords
 
-    sync_parallelize[task_func](num_tasks)
+    sync_parallelize[task_func](num_tasks, ctx)
 
 
 @__name(
@@ -972,7 +973,7 @@ def batched_matmul[
                 transpose_b=transpose_b,
                 elementwise_epilogue_fn=elementwise_epilogue_fn,
                 saturated_vnni=saturated_vnni,
-            ](c_buf, a_buf, b_buf)
+            ](c_buf, a_buf, b_buf, ctx=context.get_optional_device_context())
         else:
             comptime assert (
                 saturated_vnni == False

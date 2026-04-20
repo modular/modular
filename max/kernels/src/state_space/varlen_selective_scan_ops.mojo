@@ -183,6 +183,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                     delta_bias_strides,
                     ssm_states_strides,
                     out_strides,
+                    ctx.get_optional_device_context(),
                 )
             elif dstate == 8:
                 varlen_selective_scan_fwd_cpu[
@@ -251,6 +252,7 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                     delta_bias_strides,
                     ssm_states_strides,
                     out_strides,
+                    ctx.get_optional_device_context(),
                 )
         elif is_gpu[target]():
             var gpu_ctx = ctx.get_device_context()
@@ -645,6 +647,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     out_strides,
+                    ctx.get_optional_device_context(),
                 )
             elif dstate == 8:
                 varlen_selective_state_update_cpu[
@@ -713,6 +716,7 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     out_strides,
+                    ctx.get_optional_device_context(),
                 )
         elif is_gpu[target]():
             var gpu_ctx = ctx.get_device_context()

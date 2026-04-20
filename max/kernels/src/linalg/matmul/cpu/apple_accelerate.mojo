@@ -23,6 +23,7 @@ from std.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     parallelize_over_rows,
 )
+from std.gpu.host import DeviceContext
 from std.utils import IndexList
 from std.utils.index import Index
 
@@ -251,6 +252,7 @@ def apple_gemv[
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     comptime assert c.flat_rank >= 2
     comptime assert a.flat_rank >= 2
@@ -347,7 +349,7 @@ def apple_gemv[
     # TODO: Experiment with this.
     comptime parallelism_grain_size = 16
     parallelize_over_rows[process_rows](
-        IndexList[2](N, K), 1, parallelism_grain_size
+        IndexList[2](N, K), 1, parallelism_grain_size, ctx
     )
 
     if transposed_b_ptr:

@@ -368,6 +368,14 @@ This version is still a work in progress.
   print(mapped) # Optional("43")
   ```
 
+- `parallelize`, `parallelize_over_rows` (in
+  `std.algorithm.backend.cpu.parallelize`) and the `elementwise` overloads in
+  `std.algorithm.functional` now accept an optional trailing
+  `ctx: Optional[DeviceContext] = None` parameter. When supplied, the provided
+  CPU `DeviceContext` is forwarded to `sync_parallelize` so that parallel work
+  runs on that context; when omitted, the previous behavior is preserved. This
+  is a step toward running CPU ops on specific NUMA nodes.
+
 ## Tooling changes
 
 - The Mojo debugger now displays scalar types (e.g. `UInt8`, `Float32`) as

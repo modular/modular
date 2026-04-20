@@ -216,7 +216,8 @@ def top_k[
                 out_vals,
                 out_idxs,
                 grain_size,
-                sorted,
+                sorted=sorted,
+                ctx=ctx.get_optional_device_context(),
                 k=k,
             )
         else:
@@ -251,6 +252,7 @@ def _top_k_cpu[
     out_idxs: TileTensor[mut=True, out_idx_type, ...],
     parallelism_grain_size: Int,  # impl detail, exposed for testing
     sorted: Bool,
+    ctx: Optional[DeviceContext] = None,
     k: Optional[TileTensor[DType.int64, KLayoutType, ImmutAnyOrigin]] = None,
 ):
     comptime assert (
@@ -352,7 +354,9 @@ def _top_k_cpu[
                     idxs[i]
                 )
 
-    parallelize_over_rows[process_rows](shape, axis, parallelism_grain_size)
+    parallelize_over_rows[process_rows](
+        shape, axis, parallelism_grain_size, ctx
+    )
 
 
 @always_inline

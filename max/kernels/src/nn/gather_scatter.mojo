@@ -129,6 +129,7 @@ def gather_reduce[
     input: TileTensor[dtype, ...],
     indices: TileTensor[DType.int32, ...],
     reduce_init: Scalar[dtype],
+    ctx: Optional[DeviceContext] = None,
 ):
     """Computes output[i, j, k] = input[indices[i, j], k] and simultaneously
     reduces the output across axis 1 to produce output[i, k].
@@ -285,7 +286,7 @@ def gather_reduce[
             # TODO(MOCO-2074): Suppress false positive unused var warning.
             _ = i
 
-    sync_parallelize[task_func](num_tasks)
+    sync_parallelize[task_func](num_tasks, ctx)
 
 
 # TODO: Delete / for testing purposes (test_gather.mojo)

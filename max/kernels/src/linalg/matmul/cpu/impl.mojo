@@ -15,6 +15,7 @@ from std.math import align_up, ceildiv
 from std.sys.info import align_of
 
 from std.algorithm import sync_parallelize, tile, vectorize
+from std.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
@@ -398,6 +399,7 @@ def _matmul_cpu_impl[
     a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     num_threads: Int = -1,
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     comptime assert c.rank == 2 and c.flat_rank == 2
     comptime assert a.rank == 2 and a.flat_rank == 2
@@ -425,7 +427,7 @@ def _matmul_cpu_impl[
                     b_packed=b_packed,
                     transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
-                ](c, a, b)
+                ](c, a, b, ctx=ctx)
             else:
                 comptime apple_transpose = True if b_packed else transpose_b
                 apple_matmul[
@@ -532,11 +534,11 @@ def _matmul_cpu_impl[
         # Also parallelize currently is slower than asyn_parallelize which is depreciated now.
         # See issue 27734
         comptime if use_i8mm:
-            sync_parallelize[pack_task_func](num_tasks)
+            sync_parallelize[pack_task_func](num_tasks, ctx)
 
         # TODO (#12624): Closure captures some state on the stack so this needs
         # to be synchronous in order to keep that state alive
-        sync_parallelize[task_func](num_tasks)
+        sync_parallelize[task_func](num_tasks, ctx)
 
         if a_packed_ptr:
             a_packed_ptr.unsafe_value().free()
@@ -555,6 +557,7 @@ def matmul[
     b: TileTensor[address_space=AddressSpace.GENERIC, ...],
     kernel_type_m: Int,
     num_threads: Int = -1,
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     """TileTensor matmul dispatcher. Selects kernel type and delegates to
     `_matmul_cpu_impl`."""
@@ -590,6 +593,7 @@ def matmul[
                 a,
                 b,
                 num_threads,
+                ctx,
             )
         elif kernel_id == InnerKernelID.VNNI:
             _matmul_cpu_impl[
@@ -604,6 +608,7 @@ def matmul[
                 a,
                 b,
                 num_threads,
+                ctx,
             )
         elif kernel_id == InnerKernelID.NEON:
             _matmul_cpu_impl[
@@ -618,6 +623,7 @@ def matmul[
                 a,
                 b,
                 num_threads,
+                ctx,
             )
         elif kernel_id == InnerKernelID.I8MM:
             _matmul_cpu_impl[
@@ -632,6 +638,7 @@ def matmul[
                 a,
                 b,
                 num_threads,
+                ctx,
             )
         else:
             comptime assert False, "no _run_inner_loop implementation"
