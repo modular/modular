@@ -49,6 +49,7 @@ from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib.config import SpeculativeConfig
 from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
     RaggedTokenMerger,
+    shape_to_scalar,
 )
 
 from ..deepseekV3.deepseekV3 import DeepseekV3
@@ -214,11 +215,7 @@ class UnifiedMTPDeepseekV3(Module):
         hidden_dim = self.draft.config.hidden_size
 
         last_idx = merged_offsets[1:] - 1
-        num_draft_sentinel_gpu = (
-            ops.shape_to_tensor([draft_tokens.shape[1]])
-            .cast(DType.int64)
-            .to(device0)
-        )
+        num_draft_sentinel_gpu = shape_to_scalar(draft_tokens.shape[1], device0)
         last_accepted_idx = (
             ops.rebind(last_idx, ["batch_size"])
             - num_draft_sentinel_gpu.broadcast_to(["batch_size"])
@@ -261,7 +258,13 @@ class UnifiedMTPDeepseekV3(Module):
             device=device0,
             dtype=DType.uint32,
         )
-        host_decode_offsets = decode_offsets.to(DeviceRef.CPU())
+        host_decode_offsets = ops.range(
+            start=0,
+            stop=input_row_offsets.shape[0],
+            out_dim="input_row_offsets_len",
+            device=DeviceRef.CPU(),
+            dtype=DType.uint32,
+        )
 
         next_draft_tokens = next_draft_tokens.rebind(["batch_size"])
         all_draft_tokens = [next_draft_tokens]
