@@ -12,6 +12,10 @@ modular_cc_binary(
         ],
         "//conditions:default": [],
     }),
+    visibility = [
+        "//KGEN:consumers",
+        "//KGEN:plugin_consumers",
+    ],
     deps = [
         "//Init",
         "//KGEN:Compiler",
