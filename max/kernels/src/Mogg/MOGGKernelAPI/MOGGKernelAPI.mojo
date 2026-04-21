@@ -100,6 +100,9 @@ from linalg.fp4_quantization import (
     quantize_dynamic_block_scaled,
     block_scales_interleave,
     quantize_mxfp4_amd,
+    quantize_dynamic_block_scaled_mxfp4,
+    matmul_dynamic_block_scaled_mxfp4,
+    grouped_matmul_block_scaled_mxfp4,
 )
 from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
 from linalg.mxfp4_dequant import dequant_mxfp4
@@ -8949,6 +8952,69 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         )
 
 
+@compiler.register("mo.grouped.matmul.block.scaled.mxfp4")
+struct Struct_grouped_matmul_block_scaled_mxfp4:
+    """MOGG wrapper for grouped block-scaled matrix multiplication.
+
+    Provides graph compiler integration for block-scaled grouped matmul
+    operations used in Mixture of Experts (MoE) layers on AMD GPUs.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=3, ...],
+        a_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        b_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=3, ...],
+        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        num_active_experts: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        """Executes grouped block-scaled matrix multiplication.
+
+        Computes C = A @ B^T for multiple expert groups where A and B are
+        block-scaled (e.g. MXFP4: 4-bit floating point packed as uint8).
+
+        Parameters:
+            c_type: The output tensor data type.
+            target: The target GPU device.
+
+        Args:
+            c: The output tensor of shape (total_tokens, N).
+            a: The input tensor of shape (total_tokens, K // 2).
+            b: The weight tensor of shape (num_experts, N, K // 2).
+            a_scales: The A scale factors in 2D layout.
+            b_scales: The B scale factors in 3D layout.
+            expert_start_indices: The starting token index for each expert.
+            expert_ids: The expert ID for each group.
+            num_active_experts: The number of active experts.
+            context: The device context pointer.
+        """
+        comptime assert is_gpu[
+            target
+        ](), "grouped block-scaled matmul only supports GPUs"
+        if num_active_experts == 0:
+            return
+        grouped_matmul_block_scaled_mxfp4(
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            Int(num_active_experts),
+            context.get_device_context(),
+        )
+
+
 @compiler.register("mo.batched.matmul.dynamic.scaled.fp8")
 struct Struct_batched_matmul_dynamic_scaled_fp8:
     @always_inline
@@ -9082,6 +9148,37 @@ struct Struct_matmul_dynamic_block_scaled:
         )
 
 
+@compiler.register("mo.matmul.dynamic.block.scaled.mxfp4")
+struct Struct_matmul_dynamic_block_scaled_mxfp4:
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        a_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        b_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), (
+            "dynamic block scaled matmul only support GPUs with native"
+            " block scaled support"
+        )
+
+        matmul_dynamic_block_scaled_mxfp4(
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            context.get_device_context(),
+        )
+
+
 @compiler.register("mo.quantize.dynamic.block.scaled")
 struct Struct_quantize_dynamic_block_scaled:
     @always_inline
@@ -9116,6 +9213,33 @@ struct Struct_quantize_dynamic_block_scaled:
             input.to_tile_tensor[DType.int64](),
             tensor_sf,
             cuda_ctx,
+        )
+
+
+@compiler.register("mo.quantize.dynamic.block.scaled.mxfp4")
+struct Struct_quantize_dynamic_block_scaled_mxfp4:
+    @always_inline
+    @staticmethod
+    def execute[
+        in_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        scales: OutputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), (
+            "quantize dynamic block scaled only support GPUs with native"
+            " block scaled support"
+        )
+
+        quantize_dynamic_block_scaled_mxfp4(
+            output.to_tile_tensor[DType.int64](),
+            scales.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            context.get_device_context(),
         )
 
 

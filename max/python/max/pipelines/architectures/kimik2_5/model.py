@@ -289,8 +289,11 @@ class KimiK2_5Model(
                 // attn_tp_size
             )
 
+            is_mxfp4 = quant_config is not None and quant_config.is_mxfp4
+            ep_dispatch_dtype = DType.uint8 if is_mxfp4 else dtype
+
             ep_kwargs: dict[str, Any] = dict(
-                dispatch_dtype=dtype,
+                dispatch_dtype=ep_dispatch_dtype,
                 combine_dtype=DType.bfloat16,
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
@@ -301,9 +304,9 @@ class KimiK2_5Model(
                 dispatch_quant_config=None,
             )
 
-            if config.n_shared_experts == 1:
+            if config.n_shared_experts == 1 and not is_mxfp4:
                 # Only enable shared expert fusion if the shared expert is of
-                # the same shape as routed experts.
+                # the same shape and dtype as routed experts.
                 ep_kwargs["fused_shared_expert"] = True
 
             if quant_config is not None:

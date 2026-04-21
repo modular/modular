@@ -23,6 +23,7 @@ from ..kernels import moe_create_indices
 from .moe import MoE
 from .quant_strategy import (
     Fp8Strategy,
+    Mxfp4Strategy,
     Nvfp4Scales,
     Nvfp4Strategy,
     QuantStrategy,
@@ -53,6 +54,8 @@ class MoEQuantized(MoE):
         assert self.quant_config is not None
         if self.quant_config.is_nvfp4:
             return Nvfp4Strategy(self.quant_config, self.dtype)
+        elif self.quant_config.is_mxfp4:
+            return Mxfp4Strategy(self.quant_config, self.dtype)
         return Fp8Strategy(self.quant_config, self.dtype)
 
     @property
@@ -123,7 +126,7 @@ class MoEQuantized(MoE):
         """Returns stacked gate/up weight scales for grouped matmul."""
         assert self.quant_config is not None
         assert self.quant_config.weight_scale.block_size is not None
-        if not self.quant_config.is_nvfp4:
+        if not self.quant_config.is_fp4:
             assert self.quant_config.weight_scale.block_size == (128, 128), (
                 "Only support block_size=[128, 128] for weights."
             )

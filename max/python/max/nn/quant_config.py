@@ -328,6 +328,8 @@ class QuantConfig:
         """The :class:`~max.graph.TensorType` of the scales tensor after dynamic quantization."""
         if self.is_nvfp4:
             return _nvfp4_scales_type(quantized_shape, device_ref)
+        elif self.is_mxfp4:
+            return _mxfp4_scales_type(quantized_shape, device_ref)
         elif (
             self.input_scale.block_size is not None
             and self.input_scale.block_size == (1, 128)
@@ -398,5 +400,16 @@ def _nvfp4_scales_type(
             SF_ATOM_M[1],
             SF_ATOM_K,
         ),
+        device=device_ref,
+    )
+
+
+def _mxfp4_scales_type(
+    quantized_shape: Shape, device_ref: DeviceRef
+) -> TensorType:
+    """Returns the TensorType of the MXFP4 scales tensor."""
+    return TensorType(
+        dtype=DType.float8_e8m0fnu,
+        shape=(quantized_shape[0], ceildiv(quantized_shape[1], 32)),
         device=device_ref,
     )

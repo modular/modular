@@ -217,7 +217,15 @@ def ep_signal_completion[
         # If this is the last expert for this destination rank,
         # use a release store to flush all pending stores.
         if old_count < Int32(n_experts_per_device - 1):
-            dst_p2p_ptr[] = signal
+            comptime if is_nvidia_gpu():
+                dst_p2p_ptr[] = signal
+            else:
+                # TODO(KERN-2792): Investigate why AMD GPUs require this to be
+                # store-release instead of a normal store as done above. Without
+                # store-release, the kernel can hang spinning on stale data.
+                _signal_atomic.store[ordering=Ordering.RELEASE](
+                    dst_p2p_ptr, signal
+                )
         else:
             # Technically, this release store only guarantees the arrival of
             # all experts' messages to the target device. It doesn't guarantee
@@ -3830,15 +3838,15 @@ def fused_silu_mxfp4_kernel[
 
     with PDL():
         var num_tokens = row_offsets[row_offsets.static_shape[0] - 1]
-        var num_elem = num_tokens * UInt32(output_dim)
+        var num_elem = num_tokens * UInt32(output_dim) * 2
 
         for i in range(
             gid,
             Int(num_elem // UInt32(src_width)),
             num_threads * num_sms,
         ):
-            var m = (i * src_width) // output_dim
-            var k = (i * src_width) % output_dim
+            var m = (i * src_width) // (output_dim * 2)
+            var k = (i * src_width) % (output_dim * 2)
 
             var gate_proj = input_tensor.load[width=src_width](
                 (Idx(m), Idx(k))
