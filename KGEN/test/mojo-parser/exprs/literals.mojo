@@ -398,3 +398,39 @@ def comprehensionInForLoop(data: List[List[Int]], rows: Int, cols: Int) raises:
             1 if data[row][col] == 1 else 0 for col in IterRange(cols)
         ]
         useIt(my_list)
+
+
+# ===----------------------------------------------------------------------=== #
+# MOCO-3801: Literal arguments to a trait-bound variadic pack
+# ===----------------------------------------------------------------------=== #
+
+# Pack inference previously bailed out with "could not infer type of parameter
+# pack ... given value with unresolved type" whenever a list/dict/set literal
+# was passed to a `*Ts`-bound variadic pack parameter, because initializer
+# UValues don't have a resolvable RValue type until bound to a target type.
+# After the fix, pack inference falls back to the literal's default type
+# (List/Dict/Set) the same way the single-argument trait-bound path does.
+
+
+def _moco_3801_pack[*Ts: AnyType](var *values: *Ts):
+    pass
+
+
+# CHECK-LABEL: lit.fn @"test_moco_3801_pack_of_literals
+def test_moco_3801_pack_of_literals():
+    # COM: Each list literal defaults to List[Int] and binds its own pack slot.
+    # CHECK: lit.call {{.*}}@"_moco_3801_pack{{.*}}<:param_list<!AnyType> [{{.*}}@List<:!Copyable !Int>, {{.*}}@List<:!Copyable !Int>]
+    _moco_3801_pack([1, 2, 3], [4, 5, 6])
+
+    # COM: Dict literal defaults to Dict[Int, Int].
+    # CHECK: lit.call {{.*}}@"_moco_3801_pack{{.*}}<:param_list<!AnyType> [{{.*}}@Dict<:!Copyable_ImplicitlyDestructible !Int, :!Copyable_ImplicitlyDestructible !Int>]
+    _moco_3801_pack({1: 2})
+
+    # COM: Set literal defaults to Set[Int].
+    # CHECK: lit.call {{.*}}@"_moco_3801_pack{{.*}}<:param_list<!AnyType> [{{.*}}@Set<:!AnyType !Int>]
+    _moco_3801_pack({1, 2, 3})
+
+    # COM: Mixed-literal packs work because each pack element infers
+    # independently.
+    # CHECK: lit.call {{.*}}@"_moco_3801_pack{{.*}}<:param_list<!AnyType> [{{.*}}@List<:!Copyable !Int>, {{.*}}@Set<:!AnyType !Int>]
+    _moco_3801_pack([1, 2], {3, 4})
