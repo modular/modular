@@ -222,10 +222,15 @@ class TokenGeneratorPipeline(
                         )
 
                     if tokens is None and reasoning_tokens is None:
-                        yield TokenGeneratorOutput(
-                            status=response.final_status,
-                            token_count=0,
-                        )
+                        # If the status is not done and there were no tokens,
+                        # this indicates that the chunk contained only stripped
+                        # tokens, such as reasoning delimiters. In this case,
+                        # hold off on yielding a chunk.
+                        if response.final_status.is_done:
+                            yield TokenGeneratorOutput(
+                                status=response.final_status,
+                                token_count=0,
+                            )
                         continue
 
                     token_count = len(tokens) if tokens is not None else 0
