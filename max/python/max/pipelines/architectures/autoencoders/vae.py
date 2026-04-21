@@ -450,10 +450,9 @@ class ResidualBlock(Module):
 class AttentionBlock(Module):
     """Per-frame self-attention used in Wan decoder/encoder mid block.
 
-    Uses flash_attention_gpu for memory-efficient full spatial attention.
+    Single-head attention matching the diffusers Wan VAE: the full
+    channel dim is the head dim, with `scale = 1 / sqrt(dim)`.
     """
-
-    _HEAD_DIM: int = 64
 
     def __init__(
         self,
@@ -463,8 +462,9 @@ class AttentionBlock(Module):
     ) -> None:
         super().__init__()
         self.dim = dim
-        self.num_heads = dim // self._HEAD_DIM
-        self.scale = 1.0 / (self._HEAD_DIM**0.5)
+        self.num_heads = 1
+        self.head_dim = dim
+        self.scale = 1.0 / (dim**0.5)
         self.norm = RMSNorm(
             dim,
             images=True,
@@ -515,10 +515,10 @@ class AttentionBlock(Module):
         k = qkv[:, :, c : 2 * c]
         v = qkv[:, :, 2 * c : 3 * c]
 
-        # Reshape for flash attention: [bt, seq_len, num_heads, head_dim]
-        q = ops.reshape(q, [b * t, seq_len, self.num_heads, self._HEAD_DIM])
-        k = ops.reshape(k, [b * t, seq_len, self.num_heads, self._HEAD_DIM])
-        v = ops.reshape(v, [b * t, seq_len, self.num_heads, self._HEAD_DIM])
+        # Single-head: [bt, seq_len, 1, dim]
+        q = ops.reshape(q, [b * t, seq_len, self.num_heads, self.head_dim])
+        k = ops.reshape(k, [b * t, seq_len, self.num_heads, self.head_dim])
+        v = ops.reshape(v, [b * t, seq_len, self.num_heads, self.head_dim])
 
         out = flash_attention_gpu(
             q,
