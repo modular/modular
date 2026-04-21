@@ -6,6 +6,7 @@
 
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/Process.h"
@@ -17,27 +18,15 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <memory>
 #include <mutex>
 
 #include <fmt/chrono.h>
 
-namespace {
-struct LogFormatState {
-  bool initialized = false;
-  bool useEnhancedFormat = true;
-  bool showTimeStamp = true;
-  bool showColors = true;
-  bool showLogLevel = true;
-  bool useIsoTimestamps = false;
-  bool showMicroseconds = false;
-  bool emitJSON = false;
-}; // struct LogFormatState
-
-} // namespace
-
 namespace M::Log {
 
 namespace ConfigEntry {
+static constexpr llvm::StringLiteral LOG_STDOUT = "log.stdout";
 static constexpr llvm::StringLiteral LOG_FILE = "log.file";
 static constexpr llvm::StringLiteral LOG_ISO_TIME = "log.iso_time";
 static constexpr llvm::StringLiteral LOG_LEVEL = "log.level";
@@ -72,47 +61,8 @@ static LogLevel parseLogLevelFromString(llvm::StringRef levelStr) {
   return LogLevel::WARN;
 }
 
-static void setLogLevelFromString(const llvm::StringRef level) {
-  setLogLevel(parseLogLevelFromString(level));
-}
-
-static LogFormatState &getLogFormatState() {
-  static LogFormatState state = []() {
-    LogFormatState state;
-    state.initialized = true;
-
-    auto cfgOr = Config::open();
-    if (cfgOr.isError())
-      return state; // Use defaults if we can't read config
-
-    using namespace ConfigEntry;
-    auto cfg = cfgOr.takeValue();
-    state.useEnhancedFormat = !cfg.getValueAsBool(LOG_NO_ENHANCED, false);
-    state.showTimeStamp = !cfg.getValueAsBool(LOG_NO_TIMESTAMP, false);
-    state.useIsoTimestamps = cfg.getValueAsBool(LOG_ISO_TIME, false);
-    state.showMicroseconds = cfg.getValueAsBool(LOG_MICROSECONDS, false);
-    state.emitJSON = cfg.getValueAsBool(LOG_JSON, false);
-
-    // Respect the standard NO_COLOR env var, any value (even empty) disables
-    // color.
-    state.showColors = !llvm::sys::Process::GetEnv("NO_COLOR").has_value();
-
-    // Check if the terminal does not support colors.
-    if (state.showColors) {
-      auto term = llvm::sys::Process::GetEnv("TERM");
-      if ((term && *term == "dumb") ||
-          !llvm::sys::Process::StandardOutIsDisplayed())
-        state.showColors = false;
-    }
-    return state;
-  }();
-  return state;
-}
-
 static llvm::raw_ostream::Colors getLogLevelColor(LogLevel level) {
   using enum llvm::raw_ostream::Colors;
-  if (!getLogFormatState().showColors)
-    return RESET;
   switch (level) {
   case LogLevel::DEBUG:
     return BRIGHT_BLACK;
@@ -140,33 +90,6 @@ static llvm::StringLiteral getLogLevelPrefix(LogLevel level) {
   case LogLevel::FATAL:
     return "FATL";
   }
-}
-
-namespace {
-std::atomic<Log::LogLevel> logLevel{Log::LogLevel::WARN};
-}
-
-// Initialize the log level from environment variable.
-static void initLogLevel() {
-  auto cfgOr = Config::open();
-  if (cfgOr.isError()) {
-    setLogLevel(LogLevel::WARN);
-    return;
-  }
-
-  setLogLevelFromString(cfgOr.takeValue().getValue(ConfigEntry::LOG_LEVEL));
-}
-
-void setLogLevel(LogLevel level) {
-  logLevel.store(level, std::memory_order::release);
-}
-
-LogLevel getLogLevel() {
-  [[maybe_unused]] static bool initialized = []() -> bool {
-    initLogLevel();
-    return true;
-  }();
-  return logLevel.load(std::memory_order::acquire);
 }
 
 // Returns us in string form with a leading '.' and zero-padded to six digits
@@ -204,57 +127,6 @@ buildISOFormatString(std::chrono::time_point<std::chrono::system_clock> now,
   return result;
 }
 
-static llvm::SmallString<32> buildTimestampString() {
-  llvm::SmallString<32> result;
-  const auto &state = getLogFormatState();
-  if (!state.showTimeStamp)
-    return result;
-
-  auto now = std::chrono::system_clock::now();
-  if (state.useIsoTimestamps)
-    return buildISOFormatString(now, state.showMicroseconds);
-
-  // Simple format: 16:21:14
-  std::tm utc = fmt::gmtime(std::chrono::system_clock::to_time_t(now));
-  constexpr size_t nChars = 32;
-  llvm::SmallString<nChars> time;
-  // Pre-size the buffer before format_to_n. Sizing after would call append()
-  // from size 0, which overwrites the just-formatted data with zeros.
-  time.resize(nChars, '\0');
-  auto formatResult = fmt::format_to_n(time.data(), nChars, "{:%H:%M:%S}", utc);
-  time.resize(formatResult.size);
-  result += time;
-  if (state.showMicroseconds)
-    result += formatMicroseconds(now);
-  return result;
-}
-
-static llvm::SmallString<128> buildLogPrefix(LogLevel level) {
-  using enum llvm::raw_ostream::Colors;
-  const auto &state = getLogFormatState();
-  llvm::SmallString<128> prefix;
-
-  if (state.showTimeStamp) {
-    prefix += "[";
-    prefix += buildTimestampString();
-    prefix += "] ";
-  }
-
-  if (state.showLogLevel) {
-    if (state.showColors)
-      prefix += llvm::sys::Process::OutputColor(
-          static_cast<char>(getLogLevelColor(level)), /*bold=*/false,
-          /*bg=*/false);
-    prefix += "[";
-    prefix += getLogLevelPrefix(level);
-    prefix += "] ";
-    if (state.showColors)
-      prefix += llvm::sys::Process::ResetColor();
-  }
-
-  return prefix;
-}
-
 static llvm::SmallString<512> buildJSONLogLine(LogLevel level,
                                                llvm::StringRef msg) {
   // Always use full ISO 8601 with microseconds in JSON mode regardless of
@@ -273,41 +145,204 @@ static llvm::SmallString<512> buildJSONLogLine(LogLevel level,
   return jsonLogLine;
 }
 
-static void writeStringToLogFileOrStdout(llvm::StringRef msg) {
-  static std::mutex logFileMutex;
-  static auto ostream = []() {
-    auto cfgOr = Config::open();
-    auto logFileName = cfgOr.isError()
-                           ? llvm::StringRef()
-                           : cfgOr.get().getValue(ConfigEntry::LOG_FILE);
-    llvm::raw_ostream *stream = &llvm::outs();
-    if (!logFileName.empty()) {
-      std::error_code ec;
-      static llvm::raw_fd_ostream fdStream(
-          logFileName, ec, llvm::sys::fs::CD_OpenAlways,
-          llvm::sys::fs::FA_Write, llvm::sys::fs::OF_Append);
-      if (!ec) {
-        stream = &fdStream;
-      }
-    }
-    return stream;
-  }();
+class Sink {
+protected:
+  std::mutex outputMutex;
 
-  std::lock_guard<std::mutex> lock(logFileMutex);
-  ostream->write(msg.begin(), msg.size());
-  ostream->write('\n');
-  ostream->flush();
+public:
+  virtual ~Sink() = default;
+  virtual void write(llvm::StringRef msg) = 0;
+};
+
+class FileSink : public Sink {
+  std::error_code ec;
+  llvm::raw_fd_ostream ostream;
+
+  FileSink(llvm::StringRef path)
+      : ostream{path, ec, llvm::sys::fs::CD_OpenAlways, llvm::sys::fs::FA_Write,
+                llvm::sys::fs::OF_Append} {}
+
+public:
+  ~FileSink() override {
+    // Ensure the file is flushed and closed on destruction.
+    ostream.flush();
+    ostream.close();
+  }
+
+  static llvm::ErrorOr<std::unique_ptr<FileSink>> create(llvm::StringRef path) {
+    auto fileSink = std::unique_ptr<FileSink>(new FileSink(path));
+    if (fileSink->ec)
+      return fileSink->ec;
+    return fileSink;
+  }
+
+  void write(llvm::StringRef msg) override {
+    std::lock_guard<std::mutex> lock(outputMutex);
+    ostream.write(msg.begin(), msg.size());
+    ostream.write('\n');
+    ostream.flush();
+  }
+};
+
+class StdoutSink : public Sink {
+  void write(llvm::StringRef msg) override {
+    std::lock_guard<std::mutex> lock(outputMutex);
+    llvm::outs() << msg << "\n";
+    llvm::outs().flush();
+  }
+};
+
+class Logger {
+  struct LogFormatState {
+    bool useEnhancedFormat = true;
+    bool showTimeStamp = true;
+    bool showColors = true;
+    bool showLogLevel = true;
+    bool useIsoTimestamps = false;
+    bool showMicroseconds = false;
+    bool emitJSON = false;
+  } formatState;
+  std::atomic<LogLevel> level = LogLevel::WARN;
+  std::vector<std::unique_ptr<Sink>> sinks;
+
+public:
+  Logger() {
+    // Respect the standard NO_COLOR env var, any value (even empty) disables
+    // color - does not depend on config object.
+    formatState.showColors =
+        !llvm::sys::Process::GetEnv("NO_COLOR").has_value();
+
+    // Check if the terminal does not support colors.
+    if (formatState.showColors) {
+      auto term = llvm::sys::Process::GetEnv("TERM");
+      if ((term && *term == "dumb") ||
+          !llvm::sys::Process::StandardOutIsDisplayed())
+        formatState.showColors = false;
+    }
+
+    auto cfgOr = Config::open();
+    if (cfgOr.isError()) {
+      // If we can't read the config, the default is to log to stdout.
+      sinks.push_back(std::make_unique<StdoutSink>());
+      return;
+    }
+    auto cfg = cfgOr.takeValue();
+    using namespace ConfigEntry;
+    formatState.useEnhancedFormat = !cfg.getValueAsBool(LOG_NO_ENHANCED, false);
+    formatState.showTimeStamp = !cfg.getValueAsBool(LOG_NO_TIMESTAMP, false);
+    formatState.useIsoTimestamps = cfg.getValueAsBool(LOG_ISO_TIME, false);
+    formatState.showMicroseconds = cfg.getValueAsBool(LOG_MICROSECONDS, false);
+    formatState.emitJSON = cfg.getValueAsBool(LOG_JSON, false);
+    auto logToStdout = cfg.getValueAsBool(LOG_STDOUT, true);
+
+    setLogLevel(parseLogLevelFromString(
+        cfg.getValueOr(ConfigEntry::LOG_LEVEL, "WARN")));
+
+    // If stdout logging is requested or if no log file present, log to stdout.
+    // The stdout variable is default-true, but can be overridden.
+    auto logFilePath = cfg.getValueOr(ConfigEntry::LOG_FILE, "");
+    if (logToStdout)
+      sinks.push_back(std::make_unique<StdoutSink>());
+    if (!logFilePath.empty()) {
+      auto fileSinkOrErr = FileSink::create(logFilePath);
+      if (fileSinkOrErr)
+        sinks.push_back(std::move(*fileSinkOrErr));
+      else
+        llvm::errs() << "Failed to open log file '" << logFilePath
+                     << "': " << fileSinkOrErr.getError().message()
+                     << (logToStdout ? "\nLog messages only going to stdout.\n"
+                                     : "\nNo log messages will be emitted.\n");
+    }
+  }
+
+  void log(LogLevel level, llvm::StringRef msg) {
+    llvm::SmallString<512> enhancedOrJSONMsg;
+    if (formatState.emitJSON)
+      enhancedOrJSONMsg = buildJSONLogLine(level, msg);
+    else if (formatState.useEnhancedFormat) {
+      auto enhanced = buildLogPrefix(level);
+      enhancedOrJSONMsg = std::move(enhanced);
+      enhancedOrJSONMsg += msg;
+    } else
+      enhancedOrJSONMsg = msg;
+
+    for (const auto &sink : sinks) {
+      sink->write(enhancedOrJSONMsg);
+    }
+  }
+
+  LogLevel getLogLevel() const {
+    return level.load(std::memory_order::acquire);
+  }
+
+  void setLogLevel(LogLevel newLevel) {
+    level.store(newLevel, std::memory_order::release);
+  }
+
+private:
+  // Depends on logger state to access formatting options
+  llvm::SmallString<32> buildTimestampString() {
+    llvm::SmallString<32> result;
+    if (!formatState.showTimeStamp)
+      return result;
+
+    auto now = std::chrono::system_clock::now();
+    if (formatState.useIsoTimestamps)
+      return buildISOFormatString(now, formatState.showMicroseconds);
+
+    // Simple format: 16:21:14
+    std::tm utc = fmt::gmtime(std::chrono::system_clock::to_time_t(now));
+    constexpr size_t nChars = 32;
+    llvm::SmallString<nChars> time;
+    // Pre-size the buffer before format_to_n. Sizing after would call append()
+    // from size 0, which overwrites the just-formatted data with zeros.
+    time.resize(nChars, '\0');
+    auto formatResult =
+        fmt::format_to_n(time.data(), nChars, "{:%H:%M:%S}", utc);
+    time.resize(formatResult.size);
+    result += time;
+    if (formatState.showMicroseconds)
+      result += formatMicroseconds(now);
+    return result;
+  }
+
+  llvm::SmallString<128> buildLogPrefix(LogLevel level) {
+    using enum llvm::raw_ostream::Colors;
+    llvm::SmallString<128> prefix;
+
+    if (formatState.showTimeStamp) {
+      prefix += "[";
+      prefix += buildTimestampString();
+      prefix += "] ";
+    }
+
+    if (formatState.showLogLevel) {
+      if (formatState.showColors)
+        prefix += llvm::sys::Process::OutputColor(
+            static_cast<char>(getLogLevelColor(level)), /*bold=*/false,
+            /*bg=*/false);
+      prefix += "[";
+      prefix += getLogLevelPrefix(level);
+      prefix += "] ";
+      if (formatState.showColors)
+        prefix += llvm::sys::Process::ResetColor();
+    }
+
+    return prefix;
+  }
+};
+
+void setLogLevel(LogLevel level) { getDefaultLog().setLogLevel(level); }
+
+LogLevel getLogLevel(Logger &log) { return log.getLogLevel(); }
+
+Logger &getDefaultLog() {
+  static Logger defaultLog;
+  return defaultLog;
 }
 
-void logWrite(LogLevel level, llvm::StringRef msg) {
-  if (getLogFormatState().emitJSON)
-    return writeStringToLogFileOrStdout(buildJSONLogLine(level, msg));
-  if (!getLogFormatState().useEnhancedFormat)
-    return writeStringToLogFileOrStdout(msg);
-
-  auto enhanced = buildLogPrefix(level);
-  enhanced += msg;
-  writeStringToLogFileOrStdout(enhanced);
+void logWrite(Logger &log, LogLevel level, llvm::StringRef msg) {
+  log.log(level, msg);
 }
 
 } // namespace M::Log

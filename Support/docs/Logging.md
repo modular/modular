@@ -16,13 +16,21 @@ The following environment variables control logging behavior.
 
 | Variable                   | Description                                                           |
 |----------------------------|-----------------------------------------------------------------------|
-| `MODULAR_LOG_FILE`         | Path to the log file. If unset, output goes to stdout.                |
+| `MODULAR_LOG_STDOUT`       | `false` suppresses stdout output. Default true. See note on sinks.    |
+| `MODULAR_LOG_FILE`         | Path to the log file. If unset, no file is written.                   |
 | `MODULAR_LOG_ISO_TIME`     | Output timestamps in `YYYY-MM-DD:hh:mm:ss` format.                    |
 | `MODULAR_LOG_LEVEL`        | Minimum message level to write. Corresponds to the macro names above. |
 | `MODULAR_LOG_MICROSECONDS` | Include microseconds in the timestamp.                                |
 | `MODULAR_LOG_NO_ENHANCED`  | Disable all prefix formatting, including the level and timestamp.     |
 | `MODULAR_LOG_NO_TIMESTAMP` | Disable the timestamp while keeping the level prefix.                 |
 | `MODULAR_LOG_JSON`         | Output JSON log lines, overriding other output configurations.        |
+
+## Output sinks
+
+Output can be sent to stdout (`MODULAR_LOG_STDOUT` is true) or to a file
+(`MODULAR_LOG_FILE` is set to some valid path). These options are orthogonal;
+if both are set, output goes to both, and if set to `false` and `""` (empty
+string or unset) then the logging is effectively turned off.
 
 ## JSON output format
 

@@ -49,6 +49,9 @@ modular_cc_test(
     srcs = [
         "Log/LogTest.cpp",
     ],
+    env = {
+        "MODULAR_LOG_STDOUT": "false",
+    },
     deps = [
         "//Support:Log",
         "@llvm-project//llvm:Support",
@@ -61,6 +64,9 @@ modular_cc_test(
     srcs = [
         "Log/LogConfigFileTest.cpp",
     ],
+    env = {
+        "MODULAR_LOG_STDOUT": "false",
+    },
     deps = [
         "//Support:Configuration",
         "//Support:Log",
@@ -77,6 +83,7 @@ modular_cc_test(
     env = {
         "MODULAR_LOG_JSON": "true",
         "MODULAR_LOG_LEVEL": "DEBUG",
+        "MODULAR_LOG_STDOUT": "false",
     },
     deps = [
         "//Support:Configuration",

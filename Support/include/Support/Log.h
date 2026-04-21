@@ -75,14 +75,19 @@ enum class LogLevel : uint8_t {
   FATAL = 4,
 };
 
+class Logger;
+
+Logger &getDefaultLog();
+
 void setLogLevel(LogLevel level);
 
-LogLevel getLogLevel();
+LogLevel getLogLevel(Logger &log = getDefaultLog());
 
-void logWrite(LogLevel level, llvm::StringRef msg);
+void logWrite(Logger &log, LogLevel level, llvm::StringRef msg);
 
-// This helper function to transform arguments: apply fmt::ptr to non-string
-// pointer types and displays them as hex pointers.
+// Forwards on most arguments unchanged, but adds special handling for pointer
+// types to differentiate between string-like pointers (which should format as
+// strings) and other pointers (which should format as their address).
 template <typename... Args>
 constexpr auto transformArgs(Args &&...args) {
   return std::make_tuple([](auto &&arg) {
@@ -103,6 +108,8 @@ constexpr auto transformArgs(Args &&...args) {
   }(args)...);
 }
 
+// Formats the provided message. If no args, returns the message as-is.
+// Otherwise, fmt::vformat to all the arguments in the tuple.
 template <typename... Args>
 inline std::string safeFormat(std::string_view format_str, Args &&...args) {
   if constexpr (sizeof...(args) == 0) {
@@ -120,29 +127,53 @@ inline std::string safeFormat(std::string_view format_str, Args &&...args) {
   }
 }
 
+// Checks the log level to see if it should emit a message, and, if so,
+// writes the formatted message.
 template <typename... Args>
-inline void logWriteDispatch(LogLevel level, Args &&...args) {
-  if (static_cast<uint8_t>(getLogLevel()) > static_cast<uint8_t>(level))
+inline void logWriteDispatch(Logger &log, LogLevel level, Args &&...args) {
+  if (getLogLevel(log) > level)
     return;
 
   if constexpr (sizeof...(args) == 0)
-    logWrite(level, "");
+    logWrite(log, level, "");
   else if constexpr (sizeof...(args) == 1)
-    logWrite(level, safeFormat("{}", std::forward<Args>(args)...));
+    logWrite(log, level, safeFormat("{}", std::forward<Args>(args)...));
   else
-    logWrite(level, safeFormat(std::forward<Args>(args)...));
+    logWrite(log, level, safeFormat(std::forward<Args>(args)...));
 }
 
+namespace Detail {
+// Helper to check if the type at a given index in the parameter pack is a
+// specific type.
+template <typename T, int Index, typename... Args>
+static constexpr auto is_same_at_index_v = std::is_same_v<
+    std::decay_t<std::tuple_element_t<Index, std::tuple<Args...>>>, T>;
+} // namespace Detail
+
+// Main log entry point (called from the user macros). Checks to see what
+// type the arguments being passed to the macros are, to determine how to
+// route to logWriteDispatch. Users aren't expected to pass in their own
+// Logger instances, but this can still handle the different types if this
+// is added later.
 template <typename... Args>
 inline void log(Args &&...args) {
   if constexpr (sizeof...(args) == 0)
-    logWriteDispatch(LogLevel::INFO);
-  else if constexpr (std::is_same_v<std::decay_t<std::tuple_element_t<
-                                        0, std::tuple<Args...>>>,
-                                    LogLevel>)
-    logWriteDispatch(std::forward<Args>(args)...);
-  else
-    logWriteDispatch(LogLevel::INFO, std::forward<Args>(args)...);
+    logWriteDispatch(getDefaultLog(), LogLevel::INFO);
+  else if constexpr (sizeof...(args) == 1) {
+    if constexpr (Detail::is_same_at_index_v<LogLevel, 0, Args...>)
+      logWriteDispatch(getDefaultLog(), std::forward<Args>(args)...);
+    else if constexpr (Detail::is_same_at_index_v<Logger, 0, Args...>)
+      logWriteDispatch(std::forward<Args>(args)..., LogLevel::INFO);
+    else
+      logWriteDispatch(getDefaultLog(), LogLevel::INFO,
+                       std::forward<Args>(args)...);
+  } else {
+    if constexpr (Detail::is_same_at_index_v<LogLevel, 0, Args...>)
+      logWriteDispatch(getDefaultLog(), std::forward<Args>(args)...);
+    else
+      logWriteDispatch(getDefaultLog(), LogLevel::INFO,
+                       std::forward<Args>(args)...);
+  }
 }
 
 } // namespace M::Log
