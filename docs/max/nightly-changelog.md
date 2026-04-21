@@ -37,6 +37,9 @@ This version is still a work in progress.
 - Added sweep benchmarking capabilities to `max benchmark`: iterate over
   multiple concurrency and request-rate combinations, flush the prefix cache
   between runs, and collect per-run structured JSON results.
+- Added the `max.benchmark.sweep_benchmark_serving_result_utils` module,
+  that comes with CSV result writers and a `SweepUploader` protocol
+  so callers can wire in any result-ingestion backend.
 
 ### Python API {#26-3-max-python}
 
