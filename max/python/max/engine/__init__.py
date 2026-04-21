@@ -20,5 +20,6 @@ from .api import (
     InferenceSession,
     LogLevel,
     Model,
+    PrintStyle,
     TensorSpec,
 )

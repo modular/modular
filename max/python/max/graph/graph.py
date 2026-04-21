@@ -39,6 +39,7 @@ from max._core import graph as _graph
 from max._core.dialects import builtin, kgen
 from max._core.dialects import kgen as _kgen
 from max._core.dialects import mo as _mo
+from max._core.engine import InferenceSession as _InferenceSession
 from max._mlir_context import default_mlir_context
 from max.mlir.dialects import mo
 from mojo.paths import (
@@ -339,6 +340,24 @@ def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
 Module = mlir.Module
 
 
+class _GraphDebugConfig:
+    """Narrow view of ``DebugConfig`` exposed via :attr:`Graph.debug`.
+
+    Only :attr:`source_tracebacks` lives on ``Graph.debug`` because it is
+    consumed during graph construction, before an ``InferenceSession`` exists.
+    All other debug options are available on ``InferenceSession.debug`` and
+    share the same global state.
+    """
+
+    @property
+    def source_tracebacks(self) -> bool:
+        return _InferenceSession.debug.source_tracebacks
+
+    @source_tracebacks.setter
+    def source_tracebacks(self, value: bool) -> None:
+        _InferenceSession.debug.source_tracebacks = value
+
+
 class Graph:
     """Represents a single MAX graph.
 
@@ -421,6 +440,8 @@ class Graph:
         module: Optional existing MLIR module (internal use only). Defaults to
             ``None``.
     """
+
+    debug = _GraphDebugConfig()
 
     # Use a dict rather than a set to keep params ordered.
     # This is to make IR generation deterministic for model IR cache hits.

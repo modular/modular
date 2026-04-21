@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import numpy as np
+from max._core.engine import DebugConfig as _DebugConfig
 from max._core.engine import InferenceSession as _InferenceSession
 from max._core.engine import Model as Model
 from max._core.engine import PrintStyle
@@ -341,10 +342,15 @@ class InferenceSession:
     _impl: _InferenceSession
     # This is shared across sessions. Compilation is currently not thread safe.
     _compilation_lock = threading.Lock()
+    # DebugConfig is a process-wide singleton. Assigning it as a class
+    # attribute at import time means both ``InferenceSession.debug`` and
+    # ``session.debug`` return the same underlying object, and any
+    # ``MODULAR_DEBUG`` env-var parsing happens exactly once (at import).
+    debug: _DebugConfig = _InferenceSession.debug
 
     def __init__(
         self,
-        devices: Iterable[Device],
+        devices: Iterable[Device] = (),
         num_threads: int | None = None,
         *,
         custom_extensions: CustomExtensionsType | None = None,
