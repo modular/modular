@@ -1017,7 +1017,7 @@ class Tensor(DLPackArray, HasTensorValue):
         value: Number,
         *,
         dtype: DType | None = None,
-        device: Device | None = None,
+        device: Device | DeviceMapping | None = None,
     ) -> Tensor:
         """Creates a tensor filled with a specified value.
 
@@ -1043,13 +1043,16 @@ class Tensor(DLPackArray, HasTensorValue):
             dtype: The data type for the tensor elements. If not specified,
                 defaults to :obj:`DType.float32` for CPU devices and
                 :obj:`DType.bfloat16` for accelerator devices.
-            device: The device where the tensor will be allocated. If not
-                specified, defaults to an accelerator if available, otherwise CPU.
+            device: The device or device mapping where the tensor will be
+                allocated. If not specified, defaults to an accelerator if
+                available, otherwise CPU. Pass a
+                :class:`~max.experimental.sharding.DeviceMapping` to create
+                a distributed tensor.
 
         Returns:
             Tensor: A new tensor with the specified shape filled with the given value.
         """
-        return F.broadcast_to(cls(value, dtype=dtype, device=device), shape)
+        return F.full(shape, value, dtype=dtype, device=device)
 
     @classmethod
     def full_like(cls, input: Tensor | TensorType, value: Number) -> Tensor:
@@ -1092,7 +1095,7 @@ class Tensor(DLPackArray, HasTensorValue):
         shape: ShapeLike,
         *,
         dtype: DType | None = None,
-        device: Device | None = None,
+        device: Device | DeviceMapping | None = None,
     ) -> Tensor:
         """Creates a tensor filled with zeros.
 
@@ -1118,8 +1121,9 @@ class Tensor(DLPackArray, HasTensorValue):
             dtype: The data type for the tensor elements. If not specified,
                 defaults to :obj:`DType.float32` for CPU devices and
                 :obj:`DType.bfloat16` for accelerator devices.
-            device: The device where the tensor will be allocated. If not
-                specified, defaults to an accelerator if available, otherwise CPU.
+            device: The device or device mapping where the tensor will be
+                allocated. If not specified, defaults to an accelerator if
+                available, otherwise CPU.
 
         Returns:
             Tensor: A new tensor with the specified shape filled with zeros.
@@ -1166,7 +1170,7 @@ class Tensor(DLPackArray, HasTensorValue):
         shape: ShapeLike,
         *,
         dtype: DType | None = None,
-        device: Device | None = None,
+        device: Device | DeviceMapping | None = None,
     ) -> Tensor:
         """Creates a tensor filled with ones.
 
@@ -1185,8 +1189,9 @@ class Tensor(DLPackArray, HasTensorValue):
             dtype: The data type for the tensor elements. If not specified,
                 defaults to :obj:`DType.float32` for CPU devices and
                 :obj:`DType.bfloat16` for accelerator devices.
-            device: The device where the tensor will be allocated. If not
-                specified, defaults to an accelerator if available, otherwise CPU.
+            device: The device or device mapping where the tensor will be
+                allocated. If not specified, defaults to an accelerator if
+                available, otherwise CPU.
 
         Returns:
             Tensor: A new tensor with the specified shape filled with ones.
@@ -1236,7 +1241,7 @@ class Tensor(DLPackArray, HasTensorValue):
         out_dim: DimLike | None = None,
         *,
         dtype: DType | None = None,
-        device: Device | None = None,
+        device: Device | DeviceMapping | None = None,
     ) -> Tensor:
         """Creates a tensor with evenly spaced values within a given interval.
 
@@ -1289,7 +1294,6 @@ class Tensor(DLPackArray, HasTensorValue):
         Returns:
             Tensor: A 1D tensor containing the evenly spaced values.
         """
-        dtype, device = defaults(dtype, device)
         if stop is None:
             start, stop = 0, start
         return F.arange(
@@ -1461,7 +1465,7 @@ class Tensor(DLPackArray, HasTensorValue):
             for ax, p in enumerate(_placements):
                 if isinstance(p, Sharded):
                     d = p.axis % len(shard_shape)
-                    shard_shape[d] = int(shard_shape[d]) * _mesh.mesh_shape[ax]
+                    shard_shape[d] = shard_shape[d] * _mesh.mesh_shape[ax]
             return graph.Shape(shard_shape)
         shape = self._backing_value.shape
         return shape if isinstance(shape, graph.Shape) else graph.Shape(shape)
@@ -2286,7 +2290,7 @@ class Tensor(DLPackArray, HasTensorValue):
     def __setitem__(self, idx, val) -> None:  # noqa: ANN001
         """Write into a slice of this tensor in-place.
 
-        Delegates to :func:`distributed_functional.buffer_store_slice`
+        Delegates to :func:`functional.buffer_store_slice`
         which handles both single-device and distributed tensors.
 
         Args:
@@ -2411,7 +2415,8 @@ class Tensor(DLPackArray, HasTensorValue):
 import numpy as np  # isort: skip
 
 from max.experimental import functional as F  # isort: skip
-from max.experimental.distributed_functional import (  # isort: skip
-    buffer_store_slice as _buffer_store_slice,
-    transfer_to as _transfer_to,
-)
+
+# Access via module attribute to avoid importing names from a
+# partially-initialized package (circular import guard).
+_buffer_store_slice = lambda *a, **kw: F.buffer_store_slice(*a, **kw)
+_transfer_to = lambda *a, **kw: F.transfer_to(*a, **kw)

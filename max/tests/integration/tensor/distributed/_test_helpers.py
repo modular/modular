@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
-from max.experimental.distributed_functional import transfer_to
+from max.experimental.functional import transfer_to
 from max.experimental.sharding import (
     DeviceMesh,
     Placement,

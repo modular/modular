@@ -34,7 +34,7 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import Model
-from max.experimental.distributed_functional import full, matmul
+from max.experimental.functional import full, matmul
 from max.experimental.nn.module import CompiledModel, Module, module_dataclass
 from max.experimental.tensor import Tensor, TensorType
 from max.graph import DeviceRef

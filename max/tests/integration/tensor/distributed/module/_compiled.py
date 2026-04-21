@@ -29,7 +29,7 @@ import numpy as np
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import Model
-from max.experimental.distributed_functional import (
+from max.experimental.functional import (
     full,
     matmul,
     ones,

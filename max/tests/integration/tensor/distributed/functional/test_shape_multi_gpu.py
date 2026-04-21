@@ -22,7 +22,7 @@ not a dispatch logic bug — tracked for a proper fix.
 
 import numpy as np
 from max.driver import Accelerator
-from max.experimental.distributed_functional import (
+from max.experimental.functional import (
     permute,
     reshape,
     transfer_to,

@@ -139,20 +139,23 @@ def full_like(
     like: Tensor | TensorType | DistributedTensorType, value: Number
 ) -> Tensor:
     """Create a tensor filled with *value*, matching the shape and dtype of *like*."""
-    shape = [int(d) for d in like.shape]
-    return full(shape, value, dtype=like.dtype, device=_device_from_like(like))
+    return full(
+        like.shape, value, dtype=like.dtype, device=_device_from_like(like)
+    )
 
 
 def ones_like(like: Tensor | TensorType | DistributedTensorType) -> Tensor:
     """Create an all-ones tensor matching the shape and dtype of *like*."""
-    shape = [int(d) for d in like.shape]
-    return full(shape, 1.0, dtype=like.dtype, device=_device_from_like(like))
+    return full(
+        like.shape, 1.0, dtype=like.dtype, device=_device_from_like(like)
+    )
 
 
 def zeros_like(like: Tensor | TensorType | DistributedTensorType) -> Tensor:
     """Create an all-zeros tensor matching the shape and dtype of *like*."""
-    shape = [int(d) for d in like.shape]
-    return full(shape, 0.0, dtype=like.dtype, device=_device_from_like(like))
+    return full(
+        like.shape, 0.0, dtype=like.dtype, device=_device_from_like(like)
+    )
 
 
 # ═════════════════════════════════════════════════════════════════════════

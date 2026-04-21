@@ -27,7 +27,7 @@ from max.experimental.sharding import (
     local_shard_shape_from_global,
     shard_shape,
 )
-from max.graph import Dim, Shape, StaticDim
+from max.graph import Dim, Shape, StaticDim, SymbolicDim
 
 # ── Inline mesh helpers (no conftest dependency) ──────────────────────
 
@@ -169,12 +169,20 @@ class TestLocalShardShapeFromGlobal:
         for s in shapes:
             assert list(s) == [StaticDim(4), StaticDim(12)]
 
-    def test_symbolic_dim_raises(self) -> None:
-        mesh = mesh_1d(2)
-        with pytest.raises(NotImplementedError, match="static dimensions"):
-            local_shard_shape_from_global(
-                Shape([Dim("batch"), Dim(4)]), mesh, [Sharded(0)]
-            )
+    def test_symbolic_sharded_dim_emits_fresh_symbolic(self) -> None:
+        """SymbolicDim on a Sharded axis → fresh ``{name}_{axis_name}`` dim.
+
+        Mirrors the graph-layer behaviour in
+        :meth:`DistributedTensorType._local_shard_shape`. Replicated axes
+        pass through unchanged.
+        """
+        mesh = mesh_1d(2)  # axis name defaults to "tp"
+        shapes = local_shard_shape_from_global(
+            Shape([Dim("batch"), Dim(4)]), mesh, [Sharded(0)]
+        )
+        assert len(shapes) == 2
+        for s in shapes:
+            assert list(s) == [SymbolicDim("batch_tp"), StaticDim(4)]
 
     def test_negative_axis_wraps(self) -> None:
         mesh = mesh_1d(2)

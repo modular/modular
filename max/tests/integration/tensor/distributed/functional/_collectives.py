@@ -46,7 +46,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 import pytest
-from max.experimental.distributed_functional import (
+from max.experimental.functional import (
     allgather,
     allreduce_sum,
     reduce_scatter,

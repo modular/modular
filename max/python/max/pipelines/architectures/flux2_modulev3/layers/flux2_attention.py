@@ -559,7 +559,7 @@ class Flux2ParallelSelfAttention(Module[[Tensor], Tensor]):
         hidden_states = hidden_states.cast(query.dtype)
 
         # Process MLP stream
-        mlp_hidden_states = self.mlp_act_fn(mlp_hidden_states)  # type: ignore[arg-type]
+        mlp_hidden_states = self.mlp_act_fn(mlp_hidden_states)
 
         # Concatenate attention and MLP outputs
         hidden_states = F.concat([hidden_states, mlp_hidden_states], axis=-1)

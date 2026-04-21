@@ -30,7 +30,7 @@ from typing import ClassVar
 import numpy as np
 import pytest
 from max.dtype import DType
-from max.experimental.distributed_functional import (
+from max.experimental.functional import (
     full,
     ones,
     transfer_to,
@@ -213,7 +213,7 @@ class _Properties:
             np.testing.assert_allclose(arr, np.full((4, 4), 2.0), rtol=1e-5)
 
     def test_dtype_preserved(self) -> None:
-        from max.experimental.distributed_functional import cast
+        from max.experimental.functional import cast
 
         mapping = PlacementMapping(self.MESH_2D, (Replicated(), Replicated()))
         t = full([2, 4], 1.0, dtype=DType.bfloat16, device=mapping)

@@ -418,11 +418,15 @@ def broadcast_to_rule(
     shape: tuple[int, ...] = (),
     out_dims: object = None,
 ) -> RuleSignature:
-    """Sharding rule for broadcast to."""
-    target = tuple(int(d) for d in shape)
+    """Sharding rule for broadcast to.
+
+    ``shape`` elements may be ``StaticDim``, ``SymbolicDim``, or
+    ``AlgebraicDim`` — structural ``Dim`` equality (``==``) handles the
+    compatibility check without concretization.
+    """
     src = x.shape
-    for i in builtins.range(1, builtins.min(len(src), len(target)) + 1):
-        s_dim, t_dim = src[-i], target[-i]
+    for i in builtins.range(1, builtins.min(len(src), len(shape)) + 1):
+        s_dim, t_dim = src[-i], shape[-i]
         if s_dim != 1 and s_dim != t_dim:
             raise ValueError(
                 f"broadcast_to: input dimension {-i} (size {s_dim}) "
@@ -515,32 +519,44 @@ def _map_axis_through_reshape(
 
 
 def reshape_rule(x: TensorLayout, shape: tuple[int, ...]) -> RuleSignature:
-    """Sharding rule for reshape."""
-    target = tuple(int(d) for d in shape)
+    """Sharding rule for reshape.
 
+    The `_map_axis_through_reshape` heuristic requires magnitude comparisons
+    (``<``, ``<=``) and cumulative products that are only decidable for
+    ``StaticDim``.  Only concretize when a Sharded axis actually needs to
+    be tracked through the reshape — otherwise (all-Replicated path)
+    forward the shape unchanged so symbolic dims flow through.
+    """
     s = x.mapping
     sp = s.to_placements()
-    old_shape = tuple(int(d) for d in x.shape)
     mesh = x.mapping.mesh
 
     out_p = list(sp)
-    for i, p in enumerate(sp):
-        if isinstance(p, Sharded):
-            new_ax = _map_axis_through_reshape(old_shape, target, p.axis)
-            if new_ax is None:
-                raise ValueError(
-                    f"reshape: sharded axis {p.axis} cannot be mapped to {target}."
-                )
-            if target[new_ax] % mesh.mesh_shape[i] != 0:
-                raise ValueError(
-                    f"reshape: sharded dim {new_ax} (size "
-                    f"{target[new_ax]}) is not evenly divisible by "
-                    f"{mesh.mesh_shape[i]} devices on mesh axis {i}."
-                )
-            out_p[i] = Sharded(new_ax)
+    has_sharded = any(isinstance(p, Sharded) for p in sp)
+    if has_sharded:
+        # Only the Sharded path needs concrete sizes; this branch already
+        # implicitly requires static dims (uneven symbolic split is
+        # undecidable).
+        target = tuple(int(d) for d in shape)
+        old_shape = tuple(int(d) for d in x.shape)
+        for i, p in enumerate(sp):
+            if isinstance(p, Sharded):
+                new_ax = _map_axis_through_reshape(old_shape, target, p.axis)
+                if new_ax is None:
+                    raise ValueError(
+                        f"reshape: sharded axis {p.axis} cannot be mapped "
+                        f"to {target}."
+                    )
+                if target[new_ax] % mesh.mesh_shape[i] != 0:
+                    raise ValueError(
+                        f"reshape: sharded dim {new_ax} (size "
+                        f"{target[new_ax]}) is not evenly divisible by "
+                        f"{mesh.mesh_shape[i]} devices on mesh axis {i}."
+                    )
+                out_p[i] = Sharded(new_ax)
 
     out_placements = tuple(out_p)
-    local_shape = _localize_shape(target, out_placements, mesh.mesh_shape)
+    local_shape = _localize_shape(shape, out_placements, mesh.mesh_shape)
     out_m = PlacementMapping(mesh, out_placements)
     return (s, local_shape), (out_m,)
 

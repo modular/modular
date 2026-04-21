@@ -24,7 +24,7 @@ from typing import Any
 
 from max import driver, graph
 from max.driver import Accelerator, DLPackArray
-from max.experimental.distributed_functional import transfer_to
+from max.experimental.functional import transfer_to
 from max.experimental.sharding import (
     DeviceMapping,
     DistributedType,

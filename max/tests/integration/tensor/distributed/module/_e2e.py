@@ -31,7 +31,7 @@ import numpy as np
 import pytest
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.distributed_functional import (
+from max.experimental.functional import (
     add,
     full,
     matmul,

@@ -27,7 +27,7 @@ from typing import ClassVar
 
 import numpy as np
 from max.dtype import DType
-from max.experimental.distributed_functional import gaussian, uniform
+from max.experimental.functional import gaussian, uniform
 from max.experimental.sharding import (
     DeviceMesh,
     PlacementMapping,
