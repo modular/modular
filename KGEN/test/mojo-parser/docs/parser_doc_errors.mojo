@@ -268,6 +268,17 @@ def fn_nested_fn():
     return
 
 
+def fn_unified_thin_closure():
+    """This function defines a thin unified closure (no captures).
+
+    The closure is lifted to file scope during compilation, but docstring
+    rules must not be enforced on it.
+    """
+
+    def thin_closure(x: Int) unified {} -> Int:
+        return x
+
+
 struct Error:
     """Error type stub to allow decoupling from the builtins."""
 

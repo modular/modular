@@ -1895,6 +1895,7 @@ ASTDecl *ClosureEmitter::promoteStatelessClosure(
   // into elaboration.
   if (auto linkageName = nestedFn.getLinkageNameAttr())
     promotedFn.setLinkageNameAttr(linkageName);
+  promotedFn.setNoDocRequired(true);
   auto &decl = shared.declResolver->addFullyResolvedDecl(
       promotedFn, nestedFn.getSourceNameAttr(), loc, moduleDecl);
   // Transfer child decls from the original to the promoted decl. Since the op

@@ -96,7 +96,8 @@ def LIT_FnOp : LITOp<"fn", [
     // each odd corresponds to its value (zero index based)
     DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
     DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
-    OptionalAttr<AnyAttr>:$thunkKey
+    OptionalAttr<AnyAttr>:$thunkKey,
+    UnitAttr:$noDocRequired
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
