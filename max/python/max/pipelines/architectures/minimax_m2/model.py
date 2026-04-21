@@ -210,8 +210,12 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         # Each GPU sends the full batch through EP dispatch (attention is
         # replicated, so all GPUs have identical tokens).
         num_devices = len(self.devices)
+        ep_size = num_devices
+        attn_tp_size = (
+            ep_size // self.pipeline_config.model.data_parallel_degree
+        )
         ep_max_rank_send_tokens = (
-            self.pipeline_config.runtime.max_batch_input_tokens // num_devices
+            self.pipeline_config.runtime.max_batch_input_tokens // attn_tp_size
         )
         model_config.ep_config = EPConfig(
             dispatch_dtype=DType.float8_e4m3fn,
@@ -252,8 +256,6 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         )
 
         self.state_dict = nn_model.state_dict()
-
-        num_devices = len(self.devices)
 
         with Graph("minimax_m2", input_types=graph_inputs) as graph:
             (
