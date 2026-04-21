@@ -2061,6 +2061,12 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   }
 
   if (signature.isUnified()) {
+    // abi("C") functions must be bare function pointers with no captured
+    // state, even when declared 'unified'.
+    if (signature.getFnEffects().isCABI() && !captures.empty())
+      return emitError(funcOp.getLoc(),
+                       "a abi(\"C\") function cannot capture variables");
+
     // Check if this is a stateless unified closure. This means it has:
     // - no captured values
     // - no explicit dynamic captures

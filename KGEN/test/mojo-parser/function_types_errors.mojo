@@ -383,7 +383,11 @@ def test_abi_c_capturing():
     var x: Int = 1
 
     # expected-error @below {{a abi("C") function cannot capture variables}}
-    def captures_x(y: Int) abi("C") -> Int:
+    def captures_x(y: Int) unified abi("C") {read} -> Int:
+        return x + y
+
+    # expected-error @below {{a abi("C") function cannot capture variables}}
+    def captures_legacy(y: Int) abi("C") -> Int:
         return x + y
 
     _ = captures_x(2)
