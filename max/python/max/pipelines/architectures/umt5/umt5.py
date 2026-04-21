@@ -251,19 +251,16 @@ class UMT5Attention(Module):
         max_distance = self.relative_attention_max_distance
 
         dev = self._device
-        relative_buckets = ops.constant(0, dtype=DType.int32, device=dev)
-        relative_buckets = ops.broadcast_to(
-            relative_buckets, relative_position.shape
-        )
-
         if not self.is_decoder:
             num_buckets = num_buckets // 2
             is_positive = ops.greater(relative_position, 0)
-            relative_buckets = relative_buckets + (
-                ops.cast(is_positive, DType.int32) * num_buckets
-            )
+            relative_buckets = ops.cast(is_positive, DType.int32) * num_buckets
             relative_position = ops.abs(relative_position)
         else:
+            relative_buckets = ops.broadcast_to(
+                ops.constant(0, dtype=DType.int32, device=dev),
+                relative_position.shape,
+            )
             relative_position = -ops.min(relative_position, 0)
 
         max_exact = num_buckets // 2
@@ -383,13 +380,11 @@ class UMT5LayerSelfAttention(Module):
     def __init__(
         self,
         config: UMT5ConfigBase,
-        layer_idx: int | None = None,
         *,
         dtype: DType,
         device: DeviceRef,
     ) -> None:
         super().__init__()
-        del layer_idx
         self.SelfAttention = UMT5Attention(
             config,
             has_relative_attention_bias=True,
@@ -417,7 +412,6 @@ class UMT5Block(Module):
     def __init__(
         self,
         config: UMT5ConfigBase,
-        layer_idx: int | None = None,
         *,
         dtype: DType,
         device: DeviceRef,
@@ -427,9 +421,7 @@ class UMT5Block(Module):
         # to match HF weight key paths: block.{i}.layer.0 / block.{i}.layer.1
         self.layer = LayerList(
             [
-                UMT5LayerSelfAttention(
-                    config, layer_idx=layer_idx, dtype=dtype, device=device
-                ),
+                UMT5LayerSelfAttention(config, dtype=dtype, device=device),
                 UMT5LayerFF(config, dtype=dtype, device=device),
             ]
         )
@@ -457,8 +449,8 @@ class UMT5Stack(Module):
         self.embed_tokens = embed_tokens
         self.block = LayerList(
             [
-                UMT5Block(config, layer_idx=i, dtype=dtype, device=device)
-                for i in range(config.num_layers)
+                UMT5Block(config, dtype=dtype, device=device)
+                for _ in range(config.num_layers)
             ]
         )
         self.final_layer_norm = UMT5LayerNorm(

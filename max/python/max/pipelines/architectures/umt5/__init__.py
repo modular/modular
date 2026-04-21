@@ -11,6 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .model import UMT5Model
+from .model import _prepare_state_dict
 
-__all__ = ["UMT5Model"]
+__all__ = ["_prepare_state_dict"]
