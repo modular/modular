@@ -702,6 +702,11 @@ struct ManagedTensorSlice[
             The size of the tensor slice in the given dimension.
         """
 
+        comptime assert 0 <= index < Self.rank, String(
+            t"dim_size index of {index} is out of bounds for tensor rank [0,"
+            t" {Self.rank}]"
+        )
+
         comptime if not Self.static_spec.static_layout._shape_types[
             index
         ].is_static_value:
@@ -756,6 +761,11 @@ struct ManagedTensorSlice[
         Returns:
             The size of the tensor slice in the given dimension.
         """
+
+        comptime assert 0 <= index < Self.rank, String(
+            t"stride_length index of {index} is out of bounds for tensor rank"
+            t" [0, {Self.rank}]"
+        )
 
         comptime if not Self.static_spec.static_layout._stride_types[
             index

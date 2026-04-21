@@ -995,6 +995,10 @@ struct TileTensor[
         Returns:
             A view into the original tensor representing the specified tile.
         """
+        comptime assert tile_sizes.size == Self.rank, String(
+            t"tile requires exactly one tile size per tensor dimension; got"
+            t" {tile_sizes.size} tile sizes for tensor of rank {Self.rank}"
+        )
         return _tile(self, coord[*tile_sizes](), coordinates)
 
     @always_inline("nodebug")
@@ -1030,6 +1034,14 @@ struct TileTensor[
         Returns:
             A view into the original tensor representing the specified tile.
         """
+        comptime assert tile_sizes.size == Self.rank, String(
+            t"tile requires exactly one tile size per tensor dimension; got"
+            t" {tile_sizes.size} tile sizes for tensor of rank {Self.rank}"
+        )
+        comptime assert stride_layout.rank == Self.rank, String(
+            t"stride_layout rank {stride_layout.rank} must match tensor rank"
+            t" {Self.rank}"
+        )
         return _tile[stride_layout=stride_layout](
             self, coord[*tile_sizes](), coordinates
         )
@@ -1080,6 +1092,10 @@ struct TileTensor[
         var t = tensor.tile(coord[2, 2](), coord[1, 0]())
         ```
         """
+        comptime assert tile_shape_types.size == Self.rank, String(
+            t"tile_shape rank {tile_shape_types.size} must match tensor rank"
+            t" {Self.rank}"
+        )
         return _tile(self, tile_shape, coordinates)
 
     @always_inline("nodebug")
@@ -1110,6 +1126,10 @@ struct TileTensor[
         Returns:
             Tuple of (tile, corner_coords, offset).
         """
+        comptime assert tile_sizes.size == Self.rank, String(
+            t"tile_with_offset requires one tile size per tensor dimension;"
+            t" got {tile_sizes.size} tile sizes for tensor of rank {Self.rank}"
+        )
         return _tile_with_offset(self, coord[*tile_sizes](), coordinates)
 
     @always_inline("nodebug")
@@ -1144,6 +1164,14 @@ struct TileTensor[
         Returns:
             Tuple of (tile, corner_coords, offset).
         """
+        comptime assert tile_sizes.size == Self.rank, String(
+            t"tile_with_offset requires one tile size per tensor dimension;"
+            t" got {tile_sizes.size} tile sizes for tensor of rank {Self.rank}"
+        )
+        comptime assert stride_layout.rank == Self.rank, String(
+            t"stride_layout rank {stride_layout.rank} must match tensor rank"
+            t" {Self.rank}"
+        )
         return _tile_with_offset[stride_layout=stride_layout](
             self, coord[*tile_sizes](), coordinates
         )
@@ -1256,6 +1284,10 @@ struct TileTensor[
         var t = tensor.tile[2, 2](1, 0)
         ```
         """
+        comptime assert tile_sizes.size == Self.rank, String(
+            t"tile requires exactly one tile size per tensor dimension; got"
+            t" {tile_sizes.size} tile sizes for tensor of rank {Self.rank}"
+        )
         var coordinates = DynamicCoord[Self.linear_idx_type, Self.rank]()
 
         comptime for i in range(Self.rank):
@@ -1442,6 +1474,9 @@ struct TileTensor[
         Returns:
             The size of dimension i as a scalar.
         """
+        comptime assert 0 <= i < Self.rank, String(
+            t"dim index {i} is out of bounds for tensor rank [0, {Self.rank})"
+        )
         return Scalar[Self.linear_idx_type](self.layout.shape[i]().value())
 
     @always_inline("nodebug")
@@ -2364,6 +2399,9 @@ struct NullableTileTensor[
         Returns:
             The size of dimension i as a scalar.
         """
+        comptime assert 0 <= i < Self.rank, String(
+            t"dim index {i} is out of bounds for tensor rank [0, {Self.rank})"
+        )
         return Scalar[Self.linear_idx_type](self.layout.shape[i]().value())
 
     @always_inline("nodebug")

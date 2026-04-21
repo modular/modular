@@ -930,12 +930,34 @@ def _crd2idx_flat[
     Returns:
         Linear index computed from flat coords and nested shape/stride.
     """
-    # Flatten the stride and compute dot product with flat coord
+    # Flatten the stride and compute dot product with flat coord. Also
+    # compute the flattened shape *types* (without materializing a runtime
+    # value) so that each flat coordinate leaf can be checked against its
+    # corresponding flattened shape leaf at compile time.
     var flat_stride = stride_t.flatten()
     var result: Scalar[out_type] = 0
     comptime flat_len = type_of(crd_t).__len__()
 
+    # For each flat dimension, if both the coordinate and the corresponding
+    # flattened shape are statically known, assert that the coordinate is in
+    # bounds. Runtime dims and runtime coords are left unchecked here.
+    comptime _FlatCrdTypes = type_of(crd_t).element_types
+    comptime _FlatShapeTypes = _Flattened[*type_of(shape_t).element_types]
+
     comptime for i in range(flat_len):
+        comptime if (
+            _FlatCrdTypes[i].is_static_value
+            and _FlatShapeTypes[i].is_static_value
+        ):
+            comptime assert (
+                0
+                <= _FlatCrdTypes[i].static_value
+                < _FlatShapeTypes[i].static_value
+            ), String(
+                t"crd2idx: static coordinate {_FlatCrdTypes[i].static_value} is"
+                t" out of bounds for static shape [0,"
+                t" {_FlatShapeTypes[i].static_value}) at flat dim {i}"
+            )
         result += Scalar[out_type](crd_t[i].value() * flat_stride[i].value())
 
     return result
@@ -1013,6 +1035,16 @@ def crd2idx[
         comptime if crd_len > 1:
             abort("crd is a tuple but shape and stride are not")
         else:
+            # Scalar leaf case: if both crd and shape are statically known,
+            # assert that the coord is within the shape's bounds at compile
+            # time. Runtime values are not checked here.
+            comptime if Index.is_static_value and Shape.is_static_value:
+                comptime assert (
+                    0 <= Index.static_value < Shape.static_value
+                ), String(
+                    t"crd2idx: static coordinate {Index.static_value} is out of"
+                    t" bounds for static shape [0, {Shape.static_value})"
+                )
             return Scalar[out_type](crd.value() * stride.value())
 
 
