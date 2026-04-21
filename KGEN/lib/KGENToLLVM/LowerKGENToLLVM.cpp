@@ -343,16 +343,25 @@ static LogicalResult convertLLVMMetadata(LLVM::LLVMFuncOp func, FuncType sig,
         }
 
         if (isa<mlir::NVVM::NVVMDialect>(nameDialect)) {
-          if (attr.getName() ==
-              mlir::NVVM::NVVMDialect::getGridConstantAttrName()) {
-            list.set(attr.getName(), b.getUnitAttr());
-            // FIXME(MOCO-1342): Remove this, once we are able to
-            // explicitly pass alignment.
-            list.set(StringAttr::get(func->getContext(),
-                                     LLVM::LLVMDialect::getAlignAttrName()),
-                     IntegerAttr::get(b.getI32Type(), 64));
-            continue;
+          // Only take action if target is NVPTX for nvvm annotations and
+          // no-op for other backends with this annotation.
+          // This is a quick hack to make mojo code with this annotation also
+          // work for other backends like AMDGPUs.
+          // TODO: build more general language mechanism to have this annotation
+          // parameterized with target at mojo level.
+          if (target.getTriple().isNVPTX()) {
+            if (attr.getName() ==
+                mlir::NVVM::NVVMDialect::getGridConstantAttrName()) {
+              list.set(attr.getName(), b.getUnitAttr());
+              // FIXME(MOCO-1342): Remove this, once we are able to
+              // explicitly pass alignment.
+              list.set(StringAttr::get(func->getContext(),
+                                       LLVM::LLVMDialect::getAlignAttrName()),
+                       IntegerAttr::get(b.getI32Type(), 64));
+            }
           }
+
+          continue;
         }
 
         return mlir::emitError(func.getLoc(), "unsupported LLVM arg metadata: ")
