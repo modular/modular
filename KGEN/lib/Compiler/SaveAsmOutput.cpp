@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Compiler/SaveAsmOutput.h"
-#include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/Support/FileUtilities.h"
@@ -69,11 +68,16 @@ llvm::StringRef offloadLLVMExt(const llvm::Triple &triple) {
 std::string reserveOffloadOutputBaseName(mlir::StringAttr rawName,
                                          llvm::StringRef ext,
                                          llvm::StringMap<int> &nameCountMap) {
-  std::string sanitized = sanitizeSymbolToAlnum(rawName).getValue().str();
-  std::string nameKey = sanitized + ext.str();
+  llvm::StringRef name = rawName.getValue();
+  assert(
+      !name.empty() &&
+      llvm::all_of(name, [](char c) { return llvm::isAlnum(c) || c == '_'; }) &&
+      "Output symbol name must be non-empty and contain only alnum/underscore");
+  std::string nameKey = (name + ext).str();
   int &count = nameCountMap[nameKey];
-  std::string baseName =
-      count == 0 ? sanitized : sanitized + "_" + std::to_string(count);
+  std::string baseName = name.str();
+  if (count != 0)
+    baseName += "_" + std::to_string(count);
   ++count;
   return baseName;
 }

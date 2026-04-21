@@ -626,10 +626,12 @@ static ElaboratorCompileOffloadRetType compileOffloads(
           auto [capturesFunc, numCaptures, captureSizes] = writeCaptureArgs(
               *module, kernelFunc, kernelPreRenameSyms.lookup(kernel.kernelId));
 
-          // Use the user-visible source name for the offload output filename
-          // when available; fall back to the mangled symbol name otherwise.
-          mlir::StringAttr nameForFile =
-              kernel.sourceName.value_or(symbol.getSymbol().getRootReference());
+          // renameFunctions has already run, so sym_name is the exact name
+          // that will be emitted. Use it directly as the output file basename
+          // so the file name always matches the symbol inside.
+          mlir::StringAttr nameForFile = kernelFunc.getSymNameAttr();
+          assert(nameForFile && !nameForFile.getValue().empty() &&
+                 "kernel sym_name must be non-empty after renameFunctions");
           captures.insert({kernel.kernelId,
                            CaptureEntry{std::move(capturesFunc), numCaptures,
                                         captureSizes, nameForFile}});
