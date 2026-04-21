@@ -322,12 +322,12 @@ class UnifiedEagleLlama3(Module):
         # Assume that all tokens are accepted in this calculation.
         # Confusingly max_cache_length != max(cache_lengths). Instead max_cache_length
         # is more like max_total_seq_len including cached and input tokens.
-        max_cache_length = (
+        orig_max_cache_length = (
             draft_kv_collection.max_lengths[0, 1]
             .cast(DType.uint32)
             .broadcast_to([1])
         )
-        max_cache_length = max_cache_length + 1
+        max_cache_length = orig_max_cache_length + 1
 
         # Extract values from the original dispatch_metadata for reuse.
         orig_metadata = draft_kv_collection.attention_dispatch_metadata
@@ -341,36 +341,42 @@ class UnifiedEagleLlama3(Module):
             1, DType.int64, DeviceRef.CPU()
         ).broadcast_to([1])
 
+        upper_max_valid_length = orig_max_cache_length.cast(
+            DType.int64
+        ) + ops.constant(
+            self.num_draft_steps, DType.int64, DeviceRef.CPU()
+        ).reshape([1])
+        # Compute the metadata tensor to use for all draft steps 1-K
+        num_partitions = compute_mha_decode_num_partitions(
+            orig_batch_size,
+            upper_max_valid_length,
+            n_kv_heads,
+            device,
+        )
+        metadata_tensor = ops.concat(
+            [
+                orig_batch_size.reshape([1]),
+                ops.constant(1, DType.int64, DeviceRef.CPU()).reshape([1]),
+                num_partitions,
+                upper_max_valid_length,
+            ],
+            axis=0,
+        )
+        max_lengths = ops.concat(
+            [one, upper_max_valid_length.cast(DType.uint32)], axis=-1
+        ).broadcast_to([1, 2])
+
         # --- Draft steps 1..N-1 ---
         all_draft_tokens = [next_draft_tokens]
         for _ in range(1, self.num_draft_steps):
             next_draft_tokens = next_draft_tokens.rebind(["batch_size"])
             draft_hs = draft_hs.rebind(["batch_size", hidden_dim])
 
-            max_lengths = ops.concat([one, max_cache_length], axis=-1)
-
-            max_cache_length_i64 = max_cache_length.cast(DType.int64)
-            num_partitions = compute_mha_decode_num_partitions(
-                orig_batch_size,
-                max_cache_length_i64,
-                n_kv_heads,
-                device,
-            )
-            metadata_tensor = ops.concat(
-                [
-                    orig_batch_size.reshape([1]),
-                    ops.constant(1, DType.int64, DeviceRef.CPU()).reshape([1]),
-                    num_partitions,
-                    max_cache_length_i64,
-                ],
-                axis=0,
-            )
-
             kv_collection = PagedCacheValues(
                 kv_blocks=draft_kv_blocks,
                 cache_lengths=cache_lengths,
                 lookup_table=draft_kv_collection.lookup_table,
-                max_lengths=max_lengths.broadcast_to([1, 2]),
+                max_lengths=max_lengths,
                 attention_dispatch_metadata=metadata_tensor,
             )
 
