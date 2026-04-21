@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from max.dtype import DType
@@ -31,10 +31,7 @@ from max.graph import (
 from max.nn import ReturnHiddenStates, ReturnLogits
 
 # TODO: rename the kernel at the source
-from max.nn.kernels import (
-    compute_mha_decode_num_partitions,
-    eagle_prefill_shift_tokens,
-)
+from max.nn.kernels import eagle_prefill_shift_tokens
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
@@ -98,6 +95,7 @@ class UnifiedEagleLlama3(Module):
             lookup_table,
             max_lengths,
             dispatch_metadata,
+            draft_dispatch_metadata,
             # draft model inputs
             draft_tokens,
             # draft kvcache
@@ -112,6 +110,7 @@ class UnifiedEagleLlama3(Module):
             lookup_table=lookup_table.tensor,
             max_lengths=max_lengths.tensor,
             attention_dispatch_metadata=dispatch_metadata.tensor,
+            draft_attention_dispatch_metadata=draft_dispatch_metadata.tensor,
         )
 
         return UnifiedEagleLlama3Values(
@@ -255,6 +254,7 @@ class UnifiedEagleLlama3(Module):
             lookup_table=kv_collection.lookup_table,
             max_lengths=kv_collection.max_lengths,
             attention_dispatch_metadata=kv_collection.attention_dispatch_metadata,
+            draft_attention_dispatch_metadata=kv_collection.draft_attention_dispatch_metadata,
         )
 
         # --- Draft step 0 ---
@@ -329,42 +329,21 @@ class UnifiedEagleLlama3(Module):
         )
         max_cache_length = orig_max_cache_length + 1
 
-        # Extract values from the original dispatch_metadata for reuse.
-        orig_metadata = draft_kv_collection.attention_dispatch_metadata
-        assert orig_metadata is not None
-        orig_batch_size = orig_metadata.tensor[0]
-
-        n_kv_heads = self.config.draft.kv_params.n_kv_heads
-
         # draft_return_n_logits: [1] (CPU)
         draft_return_n_logits = ops.constant(
             1, DType.int64, DeviceRef.CPU()
         ).broadcast_to([1])
 
-        upper_max_valid_length = orig_max_cache_length.cast(
-            DType.int64
-        ) + ops.constant(
-            self.num_draft_steps, DType.int64, DeviceRef.CPU()
-        ).reshape([1])
-        # Compute the metadata tensor to use for all draft steps 1-K
-        num_partitions = compute_mha_decode_num_partitions(
-            orig_batch_size,
-            upper_max_valid_length,
-            n_kv_heads,
-            device,
-        )
-        metadata_tensor = ops.concat(
-            [
-                orig_batch_size.reshape([1]),
-                ops.constant(1, DType.int64, DeviceRef.CPU()).reshape([1]),
-                num_partitions,
-                upper_max_valid_length,
-            ],
-            axis=0,
-        )
         max_lengths = ops.concat(
-            [one, upper_max_valid_length.cast(DType.uint32)], axis=-1
-        ).broadcast_to([1, 2])
+            [one, draft_kv_collection.max_lengths[0, 1].broadcast_to([1])],
+            axis=-1,
+        ).reshape([1, 2])
+
+        draft_kv_collection = replace(
+            draft_kv_collection,
+            max_lengths=max_lengths,
+            attention_dispatch_metadata=draft_kv_collection.draft_attention_dispatch_metadata,
+        )
 
         # --- Draft steps 1..N-1 ---
         all_draft_tokens = [next_draft_tokens]
@@ -372,17 +351,13 @@ class UnifiedEagleLlama3(Module):
             next_draft_tokens = next_draft_tokens.rebind(["batch_size"])
             draft_hs = draft_hs.rebind(["batch_size", hidden_dim])
 
-            kv_collection = PagedCacheValues(
-                kv_blocks=draft_kv_blocks,
-                cache_lengths=cache_lengths,
-                lookup_table=draft_kv_collection.lookup_table,
-                max_lengths=max_lengths,
-                attention_dispatch_metadata=metadata_tensor,
+            draft_kv_collection = replace(
+                draft_kv_collection, cache_lengths=cache_lengths
             )
 
             draft_outputs = self.draft(
                 next_draft_tokens,
-                kv_collection,
+                draft_kv_collection,
                 draft_return_n_logits,
                 input_row_offsets,
                 draft_hs,
