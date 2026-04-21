@@ -93,6 +93,24 @@ public:
   /// key.
   void setValue(StringRef key, StringRef value);
 
+  /// Set a runtime override for `key` that's visible to every `Config`
+  /// instance via `maybeGetValue()`.  Takes precedence over env vars and
+  /// file values.  Thread-safe.
+  ///
+  /// This is how Python-level APIs (e.g. `InferenceSession.debug.*`) propagate
+  /// their writes to C++ readers without taking a direct dependency on
+  /// the Python bindings — readers call the usual `Config` getters and pick
+  /// up the override transparently.
+  static void setGlobalValue(StringRef key, StringRef value);
+
+  /// Clear a runtime override previously set via `setGlobalValue()`.
+  /// Thread-safe.
+  static void unsetGlobalValue(StringRef key);
+
+  /// Return the runtime override for `key`, or `std::nullopt` if none is
+  /// set.  Thread-safe.
+  static std::optional<std::string> getGlobalValueIfSet(StringRef key);
+
   /// Get all the values contained in the config.
   const llvm::StringMap<std::string> &getAllValues() const { return kv; }
 
