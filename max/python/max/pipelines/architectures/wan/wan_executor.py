@@ -348,7 +348,6 @@ class WanExecutor(
             )
             prompt_embeds = self.text_encoder(
                 inputs.tokens,
-                attention_mask=None,
                 num_videos_per_prompt=num_videos_per_prompt,
             )
 
@@ -356,7 +355,6 @@ class WanExecutor(
             if inputs.negative_tokens is not None:
                 negative_prompt_embeds = self.text_encoder(
                     inputs.negative_tokens,
-                    attention_mask=None,
                     num_videos_per_prompt=num_videos_per_prompt,
                 )
 
