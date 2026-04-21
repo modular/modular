@@ -1061,7 +1061,7 @@ struct TypeList[
             `#kgen.upcast<`,
             Self.values,
             `> : `,
-            Variadic.TypesOfTrait[dst_trait],
+            _MLIR.KGENTypeListType[dst_trait],
         ],
     ]
 
@@ -1079,7 +1079,7 @@ struct TypeList[
             `,`,
             _IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
             `> : `,
-            Variadic.TypesOfTrait[Trait],
+            _MLIR.KGENTypeListType[Trait],
         ],
     ]
 
@@ -1344,7 +1344,7 @@ struct Pointer[
 struct Tuple[*element_types: Movable](ImplicitlyCopyable):
     comptime _mlir_type = __mlir_type[
         `!kgen.pack<:`,
-        Variadic.TypesOfTrait[Movable],
+        _MLIR.KGENTypeListType[Movable],
         Self.element_types.values,
         `>`,
     ]
