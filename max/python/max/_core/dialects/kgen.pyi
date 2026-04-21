@@ -765,6 +765,31 @@ class GetWitnessAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.Type | None: ...
 
+class IsRefinedTypeAttr(max._core.Attribute):
+    """
+    This represents a flag to indicate the type, specified by `sourceType`,
+    is a more refined type of the other target type, specified by `targetType`.
+
+    It requires both `sourceType` and `targetType` to be at the same type depth.
+    """
+
+    @overload
+    def __init__(
+        self,
+        source_type: max._core.dialects.builtin.TypedAttr,
+        target_type: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        source_type: max._core.dialects.builtin.TypedAttr,
+        target_type: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def source_type(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def target_type(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class IsStructTypeAttr(max._core.Attribute):
     """
     The `#kgen.is_struct_type` attribute returns true if the given type value

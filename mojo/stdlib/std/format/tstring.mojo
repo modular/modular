@@ -119,7 +119,7 @@ struct TString[
 
         fmt.FormatStruct(writer, "TString").params(
             fmt.Repr(self.format_string),
-            fmt.TypeNames[*Self.Ts.upcast[AnyType]()](),
+            fmt.TypeNames[*Self.Ts](),
         ).fields[FieldsFn=fields]()
 
 

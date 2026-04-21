@@ -199,24 +199,31 @@ struct TypeList[
         idx: The index of the type to access.
     """
 
-    # TODO: Support implicit conversion from a more derived trait to a base one.
-    comptime upcast[dst_trait: type_of(AnyType)] = TypeList[
-        Trait=dst_trait,
-        __mlir_attr[
-            `#kgen.upcast<`,
-            Self.values,
-            `> : `,
-            _MLIR.KGENTypeListType[dst_trait],
+    @implicit
+    @always_inline("builtin")
+    def __init__(
+        existing: TypeList[...],
+        out self: TypeList[
+            Trait=Self.Trait,
+            __mlir_attr[
+                `#kgen.upcast<`,
+                existing.values,
+                `> : `,
+                _MLIR.KGENTypeListType[Self.Trait],
+            ],
         ],
-    ]
-    """Upcasts a TypeList to a base trait.
+    ) where __mlir_attr[
+        `#kgen.is_refined_type<`, existing.Trait, `, `, Self.Trait, `>`
+    ]:
+        """Upcasts a TypeList to a base trait.
 
-    Parameters:
-        dst_trait: The trait to downcast to.
+        Args:
+            existing: The TypeList to upcast from.
 
-    Returns:
-        A new TypeList with the types downcasted to the base trait.
-    """
+        Constraints:
+            The existing.Trait is more refined than Self.Trait.
+        """
+        pass
 
     # ===-------------------------------------------------------------------===#
     # Constructors

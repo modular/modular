@@ -544,9 +544,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
 
     @implicit
     @always_inline("nodebug")
-    def __init__(
-        out self, var tuple: Tuple[*Self.element_types.upcast[Movable]()]
-    ):
+    def __init__(out self, var tuple: Tuple[*Self.element_types]):
         """Construct from a Tuple with matching element types.
 
         Args:
@@ -1380,7 +1378,7 @@ def coord[
             Trait=CoordLike, type_of(values).__len__(), RuntimeInt[dtype]
         ]()
     ],
-) where _AllEqual[Int, *element_types.upcast[AnyType]()]:
+) where _AllEqual[Int, *element_types]:
     """Create a `Coord` from a tuple of integers with specified dtype.
 
     Parameters:

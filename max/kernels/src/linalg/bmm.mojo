@@ -166,8 +166,8 @@ def _reshape_tile_tensor_with_batch_to_3d(
     comptime out_stride_types = type_of(result).LayoutType._stride_types
     comptime rank = tensor.rank
     comptime assert rank >= 3, "expecting at least rank-3 TileTensor"
-    var shape = Tuple[*out_shape_types.upcast[Movable]()]()
-    var strides = Tuple[*out_stride_types.upcast[Movable]()]()
+    var shape = Tuple[*out_shape_types]()
+    var strides = Tuple[*out_stride_types]()
 
     comptime for i in range(3):
         comptime idx = rank - 3 + i

@@ -1471,9 +1471,7 @@ struct _FusedInputVariadicTensors[
     """
 
     var _tensors: StaticTuple[DynamicTensor[Self.dtype, Self.rank], Self.size]
-    var _fusions: _FusionPack[
-        *Self.FusionTypes.upcast[TrivialRegisterPassable]()
-    ]
+    var _fusions: _FusionPack[*Self.FusionTypes]
 
     def __init__(
         out self,
@@ -1482,9 +1480,7 @@ struct _FusedInputVariadicTensors[
             Self.size,
         ],
         shapes: StaticTuple[IndexList[Self.rank], Self.size],
-        fusions: _FusionPack[
-            *Self.FusionTypes.upcast[TrivialRegisterPassable]()
-        ],
+        fusions: _FusionPack[*Self.FusionTypes],
     ):
         comptime for i in range(Self.size):
             comptime assert not _type_is_eq[
@@ -1565,9 +1561,7 @@ struct _FusedOutputVariadicTensors[
     """
 
     var _tensors: StaticTuple[DynamicTensor[Self.dtype, Self.rank], Self.size]
-    var _fusions: _FusionPack[
-        *Self.FusionTypes.upcast[TrivialRegisterPassable]()
-    ]
+    var _fusions: _FusionPack[*Self.FusionTypes]
 
     def __init__(
         out self,
@@ -1576,9 +1570,7 @@ struct _FusedOutputVariadicTensors[
             Self.size,
         ],
         shapes: StaticTuple[IndexList[Self.rank], Self.size],
-        fusions: _FusionPack[
-            *Self.FusionTypes.upcast[TrivialRegisterPassable]()
-        ],
+        fusions: _FusionPack[*Self.FusionTypes],
     ):
         comptime for i in range(Self.size):
             comptime assert not _type_is_eq[

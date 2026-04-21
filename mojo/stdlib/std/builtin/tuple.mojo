@@ -45,27 +45,24 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 
 @lldb_formatter_wrapping_type
 struct Tuple[*element_types: Movable](
-    Copyable where AllCopyable[*element_types.upcast[AnyType]()],
-    Defaultable where AllDefaultable[*element_types.upcast[AnyType]()],
-    Equatable where AllEquatable[*element_types.upcast[AnyType]()],
-    Hashable where AllHashable[*element_types.upcast[AnyType]()],
+    Copyable where AllCopyable[*element_types],
+    Defaultable where AllDefaultable[*element_types],
+    Equatable where AllEquatable[*element_types],
+    Hashable where AllHashable[*element_types],
     # TODO(MOCO-3421): AllImplicitlyCopyable implies AllCopyable since
     # ImplicitlyCopyable refines Copyable, but the compiler can't infer
     # parent trait constraints from derived ones yet. Remove AllCopyable
     # from this where clause once that's fixed.
     ImplicitlyCopyable where (
-        AllImplicitlyCopyable[*element_types.upcast[AnyType]()]
-        and AllCopyable[*element_types.upcast[AnyType]()]
+        AllImplicitlyCopyable[*element_types] and AllCopyable[*element_types]
     ),
     # ImplicitlyDestructible and Movable are listed explicitly because
     # conditional conformances require all conformances to be stated.
     ImplicitlyDestructible,
     Movable,
-    RegisterPassable where AllRegisterPassable[
-        *element_types.upcast[AnyType]()
-    ],
+    RegisterPassable where AllRegisterPassable[*element_types],
     Sized,
-    Writable where AllWritable[*element_types.upcast[AnyType]()],
+    Writable where AllWritable[*element_types],
 ):
     """The type of a literal tuple expression.
 
@@ -102,7 +99,7 @@ struct Tuple[*element_types: Movable](
         )
 
         # TODO(MOCO-3791): Replace the per-element `comptime assert` below
-        # with `where AllDefaultable[*Self.element_types.upcast[AnyType]()]`
+        # with `where AllDefaultable[*Self.element_types ]`
         # once the solver can prove reducer-based `where` clauses for
         # generic callers that forward parameter packs.
         comptime for i in range(Self.__len__()):
@@ -263,7 +260,7 @@ struct Tuple[*element_types: Movable](
     @always_inline
     def __eq__(
         self, other: Self
-    ) -> Bool where AllEquatable[*Self.element_types.upcast[AnyType]()]:
+    ) -> Bool where AllEquatable[*Self.element_types]:
         """Compare this tuple to another tuple using equality comparison.
 
         Args:
@@ -281,9 +278,7 @@ struct Tuple[*element_types: Movable](
 
     def __hash__[
         H: Hasher
-    ](self, mut hasher: H) where AllHashable[
-        *Self.element_types.upcast[AnyType]()
-    ]:
+    ](self, mut hasher: H) where AllHashable[*Self.element_types]:
         """Hashes the tuple using the given hasher.
 
         Parameters:
@@ -298,9 +293,7 @@ struct Tuple[*element_types: Movable](
     @no_inline
     def _write_tuple_to[
         *, is_repr: Bool
-    ](self, mut writer: Some[Writer]) where AllWritable[
-        *Self.element_types.upcast[AnyType]()
-    ]:
+    ](self, mut writer: Some[Writer]) where AllWritable[*Self.element_types]:
         """Write this tuple's elements to a writer.
 
         Parameters:
@@ -328,7 +321,7 @@ struct Tuple[*element_types: Movable](
     @no_inline
     def write_to(
         self, mut writer: Some[Writer]
-    ) where AllWritable[*Self.element_types.upcast[AnyType]()]:
+    ) where AllWritable[*Self.element_types]:
         """Write this tuple's text representation to a writer.
 
         Elements are formatted using their `write_to()` representation.
@@ -344,7 +337,7 @@ struct Tuple[*element_types: Movable](
     @no_inline
     def write_repr_to(
         self, mut writer: Some[Writer]
-    ) where AllWritable[*Self.element_types.upcast[AnyType]()]:
+    ) where AllWritable[*Self.element_types]:
         """Write this tuple's debug representation to a writer.
 
         Outputs the type name and parameters followed by elements formatted
@@ -360,7 +353,7 @@ struct Tuple[*element_types: Movable](
             self._write_tuple_to[is_repr=True](w)
 
         FormatStruct(writer, "Tuple").params(
-            TypeNames[*Self.element_types.upcast[AnyType]()]()
+            TypeNames[*Self.element_types]()
         ).fields[
             FieldsFn=fields,
         ]()
@@ -368,7 +361,7 @@ struct Tuple[*element_types: Movable](
     @always_inline
     def _compare(
         self, other: Self
-    ) -> Int where AllComparable[*Self.element_types.upcast[AnyType]()]:
+    ) -> Int where AllComparable[*Self.element_types]:
         comptime self_len = type_of(self).__len__()
         comptime other_len = type_of(other).__len__()
 
@@ -393,7 +386,7 @@ struct Tuple[*element_types: Movable](
     @always_inline
     def __lt__(
         self, other: Self
-    ) -> Bool where AllComparable[*Self.element_types.upcast[AnyType]()]:
+    ) -> Bool where AllComparable[*Self.element_types]:
         """Compare this tuple to another tuple using less than comparison.
 
         Args:
@@ -407,7 +400,7 @@ struct Tuple[*element_types: Movable](
     @always_inline
     def __le__(
         self, other: Self
-    ) -> Bool where AllComparable[*Self.element_types.upcast[AnyType]()]:
+    ) -> Bool where AllComparable[*Self.element_types]:
         """Compare this tuple to another tuple using less than or equal to comparison.
 
         Args:
@@ -421,7 +414,7 @@ struct Tuple[*element_types: Movable](
     @always_inline
     def __gt__(
         self, other: Self
-    ) -> Bool where AllComparable[*Self.element_types.upcast[AnyType]()]:
+    ) -> Bool where AllComparable[*Self.element_types]:
         """Compare this tuple to another tuple using greater than comparison.
 
         Args:
@@ -436,7 +429,7 @@ struct Tuple[*element_types: Movable](
     @always_inline
     def __ge__(
         self, other: Self
-    ) -> Bool where AllComparable[*Self.element_types.upcast[AnyType]()]:
+    ) -> Bool where AllComparable[*Self.element_types]:
         """Compare this tuple to another tuple using greater than or equal to comparison.
 
         Args:

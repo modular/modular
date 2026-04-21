@@ -834,7 +834,7 @@ def row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
     comptime RowMajorTypes = _RowMajor[*shape.element_types]
     comptime rank = shape.element_types.size
 
-    var strides = Tuple[*RowMajorTypes.upcast[Movable]()]()
+    var strides = Tuple[*RowMajorTypes]()
 
     comptime for i in range(rank):
         comptime idx = rank - 1 - i  # Process in reverse order
@@ -890,7 +890,7 @@ def row_major[
     comptime RowMajorTypes = _RowMajor[*element_types]
     comptime rank = element_types.size
 
-    var strides = Tuple[*RowMajorTypes.upcast[Movable]()]()
+    var strides = Tuple[*RowMajorTypes]()
 
     # Compute row-major strides on the flattened shape
     # Row-major means rightmost dimension has stride 1,
@@ -1044,7 +1044,7 @@ def col_major(var shape: Coord) -> ColMajorLayout[shape.element_types]:
     comptime ColMajorTypes = _ColMajor[*shape.element_types]
     comptime rank = shape.element_types.size
 
-    var strides = Tuple[*ColMajorTypes.upcast[Movable]()]()
+    var strides = Tuple[*ColMajorTypes]()
 
     # Compute column-major strides on the shape
     # Column-major means leftmost dimension has stride 1,
