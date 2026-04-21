@@ -13,7 +13,7 @@
 
 # CHECK-DAG: [[INT:!.*]] = !lit.struct<@{{.*}}::@Int>
 # CHECK-DAG: lit.fn @"outer()"() -> [[INT]]
-# CHECK-DAG: lit.fn @"stateless()`{{.*}}"() -> [[INT]] attributes {sourceName = "stateless"
+# CHECK-DAG: lit.fn @"stateless()`{{.*}}"() -> [[INT]] attributes {{{.*}}sourceName = "stateless"
 
 
 def outer() -> Int:

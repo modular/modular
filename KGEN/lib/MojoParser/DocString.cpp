@@ -94,6 +94,9 @@ static bool requiresDocString(FnOp op) {
   if (hasDocHiddenDecorator(op.getDecorators()))
     return false;
 
+  if (op.getNoDocRequired())
+    return false;
+
   Operation *parent = op->getParentOp();
   if (isa<FileModuleOp>(parent))
     return true;
