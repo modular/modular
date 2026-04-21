@@ -92,7 +92,7 @@ def main() raises:
 
     # COM: Copyable closures
     @no_inline
-    def copyMem() unified {var ^}:
+    def copyMem() unified {var^}:
         print(movableMem.to_string())
 
     # CHECK: copied mem
