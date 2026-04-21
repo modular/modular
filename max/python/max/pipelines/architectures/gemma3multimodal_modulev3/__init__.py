@@ -10,10 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+"""Gemma 3 vision-language architecture for multimodal text generation."""
 
 from .arch import gemma3_multimodal_modulev3_arch
+from .model import Gemma3MultiModalModelV3
+from .model_config import Gemma3ForConditionalGenerationConfig
 
 ARCHITECTURES = [gemma3_multimodal_modulev3_arch]
 
-__all__ = ["ARCHITECTURES", "gemma3_multimodal_modulev3_arch"]
+__all__ = [
+    "ARCHITECTURES",
+    "Gemma3ForConditionalGenerationConfig",
+    "Gemma3MultiModalModelV3",
+    "gemma3_multimodal_modulev3_arch",
+]

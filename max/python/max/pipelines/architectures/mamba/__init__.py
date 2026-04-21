@@ -10,9 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Mamba state-space architecture for text generation."""
 
 from .arch import mamba_arch
+from .model import MambaModel
+from .model_config import MambaConfig
 
-__all__ = [
-    "mamba_arch",
-]
+__all__ = ["MambaConfig", "MambaModel", "mamba_arch"]

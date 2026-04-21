@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""FLUX.2 diffusion architecture for image generation."""
 
 from .arch import (
     flux2_klein_modulev3_arch,

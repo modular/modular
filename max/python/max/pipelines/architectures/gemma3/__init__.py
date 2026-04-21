@@ -10,8 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+"""Gemma 3 transformer architecture for text generation."""
 
 from .arch import gemma3_arch
+from .model import Gemma3Model
+from .model_config import Gemma3Config
 
-__all__ = ["gemma3_arch"]
+__all__ = ["Gemma3Config", "Gemma3Model", "gemma3_arch"]

@@ -10,14 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Wan diffusion architecture for video generation."""
 
-from .arch import wan_arch, wan_i2v_arch
+from .arch import WanArchConfig, wan_arch, wan_i2v_arch
 from .context import WanContext
 from .model import WanTransformerModel
 from .tokenizer import WanTokenizer
 from .wan_executor import WanExecutor
 
 __all__ = [
+    "WanArchConfig",
     "WanContext",
     "WanExecutor",
     "WanTokenizer",

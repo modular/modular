@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Granite (eager) architecture, builds on :mod:`~max.pipelines.architectures.llama3_modulev3`."""
 
 from .arch import granite_modulev3_arch
 

@@ -10,10 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
-
-"""Kimi K2.5 pipeline architecture."""
+"""Kimi K2.5 mixture-of-experts architecture for text generation."""
 
 from .arch import eagle3_kimik25_arch, kimik2_5_arch, kimivl_arch
+from .model import KimiK2_5Model
+from .model_config import KimiK2_5Config
 
-__all__ = ["eagle3_kimik25_arch", "kimik2_5_arch", "kimivl_arch"]
+__all__ = [
+    "KimiK2_5Config",
+    "KimiK2_5Model",
+    "eagle3_kimik25_arch",
+    "kimik2_5_arch",
+    "kimivl_arch",
+]

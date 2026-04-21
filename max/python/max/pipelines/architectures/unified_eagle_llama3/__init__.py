@@ -10,7 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""EAGLE speculative decoding draft model for Llama 3 with unified graph compilation."""
 
 from .arch import unified_eagle_llama3_arch
+from .model import UnifiedEagleLlama3Model
+from .model_config import UnifiedEagleLlama3Config
 
-__all__ = ["unified_eagle_llama3_arch"]
+__all__ = [
+    "UnifiedEagleLlama3Config",
+    "UnifiedEagleLlama3Model",
+    "unified_eagle_llama3_arch",
+]

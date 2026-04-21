@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""ModuleV3-only Mistral3 architecture components."""
+"""Mistral 3 vision-language architecture for multimodal text generation."""
 
 from .text_encoder import Mistral3TextEncoderModel
 

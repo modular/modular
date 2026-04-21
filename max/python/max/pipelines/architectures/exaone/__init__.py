@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""EXAONE architecture, builds on :mod:`~max.pipelines.architectures.llama3`."""
 
 from .arch import exaone_arch
 
