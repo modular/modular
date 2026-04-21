@@ -807,7 +807,9 @@ def build_realize_future_token_graph(
             else:
                 # TP > 1
                 assert spec_decode.signal_buffers is not None
-                cache_length_u32 = curr_cache_lenghts[0]
+                cache_length_u32 = ops.rebind(
+                    curr_cache_lenghts[0], ["curr_batch_size"]
+                )
                 cache_length_adjusted = (
                     cache_length_u32.cast(DType.int64) + batch_increments_i64
                 ).cast(DType.uint32)
@@ -963,9 +965,16 @@ class RealizeFutureTokenProcessor:
                 prev_batch.spec_decode.draft_tokens_to_verify_device
             )
             signal_buffers = getattr(model_inputs, "signal_buffers", None)
+
             data_parallel_splits = getattr(
                 model_inputs, "data_parallel_splits", None
             )
+            # dp_splits.shape[0] == num_replicas + 1
+            if (
+                data_parallel_splits is not None
+                and data_parallel_splits.shape[0] <= 2
+            ):
+                data_parallel_splits = None
             if num_draft_tokens_to_verify == 0:
                 prev_batch_size = prev_generated_draft_tokens.shape[0]
                 prev_generated_draft_tokens = Buffer(
