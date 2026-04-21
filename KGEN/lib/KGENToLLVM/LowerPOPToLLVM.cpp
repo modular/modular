@@ -3370,9 +3370,19 @@ struct LowerPOPToLLVMPass
     : public KGEN::impl::LowerPOPToLLVMBase<LowerPOPToLLVMPass> {
   using LowerPOPToLLVMBase::LowerPOPToLLVMBase;
 
-  LowerPOPToLLVMPass() : plugin(nullptr) {}
+  LowerPOPToLLVMPass()
+      : passLocalPlugin(std::make_unique<Plugin>()),
+        plugin(passLocalPlugin.get()) {}
 
   LowerPOPToLLVMPass(const Plugin *plugin) : plugin(plugin) {}
+
+  LowerPOPToLLVMPass(const LowerPOPToLLVMPass &other)
+      : passLocalPlugin(std::make_unique<Plugin>()),
+        plugin(passLocalPlugin.get()) {}
+
+  LowerPOPToLLVMPass(LowerPOPToLLVMPass &&other)
+      : passLocalPlugin(std::move(other.passLocalPlugin)),
+        plugin(passLocalPlugin.get()) {}
 
   void runOnOperation() override;
 
@@ -3380,7 +3390,11 @@ struct LowerPOPToLLVMPass
   FailureOr<mlir::FunctionOpInterface> validateOperation();
 
 private:
-  const Plugin *plugin;
+  /// pass local plugin, only created if the pass is created as a
+  /// standalone pass, e.g. though kgen-opt
+  std::unique_ptr<Plugin> passLocalPlugin = nullptr;
+
+  const Plugin *plugin = nullptr;
 };
 } // namespace
 
@@ -3476,16 +3490,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
   patterns.insert<ConvertPOPStackAllocation, ConvertPOPStackAllocLifetimeStart,
                   ConvertPOPStackAllocLifetimeEnd>(typeConverter, targetInfo);
 
-  std::unique_ptr<Plugin> passPlugin = nullptr;
   if (isPluginBackend(targetInfo.getTriple())) {
-    if (!plugin) {
-      // Create a new Plugin if plugin is not set. This happens
-      // when running lower-to-llvm as standalone pass with kgen tools where
-      // there is not a ObjectCompiler on top to share the plugin.
-      passPlugin = std::make_unique<Plugin>();
-      plugin = passPlugin.get();
-    }
-
     auto populatePatternsFn = plugin->getPopulateLowerPOPToLLVMPatternsFn();
     // Don't fail if plugin is not loaded or doesn't provide the pattern
     // population function, just keep continuing with the default patterns. We
@@ -3885,13 +3890,27 @@ struct LowerGlobalPOPToLLVMPass
     : public KGEN::impl::LowerGlobalPOPToLLVMBase<LowerGlobalPOPToLLVMPass> {
   using LowerGlobalPOPToLLVMBase::LowerGlobalPOPToLLVMBase;
 
-  LowerGlobalPOPToLLVMPass() : plugin(nullptr) {}
+  LowerGlobalPOPToLLVMPass()
+      : passLocalPlugin(std::make_unique<Plugin>()),
+        plugin(passLocalPlugin.get()) {}
+
+  LowerGlobalPOPToLLVMPass(const LowerGlobalPOPToLLVMPass &other)
+      : passLocalPlugin(std::make_unique<Plugin>()),
+        plugin(passLocalPlugin.get()) {}
+
+  LowerGlobalPOPToLLVMPass(LowerGlobalPOPToLLVMPass &&other)
+      : passLocalPlugin(std::move(other.passLocalPlugin)),
+        plugin(passLocalPlugin.get()) {}
 
   LowerGlobalPOPToLLVMPass(const Plugin *plugin) : plugin(plugin) {}
 
   void runOnOperation() override;
 
 private:
+  /// pass local plugin, only created if the pass is created as a
+  /// standalone pass, e.g. though kgen-opt
+  std::unique_ptr<Plugin> passLocalPlugin = nullptr;
+
   const Plugin *plugin = nullptr;
 };
 
@@ -3958,16 +3977,7 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
   // pop.compiler.* are all illegal.
   target.addIllegalOp<CompilerGlobalLoadOp, CompilerGlobalStoreOp>();
 
-  std::unique_ptr<Plugin> passPlugin = nullptr;
   if (isPluginBackend(targetInfo.getTriple())) {
-    if (!plugin) {
-      // Create a new Plugin if plugin is not set. This happens
-      // when running lower-to-llvm as a standalone pass with kgen tools where
-      // there is not a ObjectCompiler on top to share the plugin.
-      passPlugin = std::make_unique<Plugin>();
-      plugin = passPlugin.get();
-    }
-
     auto populatePatternsFn =
         plugin->getPopulateLowerGlobalPOPToLLVMPatternsFn();
     if (!populatePatternsFn.isError()) {
