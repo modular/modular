@@ -1365,8 +1365,15 @@ ElaborationState ParametricElaborator::processParamForOp(PImplNode *parent,
     }
 
     // Now schedule the work item for this body, binding this iterator value
-    // to the loop decl parameter.
-    assert(iterParamDecl.getType() == value.getType() &&
+    // to the loop decl parameter. Concretize the decl's type through the
+    // current parameter bindings before comparing: the raw decl type can
+    // carry parametric references (e.g. pack expansions, or
+    // `#kgen.param_list.tabulate` inside `Tuple<...>`) that reduce to the
+    // concretized form the iterator values carry only after substitution.
+    Type concreteIterType;
+    HANDLE_EVALUATOR_CONC(concreteIterType, parent, op.getLoc(),
+                          iterParamDecl.getType());
+    assert(concreteIterType == value.getType() &&
            "iterator value type should match the loop decl type");
     nextItem.evaluator.setDeclBinding(iterParamDecl, value);
     parent->stack.push_back(std::move(nextItem));
