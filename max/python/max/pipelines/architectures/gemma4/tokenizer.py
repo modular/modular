@@ -409,6 +409,7 @@ class Gemma4Tokenizer(TextAndVisionTokenizer):
         return Gemma4Context(
             request_id=request.request_id,
             eos_tracker=eos_tracker,
+            target_endpoint=request.target_endpoint,
             mm_token_type_ids=mm_token_type_ids.astype(np.int64, copy=False),
             pixel_position_ids=pixel_position_ids_list,
             video_frame_patches=video_frame_patches,

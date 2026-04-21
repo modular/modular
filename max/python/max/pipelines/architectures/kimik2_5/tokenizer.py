@@ -331,6 +331,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             else self.max_length,
             json_schema=json_schema,
             sampling_params=request.sampling_params,
+            target_endpoint=request.target_endpoint,
             grid_thws=grid_thws,
             position_ids=position_ids,
             image_token_indices=image_token_indices,
