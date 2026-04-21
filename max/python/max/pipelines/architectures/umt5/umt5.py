@@ -31,7 +31,11 @@ from .model_config import UMT5ConfigBase
 
 
 class UMT5LayerNorm(Module):
-    """T5-style RMSNorm (no bias, no mean subtraction)."""
+    """T5-style RMSNorm (no bias, no mean subtraction).
+
+    Uses the fused ``ops.rms_norm`` kernel (Llama-style: normalize in
+    f32, cast to output dtype, then multiply by weight).
+    """
 
     def __init__(
         self,
@@ -44,15 +48,15 @@ class UMT5LayerNorm(Module):
         super().__init__()
         self.weight = Weight("weight", dtype, [hidden_size], device)
         self.variance_epsilon = eps
-        self._dtype = dtype
 
     def __call__(self, hidden_states: TensorValue) -> TensorValue:
-        x = ops.cast(hidden_states, DType.float32)
-        variance = ops.mean(x * x, axis=-1)
-        x = x * ops.rsqrt(variance + self.variance_epsilon)
-        if self._dtype in (DType.float16, DType.bfloat16):
-            x = ops.cast(x, self._dtype)
-        return ops.cast(self.weight, x.dtype) * x
+        return ops.rms_norm(
+            hidden_states,
+            self.weight,
+            self.variance_epsilon,
+            weight_offset=0.0,
+            multiply_before_cast=False,
+        )
 
 
 class UMT5DenseActDense(Module):
