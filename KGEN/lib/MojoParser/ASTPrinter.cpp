@@ -1026,13 +1026,6 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto zip = dyn_cast<ParamListZipAttr>(param)) {
-    os << "#" << zip.name << "(";
-    printParam(os, zip.getParamLists(), diagShared);
-    os << ")";
-    return;
-  }
-
   if (auto tabulate = dyn_cast<ParamListTabulateAttr>(param)) {
     os << "#" << tabulate.name << "(";
     printParam(os, tabulate.getCount(), diagShared);

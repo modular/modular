@@ -153,46 +153,6 @@ def KGEN_ParamListReduceAttr : KGEN_ExprAttr<"ParamListReduce", "param_list.redu
   let genVerifyDecl = 1;
 }
 
-def KGEN_ParamListZipAttr : KGEN_ExprAttr<"ParamListZip", "param_list.zip"> {
-  let summary = "Zip a param_list of param_list values.";
-  let description = [{
-    The `#kgen.param_list.zip` attribute is used to zip a param_list of
-    param_list values.
-
-    Example:
-    ```mlir
-    #kgen.param_list.zip<[[Int, Int], [Float, Float]]> : !param_list<!param_list<!AnyType>>
-    // ->
-    #kgen.param_list<[[Int, Float], [Int, Float]]> : !param_list<!param_list<!AnyType>>
-    ```
-
-    At the moment, when the provided param_list are of different lengths, we zip
-    until the shortest list are consumed. In the future, we might want to
-    extend the attribute to accept an "default" value for "zip_longest".
-  }];
-
-  let parameters = (ins
-    AttributeSelfTypeParameter<"", "ParamListType">:$type,
-    "TypedAttr":$paramLists
-  );
-
-  let builders = [
-    // Override the default builder used by the generated parser because this
-    // may not return an #kgen.param_list.zip.
-    AttrBuilderWithInferredContext<(ins
-       "ParamListType":$type, "TypedAttr":$paramLists), "", "TypedAttr">,
-
-    // Verbose form with MLIRContext, needed for ODS constructors.
-    AttrBuilder<(ins "ParamListType":$type, "TypedAttr":$paramLists), [{
-      return get(type, paramLists);
-    }], "TypedAttr">,
-  ];
-
-  let assemblyFormat = "`<` $paramLists `>`";
-  let genVerifyDecl = 1;
-  let skipDefaultBuilders = 1;
-}
-
 def KGEN_ParamListTabulateAttr : KGEN_ExprAttr<"ParamListTabulate", "param_list.tabulate",
   [DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
                                ["evaluateWithContext"]>]> {
