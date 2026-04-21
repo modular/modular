@@ -24,12 +24,12 @@ struct SomeVA[*elt_types: AnyType]:
 
 
 # @expected-note @below{{function declared here}}
-def all_copyable[*elt_type: Copyable](t: SomeVA[*elt_type.upcast[AnyType]()]):
+def all_copyable[*elt_type: Copyable](t: SomeVA[*elt_type]):
     pass
 
 
 # @expected-note @below{{function declared here}}
-def all_int[*elt_type: type_of(Int)](t: SomeVA[*elt_type.upcast[AnyType]()]):
+def all_int[*elt_type: type_of(Int)](t: SomeVA[*elt_type]):
     pass
 
 
@@ -47,6 +47,18 @@ struct ParamSubst[
     T: TrivialRegisterPassable,
     shape: __mlir_type[`!kgen.param_list<`, T, `>`],
 ]:
+    pass
+
+
+# expected-note @below {{function declared here}}
+def more_refined_variadic[*elt_type: Copyable]():
+    pass
+
+
+# TODO: better error message: print out the constraint failure reason.
+def less_refined_variadic[*elt_type: AnyType]():
+    # expected-error @below {{invalid call to 'more_refined_variadic': value passed to 'elt_type' cannot be converted from 'TypeList[values]' to 'TypeList[elt_type.values]'}}
+    more_refined_variadic[*elt_type]()
     pass
 
 

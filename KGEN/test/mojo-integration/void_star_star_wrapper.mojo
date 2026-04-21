@@ -63,9 +63,7 @@ def wrapped_entry_point[
         T, MutExternalOrigin
     ]
     comptime UnsafePointerTupleType = Tuple[
-        *kernel.declared_arg_types.map[to_unsafe_pointer_mapper]().upcast[
-            Movable
-        ]()
+        *kernel.declared_arg_types.map[to_unsafe_pointer_mapper]()
     ]
     var ptr_tuple: UnsafePointerTupleType = {}
 

@@ -701,13 +701,13 @@ struct UnqualAliasLookup[param: Int]:
 ##===----------------------------------------------------------------------===##
 
 # CHECK-LABEL: lit.fn @"fnWithVariadics
-# CHECK-SAME: <["b.values`"]*"b.values`": param_list<!Int>, +, 
+# CHECK-SAME: <["b.values`"]*"b.values`": param_list<!Int>, +,
 # CHECK-SAME: b: !lit.struct<#ParameterList <:!AnyType !Int, :param_list<!Int> *"b.values`">> pos_vararg>
 def fnWithVariadics[*b: Int]():
   pass
 
 # CHECK-LABEL: lit.struct.decl @StructWithVariadics
-# CHECK-SAME: <["b.values`"]*"b.values`": param_list<!Int>, +, 
+# CHECK-SAME: <["b.values`"]*"b.values`": param_list<!Int>, +,
 # CHECK-SAME: b: !lit.struct<#ParameterList <:!AnyType !Int, :param_list<!Int> *"b.values`">> pos_vararg>
 struct StructWithVariadics[*b: Int]:
     @implicit
@@ -941,11 +941,11 @@ def tail_types[T: TrivialRegisterPassable, *U: AnyType](a: T, *b: *U):
 
 # CHECK-LABEL: lit.fn @"call_with_tail_types()"
 def call_with_tail_types():
-    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [], :!TrivialRegisterPassable !Int, 
+    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [], :!TrivialRegisterPassable !Int,
     tail_types(1)
-    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [!FloatDyn], :!TrivialRegisterPassable !Int, 
+    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [!FloatDyn], :!TrivialRegisterPassable !Int,
     tail_types(1, 1.2)
-    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [!Int], :!TrivialRegisterPassable !Int, 
+    # CHECK: call {{.*}}tail_types{{.*}}<:param_list<!AnyType> [!Int], :!TrivialRegisterPassable !Int,
     tail_types(1, 77)
 
 # COM: We can't infer parameters from the default value, but we need to test if
@@ -1837,5 +1837,4 @@ def upcast_typelist_callee[y: TypeList[Trait=AnyType, ...]]():
 def upcast_typelist_caller[x: TypeList[Trait=Movable, ...]]():
     # TODO(MOCO-3712): Causes segfault.
     #comptime a: TypeList[Trait=AnyType, ...] = x
-    upcast_typelist_callee[x.upcast[AnyType]()]()
-
+    upcast_typelist_callee[x]

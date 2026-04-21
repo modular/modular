@@ -876,9 +876,7 @@ from std.reflection.traits import AllWritable
 
 def repr_with_where[
     *types: Movable & Writable
-](t: Tuple[*types.upcast[Movable]()]) -> String where AllWritable[
-    *types.upcast[AnyType]()
-]:
+](t: Tuple[*types]) -> String where AllWritable[*types]:
     return repr(t)
 
 

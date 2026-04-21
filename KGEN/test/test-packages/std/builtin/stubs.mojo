@@ -1054,16 +1054,23 @@ struct TypeList[
     def __init__(out self):
         pass
 
-    # TODO: Support implicit conversion from a more derived trait to a base one.
-    comptime upcast[dst_trait: type_of(AnyType)] = TypeList[
-        Trait=dst_trait,
-        __mlir_attr[
-            `#kgen.upcast<`,
-            Self.values,
-            `> : `,
-            _MLIR.KGENTypeListType[dst_trait],
+    @implicit
+    @always_inline("builtin")
+    def __init__(
+        existing: TypeList[...],
+        out self: TypeList[
+            Trait=Self.Trait,
+            __mlir_attr[
+                `#kgen.upcast<`,
+                existing.values,
+                `> : `,
+                _MLIR.KGENTypeListType[Self.Trait],
+            ],
         ],
-    ]
+    ) where __mlir_attr[
+        `#kgen.is_refined_type<`, existing.Trait, `, `, Self.Trait, `>`
+    ]:
+        pass
 
     comptime tabulate[
         Trait: type_of(AnyType),
