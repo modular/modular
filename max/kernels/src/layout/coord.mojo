@@ -1447,7 +1447,7 @@ Returns:
 comptime _FlattenReducer[
     Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
+    idx: SIMDSize,
 ] = Variadic.concat_types[
     Prev,
     TypeList[From]()[idx]
@@ -1499,7 +1499,7 @@ comptime _NextOffset[
 comptime _FlattenOffsetReducer[
     Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
+    idx: SIMDSize,
 ] = Variadic.concat_types[
     Prev,
     TypeList.of[
@@ -1948,7 +1948,7 @@ struct _RegTuple[*element_types: CoordLike](
 
         # KGenPointer to the element.
         var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[
-            index=idx.__mlir_index__()
+            index=idx._int_mlir_index()
         ](storage_kgen_ptr)
         return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
 

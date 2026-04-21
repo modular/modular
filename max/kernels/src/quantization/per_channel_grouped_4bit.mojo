@@ -20,7 +20,7 @@ from std.utils import IndexList, StaticTuple, product
 
 @always_inline
 def _to_StaticTuple[
-    dtype: DType, size: Int
+    dtype: DType, size: SIMDSize
 ](data: SIMD[dtype, size]) -> StaticTuple[Scalar[dtype], size]:
     """Convert SIMD to StaticTuple."""
 
@@ -45,7 +45,7 @@ def _to_SIMD[
 
 @always_inline
 def calculate_symmetric_vector[
-    input_dtype: DType, simd_width: Int, output_bits: Int
+    input_dtype: DType, simd_width: SIMDSize, output_bits: Int
 ](data: SIMD[input_dtype, simd_width]) -> Tuple[
     SIMD[DType.uint8, simd_width],
     Scalar[input_dtype],

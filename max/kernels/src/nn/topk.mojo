@@ -785,7 +785,7 @@ def _warp_reduce_topk[
     # Shuffle function for TopK_2 structure
     @parameter
     def shuffle_topk2(v: TopK_2[T, largest], offset: Int) -> TopK_2[T, largest]:
-        comptime fn_type = def[dtype: DType, simd_width: Int](
+        comptime fn_type = def[dtype: DType, simd_width: SIMDSize](
             val: SIMD[dtype, simd_width], offset: UInt32
         ) thin -> SIMD[dtype, simd_width]
         comptime xor_fn: fn_type = warp.shuffle_xor

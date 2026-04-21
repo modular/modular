@@ -1672,7 +1672,7 @@ struct Struct_ep_combine_wait:
         @parameter
         @always_inline
         def output_fn[
-            dtype: DType, width: Int, *, alignment: Int = 1
+            dtype: DType, width: SIMDSize, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[dtype, width]):
             output_tokens._lambda_store[
                 width=width, element_alignment=alignment
@@ -1749,7 +1749,7 @@ struct Struct_ep_combine:
         @parameter
         @always_inline
         def output_fn[
-            dtype: DType, width: Int, *, alignment: Int = 1
+            dtype: DType, width: SIMDSize, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[dtype, width]):
             output_tokens._lambda_store[
                 width=width, element_alignment=alignment

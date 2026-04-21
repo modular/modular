@@ -957,7 +957,7 @@ def _matmul_dynamic_scaled_fp8_impl[
             @__copy_capture(a_scales, b_scales)
             def scale_compute_lambda_fn[
                 _dtype: DType,
-                width: Int,
+                width: SIMDSize,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -985,7 +985,7 @@ def _matmul_dynamic_scaled_fp8_impl[
             @__copy_capture(a_scales, b_scales)
             def scale_compute_lambda_fn_tensor[
                 _dtype: DType,
-                width: Int,
+                width: SIMDSize,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -1023,7 +1023,7 @@ def _matmul_dynamic_scaled_fp8_impl[
             @__copy_capture(c, a_scales, b_scales)
             @always_inline
             def scaled_output_fn[
-                dtype: DType, width: Int, *, alignment: Int = 1
+                dtype: DType, width: SIMDSize, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
                 var a_scale = a_scales.load[width=1](
                     Coord(Idx[0](), Idx(idx[0]))
@@ -1050,7 +1050,7 @@ def _matmul_dynamic_scaled_fp8_impl[
             @__copy_capture(c, a_scales, b_scales)
             @always_inline
             def scaled_output_fn_tensor[
-                dtype: DType, width: Int, *, alignment: Int = 1
+                dtype: DType, width: SIMDSize, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
                 var a_scale = a_scales.load[width=1](
                     Coord(Idx[0](), Idx[0]())

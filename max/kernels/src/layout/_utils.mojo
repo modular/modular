@@ -195,7 +195,7 @@ def load_to_simd(
     ), "load_to_simd is supported only for tensors with known layout"
     comptime size = type_of(res).size
     return rebind[type_of(res)](
-        tensor.reshape[Layout(size)]().vectorize[size]()[0]
+        tensor.reshape[Layout(Int(size))]().vectorize[size]()[0]
     )
 
 

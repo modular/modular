@@ -1231,7 +1231,7 @@ def mgp_buffer_get_cached(
 
 @register_internal("mgp.buffer.remove_cached")
 @no_inline
-def mgp_buffer_remove_cached(ctx: StateContextRef, buffer_slot: UInt64):
+def mgp_buffer_remove_cached(ctx: StateContextRef, buffer_slot: Int):
     external_call["TMP_MGP_RT_RemoveCachedBuffer", NoneType](buffer_slot, ctx)
 
 

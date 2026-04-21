@@ -785,7 +785,7 @@ comptime _UnwrapSingleTuple[*element_types: CoordLike] = TypeList[
 comptime _RowMajorMapper[
     Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
+    idx: SIMDSize,
 ] = Variadic.concat_types[
     TypeList.of[Trait=CoordLike, ComptimeInt[1]]().values if idx
     == 0 else (
@@ -974,7 +974,7 @@ comptime _ColMajor[*element_types: CoordLike] = TypeList[
 comptime _ColMajorMapper[
     Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
+    idx: SIMDSize,
 ] = Variadic.concat_types[
     Prev,
     TypeList.of[Trait=CoordLike, ComptimeInt[1]]().values if idx
@@ -1794,7 +1794,7 @@ comptime _CoalesceReducer[
     flat_stride_types: TypeList[Trait=CoordLike, ...],
     Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.TypesOfTrait[CoordLike],
-    idx: Int,
+    idx: SIMDSize,
 ] = Prev if flat_shape_types[idx].static_value == 1 else (
     # prev_shape == 1: replace last pair with current (shape, stride)
     Variadic.concat_types[

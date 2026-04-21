@@ -42,7 +42,7 @@ from std.utils import IndexList, StaticTuple, product
 from .gather_scatter import normalize_neg_index
 
 comptime elementwise_epilogue_type = def[
-    c_type: DType, rank: Int, width: Int = 1, *, alignment: Int = 1
+    c_type: DType, rank: Int, width: SIMDSize = 1, *, alignment: Int = 1
 ](IndexList[rank], SIMD[c_type, width]) capturing -> None
 
 

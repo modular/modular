@@ -23,7 +23,7 @@ import std.math
 
 @always_inline("nodebug")
 def _is_neg[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](val: SIMD[dtype, simd_width]) -> SIMD[DType.bool, simd_width]:
     """Returns True if the input value is negative.
 
@@ -49,7 +49,7 @@ def _is_neg[
 
 @always_inline
 def sign[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the sign (0, 1) of the input value.
 
@@ -75,7 +75,7 @@ def sign[
 
 @always_inline
 def elu[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the Elu Op using the equation $z if z >= 0 else alpha*(e^z -1)$.
 
@@ -100,7 +100,7 @@ def elu[
 
 @always_inline
 def relu[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the Relu Op using the equation $max(x, 0)$.
 
@@ -124,7 +124,7 @@ def relu[
 
 @always_inline
 def relu_n1[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the Relu N1 Op using the equation $max(min(x,1),-1)$.
 
@@ -148,7 +148,7 @@ def relu_n1[
 
 @always_inline
 def leaky_relu[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width], negative_slope: Scalar[dtype]) -> SIMD[
     dtype, simd_width
 ]:

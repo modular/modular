@@ -1379,7 +1379,7 @@ def conv_transposed_cpu[
     filter_packed: Bool,
     filter_is_cfrs: Bool,
     lambdas_have_fusion: Bool,
-    elementwise_lambda: def[dtype: DType, rank: Int, width: Int](
+    elementwise_lambda: def[dtype: DType, rank: Int, width: SIMDSize](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
 ](

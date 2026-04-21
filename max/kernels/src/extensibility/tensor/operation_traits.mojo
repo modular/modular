@@ -20,7 +20,7 @@ trait ElementwiseUnaryOp:
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         ...
 
@@ -30,7 +30,7 @@ trait ElementwiseUnaryMixedOp:
     def elementwise[
         dtype: DType,
         out_dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
         ...
 
@@ -39,7 +39,7 @@ trait ElementwiseBinaryOp:
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         ...
 
@@ -48,7 +48,7 @@ trait ElementwiseBinaryComparisonOp:
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
         DType.bool, width
     ]:

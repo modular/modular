@@ -85,7 +85,7 @@ def _gcd_pow2[a: Int, b: Int]() -> Int:
 def simd_store_into_managed_tensor_slice[
     dtype: DType,
     rank: Int,
-    simd_width: Int,
+    simd_width: SIMDSize,
     //,
     static_spec: StaticTensorSpec[dtype, rank, ...],
     element_alignment: Int = 1,
@@ -159,7 +159,7 @@ def simd_store_into_tensor_pointer[
     rank: Int,
     //,
     static_spec: StaticTensorSpec[dtype, rank, ...],
-    simd_width: Int,
+    simd_width: SIMDSize,
     element_alignment: Int = 1,
 ](
     ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -949,7 +949,7 @@ struct ManagedTensorSlice[
 
     @always_inline
     def store[
-        width: Int,
+        width: SIMDSize,
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
@@ -980,7 +980,7 @@ struct ManagedTensorSlice[
     @__mogg_intrinsic_attr("mogg.tensor_fused_store")
     @always_inline
     def _fused_store[
-        width: Int,
+        width: SIMDSize,
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
@@ -1004,7 +1004,7 @@ struct ManagedTensorSlice[
 
     @always_inline("nodebug")
     def _lambda_store[
-        width: Int,
+        width: SIMDSize,
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
@@ -1028,7 +1028,7 @@ struct ManagedTensorSlice[
 
     @always_inline
     def _fused_compute_output_lambda[
-        width: Int,
+        width: SIMDSize,
         # Necessary to make it simpler on the call site.
         _rank: Int,
     ](
@@ -1449,7 +1449,7 @@ struct _FusionPack[*Ts: TrivialRegisterPassable](TrivialRegisterPassable):
 
     @always_inline("nodebug")
     def __getitem_param__[i: Int](self) -> Self.Ts[i]:
-        return __mlir_op.`kgen.pack.extract`[index=i.__mlir_index__()](
+        return __mlir_op.`kgen.pack.extract`[index=i._int_mlir_index()](
             self._mlir_value
         )
 

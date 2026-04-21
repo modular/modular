@@ -504,7 +504,7 @@ def apple_batched_matmul[
         @parameter
         @__copy_capture(batch_coords)
         def elementwise_lambda_2d[
-            c_type: DType, width: Int, *, alignment: Int = 1
+            c_type: DType, width: SIMDSize, *, alignment: Int = 1
         ](out_coords: IndexList[2], out_val: SIMD[c_type, width]):
             var local_batch_coords = batch_coords
             local_batch_coords[rank - 1] = out_coords[1]

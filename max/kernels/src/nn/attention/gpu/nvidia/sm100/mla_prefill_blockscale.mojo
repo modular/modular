@@ -125,7 +125,7 @@ __extension SM100MLA:
             Int32(Self.config.num_threads)
         )
     )
-    @__llvm_metadata(`nvvm.minctasm`=Int(1))
+    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
     @__name(
         t"sm100_mla_prefill_blockscale_{Self.qkv_dtype}_{Self.output_dtype}_{blockwise_scale}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
         mangle=True,

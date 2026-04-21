@@ -79,7 +79,7 @@ trait InnerMatmulKernel(ImplicitlyCopyable):
 def elementwise_epilogue_c_tile[
     simd_width: Int,
     c_type: DType,
-    func: def[dtype: DType, width: Int, *, alignment: Int = 1](
+    func: def[dtype: DType, width: SIMDSize, *, alignment: Int = 1](
         IndexList[2], SIMD[dtype, width]
     ) capturing -> None,
 ](

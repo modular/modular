@@ -75,7 +75,7 @@ def outer_product_acc(
 def _reduce[
     axis: Int,
     init_func: def[dtype: DType, width: Int]() thin -> SIMD[dtype, width],
-    func: def[dtype: DType, width: Int](
+    func: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width], SIMD[dtype, width]
     ) thin -> (SIMD[dtype, width]),
 ](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
@@ -176,7 +176,7 @@ def sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
         return 0
 
     def sum_func[
-        dtype: DType, width: Int
+        dtype: DType, width: SIMDSize
     ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return a + b
 
@@ -208,7 +208,7 @@ def max[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
         return SIMD[dtype, width].MIN
 
     def max_func[
-        dtype: DType, width: Int
+        dtype: DType, width: SIMDSize
     ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return b_max(a, b)
 

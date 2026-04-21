@@ -13,7 +13,7 @@
 
 
 struct IO(TrivialRegisterPassable):
-    var value: Int
+    var value: SIMDSize
 
     # TODO: either rename or get rid of this
     comptime Unknown = IO(-1)

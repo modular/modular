@@ -582,7 +582,7 @@ struct Add(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs + rhs
 
@@ -592,7 +592,7 @@ struct Sub(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs - rhs
 
@@ -602,7 +602,7 @@ struct Mul(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs * rhs
 
@@ -612,7 +612,7 @@ struct Div(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs / rhs
 
@@ -622,7 +622,7 @@ struct Mod(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs % rhs
 
@@ -632,7 +632,7 @@ struct Equal(ElementwiseBinaryComparisonOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
         DType.bool, width
     ]:
@@ -644,7 +644,7 @@ struct Greater(ElementwiseBinaryComparisonOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
         DType.bool, width
     ]:
@@ -656,7 +656,7 @@ struct GreaterEqual(ElementwiseBinaryComparisonOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
         DType.bool, width
     ]:
@@ -668,7 +668,7 @@ struct NotEqual(ElementwiseBinaryComparisonOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
         DType.bool, width
     ]:
@@ -680,7 +680,7 @@ struct And(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert dtype == DType.bool, "expected bool operands for mo.and"
         return lhs & rhs
@@ -691,7 +691,7 @@ struct Or(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert dtype == DType.bool, "expected bool operands for mo.oor"
         return lhs | rhs
@@ -702,7 +702,7 @@ struct Xor(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert dtype == DType.bool, "expected bool operands for mo.xor"
         return lhs ^ rhs
@@ -714,7 +714,7 @@ struct Pow:
     def elementwise[
         dtype: DType,
         pow_dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[pow_dtype, width]) -> SIMD[
         dtype, width
     ]:
@@ -726,7 +726,7 @@ struct Max(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return max(lhs, rhs)
 
@@ -736,7 +736,7 @@ struct Min(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return min(lhs, rhs)
 
@@ -752,7 +752,7 @@ struct Cast(ElementwiseUnaryMixedOp):
     def elementwise[
         dtype: DType,
         out_dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
         return x.cast[out_dtype]()
 
@@ -762,7 +762,7 @@ struct Negative(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return -x
 
@@ -772,7 +772,7 @@ struct ReLU(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return relu(x)
 
@@ -782,7 +782,7 @@ struct Ceil(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return ceil(x)
 
@@ -792,7 +792,7 @@ struct Floor(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return floor(x)
 
@@ -802,7 +802,7 @@ struct Tanh(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -815,7 +815,7 @@ struct ACos(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -828,7 +828,7 @@ struct ATanh(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -841,7 +841,7 @@ struct Cos(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -854,7 +854,7 @@ struct Sin(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -867,7 +867,7 @@ struct Erf(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -880,7 +880,7 @@ struct Exp(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -893,7 +893,7 @@ struct Round(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return round(x)
 
@@ -903,7 +903,7 @@ struct Sqrt(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return sqrt(x)
 
@@ -913,7 +913,7 @@ struct Rsqrt(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return rsqrt(x)
 
@@ -924,7 +924,7 @@ struct Select:
     def elementwise[
         cond_dtype: DType,
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](
         cond: SIMD[cond_dtype, width],
         tc: SIMD[dtype, width],
@@ -938,7 +938,7 @@ struct Trunc(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return llvm_intrinsic["llvm.trunc", type_of(x), has_side_effect=False](
             x
@@ -950,7 +950,7 @@ struct Log(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -963,7 +963,7 @@ struct Log1p(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -977,7 +977,7 @@ struct IsNan(ElementwiseUnaryMixedOp):
     def elementwise[
         dtype: DType,
         out_dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
         comptime assert (
             out_dtype == DType.bool
@@ -991,7 +991,7 @@ struct IsInf(ElementwiseUnaryMixedOp):
     def elementwise[
         dtype: DType,
         out_dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
         comptime assert (
             out_dtype == DType.bool
@@ -1004,7 +1004,7 @@ struct Not(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert dtype == DType.bool, "expected bool operands for mo.not"
         return ~x
@@ -1015,7 +1015,7 @@ struct Abs(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return abs(x)
 
@@ -1261,7 +1261,7 @@ struct ScatterNDAdd:
         @always_inline
         @parameter
         def reduce_fn[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1309,7 +1309,7 @@ struct ScatterNDMul:
         @always_inline
         @parameter
         def reduce_fn[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1357,7 +1357,7 @@ struct ScatterNDMin:
         @always_inline
         @parameter
         def reduce_fn[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1405,7 +1405,7 @@ struct ScatterNDMax:
         @always_inline
         @parameter
         def reduce_fn[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1481,7 +1481,7 @@ struct Scatter:
         @always_inline
         @parameter
         def reduce_func[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1528,7 +1528,7 @@ struct ScatterAdd:
         @always_inline
         @parameter
         def reduce_func[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1575,7 +1575,7 @@ struct ScatterMax:
         @always_inline
         @parameter
         def reduce_func[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1622,7 +1622,7 @@ struct ScatterMin:
         @always_inline
         @parameter
         def reduce_func[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1669,7 +1669,7 @@ struct ScatterMul:
         @always_inline
         @parameter
         def reduce_func[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -2298,7 +2298,7 @@ struct MutableStore(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return val
 
@@ -2462,7 +2462,7 @@ struct Mean:
         @parameter
         @always_inline
         def output_fn[
-            width: Int, rank: Int
+            width: SIMDSize, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -2512,7 +2512,7 @@ struct ReduceAdd:
         @parameter
         @always_inline
         def output_fn[
-            width: Int, rank: Int
+            width: SIMDSize, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -2563,7 +2563,7 @@ struct ReduceMul:
         @parameter
         @always_inline
         def output_fn[
-            width: Int, rank: Int
+            width: SIMDSize, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -2614,7 +2614,7 @@ struct ReduceMax:
         @parameter
         @always_inline
         def output_fn[
-            width: Int, rank: Int
+            width: SIMDSize, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -2665,7 +2665,7 @@ struct ReduceMin:
         @parameter
         @always_inline
         def output_fn[
-            width: Int, rank: Int
+            width: SIMDSize, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -3098,7 +3098,7 @@ struct Gather:
         @parameter
         @always_inline
         def output_fn[
-            width: Int, _rank: Int
+            width: SIMDSize, _rank: Int
         ](coords: IndexList[_rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -3149,7 +3149,7 @@ struct GatherSum:
         comptime assert is_cpu[target](), "only valid on CPUs"
 
         def add[
-            dtype: DType, simd_width: Int
+            dtype: DType, simd_width: SIMDSize
         ](x: SIMD[dtype, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
             dtype, simd_width
         ]:
@@ -3206,7 +3206,7 @@ struct LayerNorm:
         @parameter
         @always_inline
         def output_fn[
-            width: Int, _rank: Int, alignment: Int
+            width: SIMDSize, _rank: Int, alignment: Int
         ](coords: IndexList[_rank], val: SIMD[dtype, width]):
             output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](coords),
@@ -3328,7 +3328,7 @@ struct ReduceRMSNorm:
         @parameter
         @always_inline
         def output_fn[
-            width: Int, _rank: Int, alignment: Int
+            width: SIMDSize, _rank: Int, alignment: Int
         ](coords: IndexList[_rank], val: SIMD[dtype, width]):
             output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](coords),
@@ -3552,7 +3552,7 @@ struct ReduceMinAndMax:
         @parameter
         @always_inline
         def output_0_fn[
-            width: Int, rank: Int
+            width: SIMDSize, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._fused_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -3570,7 +3570,7 @@ struct ReduceMinAndMax:
         @parameter
         def output_0_fn_wrapper[
             _type: DType,
-            width: Int,
+            width: SIMDSize,
             rank: Int,
         ](
             indices: IndexList[rank],
@@ -3594,7 +3594,7 @@ struct ReduceMinAndMax:
         @parameter
         def reduce_fn[
             ty: DType,
-            width: Int,
+            width: SIMDSize,
             reduction_idx: Int,
         ](left: SIMD[ty, width], right: SIMD[ty, width]) -> SIMD[ty, width]:
             comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
@@ -3681,7 +3681,7 @@ struct ReduceRMSNormFusedResidualAdd:
         @parameter
         @always_inline
         def output_fn[
-            width: Int, _rank: Int, alignment: Int
+            width: SIMDSize, _rank: Int, alignment: Int
         ](coords: IndexList[_rank], val: SIMD[dtype, width]):
             output._fused_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](coords),
@@ -3691,7 +3691,7 @@ struct ReduceRMSNormFusedResidualAdd:
         @parameter
         @always_inline
         def residual_output_fn[
-            width: Int, _rank: Int, alignment: Int
+            width: SIMDSize, _rank: Int, alignment: Int
         ](coords: IndexList[_rank], val: SIMD[dtype, width]):
             residual_output._fused_store[
                 width=width, element_alignment=alignment
@@ -3909,7 +3909,7 @@ struct Matmul:
         @parameter
         @always_inline
         def epilogue_fn[
-            _dtype: DType, _width: Int, *, alignment: Int = 1
+            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_dtype, _width]):
             c._lambda_store[width=_width, element_alignment=alignment](
                 coords,
@@ -3919,7 +3919,7 @@ struct Matmul:
         @parameter
         @always_inline
         def output_compute_fn[
-            _dtype: DType, _width: Int, *, alignment: Int = 1
+            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
             _dtype, _width
         ]:
@@ -3982,7 +3982,7 @@ struct BatchMatmul:
         @parameter
         @always_inline
         def output_fn[
-            _type: DType, _width: Int, _rank: Int, *, alignment: Int = 1
+            _type: DType, _width: SIMDSize, _rank: Int, *, alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_type, _width]):
             comptime has_compute_lambda = type_of(c)._has_compute_fusion
 
@@ -4323,7 +4323,7 @@ struct RandomNormal:
         @parameter
         @always_inline
         def output_fn[
-            _width: Int,
+            _width: SIMDSize,
             _rank: Int,
         ](coords: IndexList[_rank], val: SIMD[dtype, _width]):
             output._lambda_store[width=_width](
@@ -4368,7 +4368,7 @@ struct RandomUniform:
         @parameter
         @always_inline
         def output_fn[
-            _width: Int,
+            _width: SIMDSize,
             _rank: Int,
         ](coords: IndexList[_rank], val: SIMD[dtype, _width]):
             output._lambda_store[width=_width](
@@ -4590,7 +4590,7 @@ struct Concat:
         @always_inline
         @parameter
         def epilogue_wrapper[
-            _dtype: DType, _rank: Int, width: Int, *, alignment: Int = 1
+            _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
             output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](indices),
@@ -4891,7 +4891,7 @@ struct Conv:
         @always_inline
         @__copy_capture(output)
         def output_fn[
-            _dtype: DType, _rank: Int, _width: Int
+            _dtype: DType, _rank: Int, _width: SIMDSize
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             output._lambda_store[width=_width](
                 rebind[IndexList[output.rank]](coords),
@@ -5080,7 +5080,7 @@ struct Conv2dResidualAdd:
         @always_inline
         @__copy_capture(output, bias)
         def output_fn[
-            _dtype: DType, _rank: Int, _width: Int
+            _dtype: DType, _rank: Int, _width: SIMDSize
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var result = val
 
@@ -5211,7 +5211,7 @@ struct ConvTranspose:
         @parameter
         @always_inline
         def output_fn[
-            _dtype: DType, _rank: Int, _width: Int
+            _dtype: DType, _rank: Int, _width: SIMDSize
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             output._lambda_store[width=_width](
                 rebind[IndexList[output.rank]](coords),
@@ -7273,7 +7273,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
         @always_inline
         @parameter
         def output_fn[
-            width: Int, alignment: Int
+            width: SIMDSize, alignment: Int
         ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
             output._lambda_store[width=width, element_alignment=alignment](
                 idx,
@@ -7347,7 +7347,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         @always_inline
         @parameter
         def output_fn[
-            width: Int, alignment: Int
+            width: SIMDSize, alignment: Int
         ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
             output._lambda_store[width=width, element_alignment=alignment](
                 idx,
@@ -10594,7 +10594,7 @@ struct DistributedAllReduceSum:
         def output_lambda[
             output_index: Int,
             _dtype: DType,
-            _width: Int,
+            _width: SIMDSize,
             *,
             _alignment: Int,
         ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -10752,7 +10752,7 @@ struct BundledAllReduceSum:
         @parameter
         def output_lambda[
             _dtype: DType,
-            _width: Int,
+            _width: SIMDSize,
             *,
             _alignment: Int,
         ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -10846,7 +10846,7 @@ struct DistributedReduceScatterSum:
             def output_lambda[
                 output_index: Int,
                 _dtype: DType,
-                _width: Int,
+                _width: SIMDSize,
                 *,
                 _alignment: Int,
             ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -11752,7 +11752,7 @@ struct MatmulStaticScaledFloat8:
         @__copy_capture(output_tt, input_scale, weight_scale)
         @always_inline
         def scaled_output_fn[
-            dtype: DType, width: Int, *, alignment: Int = 1
+            dtype: DType, width: SIMDSize, *, alignment: Int = 1
         ](idx: IndexList[2], val: SIMD[dtype, width]):
             var scale = input_scale.cast[dtype]() * weight_scale.cast[dtype]()
             var scaled_val = val * scale

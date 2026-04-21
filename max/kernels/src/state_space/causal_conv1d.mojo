@@ -73,7 +73,7 @@ from layout import TensorLayout, TileTensor
 
 
 def silu[
-    dtype: DType, width: Int
+    dtype: DType, width: SIMDSize
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_floating_point():
     """Sigmoid Linear Unit (SiLU) activation function.
 

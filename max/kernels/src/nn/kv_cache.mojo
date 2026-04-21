@@ -330,7 +330,7 @@ def _fused_qkv_matmul_kv_cache_impl[
     @__copy_capture(q_dim, qk_offset, SEQ_LEN, k_cache, v_cache, valid_lengths)
     @always_inline
     def write_to_cache[
-        dtype_: DType, width: Int, *, alignment: Int = 1
+        dtype_: DType, width: SIMDSize, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype_, width]):
         var b_idx, t_idx = udivmod(idx[0], SEQ_LEN)
         if idx[1] < q_dim:
@@ -1022,7 +1022,7 @@ def rms_norm_kv_cache_ragged_paged[
     @parameter
     @__copy_capture(k_cache)
     def key_cache_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(
@@ -1170,7 +1170,7 @@ def rms_norm_value_cache_ragged_paged[
     @parameter
     @__copy_capture(v_cache)
     def value_cache_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(

@@ -44,7 +44,7 @@ def _unsafe_normalize_neg_index(idx: Int, dim_size: Int) -> Int:
 
 @always_inline
 def _unsafe_normalize_neg_index[
-    dtype: DType, width: Int, out_type: DType = DType.int
+    dtype: DType, width: SIMDSize, out_type: DType = DType.int
 ](idx: SIMD[dtype, width], dim_size: Int) -> SIMD[out_type, width]:
     return idx.lt(0).select(
         idx.cast[out_type]() + Scalar[out_type](dim_size),
@@ -70,7 +70,7 @@ def normalize_neg_index(idx: Int, dim_size: Int) raises -> Int:
 
 @always_inline
 def normalize_neg_index[
-    dtype: DType, width: Int, out_type: DType = DType.int
+    dtype: DType, width: SIMDSize, out_type: DType = DType.int
 ](idx: SIMD[dtype, width], dim_size: Int) raises -> SIMD[out_type, width]:
     """Indices passed to gather and scatter ops may be negative. This performs
     a normalization so that they can be used to index into a buffer.
@@ -112,7 +112,7 @@ struct Axis(Indexer, Intable, TrivialRegisterPassable):
         Returns:
             The corresponding __mlir_type.index value.
         """
-        return self.axis._mlir_value
+        return self.axis._int_mlir_index()
 
 
 @always_inline
@@ -121,7 +121,7 @@ def gather_reduce[
     gather_axis: Int,
     reduce_axis: Int,
     simd_width: Int,
-    reduce_fn: def[dtype: DType, width: Int](
+    reduce_fn: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width], SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
 ](
@@ -371,7 +371,7 @@ def gather[
     @parameter
     @always_inline
     def output_fn[
-        width: Int, _rank: Int
+        width: SIMDSize, _rank: Int
     ](index: IndexList[_rank], val: SIMD[dtype, width]):
         var coords = Coord(index)
         comptime assert output.flat_rank >= coords.flat_rank
@@ -477,7 +477,7 @@ def gather[
     @parameter
     @always_inline
     def output_fn[
-        width: Int, _rank: Int
+        width: SIMDSize, _rank: Int
     ](index: IndexList[_rank], val: SIMD[dtype, width]):
         var coords = Coord(index)
         comptime assert output.flat_rank >= coords.flat_rank
@@ -547,7 +547,7 @@ def gather_elementwise_fn_wrapper[
     indices_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         indices_type, width
     ],
-    output_fn: def[width: Int, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     simd_width: Int,
@@ -648,7 +648,7 @@ def gather[
     indices_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         indices_type, width
     ],
-    output_fn: def[width: Int, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     prefetch_fn: OptionalReg[
@@ -755,7 +755,7 @@ def gather[
     indices_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
         indices_type, width
     ],
-    output_fn: def[width: Int, rank: Int](
+    output_fn: def[width: SIMDSize, rank: Int](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
     prefetch_fn: OptionalReg[
@@ -883,7 +883,7 @@ def scatter_nd_generator[
     target: StaticString = "cpu",
     reduce_fn: OptionalReg[
         def[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](SIMD[dtype, width], SIMD[dtype, width]) capturing -> SIMD[
             dtype, width
         ]
@@ -1264,7 +1264,7 @@ def gather_shape[
 
 @always_inline
 def scatter_elements[
-    reduce_fn: def[dtype: DType, width: Int](
+    reduce_fn: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width], SIMD[dtype, width]
     ) capturing -> SIMD[dtype, width],
     rank: Int,
