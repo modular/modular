@@ -853,6 +853,7 @@ class RealizeFutureTokenProcessor:
                 enable_dp=enable_dp,
             )
         )
+        self._enable_dp = enable_dp
         self._num_speculative_tokens = num_speculative_tokens
 
     def _compute_mappings(
@@ -966,14 +967,9 @@ class RealizeFutureTokenProcessor:
             )
             signal_buffers = getattr(model_inputs, "signal_buffers", None)
 
-            data_parallel_splits = getattr(
-                model_inputs, "data_parallel_splits", None
-            )
-            # dp_splits.shape[0] == num_replicas + 1
-            if (
-                data_parallel_splits is not None
-                and data_parallel_splits.shape[0] <= 2
-            ):
+            if self._enable_dp:
+                data_parallel_splits = model_inputs.data_parallel_splits
+            else:
                 data_parallel_splits = None
             if num_draft_tokens_to_verify == 0:
                 prev_batch_size = prev_generated_draft_tokens.shape[0]

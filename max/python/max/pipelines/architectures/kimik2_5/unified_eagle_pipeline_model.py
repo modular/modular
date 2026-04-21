@@ -66,8 +66,6 @@ class Eagle3KimiK25Inputs(KimiK2_5ModelInputs):
     bound so the graph signature is stable and additional stochastic
     paths can reuse the same input.
     """
-    # TODO(GEX-3545): Temporary dummy input.
-    merged_len_marker: Buffer | None = None
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -92,8 +90,6 @@ class Eagle3KimiK25Inputs(KimiK2_5ModelInputs):
             buffers += tuple(self.draft_kv_blocks)
         assert self.seed is not None
         buffers += (self.seed,)
-        if self.merged_len_marker is not None:
-            buffers += (self.merged_len_marker,)
         return buffers
 
 
@@ -366,14 +362,10 @@ class Eagle3KimiK25Model(KimiK2_5Model):
 
                 seed = next(variadic_args_iter).tensor
 
-                # TODO(GEX-3545): Temporary dummy input.
-                merged_len_marker = next(variadic_args_iter).tensor
-
                 outputs = nn_model(
                     tokens=tokens.tensor,
                     input_row_offsets=devices_input_row_offsets.tensor,
                     draft_tokens=draft_tokens.tensor,
-                    merged_len_marker=merged_len_marker,
                     signal_buffers=signal_buffers,
                     kv_collections=kv_caches_per_dev,
                     return_n_logits=return_n_logits.tensor,
@@ -395,21 +387,6 @@ class Eagle3KimiK25Model(KimiK2_5Model):
 
     def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
         """Execute and return all graph outputs for speculative decoding."""
-        assert isinstance(model_inputs, Eagle3KimiK25Inputs)
-        # TODO(GEX-3545): Temporary dummy input.
-        merged_seq_len = model_inputs.tokens.shape[0]
-        if model_inputs.draft_tokens is not None:
-            dts = model_inputs.draft_tokens.shape
-            merged_seq_len += dts[0] * dts[1]
-        if (
-            model_inputs.merged_len_marker is None
-            or model_inputs.merged_len_marker.shape[0] != merged_seq_len
-        ):
-            model_inputs.merged_len_marker = Buffer.zeros(
-                shape=[merged_seq_len],
-                dtype=DType.uint8,
-            ).to(self.devices[0])
-
         model_outputs = self.language_model.execute(*model_inputs.buffers)
         assert len(model_outputs) == 3, (
             f"Expected 3 outputs, got {len(model_outputs)}"
@@ -436,17 +413,6 @@ class Eagle3KimiK25Model(KimiK2_5Model):
             kv_cache_inputs=kv_cache_inputs,
             return_n_logits=return_n_logits,
         )
-
-        # TODO(GEX-3545): Temporary dummy input.
-        merged_seq_len = base.tokens.shape[0]
-        if draft_tokens is not None:
-            draft_tokens_shape = draft_tokens.shape
-            merged_seq_len += draft_tokens_shape[0] * draft_tokens_shape[1]
-        merged_len_marker = Buffer.zeros(
-            shape=[merged_seq_len],
-            dtype=DType.uint8,
-        ).to(self.devices[0])
-
         return Eagle3KimiK25Inputs(
             tokens=base.tokens,
             input_row_offsets=base.input_row_offsets,
@@ -460,7 +426,6 @@ class Eagle3KimiK25Model(KimiK2_5Model):
             draft_tokens=draft_tokens,
             draft_kv_blocks=draft_kv_cache_buffers,
             seed=self._next_seed(),
-            merged_len_marker=merged_len_marker,
         )
 
     def prepare_next_token_inputs(

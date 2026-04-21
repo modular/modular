@@ -136,6 +136,8 @@ class UnifiedMTPDeepseekV3(Module):
         merged_tokens, merged_offsets = self.merger(
             tokens, input_row_offsets, draft_tokens
         )
+        merged_tokens = ops.rebind(merged_tokens, ["merged_seq_len"])
+        merged_offsets = ops.rebind(merged_offsets, ["input_row_offsets_len"])
 
         host_merged_offsets = compute_host_merged_offsets(
             host_input_row_offsets, draft_tokens

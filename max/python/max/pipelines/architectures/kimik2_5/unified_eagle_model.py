@@ -99,7 +99,6 @@ class Eagle3KimiK25Unified(Module):
         tokens: TensorValue,
         input_row_offsets: TensorValue,
         draft_tokens: TensorValue,
-        merged_len_marker: TensorValue,
         signal_buffers: list[BufferValue],
         kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
@@ -113,9 +112,8 @@ class Eagle3KimiK25Unified(Module):
         merged_tokens, merged_offsets = self.merger(
             tokens, input_row_offsets, draft_tokens
         )
-        # TODO(GEX-3545): Temporary dummy input.
-        if self.config.data_parallel_degree == 1:
-            merged_tokens = merged_tokens.rebind([merged_len_marker.shape[0]])
+        merged_tokens = ops.rebind(merged_tokens, ["merged_seq_len"])
+        merged_offsets = ops.rebind(merged_offsets, ["input_row_offsets_len"])
 
         host_merged_offsets = compute_host_merged_offsets(
             host_input_row_offsets, draft_tokens
@@ -155,14 +153,10 @@ class Eagle3KimiK25Unified(Module):
         corrected_merged, corrected_offsets = self.merger(
             tokens, input_row_offsets, recovered
         )
-        # TODO(GEX-3545): Temporary dummy input.
-        if self.config.data_parallel_degree == 1:
-            corrected_merged = corrected_merged.rebind(
-                [merged_len_marker.shape[0]]
-            )
-        else:
-            corrected_merged = corrected_merged.rebind(["merged_seq_len"])
-        corrected_offsets = corrected_offsets.rebind(["input_row_offsets_len"])
+        corrected_merged = ops.rebind(corrected_merged, ["merged_seq_len"])
+        corrected_offsets = ops.rebind(
+            corrected_offsets, ["input_row_offsets_len"]
+        )
 
         # Shift the corrected merged sequence for the draft input.
         shifted_corrected = eagle_prefill_shift_tokens(
@@ -389,10 +383,5 @@ class Eagle3KimiK25Unified(Module):
                 all_input_types.append(sym.kv_blocks)
 
         all_input_types.append(ops.random.SeedType)
-        # TODO(GEX-3545): Temporary dummy input.
-        merged_len_marker_type = TensorType(
-            DType.uint8, shape=["merged_seq_len"], device=device_ref
-        )
-        all_input_types.append(merged_len_marker_type)
 
         return tuple(all_input_types)
