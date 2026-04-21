@@ -763,7 +763,7 @@ struct PRegisterBuffer[
                 )
                 (block_base + swizzled).store[width=frag_w](reg_val)
             else:
-                dst_frag.flat_store[width=frag_w](0, reg_val)
+                dst_frag.raw_store[width=frag_w](0, reg_val)
 
         comptime if Self.WN < Self.BK:
             # WN < BK: multiple warps fill each [BM, BK] SMEM block.
@@ -793,7 +793,7 @@ struct PRegisterBuffer[
                     comptime for n_mma in range(Self.num_n_mmas):
                         comptime reg_idx = n_mma * Self.num_m_mmas + m_mma
                         var p_reg_tile = p_reg_vec.tile[1, 1](reg_idx, 0)
-                        var reg_val = p_reg_tile.flat_load[
+                        var reg_val = p_reg_tile.raw_load[
                             width=p_reg_tile.element_size
                         ](0).cast[Self.dtype]()
 
@@ -843,12 +843,12 @@ struct PRegisterBuffer[
                         ) * Self.num_m_mmas + m_mma
                         var lo = (
                             p_reg_vec.tile[1, 1](lo_idx, 0)
-                            .flat_load[width=frag_w](0)
+                            .raw_load[width=frag_w](0)
                             .cast[Self.dtype]()
                         )
                         var hi = (
                             p_reg_vec.tile[1, 1](hi_idx, 0)
-                            .flat_load[width=frag_w](0)
+                            .raw_load[width=frag_w](0)
                             .cast[Self.dtype]()
                         )
                         var joined = lo.join(hi)

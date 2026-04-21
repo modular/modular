@@ -135,7 +135,7 @@ def bench_rms_norm_fused_fp8[
                 width: Int, _rank: Int
             ](coords: IndexList[_rank]) -> SIMD[in_dtype, width]:
                 var idx = data_buf_offset.layout(Coord(coords))
-                return data_buf_offset.flat_load[width=width, alignment=width](
+                return data_buf_offset.raw_load[width=width, alignment=width](
                     idx
                 )
 
@@ -147,7 +147,7 @@ def bench_rms_norm_fused_fp8[
                 width: Int, alignment: Int
             ](coords: IndexList[rank], val: SIMD[in_dtype, width]) -> None:
                 var idx = rms_output_buf_offset.layout(Coord(coords))
-                rms_output_buf_offset.flat_store[
+                rms_output_buf_offset.raw_store[
                     width=width, alignment=alignment
                 ](idx, val)
 
@@ -253,7 +253,7 @@ def bench_rms_norm_fused_fp8[
                     data_ptr_offset, row_major(Coord(shape))
                 )
                 var idx = data_buf_offset.layout(Coord(coords))
-                return data_buf_offset.flat_load[width=width, alignment=width](
+                return data_buf_offset.raw_load[width=width, alignment=width](
                     idx
                 )
 
@@ -334,7 +334,7 @@ def bench_rms_norm_fused_fp8[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[in_dtype, width]:
         var idx = data_buf_verify.layout(Coord(coords))
-        return data_buf_verify.flat_load[width=width](idx)
+        return data_buf_verify.raw_load[width=width](idx)
 
     # Output function for verification
     @always_inline
@@ -344,7 +344,7 @@ def bench_rms_norm_fused_fp8[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[in_dtype, width]) -> None:
         var idx = rms_output_buf_verify.layout(Coord(coords))
-        rms_output_buf_verify.flat_store[width=width, alignment=alignment](
+        rms_output_buf_verify.raw_store[width=width, alignment=alignment](
             idx, val
         )
 
@@ -395,7 +395,7 @@ def bench_rms_norm_fused_fp8[
         )
         var data_buf = TileTensor(data_ptr, row_major(Coord(shape)))
         var idx = data_buf.layout(Coord(coords))
-        return data_buf.flat_load[width=width](idx)
+        return data_buf.raw_load[width=width](idx)
 
     var fused_output_tt_verify = TileTensor(
         UnsafePointer[Scalar[out_dtype], MutAnyOrigin](fused_verify_base_ptr),

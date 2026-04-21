@@ -258,9 +258,9 @@ def test_conv_transposed[
 
             var output_idx = output.layout(Coord(curr_coords))
 
-            var vec = output.flat_load[width=width](output_idx)
+            var vec = output.raw_load[width=width](output_idx)
 
-            output.flat_store(
+            output.raw_store(
                 output_idx,
                 10.0
                 * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
@@ -293,8 +293,8 @@ def test_conv_transposed[
     for i in range(output_size):
         if not all(
             isclose(
-                output_ref.flat_load[width=1](i),
-                output.flat_load[width=1](i),
+                output_ref.raw_load[width=1](i),
+                output.raw_load[width=1](i),
                 atol=1e-4,  # absolute error tolerance
                 rtol=1e-4,  # relative error tolerance
             )
@@ -303,8 +303,8 @@ def test_conv_transposed[
             print("filter shape: ", filter_shape)
             print("num groups", num_groups)
             print("flat output index:", i)
-            print("Golden value: ", output_ref.flat_load[width=1](i))
-            print("Actual value: ", output.flat_load[width=1](i))
+            print("Golden value: ", output_ref.raw_load[width=1](i))
+            print("Actual value: ", output.raw_load[width=1](i))
             output_ptr.free()
             output_ref_ptr.free()
             return

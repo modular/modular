@@ -524,7 +524,7 @@ def fill_random[
     var total_elements = buffer.num_elements()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
-        buffer.flat_store(i, random_value.cast[dtype]())
+        buffer.raw_store(i, random_value.cast[dtype]())
 
 
 def fill_constant[
@@ -533,9 +533,9 @@ def fill_constant[
     var total_elements = buffer.num_elements()
     for i in range(total_elements):
         if i % 3 == 1:
-            buffer.flat_store(i, 1.0)
+            buffer.raw_store(i, 1.0)
         else:
-            buffer.flat_store(i, 0.0)
+            buffer.raw_store(i, 0.0)
 
 
 def fill_iota[

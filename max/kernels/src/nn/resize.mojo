@@ -189,7 +189,7 @@ def resize_nearest_neighbor[
         var in_idx = input.layout(Coord(in_coords))
         var out_idx = output.layout(Coord(out_coords))
 
-        output.flat_store(out_idx, input.ptr[in_idx])
+        output.raw_store(out_idx, input.ptr[in_idx])
 
     # TODO (#21439): can use memcpy when scale on inner dimension is 1
     elementwise[nn_interpolate, 1](
@@ -260,13 +260,13 @@ def interpolate_point_1d[
         ) * ss
         var filter_coeff = interpolator.filter(dist_from_center).cast[dtype]()
         var in_idx = input.layout(Coord(in_coords))
-        acc += input.flat_load(in_idx) * filter_coeff
+        acc += input.raw_load(in_idx) * filter_coeff
         sum += filter_coeff
 
     # normalize to handle cases near image boundary where only 1 point is used
     # for interpolation
     var out_idx = output.layout(Coord(out_coords))
-    output.flat_store(out_idx, acc / sum)
+    output.raw_store(out_idx, acc / sum)
 
 
 def resize_linear[

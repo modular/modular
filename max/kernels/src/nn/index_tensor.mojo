@@ -265,9 +265,10 @@ def _index_tensor_1d[
                     )
 
                 var rd_coord = Coord(data_coord)
-                output.ptr[i * Int(indices.dim(0)) + j] = reshaped_data.load[
-                    width=1
-                ](rd_coord)
+                output.raw_store(
+                    i * Int(indices.dim(0)) + j,
+                    reshaped_data.load[width=1](rd_coord),
+                )
 
     sync_parallelize[calc_batch_dim](num_tasks, ctx)
 

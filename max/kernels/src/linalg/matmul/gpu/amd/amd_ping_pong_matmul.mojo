@@ -596,7 +596,7 @@ struct AMDPingPongMatmul[
                                 m_mma * num_n_mmas * c_frag_size
                                 + n_mma * c_frag_size
                             )
-                            var v = c_reg.flat_load[width=c_frag_size](
+                            var v = c_reg.raw_load[width=c_frag_size](
                                 src_off
                             ).cast[Self.c_type]()
 

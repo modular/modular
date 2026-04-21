@@ -139,7 +139,9 @@ def _rope_split_store_ragged_impl[
             var bi: Int = get_batch_from_row_offsets(
                 input_row_offsets, global_token_idx
             )
-            var ti = Int(UInt32(global_token_idx) - input_row_offsets.ptr[bi])
+            var ti = Int(
+                UInt32(global_token_idx) - input_row_offsets.raw_load(bi)
+            )
 
             # Cache position: used for cache stores and as the default
             # freq_pos when the caller doesn't supply explicit position IDs.

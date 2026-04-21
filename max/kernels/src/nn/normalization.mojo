@@ -467,9 +467,9 @@ def layer_norm_gpu_block[
             if offset < num_cols:
                 var gamma_val = gamma_fn[simd_width](Index(offset))
                 var beta_offset = beta.layout(Idx(offset))
-                var beta_val = beta.flat_load[
-                    width=simd_width, alignment=align
-                ](beta_offset)
+                var beta_val = beta.raw_load[width=simd_width, alignment=align](
+                    beta_offset
+                )
 
                 var vec_data = input_fn[simd_width](row, offset).cast[
                     accum_type
@@ -730,7 +730,7 @@ def layer_norm_cpu[
 
             var norm_val = (
                 out_val - mean_val
-            ) * norm_factor * gamma_val + beta.flat_load[width=simd_width](
+            ) * norm_factor * gamma_val + beta.raw_load[width=simd_width](
                 beta_col
             )
             output_fn[simd_width, 1](
@@ -2318,7 +2318,7 @@ def rms_norm_fused_residual_add_cpu[
         var residual_add_val = val + residual_val
         output_residual_fn[width, alignment](idx, residual_add_val)
         var intermediate_idx = intermediate_buffer.layout(Coord(idx))
-        intermediate_buffer.flat_store[width=width, alignment=alignment](
+        intermediate_buffer.raw_store[width=width, alignment=alignment](
             intermediate_idx, residual_add_val
         )
 
@@ -2335,7 +2335,7 @@ def rms_norm_fused_residual_add_cpu[
         width: Int, rank_: Int
     ](idx: IndexList[rank_]) -> SIMD[dtype, width]:
         var intermediate_idx = intermediate_buffer.layout(Coord(idx))
-        return intermediate_buffer.flat_load[width=width](intermediate_idx)
+        return intermediate_buffer.raw_load[width=width](intermediate_idx)
 
     rms_norm_cpu[
         intermediate_input_fn,
@@ -3333,7 +3333,7 @@ def group_norm_gpu_warp_tiling[
                 ]()
 
             var output_idx = output.layout(Coord(Idx(row), Idx(idx)))
-            output.flat_store[alignment=align](
+            output.raw_store[alignment=align](
                 output_idx, norm_val.cast[dtype]()
             )
 
@@ -3425,7 +3425,7 @@ def group_norm_gpu_block[
                 var output_row_offset = output.layout(
                     Coord(Idx(row), Idx(offset))
                 )
-                output.flat_store[alignment=align](
+                output.raw_store[alignment=align](
                     output_row_offset, norm_val.cast[dtype]()
                 )
 
@@ -3615,7 +3615,7 @@ def group_norm_gpu_multi_block_norm[
                 var output_row_offset = output.layout(
                     Coord(Idx(row), Idx(offset))
                 )
-                output.flat_store[alignment=align](
+                output.raw_store[alignment=align](
                     output_row_offset, norm_val.cast[dtype]()
                 )
 

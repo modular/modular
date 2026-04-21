@@ -59,7 +59,7 @@ def arg_nonzero[
                 i, coord_to_index_list(input_buffer.layout.shape_coord())
             )
             var offset = input_buffer.layout(Coord(indices))
-            if input_buffer.flat_load(offset) != 0:
+            if input_buffer.raw_load(offset) != 0:
                 var out_indices = IndexList[2]()
                 out_indices[0] = j
                 j += 1
@@ -102,7 +102,7 @@ def arg_nonzero_shape[
     var j: Int = 0
     for i in range(numel):
         var offset = input_buffer.layout(Idx(i))
-        if input_buffer.flat_load(offset) != 0:
+        if input_buffer.raw_load(offset) != 0:
             j += 1
 
     shape[0] = j

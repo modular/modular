@@ -243,7 +243,7 @@ struct ImageData[
         Returns:
             The value stored at the given index position.
         """
-        return self.data.flat_load(self._get_index(n, c, h, w))
+        return self.data.raw_load(self._get_index(n, c, h, w))
 
     def __setitem__(
         self, n: Int, c: Int, h: Int, w: Int, value: Scalar[Self.dtype]
@@ -258,7 +258,7 @@ struct ImageData[
             w: Index on the width dimension.
             value: The value to store at the given index position.
         """
-        self.data.flat_store(self._get_index(n, c, h, w), value)
+        self.data.raw_store(self._get_index(n, c, h, w), value)
 
     def num_elements(self) -> Int:
         return self.data.num_elements()

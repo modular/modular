@@ -36,11 +36,11 @@ def test_pack_b() raises:
         row_major[width // kernel_cols, K, kernel_cols]()
     )
     for i in range(packed_b.num_elements()):
-        packed_b.flat_store(i, 1.0)
+        packed_b.raw_store(i, 1.0)
 
     var b = tt_stack_allocation[dtype=type,](row_major[K, N]())
     for i in range(b.num_elements()):
-        b.flat_store(i, 1.0)
+        b.raw_store(i, 1.0)
 
     PackMatrixCols[
         type,

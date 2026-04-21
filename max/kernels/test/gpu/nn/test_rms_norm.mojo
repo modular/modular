@@ -77,7 +77,7 @@ def run_rms_norm_gpu[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
-        return data_buf.flat_load[width=width](idx)
+        return data_buf.raw_load[width=width](idx)
 
     @always_inline
     @__copy_capture(data_buf)
@@ -86,7 +86,7 @@ def run_rms_norm_gpu[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = data_buf.layout(Coord(coords))
-        data_buf.flat_store[width=width, alignment=alignment](idx, val)
+        data_buf.raw_store[width=width, alignment=alignment](idx, val)
 
     rms_norm_gpu[input_fn, identity_output_fn, multiply_before_cast=True](
         shape, gamma, epsilon, weight_offset, ctx

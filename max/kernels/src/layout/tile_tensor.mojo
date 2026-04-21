@@ -459,7 +459,7 @@ struct TileTensor[
             )
 
         # Inline load logic to avoid constraint propagation issues
-        return self.flat_load[
+        return self.raw_load[
             width=Self.element_size,
             alignment=align_of[
                 SIMD[Self.dtype, Self.element_size]
@@ -649,7 +649,7 @@ struct TileTensor[
         Returns:
             A SIMD vector containing the loaded elements.
         """
-        return self.flat_load[
+        return self.raw_load[
             width=width,
             alignment=alignment,
             invariant=invariant,
@@ -736,7 +736,7 @@ struct TileTensor[
         Returns:
             A SIMD vector containing the loaded elements.
         """
-        return self.flat_load[
+        return self.raw_load[
             width=width, alignment=alignment, invariant=invariant
         ](self._linear_offset(idx))
 
@@ -762,10 +762,10 @@ struct TileTensor[
             idx: The multi-dimensional index.
             value: The SIMD vector to store.
         """
-        self.flat_store[alignment=alignment](self._linear_offset(idx), value)
+        self.raw_store[alignment=alignment](self._linear_offset(idx), value)
 
     @always_inline("nodebug")
-    def flat_load[
+    def raw_load[
         width: Int = 1,
         alignment: Int = align_of[Self.dtype](),
         invariant: Bool = _default_invariant[Self.mut](),
@@ -773,10 +773,10 @@ struct TileTensor[
     ](self, offset: Some[Indexer]) -> SIMD[Self.dtype, width]:
         """Load `width` elements starting at `ptr[offset]`, bypassing the layout.
 
-        This is a raw flat read against the underlying storage: the caller
-        is responsible for ensuring `offset` is a valid linear index into
+        This is a raw read against the underlying storage: the caller
+        is responsible for ensuring `offset` is a valid index into
         the backing buffer, independent of the tensor's layout. Useful for
-        kernels that treat the buffer as a flat array (copies, fills,
+        kernels that treat the buffer as a contiguous array (copies, fills,
         reductions over contiguous storage).
 
         Parameters:
@@ -801,7 +801,7 @@ struct TileTensor[
         ](_index(offset))
 
     @always_inline("nodebug")
-    def flat_store[
+    def raw_store[
         width: Int = 1,
         alignment: Int = align_of[Self.dtype](),
         non_temporal: Bool = False,
@@ -812,8 +812,8 @@ struct TileTensor[
     ) where Self.mut:
         """Store `width` elements at `ptr[offset]`, bypassing the layout.
 
-        This is a raw flat write against the underlying storage: the caller
-        is responsible for ensuring `offset` is a valid linear index into
+        This is a raw write against the underlying storage: the caller
+        is responsible for ensuring `offset` is a valid index into
         the backing buffer, independent of the tensor's layout.
 
         Parameters:

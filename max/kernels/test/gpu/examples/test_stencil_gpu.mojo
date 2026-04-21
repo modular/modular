@@ -24,7 +24,7 @@ from std.utils.numerics import min_or_neg_inf
 
 def fill_buffer[dtype: DType](buf: TileTensor[mut=True, dtype=dtype, ...]):
     for j in range(buf.num_elements()):
-        buf.flat_store(j, Scalar[dtype](j) + 1)
+        buf.raw_store(j, Scalar[dtype](j) + 1)
 
 
 def assert_allclose[
@@ -34,7 +34,7 @@ def assert_allclose[
     h_output_gpu: TileTensor[dtype=dtype, ...],
 ) raises:
     for i in range(h_output_ref.num_elements()):
-        assert_almost_equal(h_output_ref.ptr[i], h_output_gpu.ptr[i])
+        assert_almost_equal(h_output_ref.raw_load(i), h_output_gpu.raw_load(i))
 
 
 def test_stencil_avg_pool(ctx: DeviceContext) raises:

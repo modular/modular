@@ -153,7 +153,7 @@ def _copy_values_to_tile_tensor[
         raise Error("Tensor size and values size mismatch")
 
     for i in range(num_elements):
-        tensor.flat_store(i, values[i])
+        tensor.raw_store(i, values[i])
 
 
 def main() raises:

@@ -491,7 +491,9 @@ def assert_allclose[
 ) raises:
     try:
         for i in range(h_output_ref.layout.product()):
-            assert_almost_equal(h_output_ref.ptr[i], h_output_gpu.ptr[i])
+            assert_almost_equal(
+                h_output_ref.raw_load(i), h_output_gpu.raw_load(i)
+            )
     except e:
         print(e)
         print("left: ", h_output_ref)
