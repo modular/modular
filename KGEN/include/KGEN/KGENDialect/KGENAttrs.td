@@ -562,6 +562,42 @@ def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms
   let genVerifyDecl = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// IsRefinedTraitAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_IsRefinedType : KGENAttr<"IsRefinedType", "is_refined_type",
+  [TypedAttrInterface, ContextuallyEvaluatedAttrInterface]> {
+  let summary = "check whether the source type is a more refined type of the target type";
+  let description = [{
+    This represents a flag to indicate the type, specified by `sourceType`,
+    is a more refined type of the other target type, specified by `targetType`.
+
+    It requires both `sourceType` and `targetType` to be at the same type depth.
+  }];
+
+  let assemblyFormat = [{
+    `<` custom<TypeParamValue>($sourceType) `,`
+        custom<TypeParamValue>($targetType) `>`
+  }];
+
+  let parameters = (ins
+    "TypedAttr":$sourceType,
+    "TypedAttr":$targetType
+  );
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$sourceType,
+                                        "TypedAttr":$targetType), [{
+      return $_get(sourceType.getContext(), sourceType, targetType);
+    }]>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Get the type of the attribute. It is always I1 type.
+    Type getType() const { return IntegerType::get(getContext(), 1);}
+  }];
+}
 
 //===----------------------------------------------------------------------===//
 // Upcast/DowncastAttr

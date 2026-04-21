@@ -114,6 +114,7 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
   TypedAttr typedAttr = dyn_cast<TypedAttr>((Attribute)attr);
 
   // Handle TypeConformsToTraitAttr.
+  // TODO: preserve trait symbols in KGEN.
   if (auto conformsTo =
           sugarDynCastIfPresent<TypeConformsToTraitAttr>(typedAttr)) {
     // Try LIT-specific trait type folding first, then fall back to the attr
@@ -126,6 +127,24 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
     if (succeeded(result))
       return result;
     return conformsTo.evaluateWithContext(*this);
+  }
+
+  // For now, only fold IsSubTraitAttr in parser context, un-foldable parametric
+  // trait will be erased after lowerLIT.
+  // TODO: preserve trait symbols in KGEN.
+  if (auto isRefinedTrait =
+          sugarDynCastIfPresent<IsRefinedTypeAttr>(typedAttr)) {
+    auto sourceType = ASTType(isRefinedTrait.getSourceType());
+    if (auto targetTrait =
+            sugarDynCast<TraitType>(ASTType(isRefinedTrait.getTargetType()))) {
+      ConformanceResult foldResult = sourceType.checkConformance(
+          targetTrait, shared, /*callerAssumptions=*/{});
+      if (foldResult == ConformanceResult::NeedsEvidence)
+        return failure(); // un-foldable
+
+      return TypedAttr(BoolAttr::get(isRefinedTrait.getContext(),
+                                     foldResult == ConformanceResult::Yes));
+    }
   }
 
   // Handle DowncastAttr.

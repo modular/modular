@@ -236,6 +236,8 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
   // properly in KGEN for a better error message.
   // We simply strip all downcast at the moment otherwise all downcasts will be
   // in same (useless) form of `#downcast<T> : !kgen.type` anyway.
+  //
+  // TODO: preserve trait symbol in KGEN for downcast/conforms_to/is_sub_trait.
   replacer.addInferredDomainNonRecursiveReplacement(
       [&replacer](DowncastAttr downcast) -> FailureOr<Attribute> {
         auto typeOr = replacer.replace(downcast.getType(), TypeDomain::AsType);
@@ -248,6 +250,10 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
         // Since we are erasing the trait target type, the downcast becomes
         // essentially an upcast to type.type
         return UpcastAttr::get(*typeOr, *downcastValOr);
+      });
+  replacer.addInferredDomainNonRecursiveReplacement(
+      [](IsRefinedTypeAttr isRefinedTrait) -> FailureOr<Attribute> {
+        return BoolAttr::get(isRefinedTrait.getContext(), true);
       });
 
   // ParamRefTypes should be TypeValueType if in the value domain.
