@@ -194,6 +194,19 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue &init,
       .getUserResultType();
 }
 
+/// Try to infer the type of an initializer list/dict/set/slice literal by
+/// first binding it to `preferred` and, on failure, to the literal's default
+/// type (e.g. `List[Int]` for a list literal).  Returns a null `Type` if
+/// neither binding succeeds.
+static Type tryInferInitializerType(ASTDecl &declScope, InitializerUValue &init,
+                                    ASTExprAnd<AnyValue> operand,
+                                    ASTType preferred) {
+  if (Type result = inferInitializerType(declScope, init, operand, preferred))
+    return result;
+  return inferInitializerType(declScope, init, operand,
+                              init.getDefaultType(declScope.getShared()));
+}
+
 // TODO: Reconsolidate this.
 namespace M::KGEN::LIT {
 void printUValueTypeInfo(const AnyValue &value, MojoInflightDiag &diag);
@@ -439,16 +452,11 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
   // since those are what we're inferring from the arguments.  The result
   // 'actualType' will have those newly inferred parameters.
   if (auto initValue = operand.ir.getIfInitializer()) {
-    // If we have a type like List[$0] replace it with List[?] so we can
-    // infer the unbound parameter.
-    auto unbound = expectedType.getWithUnknownParametersReplaced(getShared());
-    ASTType initType =
-        inferInitializerType(getDeclScope(), *initValue, operand, unbound);
-    // If the literal cannot bind to the inferred type, try binding it to the
-    // default literal type and matching the inferred type against that.
-    if (!initType)
-      initType = inferInitializerType(getDeclScope(), *initValue, operand,
-                                      initValue->getDefaultType(getShared()));
+    // Try binding the literal to `expectedType` (e.g. `List[$0]` becomes
+    // `List[?]` so the unbound parameter is inferred), then fall back to the
+    // literal's default type.
+    ASTType initType = tryInferInitializerType(getDeclScope(), *initValue,
+                                               operand, expectedType);
 
     // If there were declaration errors, assume success to not raise
     // spurious errors due to not resolving to those erroneous
@@ -1426,6 +1434,18 @@ LogicalResult ParamInf::inferForCall(
         } else {
           // Otherwise, infer the variadic element type from the value's type.
           ASTType toPush = operand.ir.getRValueTypeIfResolvable();
+
+          // Initializer UValues (list/dict/set/slice literals) don't have a
+          // resolvable RValue type until they're bound to a target type.
+          // Apply the same fallback `inferCValue` uses so a literal passed to
+          // a trait-bound pack binds to its default type instead of bailing
+          // out with a bogus "unresolved type" diagnostic.
+          if (!toPush) {
+            if (auto initValue = operand.ir.getIfInitializer())
+              toPush = tryInferInitializerType(getDeclScope(), *initValue,
+                                               operand, ASTType(elementType));
+          }
+
           if (!toPush) {
             getMojoDiag(operand.expr->getLoc())
                 << "could not infer type of parameter pack "
