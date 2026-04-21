@@ -37,10 +37,7 @@ from max.kv_cache import (
     TransferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import (
-    PipelineConfig,
-    TextGenerationPipeline,
-)
+from max.pipelines.lib import PipelineConfig, TextGenerationPipeline
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.scheduler.base import (
@@ -279,7 +276,6 @@ class DecodeScheduler(Scheduler):
                     context,
                     replica_idx=replica_idx,
                     num_steps=1,
-                    num_speculative_steps=self.scheduler_config.num_speculative_tokens,
                 )
             except InsufficientBlocksError:
                 # If we don't have enough space, we will return this to the request queue.

@@ -1290,17 +1290,12 @@ class OverlapTextGenerationPipeline(
                     for idx in range(batch_size)
                 ]
             )
-        with self._kv_manager.reserve(
-            replica_batches,
-            num_steps=1,
-            num_speculative_steps=num_speculative_tokens,
-        ):
+        with self._kv_manager.reserve(replica_batches, num_steps=1):
             max_cache_length = self._effective_max_cache_length
             kv_cache_inputs = self._kv_manager.runtime_inputs(
                 replica_batches,
                 num_steps=1,
                 max_cache_length=max_cache_length,
-                num_speculative_steps=num_speculative_tokens,
             )
 
             return_n_logits = (
@@ -1440,13 +1435,10 @@ class OverlapTextGenerationPipeline(
                     inputs.batches,
                     num_steps=1,
                     max_cache_length=self._graph_capture_runner._max_cache_length_upper_bound,
-                    num_speculative_steps=num_speculative_steps,
                 )
         else:
             kv_cache_inputs = self._kv_manager.runtime_inputs(
-                inputs.batches,
-                num_steps=1,
-                num_speculative_steps=num_speculative_steps,
+                inputs.batches, num_steps=1
             )
 
         return_n_logits = (
@@ -1466,9 +1458,7 @@ class OverlapTextGenerationPipeline(
             debug_verify_model_inputs = copy.copy(model_inputs)
             debug_verify_model_inputs.update(
                 kv_cache_inputs=self._kv_manager.runtime_inputs(
-                    inputs.batches,
-                    num_steps=1,
-                    num_speculative_steps=num_speculative_steps,
+                    inputs.batches, num_steps=1
                 )
             )
 

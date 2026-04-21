@@ -73,6 +73,7 @@ def create_kv_cache(
     kv_connector: KVConnectorType | None = None,
     dp: int = 1,
     device: Device = CPU(),
+    num_speculative_tokens: int = 0,
 ) -> PagedKVCacheManager:
     dtype = DType.float32
 
@@ -87,6 +88,7 @@ def create_kv_cache(
         host_kvcache_swap_space_gb=999,
         data_parallel_degree=dp,
         devices=[DeviceRef.from_device(device) for i in range(dp)],
+        num_eagle_speculative_tokens=num_speculative_tokens,
     )
 
     session = InferenceSession(devices=[device])
@@ -140,6 +142,7 @@ def create_paged_scheduler(
         kv_connector=kv_connector,
         dp=dp,
         device=device,
+        num_speculative_tokens=num_speculative_tokens,
     )
 
     # Create a scheduler with a paged manager

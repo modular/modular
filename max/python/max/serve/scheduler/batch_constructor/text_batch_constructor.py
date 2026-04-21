@@ -776,10 +776,7 @@ class TextBatchConstructor:
 
                 try:
                     self.kv_cache.alloc(
-                        ctx,
-                        replica_idx=replica_idx,
-                        num_steps=1,
-                        num_speculative_steps=self.scheduler_config.num_speculative_tokens,
+                        ctx, replica_idx=replica_idx, num_steps=1
                     )
                 except InsufficientBlocksError:
                     if len(replica_requests.tg_reqs) == 0 and len(batch) == 0:
@@ -869,7 +866,6 @@ class TextBatchConstructor:
                         candidate_context,
                         replica_idx=replica_idx,
                         num_steps=batch.num_steps,
-                        num_speculative_steps=self.scheduler_config.num_speculative_tokens,
                     )
                     break
                 except InsufficientBlocksError:

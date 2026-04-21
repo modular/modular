@@ -159,6 +159,7 @@ class KVCacheParamInterface(Protocol):
     n_devices: int
     kv_connector: KVConnectorType | None
     host_kvcache_swap_space_gb: float | None
+    num_eagle_speculative_tokens: int = 0
 
     @property
     def bytes_per_block(self) -> int:
@@ -235,6 +236,9 @@ class KVCacheParams(KVCacheParamInterface):
 
     kvcache_quant_config: KVCacheQuantizationConfig | None = None
     """KVCache quantization config. Currently only FP8 quantization supported."""
+
+    num_eagle_speculative_tokens: int = 0
+    """Number of draft tokens to generate for EAGLE speculative decoding."""
 
     def __post_init__(self):
         """Validates configuration and computes derived fields after initialization.
@@ -636,6 +640,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
     n_devices: int
     kv_connector: KVConnectorType | None
     host_kvcache_swap_space_gb: float | None
+    num_eagle_speculative_tokens: int = 0
 
     @classmethod
     def from_params(cls, *params: KVCacheParams) -> MultiKVCacheParams:
@@ -663,6 +668,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
             n_devices=params[0].n_devices,
             kv_connector=params[0].kv_connector,
             host_kvcache_swap_space_gb=params[0].host_kvcache_swap_space_gb,
+            num_eagle_speculative_tokens=params[0].num_eagle_speculative_tokens,
         )
 
     def __post_init__(self) -> None:
@@ -702,6 +708,14 @@ class MultiKVCacheParams(KVCacheParamInterface):
         if len(host_kvcache_swap_space_gb) > 1:
             raise ValueError(
                 f"All params must use the same host_kvcache_swap_space_gb, got: {host_kvcache_swap_space_gb}"
+            )
+
+        num_eagle_speculative_tokens = {
+            p.num_eagle_speculative_tokens for p in self.params
+        }
+        if len(num_eagle_speculative_tokens) > 1:
+            raise ValueError(
+                f"All params must use the same num_eagle_speculative_tokens, got: {num_eagle_speculative_tokens}"
             )
 
     @property

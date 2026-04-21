@@ -165,6 +165,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             is_mla=True,
             num_q_heads=huggingface_config.num_attention_heads,
             kvcache_quant_config=kvcache_quant_config,
+            num_eagle_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
+            if pipeline_config.speculative
+            else 0,
         )
 
     @staticmethod
