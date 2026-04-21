@@ -421,6 +421,14 @@ This version is still a work in progress.
 
 ## 🛠️ Fixed
 
+- Fixed pack inference failing with `could not infer type of parameter pack ...
+  given value with unresolved type` when passing list, dict, set, or slice
+  literals to a `*Ts`-bound variadic pack parameter (e.g.
+  `def foo[*Ts: Iterable](*args: *Ts)`). Pack inference now applies the same
+  default-type fallback that single-argument trait-bound parameters already
+  use, so `foo([1, 2, 3], [4, 5, 6])` resolves each literal to its default
+  type (e.g. `List[Int]`) before binding the pack.
+
 - Fixed `mojo` aborting at startup with `std::filesystem::filesystem_error`
   when `$HOME` is not traversable by the running UID (common in containerized
   CI where the image's build-time UID differs from the runtime UID). The
