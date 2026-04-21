@@ -291,27 +291,27 @@ class DebugConfig:
     """
     Unified debug configuration for MAX inference.
 
-    ``DebugConfig`` is a process-wide singleton accessed via
-    :attr:`InferenceSession.debug`.  It controls model debugging
-    features such as NaN checks, synchronous GPU execution, stack
-    traces, and IR dumping.
+    ``DebugConfig`` is a process-wide singleton accessed through
+    :attr:`InferenceSession.debug`. It controls model debugging features
+    such as ``NaN`` checks, synchronous GPU execution, stack traces, and IR
+    dumping.
 
-    The same options can be configured through three mechanisms:
+    You can configure debugging options three ways:
 
-    * **Environment variable** ``MODULAR_DEBUG``: a comma-separated
-      list of tokens, where each token is either a bare flag name or
-      ``key=value``.  Example:
-      ``MODULAR_DEBUG=nan-check,assert-level=all``.  The bare token
-      ``sensible`` enables a curated default set.
-    * **Configuration file**: the ``[max-debug]`` section in
-      ``modular.cfg``.
-    * **Python API**: ``InferenceSession.debug.<property> = <value>``.
+    * Add a ``[max-debug]`` section to the ``modular.cfg`` configuration
+      file with the properties below in kebab case. For example,
+      ``nan-check = true`` or ``assert-level = all``.
+    * Set the ``MODULAR_DEBUG`` environment variable to a list of
+      kebab-case property names separated by commas. Boolean properties
+      can be enabled with just the name; others use ``name=value`` form.
+      For example: ``MODULAR_DEBUG=nan-check,assert-level=all``.
+    * Set properties directly with the Python API, for example
+      ``InferenceSession.debug.<property> = <value>``. Options are
+      class-level on :class:`InferenceSession` because they affect
+      globally shared infrastructure.
 
-    Options are class-level on :class:`InferenceSession` because they
-    affect globally shared infrastructure.  One option —
-    ``source_tracebacks`` — also lives on :attr:`Graph.debug` because
-    it is consumed during graph construction, before an
-    ``InferenceSession`` exists.
+    For the environment variable and config file, the name ``sensible``
+    enables a curated default set defined in :attr:`sensible_mode`.
     """
 
     @property
@@ -357,7 +357,7 @@ class DebugConfig:
     @property
     def source_tracebacks(self) -> bool:
         """
-        When ``True``, captures Python source locations during graph construction so runtime errors can be traced back to user code.  Takes effect at graph build time; typically set via ``Graph.debug.source_tracebacks``.
+        When ``True``, captures Python source locations during graph construction so runtime errors can be traced back to user code.  Takes effect at graph build time and is typically set using ``Graph.debug.source_tracebacks``.
         """
 
     @source_tracebacks.setter
@@ -395,7 +395,7 @@ class DebugConfig:
     @property
     def sensible_mode(self) -> bool:
         """
-        When set to ``True``, enables a curated default set: ``nan_check``, ``assert_level='all'``, ``device_sync_mode``, ``stack_trace_on_error``, ``stack_trace_on_crash``, and ``source_tracebacks``.  Individual options can still be overridden afterwards.
+        When set to ``True``, enables a curated default debugging set, including ``nan_check``, ``assert_level='all'``, ``device_sync_mode``, ``stack_trace_on_error``, ``stack_trace_on_crash``, and ``source_tracebacks``.  You can override the defaults using individual properties.
         """
 
     @sensible_mode.setter

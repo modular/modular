@@ -340,10 +340,10 @@ def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
 Module = mlir.Module
 
 
-class _GraphDebugConfig:
-    """Narrow view of ``DebugConfig`` exposed via :attr:`Graph.debug`.
+class GraphDebugConfig:
+    """Narrow view of :class:`max.engine.DebugConfig` exposed through :attr:`Graph.debug`.
 
-    Only :attr:`source_tracebacks` lives on ``Graph.debug`` because it is
+    The attribute :attr:`source_tracebacks` lives on ``Graph.debug`` because it is
     consumed during graph construction, before an ``InferenceSession`` exists.
     All other debug options are available on ``InferenceSession.debug`` and
     share the same global state.
@@ -351,6 +351,7 @@ class _GraphDebugConfig:
 
     @property
     def source_tracebacks(self) -> bool:
+        """See :attr:`max.engine.DebugConfig.source_tracebacks`."""
         return _InferenceSession.debug.source_tracebacks
 
     @source_tracebacks.setter
@@ -441,7 +442,7 @@ class Graph:
             ``None``.
     """
 
-    debug = _GraphDebugConfig()
+    debug = GraphDebugConfig()
 
     # Use a dict rather than a set to keep params ordered.
     # This is to make IR generation deterministic for model IR cache hits.
