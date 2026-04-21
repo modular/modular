@@ -12,8 +12,7 @@ from tests.util import assert_mojo_format
 
 # Bare capture modes (no name). `ref` always requires a name, so it's
 # covered by `test_unified_raises_mixed_capture_list` instead.
-# `var ^` should be `var^` — see MOTO-1569 for the spacing fix.
-CAPTURE_MODES = ["var", "var ^", "read", "mut"]
+CAPTURE_MODES = ["var", "var^", "read", "mut"]
 
 # Type expressions accepted after `raises` in a unified closure. `Foo.Bar`
 # requires a `struct Foo` prelude.
@@ -100,6 +99,19 @@ def test_unified_raises_mixed_capture_list():
         "    def cb[]() unified raises {var a, read b, mut c, ref d}:\n"
         "        var x = a + b + d\n"
         "        c = 1\n"
+    )
+    assert_mojo_format(source, source)
+
+
+def test_unified_var_move_named_capture():
+    """Preserves ``var^ name`` (move marker on a named capture) tight."""
+    source = (
+        "def main() raises:\n"
+        "    var a: Int = 0\n"
+        "\n"
+        "    @always_inline\n"
+        "    def cb[]() unified raises {var^ a}:\n"
+        "        var x = a\n"
     )
     assert_mojo_format(source, source)
 

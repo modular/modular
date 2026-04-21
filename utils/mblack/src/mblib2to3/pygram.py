@@ -58,6 +58,7 @@ class _python_symbols(Symbols):
     atom: int
     augassign: int
     break_stmt: int
+    capture_item: int
     case_block: int
     classdef: int
     comp_for: int

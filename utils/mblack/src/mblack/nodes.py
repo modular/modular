@@ -546,6 +546,12 @@ def whitespace(
         if t == token.LSQB and prev and prev.type == token.REF:
             return NO
 
+    elif p.type == syms.capture_item:
+        # No space before `^` in a `var^` move-mode capture
+        # (e.g., `{var^}` or `{var^ a}`, not `{var ^ a}`).
+        if t == token.CIRCUMFLEX:
+            return NO
+
     return SPACE
 
 
