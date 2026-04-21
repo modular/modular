@@ -748,24 +748,23 @@ def _types_to_int_tuple[Types: TypeList[Trait=CoordLike, ...]]() -> IntTuple:
 
 
 # This is passed a pair of [shape, stride] as CoordLike values.
-comptime _StaticCosizeReducer[
-    Prev: Int,
-    ShapeAndStride: Variadic.TypesOfTrait[CoordLike],
-] = (TypeList[ShapeAndStride]()[0].static_value - 1) * TypeList[
-    ShapeAndStride
-]()[
-    1
-].static_value + Prev
+comptime _StaticCosizeTabulator[
+    Shapes: TypeList[Trait=CoordLike, ...],
+    Strides: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: Int = (Shapes[idx].static_value - 1) * Strides[idx].static_value
 
+comptime _AddReducer[a: Int, b: Int]: Int = a + b
 
 comptime _StaticCosize[
     Shapes: TypeList[Trait=CoordLike, ...],
     Strides: TypeList[Trait=CoordLike, ...],
-] = Variadic.zip_types[Shapes.values, Strides.values]().reduce[
-    FromAndTo=Int,
-    BaseVal=1,
-    Reducer=_StaticCosizeReducer,
+] = ParameterList.tabulate[
+    Shapes.size, _StaticCosizeTabulator[Shapes, Strides, _]
+]().reduce[
+    1, _AddReducer
 ]
+"""The compile-time size of the memory region spanned by the layout."""
 
 
 comptime _RowMajor[*element_types: CoordLike] = TypeList[
@@ -1985,7 +1984,7 @@ def coalesce[
 # compile-time Bool.
 
 
-comptime _WCPair3[L: CoordLike, C: CoordLike] = (
+comptime _WCPair3[L: CoordLike, C: CoordLike]: Bool = (
     True if not C.is_tuple else (
         False if not L.is_tuple else (
             L.ParamListType.size == C.ParamListType.size
@@ -1995,62 +1994,58 @@ comptime _WCPair3[L: CoordLike, C: CoordLike] = (
 """Depth-3 pair check (innermost): scalar coords pass, tuple coords only
 check length match without descending further."""
 
-
-comptime _WCChecker3[pair: Variadic.TypesOfTrait[CoordLike]] = (
-    _WCPair3[TypeList[pair]()[0], TypeList[pair]()[1]]
-)
-
-comptime _WCPair2[L: CoordLike, C: CoordLike] = (
+comptime _WCPair2[L: CoordLike, C: CoordLike]: Bool = (
     True if not C.is_tuple else (
-        False if not L.is_tuple else (
-            False if L.ParamListType.size
-            != C.ParamListType.size else Variadic.zip_types[
-                L._ParamListType, C._ParamListType
-            ]().all_satisfies[
-                _WCChecker3,
-            ]()
-        )
+        False if not L.is_tuple else _AllEltsSatisfy[
+            L.ParamListType, C.ParamListType, _WCPair3
+        ]
     )
 )
 """Depth-2 pair check: delegates sub-element checks to depth-3."""
 
-
-comptime _WCChecker2[pair: Variadic.TypesOfTrait[CoordLike]] = (
-    _WCPair2[TypeList[pair]()[0], TypeList[pair]()[1]]
-)
-"""Checks a depth2 pair."""
-
-
-comptime _WCPair1[L: CoordLike, C: CoordLike] = (
+comptime _WCPair1[L: CoordLike, C: CoordLike]: Bool = (
     True if not C.is_tuple else (
-        False if not L.is_tuple else (
-            False if L.ParamListType.size
-            != C.ParamListType.size else Variadic.zip_types[
-                L._ParamListType, C._ParamListType
-            ]().all_satisfies[
-                _WCChecker2,
-            ]()
-        )
+        False if not L.is_tuple else _AllEltsSatisfy[
+            L.ParamListType, C.ParamListType, _WCPair2
+        ]
     )
 )
 """Depth-1 pair check: delegates sub-element checks to depth-2."""
 
-comptime _WCChecker1[pair: Variadic.TypesOfTrait[CoordLike]] = (
-    _WCPair1[TypeList[pair]()[0], TypeList[pair]()[1]]
-)
-"""Checks a depth1 pair."""
+
+comptime _BoolIsTrue[a: Bool]: Bool = a
+comptime _TwoCoordLikePredicate = __mlir_type[
+    `!lit.generator<<"LHS": `,
+    +CoordLike,
+    `, "RHS": `,
+    +CoordLike,
+    `> `,
+    +Bool,
+    `>`,
+]
+
+comptime _tabulatePredicate[
+    a: TypeList[Trait=CoordLike, ...],
+    b: TypeList[Trait=CoordLike, ...],
+    pred: _TwoCoordLikePredicate,
+    idx: Int,
+]: Bool = pred[a[idx], b[idx]]
+
+comptime _AllEltsSatisfy[
+    a: TypeList[Trait=CoordLike, ...],
+    b: TypeList[Trait=CoordLike, ...],
+    pred: _TwoCoordLikePredicate,
+]: Bool = a.size == b.size and ParameterList.tabulate[
+    a.size, _tabulatePredicate[a, b, pred, _]
+]().all_satisfies[
+    _BoolIsTrue,
+]()
+
 
 comptime _WeaklyCompatible[
     layout_types: TypeList[Trait=CoordLike, ...],
     coord_types: TypeList[Trait=CoordLike, ...],
-] = (
-    False if layout_types.size
-    != coord_types.size else Variadic.zip_types[
-        layout_types.values, coord_types.values
-    ]().all_satisfies[
-        _WCChecker1,
-    ]()
-)
+] = _AllEltsSatisfy[layout_types, coord_types, _WCPair1]
 """Top-level variadic pair check (depth 0): checks that both variadics have
 the same length and all element pairs are weakly compatible."""
 

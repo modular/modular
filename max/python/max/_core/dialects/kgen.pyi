@@ -1284,40 +1284,6 @@ class ParamListTabulateAttr(max._core.Attribute):
     @property
     def generator(self) -> max._core.dialects.builtin.TypedAttr: ...
 
-class ParamListZipAttr(max._core.Attribute):
-    """
-    The `#kgen.param_list.zip` attribute is used to zip a param_list of
-    param_list values.
-
-    Example:
-    ```mlir
-    #kgen.param_list.zip<[[Int, Int], [Float, Float]]> : !param_list<!param_list<!AnyType>>
-    // ->
-    #kgen.param_list<[[Int, Float], [Int, Float]]> : !param_list<!param_list<!AnyType>>
-    ```
-
-    At the moment, when the provided param_list are of different lengths, we zip
-    until the shortest list are consumed. In the future, we might want to
-    extend the attribute to accept an "default" value for "zip_longest".
-    """
-
-    @overload
-    def __init__(
-        self,
-        type: ParamListType,
-        param_lists: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        type: ParamListType,
-        param_lists: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @property
-    def type(self) -> ParamListType: ...
-    @property
-    def param_lists(self) -> max._core.dialects.builtin.TypedAttr: ...
-
 class ParamOperatorAttr(max._core.Attribute):
     @overload
     def __init__(

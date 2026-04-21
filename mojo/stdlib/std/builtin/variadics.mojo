@@ -61,42 +61,6 @@ struct Variadic:
         Ts: The variadic sequences to concatenate.
     """
 
-    comptime zip_types[
-        Trait: type_of(AnyType), //, *types: _MLIR.KGENTypeListType[Trait]
-    ] = ParameterList[
-        __mlir_attr[
-            `#kgen.param_list.zip<`,
-            types.values,
-            `> : `,
-            _MLIR.KGENParamListType[_MLIR.KGENTypeListType[Trait]],
-        ]
-    ]
-    """
-    Zips a group of variadics of types together.
-
-    Parameters:
-        Trait: The trait that the types conform to.
-        types: The type to check for.
-    """
-
-    comptime zip_values[
-        type: AnyType, //, *values: _MLIR.KGENParamListType[type]
-    ] = ParameterList[
-        __mlir_attr[
-            `#kgen.param_list.zip<`,
-            values.values,
-            `> : `,
-            _MLIR.KGENParamListType[_MLIR.KGENParamListType[type]],
-        ]
-    ]
-    """
-    Zips a group of variadics of values together.
-
-    Parameters:
-        type: The type that the values conform to.
-        values: The values to zip.
-    """
-
 
 # ===-----------------------------------------------------------------------===#
 # ParameterList and TypeList Utilities
