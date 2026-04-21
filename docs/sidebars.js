@@ -425,6 +425,7 @@ const maxSidebars = {
             "max/api/python/pipelines.architectures.llama3",
             "max/api/python/pipelines.architectures.llama3_modulev3",
             "max/api/python/pipelines.architectures.mamba",
+            "max/api/python/pipelines.architectures.minimax_m2",
             "max/api/python/pipelines.architectures.mistral",
             "max/api/python/pipelines.architectures.mistral3",
             "max/api/python/pipelines.architectures.mpnet",

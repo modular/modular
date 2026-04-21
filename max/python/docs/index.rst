@@ -72,6 +72,7 @@ Modules
    pipelines.architectures.llama3
    pipelines.architectures.llama3_modulev3
    pipelines.architectures.mamba
+   pipelines.architectures.minimax_m2
    pipelines.architectures.mistral
    pipelines.architectures.mistral3
    pipelines.architectures.mpnet
