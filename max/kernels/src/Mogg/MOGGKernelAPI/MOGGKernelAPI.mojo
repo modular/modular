@@ -11637,13 +11637,17 @@ struct MatmulStaticScaledFloat8:
                 idx, scaled_val.cast[output_type]()
             )
 
-        # Create a dummy buffer to instruct the matmul kernel to accumulate
-        # in float32. The null pointer tells vendor matmul to allocate a
-        # temp buffer; the epilogue lambda writes to the real output.
+        # Allocate an fp32 scratch buffer for the matmul accumulator;
+        # the epilogue lambda reads from it, applies scaling, and writes
+        # the quantized result into the real output.
         comptime N = type_of(weight_tt).static_shape[0]
         var M = Int(input_tt.dim[0]())
-        var output_dummy = TileTensor[DType.float32, _, MutAnyOrigin](
-            None,
+        var device_ctx = ctx.get_device_context()
+        var scratch_buffer = device_ctx.enqueue_create_buffer[DType.float32](
+            M * N
+        )
+        var output_scratch = TileTensor(
+            scratch_buffer.unsafe_ptr(),
             row_major(Coord(RuntimeInt[DType.int64](Int64(M)), Idx[N]())),
         )
 
@@ -11652,10 +11656,10 @@ struct MatmulStaticScaledFloat8:
             transpose_b=True,
             elementwise_lambda_fn=scaled_output_fn,
         ](
-            output_dummy,
+            output_scratch,
             input_tt,
             weight_tt,
-            Optional(ctx.get_device_context()),
+            Optional(device_ctx),
         )
 
 

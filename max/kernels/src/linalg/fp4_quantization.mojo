@@ -32,7 +32,6 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_tensor import NullableTileTensor
 from layout.tile_layout import TensorLayout
 from std.logger import Logger
 from std.gpu.primitives.warp import lane_group_max, shuffle_xor
@@ -1162,7 +1161,7 @@ def block_scaled_matmul_with_epilogue[
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NullableTileTensor[mut=True, c_type, ...],
+    c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     a_scales: TileTensor[scales_dtype, ...],
@@ -1173,7 +1172,9 @@ def block_scaled_matmul_with_epilogue[
     """Our sm100 block scaled matmul kernel still does not support fusion of elementwise
     operations. This is a temporary implementation that uses our sm100 block scaled matmul
     kernel and dispatch a separate epilogue kernel to apply the elementwise
-    operations.
+    operations. Callers must allocate `c`; when an `elementwise_lambda_fn`
+    is supplied the matmul result is written into `c` and then read back
+    by the lambda.
     """
 
     comptime assert _is_sm10x_gpu(
@@ -1205,7 +1206,7 @@ def block_scaled_matmul_with_epilogue[
 
     var m = Int(c.dim[0]())
     var n = Int(c.dim[1]())
-    var k = Int(a.dim[1]()) * 2 if a_type == DType.uint8 else Int(a.dim[1]())
+    var _k = Int(a.dim[1]()) * 2 if a_type == DType.uint8 else Int(a.dim[1]())
     if m == 0 or n == 0:
         return
 
@@ -1215,8 +1216,8 @@ def block_scaled_matmul_with_epilogue[
         # fmt: off
         return String(
             "(gpu",
-            ";", trace_arg("A", IndexList[2](m, k), a_type),
-            ";", trace_arg("B", IndexList[2](k, n), b_type),
+            ";", trace_arg("A", IndexList[2](m, _k), a_type),
+            ";", trace_arg("B", IndexList[2](_k, n), b_type),
             ";", trace_arg("C", IndexList[2](m, n), c_type),
             ";A_scales=[", a_scales.dim[0](), ",", a_scales.dim[1](), "]",
             ";B_scales=[", b_scales.dim[0](), ",", b_scales.dim[1](), "]",
@@ -1236,12 +1237,9 @@ def block_scaled_matmul_with_epilogue[
         task_id=get_safe_task_id(ctx),
     ):
         comptime if not elementwise_lambda_fn:
-            if not c.ptr:
-                raise Error("c must be allocated!")
-
             matmul[scales_type=scales_dtype](
                 ctx,
-                c.value(),
+                c,
                 a,
                 b,
                 a_scales=a_scales,
@@ -1258,65 +1256,33 @@ def block_scaled_matmul_with_epilogue[
                 simd_width_of[c_type, target=get_gpu_target()]()
             )
 
-            # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
-            # apply the epilogue.
-            if c.ptr:
-                var c_tt = c.value()
-
-                @parameter
-                @__copy_capture(c_tt, n)
-                def epilogue_wrapper[
-                    simd_width: Int, rank: Int, alignment: Int = 1
-                ](idx: IndexList[rank]):
-                    var c_coord = Index(idx[0], idx[1])
-                    var c_val = rebind[SIMD[c_type, simd_width]](
-                        c_tt.raw_load[width=simd_width](idx[0] * n + idx[1])
-                    )
-                    epilogue[c_type, simd_width, alignment=alignment](
-                        c_coord, c_val
-                    )
-
-                matmul[scales_type=scales_dtype](
-                    ctx,
-                    c_tt,
-                    a,
-                    b,
-                    a_scales=a_scales,
-                    b_scales=b_scales,
-                    alpha=tensor_sf,
-                    transpose_b=True,
-                    c_row_major=True,
+            @parameter
+            @__copy_capture(c, n)
+            def epilogue_wrapper[
+                simd_width: Int, rank: Int, alignment: Int = 1
+            ](idx: IndexList[rank]):
+                var c_coord = Index(idx[0], idx[1])
+                var c_val = rebind[SIMD[c_type, simd_width]](
+                    c.raw_load[width=simd_width](idx[0] * n + idx[1])
                 )
-                elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                    Index(m, n), ctx
+                epilogue[c_type, simd_width, alignment=alignment](
+                    c_coord, c_val
                 )
-                return
 
-            # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-            var num_elems = m * n
-            var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](num_elems)
-            var c_tmp = TileTensor(
-                rebind[UnsafePointer[Scalar[c_type], MutExternalOrigin]](
-                    tmp_device_buffer.unsafe_ptr()
-                ),
-                row_major(Coord(Idx(m), Idx(n))),
-            )
-
-            block_scaled_matmul_with_epilogue[
-                SF_VECTOR_SIZE=SF_VECTOR_SIZE,
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ](
-                c_tmp,
+            matmul[scales_type=scales_dtype](
+                ctx,
+                c,
                 a,
                 b,
-                a_scales,
-                b_scales,
-                tensor_sf,
-                ctx,
+                a_scales=a_scales,
+                b_scales=b_scales,
+                alpha=tensor_sf,
+                transpose_b=True,
+                c_row_major=True,
             )
-
-            _ = tmp_device_buffer^
+            elementwise[epilogue_wrapper, simd_size, target="gpu"](
+                Index(m, n), ctx
+            )
 
 
 # ===----------------------------------------------------------------------=== #

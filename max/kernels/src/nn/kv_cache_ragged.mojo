@@ -42,7 +42,6 @@ from layout import (
     lt_to_tt,
     row_major,
 )
-from layout.tile_tensor import NullableTileTensor
 from linalg.matmul import elementwise_epilogue_type, matmul
 from linalg.fp8_quantization import blockwise_scaled_fp8_with_epilogue
 from linalg.fp4_quantization import (
@@ -1516,18 +1515,14 @@ def _matmul_blockwise_scaled_fp8_common[
             layout=layout,
         )
 
-    # Construct a null-pointer TileTensor for the output (allocated by the
-    # callee when an epilogue is present).
-    var c_tt = NullableTileTensor[
-        output_dtype,
-        RowMajorLayout[
-            *Coord[
-                RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-            ].element_types
-        ],
-        MutAnyOrigin,
-    ](
-        ptr={},
+    # Allocate an output-typed scratch buffer for the matmul result; the
+    # epilogue lambda reads from it and writes the final values to the KV
+    # cache.
+    var scratch_buffer = context.enqueue_create_buffer[output_dtype](
+        TOTAL_SEQ_LEN * N
+    )
+    var c_tt = TileTensor(
+        scratch_buffer.unsafe_ptr(),
         layout=row_major(
             (
                 RuntimeInt(Scalar[DType.int64](TOTAL_SEQ_LEN)),
@@ -1581,19 +1576,15 @@ def _matmul_blockwise_scaled_fp4_common[
     var TOTAL_SEQ_LEN = hidden_state.dim[0]()
     comptime N = Int(weight.layout.shape[0])
 
-    # Construct a null-pointer TileTensor for the output (allocated by the
-    # callee when an epilogue is present).
-    var c_tt = NullableTileTensor[
-        output_dtype,
-        RowMajorLayout[
-            *Coord[
-                RuntimeInt[DType.int64], RuntimeInt[DType.int64]
-            ].element_types
-        ],
-        MutAnyOrigin,
-    ](
-        ptr={},
-        layout=row_major(
+    # Allocate an output-typed scratch buffer for the matmul result; the
+    # epilogue lambda reads from it and writes the final values to the KV
+    # cache.
+    var scratch_buffer = context.enqueue_create_buffer[output_dtype](
+        TOTAL_SEQ_LEN * N
+    )
+    var c_tt = TileTensor(
+        scratch_buffer.unsafe_ptr(),
+        row_major(
             (
                 RuntimeInt(Scalar[DType.int64](TOTAL_SEQ_LEN)),
                 RuntimeInt(Scalar[DType.int64](N)),

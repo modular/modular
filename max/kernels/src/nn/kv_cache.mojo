@@ -406,29 +406,38 @@ def _matmul_common[
     )
 
     comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
-    var c_nd: LayoutTensor[dtype, c_layout, MutAnyOrigin]
 
     comptime if is_cpu[target]():
         var c_ptr = alloc[Scalar[dtype]](BS * SEQ_LEN * N)
-
-        c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
+        var c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
             c_ptr,
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
+
+        matmul[
+            transpose_b=True,
+            target=target,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
+
+        c_nd.ptr.free()
     else:
-        c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
-            None,
+        # Allocate a device-local scratch for the matmul accumulator; the
+        # epilogue lambda reads from it and scatters Q/K/V to the real
+        # output and KV cache.
+        var c_device_buffer = context.value().enqueue_create_buffer[dtype](
+            BS * SEQ_LEN * N
+        )
+        var c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
+            c_device_buffer.unsafe_ptr(),
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
 
-    matmul[
-        transpose_b=True,
-        target=target,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
-
-    comptime if is_cpu[target]():
-        c_nd.ptr.free()
+        matmul[
+            transpose_b=True,
+            target=target,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
 
 
 # ===-----------------------------------------------------------------------===#
