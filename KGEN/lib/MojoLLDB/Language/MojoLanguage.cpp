@@ -6,6 +6,7 @@
 
 #include "MojoLanguage.h"
 #include "../Utils/Errors.h"
+#include "../Utils/ValueObjectHelpers.h"
 #include "Formatters/MojoDecoratorBasedTypeFormatter.h"
 #include "Formatters/MojoKGENVariantTypeFormatter.h"
 #include "Formatters/MojoListTypeFormatter.h"
@@ -44,57 +45,6 @@ Language *MojoLanguage::CreateInstance(lldb::LanguageType language) {
   default:
     return nullptr;
   }
-}
-
-/// Unwrap Mojo wrapper struct layers to reach a scalar or pointer leaf.
-/// Mojo types like Int, UInt, UnsafePointer etc. nest their raw value inside
-/// fields named `_mlir_value`, `value`, `address`, `_value`, or `_storage`.
-/// Walk down through any such wrappers until we hit a scalar or pointer.
-///
-/// NOTE: Each iteration calls GetChildMemberWithName on potentially synthetic
-/// ValueObjects. Call sites should only pass children known to exist for the
-/// type (e.g., _len/_data after resolving to a Span). Passing an arbitrary
-/// synthetic ValueObject whose children provider uses cantFail may crash if
-/// none of the known field names exist and the type is not yet scalar or
-/// pointer.
-static ValueObjectSP unwrapToScalarOrPointer(ValueObjectSP field) {
-  while (field && !field->IsScalarType() && !field->IsPointerType()) {
-    if (auto member = field->GetChildMemberWithName("_mlir_value")) {
-      field = member;
-      continue;
-    }
-    if (auto member = field->GetChildMemberWithName("value")) {
-      field = member;
-      continue;
-    }
-    if (auto member = field->GetChildMemberWithName("address")) {
-      field = member;
-      continue;
-    }
-    if (auto member = field->GetChildMemberWithName("_value")) {
-      field = member;
-      continue;
-    }
-    if (auto member = field->GetChildMemberWithName("_storage")) {
-      field = member;
-      continue;
-    }
-    // Handle Scalar[T] (i.e. SIMD[T, 1]): the _mlir_value is a 1-element
-    // SIMD vector that LLDB does not recognize as a scalar type, so
-    // GetValueAsUnsigned fails on it directly.  Descend into the single
-    // child element to reach the underlying integer scalar.
-    //
-    // We check the type name explicitly to avoid descending into arbitrary
-    // 1-child wrappers that happen to lack a named member field.
-    if (llvm::StringRef(field->GetTypeName()).starts_with("!pop.simd<1,")) {
-      if (auto member = field->GetChildAtIndex(0)) {
-        field = member;
-        continue;
-      }
-    }
-    break;
-  }
-  return field;
 }
 
 static bool
