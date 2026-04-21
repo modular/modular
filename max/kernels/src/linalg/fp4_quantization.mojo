@@ -430,6 +430,9 @@ def block_scales_interleave_fp4[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_max_threads))
 )
+@__name(
+    t"block_scales_interleave_fp4_{scales_dtype}_{SF_VECTOR_SIZE}", mangle=True
+)
 def block_scales_interleave_fp4_kernel[
     scales_dtype: DType,
     input_scales_layout: Layout,
@@ -617,6 +620,7 @@ def naive_block_scaled_matmul[
     )
 
 
+@__name(t"naive_block_scaled_matmul", mangle=True)
 def naive_block_scaled_matmul_kernel[
     c_type: DType,
     a_type: DType,
@@ -722,6 +726,7 @@ def naive_block_scaled_matmul_kernel[
 @__llvm_arg_metadata(input_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(output_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(scales_tma_op, `nvvm.grid_constant`)
+@__name("quantize_dynamic_scaled_async_fp4_kernel", mangle=True)
 def quantize_dynamic_scaled_async_fp4_kernel[
     input_dtype: DType,
     input_tile_rank: Int,
@@ -1808,6 +1813,7 @@ def block_scales_interleave[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_max_threads))
 )
+@__name("quantize_mxfp4_amd_kernel", mangle=True)
 def _quantize_mxfp4_amd_kernel[
     output_layout: TensorLayout,
     scales_layout: TensorLayout,
@@ -1979,6 +1985,7 @@ def quantize_mxfp4_amd[
     )
 
 
+@__name("quantize_dynamic_block_scaled_mxfp4_kernel", mangle=True)
 def quantize_dynamic_block_scaled_mxfp4_kernel[
     in_dtype: DType,
     *,
@@ -2094,6 +2101,7 @@ def _mxfp4_dotprod(
     return accum.reduce_add()
 
 
+@__name("matmul_dynamic_block_scaled_mxfp4_kernel", mangle=True)
 def matmul_dynamic_block_scaled_mxfp4_kernel[
     out_dtype: DType
 ](
@@ -2165,6 +2173,7 @@ def matmul_dynamic_block_scaled_mxfp4[
         )
 
 
+@__name("grouped_matmul_block_scaled_mxfp4_kernel", mangle=True)
 def grouped_matmul_block_scaled_mxfp4_kernel[
     out_dtype: DType
 ](
