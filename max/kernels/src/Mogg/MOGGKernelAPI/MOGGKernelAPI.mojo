@@ -499,6 +499,32 @@ struct Copy:
         foreach[func](output, ctx)
 
 
+# TODO(GEX-3544): Remove once the FLUX.2 VAE encoder compiler-fusion
+# NaN bug is fixed. Identity copy with non-fused InputTensor and
+# non-fused OutputTensor so the compiler cannot fuse through the op's
+# boundary. Used as a fusion barrier in ResnetBlock2D.forward.
+@compiler.register("fusion_barrier")
+struct FusionBarrier:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def func[
+            width: Int, element_alignment: Int
+        ](idx: IndexList[rank]) -> SIMD[dtype, width]:
+            return input.load[width](idx)
+
+        foreach[func, target=target](output, ctx)
+
+
 @compiler.register("nan_check_count")
 struct NanCheckCountOp:
     """Counts NaN/Inf values in a floating-point tensor.
