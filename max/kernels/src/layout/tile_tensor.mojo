@@ -162,8 +162,8 @@ struct TileTensor[
     """
 
     comptime is_compatible_with[
-        C: Variadic.TypesOfTrait[CoordLike]
-    ] = WeaklyCompatible[Self.LayoutType, TypeList[C]()]
+        C: TypeList[Trait=CoordLike, ...]
+    ] = WeaklyCompatible[Self.LayoutType, C]
     """True if coordinate types `C` are structurally compatible with this
     tensor's layout shape.
 
@@ -677,7 +677,7 @@ struct TileTensor[
             coord: The coordinates specifying the element's position.
             value: The SIMD vector to store.
         """
-        comptime assert Self.is_compatible_with[coord.element_types.values]
+        comptime assert Self.is_compatible_with[coord.element_types]
 
         self.ptr.mut_cast[True]().store[
             alignment=alignment, non_temporal=non_temporal
@@ -2195,8 +2195,8 @@ struct NullableTileTensor[
     """True if both shape and stride are fully known at compile time."""
 
     comptime is_compatible_with[
-        C: Variadic.TypesOfTrait[CoordLike]
-    ] = WeaklyCompatible[Self.LayoutType, TypeList[C]()]
+        C: TypeList[Trait=CoordLike, ...]
+    ] = WeaklyCompatible[Self.LayoutType, C]
     """True if coordinate types `C` are structurally compatible with this
     tensor's layout shape.
 
@@ -2920,7 +2920,7 @@ def _tile_with_offset[
 def _tile[
     dtype: DType,
     coord_types: TypeList[Trait=CoordLike, ...],
-    tile_shape_types: Variadic.TypesOfTrait[CoordLike],
+    tile_shape_types: TypeList[Trait=CoordLike, _],
     //,
     *,
     stride_layout: TensorLayout,
@@ -2929,12 +2929,12 @@ def _tile[
         dtype,
         ...,
     ],
-    tile_shape: Coord[*TypeList[tile_shape_types]()],
+    tile_shape: Coord[*tile_shape_types],
     tile_coords: Coord[*coord_types],
 ) -> TileTensor[
     dtype,
     Layout[
-        shape_types=TypeList[tile_shape_types](),
+        shape_types=tile_shape_types,
         stride_types=stride_layout._shape_types,
     ],
     data_layout_tensor.origin,
@@ -2966,7 +2966,7 @@ def _tile[
     return TileTensor[
         dtype,
         Layout[
-            shape_types=TypeList[tile_shape_types](),
+            shape_types=tile_shape_types,
             stride_types=stride_layout._shape_types,
         ],
         data_layout_tensor.origin,
@@ -3166,7 +3166,7 @@ def _get_index_type[
 
 comptime _ToRuntimeMapper[
     dtype: DType,
-    element_types: Variadic.TypesOfTrait[CoordLike],
+    element_types: TypeList[Trait=CoordLike, _],
     idx: Int,
 ] = RuntimeInt[dtype]
 """Convert shape types to RuntimeInt for slicing operations.

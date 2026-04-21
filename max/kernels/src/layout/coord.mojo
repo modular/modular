@@ -26,7 +26,7 @@ trait CoordLike(
 ):
     """Trait for unified layout handling of compile-time and runtime indices."""
 
-    comptime _ParamListType: Variadic.TypesOfTrait[CoordLike]
+    comptime _ParamListType: TypeList[Trait=CoordLike, _]._mlir_type
     """The low-level parameter list of element types."""
 
     comptime ParamListType: TypeList[Trait=CoordLike, Self._ParamListType]
@@ -104,9 +104,7 @@ struct ComptimeInt[val: Int](CoordLike, TrivialRegisterPassable):
     comptime ParamListType = Coord[Self].element_types
     """The element types (Self for scalar types)."""
 
-    comptime _ParamListType: Variadic.TypesOfTrait[
-        CoordLike
-    ] = Self.ParamListType.values
+    comptime _ParamListType = Self.ParamListType.values
     """The low-level parameter list of element types."""
 
     comptime static_value: Int = Self.val
@@ -195,9 +193,7 @@ struct RuntimeInt[dtype: DType = DType.int](CoordLike, TrivialRegisterPassable):
     comptime ParamListType = Coord[Self].element_types
     """The element types (Self for scalar types)."""
 
-    comptime _ParamListType: Variadic.TypesOfTrait[
-        CoordLike
-    ] = Self.ParamListType.values
+    comptime _ParamListType = Self.ParamListType.values
     """The low-level parameter list of element types."""
 
     comptime static_value: Int = -1
@@ -375,9 +371,7 @@ struct _All(CoordLike, TrivialRegisterPassable):
     comptime ParamListType = Coord[Self].element_types
     """The element types (Self for scalar types)."""
 
-    comptime _ParamListType: Variadic.TypesOfTrait[
-        CoordLike
-    ] = Self.ParamListType.values
+    comptime _ParamListType = Self.ParamListType.values
     """The low-level parameter list of element types."""
 
     comptime static_value: Int = -2
@@ -433,9 +427,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     comptime ParamListType = Self.element_types
     """The element types of this `Coord`."""
 
-    comptime _ParamListType: Variadic.TypesOfTrait[
-        CoordLike
-    ] = Self.element_types.values
+    comptime _ParamListType = Self.element_types.values
     """The element types (Self for scalar types)."""
 
     comptime static_value: Int = -1
@@ -1832,8 +1824,8 @@ For each dimension:
 Example:
     ```mojo
     from layout.coord import _Idx2CrdResultTypes, ComptimeInt, RuntimeInt
-    comptime stride_t = TypeList.of[Trait=CoordLike, ComptimeInt[4], ComptimeInt[4], ComptimeInt[1]]().values
-    comptime shape_t = TypeList.of[Trait=CoordLike, ComptimeInt[3], ComptimeInt[1], ComptimeInt[4]]().values
+    comptime stride_t = TypeList.of[Trait=CoordLike, ComptimeInt[4], ComptimeInt[4], ComptimeInt[1]]()
+    comptime shape_t = TypeList.of[Trait=CoordLike, ComptimeInt[3], ComptimeInt[1], ComptimeInt[4]]()
     comptime types = _Idx2CrdResultTypes[DType.int64, RuntimeInt[DType.int64], stride_t, shape_t]
     ```
 """
@@ -1850,7 +1842,7 @@ struct _RegTuple[*element_types: CoordLike](
 
     comptime _mlir_type = __mlir_type[
         `!kgen.pack<:`,
-        Variadic.TypesOfTrait[CoordLike],
+        type_of(Self.element_types.values),
         Self.element_types.values,
         `>`,
     ]

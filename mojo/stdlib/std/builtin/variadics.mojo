@@ -50,9 +50,9 @@ struct Variadic:
     # ===-----------------------------------------------------------------------===#
 
     comptime concat_types[
-        T: type_of(AnyType), //, *Ts: Variadic.TypesOfTrait[T]
+        T: type_of(AnyType), //, *Ts: _MLIR.KGENTypeListType[T]
     ] = __mlir_attr[
-        `#kgen.param_list.concat<`, Ts.values, `> :`, Variadic.TypesOfTrait[T]
+        `#kgen.param_list.concat<`, Ts.values, `> :`, _MLIR.KGENTypeListType[T]
     ]
     """Represents the concatenation of multiple variadic sequences of types.
 
@@ -62,13 +62,13 @@ struct Variadic:
     """
 
     comptime zip_types[
-        Trait: type_of(AnyType), //, *types: Variadic.TypesOfTrait[Trait]
+        Trait: type_of(AnyType), //, *types: _MLIR.KGENTypeListType[Trait]
     ] = ParameterList[
         __mlir_attr[
             `#kgen.param_list.zip<`,
             types.values,
             `> : `,
-            _MLIR.KGENParamListType[Variadic.TypesOfTrait[Trait]],
+            _MLIR.KGENParamListType[_MLIR.KGENTypeListType[Trait]],
         ]
     ]
     """
@@ -205,10 +205,13 @@ struct TypeList[
     ```
     """
 
+    comptime _mlir_type = _MLIR.KGENTypeListType[Self.Trait]
+    """The low-level MLIR type of the type list."""
+
     comptime size: Int = Int(
         mlir_value=__mlir_attr[
             `#kgen.param_list.size<:`,
-            type_of(Self.values),
+            Self._mlir_type,
             ` `,
             +Self.values,
             `> : index`,
@@ -218,7 +221,7 @@ struct TypeList[
 
     comptime __getitem_param__[idx: Int] = __mlir_attr[
         `#kgen.param_list.get<:`,
-        type_of(Self.values),
+        Self._mlir_type,
         ` `,
         +Self.values,
         `, `,
@@ -239,7 +242,7 @@ struct TypeList[
             `#kgen.upcast<`,
             Self.values,
             `> : `,
-            Variadic.TypesOfTrait[dst_trait],
+            _MLIR.KGENTypeListType[dst_trait],
         ],
     ]
     """Upcasts a TypeList to a base trait.
@@ -298,7 +301,7 @@ struct TypeList[
             `,`,
             Self._IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
             `> : `,
-            Variadic.TypesOfTrait[Trait],
+            _MLIR.KGENTypeListType[Trait],
         ],
     ]
     """Builds a type list by applying an index-to-type mapper `count` times.
@@ -327,13 +330,13 @@ struct TypeList[
 
     # Note: this is _concat instead of concat because it takes MLIR typelists
     comptime _concat[
-        Trait: type_of(AnyType), //, *Ts: Variadic.TypesOfTrait[Trait]
+        Trait: type_of(AnyType), //, *Ts: _MLIR.KGENTypeListType[Trait]
     ] = TypeList[
         __mlir_attr[
             `#kgen.param_list.concat<`,
             Ts.values,
             `> :`,
-            Variadic.TypesOfTrait[Trait],
+            _MLIR.KGENTypeListType[Trait],
         ]
     ]
     """Form a TypeList from the concatenation of multiple MLIR type lists.
@@ -363,7 +366,7 @@ struct TypeList[
         FromAndTo: AnyType,
         ToWrap: Self._ReducerGeneratorType[FromAndTo],
         PrevV: FromAndTo,
-        VA: Variadic.TypesOfTrait[Self.Trait],
+        VA: _MLIR.KGENTypeListType[Self.Trait],
         idx: SIMDSize,
     ] = ToWrap[PrevV, TypeList[VA].__getitem_param__[idx]]
     """Adapts a (prev, element) reducer to the variadic reduce index signature."""
@@ -521,7 +524,7 @@ struct TypeList[
     comptime _FilterIdxTabulator[
         Predicate: _TypeIndexPredicateGenerator[Self.Trait],
         idx: Int,
-    ]: Variadic.TypesOfTrait[Self.Trait] = TypeList.of[
+    ]: _MLIR.KGENTypeListType[Self.Trait] = TypeList.of[
         Trait=Self.Trait, Self.__getitem_param__[idx]
     ]().values if Predicate[
         Self.__getitem_param__[idx], idx
@@ -712,10 +715,13 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         values: The values in the list.
     """
 
+    comptime _mlir_type = _MLIR.KGENParamListType[Self.type]
+    """The low-level MLIR type of the parameter list."""
+
     comptime size: Int = Int(
         mlir_value=__mlir_attr[
             `#kgen.param_list.size<:`,
-            type_of(Self.values),
+            Self._mlir_type,
             ` `,
             +Self.values,
             `> : index`,
@@ -747,7 +753,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         # Convert 'values' to use a flat array representation.
         comptime array = __mlir_attr[
             `#pop.variadic_to_array<:`,
-            type_of(Self.values),
+            Self._mlir_type,
             ` `,
             +Self.values,
             `>`,
@@ -772,7 +778,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
 
     comptime __getitem_param__[idx: Int]: Self.type = __mlir_attr[
         `#kgen.param_list.get<:`,
-        type_of(Self.values),
+        Self._mlir_type,
         ` `,
         +Self.values,
         `, `,
@@ -902,7 +908,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         FromAndTo: AnyType,
         ToWrap: Self._ReducerGeneratorType[FromAndTo],
         PrevV: FromAndTo,
-        VA: type_of(Self.values),
+        VA: Self._mlir_type,
         idx: __mlir_type.index,
     ] = ToWrap[PrevV, Self.__getitem_param__[Int(mlir_value=idx)]]
     """Takes an index because kgen.variadic.reduce passes it but we don't want it"""
@@ -1750,7 +1756,7 @@ comptime _ReduceVariadicIdxGeneratorTypeGenerator[
     `>`,
 ]
 """This specifies a generator to generate a generator type for the reducer.
-The generated generator type is [Prev: AnyType, Ts: Variadic.TypesOfTrait[AnyType], idx: SIMDSize] -> Prev,
+The generated generator type is [Prev: AnyType, Ts: _MLIR.KGENTypeListType[AnyType], idx: SIMDSize] -> Prev,
 """
 
 comptime _IndexToIntWrap[
@@ -1758,7 +1764,7 @@ comptime _IndexToIntWrap[
     ReduceT: AnyType,
     ToWrap: _ReduceVariadicIdxGeneratorTypeGenerator[ReduceT, From],
     PrevV: ReduceT,
-    VA: Variadic.TypesOfTrait[From],
+    VA: _MLIR.KGENTypeListType[From],
     idx: __mlir_type.index,
 ] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
 """Wrapper for type -> value."""
@@ -1768,10 +1774,10 @@ comptime _ReduceVariadicAndIdxToVariadic[
     To: type_of(AnyType),
     //,
     *,
-    BaseVal: Variadic.TypesOfTrait[To],
-    ParamListType: Variadic.TypesOfTrait[From],
+    BaseVal: _MLIR.KGENTypeListType[To],
+    ParamListType: _MLIR.KGENTypeListType[From],
     Reducer: _ReduceVariadicIdxGeneratorTypeGenerator[
-        Variadic.TypesOfTrait[To], From
+        _MLIR.KGENTypeListType[To], From
     ],
 ] = __mlir_attr[
     `#kgen.param_list.reduce<`,
@@ -1779,7 +1785,7 @@ comptime _ReduceVariadicAndIdxToVariadic[
     `,`,
     ParamListType,
     `,`,
-    _IndexToIntWrap[From, Variadic.TypesOfTrait[To], Reducer, ...],
+    _IndexToIntWrap[From, _MLIR.KGENTypeListType[To], Reducer, ...],
     `> : `,
     type_of(BaseVal),
 ]
@@ -1791,5 +1797,5 @@ Parameters:
     To: The common trait bound for the output variadic types.
     BaseVal: The initial value to reduce on.
     ParamListType: The variadic to be reduced.
-    Reducer: A `[BaseVal: Variadic.TypesOfTrait[To], Ts: *From, idx: index] -> To` that does the reduction.
+    Reducer: A `[BaseVal: _MLIR.KGENTypeListType[To], Ts: *From, idx: index] -> To` that does the reduction.
 """

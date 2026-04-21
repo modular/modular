@@ -136,8 +136,8 @@ trait TensorLayout(TrivialRegisterPassable):
     comptime static_cosize: Int
     """The compile-time size of the memory region spanned by the layout."""
 
-    comptime __shape_types: Variadic.TypesOfTrait[CoordLike]
-    comptime __stride_types: Variadic.TypesOfTrait[CoordLike]
+    comptime __shape_types: TypeList[Trait=CoordLike, _]._mlir_type
+    comptime __stride_types: TypeList[Trait=CoordLike, _]._mlir_type
 
     comptime _shape_types: TypeList[Trait=CoordLike, Self.__shape_types]
     comptime _stride_types: TypeList[Trait=CoordLike, Self.__stride_types]
@@ -335,15 +335,10 @@ struct Layout[
         i: The dimension index.
     """
 
-    comptime __shape_types: Variadic.TypesOfTrait[
-        CoordLike
-    ] = Self.shape_types.values
-    comptime __stride_types: Variadic.TypesOfTrait[
-        CoordLike
-    ] = Self.stride_types.values
-
     comptime _shape_types = Self.shape_types
     comptime _stride_types = Self.stride_types
+    comptime __shape_types = Self.shape_types.values
+    comptime __stride_types = Self.stride_types.values
 
     comptime static_product = Coord[*Self._flat_shape_types]().static_product
     """The compile-time product of all shape dimensions (handles nested Coords)."""

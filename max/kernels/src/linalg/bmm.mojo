@@ -111,49 +111,35 @@ def _get_batch_dims[
         curr_index //= shape[i]
 
 
-@always_inline
-def _slice_types_impl[
+comptime _slice_types[
     stride_types: TypeList[Trait=CoordLike, ...], n_dims: Int
-]() -> Variadic.TypesOfTrait[CoordLike]:
-    """
-    Slice the last n_dims dimensions of the Coord element types.
-    """
-    comptime rank = stride_types.size
-    comptime assert 0 <= rank - n_dims <= stride_types.size
-    comptime assert rank <= stride_types.size
-
-    return stride_types.slice[rank - n_dims]().values
+] = stride_types.slice[stride_types.size - n_dims]
 
 
-@always_inline
-def _slice_types[
-    stride_types: TypeList[Trait=CoordLike, ...], n_dims: Int
-]() -> TypeList[Trait=CoordLike, _slice_types_impl[stride_types, n_dims]()]:
-    return {}
+comptime _shape_types_to_3d_get_first_dim[
+    dtype: DType, *coords: CoordLike
+]: CoordLike = ComptimeInt[Coord[*coords].static_product] if Coord[
+    *coords
+].all_dims_known else RuntimeInt[
+    dtype
+]
 
-
-@always_inline
-def _shape_types_to_3d[
+comptime _shape_types_to_3d[
     shape_types: TypeList[Trait=CoordLike, ...]
-]() -> Variadic.TypesOfTrait[CoordLike]:
-    """
-    Reshape the shape types to 3D. The last two dimensions stay the same. The
-    first dimension will be the product of the batch dimensions if all the batch
-    dimensions are static, otherwise it's a runtime dimension.
-    """
-    comptime rank = shape_types.size
-    comptime last_two_dims = _slice_types[shape_types, 2]()
-    comptime batch_dims = _slice_types[shape_types.reverse(), rank - 2]()
-
-    comptime _get_first_dim[dtype: DType, *coords: CoordLike] = TypeList.of[
-        Trait=CoordLike, ComptimeInt[Coord[*coords].static_product]
-    ]().values if Coord[*coords].all_dims_known else TypeList.of[
-        Trait=CoordLike, RuntimeInt[dtype]
-    ]().values
-
-    return TypeList._concat[
-        _get_first_dim[DType.int64, *batch_dims], last_two_dims.values
-    ]().values
+] = TypeList._concat[
+    TypeList.of[
+        _shape_types_to_3d_get_first_dim[
+            DType.int64,
+            *_slice_types[shape_types.reverse(), shape_types.size - 2](),
+        ]
+    ].values,
+    _slice_types[shape_types, 2]().values,
+]
+"""
+Reshape the shape types to 3D. The last two dimensions stay the same. The
+first dimension will be the product of the batch dimensions if all the batch
+dimensions are static, otherwise it's a runtime dimension.
+"""
 
 
 @always_inline
@@ -162,7 +148,7 @@ def _reshape_tile_tensor_with_batch_to_3d(
     out result: TileTensor[
         mut=tensor.mut,
         LayoutType=TileLayout[
-            TypeList[_shape_types_to_3d[tensor.LayoutType._shape_types]()](),
+            _shape_types_to_3d[tensor.LayoutType._shape_types](),
             _slice_types[tensor.LayoutType._stride_types, 3](),
         ],
         dtype=tensor.dtype,
