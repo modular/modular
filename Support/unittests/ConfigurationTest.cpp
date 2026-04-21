@@ -318,3 +318,38 @@ values = one,two,three
   cfg.getValueAsList("empty", empty);
   EXPECT_EQ(0, empty.size());
 }
+
+TEST(Configuration, GlobalOverride) {
+  // Clean up after ourselves — the override map is process-global.
+  auto cleanup = llvm::scope_exit([]() {
+    Config::unsetGlobalValue("override.bool-key");
+    Config::unsetGlobalValue("override.string-key");
+    Config::unsetGlobalValue("override.env-win");
+    unsetenv("MODULAR_OVERRIDE_ENV_WIN");
+  });
+
+  // A fresh Config with nothing else configured should see the override.
+  Config::setGlobalValue("override.bool-key", "true");
+  Config::setGlobalValue("override.string-key", "hello");
+
+  Config cfg;
+  EXPECT_TRUE(cfg.getValueAsBool("override.bool-key", false));
+  EXPECT_EQ(cfg.getValue("override.string-key"), "hello");
+  EXPECT_EQ(Config::getGlobalValueIfSet("override.bool-key"), "true");
+
+  // Override wins over an env var on the same key.
+  setenv("MODULAR_OVERRIDE_ENV_WIN", "from-env", 1);
+  Config::setGlobalValue("override.env-win", "from-override");
+  Config cfg2;
+  EXPECT_EQ(cfg2.getValue("override.env-win"), "from-override");
+
+  // A second Config instance after the override is set also sees it.
+  Config cfg3;
+  EXPECT_TRUE(cfg3.getValueAsBool("override.bool-key", false));
+
+  // Clearing the override reverts to the underlying source (env var here).
+  Config::unsetGlobalValue("override.env-win");
+  EXPECT_EQ(Config::getGlobalValueIfSet("override.env-win"), std::nullopt);
+  Config cfg4;
+  EXPECT_EQ(cfg4.getValue("override.env-win"), "from-env");
+}

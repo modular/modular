@@ -36,6 +36,18 @@ using namespace M;
 /// Folder type for searching.
 namespace {
 enum class FolderType { Config, Data, Cache };
+
+// Runtime overrides set via Config::setGlobalValue().  Shared across every
+// Config instance through maybeGetValue() so that Python-level writes
+// reach downstream C++ readers without a direct dependency.
+std::mutex &globalOverridesMutex() {
+  static std::mutex m;
+  return m;
+}
+llvm::StringMap<std::string> &globalOverrides() {
+  static llvm::StringMap<std::string> m;
+  return m;
+}
 } // namespace
 
 static ErrorOrSuccess createPath(const std::filesystem::path &path) {
@@ -222,6 +234,18 @@ StringRef Config::getValue(StringRef key) {
 }
 
 std::optional<StringRef> Config::maybeGetValue(StringRef key) {
+  // Highest priority: runtime overrides set via setGlobalValue().  Cached
+  // into the instance's kv so the returned StringRef stays valid for the
+  // lifetime of this Config.
+  {
+    std::lock_guard<std::mutex> lock(globalOverridesMutex());
+    auto &overrides = globalOverrides();
+    if (auto it = overrides.find(key.lower()); it != overrides.end()) {
+      kv[key.lower()] = it->second;
+      return kv[key.lower()];
+    }
+  }
+
   std::string upper = key.upper();
   std::replace_if(
       upper.begin(), upper.end(),
@@ -288,6 +312,24 @@ bool Config::isValueInList(StringRef key, StringRef value, StringRef sep) {
 
 void Config::setValue(StringRef key, StringRef value) {
   kv[key.lower()] = value;
+}
+
+void Config::setGlobalValue(StringRef key, StringRef value) {
+  std::lock_guard<std::mutex> lock(globalOverridesMutex());
+  globalOverrides()[key.lower()] = value.str();
+}
+
+void Config::unsetGlobalValue(StringRef key) {
+  std::lock_guard<std::mutex> lock(globalOverridesMutex());
+  globalOverrides().erase(key.lower());
+}
+
+std::optional<std::string> Config::getGlobalValueIfSet(StringRef key) {
+  std::lock_guard<std::mutex> lock(globalOverridesMutex());
+  auto &overrides = globalOverrides();
+  if (auto it = overrides.find(key.lower()); it != overrides.end())
+    return it->second;
+  return std::nullopt;
 }
 
 /// Get the list of search paths, in order of preference.
