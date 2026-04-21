@@ -23,6 +23,7 @@ from std.format._utils import (
 )
 from std.hashlib.hasher import Hasher
 from std.reflection.traits import (
+    AllComparable,
     AllCopyable,
     AllDefaultable,
     AllEquatable,
@@ -76,7 +77,7 @@ struct Tuple[*element_types: Movable](
 
     comptime _mlir_type = __mlir_type[
         `!kgen.pack<:`,
-        Variadic.TypesOfTrait[Movable],
+        type_of(Self.element_types.values),
         Self.element_types.values,
         `>`,
     ]
@@ -365,12 +366,9 @@ struct Tuple[*element_types: Movable](
         ]()
 
     @always_inline
-    def _compare[
-        elt_types: Variadic.TypesOfTrait[Movable & Comparable], //
-    ](
-        self: Tuple[*TypeList[elt_types]().upcast[Movable]()],
-        other: type_of(self),
-    ) -> Int:
+    def _compare(
+        self, other: Self
+    ) -> Int where AllComparable[*Self.element_types.upcast[AnyType]()]:
         comptime self_len = type_of(self).__len__()
         comptime other_len = type_of(other).__len__()
 
@@ -380,9 +378,9 @@ struct Tuple[*element_types: Movable](
         comptime min_length = min(self_len, other_len)
 
         comptime for i in range(min_length):
-            if self[i] < other[i]:
+            if trait_downcast[Comparable](self[i]) < other[i]:
                 return -1
-            if other[i] < self[i]:
+            if trait_downcast[Comparable](other[i]) < self[i]:
                 return 1
 
         comptime if self_len < other_len:
@@ -393,16 +391,10 @@ struct Tuple[*element_types: Movable](
             return 0
 
     @always_inline
-    def __lt__[
-        elt_types: Variadic.TypesOfTrait[Movable & Comparable], //
-    ](
-        self: Tuple[*TypeList[elt_types]().upcast[Movable]()],
-        other: type_of(self),
-    ) -> Bool:
+    def __lt__(
+        self, other: Self
+    ) -> Bool where AllComparable[*Self.element_types.upcast[AnyType]()]:
         """Compare this tuple to another tuple using less than comparison.
-
-        Parameters:
-            elt_types: The types of the elements contained in the Tuple.
 
         Args:
             other: The other tuple to compare against.
@@ -413,16 +405,10 @@ struct Tuple[*element_types: Movable](
         return self._compare(other) < 0
 
     @always_inline
-    def __le__[
-        elt_types: Variadic.TypesOfTrait[Movable & Comparable], //
-    ](
-        self: Tuple[*TypeList[elt_types]().upcast[Movable]()],
-        other: type_of(self),
-    ) -> Bool:
+    def __le__(
+        self, other: Self
+    ) -> Bool where AllComparable[*Self.element_types.upcast[AnyType]()]:
         """Compare this tuple to another tuple using less than or equal to comparison.
-
-        Parameters:
-            elt_types: The types of the elements contained in the Tuple.
 
         Args:
             other: The other tuple to compare against.
@@ -433,16 +419,10 @@ struct Tuple[*element_types: Movable](
         return self._compare(other) <= 0
 
     @always_inline
-    def __gt__[
-        elt_types: Variadic.TypesOfTrait[Movable & Comparable], //
-    ](
-        self: Tuple[*TypeList[elt_types]().upcast[Movable]()],
-        other: type_of(self),
-    ) -> Bool:
+    def __gt__(
+        self, other: Self
+    ) -> Bool where AllComparable[*Self.element_types.upcast[AnyType]()]:
         """Compare this tuple to another tuple using greater than comparison.
-
-        Parameters:
-            elt_types: The types of the elements contained in the Tuple.
 
         Args:
             other: The other tuple to compare against.
@@ -454,16 +434,10 @@ struct Tuple[*element_types: Movable](
         return self._compare(other) > 0
 
     @always_inline
-    def __ge__[
-        elt_types: Variadic.TypesOfTrait[Movable & Comparable], //
-    ](
-        self: Tuple[*TypeList[elt_types]().upcast[Movable]()],
-        other: type_of(self),
-    ) -> Bool:
+    def __ge__(
+        self, other: Self
+    ) -> Bool where AllComparable[*Self.element_types.upcast[AnyType]()]:
         """Compare this tuple to another tuple using greater than or equal to comparison.
-
-        Parameters:
-            elt_types: The types of the elements contained in the Tuple.
 
         Args:
             other: The other tuple to compare against.
