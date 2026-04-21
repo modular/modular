@@ -546,6 +546,13 @@ public:
   GetNumChildren(lldb::opaque_compiler_type_t type, bool omitEmptyBaseClasses,
                  const lldb_private::ExecutionContext *exeCtx) override;
 
+  // Note on `POP::UnionType` support: `GetNumChildren` and
+  // `GetChildCompilerTypeAtIndex` enumerate one child per union arm at
+  // offset 0 so the Variant formatter can drill into the active payload.
+  // Other TypeSystem dispatches (`IsAggregateType`, `GetFormat`,
+  // `GetByteSize`, …) intentionally don't special-case unions today — if
+  // a caller ever needs to treat a raw `!pop.union` as a proper aggregate
+  // type, those will need matching handlers.
   uint32_t GetNumFields(lldb::opaque_compiler_type_t type) override {
     // Unimplemented.
     return 0;
