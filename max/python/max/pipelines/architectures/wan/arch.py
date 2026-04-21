@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
+from max.pipelines.core import validate_wan_max_pixel_area
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
@@ -65,6 +66,7 @@ wan_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     tokenizer=WanTokenizer,
     config=WanArchConfig,
+    context_validators=[validate_wan_max_pixel_area],
 )
 
 wan_i2v_arch = SupportedArchitecture(
@@ -81,4 +83,5 @@ wan_i2v_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     tokenizer=WanTokenizer,
     config=WanArchConfig,
+    context_validators=[validate_wan_max_pixel_area],
 )

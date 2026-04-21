@@ -34,7 +34,7 @@ from max.interfaces import (
     TextGenerationContext,
     TextGenerationRequest,
 )
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import PixelContext, TextAndVisionContext, TextContext
 from transformers import (
     AutoConfig,
     AutoTokenizer,
@@ -305,7 +305,7 @@ class SupportedArchitecture:
     """A dictionary specifying required values for PipelineConfig options."""
 
     context_validators: list[
-        Callable[[TextContext | TextAndVisionContext], None]
+        Callable[[TextContext | TextAndVisionContext | PixelContext], None]
     ] = field(default_factory=list)
     """A list of callable validators that verify context inputs before model execution.
 
