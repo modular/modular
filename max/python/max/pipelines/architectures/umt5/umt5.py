@@ -24,6 +24,7 @@ import math
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, Weight, ops
 from max.nn.embedding import Embedding
+from max.nn.kernels import masked_flash_attention_gpu
 from max.nn.layer import LayerList, Module
 from max.nn.linear import Linear
 
@@ -332,44 +333,42 @@ class UMT5Attention(Module):
         batch_size = hidden_states.shape[0]
         seq_length = hidden_states.shape[1]
 
-        query_states = self.q(hidden_states)
-        key_states = self.k(hidden_states)
-        value_states = self.v(hidden_states)
-
+        # Project Q, K, V directly to BSHD. masked_flash_attention_gpu
+        # takes BSHD as-is, so no permute to BHSD is needed.
         query_states = ops.reshape(
-            query_states,
+            self.q(hidden_states),
             [batch_size, seq_length, self.n_heads, self.key_value_proj_dim],
         )
         key_states = ops.reshape(
-            key_states,
+            self.k(hidden_states),
             [batch_size, seq_length, self.n_heads, self.key_value_proj_dim],
         )
         value_states = ops.reshape(
-            value_states,
+            self.v(hidden_states),
             [batch_size, seq_length, self.n_heads, self.key_value_proj_dim],
         )
 
-        # [B, S, H, D] -> [B, H, S, D]
-        query_states = ops.permute(query_states, [0, 2, 1, 3])
-        key_states = ops.permute(key_states, [0, 2, 1, 3])
-        value_states = ops.permute(value_states, [0, 2, 1, 3])
-
-        # scores: [B, H, S, S]
-        scores = query_states @ ops.permute(key_states, [0, 1, 3, 2])
-
+        # Build a combined additive mask: position_bias + attention_mask.
+        # position_bias is [1, H, S, S]; attention_mask is [B, 1, 1, S]
+        # in the model dtype. Broadcasting produces [B, H, S, S].
         if self.has_relative_attention_bias:
-            position_bias = self._compute_bias(seq_length, seq_length)
-            scores = scores + position_bias
-
+            mask = self._compute_bias(seq_length, seq_length)
+        else:
+            # Defensive fallback: every UMT5 encoder layer has
+            # has_relative_attention_bias=True in practice.
+            mask = ops.broadcast_to(
+                ops.constant(0, dtype=self._dtype, device=self._device),
+                [batch_size, self.n_heads, seq_length, seq_length],
+            )
         if attention_mask is not None:
-            scores = scores + attention_mask
+            mask = mask + attention_mask
 
-        attn_weights = ops.softmax(ops.cast(scores, DType.float32))
-        attn_weights = ops.cast(attn_weights, self._dtype)
-        attn_output = attn_weights @ value_states
+        # UMT5/T5 does NOT apply 1/sqrt(d) scaling, so scale=1.0.
+        attn_output = masked_flash_attention_gpu(
+            query_states, key_states, value_states, mask, scale=1.0
+        )
 
-        # [B, H, S, D] -> [B, S, H, D] -> [B, S, inner_dim]
-        attn_output = ops.permute(attn_output, [0, 2, 1, 3])
+        # [B, S, H, D] -> [B, S, H*D]
         attn_output = ops.reshape(
             attn_output, [batch_size, seq_length, self.inner_dim]
         )

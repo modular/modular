@@ -2128,8 +2128,10 @@ def masked_flash_attention_gpu(
         q: Query tensor of shape [batch, q_seq_len, num_heads, head_dim]
         k: Key tensor of shape [batch, kv_seq_len, num_heads, head_dim]
         v: Value tensor of shape [batch, kv_seq_len, num_heads, head_dim]
-        mask: Additive mask tensor of shape [batch, q_seq_len, kv_seq_len].
-            The mask is broadcast across attention heads.
+        mask: Additive mask tensor. Rank 3 of shape
+            [batch, q_seq_len, kv_seq_len] broadcasts across attention
+            heads. Rank 4 of shape [batch, num_heads, q_seq_len,
+            kv_seq_len] applies a per-head bias.
         scale: Scaling factor for attention scores.
 
     Returns:
@@ -2148,8 +2150,11 @@ def masked_flash_attention_gpu(
                 f"{name} must be rank {expected_rank}, got {tensor.rank}"
             )
 
-    if mask.rank != 3:
-        raise ValueError(f"mask must be rank 3, got {mask.rank}")
+    if mask.rank not in (3, 4):
+        raise ValueError(
+            "mask must be rank 3 (broadcast across heads) or rank 4 "
+            f"(per-head), got {mask.rank}"
+        )
 
     if q.shape[0] != k.shape[0] or q.shape[0] != v.shape[0]:
         raise ValueError(
@@ -2162,16 +2167,28 @@ def masked_flash_attention_gpu(
             f"mask batch size ({mask.shape[0]}) must match q batch size ({q.shape[0]})"
         )
 
-    if mask.shape[1] != q.shape[1]:
+    # Rank-4 masks are per-head: validate num_heads dim matches q.
+    if mask.rank == 4:
+        num_heads = q.shape[2]  # q is BSHD
+        if mask.shape[1] != num_heads:
+            raise ValueError(
+                f"mask num_heads ({mask.shape[1]}) must match q num_heads "
+                f"({num_heads})"
+            )
+
+    q_seq_idx = 2 if mask.rank == 4 else 1
+    kv_seq_idx = 3 if mask.rank == 4 else 2
+
+    if mask.shape[q_seq_idx] != q.shape[1]:
         raise ValueError(
-            f"mask query length ({mask.shape[1]}) must match q sequence length "
-            f"({q.shape[1]})"
+            f"mask query length ({mask.shape[q_seq_idx]}) must match q "
+            f"sequence length ({q.shape[1]})"
         )
 
-    if mask.shape[2] != k.shape[1]:
+    if mask.shape[kv_seq_idx] != k.shape[1]:
         raise ValueError(
-            f"mask key length ({mask.shape[2]}) must match k sequence length "
-            f"({k.shape[1]})"
+            f"mask key length ({mask.shape[kv_seq_idx]}) must match k "
+            f"sequence length ({k.shape[1]})"
         )
 
     head_dim = q.shape[-1]
