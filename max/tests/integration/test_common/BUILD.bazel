@@ -207,6 +207,10 @@ modular_py_library(
     ] + select({
         "//:nvidia_gpu": [
             requirement("ninja"),
+        ],
+        "//conditions:default": [],
+    }) + select({
+        "//:use_vllm_setting": [
             requirement("vllm"),
         ],
         "//conditions:default": [],

@@ -16,9 +16,36 @@ modular_py_binary(
 
 modular_py_test(
     name = "tests",
-    srcs = glob(["test_*.py"]),
+    srcs = glob(
+        ["test_*.py"],
+        exclude = ["test_vllm_and_sglang.py"],
+    ),
     deps = [
         ":generate",
         requirement("packaging"),
     ],
+)
+
+modular_py_test(
+    name = "test_vllm_and_sglang",
+    srcs = ["test_vllm_and_sglang.py"],
+    env = select({
+        "//:use_sglang_setting": {"USE_SGLANG": "1"},
+        "//conditions:default": {"USE_SGLANG": "0"},
+    }) | select({
+        "//:use_vllm_setting": {"USE_VLLM": "1"},
+        "//conditions:default": {"USE_VLLM": "0"},
+    }),
+    tags = [
+        "manual",
+        "no-mypy",
+        "no-pydeps",
+    ],
+    deps = select({
+        "//:use_sglang_setting": [requirement("sglang")],
+        "//conditions:default": [],
+    }) + select({
+        "//:use_vllm_setting": [requirement("vllm")],
+        "//conditions:default": [],
+    }),
 )

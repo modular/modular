@@ -227,6 +227,11 @@ modular_py_binary(
             requirement("tokenicer"),  # Required by gptqmodel
         ],
         "//conditions:default": [],
+    }) + select({
+        "//:use_sglang_setting": [
+            requirement("sglang"),  # Required for compressed-tensors quantization models
+        ],
+        "//conditions:default": [],
     }),
 )
 

@@ -1,4 +1,4 @@
-load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
 load("@mojo//:mojo.bzl", "ALL_MOJOPKGS")
 load("@mojo_gpu_toolchains//:gpus.bzl", "SUPPORTED_GPUS")
 load("//bazel:api.bzl", "mojo_binary", "requirement")
@@ -361,4 +361,24 @@ filegroup(
     name = "clang_tidy_config",
     srcs = [".clang-tidy"],
     tags = [TOP_LEVEL_TAG],
+)
+
+bool_flag(
+    name = "use_sglang",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "use_sglang_setting",
+    flag_values = {"//:use_sglang": "true"},
+)
+
+bool_flag(
+    name = "use_vllm",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "use_vllm_setting",
+    flag_values = {"//:use_vllm": "true"},
 )
