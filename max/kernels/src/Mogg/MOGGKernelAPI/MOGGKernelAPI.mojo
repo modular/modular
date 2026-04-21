@@ -2177,24 +2177,19 @@ struct Slice:
                 i
             ].static_value < 0:
                 return 1
-            comptime if i == rank - 1:
-                # Slicing the innermost dimension: need the exact offset.
-                comptime if not start_types[i].is_static_value:
-                    return 1
-                alignment = gcd(
-                    alignment,
-                    start_types[i].static_value
-                    * step_types[i].static_value
-                    * align_of[dtype](),
-                )
-            else:
-                # Non-innermost: alignment is bounded by the innermost stride.
-                comptime if not stride_types[rank - 1].is_static_value:
-                    return 1
-                alignment = gcd(
-                    alignment,
-                    stride_types[rank - 1].static_value * align_of[dtype](),
-                )
+
+            # The offset for dimension `i` is `start[i] * strides[i]`
+            comptime if not start_types[i].is_static_value or not stride_types[
+                i
+            ].is_static_value:
+                return 1
+            alignment = gcd(
+                alignment,
+                start_types[i].static_value
+                * stride_types[i].static_value
+                * align_of[dtype](),
+            )
+
         return alignment
 
     @staticmethod
