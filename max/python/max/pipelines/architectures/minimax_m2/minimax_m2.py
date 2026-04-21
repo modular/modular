@@ -22,7 +22,8 @@ MiniMax-M2 is a Mixture-of-Experts decoder-only transformer with:
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from max.dtype import DType
 from max.graph import (
@@ -33,6 +34,7 @@ from max.graph import (
     TensorType,
     TensorValue,
     TensorValueLike,
+    Type,
     ops,
 )
 from max.graph.quantization import QuantizationEncoding
@@ -58,6 +60,38 @@ from .layers.attention import MiniMaxM2Attention
 from .layers.moe_gate import MiniMaxM2TopKRouter
 from .layers.rotary_embedding import MiniMaxM2RotaryEmbedding
 from .model_config import MiniMaxM2Config
+
+
+def _unpack_kv_collections(
+    kv_collections: Sequence[PagedCacheValues],
+) -> tuple[
+    list[BufferValue],
+    list[TensorValue],
+    list[TensorValue],
+    list[TensorValue],
+    list[TensorValue],
+]:
+    """Unpack KV collections into component lists for subgraph compatibility.
+
+    Subgraphs require all inputs to be flat Value objects. PagedCacheValues
+    is a Python dataclass that cannot be passed directly.
+
+    Returns:
+        Tuple of (kv_blocks, cache_lengths, lookup_tables, max_lengths,
+        dispatch_metadata_tensors).
+    """
+    dispatch_metadata_tensors = [
+        kv.attention_dispatch_metadata
+        for kv in kv_collections
+        if kv.attention_dispatch_metadata is not None
+    ]
+    return (
+        [kv.kv_blocks for kv in kv_collections],
+        [kv.cache_lengths for kv in kv_collections],
+        [kv.lookup_table for kv in kv_collections],
+        [kv.max_lengths for kv in kv_collections],
+        dispatch_metadata_tensors,
+    )
 
 
 class MiniMaxM2TransformerBlock(Module):
@@ -158,13 +192,34 @@ class MiniMaxM2TransformerBlock(Module):
         self,
         layer_idx: TensorValue,
         xs: list[TensorValue],
-        kv_collections: list[PagedCacheValues],
+        signal_buffers: list[BufferValue],
+        kv_blocks: list[BufferValue],
+        kv_cache_lengths: list[TensorValue],
+        kv_lookup_table: list[TensorValue],
+        kv_max_lengths: list[TensorValue],
+        dispatch_metadata_tensors: list[TensorValue],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
-        signal_buffers: list[BufferValue],
         ep_inputs: list[TensorValue | BufferValue] | None = None,
     ) -> list[TensorValue]:
         """Forward pass through the block."""
+        # Re-pack flat KV args into PagedCacheValues for attention.
+        # Subgraphs require flat Value inputs, so the caller unpacks and we
+        # reconstruct here.
+        num_devices = len(kv_blocks)
+        kv_collections = [
+            PagedCacheValues(
+                kv_blocks[i],
+                kv_cache_lengths[i],
+                kv_lookup_table[i],
+                kv_max_lengths[i],
+                attention_dispatch_metadata=dispatch_metadata_tensors[i]
+                if dispatch_metadata_tensors
+                else None,
+            )
+            for i in range(num_devices)
+        ]
+
         # Input layer norm
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
 
@@ -263,6 +318,13 @@ class MiniMaxM2(DistributedLogitsPostprocessMixin, Module):
             ]
         )
 
+        if config.use_subgraphs:
+            self.subgraph_layer_groups: list[list[int]] = [
+                list(range(config.num_hidden_layers))
+            ]
+        else:
+            self.subgraph_layer_groups = []
+
         # Final norm (replicated)
         self.norm = create_norm()
         self.norm.sharding_strategy = ShardingStrategy.replicate(
@@ -339,18 +401,86 @@ class MiniMaxM2(DistributedLogitsPostprocessMixin, Module):
             data_parallel_splits,
         )
 
+        # Unpack KV collections for subgraph compatibility
+        (
+            kv_blocks,
+            cache_lengths,
+            lookup_tables,
+            max_lengths,
+            dispatch_metadata_tensors,
+        ) = _unpack_kv_collections(kv_collections)
+
+        # Build subgraphs (compiled once, called per-layer with different
+        # weight prefixes — reduces compile time significantly).
+        subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [
+            TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
+            [hidden.type for hidden in h],
+            [signal_buffer.type for signal_buffer in signal_buffers],
+            [block.type for block in kv_blocks],
+            [length.type for length in cache_lengths],
+            [table.type for table in lookup_tables],
+            [length.type for length in max_lengths],
+            [m.type for m in dispatch_metadata_tensors],
+            [freq.type for freq in freqs_cis],
+            [offset.type for offset in input_row_offsets_list],
+        ]
+        if ep_inputs is not None:
+            subgraph_input_types.append([inp.type for inp in ep_inputs])
+
+        subgraphs = []
+        for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
+            assert len(layer_group) > 0
+            subgraph_layer = self.layers[layer_group[0]]
+            assert isinstance(subgraph_layer, MiniMaxM2TransformerBlock)
+            subgraphs.append(
+                subgraph_layer.build_subgraph(
+                    f"transformer_block_{group_idx}",
+                    subgraph_input_types,
+                    f"layers.{layer_group[0]}.",
+                )
+            )
+
         # Process through transformer layers
         for idx, layer in enumerate(self.layers):
-            layer_idx = ops.constant(idx, DType.uint32, device=DeviceRef.CPU())
-            h = layer(
-                layer_idx,
-                h,
-                kv_collections,
-                freqs_cis,
-                input_row_offsets_list,
-                signal_buffers,
-                ep_inputs,
-            )
+            has_subgraph = False
+            for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
+                if idx in layer_group:
+                    has_subgraph = True
+                    h = [
+                        x.tensor
+                        for x in ops.call(
+                            subgraphs[group_idx],
+                            ops.constant(
+                                idx, DType.uint32, device=DeviceRef.CPU()
+                            ),
+                            *h,
+                            *signal_buffers,
+                            *kv_blocks,
+                            *cache_lengths,
+                            *lookup_tables,
+                            *max_lengths,
+                            *dispatch_metadata_tensors,
+                            *freqs_cis,
+                            *input_row_offsets_list,
+                            *(ep_inputs if ep_inputs is not None else ()),
+                            prefix=f"layers.{idx}.",
+                        )
+                    ]
+                    break
+            if not has_subgraph:
+                h = layer(
+                    ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
+                    h,
+                    signal_buffers,
+                    kv_blocks,
+                    cache_lengths,
+                    lookup_tables,
+                    max_lengths,
+                    dispatch_metadata_tensors,
+                    freqs_cis,
+                    input_row_offsets_list,
+                    ep_inputs,
+                )
 
         # DP logit postprocessing: allgather last tokens then lm_head
         last_token_per_dev = [
