@@ -1410,13 +1410,9 @@ class OverlapTextGenerationPipeline(
         """
         if draft_tokens is not None:
             assert self._spec_decode_state is not None
-            num_speculative_steps = (
-                self._spec_decode_state.num_speculative_tokens
-            )
             num_draft_tokens_to_verify = draft_tokens.shape[1]
         else:
             assert self._spec_decode_state is None
-            num_speculative_steps = 0
             num_draft_tokens_to_verify = 0
 
         runner = self._graph_capture_runner

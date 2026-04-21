@@ -97,7 +97,7 @@ def test_failed_mojo_object_creation_does_not_del() -> None:
 
     # Test that an error is raised if passing any arguments to the initializer
     with pytest.raises(ValueError) as cm:
-        result = feature_overview.FailToInitialize("illegal argument")
+        feature_overview.FailToInitialize("illegal argument")
 
     assert cm.value.args == (
         (
