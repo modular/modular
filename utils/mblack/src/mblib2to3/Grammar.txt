@@ -37,7 +37,13 @@ global_effects: global_effect_keyword*
 global_effect_keyword: 'raises' [typeconvexpr] | 'escaping' | 'capturing'
 unified_capture: UNIFIED [effect_list] [captures]
 effect_list: effect_keyword*
-effect_keyword: named_effect | 'raises' [typeconvexpr]
+# `raises_type` restricts the exception type to a dotted name or a
+# parenthesized expression so a following `{...}` always parses as
+# `captures`, not as a `{...}` atom/trailer of a broader type expression.
+# Mojo's compiler currently rejects subscripted types (e.g. `raises Foo[T]`)
+# after `raises`, so the grammar doesn't support them either.
+effect_keyword: named_effect | 'raises' [raises_type]
+raises_type: dotted_name | '(' [testlist_gexp] ')'
 named_effect: NAME ['(' STRING ')']
 captures: '{' [capture_list] '}'
 capture_list: capture_item (',' capture_item)* [',']
