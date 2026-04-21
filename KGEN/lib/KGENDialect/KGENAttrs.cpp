@@ -193,7 +193,6 @@ LogicalResult ParamListType::printValue(AsmPrinter &p, TypedAttr value) const {
 
 // If not folded, they are not a constant.
 bool ParamListReduceAttr::isConstant() const { return false; }
-bool ParamListZipAttr::isConstant() const { return false; }
 bool ParamListSizeAttr::isConstant() const { return false; }
 bool ParamListGetAttr::isConstant() const { return false; }
 bool ParamListTabulateAttr::isConstant() const { return false; }
@@ -239,63 +238,6 @@ ParamListReduceAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                        << type << ", but got " << toApply.getBody();
 
   return success();
-}
-
-LogicalResult
-ParamListZipAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                         ParamListType type, TypedAttr variadics) {
-  if (variadics.getType() != type)
-    return emitError() << "expected same input/output type, input type: "
-                       << type << ", output type: " << variadics.getType();
-  if (!isa<ParamListType>(type.getElementType()))
-    return emitError() << "expected to zip a variadic of variadic values";
-
-  return success();
-}
-
-TypedAttr ParamListZipAttr::get(ParamListType type, TypedAttr variadics) {
-  auto va = sugarDynCast<ParamListAttr>(variadics);
-  if (!va || va.getValues().empty())
-    return Base::get(type.getContext(), type, variadics);
-
-  size_t zipLen = std::numeric_limits<size_t>::max();
-  bool fullyResolved = true;
-  SmallVector<ParamListAttr> elts =
-      llvm::map_to_vector(va.getValues(), [&](TypedAttr elt) {
-        auto vaElt = sugarDynCast<ParamListAttr>(elt);
-        zipLen = vaElt ? std::min(zipLen, vaElt.getValues().size()) : 0;
-        fullyResolved = fullyResolved && vaElt;
-        return vaElt;
-      });
-
-  // Note that zipLen == 0 does not necessarily means !fullyResolved.
-  if (!fullyResolved)
-    return Base::get(type.getContext(), type, variadics);
-
-  // Fold the attribute aggressively whenever possible upon creation.
-  auto eltVATps = cast<ParamListType>(type.getElementType());
-
-  // return <[[]]>
-  if (zipLen == 0)
-    return ParamListAttr::get({ParamListAttr::get({}, eltVATps)}, type);
-
-  // Do zipping.
-  SmallVector<TypedAttr> zippedElts(zipLen, nullptr);
-  for (unsigned i = 0; i < zipLen; ++i) {
-    SmallVector<TypedAttr> toZip = llvm::map_to_vector(
-        elts, [i](ParamListAttr elt) { return elt.getValues()[i]; });
-    zippedElts[i] = ParamListAttr::get(toZip, eltVATps);
-  }
-
-  return ParamListAttr::get(zippedElts, type);
-}
-
-TypedAttr ParamListZipAttr::getChecked(
-    function_ref<::mlir::InFlightDiagnostic()> emitError, ParamListType type,
-    TypedAttr variadics) {
-  if (failed(verify(emitError, type, variadics)))
-    return {};
-  return get(type, variadics);
 }
 
 LogicalResult

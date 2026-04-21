@@ -159,11 +159,6 @@ def ParamListReduceAttr : DialectAttribute<(attr
     TypedAttr:$generator
 )>;
 
-def ParamListZipAttr : DialectAttribute<(attr
-  ConcreteType<"ParamListType">:$type,
-  TypedAttr:$paramLists
-)>;
-
 def ParamListTabulateAttr : DialectAttribute<(attr
   ConcreteType<"ParamListType">:$type,
   TypedAttr:$count,
@@ -413,7 +408,6 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     ParamDeclArrayAttr,
     ParamListAttr,
     ParamListReduceAttr,
-    ParamListZipAttr,
     ParamListTabulateAttr,
     ParamListSizeAttr,
     ParamListGetAttr,
