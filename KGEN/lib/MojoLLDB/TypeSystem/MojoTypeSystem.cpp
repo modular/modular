@@ -656,6 +656,19 @@ MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
   if (auto variantType = dyn_cast<VariantType>(astType))
     return 1 + variantType.getNumTypes();
 
+  // A union exposes one child per variant type, matching the DWARF
+  // `DW_TAG_variant_part` member names `v0`, `v1`, ..., emitted by
+  // `KGEN::DebugInfoTypeConverter::buildDebugType(POP::UnionType)`. Note:
+  // only one of these children is "live" at any point; they all share
+  // offset 0 and are intended to be selected by a sibling discriminant
+  // (see `_DefaultVariantStorage._impl` lowering in
+  // `KGEN/lib/Transforms/LowerCallingConventions.cpp::lowerVariantType`).
+  // Callers inspecting a `!pop.union` directly must pick the correct child
+  // based on the discriminant — displaying all of them is a deliberate
+  // trade-off that keeps the type system simple.
+  if (auto unionType = dyn_cast<POP::UnionType>(astType))
+    return unionType.getNumTypes();
+
   return 0;
 }
 
@@ -776,6 +789,19 @@ MojoTypeSystem::GetChildCompilerTypeAtIndex(
       childName = idx == variantType.getNumTypes()
                       ? "discriminator"
                       : std::string(llvm::formatv("variant[{0}]", idx));
+      const auto &field = layout->getFields()[idx];
+      childByteOffset = field.getByteOffset();
+      childByteSize = field.getByteSize();
+      return createCompilerType(field.getConcreteType());
+    }
+    return lldb_private::CompilerType();
+  }
+
+  if (auto unionType = dyn_cast<POP::UnionType>(astType)) {
+    if (const std::optional<MojoTypeDataLayout> &layout =
+            impl->dataLayoutContext->getOrCalculate(astType)) {
+      // Child names match DWARF emission: `v0`, `v1`, ...
+      childName = std::string(llvm::formatv("v{0}", idx));
       const auto &field = layout->getFields()[idx];
       childByteOffset = field.getByteOffset();
       childByteSize = field.getByteSize();

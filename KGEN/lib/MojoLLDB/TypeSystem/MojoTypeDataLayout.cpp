@@ -8,6 +8,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/MojoTooling/PublicASTDecl.h"
+#include "KGEN/POPDialect/POPTypes.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -43,6 +44,12 @@ struct MojoTypeDataLayoutContext::Impl {
   /// Calculate the data layout of the given variant.
   std::optional<MojoTypeDataLayout>
   calculateForVariant(MojoASTTypeRef typeRef, VariantType variantType);
+
+  /// Calculate the data layout of the given union. Each member sits at
+  /// offset 0; the type's overall size is the max member size, rounded up
+  /// to the union's alignment.
+  std::optional<MojoTypeDataLayout> calculateForUnion(MojoASTTypeRef typeRef,
+                                                      POP::UnionType unionType);
 
   /// Calculate the data layout of a struct-like collection of types.
   std::optional<MojoTypeDataLayout>
@@ -155,6 +162,31 @@ MojoTypeDataLayoutContext::Impl::calculateForVariant(MojoASTTypeRef typeRef,
   return layout;
 }
 
+std::optional<MojoTypeDataLayout>
+MojoTypeDataLayoutContext::Impl::calculateForUnion(MojoASTTypeRef typeRef,
+                                                   POP::UnionType unionType) {
+  if (!unionType.isResolved())
+    return {};
+
+  std::optional<int64_t> overallSize = unionType.getTypeSize(targetInfo);
+  std::optional<int64_t> overallAlign = unionType.getTypeAlign(targetInfo);
+  if (!overallSize || !overallAlign)
+    return {};
+
+  MojoTypeDataLayout layout;
+  for (Type memberType : unionType.getTypes()) {
+    MojoASTTypeRef memberRef(memberType);
+    auto &memberLayout = getOrCalculate(memberRef);
+    if (!memberLayout)
+      return {};
+    layout.addField({/*byteOffset=*/0, memberLayout->getByteSize(),
+                     memberLayout->getAlignment(), memberRef});
+  }
+  layout.setByteSize(*overallSize);
+  layout.setAlignment(*overallAlign);
+  return layout;
+}
+
 const std::optional<MojoTypeDataLayout> &
 MojoTypeDataLayoutContext::Impl::getOrCalculate(MojoASTTypeRef type) {
   auto it = cache.find(type.getMLIRType());
@@ -185,6 +217,9 @@ MojoTypeDataLayoutContext::Impl::calculate(MojoASTTypeRef type) {
 
   if (auto variantType = dyn_cast<VariantType>(type))
     return calculateForVariant(type, variantType);
+
+  if (auto unionType = dyn_cast<POP::UnionType>(type))
+    return calculateForUnion(type, unionType);
 
   std::optional<uint64_t> size =
       DataLayoutInterface::getTypeStoreSize(targetInfo, type.getMLIRType());
