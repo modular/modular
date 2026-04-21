@@ -393,7 +393,15 @@ struct PythonObject(
         """Destroy the object.
 
         This decrements the underlying refcount of the pointed-to object.
+
+        SAFETY: We check for NULL pointer before calling Py_DecRef to avoid
+        segfaults when dealing with objects that may have been initialized with
+        NULL pointers (e.g., from failed Python C API calls).
         """
+        # Skip if the pointer is NULL - this avoids segfaults in low-level binding code
+        if not self._obj_ptr:
+            return
+
         ref cpy = Python().cpython()
         # Acquire GIL such that __del__ can be called safely for cases where the
         # PyObject is handled in non-python contexts.

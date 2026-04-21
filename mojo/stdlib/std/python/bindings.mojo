@@ -26,7 +26,7 @@ from std.sys.info import size_of
 from std.builtin._startup import _ensure_runtime_init
 from std.reflection import get_type_name
 from std.memory import OpaquePointer, stack_allocation
-from std.python import Python, PythonObject
+from std.python import Python, PythonException, PythonObject
 from std.python._cpython import (
     GILAcquired,
     Py_TPFLAGS_DEFAULT,
