@@ -38,12 +38,6 @@ public:
 #else
 #error "Test requires modification for Windows"
 #endif
-    // Warm up getLogLevel() so its one-time initializer (initLogLevel) runs
-    // now, before any test calls setLogLevel(). Without this, the first
-    // setLogLevel() call in a test would be silently overridden when
-    // getLogLevel() later invokes initLogLevel() for the first time.
-    [[maybe_unused]] auto level = getLogLevel();
-
     // Route all log output to a temp file so tests can inspect it.
     char tmpPath[] = "/tmp/modular-log-test-%%%%%%";
     int fd = 0;
@@ -56,6 +50,9 @@ public:
 #else
 #error "Test requires modification for Windows"
 #endif
+    // Runs after writing the config file, as getLogLevel() initializes
+    // the Logger class.
+    [[maybe_unused]] auto level = getLogLevel();
   }
 
   void TearDown() override { llvm::sys::fs::remove(gLogFilePath); }
