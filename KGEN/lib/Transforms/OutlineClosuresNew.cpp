@@ -913,6 +913,10 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
   llvm::SetVector<ParamDeclAttr> capturedParamDecls =
       collectCapturedParams(captureToSymbol, generator, region, uses);
 
+  if (auto hoistedCaptures = closureInit.getHoistedCaptures())
+    for (ParamDeclAttr hoisted : *hoistedCaptures)
+      capturedParamDecls.insert(hoisted);
+
   // Create the capture struct type and collect symbols.
   // In order to create the move constructor, we need the move constructors of
   // all capture by copy/move values.

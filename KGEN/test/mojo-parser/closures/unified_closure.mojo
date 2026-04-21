@@ -1718,3 +1718,31 @@ def outer[
 
     # CHECK: :!DType dtype, :!Int E1>(%{{.*}}, %a)
     var x = inner(a)
+
+
+# // -----
+
+# COM: Ensure Hoisted Parameters Persist In Signature
+
+def _current_target() -> __mlir_type.`!kgen.target`:
+    return __mlir_attr.`#kgen.param.expr<current_target> : !kgen.target`
+
+
+def _align_of[dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()]() -> Int:
+    return 1
+
+@fieldwise_init
+struct LayoutTensor[dtype:DType, alignment: Int = _align_of[dtype, _current_target()]()](TrivialRegisterPassable):
+   pass
+
+
+def outer[
+    dtype: DType
+](
+    a: LayoutTensor[dtype, ...]
+) raises:
+    # CHECK: {hoistedCaptures = #kgen<param.decls[E1 : !Int]>}
+    def inner(
+        buf: LayoutTensor[dtype, ...]
+    ) unified {} -> LayoutTensor[dtype]:
+        return LayoutTensor[dtype]()
