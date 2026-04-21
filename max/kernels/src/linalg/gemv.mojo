@@ -1062,7 +1062,11 @@ def gemv_gpu[
             kernel_func = GEMVAlgorithm.GEMV_KERNEL
 
     elif m == 1 and transpose_b == True:
-        comptime if a_type in (DType.bfloat16, DType.float8_e4m3fn):
+        comptime if a_type in (
+            DType.bfloat16,
+            DType.float16,
+            DType.float8_e4m3fn,
+        ):
             if k % simd_width == 0:
                 if ceildiv(n, 2) <= ctx.get_attribute(
                     DeviceAttribute.MAX_GRID_DIM_Y
