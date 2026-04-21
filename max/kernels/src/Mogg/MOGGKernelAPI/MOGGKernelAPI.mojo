@@ -12274,11 +12274,12 @@ struct Sleep:
 
         if is_gpu[target]():
 
+            @__name("sleep")
             def sleep_kernel(duration_sec: Float64):
                 sleep(duration_sec)
 
             var device_ctx = ctx.get_device_context()
-            device_ctx.enqueue_function_experimental[sleep_kernel](
+            device_ctx.enqueue_function[sleep_kernel, sleep_kernel](
                 duration_sec, grid_dim=(1,), block_dim=(1,)
             )
         else:

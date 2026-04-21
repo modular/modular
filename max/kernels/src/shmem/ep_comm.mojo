@@ -2010,6 +2010,10 @@ struct EPDispatchKernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
+@__name(
+    t"ep_dispatch_async_{input_type}_{num_threads}_{n_sms}_{n_experts}_{n_ranks}_{max_tokens_per_rank}_{p2p_world_size}_{use_shmem}",
+    mangle=True,
+)
 def dispatch_async_kernel[
     input_type: DType,
     num_threads: Int,
@@ -2124,6 +2128,10 @@ def dispatch_async_kernel[
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(
+    t"ep_wait_{num_threads}_{n_sms}_{n_experts}_{n_ranks}_{max_tokens_per_rank}_{fused_shared_expert}_{shared_expert_input_dtype}",
+    mangle=True,
 )
 def dispatch_wait_kernel[
     num_threads: Int,
@@ -2784,6 +2792,10 @@ struct EPCombineKernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
+@__name(
+    t"ep_combine_async_{input_type}_{num_threads}_{n_sms}_{top_k}_{n_experts}_{n_ranks}_{msg_bytes}_{max_tokens_per_rank}_{p2p_world_size}_{use_shmem}_{fused_shared_expert}",
+    mangle=True,
+)
 def combine_async_kernel[
     input_type: DType,
     num_threads: Int,
@@ -2904,6 +2916,10 @@ def combine_async_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
+@__name(
+    t"ep_combine_wait_{output_type}_{num_threads}_{n_sms}_{top_k}_{n_experts}_{n_ranks}_{msg_bytes}_{max_tokens_per_rank}",
+    mangle=True,
+)
 def combine_wait_kernel[
     output_type: DType,
     num_threads: Int,
@@ -2997,6 +3013,10 @@ def combine_wait_kernel[
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(
+    t"ep_fused_dispatch_{input_type}_{num_threads}_{n_sms}_{n_experts}_{n_ranks}_{max_tokens_per_rank}_{p2p_world_size}_{fused_shared_expert}_{use_shmem}",
+    mangle=True,
 )
 def dispatch_kernel[
     input_type: DType,
@@ -3165,6 +3185,10 @@ def dispatch_kernel[
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(
+    t"ep_combine_{input_type}_{num_threads}_{n_sms}_{top_k}_{n_experts}_{n_ranks}_{msg_bytes}_{max_tokens_per_rank}_{p2p_world_size}_{fused_shared_expert}_{use_shmem}",
+    mangle=True,
 )
 def combine_kernel[
     input_type: DType,
@@ -3360,7 +3384,7 @@ def combine_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-@__name(t"fused_silu_{input_dtype}_{output_dtype}", mangle=True)
+@__name(t"ep_fused_silu_{input_dtype}_{output_dtype}", mangle=True)
 def fused_silu_kernel[
     output_dtype: DType,
     input_dtype: DType,
@@ -3445,7 +3469,7 @@ def fused_silu_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-@__name(t"fused_silu_fp8_{input_dtype}_{fp8_dtype}", mangle=True)
+@__name(t"ep_fused_silu_fp8_{input_dtype}_{fp8_dtype}", mangle=True)
 def fused_silu_fp8_kernel[
     fp8_dtype: DType,
     scales_dtype: DType,
@@ -3558,7 +3582,7 @@ def fused_silu_fp8_kernel[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
-@__name(t"fused_silu_nvfp4_{input_dtype}_{fp4_dtype}", mangle=True)
+@__name(t"ep_fused_silu_nvfp4_{input_dtype}_{fp4_dtype}", mangle=True)
 def fused_silu_nvfp4_kernel[
     fp4_dtype: DType,
     scales_dtype: DType,
