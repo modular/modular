@@ -2436,6 +2436,18 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       argMetadata && !argMetadata.empty())
     closure.setLLVMArgMetadataArrayAttr(argMetadata);
 
+  // Record hoisted parameter bindings
+  SmallVector<ParamDeclAttr> hoistedDecls;
+  for (ASTDecl *scope = nestedFnDecl.getParentDecl(); scope;
+       scope = scope->getParentDecl()) {
+    auto it = hoistedBindingsByScope.find(scope);
+    if (it != hoistedBindingsByScope.end())
+      for (auto &[expr, decl] : it->second)
+        hoistedDecls.push_back(decl);
+  }
+  if (!hoistedDecls.empty())
+    closure.setHoistedCapturesAttr(ParamDeclArrayAttr::get(ctx, hoistedDecls));
+
   closure.getBodyRegion().takeBody(nestedFn.getBodyRegion());
 
   // The body ops still reference the original subprogram in their locations.

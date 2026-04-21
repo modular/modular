@@ -1042,3 +1042,25 @@ kgen.generator @foo<FuncType: type>(%arg1: !kgen.param<FuncType>) {
 
   kgen.return
 }
+
+// -----
+
+// COM: Verify that hoistedCaptures on a closure.init forces the parameter into
+// COM: the lifted function even when the body has no reference to it.
+
+kgen.struct.generator @"hoisted::fn"<CAPTURES: !kgen.param_closure<@"hoisted" "fn">> = !kgen.closure<@"hoisted", "fn" trivial> {
+  kgen.conformance @"closure_trait" {
+    kgen.witness "__call__" : (!kgen.closure<@"hoisted", "fn" trivial>, index) -> index = #kgen.closure.symbol<@"hoisted", "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@"hoisted" "fn"> CAPTURES>>
+  }
+}
+
+// CHECK-LABEL: kgen.generator @hoisted_fn
+// CHECK-SAME: <E1>
+// CHECK-SAME: (%arg0: !kgen.struct<(index)>, %arg1: index) -> index
+kgen.generator @hoisted<E: index>(%arg0: index) {
+  kgen.param.declare E1: index = <E>
+  %0 = kgen.closure.init(%arg0)(%arg1: index) -> index {
+    kgen.return %arg0 : index
+  } : (index), !kgen.closure<@hoisted, "fn" trivial> {hoistedCaptures = #kgen<param.decls[E1 : index]>}
+  kgen.return
+}

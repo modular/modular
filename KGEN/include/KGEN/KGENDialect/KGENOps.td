@@ -2127,7 +2127,8 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
                    KGEN_InlineLevelAttr:$inlineLevel,
                    OptionalAttr<AnyAttr>:$nestedFnScope,
                    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
-                   DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray
+                   DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
+                   OptionalAttr<KGEN_ParamDeclArrayAttr>:$hoistedCaptures
                   );
 
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -2148,7 +2149,8 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
       build($_builder, $_state, result,
             funcTypeGenerator, functionType, captures, moveOrCopyCaptureSymbols,
             inputParams, inlineLevel, /*nestedFnScope=*/{},
-            /*LLVMMetadataArray=*/nullptr, /*LLVMArgMetadataArray=*/nullptr);
+            /*LLVMMetadataArray=*/nullptr, /*LLVMArgMetadataArray=*/nullptr,
+            /*hoistedCaptures=*/::M::KGEN::ParamDeclArrayAttr{});
     }]>
   ];
   let extraClassDeclaration = [{

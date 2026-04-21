@@ -2076,7 +2076,8 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
                        TypedAttrInterface:$typeValue,
                        OptionalAttr<AnyAttr>:$nestedFnScope,
                        DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
-                       DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray
+                       DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
+                       OptionalAttr<KGEN_ParamDeclArrayAttr>:$hoistedCaptures
                        );
   let results = (outs LIT_RefType:$result);
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -2106,7 +2107,8 @@ def LIT_ClosureInitOp : LITOp<"closure.init",
       build($_builder, $_state, result, funcTypeGenerator, functionType, captures,
             captureConventions, inputParams, inlineLevel,
             paramDecl, typeValue, /*nestedFnScope=*/{},
-            /*LLVMMetadataArray=*/nullptr, /*LLVMArgMetadataArray=*/nullptr);
+            /*LLVMMetadataArray=*/nullptr, /*LLVMArgMetadataArray=*/nullptr,
+            /*hoistedCaptures=*/::M::KGEN::ParamDeclArrayAttr{});
     }]>
   ];
 
