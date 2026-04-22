@@ -10,6 +10,7 @@
 #include "Formatters/MojoDecoratorBasedTypeFormatter.h"
 #include "Formatters/MojoKGENVariantTypeFormatter.h"
 #include "Formatters/MojoListTypeFormatter.h"
+#include "Formatters/MojoStringHelpers.h"
 #include "lldb/API/SBValue.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/DataFormatters/DataVisualization.h"
@@ -58,7 +59,7 @@ builtinStringSummaryProvider(ValueObject &valobj, Stream &stream,
     return true;
   };
 
-  auto loadWord = [&](const char *memberName, size_t &result) -> bool {
+  auto loadWord = [&](const char *memberName, uint64_t &result) -> bool {
     // Get the _StringCapacityField member.
     ValueObjectSP field = valobj.GetChildMemberWithName(memberName);
     if (!field || !field->GetError().Success())
@@ -74,6 +75,7 @@ builtinStringSummaryProvider(ValueObject &valobj, Stream &stream,
       result = field->GetPointerValue().address;
       if (result == LLDB_INVALID_ADDRESS)
         return onError("failed to load pointer value");
+      return false;
     }
 
     bool success = true;
@@ -83,84 +85,15 @@ builtinStringSummaryProvider(ValueObject &valobj, Stream &stream,
     return false;
   };
 
-  size_t capacity = 0, size = 0;
-  if (loadWord("_capacity_or_data", capacity) || loadWord("_len_or_data", size))
+  MojoStringHeader header{};
+  if (loadWord("_ptr_or_data", header.ptrOrData) ||
+      loadWord("_len_or_data", header.lenOrData) ||
+      loadWord("_capacity_or_data", header.capacity))
     return true;
 
-  // The capacity field indicates whether the string is inline or not. This is
-  // controlled by the top bit.
-  if (ssize_t(capacity) < 0) {
-    // In the small case, the length is the low 5 bits of the top byte of the
-    // capacity.
-    size_t length = (size_t(capacity) >> (7 * 8)) & 31;
-    size_t ptrOrData = 0;
-    if (loadWord("_ptr_or_data", ptrOrData))
-      return true;
-
-    // Slam together the bytes of the small string.
-    llvm::SmallVector<uint8_t> bytes;
-    bytes.append((uint8_t *)&ptrOrData, (uint8_t *)(&ptrOrData + 1));
-    bytes.append((uint8_t *)&size, (uint8_t *)(&size + 1));
-    bytes.append((uint8_t *)&capacity, (uint8_t *)(&capacity + 1));
-    bytes.resize(length);
-
-    DataExtractor extractor(bytes.data(), length,
-                            lldb::ByteOrder::eByteOrderLittle, 8);
-    StringPrinter::ReadBufferAndDumpToStreamOptions options(valobj);
-    options.SetData(std::move(extractor));
-    options.SetStream(&stream);
-    options.SetPrefixToken(nullptr);
-    options.SetQuote('"');
-    options.SetSourceSize(length);
-    options.SetBinaryZeroIsTerminator(true);
-    return StringPrinter::ReadBufferAndDumpToStream<
-        StringPrinter::StringElementType::ASCII>(options);
-  }
-
-  // If the size is 0, the data address might be invalid.
-  if (size == 0) {
-    stream << "\"\"";
-    return true;
-  }
-
-  // Otherwise, decode the pointer.
-  ValueObjectSP dataVal = valobj.GetChildMemberWithName("_ptr_or_data");
-  if (!dataVal || !dataVal->GetError().Success())
-    return onError("; could not find String._ptr_or_data field");
-
-  // The REPL sees a struct around a pointer, but DWARF shows directly the
-  // pointer.
-  ValueObjectSP dataPointer = dataVal->IsPointerType()
-                                  ? dataVal
-                                  : dataVal->GetChildMemberWithName("address");
-
-  if (!dataPointer || !dataPointer->GetError().Success())
-    return onError("couldn't decode pointer");
-
-  // Now that we have the data pointer, dereference to read the string data.
-  StringPrinter::ReadBufferAndDumpToStreamOptions options(valobj);
-
-  if (summaryOptions.GetCapping() == TypeSummaryCapping::eTypeSummaryCapped) {
-    size_t maxSize = valobj.GetTargetSP()->GetMaximumSizeOfStringSummary();
-    if (size > maxSize) {
-      size = maxSize;
-      options.SetIsTruncated(true);
-    }
-  }
-
-  DataExtractor extractor;
-  const size_t bytesRead = dataPointer->GetPointeeData(extractor, 0, size);
-  if (bytesRead < size)
-    return onError("couldn't fetch string data");
-
-  options.SetData(std::move(extractor));
-  options.SetStream(&stream);
-  options.SetPrefixToken(nullptr);
-  options.SetQuote('"');
-  options.SetSourceSize(size);
-  options.SetBinaryZeroIsTerminator(true);
-  return StringPrinter::ReadBufferAndDumpToStream<
-      StringPrinter::StringElementType::ASCII>(options);
+  if (!dumpMojoString(valobj, header, stream, summaryOptions))
+    return onError();
+  return true;
 }
 
 /// The None type is rendered nicely if its summary is the "None" string.
