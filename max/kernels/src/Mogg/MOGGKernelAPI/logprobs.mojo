@@ -169,7 +169,9 @@ struct LogProbabilitiesRagged:
                     lp_output_offsets=lp_output_offsets,
                 )
 
-            parallelize[lp_idx_kernel](num_output_tokens)
+            parallelize[lp_idx_kernel](
+                num_output_tokens, ctx=ctx.get_optional_device_context()
+            )
         elif is_gpu[target]():
 
             @parameter

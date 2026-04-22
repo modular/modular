@@ -86,6 +86,16 @@ Weights
    ShardingStrategy
    Weight
 
+Configuration
+-------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   GraphDebugConfig
+
 Submodules
 ----------
 
