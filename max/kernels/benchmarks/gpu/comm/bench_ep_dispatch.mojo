@@ -230,7 +230,7 @@ def bench_dispatch[
             FormatHandlerType,
         ]
 
-        var func_wait = ctx.compile_function_experimental[dispatch_wait]()
+        var func_wait = ctx.compile_function[dispatch_wait, dispatch_wait]()
 
         @always_inline
         @parameter
@@ -342,12 +342,9 @@ def bench_dispatch[
             output_layout=type_of(output_tt_layout), hidden_size, top_k
         ]
 
-        var bf16_output = TileTensor[
-            DType.bfloat16, output_tensor.LayoutType, MutAnyOrigin
-        ](
-            ptr=output_tensor.ptr.bitcast[Scalar[DType.bfloat16]](),
-            layout=output_tensor.layout,
-        )
+        var bf16_output = output_tensor.bitcast[
+            DType.bfloat16
+        ]().as_any_origin()
         var format_handler = token_fmt_type(bf16_output)
 
         setup_and_run_benchmark[
@@ -372,12 +369,7 @@ def bench_dispatch[
             top_k,
         ]
 
-        var fp8_output = TileTensor[
-            token_dtype, output_tensor.LayoutType, MutAnyOrigin
-        ](
-            ptr=output_tensor.ptr.bitcast[Scalar[token_dtype]](),
-            layout=output_tensor.layout,
-        )
+        var fp8_output = output_tensor.bitcast[token_dtype]().as_any_origin()
         var format_handler = token_fmt_type(fp8_output, output_scales_tensor)
 
         setup_and_run_benchmark[

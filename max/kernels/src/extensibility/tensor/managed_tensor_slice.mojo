@@ -85,7 +85,7 @@ def _gcd_pow2[a: Int, b: Int]() -> Int:
 def simd_store_into_managed_tensor_slice[
     dtype: DType,
     rank: Int,
-    simd_width: Int,
+    simd_width: SIMDSize,
     //,
     static_spec: StaticTensorSpec[dtype, rank, ...],
     element_alignment: Int = 1,
@@ -159,7 +159,7 @@ def simd_store_into_tensor_pointer[
     rank: Int,
     //,
     static_spec: StaticTensorSpec[dtype, rank, ...],
-    simd_width: Int,
+    simd_width: SIMDSize,
     element_alignment: Int = 1,
 ](
     ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -702,6 +702,11 @@ struct ManagedTensorSlice[
             The size of the tensor slice in the given dimension.
         """
 
+        comptime assert 0 <= index < Self.rank, String(
+            t"dim_size index of {index} is out of bounds for tensor rank [0,"
+            t" {Self.rank}]"
+        )
+
         comptime if not Self.static_spec.static_layout._shape_types[
             index
         ].is_static_value:
@@ -756,6 +761,11 @@ struct ManagedTensorSlice[
         Returns:
             The size of the tensor slice in the given dimension.
         """
+
+        comptime assert 0 <= index < Self.rank, String(
+            t"stride_length index of {index} is out of bounds for tensor rank"
+            t" [0, {Self.rank}]"
+        )
 
         comptime if not Self.static_spec.static_layout._stride_types[
             index
@@ -939,7 +949,7 @@ struct ManagedTensorSlice[
 
     @always_inline
     def store[
-        width: Int,
+        width: SIMDSize,
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
@@ -970,7 +980,7 @@ struct ManagedTensorSlice[
     @__mogg_intrinsic_attr("mogg.tensor_fused_store")
     @always_inline
     def _fused_store[
-        width: Int,
+        width: SIMDSize,
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
@@ -994,7 +1004,7 @@ struct ManagedTensorSlice[
 
     @always_inline("nodebug")
     def _lambda_store[
-        width: Int,
+        width: SIMDSize,
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
@@ -1018,7 +1028,7 @@ struct ManagedTensorSlice[
 
     @always_inline
     def _fused_compute_output_lambda[
-        width: Int,
+        width: SIMDSize,
         # Necessary to make it simpler on the call site.
         _rank: Int,
     ](
@@ -1439,7 +1449,7 @@ struct _FusionPack[*Ts: TrivialRegisterPassable](TrivialRegisterPassable):
 
     @always_inline("nodebug")
     def __getitem_param__[i: Int](self) -> Self.Ts[i]:
-        return __mlir_op.`kgen.pack.extract`[index=i.__mlir_index__()](
+        return __mlir_op.`kgen.pack.extract`[index=i._int_mlir_index()](
             self._mlir_value
         )
 
@@ -1461,9 +1471,7 @@ struct _FusedInputVariadicTensors[
     """
 
     var _tensors: StaticTuple[DynamicTensor[Self.dtype, Self.rank], Self.size]
-    var _fusions: _FusionPack[
-        *Self.FusionTypes.upcast[TrivialRegisterPassable]()
-    ]
+    var _fusions: _FusionPack[*Self.FusionTypes]
 
     def __init__(
         out self,
@@ -1472,9 +1480,7 @@ struct _FusedInputVariadicTensors[
             Self.size,
         ],
         shapes: StaticTuple[IndexList[Self.rank], Self.size],
-        fusions: _FusionPack[
-            *Self.FusionTypes.upcast[TrivialRegisterPassable]()
-        ],
+        fusions: _FusionPack[*Self.FusionTypes],
     ):
         comptime for i in range(Self.size):
             comptime assert not _type_is_eq[
@@ -1555,9 +1561,7 @@ struct _FusedOutputVariadicTensors[
     """
 
     var _tensors: StaticTuple[DynamicTensor[Self.dtype, Self.rank], Self.size]
-    var _fusions: _FusionPack[
-        *Self.FusionTypes.upcast[TrivialRegisterPassable]()
-    ]
+    var _fusions: _FusionPack[*Self.FusionTypes]
 
     def __init__(
         out self,
@@ -1566,9 +1570,7 @@ struct _FusedOutputVariadicTensors[
             Self.size,
         ],
         shapes: StaticTuple[IndexList[Self.rank], Self.size],
-        fusions: _FusionPack[
-            *Self.FusionTypes.upcast[TrivialRegisterPassable]()
-        ],
+        fusions: _FusionPack[*Self.FusionTypes],
     ):
         comptime for i in range(Self.size):
             comptime assert not _type_is_eq[

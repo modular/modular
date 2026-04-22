@@ -14,7 +14,6 @@
 
 from std.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
-from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 from linalg.fp4_utils import (
     SF_ATOM_M,
@@ -264,7 +263,7 @@ def _block_scaled_matmul_with_epilogue[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NullableTileTensor[mut=True, c_type, ...],
+    c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
     a_scales: TileTensor[scales_dtype, ...],
@@ -275,7 +274,9 @@ def _block_scaled_matmul_with_epilogue[
     """Our sm100 block scaled matmul kernel still does not support fusion of elementwise
     operations. This is a temporary implementation that uses our sm100 block scaled matmul
     kernel and dispatch a separate epilogue kernel to apply the elementwise
-    operations.
+    operations. Callers must allocate `c`; when an `elementwise_lambda_fn`
+    is supplied the matmul result is written into `c` and then read back
+    by the lambda.
     """
 
     var m = Int(c.dim[0]())
@@ -283,11 +284,9 @@ def _block_scaled_matmul_with_epilogue[
     if m == 0 or n == 0:
         return
 
-    comptime if not elementwise_lambda_fn:
-        if not c.ptr:
-            raise "c must be allocated!"
+    comptime K_phys = a.static_shape[1]
 
-        comptime K_phys = a.static_shape[1]
+    comptime if not elementwise_lambda_fn:
         blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
             K=K_phys,
@@ -295,7 +294,7 @@ def _block_scaled_matmul_with_epilogue[
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
         ](
-            c.value(),
+            c,
             a,
             b,
             a_scales,
@@ -303,7 +302,6 @@ def _block_scaled_matmul_with_epilogue[
             ctx,
             alpha=tensor_sf,
         )
-        return
     else:
         comptime epilogue = elementwise_lambda_fn.value()
         # Nvidia GPUs >= sm_100 arch support 32B load/store to global memory.
@@ -312,76 +310,36 @@ def _block_scaled_matmul_with_epilogue[
             simd_width_of[c_type, target=get_gpu_target()]()
         )
 
-        # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
-        # apply the epilogue.
-        if c.ptr:
-            comptime K_phys = a.static_shape[1]
-            var c_tt = c.value()
-
-            # The epilogue lambda takes IndexList[2]. We load from c's raw pointer
-            # using row-major offset since TileTensor.load's Coord constraint
-            # can't be proved when c's layout type is fully inferred.
-            @parameter
-            @__copy_capture(c_tt, n)
-            def epilogue_wrapper[
-                simd_width: Int, rank: Int, alignment: Int = 1
-            ](idx: IndexList[rank]):
-                var c_coord = Index(idx[0], idx[1])
-                var c_val = rebind[SIMD[c_type, simd_width]](
-                    c_tt.load[width=simd_width](Coord(c_coord))
-                )
-                epilogue[c_type, simd_width, alignment=alignment](
-                    c_coord, c_val
-                )
-
-            blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-                transpose_b=transpose_b,
-                K=K_phys,
-                config=config,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](
-                c_tt,
-                a,
-                b,
-                a_scales,
-                b_scales,
-                ctx,
-                alpha=tensor_sf,
+        # The epilogue lambda takes IndexList[2]. We load from c's raw pointer
+        # using row-major offset since TileTensor.load's Coord constraint
+        # can't be proved when c's layout type is fully inferred.
+        @parameter
+        @__copy_capture(c, n)
+        def epilogue_wrapper[
+            simd_width: Int, rank: Int, alignment: Int = 1
+        ](idx: IndexList[rank]):
+            var c_coord = Index(idx[0], idx[1])
+            var c_val = rebind[SIMD[c_type, simd_width]](
+                c.load[width=simd_width](Coord(c_coord))
             )
-            elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Index(m, n), ctx
-            )
-            return
+            epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
 
-        # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-        var num_elems = m * n
-        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](num_elems)
-        var c_tmp = TileTensor(
-            rebind[UnsafePointer[Scalar[c_type], MutExternalOrigin]](
-                tmp_device_buffer.unsafe_ptr()
-            ),
-            row_major(Coord(Idx(m), Idx(n))),
-        )
-
-        _block_scaled_matmul_with_epilogue[
-            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+        blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
+            K=K_phys,
             config=config,
-            elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
         ](
-            c_tmp,
+            c,
             a,
             b,
             a_scales,
             b_scales,
-            tensor_sf,
             ctx,
+            alpha=tensor_sf,
         )
-
-        _ = tmp_device_buffer^
+        elementwise[epilogue_wrapper, simd_size, target="gpu"](Index(m, n), ctx)
 
 
 def _vendor_blas_block_scaled_matmul_with_epilogue[

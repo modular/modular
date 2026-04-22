@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import fields, replace
+from dataclasses import dataclass, fields, replace
 from typing import Any
 
 import numpy as np
@@ -40,11 +40,19 @@ from .unified_mtp_deepseekV3 import UnifiedMTPDeepseekV3
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class UnifiedMTPDeepseekV3Inputs(DeepseekV3Inputs):
     """Inputs for the UnifiedMTPDeepseekV3 model."""
 
     draft_tokens: Buffer | None = None
     draft_kv_blocks: list[Buffer] | None = None
+    seed: Buffer | None = None
+    """Per-execute int64 scalar seed reserved for stochastic sub-modules.
+
+    Currently only consumed by synthetic acceptance sampling, but always
+    bound so the graph signature is stable and additional stochastic
+    paths can reuse the same input.
+    """
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -53,6 +61,8 @@ class UnifiedMTPDeepseekV3Inputs(DeepseekV3Inputs):
             buffers += (self.draft_tokens,)
         if self.draft_kv_blocks is not None:
             buffers += tuple(self.draft_kv_blocks)
+        assert self.seed is not None
+        buffers += (self.seed,)
         return buffers
 
 
@@ -63,6 +73,12 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
         kwargs["return_logits"] = ReturnLogits.VARIABLE
         kwargs["return_hidden_states"] = ReturnHiddenStates.ALL_NORMALIZED
         super().__init__(*args, **kwargs)
+        self._seed_counter = 0
+
+    def _next_seed(self) -> Buffer:
+        """Monotonically advancing int64 scalar seed, fresh per execute."""
+        self._seed_counter += 1
+        return Buffer.from_numpy(np.array(self._seed_counter, dtype=np.int64))
 
     @override
     def load_model(self, session: InferenceSession) -> Model:
@@ -154,12 +170,11 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
             draft_config.return_hidden_states = ReturnHiddenStates.LAST
 
             assert self.pipeline_config.speculative is not None
-            num_draft_steps = (
-                self.pipeline_config.speculative.num_speculative_tokens
-            )
 
             nn_model = UnifiedMTPDeepseekV3(
-                config, draft_config, num_draft_steps=num_draft_steps
+                config,
+                draft_config,
+                speculative_config=self.pipeline_config.speculative,
             )
 
             # Share embed_tokens and lm_head BEFORE loading so state_dict()
@@ -266,8 +281,13 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                             attention_dispatch_metadata=kv_caches_per_dev[
                                 dev_idx
                             ].attention_dispatch_metadata,
+                            draft_attention_dispatch_metadata=kv_caches_per_dev[
+                                dev_idx
+                            ].draft_attention_dispatch_metadata,
                         )
                     )
+
+                seed = next(variadic_args_iter).tensor
 
                 outputs = nn_model(
                     tokens=tokens.tensor,
@@ -279,6 +299,7 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                     host_input_row_offsets=host_input_row_offsets.tensor,
                     data_parallel_splits=data_parallel_splits.tensor,
                     batch_context_lengths=batch_context_lengths,
+                    seed=seed,
                     ep_inputs=target_ep_inputs,
                     draft_kv_collections=draft_kv_collections,
                 )
@@ -326,6 +347,7 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
             return_n_logits=base.return_n_logits,
             data_parallel_splits=base.data_parallel_splits,
             ep_inputs=base.ep_inputs,
+            seed=self._next_seed(),
         )
 
     def prepare_next_token_inputs(
