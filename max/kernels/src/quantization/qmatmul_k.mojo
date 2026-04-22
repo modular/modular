@@ -16,6 +16,7 @@ from std.sys import CompilationTarget, align_of, simd_width_of, size_of
 from std.sys.intrinsics import llvm_intrinsic
 
 from std.algorithm import sync_parallelize, tile
+from std.gpu.host import DeviceContext
 from layout import LayoutTensor, TileTensor
 from linalg.accumulate import _Accumulator
 from linalg.arch.cpu.neon_intrinsics import _neon_dotprod_lane
@@ -718,7 +719,7 @@ def _matmul_group_stream[
     a_q_bits_ptr: UnsafePointer[Int8, _],
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
-    comptime assert tile_k.is_power_of_two() and tile_k <= 4
+    comptime assert Bool(tile_k.is_power_of_two()) and tile_k <= 4
 
     comptime if CompilationTarget.is_x86():
         return _matmul_group_stream_x86[group_size, stream_b_vals_fn](
@@ -1433,6 +1434,7 @@ def _matmul_Qb_K[
     c: LayoutTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
+    ctx: Optional[DeviceContext] = None,
 ):
     comptime assert a.rank == 2
     comptime assert b.rank == 2
@@ -1505,7 +1507,7 @@ def _matmul_Qb_K[
             a_packed_ptr += M
             b_packed_ptr += N
 
-    sync_parallelize[task_func](num_workers)
+    sync_parallelize[task_func](num_workers, ctx)
 
     a_packed_base_ptr.free()
 
@@ -1518,6 +1520,7 @@ def matmul_Q4_K[
     c_tt: TileTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
+    ctx: Optional[DeviceContext] = None,
 ):
     var a = a_tt.to_layout_tensor()
     var b = b_tt.to_layout_tensor()
@@ -1532,7 +1535,7 @@ def matmul_Q4_K[
         columns_fn=_matmul_Q4_K_columns,
         interleave_group_sums=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](a, b, c)
+    ](a, b, c, ctx)
 
 
 def matmul_Q6_K[
@@ -1543,6 +1546,7 @@ def matmul_Q6_K[
     c_tt: TileTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
+    ctx: Optional[DeviceContext] = None,
 ):
     var a = a_tt.to_layout_tensor()
     var b = b_tt.to_layout_tensor()
@@ -1556,4 +1560,4 @@ def matmul_Q6_K[
         b_type=_block_Q6_K_packed[],
         columns_fn=_matmul_Q6_K_columns,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](a, b, c)
+    ](a, b, c, ctx)

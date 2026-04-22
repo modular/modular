@@ -28,9 +28,6 @@ QWEN3_MOE_SAFETENSOR_MAPPING = {
     "model.": "",  # Removes the "model" prefix.
     "mlp.gate.weight": "mlp.gate.gate_score.weight",  # Router gate
     "weight_scale_inv": "weight_scale",  # FP8 scale naming (e.g. compressed-tensors)
-    "self_attn.q_proj.": "self_attn.qkv_proj.q.",
-    "self_attn.k_proj.": "self_attn.qkv_proj.k.",
-    "self_attn.v_proj.": "self_attn.qkv_proj.v.",
 }
 
 

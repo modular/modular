@@ -10,7 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Qwen2 transformer architecture for text generation."""
 
 from .arch import qwen2_arch
+from .model import Qwen2Model
+from .model_config import Qwen2Config
 
-__all__ = ["qwen2_arch"]
+__all__ = ["Qwen2Config", "Qwen2Model", "qwen2_arch"]

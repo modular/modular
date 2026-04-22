@@ -118,13 +118,13 @@ struct String(
     Be aware of the following characteristics when working with `String`:
 
     - **UTF-8 encoding**: Strings store UTF-8 encoded text, so byte length may
-      differ from character count. Use `len(string.codepoints())` to get
+      differ from character count. Use `string.count_codepoints())` to get
       the codepoint count:
 
       ```mojo
       var text = "café"                # 4 Unicode characters
-      print(len(text))                 # Prints 5 (é is 2 bytes in UTF-8)
-      print(len(text.codepoints()))    # Prints 4 (correct Unicode count)
+      print(text.byte_length())        # Prints 5 (é is 2 bytes in UTF-8)
+      print(text.count_codepoints())   # Prints 4 (correct Unicode count)
       ```
 
     - **Always mutable**: You can modify strings in-place:
@@ -160,9 +160,9 @@ struct String(
     var text = "Hello"
 
     # String properties and indexing
-    print(len(text))            # 5
-    print(text[byte=1])              # e (byte slice)
-    print(text[byte=len(text) - 1])  # o (last character)
+    print(text.byte_length())                 # 5
+    print(text[byte=1])                       # e (byte slice)
+    print(text[byte=text.byte_length() - 1])  # o (last character)
 
     # In-place concatenation
     text += " World"
@@ -1358,29 +1358,31 @@ struct String(
         return substr in StringSlice(self)
 
     def find(self, substr: StringSlice, start: Int = 0) -> Int:
-        """Finds the offset of the first occurrence of `substr` starting at
-        `start`. If not found, returns -1.
+        """Finds the offset in bytes of the first occurrence of `substr`
+        starting at `start`. If not found, returns `-1`.
 
         Args:
           substr: The substring to find.
-          start: The offset from which to find.
+          start: The offset in bytes from which to find.
 
         Returns:
-          The offset of `substr` relative to the beginning of the string.
+          The offset in bytes of `substr` relative to the beginning of the
+          string.
         """
 
         return StringSlice(self).find(substr, start)
 
     def rfind(self, substr: StringSlice, start: Int = 0) -> Int:
-        """Finds the offset of the last occurrence of `substr` starting at
-        `start`. If not found, returns -1.
+        """Finds the offset in bytes of the last occurrence of `substr` starting
+        at `start`. If not found, returns `-1`.
 
         Args:
           substr: The substring to find.
-          start: The offset from which to find.
+          start: The offset in bytes from which to find.
 
         Returns:
-          The offset of `substr` relative to the beginning of the string.
+          The offset in bytes of `substr` relative to the beginning of the
+          string.
         """
 
         return StringSlice(self).rfind(substr, start=start)
@@ -1630,13 +1632,16 @@ struct String(
         """Checks if the string starts with the specified prefix between start
         and end positions. Returns True if found and False otherwise.
 
+        The `start` and `end` positions must be offsets given in bytes, and
+        must be codepoint boundaries.
+
         Args:
             prefix: The prefix to check.
-            start: The start offset from which to check.
-            end: The end offset from which to check.
+            start: The start offset in bytes from which to check.
+            end: The end offset in bytes from which to check.
 
         Returns:
-            True if the `self[start:end]` is prefixed by the input prefix.
+            True if the `self[byte=start:end]` is prefixed by the input prefix.
         """
         return StringSlice(self).startswith(prefix, start, end)
 
@@ -1646,13 +1651,16 @@ struct String(
         """Checks if the string end with the specified suffix between start
         and end positions. Returns True if found and False otherwise.
 
+        The `start` and `end` positions must be offsets given in bytes, and
+        must be codepoint boundaries.
+
         Args:
             suffix: The suffix to check.
-            start: The start offset from which to check.
-            end: The end offset from which to check.
+            start: The start offset in bytes from which to check.
+            end: The end offset in bytes from which to check.
 
         Returns:
-            True if the `self[start:end]` is suffixed by the input suffix.
+            True if the `self[byte=start:end]` is suffixed by the input suffix.
         """
         return StringSlice(self).endswith(suffix, start, end)
 
@@ -1665,8 +1673,8 @@ struct String(
             prefix: The prefix to remove from the string.
 
         Returns:
-            `string[len(prefix):]` if the string starts with the prefix string,
-            or a copy of the original string otherwise.
+            `string[byte=prefix.byte_length():]` if the string starts with
+            the prefix string, or a copy of the original string otherwise.
 
         Examples:
 
@@ -1686,7 +1694,7 @@ struct String(
             suffix: The suffix to remove from the string.
 
         Returns:
-            `string[:-len(suffix)]` if the string ends with the suffix string,
+            `string[byte=:(self.byte_length()-suffix.byte_length())]` if the string ends with the suffix string,
             or a copy of the original string otherwise.
 
         Examples:

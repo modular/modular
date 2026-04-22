@@ -17,6 +17,7 @@ from std.sys.info import simd_width_of, size_of
 from std.sys.intrinsics import strided_load, strided_store
 
 from std.algorithm import parallel_memcpy, sync_parallelize, tile, vectorize
+from std.gpu.host import DeviceContext
 from layout import TileTensor
 from std.memory import memcpy
 from std.runtime.asyncrt import parallelism_level
@@ -34,10 +35,10 @@ def _transpose_inplace_4x4[
     comptime assert bufloat0.flat_rank == 2
 
     # Contiguous row-major 4x4: row i starts at offset i * 4.
-    var row0 = bufloat0.ptr.load[width=4](0)
-    var row1 = bufloat0.ptr.load[width=4](4)
-    var row2 = bufloat0.ptr.load[width=4](8)
-    var row3 = bufloat0.ptr.load[width=4](12)
+    var row0 = bufloat0.raw_load[width=4](0)
+    var row1 = bufloat0.raw_load[width=4](4)
+    var row2 = bufloat0.raw_load[width=4](8)
+    var row3 = bufloat0.raw_load[width=4](12)
 
     var tmp0 = row0.shuffle[0, 1, 4, 5](row1)
     var tmp1 = row2.shuffle[0, 1, 4, 5](row3)
@@ -49,10 +50,10 @@ def _transpose_inplace_4x4[
     var r2 = tmp2.shuffle[0, 2, 4, 6](tmp3)
     var r3 = tmp2.shuffle[1, 3, 5, 7](tmp3)
 
-    bufloat0.ptr.store[width=4](0, r0)
-    bufloat0.ptr.store[width=4](4, r1)
-    bufloat0.ptr.store[width=4](8, r2)
-    bufloat0.ptr.store[width=4](12, r3)
+    bufloat0.raw_store[width=4](0, r0)
+    bufloat0.raw_store[width=4](4, r1)
+    bufloat0.raw_store[width=4](8, r2)
+    bufloat0.raw_store[width=4](12, r3)
 
 
 def _transpose_inplace_8x8[
@@ -65,14 +66,14 @@ def _transpose_inplace_8x8[
     comptime assert bufloat0.flat_rank == 2
 
     # Contiguous row-major 8x8: row i starts at offset i * 8.
-    var row0 = bufloat0.ptr.load[width=8](0)
-    var row1 = bufloat0.ptr.load[width=8](8)
-    var row2 = bufloat0.ptr.load[width=8](16)
-    var row3 = bufloat0.ptr.load[width=8](24)
-    var row4 = bufloat0.ptr.load[width=8](32)
-    var row5 = bufloat0.ptr.load[width=8](40)
-    var row6 = bufloat0.ptr.load[width=8](48)
-    var row7 = bufloat0.ptr.load[width=8](56)
+    var row0 = bufloat0.raw_load[width=8](0)
+    var row1 = bufloat0.raw_load[width=8](8)
+    var row2 = bufloat0.raw_load[width=8](16)
+    var row3 = bufloat0.raw_load[width=8](24)
+    var row4 = bufloat0.raw_load[width=8](32)
+    var row5 = bufloat0.raw_load[width=8](40)
+    var row6 = bufloat0.raw_load[width=8](48)
+    var row7 = bufloat0.raw_load[width=8](56)
 
     @parameter
     def _apply_permute_0(
@@ -137,14 +138,14 @@ def _transpose_inplace_8x8[
     var r6 = _apply_permute_5(k130, k570)
     var r7 = _apply_permute_5(k131, k571)
 
-    bufloat0.ptr.store[width=8](0, r0)
-    bufloat0.ptr.store[width=8](8, r1)
-    bufloat0.ptr.store[width=8](16, r2)
-    bufloat0.ptr.store[width=8](24, r3)
-    bufloat0.ptr.store[width=8](32, r4)
-    bufloat0.ptr.store[width=8](40, r5)
-    bufloat0.ptr.store[width=8](48, r6)
-    bufloat0.ptr.store[width=8](56, r7)
+    bufloat0.raw_store[width=8](0, r0)
+    bufloat0.raw_store[width=8](8, r1)
+    bufloat0.raw_store[width=8](16, r2)
+    bufloat0.raw_store[width=8](24, r3)
+    bufloat0.raw_store[width=8](32, r4)
+    bufloat0.raw_store[width=8](40, r5)
+    bufloat0.raw_store[width=8](48, r6)
+    bufloat0.raw_store[width=8](56, r7)
 
 
 def _transpose_inplace_16x16[
@@ -221,22 +222,22 @@ def _transpose_inplace_16x16[
         ](other)
 
     # Contiguous row-major 16x16: row i starts at offset i * 16.
-    var row00 = bufloat0.ptr.load[width=16](0)
-    var row01 = bufloat0.ptr.load[width=16](16)
-    var row02 = bufloat0.ptr.load[width=16](32)
-    var row03 = bufloat0.ptr.load[width=16](48)
-    var row04 = bufloat0.ptr.load[width=16](64)
-    var row05 = bufloat0.ptr.load[width=16](80)
-    var row06 = bufloat0.ptr.load[width=16](96)
-    var row07 = bufloat0.ptr.load[width=16](112)
-    var row08 = bufloat0.ptr.load[width=16](128)
-    var row09 = bufloat0.ptr.load[width=16](144)
-    var row10 = bufloat0.ptr.load[width=16](160)
-    var row11 = bufloat0.ptr.load[width=16](176)
-    var row12 = bufloat0.ptr.load[width=16](192)
-    var row13 = bufloat0.ptr.load[width=16](208)
-    var row14 = bufloat0.ptr.load[width=16](224)
-    var row15 = bufloat0.ptr.load[width=16](240)
+    var row00 = bufloat0.raw_load[width=16](0)
+    var row01 = bufloat0.raw_load[width=16](16)
+    var row02 = bufloat0.raw_load[width=16](32)
+    var row03 = bufloat0.raw_load[width=16](48)
+    var row04 = bufloat0.raw_load[width=16](64)
+    var row05 = bufloat0.raw_load[width=16](80)
+    var row06 = bufloat0.raw_load[width=16](96)
+    var row07 = bufloat0.raw_load[width=16](112)
+    var row08 = bufloat0.raw_load[width=16](128)
+    var row09 = bufloat0.raw_load[width=16](144)
+    var row10 = bufloat0.raw_load[width=16](160)
+    var row11 = bufloat0.raw_load[width=16](176)
+    var row12 = bufloat0.raw_load[width=16](192)
+    var row13 = bufloat0.raw_load[width=16](208)
+    var row14 = bufloat0.raw_load[width=16](224)
+    var row15 = bufloat0.raw_load[width=16](240)
 
     var k00 = _apply_permute_0(row00, row01)
     var k01 = _apply_permute_1(row00, row01)
@@ -306,22 +307,22 @@ def _transpose_inplace_16x16[
     var r14 = _apply_permute_7(t06, t14)
     var r15 = _apply_permute_7(t07, t15)
 
-    bufloat0.ptr.store[width=16](0, r00)
-    bufloat0.ptr.store[width=16](16, r01)
-    bufloat0.ptr.store[width=16](32, r02)
-    bufloat0.ptr.store[width=16](48, r03)
-    bufloat0.ptr.store[width=16](64, r04)
-    bufloat0.ptr.store[width=16](80, r05)
-    bufloat0.ptr.store[width=16](96, r06)
-    bufloat0.ptr.store[width=16](112, r07)
-    bufloat0.ptr.store[width=16](128, r08)
-    bufloat0.ptr.store[width=16](144, r09)
-    bufloat0.ptr.store[width=16](160, r10)
-    bufloat0.ptr.store[width=16](176, r11)
-    bufloat0.ptr.store[width=16](192, r12)
-    bufloat0.ptr.store[width=16](208, r13)
-    bufloat0.ptr.store[width=16](224, r14)
-    bufloat0.ptr.store[width=16](240, r15)
+    bufloat0.raw_store[width=16](0, r00)
+    bufloat0.raw_store[width=16](16, r01)
+    bufloat0.raw_store[width=16](32, r02)
+    bufloat0.raw_store[width=16](48, r03)
+    bufloat0.raw_store[width=16](64, r04)
+    bufloat0.raw_store[width=16](80, r05)
+    bufloat0.raw_store[width=16](96, r06)
+    bufloat0.raw_store[width=16](112, r07)
+    bufloat0.raw_store[width=16](128, r08)
+    bufloat0.raw_store[width=16](144, r09)
+    bufloat0.raw_store[width=16](160, r10)
+    bufloat0.raw_store[width=16](176, r11)
+    bufloat0.raw_store[width=16](192, r12)
+    bufloat0.raw_store[width=16](208, r13)
+    bufloat0.raw_store[width=16](224, r14)
+    bufloat0.raw_store[width=16](240, r15)
 
 
 def _transpose_inplace_naive[
@@ -517,7 +518,7 @@ def _convert_transpose_perms_to_static_int_tuple[
     var simplified_perms = IndexList[rank]()
     # TODO: unroll
     for j in range(rank):
-        simplified_perms[j] = Int(perms.load(j)[0]._mlir_value)
+        simplified_perms[j] = Int(perms.load(j)[0])
     return simplified_perms
 
 
@@ -630,6 +631,7 @@ def _transpose_2d_parallel_tiled[
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
+    ctx: Optional[DeviceContext] = None,
 ):
     comptime if rank < 2:
         return
@@ -681,7 +683,7 @@ def _transpose_2d_parallel_tiled[
                     input.ptr + offset,
                 )
 
-    sync_parallelize[_parallel_tile](num_tasks)
+    sync_parallelize[_parallel_tile](num_tasks, ctx)
 
 
 def transpose_2d[
@@ -697,6 +699,7 @@ def transpose_2d[
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
     offset: Int,
+    ctx: Optional[DeviceContext] = None,
 ):
     comptime if rank < 2:
         return
@@ -714,6 +717,7 @@ def transpose_2d[
             simplified_input_shape,
             simplified_rank,
             offset,
+            ctx,
         )
     else:
         _transpose_2d_serial_tiled(
@@ -737,6 +741,7 @@ def _transpose_4d_swap_middle_helper[
     M: Int,
     N: Int,
     K: Int,
+    ctx: Optional[DeviceContext] = None,
 ):
     var work = L * M * N
     var total_size = L * M * N * K
@@ -790,7 +795,7 @@ def _transpose_4d_swap_middle_helper[
                     count=K,
                 )
 
-        sync_parallelize[_parallel_copy](num_tasks)
+        sync_parallelize[_parallel_copy](num_tasks, ctx)
 
 
 def transpose_4d_swap_middle[
@@ -805,6 +810,7 @@ def transpose_4d_swap_middle[
     perms: UnsafePointer[Scalar[DType.int], _],
     simplified_input_shape: IndexList[rank],
     simplified_rank: Int,
+    ctx: Optional[DeviceContext] = None,
 ):
     comptime if rank < 4:
         return
@@ -817,7 +823,7 @@ def transpose_4d_swap_middle[
     var K = simplified_input_shape[simplified_rank - 1]
     var src_ptr = input.ptr
     var dst_ptr = output.ptr
-    _transpose_4d_swap_middle_helper(dst_ptr, src_ptr, L, M, N, K)
+    _transpose_4d_swap_middle_helper(dst_ptr, src_ptr, L, M, N, K, ctx)
 
 
 def transpose_3d_swap_outer[
@@ -933,6 +939,7 @@ def _copy_with_strides[
     output_strides: UnsafePointer[mut=False, Scalar[DType.int], _],
     input_offset: Int,
     output_offset: Int,
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     """
     Copy data from `input_ptr` to `output_ptr`, starting at corresponding
@@ -948,13 +955,14 @@ def _copy_with_strides[
         output_strides: The stride at each output axis.
         input_offset: The offset at which input data starts.
         output_offset: The offset at which output data starts.
+        ctx: The context to execute the work on.
     """
     if axis + 1 > rank:
         raise Error("out of range")
 
     var axis_dim = output_shape[axis]
-    var input_axis_stride: Int = Int(input_strides.load(axis)[0]._mlir_value)
-    var output_axis_stride: Int = Int(output_strides.load(axis)[0]._mlir_value)
+    var input_axis_stride: Int = Int(input_strides.load(axis)[0])
+    var output_axis_stride: Int = Int(output_strides.load(axis)[0])
 
     if axis + 1 == rank:
         var src_ptr = input_ptr + input_offset
@@ -1006,6 +1014,7 @@ def _copy_with_strides[
                 output_strides,
                 next_input_offset,
                 next_output_offset,
+                ctx,
             )
             next_input_offset += input_axis_stride
             next_output_offset += output_axis_stride
@@ -1050,13 +1059,14 @@ def _copy_with_strides[
                     output_strides,
                     next_input_offset,
                     next_output_offset,
+                    ctx,
                 )
                 next_input_offset += input_axis_stride
                 next_output_offset += output_axis_stride
 
         # TODO: transpose_strided is using stack allocated structures and
         # so depends on us being synchronous. We need a better way to do this.
-        sync_parallelize[_parallel_copy](num_tasks)
+        sync_parallelize[_parallel_copy](num_tasks, ctx)
 
 
 def transpose_strided[
@@ -1070,6 +1080,7 @@ def transpose_strided[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     perms: UnsafePointer[Scalar[DType.int], _],
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     # Compute row-major strides for input.
     var input_strides_arr = InlineArray[Scalar[DType.int], rank](
@@ -1126,6 +1137,7 @@ def transpose_strided[
         output_strides_arr.unsafe_ptr(),
         0,  # input_offset
         0,  # output_offset
+        ctx,
     )
 
 
@@ -1142,6 +1154,7 @@ def transpose[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
     perms: UnsafePointer[Scalar[DType.int], _],
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     """
     Permute the axis of `input` based on `perms`, and place the result in
@@ -1160,6 +1173,7 @@ def transpose[
         output: The output buffer.
         input: The input buffer.
         perms: Permutation of the input axes.
+        ctx: The context to execute the work on.
     """
     comptime assert (
         output.rank == input.rank
@@ -1247,7 +1261,8 @@ def transpose[
                 perms,
                 simplified_shape,
                 simplified_rank,
+                ctx,
             )
 
     # Fall back to the generic strided implementation.
-    transpose_strided[rank](output, input, perms)
+    transpose_strided[rank](output, input, perms, ctx)
