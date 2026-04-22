@@ -176,6 +176,9 @@ class Llama3Config(ArchConfigWithKVCache):
             num_layers=Llama3Config.get_num_layers(huggingface_config),
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            num_eagle_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
+            if pipeline_config.speculative
+            else 0,
         )
 
     @staticmethod

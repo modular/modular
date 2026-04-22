@@ -190,8 +190,8 @@ struct AMDMatmul[
         var warp_k, warp_m = divmod(warp_km, Self.num_warps_m)
 
         # === GMEM views ===
-        var a_gmem = TileTensor(a.ptr.bitcast[Scalar[Self.a_type]](), a.layout)
-        var b_gmem = TileTensor(b.ptr.bitcast[Scalar[Self.a_type]](), b.layout)
+        var a_gmem = a.bitcast[Self.a_type]()
+        var b_gmem = b.bitcast[Self.a_type]()
 
         # === SMEM: row_major tiles for the full BK-wide block ===
         comptime k_tile_size = Self.MMA_K * Self.k_group_size
@@ -395,7 +395,7 @@ struct AMDMatmul[
                             m_mma * num_n_mmas * c_frag_size
                             + n_mma * c_frag_size
                         )
-                        var v = c_reg.ptr.load[width=c_frag_size](src_off).cast[
+                        var v = c_reg.raw_load[width=c_frag_size](src_off).cast[
                             Self.c_type
                         ]()
 
@@ -444,7 +444,7 @@ struct AMDMatmul[
                             m_mma * num_n_mmas * c_frag_size
                             + n_mma * c_frag_size
                         )
-                        var v = c_reg.ptr.load[width=c_frag_size](src_off).cast[
+                        var v = c_reg.raw_load[width=c_frag_size](src_off).cast[
                             Self.c_type
                         ]()
 
@@ -458,7 +458,7 @@ struct AMDMatmul[
                                     + (e % 4)
                                 )
                                 if col < N:
-                                    c.ptr[m * N + col] = v[e]
+                                    c.raw_store(m * N + col, v[e])
                         else:
                             var n = (
                                 warp_tile_n
@@ -466,7 +466,7 @@ struct AMDMatmul[
                                 + lane_group * c_frag_size
                             )
                             if n < N:
-                                c.ptr.store[width=c_frag_size](m * N + n, v)
+                                c.raw_store[width=c_frag_size](m * N + n, v)
         else:
             # Fast path: N is block-aligned, no OOB checks needed.
             var c_block = c.tile[BM, BN](block_idx.y, block_idx.x)
