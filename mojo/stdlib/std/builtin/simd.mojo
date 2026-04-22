@@ -269,7 +269,7 @@ def _has_native_f8_support() -> Bool:
 
 
 @fieldwise_init
-struct FastMathFlag(Equatable, ImplicitlyCopyable, RegisterPassable):
+struct FastMathFlag(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     """Flags for controlling fast-math optimizations in floating-point operations.
 
     FastMathFlag provides compile-time controls for various floating-point math
@@ -341,6 +341,41 @@ struct FastMathFlag(Equatable, ImplicitlyCopyable, RegisterPassable):
             True if both flags have the same value, False otherwise.
         """
         return self._value == other._value
+
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the `FastMathFlag` to the provided writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        if self == FastMathFlag.NONE:
+            writer.write_string("NONE")
+        elif self == FastMathFlag.NNAN:
+            writer.write_string("NNAN")
+        elif self == FastMathFlag.NINF:
+            writer.write_string("NINF")
+        elif self == FastMathFlag.NSZ:
+            writer.write_string("NSZ")
+        elif self == FastMathFlag.ARCP:
+            writer.write_string("ARCP")
+        elif self == FastMathFlag.CONTRACT:
+            writer.write_string("CONTRACT")
+        elif self == FastMathFlag.AFN:
+            writer.write_string("AFN")
+        elif self == FastMathFlag.REASSOC:
+            writer.write_string("REASSOC")
+        elif self == FastMathFlag.FAST:
+            writer.write_string("FAST")
+        else:
+            writer.write_string("<<unknown>>")
+
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Writes a repr string of the `FastMathFlag` to the provided writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        writer.write("FastMathFlag.", self)
 
     def _mlir_attr(self) -> __mlir_type.`!kgen.deferred`:
         if self == FastMathFlag.NONE:
