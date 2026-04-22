@@ -35,9 +35,9 @@ from typing import ClassVar
 
 import numpy as np
 from max.experimental import tensor as _tensor_mod
-from max.experimental.distributed_functional import transfer_to
-from max.experimental.distributed_functional.spmd_ops import spmd_dispatch
-from max.experimental.distributed_functional.utils import tensor_to_layout as tl
+from max.experimental.functional import transfer_to
+from max.experimental.functional.spmd_ops import spmd_dispatch
+from max.experimental.functional.utils import tensor_to_layout as tl
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,

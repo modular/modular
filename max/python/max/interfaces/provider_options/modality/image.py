@@ -71,10 +71,6 @@ class ImageProviderOptions(BaseModel):
         ge=128,
     )
 
-    # Maximum total pixel area (e.g. 1024x1024). Requests exceeding this
-    # would allocate huge latent tensors and risk OOM on the GPU.
-    _MAX_PIXEL_AREA: int = 1024 * 1024
-
     @model_validator(mode="after")
     def _validate_dimensions(self) -> "ImageProviderOptions":
         for name, value in [("width", self.width), ("height", self.height)]:
@@ -82,17 +78,6 @@ class ImageProviderOptions(BaseModel):
                 raise ValueError(
                     f"{name} must be a multiple of 16, got {value}"
                 )
-
-        if (
-            self.width is not None
-            and self.height is not None
-            and self.width * self.height > self._MAX_PIXEL_AREA
-        ):
-            raise ValueError(
-                f"width * height ({self.width} * {self.height} ="
-                f" {self.width * self.height}) exceeds the maximum"
-                f" pixel area of {self._MAX_PIXEL_AREA}"
-            )
 
         return self
 

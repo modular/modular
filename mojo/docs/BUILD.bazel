@@ -42,6 +42,7 @@ genrule(
   cp -r internal_tmp/* mojosite/
   rm -rf internal_tmp
   mv mojosite/redirects.js mojosite/docs/redirects.js
+  rm mojosite/docs/lib.mdx
 
   # Generate final output
   cd mojosite

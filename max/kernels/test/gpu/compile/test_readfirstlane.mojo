@@ -19,7 +19,7 @@ from std.memory import UnsafePointer
 from std.sys.intrinsics import readfirstlane
 from std.testing import assert_true
 
-comptime MI300X_TARGET = get_gpu_target["mi300x"]()
+comptime MI355X_TARGET = get_gpu_target["mi355x"]()
 
 
 def readfirstlane_kernel[
@@ -34,7 +34,7 @@ def test_readfirstlane_scalar_types() raises:
 
     var ir_f32 = _compile_code[
         readfirstlane_kernel[DType.float32],
-        target=MI300X_TARGET,
+        target=MI355X_TARGET,
         emission_kind="llvm",
     ]().asm
     assert_true(
@@ -44,7 +44,7 @@ def test_readfirstlane_scalar_types() raises:
 
     var ir_u32 = _compile_code[
         readfirstlane_kernel[DType.uint32],
-        target=MI300X_TARGET,
+        target=MI355X_TARGET,
         emission_kind="llvm",
     ]().asm
     assert_true(
@@ -54,7 +54,7 @@ def test_readfirstlane_scalar_types() raises:
 
     var ir_f16 = _compile_code[
         readfirstlane_kernel[DType.float16],
-        target=MI300X_TARGET,
+        target=MI355X_TARGET,
         emission_kind="llvm",
     ]().asm
     assert_true(
@@ -64,7 +64,7 @@ def test_readfirstlane_scalar_types() raises:
 
     var ir_f64 = _compile_code[
         readfirstlane_kernel[DType.float64],
-        target=MI300X_TARGET,
+        target=MI355X_TARGET,
         emission_kind="llvm",
     ]().asm
     assert_true(
@@ -84,7 +84,7 @@ def test_readfirstlane_u64() raises:
 
     var ir = _compile_code[
         readfirstlane_u64_kernel,
-        target=MI300X_TARGET,
+        target=MI355X_TARGET,
         emission_kind="llvm",
     ]().asm
     assert_true(
@@ -108,7 +108,7 @@ def test_warp_id_broadcast_single_readfirstlane() raises:
 
     var asm = _compile_code[
         warp_id_broadcast_kernel,
-        target=MI300X_TARGET,
+        target=MI355X_TARGET,
         emission_kind="asm",
     ]().asm
     var count = asm.count("v_readfirstlane_b32")

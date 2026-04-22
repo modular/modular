@@ -39,7 +39,6 @@ from layout import (
     row_major,
 )
 from layout.tile_layout import TensorLayout
-from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 from std.memory import bitcast
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
@@ -958,7 +957,7 @@ def _matmul_dynamic_scaled_fp8_impl[
             @__copy_capture(a_scales, b_scales)
             def scale_compute_lambda_fn[
                 _dtype: DType,
-                width: Int,
+                width: SIMDSize,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -986,7 +985,7 @@ def _matmul_dynamic_scaled_fp8_impl[
             @__copy_capture(a_scales, b_scales)
             def scale_compute_lambda_fn_tensor[
                 _dtype: DType,
-                width: Int,
+                width: SIMDSize,
                 *,
                 alignment: Int = align_of[SIMD[_dtype, width]](),
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
@@ -1024,7 +1023,7 @@ def _matmul_dynamic_scaled_fp8_impl[
             @__copy_capture(c, a_scales, b_scales)
             @always_inline
             def scaled_output_fn[
-                dtype: DType, width: Int, *, alignment: Int = 1
+                dtype: DType, width: SIMDSize, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
                 var a_scale = a_scales.load[width=1](
                     Coord(Idx[0](), Idx(idx[0]))
@@ -1051,7 +1050,7 @@ def _matmul_dynamic_scaled_fp8_impl[
             @__copy_capture(c, a_scales, b_scales)
             @always_inline
             def scaled_output_fn_tensor[
-                dtype: DType, width: Int, *, alignment: Int = 1
+                dtype: DType, width: SIMDSize, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
                 var a_scale = a_scales.load[width=1](
                     Coord(Idx[0](), Idx[0]())
@@ -1066,12 +1065,18 @@ def _matmul_dynamic_scaled_fp8_impl[
                     scaled_val.cast[c_type](),
                 )
 
-            # Preserve the compile-time-static N dimension from b so
-            # the SM90 dispatch sees c.static_shape[1] > -1.
+            # Allocate an fp32 scratch buffer for the matmul accumulator;
+            # the epilogue lambda reads from it, applies scaling, and
+            # writes the quantized result into the real fp8 `c`.
+            # Preserve the compile-time-static N dimension from b so the
+            # SM90 dispatch sees c.static_shape[1] > -1.
             comptime b_N = b.static_shape[b_row_axis]
             comptime if b_N > -1:
-                var c_dummy = TileTensor[DType.float32, _, MutExternalOrigin](
-                    None,
+                var scratch_buffer = ctx.enqueue_create_buffer[DType.float32](
+                    M * b_N
+                )
+                var c_scratch = TileTensor(
+                    scratch_buffer.unsafe_ptr(),
                     row_major(Coord(Idx(M), Idx[b_N]())),
                 )
 
@@ -1081,18 +1086,21 @@ def _matmul_dynamic_scaled_fp8_impl[
                         transpose_b=transpose_b,
                         elementwise_lambda_fn=scaled_output_fn_tensor,
                         _trace_description=_trace_string,
-                    ](c_dummy, a, b, Optional[DeviceContext](ctx))
+                    ](c_scratch, a, b, Optional[DeviceContext](ctx))
                 else:
                     matmul[
                         target=target,
                         transpose_b=transpose_b,
                         elementwise_lambda_fn=scaled_output_fn,
                         _trace_description=_trace_string,
-                    ](c_dummy, a, b, Optional[DeviceContext](ctx))
+                    ](c_scratch, a, b, Optional[DeviceContext](ctx))
             else:
                 var N_rt = Int(b.dim[b_row_axis]())
-                var c_dummy = TileTensor[DType.float32, _, MutExternalOrigin](
-                    None,
+                var scratch_buffer = ctx.enqueue_create_buffer[DType.float32](
+                    M * N_rt
+                )
+                var c_scratch = TileTensor(
+                    scratch_buffer.unsafe_ptr(),
                     row_major(Coord(Idx(M), Idx(N_rt))),
                 )
 
@@ -1102,14 +1110,14 @@ def _matmul_dynamic_scaled_fp8_impl[
                         transpose_b=transpose_b,
                         elementwise_lambda_fn=scaled_output_fn_tensor,
                         _trace_description=_trace_string,
-                    ](c_dummy, a, b, Optional[DeviceContext](ctx))
+                    ](c_scratch, a, b, Optional[DeviceContext](ctx))
                 else:
                     matmul[
                         target=target,
                         transpose_b=transpose_b,
                         elementwise_lambda_fn=scaled_output_fn,
                         _trace_description=_trace_string,
-                    ](c_dummy, a, b, Optional[DeviceContext](ctx))
+                    ](c_scratch, a, b, Optional[DeviceContext](ctx))
 
     elif (
         input_scale_granularity == "block"
@@ -1680,9 +1688,7 @@ def blockwise_scaled_fp8_with_epilogue[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NullableTileTensor[
-        mut=True, c_type, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, c_type, address_space=AddressSpace.GENERIC, ...],
     a: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
     b: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
     a_scales: TileTensor[
@@ -1697,6 +1703,8 @@ def blockwise_scaled_fp8_with_epilogue[
     operations. This is a temporary implementation that uses our sm100 blockwise scaled fp8 matmul
     kernel and dispatch a separate epilogue kernel to apply the elementwise
     operations. For non B200 GPUs, we use the naive blockwise scaled fp8 matmul which support normal epilogue natively.
+    Callers must allocate `c`; when an `elementwise_lambda_fn` is supplied
+    the matmul result is written into `c` and then read back by the lambda.
     """
 
     # 1D/2D (1x128)x(128x128) blockwise scaling
@@ -1724,15 +1732,12 @@ def blockwise_scaled_fp8_with_epilogue[
         )
 
         comptime if not elementwise_lambda_fn:
-            if not c.ptr:
-                raise "c must be allocated!"
-
             blockwise_fp8_matmul[
                 transpose_b=transpose_b,
                 a_scales_type=a_scales_type,
                 b_scales_type=b_scales_type,
                 config=matmul_config,
-            ](c.value(), a, b, a_scales, b_scales, ctx)
+            ](c, a, b, a_scales, b_scales, ctx)
         else:
             comptime epilogue = elementwise_lambda_fn.value()
             # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
@@ -1745,53 +1750,29 @@ def blockwise_scaled_fp8_with_epilogue[
                 simd_width_of[c_type, target=get_gpu_target()]()
             )
 
-            # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
-            # apply the epilogue.
-            if c.ptr:
-                var m = Int(c.dim[0]())
-                var n = Int(c.dim[1]())
+            var m = Int(c.dim[0]())
+            var n = Int(c.dim[1]())
 
-                var c_tt = c.value()
-
-                @parameter
-                @__copy_capture(c_tt)
-                def epilogue_wrapper[
-                    simd_width: Int, rank: Int, alignment: Int = 1
-                ](idx: IndexList[rank]):
-                    var c_coord = Index(idx[0], idx[1])
-                    var c_val = c_tt.load_linear[simd_width](idx)
-                    epilogue[c_type, simd_width, alignment=alignment](
-                        c_coord, c_val
-                    )
-
-                blockwise_fp8_matmul[
-                    transpose_b=transpose_b,
-                    a_scales_type=a_scales_type,
-                    b_scales_type=b_scales_type,
-                    config=matmul_config,
-                ](c_tt, a, b, a_scales, b_scales, ctx)
-                elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                    Index(m, n), ctx
+            @parameter
+            @__copy_capture(c)
+            def epilogue_wrapper[
+                simd_width: Int, rank: Int, alignment: Int = 1
+            ](idx: IndexList[rank]):
+                var c_coord = Index(idx[0], idx[1])
+                var c_val = c.load_linear[simd_width](idx)
+                epilogue[c_type, simd_width, alignment=alignment](
+                    c_coord, c_val
                 )
-                return
 
-            # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-
-            var c_m = Int(c.dim[0]())
-            var c_n = Int(c.dim[1]())
-            var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c_m * c_n)
-            var c_tmp = TileTensor(
-                tmp_device_buffer,
-                row_major(Coord(Idx(c_m), Idx(c_n))),
-            )
-
-            blockwise_scaled_fp8_with_epilogue[
+            blockwise_fp8_matmul[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                scales_granularity_mnk=scales_granularity_mnk,
-            ](c_tmp, a, b, a_scales, b_scales, ctx)
-
-            _ = tmp_device_buffer^
+                a_scales_type=a_scales_type,
+                b_scales_type=b_scales_type,
+                config=matmul_config,
+            ](c, a, b, a_scales, b_scales, ctx)
+            elementwise[epilogue_wrapper, simd_size, target="gpu"](
+                Index(m, n), ctx
+            )
 
     else:
         # For non B200 GPUs, use the naive blockwise scaled fp8 matmul

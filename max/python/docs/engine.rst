@@ -30,6 +30,7 @@ Configuration
    :toctree: generated
    :template: autosummary/class.rst
 
+   DebugConfig
    GPUProfilingMode
    LogLevel
    TensorSpec
