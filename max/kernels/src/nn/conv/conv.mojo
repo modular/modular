@@ -360,6 +360,7 @@ def _reduce_output[
     F: Int,
     num_partitions: Int,
     num_threads: Int,
+    ctx: Optional[DeviceContext] = None,
 ):
     var num_rows = N * output_space_dims.flattened_length()
     var buf_size = num_rows * F
@@ -397,7 +398,7 @@ def _reduce_output[
                 epilogue(Index(nhowo[0], nhowo[1], nhowo[2], 0), F)
 
     # NOTE: _synchronous, so use of locally allocated output_ptr is safe.
-    sync_parallelize[reduce_task](num_threads)
+    sync_parallelize[reduce_task](num_threads, ctx)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -471,6 +472,7 @@ struct ConvDirectNHWC[
             Self.filter_type, Self.filter_layout, Self.filter_origin
         ],
         conv_shape: ConvShape[Self.conv_attr_rank],
+        ctx: Optional[DeviceContext] = None,
     ) raises:
         comptime assert Self.conv_attr_rank == Self.input_layout.rank() - 2
         comptime simd_size = simd_width_of[Self.output_type]()
@@ -588,7 +590,7 @@ struct ConvDirectNHWC[
             instance._batch_group_loop()
 
         if num_partitions[1] > 1:
-            sync_parallelize[task_func](num_tasks)
+            sync_parallelize[task_func](num_tasks, ctx)
 
             # Reduce from the output scratch buffer to the actual output.
             _reduce_output[
@@ -604,11 +606,12 @@ struct ConvDirectNHWC[
                 conv_shape.f,
                 num_partitions[1],
                 num_threads,
+                ctx,
             )
             output_ptr.free()
         else:
             # Use sync to work around #12624
-            sync_parallelize[task_func](num_tasks)
+            sync_parallelize[task_func](num_tasks, ctx)
 
     def _batch_group_loop(self):
         """Loop over the batch and group dimensions. The two dimension are
@@ -3117,6 +3120,7 @@ def conv_nhwc_direct[
     pad_h: IndexList[2],
     pad_w: IndexList[2],
     num_groups: Int,
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     # Construct LayoutTensors with explicit Layouts passed by the caller,
     # using the TileTensor's pointer and runtime shape. The Layouts must come
@@ -3234,6 +3238,7 @@ def conv_nhwc_direct[
             input_lt,
             filter_lt,
             conv_shape,
+            ctx,
         )
 
 
@@ -3328,9 +3333,9 @@ def conv2d_gpu_naive_nhwc_rscf[
 
 
 @always_inline
-def check_cudnn_error(stat: cudnnStatus_t):
+def check_cudnn_error(stat: cudnnStatus_t) raises:
     if stat != cudnnStatus_t.CUDNN_STATUS_SUCCESS:
-        print(stat)
+        raise Error(t"cuDNN call failed with status {stat}")
 
 
 struct CuDNNConvMeta(ImplicitlyCopyable, RegisterPassable):
@@ -4498,7 +4503,7 @@ def conv_gpu[
                     @__copy_capture(hw, out_w)
                     def sm100_void_epilogue[
                         _dtype: DType,
-                        _width: Int,
+                        _width: SIMDSize,
                         *,
                         alignment: Int = 1,
                     ](coords_2d: IndexList[2], val: SIMD[_dtype, _width],):
@@ -5407,7 +5412,7 @@ def _conv3d_cudnn[
         )
         workspace_size_var = 0
 
-        var find_status_val = rebind[Int8](find_status)
+        var find_status_val = rebind[Int32](find_status)
         if find_status_val == 0:  # CUDNN_STATUS_SUCCESS
             for i in range(returned_count):
                 var base = perf_bytes + i * C_PERF_STRUCT_SIZE
@@ -5508,6 +5513,58 @@ def _conv3d_cudnn[
     stride_a.free()
     dilation_a.free()
     output_dims.free()
+
+    # Retry with IMPLICIT_GEMM + zero workspace on allocation failures.
+    # cuDNN may allocate internal scratch beyond what GetWorkspaceSize
+    # reports (filter reorder, NHWC/tensor-op padding). When that trips at
+    # execute time, fall back to the zero-workspace algorithm and update
+    # the shape cache so we don't hit the same OOM on future calls.
+    comptime IMPLICIT_GEMM = (
+        cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM
+    )
+    if (
+        fwd_status == cudnnStatus_t.CUDNN_STATUS_ALLOC_FAILED
+        or fwd_status == cudnnStatus_t.CUDNN_STATUS_ALLOC_FAILED_V9
+        or fwd_status == cudnnStatus_t.CUDNN_STATUS_ALLOC_FAILED_DEVICE_MEMORY
+        or fwd_status == cudnnStatus_t.CUDNN_STATUS_ALLOC_FAILED_HOST_MEMORY
+    ) and algo != IMPLICIT_GEMM:
+        ctx.synchronize()  # Flush pending work and reclaim held memory.
+        algo = IMPLICIT_GEMM
+        workspace_size_var = 0
+
+        var retry_workspace = ctx.enqueue_create_buffer[DType.uint8](0)
+        fwd_status = cudnnConvolutionForward(
+            ptr_meta[].ptr_handle,
+            UnsafePointer(to=alpha).bitcast[NoneType](),
+            ptr_meta[].ptr_input_desc,
+            input.ptr.bitcast[NoneType](),
+            ptr_meta[].ptr_filter_desc,
+            filter.ptr.bitcast[NoneType](),
+            ptr_meta[].ptr_conv_desc,
+            algo,
+            retry_workspace.unsafe_ptr().bitcast[NoneType](),
+            0,
+            UnsafePointer(to=beta).bitcast[NoneType](),
+            ptr_meta[].ptr_output_desc,
+            output.ptr.bitcast[NoneType](),
+        )
+        _ = retry_workspace^
+
+        if fwd_status == cudnnStatus_t.CUDNN_STATUS_SUCCESS:
+            # Persist the safer algorithm for this shape so subsequent
+            # calls skip the OOM-prone pick. InsertGlobal overwrites the
+            # existing entry keyed by cache_key.
+            var retry_entry = alloc[_Conv3dAlgoCacheEntry](1)
+            retry_entry.init_pointee_move(
+                _Conv3dAlgoCacheEntry(
+                    algo_value=rebind[Int8](algo),
+                    workspace_size=0,
+                )
+            )
+            external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
+                StringSlice(cache_key),
+                retry_entry.bitcast[NoneType](),
+            )
 
     if fwd_status != cudnnStatus_t.CUDNN_STATUS_SUCCESS:
         # Synchronize device to flush any pending GPU operations and free

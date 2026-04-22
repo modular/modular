@@ -101,6 +101,7 @@ _NVIDIA_ONLY = ["//:has_gpu"] + select({
 # Each generates a modular_py_test from test_<name>.py.
 _HARNESS_TESTS = {
     "harness_attention_with_rope_bf16": _GPU_CONSTRAINTS,
+    "harness_attention_unfused_rope": _GPU_CONSTRAINTS,
     "harness_attention_with_rope_fp4": ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//:amd_gpu": ["@platforms//:incompatible"],
@@ -148,6 +149,34 @@ modular_py_test(
     imports = ["."],
     tags = ["gpu"],
     deps = _HARNESS_TEST_DEPS,
+)
+
+modular_py_test(
+    name = "harness_text_encoder",
+    srcs = ["test_harness_text_encoder.py"],
+    # Production UMT5 (24-layer, d_model=4096) needs ~40GB for weights +
+    # activations. Default (10GB) suffices for the small smoke config.
+    exec_properties = {"test.resources:gpu-memory": "10"},
+    gpu_constraints = _GPU_CONSTRAINTS,
+    ignore_extra_deps = ["//max/python/max/interfaces"],
+    imports = ["."],
+    tags = ["gpu"],
+    deps = _HARNESS_TEST_DEPS + [":benchmark_utils"],
+)
+
+modular_py_test(
+    name = "harness_wan_vae_attention",
+    srcs = ["test_harness_wan_vae_attention.py"],
+    # Smoke config (dim=96, 8x8) fits easily. Production tiers
+    # (dim=384, 60x106 at 480p / 90x160 at 720p) use ~40GB because
+    # torch SDPA materializes the NxN attention matrix for head_dim
+    # larger than the flash-attn threshold.
+    exec_properties = {"test.resources:gpu-memory": "40"},
+    gpu_constraints = _GPU_CONSTRAINTS,
+    ignore_extra_deps = ["//max/python/max/interfaces"],
+    imports = ["."],
+    tags = ["gpu"],
+    deps = _HARNESS_TEST_DEPS + [":benchmark_utils"],
 )
 
 modular_py_test(

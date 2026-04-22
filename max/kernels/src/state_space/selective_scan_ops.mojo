@@ -156,6 +156,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     delta_bias_strides,
+                    ctx.get_optional_device_context(),
                 )
             else:
                 selective_scan_fwd_cpu[
@@ -189,6 +190,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     delta_bias_strides,
+                    ctx.get_optional_device_context(),
                 )
         elif is_gpu[target]():
             var gpu_ctx = ctx.get_device_context()
@@ -443,6 +445,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_strides,
                     B_strides,
                     C_strides,
+                    ctx.get_optional_device_context(),
                 )
             else:
                 selective_scan_fwd_cpu_minimal[
@@ -468,6 +471,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_strides,
                     B_strides,
                     C_strides,
+                    ctx.get_optional_device_context(),
                 )
         elif is_gpu[target]():
             var gpu_ctx = ctx.get_device_context()
@@ -705,6 +709,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     dt_bias_strides,
+                    ctx.get_optional_device_context(),
                 )
             else:
                 selective_scan_update_cpu[
@@ -737,6 +742,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     dt_bias_strides,
+                    ctx.get_optional_device_context(),
                 )
         elif is_gpu[target]():
             var gpu_ctx = ctx.get_device_context()

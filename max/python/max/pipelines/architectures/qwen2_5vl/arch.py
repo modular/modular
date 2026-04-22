@@ -13,7 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import InputModality, PipelineTask
-from max.pipelines.core import TextAndVisionContext, TextContext
+from max.pipelines.core import PixelContext, TextAndVisionContext, TextContext
 from max.pipelines.core.exceptions import InputError
 from max.pipelines.lib import SupportedArchitecture
 
@@ -25,7 +25,7 @@ from .weight_adapters import convert_qwen2_5vl_model_state_dict
 
 
 def validate_qwen2_5vl_required_args(
-    context: TextContext | TextAndVisionContext,
+    context: TextContext | TextAndVisionContext | PixelContext,
 ) -> None:
     """Validates that all required Qwen2.5VL arguments are present.
 
