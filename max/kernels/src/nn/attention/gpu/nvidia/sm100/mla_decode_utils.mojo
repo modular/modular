@@ -3266,7 +3266,7 @@ struct MLA_SM100_Decode_Common[
             ](s_tmem_slot)
 
             comptime for _i in range(type_of(s_row_val).size):
-                s_row.ptr.store(_i, s_row_val[_i])
+                s_row.raw_store(_i, s_row_val[_i])
             tcgen05_load_wait()
 
             s_cons.release()
@@ -3304,7 +3304,7 @@ struct MLA_SM100_Decode_Common[
                 # via max(sigma, 0) maps NaN→0 per PTX semantics (max(NaN,0)=0)
                 # and is a no-op for valid positive scales.
                 comptime for _j in range(half_load):
-                    _sigma_kv_regs.ptr.store(
+                    _sigma_kv_regs.raw_store(
                         _j,
                         max(
                             rebind[Scalar[Self.AccumType]](
@@ -3665,7 +3665,7 @@ struct MLA_SM100_Decode_Common[
                 ](o_tmem_base)
 
                 comptime for _i in range(total_elems):
-                    o_row_subtile.ptr.store(_i, _o_ld_result[_i])
+                    o_row_subtile.raw_store(_i, _o_ld_result[_i])
                 tcgen05_load_wait()
 
                 out_prod.acquire()
@@ -3776,7 +3776,7 @@ struct MLA_SM100_Decode_Common[
                         ](o_tmem_subtile)
 
                         comptime for _i in range(Self.config.BN):
-                            o_row_subtile.ptr.store(_i, _o_ld_corr[_i])
+                            o_row_subtile.raw_store(_i, _o_ld_corr[_i])
                         tcgen05_load_wait()
 
                         var float2_register = o_row_subtile.vectorize[2]()
@@ -3793,7 +3793,7 @@ struct MLA_SM100_Decode_Common[
                         ](uninitialized=True)
 
                         comptime for _i in range(Self.config.BN):
-                            _o_st_corr[_i] = o_row_subtile.ptr.load(_i)
+                            _o_st_corr[_i] = o_row_subtile.raw_load(_i)
                         tcgen05_st[
                             datapaths=32,
                             bits=32,

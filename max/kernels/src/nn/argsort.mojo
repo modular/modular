@@ -58,7 +58,7 @@ def _argsort_cpu[
     def fill_indices_iota[
         width: Int, rank: Int, alignment: Int = 1
     ](offset: IndexList[rank]):
-        indices.ptr.store(
+        indices.raw_store(
             offset[0],
             iota[indices.dtype, width](Scalar[indices.dtype](offset[0])),
         )
@@ -380,7 +380,7 @@ def _argsort_gpu[
     ascending: Bool = True,
 ](
     indices: TileTensor[mut=True, ...],
-    input: TileTensor[mut=True, ...],
+    input: TileTensor,
     ctx: DeviceContext,
 ) raises:
     """
@@ -400,25 +400,38 @@ def _argsort_gpu[
     var n = indices.num_elements()
 
     if n.is_power_of_two():
+        var input_copy_buffer = ctx.enqueue_create_buffer[input.dtype](n)
+        var input_copy = TileTensor(input_copy_buffer, row_major(Idx(n)))
+
         # Initialize indices with iota.
         @parameter
-        @__copy_capture(indices)
+        @__copy_capture(indices, input, input_copy)
         def fill_indices_iota_no_padding[
             width: Int, rank: Int, alignment: Int = 1
         ](offset: IndexList[rank]):
-            indices.ptr.store(
-                offset[0],
-                iota[indices.dtype, width](Scalar[indices.dtype](offset[0])),
+            var i = offset[0]
+
+            indices.raw_store(
+                i,
+                iota[indices.dtype, width](Scalar[indices.dtype](i)),
+            )
+            input_copy.raw_store[alignment=simd_width_of[input_copy.dtype]()](
+                i, input.ptr.load[width=width](i)
             )
 
         elementwise[
             fill_indices_iota_no_padding,
-            simd_width=simd_width_of[indices.dtype, target=get_gpu_target()](),
+            simd_width=min(
+                simd_width_of[indices.dtype, target=get_gpu_target()](),
+                simd_width_of[input.dtype, target=get_gpu_target()](),
+            ),
             target="gpu",
             _trace_description="argsort_fill_indices",
         ](n, ctx)
 
-        return _argsort_gpu_impl[ascending=ascending](indices, input, ctx)
+        _argsort_gpu_impl[ascending=ascending](indices, input_copy, ctx)
+        _ = input_copy_buffer^
+        return
 
     var pow_2_length = next_power_of_two(n)
 
@@ -447,20 +460,20 @@ def _argsort_gpu[
     ](offset: IndexList[rank]):
         var i = offset[0]
         if i < n:
-            padded_indices.ptr.store(
+            padded_indices.raw_store(
                 i, iota[padded_indices.dtype, width](Scalar[indices.dtype](i))
             )
-            padded_input.ptr.store[
+            padded_input.raw_store[
                 alignment=simd_width_of[padded_input.dtype]()
-            ](i, input.ptr.load[width=width](i))
+            ](i, input.raw_load[width=width](i))
             return
 
         # otherwise we pad with a sentinel value and the max/min value for the type.
         comptime UNKNOWN_VALUE = -1
-        padded_indices.ptr.store(
+        padded_indices.raw_store(
             i, SIMD[padded_indices.dtype, width](UNKNOWN_VALUE)
         )
-        padded_input.ptr.store(
+        padded_input.raw_store(
             i,
             SIMD[padded_input.dtype, width](
                 _sentinel_val[padded_input.dtype, ascending]()
@@ -485,8 +498,8 @@ def _argsort_gpu[
     def extract_indices[
         width: Int, rank: Int, alignment: Int = 1
     ](offset: IndexList[rank]):
-        indices.ptr.store(
-            offset[0], padded_indices.ptr.load[width=width](offset[0])
+        indices.raw_store(
+            offset[0], padded_indices.raw_load[width=width](offset[0])
         )
 
     # Extract the unpadded indices from the padded indices.
@@ -524,7 +537,7 @@ def argsort[
     target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    input: TileTensor[mut=True, ...],
+    input: TileTensor,
     ctx: DeviceContext,
 ) raises:
     """

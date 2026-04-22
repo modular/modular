@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 import torch
 from max._core.engine import PrintStyle
-from max.driver import Accelerator, Buffer, accelerator_api
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -201,9 +201,6 @@ def generate_latent_attention_max_outputs_dp(
 
 
 @pytest.mark.skip("MODELS-1039: times out on B200")
-@pytest.mark.skipif(
-    accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
-)
 def test_data_parallel_latent_attention_prefill_matches_single(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,
@@ -221,9 +218,6 @@ def test_data_parallel_latent_attention_prefill_matches_single(
 
 
 @pytest.mark.skip("MODELS-1039: times out on B200")
-@pytest.mark.skipif(
-    accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
-)
 def test_data_parallel_latent_attention_decode_matches_single(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,

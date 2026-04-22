@@ -461,7 +461,7 @@ def fill_random[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
     var total_elements = buffer.num_elements()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
-        buffer.ptr[i] = random_value.cast[dtype]()
+        buffer.raw_store(i, random_value.cast[dtype]())
 
 
 @parameter
@@ -469,9 +469,9 @@ def fill_constant[dtype: DType](buffer: TileTensor[mut=True, dtype, ...]):
     var total_elements = buffer.num_elements()
     for i in range(total_elements):
         if i % 3 == 1:
-            buffer.ptr[i] = 1.0
+            buffer.raw_store(i, 1.0)
         else:
-            buffer.ptr[i] = 0.0
+            buffer.raw_store(i, 0.0)
 
 
 @parameter

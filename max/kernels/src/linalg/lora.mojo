@@ -105,7 +105,7 @@ def shrink_qkv_permute_3mn_sm100(
     @__copy_capture(c_tensor_lora, M)
     @parameter
     def permute_dim_lora_bmn[
-        dtype: DType, width: Int, *, alignment: Int = 1
+        dtype: DType, width: SIMDSize, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         """Epilogue: permute flat (M, 3N) columns to planar (3, M, N) tiles.
         Maps a flat column index `j` into `(head, n)` via `divmod(j, N)` and
