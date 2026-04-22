@@ -261,17 +261,14 @@ class PrefillScheduler(Scheduler):
         # draft_tokens_to_verify during CE; error if it hasn't.
         draft_tokens: list[int] | None = None
         if self.scheduler_config.num_speculative_tokens > 0:
-            if (
-                context._spec_decoding_state is None
-                or not context._spec_decoding_state.draft_tokens_to_verify
-            ):
+            if not context.spec_decoding_state.draft_tokens_to_verify:
                 raise ValueError(
                     f"Expected draft tokens on context {req_id} after CE "
                     f"with speculative decoding enabled, but none were "
                     f"populated. Check that the unified Eagle/MTP pipeline "
                     f"is wired in for prefill_only."
                 )
-            draft_tokens = context._spec_decoding_state.draft_tokens_to_verify
+            draft_tokens = context.spec_decoding_state.draft_tokens_to_verify
 
         self.dispatcher.send_reply_nowait(
             PrefillResponse(
