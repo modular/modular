@@ -108,21 +108,12 @@ def test_bundled_allreduce_execution() -> None:
         assert np.allclose(out_np, out_tensor.to(host).to_numpy())
 
 
-def _allreduce_then_relu(
-    tensor_arg: TensorValue, signal_arg: BufferValue
-) -> TensorValue:
-    """Body for a mo.parallel region: bundled allreduce followed by relu."""
-    return ops.relu(ops.bundled_allreduce.sum_body(tensor_arg, signal_arg))
-
-
 @pytest.mark.parametrize("num_gpus", [2, 4])
 def test_bundled_allreduce_relu_fusion(num_gpus: int) -> None:
-    """Tests bundled allreduce + relu fused in one mo.parallel body.
+    """Tests bundled allreduce followed by relu.
 
-    Both ops live inside the same mo.parallel region so the compiler
-    lowers them as a multi-kernel composite stub (bundled_stub + relu
-    stub).  Negative inputs make the allreduce sum negative; relu clips
-    to zero, confirming it is not dropped.
+    Negative inputs make the allreduce sum negative; relu clips to zero,
+    confirming it is applied.
     """
     if (available_gpus := accelerator_count()) < num_gpus:
         pytest.skip(
@@ -150,24 +141,12 @@ def test_bundled_allreduce_relu_fusion(num_gpus: int) -> None:
             for i in range(num_gpus)
         ]
 
-        devices_for_chain = [inp.device for inp in tensor_inputs]
-        in_chain = graph._merge_chains(
-            [
-                graph._current_chain,
-                *(graph.device_chains[d] for d in devices_for_chain),
-            ]
+        allreduce_outputs = ops.bundled_allreduce.sum(
+            tensor_inputs, signal_buffers
         )
-        result = ops.parallel(
-            tensor_inputs,
-            _allreduce_then_relu,
-            extra_inputs=signal_buffers,
-            chain=in_chain,
-        )
-        assert isinstance(result, tuple)
-        results, out_chain = result
-        graph._update_chain(out_chain)
+        relu_outputs = [ops.relu(t) for t in allreduce_outputs]
 
-        graph.output(*results)
+        graph.output(*relu_outputs)
 
     host = CPU()
     devices: list[Device] = [Accelerator(i) for i in range(num_gpus)]

@@ -22,7 +22,7 @@ members:
   data.
 - **Static methods** are functions provided by the type to perform behaviors,
   provide constants, or create specialized instances.
-- **Dunder methods** are named for their *d*ouble *under*-scored form, with
+- **Dunder methods** are named for their _d_ouble _under_-scored form, with
   `__` on both sides. Also called "special methods", [they help define
   behaviors](/mojo/manual/structs/#special-methods) such as initialization
   and allow structs to conform to [traits](/mojo/manual/traits/).
@@ -118,64 +118,15 @@ print(mine.first)
 2
 ```
 
-Initializer lists make it easier to construct instances without spelling out
-full type names. Due to Mojo's type system, those names can grow long and
-complex as generic parameters, constraints, and nested types accumulate.
-Writing them out explicitly can quickly become verbose and hard to read.
-Initializer lists simplify code, improving readability and maintainability.
-
-For example, some machine-learning operations produce tensor view types whose
-fully spelled-out names can run to thousands of characters. Initializer lists
-let you construct these values simply, relying on surrounding type context
-instead of repeating the entire type.
-
-Here's the standard way to call a function:
-
-```mojo title="Calling a function"
-def process_pair(pair: MyPair):
-    ...
-
-process_pair(MyPair(2, 4))
-```
-
-Because `process_pair` expects a `MyPair` instance, Mojo infers the type from
-context. The braces construct the instance using an initializer list. Although
-the syntax uses braces, this is not a `Set`. It is an initializer list used to
-create a `MyPair` value:
-
-```mojo title="Using an initializer list"
-process_pair({2, 4})
-```
-
-Initializer lists support all Mojo argument styles, including keyword
-arguments. For example:
-
-```mojo title="Initializer lists with a keyword argument"
-def utility_function(argument: CustomType):
-    ...
-
-utility_function(CustomType(0.5, fish="swordfish"))
-```
-
-This refactors as follows, with the keyword preserved:
-
-```text
-utility_function({0.5, fish="swordfish"})
-```
-
-Use initializer lists with already-declared instances, as Mojo knows
-the variable's type:
-
-```mojo title="Reassignment with initializer lists"
-# Construct a new instance
-my_instance = CustomType(0.5, fish="swordfish")
-
-# Use the instance
-...
-
-# Update the instance before further use
-my_instance = {0.7, fish="salmon"}
-```
+:::note Initializer lists
+Mojo initializer lists let you construct instances without spelling
+out the full type name and parameters. If the full type can be inferred
+from context, pass the constructor arguments directly between braces,
+with or without keywords. For example `{0.5, fish="salmon"}` calls
+`__init__(0.5, fish="salmon")` on the appropriate struct type. This
+is equivalent to `MyStruct(0.5, fish="salmon")` if the type is inferred
+to be `MyStruct`.
+:::
 
 ## Mutating a struct
 

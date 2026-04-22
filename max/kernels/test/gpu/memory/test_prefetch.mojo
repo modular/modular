@@ -24,35 +24,6 @@ def do_prefetch[
     prefetch(addr + offset)
 
 
-def test_prefetch_mi300x() raises:
-    assert_true(
-        "llvm.prefetch "
-        in _compile_code[
-            do_prefetch[DType.float16], target=get_gpu_target["mi300x"]()
-        ]()
-    )
-    assert_true(
-        "llvm.prefetch "
-        in _compile_code[
-            do_prefetch[DType.float32], target=get_gpu_target["mi300x"]()
-        ]()
-    )
-    assert_true(
-        "llvm.prefetch "
-        in _compile_code[
-            do_prefetch[DType.int32], target=get_gpu_target["mi300x"]()
-        ]()
-    )
-
-    assert_true(
-        "llvm.prefetch "
-        in _compile_code[
-            do_prefetch[DType.int64, offset=42],
-            target=get_gpu_target["mi300x"](),
-        ]()
-    )
-
-
 def test_prefetch_nvidia() raises:
     assert_true(
         "prefetch.global.L2 "

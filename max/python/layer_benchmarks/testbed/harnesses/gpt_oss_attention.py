@@ -59,20 +59,11 @@ from transformers.models.gpt_oss.modeling_gpt_oss import (
 from transformers.models.gpt_oss.modeling_gpt_oss import GptOssRotaryEmbedding
 
 from testbed.harnesses.ragged_attention_harness import (
-    HF_TO_HARNESS_BASE,
     AttentionDynamicParams,
     AttentionStaticParams,
     RaggedAttentionHarness,
 )
 from testbed.registry import register_harness
-
-_HF_TO_HARNESS = {
-    **HF_TO_HARNESS_BASE,
-    "q_proj.bias": "qkv_proj.q.bias",
-    "k_proj.bias": "qkv_proj.k.bias",
-    "v_proj.bias": "qkv_proj.v.bias",
-    "o_proj.bias": "o_proj.bias",
-}
 
 
 @dataclass
@@ -169,15 +160,15 @@ class GptOssAttentionHarness(
         kv_dim = n_kv_heads * head_dim
 
         weights: dict[str, torch.Tensor] = {
-            "qkv_proj.q.weight": torch.randn(
+            "q_proj.weight": torch.randn(
                 q_dim, hidden_size, dtype=torch.bfloat16
             )
             * std,
-            "qkv_proj.k.weight": torch.randn(
+            "k_proj.weight": torch.randn(
                 kv_dim, hidden_size, dtype=torch.bfloat16
             )
             * std,
-            "qkv_proj.v.weight": torch.randn(
+            "v_proj.weight": torch.randn(
                 kv_dim, hidden_size, dtype=torch.bfloat16
             )
             * std,
@@ -190,13 +181,13 @@ class GptOssAttentionHarness(
         }
 
         if has_bias:
-            weights["qkv_proj.q.bias"] = (
+            weights["q_proj.bias"] = (
                 torch.randn(q_dim, dtype=torch.bfloat16) * std
             )
-            weights["qkv_proj.k.bias"] = (
+            weights["k_proj.bias"] = (
                 torch.randn(kv_dim, dtype=torch.bfloat16) * std
             )
-            weights["qkv_proj.v.bias"] = (
+            weights["v_proj.bias"] = (
                 torch.randn(kv_dim, dtype=torch.bfloat16) * std
             )
             weights["o_proj.bias"] = (
@@ -289,9 +280,8 @@ class GptOssAttentionHarness(
 
         # Load matching weights.
         for name, param in layer.named_parameters():
-            harness_name = _HF_TO_HARNESS.get(name, name)
-            if harness_name in self._torch_weights:
-                param.data = self._torch_weights[harness_name].to(
+            if name in self._torch_weights:
+                param.data = self._torch_weights[name].to(
                     device=device, dtype=torch.bfloat16
                 )
 
