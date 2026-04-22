@@ -675,6 +675,15 @@ struct DeviceContextPtr(Defaultable, ImplicitlyCopyable, RegisterPassable):
         """
         return self[]
 
+    def get_optional_device_context(self) -> Optional[DeviceContext]:
+        """Get the `DeviceContext` that this pointer points to if it is non-null,
+        otherwise None.
+
+        Returns:
+            The `DeviceContext` that this pointer points to, or `None`.
+        """
+        return Optional(self[]) if self._handle else None
+
 
 struct DeviceContextPtrList[size: Int](Sized, TrivialRegisterPassable):
     """A fixed-size collection of `DeviceContextPtr` objects.

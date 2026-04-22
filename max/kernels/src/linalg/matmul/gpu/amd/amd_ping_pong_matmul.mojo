@@ -344,8 +344,8 @@ struct AMDPingPongMatmul[
         var warp_group_id = _warp_id // 4
 
         # === Unified-dtype GMEM views ===
-        var a_gmem = TileTensor(a.ptr.bitcast[Scalar[Self.a_type]](), a.layout)
-        var b_gmem = TileTensor(b.ptr.bitcast[Scalar[Self.in_type]](), b.layout)
+        var a_gmem = a.bitcast[Self.a_type]()
+        var b_gmem = b.bitcast[Self.in_type]()
 
         # === SMEM: double-buffered half-tiles ===
         # A: 2 stages x 2 warp_m groups
@@ -596,7 +596,7 @@ struct AMDPingPongMatmul[
                                 m_mma * num_n_mmas * c_frag_size
                                 + n_mma * c_frag_size
                             )
-                            var v = c_reg.ptr.load[width=c_frag_size](
+                            var v = c_reg.raw_load[width=c_frag_size](
                                 src_off
                             ).cast[Self.c_type]()
 

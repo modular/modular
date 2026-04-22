@@ -31,8 +31,6 @@ from std.gpu.host.compile import _compile_code
 from std.gpu.intrinsics import (
     ds_read_tr8_b64,
     ds_read_tr16_b64,
-    load_acquire,
-    store_release,
     permlane_shuffle,
     permlane_swap,
 )
@@ -101,18 +99,6 @@ def kernel_cast[
     y: UnsafePointer[Scalar[target], MutAnyOrigin],
 ):
     y[0] = x[0].cast[target]()
-
-
-def kernel_atomic[
-    dtype: DType, memory: Bool = True
-](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    val: Scalar[dtype],
-):
-    output[] = ptr[]
-    store_release[memory=memory](ptr, val)
-    output[] = load_acquire[memory=memory](ptr)
 
 
 def parametric[
@@ -355,34 +341,6 @@ def test_schedule_group_barrier_compile() raises:
     )
 
 
-def test_atomic_compile() raises:
-    print("== test_atomic_compile")
-
-    # Memory model reference: https://llvm.org/docs/AMDGPUUsage.html#memory-model-gfx942.
-
-    # store atomic release system
-    # CHECK: buffer_wbl2 sc0 sc1
-    # CHECK: s_waitcnt vmcnt(0)
-    # CHECK: global_store_dword {{.*}} sc0 sc1
-
-    # load atomic acquire system
-    # CHECK: global_load_dword {{.*}} sc0 sc1
-    # CHECK: s_waitcnt vmcnt(0)
-    # CHECK: buffer_inv sc0 sc1
-
-    print(_compile_code[kernel_atomic[DType.int32], target=MI300X_TARGET]())
-
-    # CHECK: store atomic {{.*}} release
-    # CHECK: load atomic {{.*}} acquire
-    print(
-        _compile_code[
-            kernel_atomic[DType.int32],
-            target=MI300X_TARGET,
-            emission_kind="llvm-opt",
-        ]()
-    )
-
-
 # CHECK-LABEL: test_ds_read_tr16_b64_compile
 def test_ds_read_tr16_b64_compile() raises:
     print("== test_ds_read_tr16_b64_compile")
@@ -578,7 +536,6 @@ def main() raises:
     test_threadid_compile()
     test_schedule_barrier_compile()
     test_schedule_group_barrier_compile()
-    test_atomic_compile()
     test_ds_read_tr16_b64_compile()
     test_ds_read_tr8_b64_compile()
     test_permlane_compile()

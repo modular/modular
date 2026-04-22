@@ -41,6 +41,7 @@ def modular_py_test(
         main = None,
         imports = [],
         use_resource_tags = False,
+        per_test_tags = {},
         **kwargs):
     """Creates a pytest based python test target.
 
@@ -61,11 +62,15 @@ def modular_py_test(
         main: If provided, this is the main entry point for the test. If not provided, pytest is used.
         imports: Additional python import paths
         use_resource_tags: If true, use pregenerated resource tags for the test.
+        per_test_tags: A mapping of source files to extra tags to apply to that test file.
         **kwargs: Extra arguments passed through to py_test
     """
 
     if len(imports) > 1:
         fail("modular_py_test only supports a single import path.")
+
+    if len(set(per_test_tags.keys()) - set(srcs)) != 0:
+        fail("keys specified in per_test_tags that are not source files: {}".format(set(per_test_tags.keys()) - set(srcs)))
 
     validate_gpu_tags(tags, target_compatible_with + gpu_constraints)
     toolchains = [
@@ -197,7 +202,7 @@ def modular_py_test(
                 srcs = [src] + non_test_srcs + ["//bazel/internal:pytest_runner"],
                 exec_properties = default_exec_properties | exec_properties,
                 target_compatible_with = gpu_constraints + target_compatible_with,
-                tags = tags + _get_resource_tags(use_resource_tags, test_name),
+                tags = tags + _get_resource_tags(use_resource_tags, test_name) + per_test_tags.get(src, []),
                 imports = imports,
                 **kwargs
             )
@@ -208,6 +213,9 @@ def modular_py_test(
             tags = ["manual"],
         )
     else:
+        if per_test_tags:
+            fail("Don't use `per_test_tags` if only one source file is specified, use `tags` directly.")
+
         py_test(
             name = name,
             data = data + extra_data,
