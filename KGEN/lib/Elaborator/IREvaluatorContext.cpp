@@ -120,33 +120,6 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetSourceNameAttr(
   return {StringAttr::get(*sourceName, getSourceNameAttr.getType())};
 }
 
-FailureOr<TypedAttr> IREvaluatorContext::evaluateLinkageNameImpl(
-    GeneratorOp gen, SymbolConstantAttr symbol,
-    ParameterEvaluationContext &evalCtx) {
-  assert(gen.getLinkageNameAttr() &&
-         "evaluateLinkageName requires gen to have a linkageName attribute");
-  // Fall back to evaluating the generator's linkageName expression directly.
-  LinkageNameAttr genLinkageName =
-      dyn_cast_if_present<LinkageNameAttr>(gen.getLinkageNameAttr());
-  if (!genLinkageName)
-    return failure();
-
-  // Substitute the generator's parameters with the symbol's concrete values.
-  // getReboundAttribute evaluates any residual parametric expressions —
-  // including DataToStr — via the evaluateContextSpecific hook in the
-  // evaluation context, which is always the concrete IREvaluator subclass.
-  ParameterEvaluator tempEval(gen.getInputParams(), symbol.getParamValues());
-  tempEval.setEvaluationContext(&evalCtx);
-  Attribute rebound = tempEval.getReboundAttribute(genLinkageName);
-  if (!rebound)
-    return TypedAttr(); // not-ready: a sub-dependency is still being elaborated
-  if (auto lna = dyn_cast_if_present<LinkageNameAttr>(rebound))
-    if (auto prefix = dyn_cast<StringAttr>(lna.getName()))
-      return TypedAttr(StringAttr::get(prefix.getValue(),
-                                       StringType::get(gen.getContext())));
-  return failure();
-}
-
 FailureOr<TypedAttr>
 IREvaluatorContext::evaluateGetTypeNameAttr(GetTypeNameAttr getTypeNameAttr) {
   auto qualifiedBuiltins =
@@ -367,6 +340,44 @@ IREvaluatorContext::evaluateCompileAssemblyAttr(CompileAssemblyAttr attr) {
                        populateFnRef})};
 }
 
+/// Resolve the linkageName of @p gen to a concrete string for the given
+/// symbol instantiation.
+///
+/// Precondition: @p gen must have a linkageName attribute. Call this only
+/// when gen.getLinkageNameAttr() is non-null.
+///
+/// Returns:
+///   - failure()          — linkage name could not be resolved
+///   - success(null)      — not ready yet; a blocker has been registered
+///                          and the caller should retry
+///   - success(TypedAttr) — the resolved linkage name expression
+static FailureOr<TypedAttr>
+evaluateLinkageName(GeneratorOp gen, SymbolConstantAttr symbol,
+                    ParameterEvaluationContext *evalCtx) {
+  assert(gen.getLinkageNameAttr() &&
+         "evaluateLinkageName requires gen to have a linkageName attribute");
+  // Fall back to evaluating the generator's linkageName expression directly.
+  LinkageNameAttr genLinkageName =
+      dyn_cast_if_present<LinkageNameAttr>(gen.getLinkageNameAttr());
+  if (!genLinkageName)
+    return failure();
+
+  // Substitute the generator's parameters with the symbol's concrete values.
+  // getReboundAttribute evaluates any residual parametric expressions —
+  // including DataToStr — via the evaluateContextSpecific hook in the
+  // evaluation context, which is always the concrete IREvaluator subclass.
+  ParameterEvaluator tempEval(gen.getInputParams(), symbol.getParamValues());
+  tempEval.setEvaluationContext(evalCtx);
+  Attribute rebound = tempEval.getReboundAttribute(genLinkageName);
+  if (!rebound)
+    return TypedAttr(); // not-ready: a sub-dependency is still being elaborated
+  if (auto lna = dyn_cast_if_present<LinkageNameAttr>(rebound))
+    if (auto prefix = dyn_cast<StringAttr>(lna.getName()))
+      return TypedAttr(StringAttr::get(prefix.getValue(),
+                                       StringType::get(gen.getContext())));
+  return failure();
+}
+
 /// Compute the final name for a @__name-decorated generator in the given
 /// context. Two cases:
 ///   sanitize=false  → resolved verbatim (host-side lookup)
@@ -426,7 +437,7 @@ IREvaluatorContext::evaluateMangledName(TypedAttr symCst, bool sanitize,
 
   if (generator.getLinkageNameAttr()) {
     // @__name is present: evaluate the (possibly parametric) name expression.
-    FailureOr<TypedAttr> result = evaluateLinkageName(generator, symbol);
+    FailureOr<TypedAttr> result = evaluateLinkageName(generator, symbol, this);
     if (failed(result)) {
       return ErrorTree(
           {errorLoc,

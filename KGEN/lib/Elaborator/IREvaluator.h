@@ -28,17 +28,14 @@ struct ExpansionGraph;
 // IREvaluator
 //===----------------------------------------------------------------------===//
 
-/// This IR evaluator is a ParameterEvaluationContext that can work during
-/// elaboration to concretize parameter expressions and compute symbolic
-/// parameter expressions, such as `apply` on a symbol constant or `get_sizeof`
-/// and `get_alignof` a decl type.
+/// This IR evaluator can work during elaboration to concretize parameter
+/// expressions and compute symbolic parameter expressions, such as `apply` on
+/// a symbol constant or `get_sizeof` and `get_alignof` a decl type.
 ///
 /// Owns a ParameterEvaluator for parameter substitution and provides
 /// elaboration-specific handling for ParamOperatorAttr, GetLinkageNameAttr,
 /// etc. via the BytecodeInterpreter.
-class IREvaluator : public ParameterEvaluationContext,
-                    public IREvaluatorContext,
-                    public BytecodeInterpreter {
+class IREvaluator : public IREvaluatorContext, public BytecodeInterpreter {
 public:
   /// Construct the IR evaluator with a symbol table for evaluating symbolic
   /// expressions.
@@ -132,9 +129,6 @@ private:
   void addDeferredFunction(OwningOpRef<FuncOp> func) override;
 
   ImplNodeBase *getParentNode() override;
-
-  FailureOr<TypedAttr> evaluateLinkageName(GeneratorOp gen,
-                                           SymbolConstantAttr symbol) override;
 
   /// The parameter evaluator for substituting parameter bindings.
   ParameterEvaluator evaluator;

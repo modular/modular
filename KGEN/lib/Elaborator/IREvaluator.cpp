@@ -461,11 +461,6 @@ void IREvaluator::addDeferredFunction(OwningOpRef<FuncOp> func) {
 
 ImplNodeBase *IREvaluator::getParentNode() { return parent; }
 
-FailureOr<TypedAttr>
-IREvaluator::evaluateLinkageName(GeneratorOp gen, SymbolConstantAttr symbol) {
-  return evaluateLinkageNameImpl(gen, symbol, *this);
-}
-
 //===----------------------------------------------------------------------===//
 // IREvaluator
 //===----------------------------------------------------------------------===//

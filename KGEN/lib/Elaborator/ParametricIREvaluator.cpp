@@ -753,12 +753,6 @@ void ParametricIREvaluator::addDeferredFunction(OwningOpRef<FuncOp> func) {
 
 ImplNodeBase *ParametricIREvaluator::getParentNode() { return parent; }
 
-FailureOr<TypedAttr>
-ParametricIREvaluator::evaluateLinkageName(GeneratorOp gen,
-                                           SymbolConstantAttr symbol) {
-  return evaluateLinkageNameImpl(gen, symbol, *this);
-}
-
 //===----------------------------------------------------------------------===//
 // ParametricIREvaluator
 //===----------------------------------------------------------------------===//
