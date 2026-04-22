@@ -194,7 +194,7 @@ trait MHAMask(Copyable, DevicePassable, TrivialRegisterPassable):
     """
 
     def mask[
-        dtype: DType, width: Int, //, *, element_type: DType = DType.uint32
+        dtype: DType, width: SIMDSize, //, *, element_type: DType = DType.uint32
     ](
         self,
         coord: IndexList[4, element_type=element_type],
@@ -343,7 +343,7 @@ struct CausalMask(MHAMask, TrivialRegisterPassable):
     @always_inline
     def mask[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
         //,
         *,
         element_type: DType = DType.uint32,
@@ -507,7 +507,7 @@ struct NullMask(MHAMask, TrivialRegisterPassable):
 
     @always_inline
     def mask[
-        dtype: DType, width: Int, //, *, element_type: DType = DType.uint32
+        dtype: DType, width: SIMDSize, //, *, element_type: DType = DType.uint32
     ](
         self,
         coord: IndexList[4, element_type=element_type],
@@ -621,7 +621,7 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
     @always_inline
     def mask[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
         //,
         *,
         element_type: DType = DType.uint32,
@@ -802,7 +802,7 @@ struct SlidingWindowCausalMask[window_size: Int](
     @always_inline
     def mask[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         element_type: DType = DType.uint32,
     ](
@@ -1070,7 +1070,7 @@ struct CausalPaddingMask[layout_: Layout, origin_: Origin[mut=False]](
     @always_inline
     def mask[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
         //,
         *,
         element_type: DType = DType.uint32,
@@ -1255,7 +1255,7 @@ struct MaterializedMask[
     @always_inline
     def mask[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
         //,
         *,
         element_type: DType = DType.uint32,
@@ -1294,7 +1294,7 @@ struct MaterializedMask[
             elif adjusted_coord[rank - 1] < self.mask_tensor.dim[rank - 1]():
                 for i in range(
                     min(
-                        width,
+                        Int(width),
                         self.mask_tensor.dim[rank - 1]() - coord[3],
                     )
                 ):
@@ -1391,7 +1391,7 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 
     @always_inline
     def mask[
-        dtype: DType, width: Int, //, *, element_type: DType = DType.uint32
+        dtype: DType, width: SIMDSize, //, *, element_type: DType = DType.uint32
     ](
         self,
         coord: IndexList[4, element_type=element_type],
@@ -1495,7 +1495,7 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
 
     @always_inline
     def mask[
-        dtype: DType, width: Int, //, *, element_type: DType = DType.uint32
+        dtype: DType, width: SIMDSize, //, *, element_type: DType = DType.uint32
     ](
         self,
         coord: IndexList[4, element_type=element_type],

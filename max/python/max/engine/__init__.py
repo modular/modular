@@ -16,9 +16,11 @@ from max._core import __version__
 
 from .api import (
     CustomExtensionsType,
+    DebugConfig,
     GPUProfilingMode,
     InferenceSession,
     LogLevel,
     Model,
+    PrintStyle,
     TensorSpec,
 )

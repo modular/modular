@@ -1346,7 +1346,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             end: The end offset in bytes from which to check.
 
         Returns:
-            True if the `self[start:end]` is prefixed by the input prefix.
+            True if the `self[byte=start:end]` is prefixed by the input prefix.
         """
         var n = len(self)
         var s = start if start >= 0 else max(0, start + n)
@@ -1373,7 +1373,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             end: The end offset in bytes from which to check.
 
         Returns:
-            True if the `self[start:end]` is suffixed by the input suffix.
+            True if the `self[byte=start:end]` is suffixed by the input suffix.
         """
         var n = len(self)
         var s = start if start >= 0 else max(0, start + n)
@@ -1396,8 +1396,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             prefix: The prefix to remove from the string.
 
         Returns:
-            `string[len(prefix):]` if the string starts with the prefix string,
-            or a copy of the original string otherwise.
+            `string[byte=prefix.byte_length():]` if the string starts with the
+            prefix string, or a copy of the original string otherwise.
 
         Examples:
 
@@ -1417,8 +1417,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             suffix: The suffix to remove from the string.
 
         Returns:
-            `string[:-suffix.byte_length()]` if the string ends with the suffix string,
-            or a copy of the original string otherwise.
+            `string[byte=:(self.byte_length()-suffix.byte_length())]` if the string ends with the
+            suffix string, or a copy of the original string otherwise.
 
         Examples:
 

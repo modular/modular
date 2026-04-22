@@ -141,20 +141,10 @@ def generate_max_outputs(
         dtype=dtype,
     )
 
-    # Remap HuggingFace weight names to MAX StackedLinear names.
-    _HF_TO_MAX = {
-        "q_proj.": "qkv_proj.q.",
-        "k_proj.": "qkv_proj.k.",
-        "v_proj.": "qkv_proj.v.",
+    state_dict = {
+        weight_name: value.cpu()
+        for weight_name, value in attention_weights.items()
     }
-    state_dict = {}
-    for weight_name, value in attention_weights.items():
-        max_name = weight_name
-        for hf, mx in _HF_TO_MAX.items():
-            if max_name.startswith(hf):
-                max_name = mx + max_name[len(hf) :]
-                break
-        state_dict[max_name] = value.cpu()
 
     attention.load_state_dict(state_dict)
 
