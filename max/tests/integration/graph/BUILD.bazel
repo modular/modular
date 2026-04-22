@@ -29,6 +29,7 @@ _CPU_ONLY_TESTS = [
 
 # Tests with their own targets due to special configurations
 _SEPARATE_TARGET_TESTS = [
+    "test_debug_config.py",
     "test_engine_device_graph.py",
     "test_graph_pinned.py",
     "test_graph_telemetry.py",
@@ -388,5 +389,15 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_debug_config",
+    size = "medium",
+    srcs = ["test_debug_config.py"],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/graph",
     ],
 )

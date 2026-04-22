@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Qwen-Image-Edit diffusion architecture for image editing."""
 
 from .arch import qwen_image_edit_arch, qwen_image_edit_plus_arch
 from .pipeline_qwen_image_edit import QwenImageEditPipeline

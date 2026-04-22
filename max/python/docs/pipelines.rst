@@ -126,6 +126,7 @@ Submodules
 .. toctree::
    :maxdepth: 1
 
+   pipelines.architectures
    pipelines.core
    pipelines.lib
    pipelines.lib.interfaces
