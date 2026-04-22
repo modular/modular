@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Memory.h"
+#include "Support/Configuration.h"
 #include "Support/SymbolExport.h"
 #include "Support/Threading/HWInfo.h"
 #include "llvm/ADT/StringRef.h"
@@ -110,19 +111,28 @@ std::string getStackTrace(unsigned depth = 0, unsigned dropFirst = 0) {
 
 // Return true if we should collect stack trace. Assume that no need to collect
 // stack trace if `envVar` is set to '0' or 'false' (for performance, check
-// first char only). If `envVar` is not set, return `defaultValue`.
-bool isStackTraceEnabled(const char *envVar, bool defaultValue = false) {
+// first char only). If `envVar` is not set, fall back to the new
+// `max-debug.<configKey>` Config key (which also covers the
+// `MODULAR_MAX_DEBUG_*` env vars via `Config::maybeGetValue`).  If neither
+// source is set, return `defaultValue`.  The legacy env var check will be
+// removed in a follow-up PR once callers have migrated.
+bool isStackTraceEnabled(const char *envVar, const char *configKey,
+                         bool defaultValue = false) {
   auto enableStackTrace = llvm::sys::Process::GetEnv(envVar).value_or("");
-  if (enableStackTrace.empty())
-    return defaultValue;
-  return enableStackTrace[0] != '0' && enableStackTrace[0] != 'f' &&
-         enableStackTrace[0] != 'F';
+  if (!enableStackTrace.empty()) {
+    return enableStackTrace[0] != '0' && enableStackTrace[0] != 'f' &&
+           enableStackTrace[0] != 'F';
+  }
+  if (auto configOr = M::Config::open(); !configOr.isError())
+    return configOr->getValueAsBool(configKey, defaultValue);
+  return defaultValue;
 }
 } // namespace
 
 COMPILERRT_EXPORT
 COMPILERRT_VISIBILITY_EXPORT void KGEN_CompilerRT_PrintStackTraceOnFault() {
-  if (!isStackTraceEnabled("MOJO_ENABLE_STACK_TRACE_ON_CRASH", true)) {
+  if (!isStackTraceEnabled("MOJO_ENABLE_STACK_TRACE_ON_CRASH",
+                           "max-debug.stack-trace-on-crash", true)) {
     return;
   }
   llvm::sys::PrintStackTraceOnErrorSignal("", false);
@@ -140,7 +150,10 @@ COMPILERRT_VISIBILITY_EXPORT int KGEN_CompilerRT_GetStackTrace(char **strings,
 
   int isEnabled = enabled.load();
   if (isEnabled == -1) {
-    isEnabled = isStackTraceEnabled("MOJO_ENABLE_STACK_TRACE_ON_ERROR") ? 1 : 0;
+    isEnabled = isStackTraceEnabled("MOJO_ENABLE_STACK_TRACE_ON_ERROR",
+                                    "max-debug.stack-trace-on-error")
+                    ? 1
+                    : 0;
     enabled.store(isEnabled);
   }
 

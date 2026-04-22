@@ -971,6 +971,7 @@ modular_shared_library(
         "//MLRT:Driver/DeviceContext",
         "//Support:Base",
         "//Support:BinaryID",
+        "//Support:Configuration",
         "//Support:Filesystem",
         "//Support:Globals",
         "//Support:ML",
