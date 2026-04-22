@@ -97,6 +97,9 @@ modular_py_test(
         "//:nvidia_gpu",
     ],
     imports = ["."],
+    per_test_tags = {
+        "test_send_recv_multi_process_gpu.py": ["manual"],  # FIXME: Times out intermittently (SERVOPT-1326)
+    },
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",
