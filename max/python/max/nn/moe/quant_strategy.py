@@ -26,7 +26,7 @@ from ..kernels import (
     grouped_dynamic_scaled_fp8_matmul,
     grouped_dynamic_scaled_mxfp4_matmul,
     grouped_matmul_block_scaled,
-    quantize_dynamic_block_scaled_fp4,
+    grouped_quantize_dynamic_block_scaled_fp4,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
 )
@@ -56,7 +56,6 @@ class QuantStrategy(Protocol):
         self,
         tensor: TensorValue,
         group_size: int,
-        input_scale: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
         """Quantizes activations and returns (quantized, scales)."""
         ...
@@ -82,6 +81,18 @@ class QuantStrategy(Protocol):
         """Prepares weight scales for kernel consumption."""
         ...
 
+    def grouped_quantize(
+        self,
+        tensor: TensorValue,
+        group_size: int,
+        input_scale: TensorValue | None,
+        expert_start: TensorValue,
+        scales_offset: TensorValue,
+        expert_ids: TensorValue,
+    ) -> tuple[TensorValue, TensorValue]:
+        """Quantizes activations with per-expert scales and padding."""
+        ...
+
     def fused_silu_quantize(
         self,
         gate_up_projs: TensorValue,
@@ -103,7 +114,6 @@ class Fp8Strategy:
         self,
         tensor: TensorValue,
         group_size: int,
-        input_scale: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
         """Quantizes activations to FP8 and returns (quantized, scales)."""
         return quantize_dynamic_scaled_float8(
@@ -114,6 +124,18 @@ class Fp8Strategy:
             out_type=self.dtype,
             scales_type=self.config.weight_scale.dtype,
         )
+
+    def grouped_quantize(
+        self,
+        tensor: TensorValue,
+        group_size: int,
+        input_scale: TensorValue | None,
+        expert_start: TensorValue,
+        scales_offset: TensorValue,
+        expert_ids: TensorValue,
+    ) -> tuple[TensorValue, TensorValue]:
+        """Falls back to ungrouped FP8 quantization."""
+        return self.quantize(tensor, group_size)
 
     def grouped_matmul(
         self,
@@ -136,7 +158,7 @@ class Fp8Strategy:
             weight_scales,
             expert_start,
             expert_ids,
-            usage_stats,
+            usage_stats.to(DeviceRef.CPU()),
             self.config.input_scale,
             self.config.weight_scale,
             tokens_padded_per_expert=tokens_padded_per_expert,
@@ -178,14 +200,29 @@ class Nvfp4Strategy:
         self,
         tensor: TensorValue,
         group_size: int,
-        input_scale: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
-        """Quantizes activations to NVFP4 and returns (quantized, scales)."""
+        raise NotImplementedError(
+            "To quantize to NVFP4, use grouped_quantize instead"
+        )
+
+    def grouped_quantize(
+        self,
+        tensor: TensorValue,
+        group_size: int,
+        input_scale: TensorValue | None,
+        expert_start: TensorValue,
+        scales_offset: TensorValue,
+        expert_ids: TensorValue,
+    ) -> tuple[TensorValue, TensorValue]:
+        """Quantizes activations per-expert with padded scale alignment."""
         if input_scale is None:
             raise ValueError("NVFP4 requires input_scale")
-        return quantize_dynamic_block_scaled_fp4(
+        return grouped_quantize_dynamic_block_scaled_fp4(
             tensor,
-            tensor_sf=1.0 / input_scale,
+            row_offsets=expert_start,
+            scales_offsets=scales_offset,
+            expert_ids=expert_ids,
+            sf_tensor=(1.0 / input_scale).to(tensor.device),
             scales_type=DType.float8_e4m3fn,
             out_type=DType.uint8,
         )
@@ -211,6 +248,14 @@ class Nvfp4Strategy:
             expert_ids,
             usage_stats,
         ) = expert_inputs
+
+        # Replace the gpu usage stats with a dummy cpu usage stats
+        if usage_stats.device.is_gpu():
+            usage_stats = ops.constant(
+                [8192, int(expert_ids.shape[0])],
+                dtype=DType.uint32,
+                device=DeviceRef.CPU(),
+            )
 
         return grouped_matmul_block_scaled(
             hidden,
@@ -266,7 +311,6 @@ class Mxfp4Strategy:
         self,
         tensor: TensorValue,
         group_size: int,
-        input_scale: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
         """Quantizes activations to MXFP4 and returns (quantized, scales)."""
         return quantize_dynamic_block_scaled_mxfp4(
@@ -274,6 +318,18 @@ class Mxfp4Strategy:
             scales_type=self.config.weight_scale.dtype,
             out_type=DType.uint8,
         )
+
+    def grouped_quantize(
+        self,
+        tensor: TensorValue,
+        group_size: int,
+        input_scale: TensorValue | None,
+        expert_start: TensorValue,
+        scales_offset: TensorValue,
+        expert_ids: TensorValue,
+    ) -> tuple[TensorValue, TensorValue]:
+        """Falls back to ungrouped MXFP4 quantization."""
+        return self.quantize(tensor, group_size)
 
     def grouped_matmul(
         self,
@@ -300,7 +356,7 @@ class Mxfp4Strategy:
             weight_scales,
             expert_start,
             expert_ids,
-            usage_stats,
+            usage_stats.to(DeviceRef.CPU()),
             estimated_total_m=estimated_total_m,
         )
 
