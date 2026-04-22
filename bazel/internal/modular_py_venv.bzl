@@ -64,11 +64,12 @@ _collect_venv_files = rule(
     ],
 )
 
-def modular_py_venv(name, data = [], deps = []):
+def modular_py_venv(name, data = [], deps = [], target_compatible_with = []):
     _collect_venv_files(
         name = name + ".collect_venv_files",
         data = data,
         deps = deps,
+        target_compatible_with = target_compatible_with,
         testonly = True,
         tags = ["manual"],
     )
@@ -76,8 +77,9 @@ def modular_py_venv(name, data = [], deps = []):
     py_binary(
         name = name,
         srcs = ["//bazel/internal:create_venv"],
-        main = "create_venv.py",
+        main = "//bazel/internal:create_venv.py",
         data = data + [name + ".collect_venv_files"],
+        target_compatible_with = target_compatible_with,
         env = {
             "VENV_NAME": ("." + native.package_name() + "/" + name).replace("/", "+"),
             "VENV_MANIFEST": "$(location {})".format(name + ".collect_venv_files"),

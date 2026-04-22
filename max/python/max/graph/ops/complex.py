@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,9 +22,9 @@ def as_interleaved_complex(x: TensorValueLike) -> TensorValue:
     """Reshapes the input symbolic tensor as complex from alternating (real, imag).
 
     Args:
-        interleaved: A symbolic tensor representing complex numbers as
-                     alternating pairs of (real, imag) real-valued numbers. Its last
-                     dimension must have an even size.
+        x: A symbolic tensor representing complex numbers as alternating pairs
+            of (real, imag) real-valued numbers. Its last dimension must have
+            an even size.
 
     Returns:
         A symbolic tensor representing the complex-valued tensor, but with the

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.intrinsics import _type_is_eq
+from std.sys.intrinsics import _type_is_eq
 
 from std.collections.list import _ListIter
-from testing import TestSuite, assert_true
+from std.testing import TestSuite, assert_true
 
 
-fn test_iter() raises:
+def test_iter() raises:
     var l = [1, 2, 3]
     var it = iter(l)
     assert_true(_type_is_eq[type_of(it), _ListIter[Int, origin_of(l)]]())
@@ -26,5 +26,5 @@ fn test_iter() raises:
     assert_true(_type_is_eq[type_of(_it2), _ListIter[Int, origin_of(l)]]())
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

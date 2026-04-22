@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -25,14 +25,10 @@ def load_weights(paths: list[Path]) -> Weights:
     """Loads neural network weights from checkpoint files.
 
     Automatically detects checkpoint formats based on file extensions and returns
-    the appropriate `Weights` implementation, creating a seamless interface for
-    loading weights from different formats.
+    the appropriate :class:`~max.graph.weights.Weights` implementation. Supported formats:
 
-
-    Supported formats:
-    - `Safetensors`: .safetensors
-    - `PyTorch`: .bin, .pt, .pth
-    - `GGUF`: .gguf
+    - ``.safetensors`` (Safetensors)
+    - ``.gguf`` (GGUF)
 
     The following example shows how to load weights from a Safetensors file:
 
@@ -55,8 +51,8 @@ def load_weights(paths: list[Path]) -> Weights:
         )
 
     Args:
-        paths: List of `pathlib.Path` objects pointing to checkpoint files.
-            For multi-file checkpoints (e.g., sharded `Safetensors`), provide
+        paths: List of :class:`pathlib.Path` objects pointing to checkpoint files.
+            For multi-file checkpoints (for example, sharded Safetensors), provide
             all file paths in the list. For single-file checkpoints, provide
             a list with one path.
     """

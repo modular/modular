@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,7 +15,7 @@
 You can import the trait from the `os` package. For example:
 
 ```mojo
-from os import PathLike
+from std.os import PathLike
 ```
 """
 
@@ -23,7 +23,7 @@ from os import PathLike
 trait PathLike:
     """A trait representing file system paths."""
 
-    fn __fspath__(self) -> String:
+    def __fspath__(self) -> String:
         """Return the file system path representation of the object.
 
         Returns:

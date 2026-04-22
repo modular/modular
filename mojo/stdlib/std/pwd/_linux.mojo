@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import c_char, external_call
+from std.ffi import c_char, external_call, _CPointer
 
 from .pwd import Passwd
 
@@ -20,8 +20,7 @@ comptime gid_t = Int32
 comptime char = UnsafePointer[c_char, MutExternalOrigin]
 
 
-@register_passable("trivial")
-struct _C_Passwd:
+struct _C_Passwd(TrivialRegisterPassable):
     var pw_name: char
     var pw_passwd: char
     var pw_uid: uid_t
@@ -31,9 +30,9 @@ struct _C_Passwd:
     var pw_shell: char
 
 
-fn _build_pw_struct(
-    passwd_ptr: UnsafePointer[mut=False, _C_Passwd]
-) raises -> Passwd:
+def _build_pw_struct(
+    passwd_ptr: UnsafePointer[mut=False, _C_Passwd, _]
+) -> Passwd:
     var c_pwuid = passwd_ptr[]
     return Passwd(
         pw_name=String(unsafe_from_utf8_ptr=c_pwuid.pw_name),
@@ -46,19 +45,21 @@ fn _build_pw_struct(
     )
 
 
-fn _getpw_linux(uid: UInt32) raises -> Passwd:
+def _getpw_linux(uid: UInt32) raises -> Passwd:
     var passwd_ptr = external_call[
-        "getpwuid", UnsafePointer[_C_Passwd, MutExternalOrigin]
+        "getpwuid", _CPointer[_C_Passwd, ExternalOrigin[mut=True]]
     ](uid)
-    if not passwd_ptr:
+    try:
+        return _build_pw_struct(passwd_ptr[])
+    except:
         raise Error("user ID not found in the password database: ", uid)
-    return _build_pw_struct(passwd_ptr)
 
 
-fn _getpw_linux(var name: String) raises -> Passwd:
+def _getpw_linux(var name: String) raises -> Passwd:
     var passwd_ptr = external_call[
-        "getpwnam", UnsafePointer[_C_Passwd, MutExternalOrigin]
+        "getpwnam", _CPointer[_C_Passwd, ExternalOrigin[mut=True]]
     ](name.as_c_string_slice().unsafe_ptr())
-    if not passwd_ptr:
+    try:
+        return _build_pw_struct(passwd_ptr[])
+    except:
         raise Error("user name not found in the password database: ", name)
-    return _build_pw_struct(passwd_ptr)

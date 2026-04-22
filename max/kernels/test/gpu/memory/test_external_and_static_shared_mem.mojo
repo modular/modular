@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,36 +11,34 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import align_of
+from std.sys.info import align_of
 
-from gpu.host import DeviceContext, FuncAttribute
-from gpu import thread_idx
-from gpu.memory import external_memory
-from gpu.sync import barrier
-from memory import LegacyUnsafePointer, stack_allocation
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu import thread_idx
+from std.gpu.memory import external_memory
+from std.gpu.sync import barrier
+from std.memory import stack_allocation
+from std.testing import assert_equal
 
 
-def test_external_shared_mem(ctx: DeviceContext):
-    fn dynamic_smem_kernel(data: UnsafePointer[Float32]):
+def test_external_shared_mem(ctx: DeviceContext) raises:
+    def dynamic_smem_kernel(data: UnsafePointer[Float32, MutAnyOrigin]):
         var sram = stack_allocation[
             16,
             Float32,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ]()
         var dynamic_sram = external_memory[
             Float32,
-            address_space = AddressSpace.SHARED,
-            alignment = align_of[Float32](),
+            address_space=AddressSpace.SHARED,
+            alignment=align_of[Float32](),
         ]()
         dynamic_sram[thread_idx.x] = Float32(thread_idx.x)
         sram[thread_idx.x] = Float32(thread_idx.x)
         barrier()
         data[thread_idx.x] = dynamic_sram[thread_idx.x] + sram[thread_idx.x]
 
-    var res_host_ptr = UnsafePointer[Float32].alloc(16)
+    var res_host_ptr = alloc[Float32](16)
     var res_device = ctx.enqueue_create_buffer[DType.float32](16)
 
     for i in range(16):
@@ -60,12 +58,12 @@ def test_external_shared_mem(ctx: DeviceContext):
     ctx.enqueue_copy(res_host_ptr, res_device)
 
     for i in range(16):
-        assert_equal(res_host_ptr[i], 2 * i)
+        assert_equal(res_host_ptr[i], Float32(2 * i))
 
     _ = res_device
     res_host_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_external_shared_mem(ctx)

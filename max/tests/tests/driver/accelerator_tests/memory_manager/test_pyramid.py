@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -42,7 +42,7 @@ def test_pyramid(memory_manager_config: None, mem_type: MemType) -> None:
 
         # This explicit sync is necessary to ensure that the buffers are returned
         # to the memory manager for pinned memory.
-        # Interally, this calls pollPendingEvents() which polls for ready events
+        # Internally, this calls pollPendingEvents() which polls for ready events
         # and runs the above handlers we enqueued earlier. These handlers free
         # the buffers.
 

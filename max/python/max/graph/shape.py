@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,19 +23,24 @@ from .dim import Dim, DimLike, StaticDim, SymbolicDim
 
 
 class Shape(list[Dim]):
+    """A sequence of :class:`~max.graph.Dim` values representing a tensor shape."""
+
     def __init__(self, dims: ShapeLike = ()) -> None:
         super().__init__(Dim(dim) for dim in dims)
 
     @property
     def rank(self):  # noqa: ANN201
+        """Returns the number of dimensions."""
         return len(self)
 
     def to_mlir(self) -> mosh.ShapeAttr:
+        """Converts this shape to an MLIR ``mosh.ShapeAttr``."""
         shape_type = mosh.ShapeType()
         return mosh.ShapeAttr([dim.to_mlir() for dim in self], shape_type)
 
     @classmethod
     def from_mlir(cls, attr: builtin.TypedAttr) -> Shape:
+        """Constructs a shape from an MLIR ``mosh.ShapeAttr``."""
         if not isinstance(attr, mosh.ShapeAttr):
             raise TypeError(
                 f"Shape.from_mlir only supported for mosh.ShapeAttr, got {attr}"
@@ -56,6 +61,7 @@ class Shape(list[Dim]):
     # TypeGuard and TypeIs don't support self/cls narrowing
     @staticmethod
     def is_static(shape: Shape) -> TypeGuard[StaticShape]:
+        """Returns True if every dimension is static and non-negative."""
         return all(isinstance(dim, StaticDim) and dim.dim >= 0 for dim in shape)
 
 

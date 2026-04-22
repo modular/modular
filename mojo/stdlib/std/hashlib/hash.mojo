@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -25,9 +25,9 @@ There are a few main tools in this module:
     These are useful helpers to specialize for the general bytes implementation.
 """
 
-from builtin.constrained import _constrained_field_conforms_to
-from memory import Span
-from reflection import get_type_name, struct_field_names, struct_field_types
+from std.builtin.constrained import _constrained_field_conforms_to
+from std.memory import Span
+from std.reflection import get_type_name, struct_field_names, struct_field_types
 
 from .hasher import Hasher, default_hasher
 
@@ -68,14 +68,18 @@ trait Hashable:
     equal values produce equal hashes (i.e., if `a == b` then `hash(a) == hash(b)`).
     The default implementations of both traits satisfy this property when all
     fields implement both traits correctly.
+
+    Note: The default reflection-based implementation iterates over all fields
+    at compile time. For mutually recursive types (e.g., struct `A` has a field
+    of type `List[B]` and struct `B` has a field of type `A`), this creates an
+    infinite monomorphization cycle that causes the compiler to hang. To fix
+    this, provide an explicit `__hash__()` implementation for at least one type
+    in the cycle.
     """
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
+    def __hash__(self, mut hasher: Some[Hasher]):
         """Accepts a hasher and contributes to the hash value
         by calling the update function of the hasher.
-
-        Parameters:
-            H: Any Hasher type.
 
         Args:
             hasher: The hasher instance to contribute to.
@@ -83,8 +87,7 @@ trait Hashable:
         comptime names = struct_field_names[Self]()
         comptime types = struct_field_types[Self]()
 
-        @parameter
-        for i in range(names.size):
+        comptime for i in range(names.size):
             comptime T = types[i]
             _constrained_field_conforms_to[
                 conforms_to(T, Hashable),
@@ -92,11 +95,15 @@ trait Hashable:
                 FieldIndex=i,
                 ParentConformsTo="Hashable",
             ]()
-            hasher.update(trait_downcast[Hashable](__struct_field_ref(i, self)))
+            hasher.update(
+                trait_downcast[Hashable](
+                    __struct_field_ref(i._int_mlir_index(), self)
+                )
+            )
 
 
-fn hash[
-    T: Hashable, HasherType: Hasher = default_hasher
+def hash[
+    T: Hashable, //, HasherType: Hasher = default_hasher
 ](hashable: T) -> UInt64:
     """Hash a Hashable type using its underlying hash implementation.
 
@@ -116,9 +123,9 @@ fn hash[
     return value
 
 
-fn hash[
+def hash[
     HasherType: Hasher = default_hasher
-](bytes: UnsafePointer[mut=False, UInt8], n: Int) -> UInt64:
+](bytes: UnsafePointer[mut=False, UInt8, _], n: Int) -> UInt64:
     """Hash a sequence of bytes using the specified hasher.
 
     Parameters:

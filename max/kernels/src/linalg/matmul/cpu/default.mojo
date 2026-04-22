@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,16 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.sys import prefetch
+from std.sys.info import align_of
+from std.sys.intrinsics import PrefetchOptions
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import prefetch
-from sys.info import align_of
-from sys.intrinsics import PrefetchOptions
+from layout import Coord, Idx, TileTensor
 
-from layout import Layout, LayoutTensor, RuntimeTuple
-
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from ...accumulate import _Accumulator
 from ...utils import GemmShape, get_matmul_prefetch_b_distance_k
@@ -32,12 +29,12 @@ from .impl import InnerMatmulKernel
 @fieldwise_init
 struct Inner_matmul_default(InnerMatmulKernel, Movable):
     @always_inline
-    fn _accumulate[
+    def _accumulate[
         simd_size: Int, kernel_rows: Int, kernel_cols: Int
     ](
         self,
-        a: LayoutTensor,
-        b_packed: LayoutTensor,
+        a: TileTensor,
+        b_packed: TileTensor,
         mut c_local: _Accumulator[
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
@@ -55,7 +52,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
-        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
 
         # Seek outer indices in packed layout.
         var n_outer_idx = tile_n_k_idx[0] // kernel_cols
@@ -63,38 +60,30 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         # Global K index.
         var global_k = global_offset.K + tile_n_k_idx[1]
 
-        var b_offset = b_packed.runtime_layout(
-            RuntimeTuple[b_packed.layout.shape](
-                Index(n_outer_idx, tile_n_k_idx[1], 0)
-            )
+        var b_ptr = b_packed.ptr_at_offset(
+            Coord(Idx(n_outer_idx), Idx(tile_n_k_idx[1]), Idx(0))
         )
-        var b_ptr = b_packed.ptr + b_offset
 
         # Prefetch B matrix.
         comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
 
-        @parameter
-        if prefetch_distance > 0:
+        comptime if prefetch_distance > 0:
             comptime prefetch_offset = prefetch_distance * kernel_cols
 
-            @parameter
-            for idx in range(kernel_cols // simd_size):
+            comptime for idx in range(kernel_cols // simd_size):
                 prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ](b_ptr + (prefetch_offset + idx * simd_size))
 
         # This inner kernels works with non-transposed A.
-        var K = a.dim[1]()
+        var K = Int(a.dim[1]())
         var a_ptr = a.ptr + (global_offset.M * K + global_k)
 
         comptime c_type = c_local.dtype
 
         # Loop over local accumulator tiles.
-        @parameter
-        for idx0 in range(kernel_rows):
-
-            @parameter
-            for idx1 in range(kernel_cols // simd_size):
+        comptime for idx0 in range(kernel_rows):
+            comptime for idx1 in range(kernel_cols // simd_size):
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
 
                 var a_val = a_ptr[idx0 * K]
@@ -104,15 +93,15 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
                 c_local.fma(idx0, idx1, a_val, b_val)
 
     @always_inline
-    fn __inner_matmul__[
+    def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
         simd_size: Int,
     ](
         self,
-        c: LayoutTensor[mut=True, ...],
-        a: LayoutTensor,
-        b_packed: LayoutTensor,
+        c: TileTensor[mut=True, ...],
+        a: TileTensor,
+        b_packed: TileTensor,
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: IndexList[2],
@@ -121,9 +110,9 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows, TileN, TileK) tile.
         """
-        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
 
-        var c_stride = c.dim[1]()
+        var c_stride = Int(c.dim[1]())
 
         var c_ptr = c.ptr + (global_offset.M * c_stride + global_offset.N)
 
@@ -142,7 +131,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
                 acc.init(0)
             else:
                 acc.load(
-                    rebind[UnsafePointer[Scalar[c.dtype]]](c_ptr),
+                    rebind[UnsafePointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
                     c_stride,
                     idx_n,
                     c_bound,
@@ -161,7 +150,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
                     Index(idx_n, idx_k),
                 )
             acc.store(
-                rebind[UnsafePointer[Scalar[c.dtype]]](c_ptr),
+                rebind[UnsafePointer[Scalar[c.dtype], MutAnyOrigin]](c_ptr),
                 c_stride,
                 idx_n,
                 c_bound,

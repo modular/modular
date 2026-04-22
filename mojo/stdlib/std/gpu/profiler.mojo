@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,17 +24,18 @@ context manager interface. It includes:
 Example:
 
 ```mojo
-from gpu import profiler
-    with profiler.ProfileBlock("my_kernel"):
-        # Code to profile
-        run_gpu_kernel()
+from std.gpu import profiler
+
+with profiler.ProfileBlock("my_kernel"):
+    # Code to profile
+    pass
 ```
 """
 
-from io.io import _printf
-from time import perf_counter_ns
+from std.io.io import _printf
+from std.time import perf_counter_ns
 
-from reflection import call_location, SourceLocation
+from std.reflection import call_location, SourceLocation
 
 
 @fieldwise_init
@@ -59,7 +60,7 @@ struct ProfileBlock[enabled: Bool = False](ImplicitlyCopyable):
     """Start time of the profiling block in nanoseconds, captured using perf_counter_ns()."""
 
     @always_inline
-    fn __init__(out self, name: StaticString):
+    def __init__(out self, name: StaticString):
         """Initialize a new ProfileBlock.
 
         Args:
@@ -67,8 +68,7 @@ struct ProfileBlock[enabled: Bool = False](ImplicitlyCopyable):
         """
         self.start_time = 0
 
-        @parameter
-        if Self.enabled:
+        comptime if Self.enabled:
             self.name = name
             self.loc = call_location()
         else:
@@ -76,25 +76,25 @@ struct ProfileBlock[enabled: Bool = False](ImplicitlyCopyable):
             self.loc = SourceLocation(0, 0, "")
 
     @always_inline
-    fn __enter__(mut self):
+    def __enter__(mut self):
         """Enter the profiling block and record start time if enabled."""
 
-        @parameter
-        if not Self.enabled:
+        comptime if not Self.enabled:
             return
         self.start_time = perf_counter_ns()
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         """Exit the profiling block, record end time and print timing if enabled.
         """
 
-        @parameter
-        if not Self.enabled:
+        comptime if not Self.enabled:
             return
 
         var end_time = perf_counter_ns()
 
         _printf["@ %.*s %ld\n"](
-            len(self.name), self.name.unsafe_ptr(), self.start_time - end_time
+            self.name.byte_length(),
+            self.name.unsafe_ptr(),
+            self.start_time - end_time,
         )

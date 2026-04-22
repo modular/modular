@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -43,16 +43,19 @@ logger = logging.getLogger("max.entrypoints")
 def serve_api_server_and_model_worker(
     settings: Settings,
     pipeline_config: PipelineConfig,
-    pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION,
+    pipeline_task: PipelineTask = PipelineTask.UNDEFINED,
 ) -> None:
+    # Auto-detect pipeline task from the model architecture if not explicitly set.
+    if pipeline_task == PipelineTask.UNDEFINED:
+        pipeline_task = PIPELINE_REGISTRY.retrieve_pipeline_task(
+            pipeline_config.models.main_architecture_name,
+        )
+        logger.info(
+            f"Auto-detected pipeline task: {pipeline_task.value} "
+            f"(model architecture: {pipeline_config.models.main_architecture_name})"
+        )
+
     override_architecture: str | None = None
-    # TODO: This is a workaround to support embeddings generation until the
-    # changes to tie pipelines to tasks is complete. This will be removed.
-    if (
-        pipeline_config.model.model_path
-        == "sentence-transformers/all-mpnet-base-v2"
-    ):
-        pipeline_task = PipelineTask.EMBEDDINGS_GENERATION
 
     # Use the audio decoder architecture for the audio generation pipeline.
     if pipeline_task == PipelineTask.AUDIO_GENERATION:
@@ -79,6 +82,7 @@ def serve_api_server_and_model_worker(
         pipeline_config=pipeline_config,
         tokenizer=tokenizer,
         pipeline_task=pipeline_task,
+        reasoning_parser_name=pipeline_config.runtime.reasoning_parser,
     )
 
     # Initialize and serve webserver.

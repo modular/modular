@@ -17,9 +17,6 @@ large language model (LLM) of your choice, using our CLI tool or Docker
 container. Try it now with our [quickstart
 guide](https://docs.modular.com/max/get-started).
 
-See [https://builds.modular.com/](https://builds.modular.com/) to discover many
-of the models supported by MAX.
-
 ## Contributing
 
 Thanks for your interest in contributing to MAX!

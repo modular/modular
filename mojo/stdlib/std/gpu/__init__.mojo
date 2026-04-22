@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,7 +21,7 @@ A _kernel_ is a function that runs on the GPU in parallel across many threads.
 Currently, the
 [`DeviceContext`](/mojo/std/gpu/host/device_context/DeviceContext) struct
 provides the interface for compiling and launching GPU kernels inside MAX
-[custom operations](/max/custom-ops/).
+[custom operations](/max/develop/custom-ops/).
 
 The [`gpu.host`](/mojo/std/gpu/host/) package includes APIs to manage
 interaction between the _host_ (that is, the CPU) and _device_ (that is, the GPU
@@ -32,7 +32,7 @@ grid and the current thread, including block dimensions, block index in the grid
 and thread index. Import these directly from `gpu`:
 
 ```mojo
-from gpu import block_dim, block_idx, thread_idx, global_idx
+from std.gpu import block_dim, block_idx, thread_idx, global_idx
 ```
 
 For an example of launching a GPU kernel from a MAX custom operation, see the
@@ -54,16 +54,23 @@ from .primitives import (
     launch_dependent_grids,
     wait_on_dependent_grids,
     block_dim,
+    block_dim_uint,
     block_id_in_cluster,
     block_idx,
+    block_idx_uint,
     cluster_dim,
     cluster_idx,
     global_idx,
+    global_idx_uint,
     grid_dim,
+    grid_dim_uint,
     lane_id,
+    lane_id_uint,
     sm_id,
     thread_idx,
+    thread_idx_uint,
     warp_id,
+    warp_id_uint,
 )
 from .globals import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE
 from .host import DeviceBuffer, DeviceContext, HostBuffer

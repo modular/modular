@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -211,24 +211,60 @@ def bench_kineto(
 
     # Return average kernel times
     units = {"ms": 1e3, "us": 1e6}
-    kernel_times = []
-    for name in kernel_names:
-        total_time = 0.0
-        total_num = 0
+
+    def _parse_kernel_rows(
+        name: str,
+    ) -> list[tuple[float, int]]:
+        """Parse profiler table rows matching ``name``.
+
+        Returns a list of (row_total_seconds, row_count) tuples, one per
+        matching row.  Rows with a zero call count are silently skipped
+        so callers can safely divide ``row_total / row_count``.
+        """
+        rows: list[tuple[float, int]] = []
         for line in prof_lines:
             if name in line:
-                time_str = line.split()[-2]
-                num_str = line.split()[-1]
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+                time_str = parts[-2]
+                num_str = parts[-1]
                 for unit, scale in units.items():
                     if unit in time_str:
-                        total_time += (
-                            float(time_str.replace(unit, ""))
-                            / scale
-                            * int(num_str)
-                        )
-                        total_num += int(num_str)
+                        try:
+                            row_count = int(num_str)
+                            if row_count == 0:
+                                break
+                            row_total = (
+                                float(time_str.replace(unit, ""))
+                                / scale
+                                * row_count
+                            )
+                            rows.append((row_total, row_count))
+                        except (ValueError, ZeroDivisionError):
+                            pass
                         break
-        kernel_times.append(total_time / total_num)
+        return rows
+
+    kernel_times = []
+    for name in kernel_names:
+        rows = _parse_kernel_rows(name)
+        if not rows:
+            raise RuntimeError(
+                f"No kernel times found for '{name}'. "
+                f"Profiler table:\n{prof_table}"
+            )
+        if with_multiple_kernels:
+            # When multiple kernels match (e.g. split-K: decode + combine),
+            # sum the per-call average time of each matching kernel row.
+            # This gives T_decode + T_combine, not (T_decode + T_combine) / 2.
+            kernel_times.append(
+                sum(row_total / row_count for row_total, row_count in rows)
+            )
+        else:
+            total_time = sum(row_total for row_total, _ in rows)
+            total_num = sum(row_count for _, row_count in rows)
+            kernel_times.append(total_time / total_num)
 
     return tuple(kernel_times) if is_tuple else kernel_times[0]
 
@@ -245,6 +281,7 @@ def bench_kineto_with_cupti_warmup(
     trace_path: str | None = None,
     flush_l2: bool = True,
     with_multiple_kernels: bool = False,
+    num_profiler_passes: int = 5,
 ) -> float | tuple[float, ...]:
     """Wrapper around bench_kineto that handles CUPTI warmup for CUTLASS kernels.
 
@@ -253,21 +290,30 @@ def bench_kineto_with_cupti_warmup(
     This wrapper runs a dummy profiling pass first (discarding results) so subsequent
     calls are properly captured.
 
+    To guard against intermittent GPU slowdowns (thermal throttle, power management,
+    CUDA driver hiccups) that can inflate the mean by 2-7x, this function runs
+    ``num_profiler_passes`` independent profiling passes and returns the minimum.
+    The minimum is the best estimator of true kernel latency since any higher
+    measurement includes noise/overhead.
+
     Args:
-        fn: Function to benchmark
-        kernel_names: Name(s) of kernel(s) to measure
-        num_tests: Number of test iterations
-        suppress_kineto_output: Whether to suppress profiler output
-        trace_path: Optional path to save chrome trace
-        flush_l2: Whether to flush L2 cache between iterations
-        with_multiple_kernels: Whether multiple kernels with the same name are expected
+        fn: Function to benchmark.
+        kernel_names: Name(s) of kernel(s) to measure.
+        num_tests: Number of test iterations per profiling pass.
+        suppress_kineto_output: Whether to suppress profiler output.
+        trace_path: Optional path to save chrome trace (only for the best pass).
+        flush_l2: Whether to flush L2 cache between iterations.
+        with_multiple_kernels: Whether multiple kernels with the same name
+            are expected.
+        num_profiler_passes: Number of independent profiling passes to run.
+            The minimum time across passes is returned. Default 5.
 
     Returns:
-        Average kernel time in seconds (or tuple of times if kernel_names is a tuple)
+        Average kernel time in seconds (or tuple of times if kernel_names is a tuple).
     """
     global _cupti_warmup_done
 
-    # Run a warmup profiling pass on the first call
+    # Run a warmup profiling pass on the first call.
     if not _cupti_warmup_done:
         try:
             bench_kineto(
@@ -278,18 +324,35 @@ def bench_kineto_with_cupti_warmup(
                 flush_l2=flush_l2,
                 with_multiple_kernels=True,  # Don't assert on first pass
             )
-        except (AssertionError, ZeroDivisionError):
-            # Expected: first call may not capture kernel or may have zero count
+        except (AssertionError, ZeroDivisionError, RuntimeError):
+            # Expected: first call may not capture kernel, may have zero count,
+            # or CUPTI may not yet hook cudaLaunchKernelExC (RuntimeError from
+            # _parse_kernel_rows finding no matching rows).
             pass
         _cupti_warmup_done = True
 
-    # Now run the actual benchmark
-    return bench_kineto(
-        fn,
-        kernel_names=kernel_names,
-        num_tests=num_tests,
-        suppress_kineto_output=suppress_kineto_output,
-        trace_path=trace_path,
-        flush_l2=flush_l2,
-        with_multiple_kernels=with_multiple_kernels,
-    )
+    # Run multiple profiling passes and keep the minimum to reject outliers.
+    best: float | tuple[float, ...] | None = None
+    for _ in range(num_profiler_passes):
+        result = bench_kineto(
+            fn,
+            kernel_names=kernel_names,
+            num_tests=num_tests,
+            suppress_kineto_output=suppress_kineto_output,
+            trace_path=trace_path,
+            flush_l2=flush_l2,
+            with_multiple_kernels=with_multiple_kernels,
+        )
+        # Only save trace for the first pass.
+        trace_path = None
+        if best is None:
+            best = result
+        elif isinstance(result, tuple):
+            assert isinstance(best, tuple)
+            best = tuple(min(b, r) for b, r in zip(best, result, strict=True))
+        else:
+            assert isinstance(best, float)
+            assert isinstance(result, float)
+            best = min(best, result)
+    assert best is not None
+    return best

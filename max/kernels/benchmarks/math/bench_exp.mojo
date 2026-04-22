@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,14 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import *
-from math.math import _exp_taylor, _ldexp_impl
-from math.polynomial import polynomial_evaluate
-from sys import external_call, llvm_intrinsic, simd_width_of, size_of
-from sys.arg import argv
-
-from algorithm.functional import vectorize
-from benchmark import (
+from std.math import *
+from std.math.math import _exp_taylor, _ldexp_impl
+from std.math.polynomial import polynomial_evaluate
+from std.ffi import external_call
+from std.sys import llvm_intrinsic, simd_width_of, size_of
+from std.sys.arg import argv
+from std.utils import IndexList
+from std.algorithm.functional import vectorize
+from std.benchmark import (
     Bench,
     Bencher,
     BenchId,
@@ -26,49 +27,53 @@ from benchmark import (
     ThroughputMeasure,
     keep,
 )
-from buffer import NDBuffer
-from builtin.range import _StridedRange
-from compile import compile_info
-from memory import LegacyUnsafePointer, bitcast
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from layout import Coord, RuntimeInt, TileTensor, row_major
+from std.builtin.range import _StridedRange
+from std.compile import compile_info
+from std.memory import bitcast, stack_allocation
 
 
-fn apply[
-    func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+def _ri(v: Int) -> RuntimeInt[DType.int64]:
+    return RuntimeInt[DType.int64](Int64(v))
+
+
+def apply[
+    func: def[dtype: DType, width: Int](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
     dtype: DType,
-](input: NDBuffer[dtype, 1], output: NDBuffer[mut=True, dtype, 1]):
-    fn _func[width: Int](idx: Int) unified {mut}:
-        output.store((idx,), func(input.load[width=width](idx)))
+](
+    input: TileTensor[mut=False, dtype, ...],
+    output: TileTensor[mut=True, dtype, ...],
+):
+    def _func[width: Int](idx: Int) unified {read}:
+        output.store_linear[width=width](
+            IndexList[1](idx),
+            func(input.load_linear[width=width](IndexList[1](idx))),
+        )
 
-    vectorize[simd_width_of[dtype]()](len(input), _func)
+    vectorize[simd_width_of[dtype]()](input.num_elements(), _func)
 
 
 def bench_unary[
-    func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+    func: def[dtype: DType, width: Int](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
     dtype: DType,
-](mut m: Bench, size_range: _StridedRange, op_name: String):
+](mut m: Bench, size_range: _StridedRange, op_name: String) raises:
     for i in size_range:
         bench_unary[func, dtype](m, i, op_name)
 
 
 def bench_unary[
-    func: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+    func: def[dtype: DType, width: Int](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
     dtype: DType,
-](mut m: Bench, size: Int, op_name: String):
+](mut m: Bench, size: Int, op_name: String) raises:
     comptime alignment = 64
-    var input_ptr = UnsafePointer[Scalar[dtype],].alloc(
-        size, alignment=alignment
-    )
-    var output_ptr = UnsafePointer[Scalar[dtype],].alloc(
-        size, alignment=alignment
-    )
+    var input_ptr = alloc[Scalar[dtype],](size, alignment=alignment)
+    var output_ptr = alloc[Scalar[dtype],](size, alignment=alignment)
 
     var linspace = range(0x3000_0000, 0x42B0_0000, 1)
     for i in range(size):
@@ -76,12 +81,12 @@ def bench_unary[
         input_ptr[i] = f
 
     @parameter
-    fn bench(mut b: Bencher, size: Int) raises:
+    def bench(mut b: Bencher, size: Int) raises:
         @parameter
-        fn iter_fn():
+        def iter_fn():
             apply[func](
-                NDBuffer[dtype, 1](input_ptr, size),
-                NDBuffer[dtype, 1](output_ptr, size),
+                TileTensor(input_ptr, row_major(Coord(_ri(size)))),
+                TileTensor(output_ptr, row_major(Coord(_ri(size)))),
             )
             keep(output_ptr)
 
@@ -101,7 +106,7 @@ def bench_unary[
     output_ptr.free()
 
 
-fn ldexp2kf_opt[
+def ldexp2kf_opt[
     dtype: DType, simd_width: Int
 ](x_in: SIMD[dtype, simd_width], q_in: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
@@ -128,7 +133,7 @@ fn ldexp2kf_opt[
     return x * xu.cast[dtype]()
 
 
-fn pow2if[
+def pow2if[
     simd_width: Int
 ](q: SIMD[DType.int32, simd_width]) -> SIMD[DType.float32, simd_width]:
     var x = (
@@ -137,7 +142,7 @@ fn pow2if[
     return bitcast[DType.float32, simd_width](x)
 
 
-fn ldexp2kf[
+def ldexp2kf[
     dtype: DType, simd_width: Int
 ](d: SIMD[dtype, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
@@ -161,32 +166,30 @@ fn ldexp2kf[
 
 
 @always_inline
-fn exp_libm[
+def exp_libm[
     dtype: DType, simd_width: Int
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     var res = SIMD[dtype, simd_width]()
 
-    @parameter
-    for i in range(simd_width):
+    comptime for i in range(simd_width):
         res[i] = external_call["expf", Scalar[dtype]](arg[i])
     return res
 
 
 @always_inline
-fn ldexp_libm[
+def ldexp_libm[
     dtype: DType, simd_width: Int
 ](arg: SIMD[dtype, simd_width], e: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
 ]:
     var res = SIMD[dtype, simd_width]()
 
-    @parameter
-    for i in range(simd_width):
+    comptime for i in range(simd_width):
         res[i] = external_call["ldexpf", Scalar[dtype]](arg)
     return res
 
 
-fn exp_sleef[
+def exp_sleef[
     dtype: DType, simd_width: Int
 ](d: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime inv_lg2 = SIMD[dtype, simd_width](1.4426950408889634)
@@ -213,7 +216,7 @@ fn exp_sleef[
 
 
 @always_inline
-fn _exp_taylor0[
+def _exp_taylor0[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime coefficients: List[Scalar[dtype]] = [
@@ -230,12 +233,10 @@ fn _exp_taylor0[
 
 
 @always_inline
-fn exp_mojo_opt[
+def exp_mojo_opt[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "must be a floating point value"
+    comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
     comptime inv_lg2 = 1.442695040888963407359924681001892137426646
 
@@ -260,12 +261,10 @@ fn exp_mojo_opt[
 
 
 @always_inline
-fn exp_mojo_opt2[
+def exp_mojo_opt2[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "must be a floating point value"
+    comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime inv_lg2 = 1.44269504088896340736  # 1/log(2)
 
     # upper and lower parts of log(2)=[L2Uf,L2Lf]
@@ -287,7 +286,7 @@ fn exp_mojo_opt2[
 
 
 @always_inline
-fn _exp_taylor3[
+def _exp_taylor3[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime coefficients: List[Scalar[dtype]] = [
@@ -302,12 +301,10 @@ fn _exp_taylor3[
 
 
 @always_inline
-fn exp_mojo_opt3[
+def exp_mojo_opt3[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "must be a floating point value"
+    comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime inv_lg2 = 1.44269504088896340736  # 1/log(2)
 
     # upper and lower parts of log(2)=[L2Uf,L2Lf]
@@ -328,7 +325,7 @@ fn exp_mojo_opt3[
 
 
 @always_inline
-fn _exp_taylor_mlas[
+def _exp_taylor_mlas[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     return polynomial_evaluate[
@@ -345,12 +342,10 @@ fn _exp_taylor_mlas[
 
 
 @always_inline
-fn exp_mlas[
+def exp_mlas[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "must be a floating point value"
+    comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
     comptime inv_lg2 = 1.442695040888963407359924681001892137426646
 
@@ -368,7 +363,7 @@ fn exp_mlas[
 
 
 @always_inline
-fn llvm_ldexp[
+def llvm_ldexp[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width], exp: SIMD[DType.int32, simd_width]) -> SIMD[
     dtype, simd_width
@@ -377,12 +372,10 @@ fn llvm_ldexp[
 
 
 @always_inline
-fn mlas_llvm_ldexp[
+def mlas_llvm_ldexp[
     dtype: DType, simd_width: Int
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    __comptime_assert (
-        dtype.is_floating_point()
-    ), "must be a floating point value"
+    comptime assert dtype.is_floating_point(), "must be a floating point value"
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
     comptime inv_lg2 = 1.442695040888963407359924681001892137426646
 
@@ -399,15 +392,14 @@ fn mlas_llvm_ldexp[
     return max(llvm_ldexp(_exp_taylor_mlas(rr), k.cast[DType.int32]()), xc)
 
 
-def accuracy_test():
+def accuracy_test() raises:
     comptime delta_min = -16
     comptime delta_max = 15
     comptime delta_range = delta_max - delta_min + 1
 
-    var deltas = NDBuffer[
-        DType.int32, 1, MutAnyOrigin, delta_range
-    ].stack_allocation()
-    deltas.zero()
+    var deltas_ptr = stack_allocation[delta_range, DType.int32]()
+    var deltas = TileTensor(deltas_ptr, row_major[delta_range]())
+    _ = deltas.fill(Scalar[DType.int32](0))
 
     for i in range(0x3000_0000, 0x42B0_0000, 1):
         var f = bitcast[DType.float32, 1](UInt32(i))
@@ -429,7 +421,7 @@ def accuracy_test():
         print("deltas", i + delta_min, deltas[i])
 
 
-def main():
+def main() raises:
     var args = argv()
     for arg in args:
         if arg == "-c":

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -99,7 +99,7 @@ def fold(
                 zip(output_size, kernel_size, strict=True)
             ):
                 L_d = int(
-                    (int(o) + 2 * padding[n] - dilation[n] * (int(k) - 1) - 1)
+                    (int(o) + 2 * padding[n] - dilation[n] * (int(k) - 1) - 1)  # type: ignore
                     // stride[n]
                     + 1
                 )

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,17 +26,22 @@ optimized approximations when absolute precision can be traded for performance.
 """
 
 # In Python, these are in the `math` package, so we also expose them here.
-from utils.numerics import inf, isfinite, isinf, isnan, nan, nextafter
+from std.utils.numerics import inf, isfinite, isinf, isnan, nan, nextafter
 
 from .constants import e, pi, tau
 
 # These are not part of Python's `math` package, but we define them here.
 from .math import (
+    Absable,
     Ceilable,
     CeilDivable,
     CeilDivableRaising,
+    DivModable,
     Floorable,
+    Powable,
+    Roundable,
     Truncable,
+    abs,
     acos,
     acosh,
     align_down,
@@ -53,11 +58,13 @@ from .math import (
     copysign,
     cos,
     cosh,
+    divmod,
     erf,
     erfc,
     exp,
     exp2,
     expm1,
+    comb,
     factorial,
     floor,
     fma,
@@ -78,9 +85,14 @@ from .math import (
     log2,
     log10,
     logb,
+    max,
+    min,
     modf,
+    perm,
+    pow,
     recip,
     remainder,
+    round,
     scalb,
     sin,
     sinh,

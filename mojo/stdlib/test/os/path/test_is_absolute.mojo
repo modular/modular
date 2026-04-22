@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path import is_absolute
+from std.os.path import is_absolute
 
-from testing import TestSuite, assert_false, assert_true
+from std.testing import TestSuite, assert_false, assert_true
 
 
-def test_is_absolute():
+def test_is_absolute() raises:
     assert_true(is_absolute("/"))
     assert_true(is_absolute("/foo"))
     assert_true(is_absolute("/foo/bar"))
@@ -25,5 +25,5 @@ def test_is_absolute():
     assert_false(is_absolute("foo/bar"))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

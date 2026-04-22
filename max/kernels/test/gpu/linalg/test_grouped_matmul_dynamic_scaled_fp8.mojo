@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,24 +22,28 @@ grouped_matmul_sm100_blockwise_scaled_fp8 in
 test_grouped_matmul_sm100_blockwise_fp8.mojo.
 """
 
-from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from std.gpu.host import DeviceContext
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    row_major,
+)
 from layout._fillers import random
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_dynamic_scaled_fp8,
 )
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import Index, IndexList
 
 
 def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     num_experts: Int = 4,
     N: Int = 256,
     K: Int = 256,
-](num_active_experts: Int, max_num_tokens_per_expert: Int, ctx: DeviceContext,):
+](
+    num_active_experts: Int,
+    max_num_tokens_per_expert: Int,
+    ctx: DeviceContext,
+) raises:
     """Test grouped_matmul_dynamic_scaled_fp8 with zero edge cases.
 
     This test verifies that the function returns early without errors when
@@ -74,41 +78,28 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     var num_expert_ids = max(num_active_experts, 0)
 
     # Create host buffers
-    comptime static_a_shape = DimList(Dim(), K)
-    var dynamic_a_shape = IndexList[2](total_tokens, K)
     var a_size = total_tokens * K
 
-    comptime static_b_shape = DimList(num_experts, N, K)
     var b_size = num_experts * N * K
 
-    comptime static_c_shape = DimList(Dim(), N)
-    var dynamic_c_shape = IndexList[2](total_tokens, N)
     var c_size = total_tokens * N
 
-    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, K)
-    comptime b_layout = Layout.row_major(num_experts, N, K)
-    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
+    var a_host_ptr = alloc[Scalar[in_type]](a_size)
+    var b_host_ptr = alloc[Scalar[in_type]](b_size)
+    var c_host_ptr = alloc[Scalar[out_type]](c_size)
 
-    var a_host_ptr = UnsafePointer[Scalar[in_type]].alloc(a_size)
-    var b_host_ptr = UnsafePointer[Scalar[in_type]].alloc(b_size)
-    var c_host_ptr = UnsafePointer[Scalar[out_type]].alloc(c_size)
-
-    var a_host = LayoutTensor[in_type, a_layout](
+    var a_host = TileTensor(
         a_host_ptr,
-        RuntimeLayout[a_layout].row_major(dynamic_a_shape),
+        row_major(Coord(Idx(total_tokens), Idx[K]())),
     )
-    var b_host = LayoutTensor[in_type, b_layout](
+    var b_host = TileTensor(
         b_host_ptr,
-        RuntimeLayout[b_layout].row_major(IndexList[3](num_experts, N, K)),
+        row_major[num_experts, N, K](),
     )
 
     # Create offsets and expert_ids
-    var a_offsets_host_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(
-        num_offsets
-    )
-    var expert_ids_host_ptr = UnsafePointer[Scalar[DType.int32]].alloc(
-        num_expert_ids
-    )
+    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_offsets)
+    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_expert_ids)
 
     # Set up offsets
     for i in range(num_offsets):
@@ -116,43 +107,25 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
 
     # Set up expert_ids
     for i in range(num_expert_ids):
-        expert_ids_host_ptr[i] = i % num_experts
+        expert_ids_host_ptr[i] = Int32(i % num_experts)
 
     # Create scale buffers
-    comptime static_a_scales_shape = DimList(K // BLOCK_SCALE_K, Dim())
-    var dynamic_a_scales_shape = IndexList[2](K // BLOCK_SCALE_K, total_tokens)
     var a_scales_size = (K // BLOCK_SCALE_K) * total_tokens
 
-    comptime static_b_scales_shape = DimList(
-        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-    )
     var b_scales_size = (
         num_experts * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
     )
 
-    comptime a_scales_layout = Layout.row_major(
-        K // BLOCK_SCALE_K, UNKNOWN_VALUE
-    )
-    comptime b_scales_layout = Layout.row_major(
-        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-    )
+    var a_scales_host_ptr = alloc[Scalar[DType.float32]](a_scales_size)
+    var b_scales_host_ptr = alloc[Scalar[DType.float32]](b_scales_size)
 
-    var a_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        a_scales_size
-    )
-    var b_scales_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(
-        b_scales_size
-    )
-
-    var a_scales_host = LayoutTensor[DType.float32, a_scales_layout](
+    var a_scales_host = TileTensor(
         a_scales_host_ptr,
-        RuntimeLayout[a_scales_layout].row_major(dynamic_a_scales_shape),
+        row_major(Coord(Idx[K // BLOCK_SCALE_K](), Idx(total_tokens))),
     )
-    var b_scales_host = LayoutTensor[DType.float32, b_scales_layout](
+    var b_scales_host = TileTensor(
         b_scales_host_ptr,
-        RuntimeLayout[b_scales_layout].row_major(
-            IndexList[3](num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K)
-        ),
+        row_major[num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K](),
     )
 
     # Initialize with random data
@@ -178,33 +151,39 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
         b_scales_size
     )
 
-    var a_device = NDBuffer[in_type, 2, _, static_a_shape](
-        a_device_buffer.unsafe_ptr(),
-        DimList(total_tokens, K),
+    var a_device = TileTensor(
+        a_device_buffer,
+        row_major(Coord(Idx(total_tokens), Idx[K]())),
     )
-    var b_device = NDBuffer[in_type, 3, _, static_b_shape](
-        b_device_buffer.unsafe_ptr(),
-        static_b_shape,
+    var b_device = TileTensor(
+        b_device_buffer,
+        row_major(Coord(Idx[num_experts](), Idx[N](), Idx[K]())),
     )
-    var c_device = NDBuffer[out_type, 2, _, static_c_shape](
-        c_device_buffer.unsafe_ptr(),
-        DimList(total_tokens, N),
+    var c_device = TileTensor(
+        c_device_buffer,
+        row_major(Coord(Idx(total_tokens), Idx[N]())),
     )
-    var a_offsets_device = NDBuffer[DType.uint32, 1](
-        a_offsets_device_buffer.unsafe_ptr(),
-        num_offsets,
+    var a_offsets_device = TileTensor(
+        a_offsets_device_buffer,
+        row_major(Coord(Idx(num_offsets))),
     )
-    var expert_ids_device = NDBuffer[DType.int32, 1](
-        expert_ids_device_buffer.unsafe_ptr(),
-        num_expert_ids,
+    var expert_ids_device = TileTensor(
+        expert_ids_device_buffer,
+        row_major(Coord(Idx(num_expert_ids))),
     )
-    var a_scales_device = NDBuffer[DType.float32, 2, _, static_a_scales_shape](
-        a_scales_device_buffer.unsafe_ptr(),
-        DimList(K // BLOCK_SCALE_K, total_tokens),
+    var a_scales_device = TileTensor(
+        a_scales_device_buffer,
+        row_major(Coord(Idx[K // BLOCK_SCALE_K](), Idx(total_tokens))),
     )
-    var b_scales_device = NDBuffer[DType.float32, 3, _, static_b_scales_shape](
-        b_scales_device_buffer.unsafe_ptr(),
-        static_b_scales_shape,
+    var b_scales_device = TileTensor(
+        b_scales_device_buffer,
+        row_major(
+            Coord(
+                Idx[num_experts](),
+                Idx[N // BLOCK_SCALE_K](),
+                Idx[K // BLOCK_SCALE_K](),
+            )
+        ),
     )
 
     # Copy to device
@@ -258,7 +237,7 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     _ = b_scales_device_buffer^
 
 
-def main():
+def main() raises:
     """Run all edge case tests for grouped_matmul_dynamic_scaled_fp8."""
     with DeviceContext() as ctx:
         # Test zero num_active_experts (with non-zero max_num_tokens_per_expert)

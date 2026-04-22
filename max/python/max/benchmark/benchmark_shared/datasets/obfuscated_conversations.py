@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,7 +21,7 @@ import numpy as np
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from .local import LocalBenchmarkDataset
-from .types import SampledRequest
+from .types import RequestSamples, SampledRequest
 
 
 class ObfuscatedConversationsLine(msgspec.Struct):
@@ -38,7 +38,7 @@ class ObfuscatedConversationsBenchmarkDataset(LocalBenchmarkDataset):
         output_lengths: Sequence[int] | None = None,
         shuffle: bool = True,
         **kwargs,
-    ) -> Sequence[SampledRequest]:
+    ) -> RequestSamples:
         # Extract required parameters from kwargs
         seed = kwargs.get("seed")
         if seed is None:
@@ -97,4 +97,4 @@ class ObfuscatedConversationsBenchmarkDataset(LocalBenchmarkDataset):
                     ignore_eos=(output_lengths[i] is not None),
                 )
             )
-        return sampled_requests
+        return RequestSamples(requests=sampled_requests)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -312,3 +312,322 @@ def test_scatter_nd_device_mismatch() -> None:
                 inp.tensor for inp in graph.inputs
             )
             ops.scatter_nd(input_tensor, updates, indices)
+
+
+# ---------------------------------------------------------------------------
+# scatter_max / scatter_min / scatter_mul graph-level tests
+# ---------------------------------------------------------------------------
+
+_REDUCTION_OPS = [
+    pytest.param(ops.scatter_max, id="scatter_max"),
+    pytest.param(ops.scatter_min, id="scatter_min"),
+    pytest.param(ops.scatter_mul, id="scatter_mul"),
+]
+
+
+@given(
+    input_type=st.shared(input_types, key="input_red"),
+    indices_type=tensor_types(
+        dtypes=st.sampled_from([DType.int32, DType.int64])
+    ),
+    axis=axes(st.shared(input_types, key="input_red")),
+)
+@pytest.mark.parametrize("op", _REDUCTION_OPS)
+def test_scatter_reduction_preserves_shape_and_dtype(
+    op,  # noqa: ANN001
+    input_type: TensorType,
+    indices_type: TensorType,
+    axis: int,
+) -> None:
+    """Tests that scatter_max/min/mul preserve shape and dtype."""
+    updates_type = input_type
+
+    with Graph(
+        "scatter_reduction",
+        input_types=[input_type, updates_type, indices_type],
+    ) as graph:
+        input_tensor, updates, indices = (v.tensor for v in graph.inputs)
+        result = op(input_tensor, updates, indices, axis=axis)
+        graph.output(result)
+
+        assert result.type.dtype == input_tensor.type.dtype
+        assert result.type.shape == input_tensor.type.shape
+
+
+@given(
+    input_type=st.shared(input_types, key="input_red2"),
+    updates_type=st.shared(input_types, key="updates_red2"),
+    indices_type=tensor_types(
+        dtypes=st.sampled_from([DType.int32, DType.int64])
+    ),
+    axis=axes(st.shared(input_types, key="input_red2")),
+)
+@pytest.mark.parametrize("op", _REDUCTION_OPS)
+def test_scatter_reduction_dtype_mismatch(
+    op,  # noqa: ANN001
+    input_type: TensorType,
+    updates_type: TensorType,
+    indices_type: TensorType,
+    axis: int,
+) -> None:
+    """Tests that scatter_max/min/mul raise on input/updates dtype mismatch."""
+    assume(input_type.dtype != updates_type.dtype)
+
+    with Graph(
+        "scatter_reduction_dtype_mismatch",
+        input_types=[input_type, updates_type, indices_type],
+    ) as graph:
+        input_tensor, updates, indices = (v.tensor for v in graph.inputs)
+        with pytest.raises(ValueError):
+            op(input_tensor, updates, indices, axis=axis)
+
+
+@given(
+    input_type=st.shared(input_types, key="input_red3"),
+    indices_type=tensor_types(
+        dtypes=st.sampled_from([DType.float32, DType.float64])
+    ),
+    axis=axes(st.shared(input_types, key="input_red3")),
+)
+@pytest.mark.parametrize("op", _REDUCTION_OPS)
+def test_scatter_reduction_invalid_indices_dtype(
+    op,  # noqa: ANN001
+    input_type: TensorType,
+    indices_type: TensorType,
+    axis: int,
+) -> None:
+    """Tests that scatter_max/min/mul raise on non-integer indices."""
+    updates_type = input_type
+
+    with Graph(
+        "scatter_reduction_invalid_indices",
+        input_types=[input_type, updates_type, indices_type],
+    ) as graph:
+        input_tensor, updates, indices = (v.tensor for v in graph.inputs)
+        with pytest.raises(ValueError):
+            op(input_tensor, updates, indices, axis=axis)
+
+
+@given(
+    input_type=st.shared(input_types, key="input_red4"),
+    indices_type=tensor_types(
+        dtypes=st.sampled_from([DType.int32, DType.int64])
+    ),
+    axis=st.integers(),
+)
+@pytest.mark.parametrize("op", _REDUCTION_OPS)
+def test_scatter_reduction_invalid_axis(
+    op,  # noqa: ANN001
+    input_type: TensorType,
+    indices_type: TensorType,
+    axis: int,
+) -> None:
+    """Tests that scatter_max/min/mul raise on out-of-range axis."""
+    updates_type = input_type
+    assume(abs(axis) > input_type.rank)
+
+    with Graph(
+        "scatter_reduction_invalid_axis",
+        input_types=[input_type, updates_type, indices_type],
+    ) as graph:
+        input_tensor, updates, indices = (v.tensor for v in graph.inputs)
+        with pytest.raises(ValueError):
+            op(input_tensor, updates, indices, axis=axis)
+
+
+@pytest.mark.parametrize(
+    "op,name",
+    [
+        (ops.scatter_max, "ops.scatter_max"),
+        (ops.scatter_min, "ops.scatter_min"),
+        (ops.scatter_mul, "ops.scatter_mul"),
+    ],
+)
+def test_scatter_reduction_specific_error_messages(
+    op,  # noqa: ANN001
+    name: str,
+) -> None:
+    """Tests specific error messages for scatter_max/min/mul."""
+    # dtype mismatch
+    with Graph(
+        "scatter_reduction_dtype_err",
+        input_types=[
+            TensorType(DType.float32, [1, 2, 3], device=DeviceRef.CPU()),
+            TensorType(DType.float64, [1, 2, 3], device=DeviceRef.CPU()),
+            TensorType(DType.int32, [1, 2, 3], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        with pytest.raises(
+            ValueError,
+            match=re.escape(
+                "The input dtype 'DType.float32' and updates dtype"
+                " 'DType.float64' must match."
+            ),
+        ):
+            op(
+                graph.inputs[0].tensor,
+                graph.inputs[1].tensor,
+                graph.inputs[2].tensor,
+            )
+
+    # invalid indices dtype
+    with Graph(
+        "scatter_reduction_idx_err",
+        input_types=[
+            TensorType(DType.float32, [1, 2, 3], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [1, 2, 3], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [1, 2, 3], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        with pytest.raises(
+            ValueError,
+            match=re.escape(
+                "Invalid indices dtype: 'DType.float32'. Indices must be of"
+                " type int32 or int64."
+            ),
+        ):
+            op(
+                graph.inputs[0].tensor,
+                graph.inputs[1].tensor,
+                graph.inputs[2].tensor,
+            )
+
+    # invalid axis
+    with Graph(
+        "scatter_reduction_axis_err",
+        input_types=[
+            TensorType(DType.float32, [1, 2, 3], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [1, 2, 3], device=DeviceRef.CPU()),
+            TensorType(DType.int32, [1, 2, 3], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        with pytest.raises(
+            ValueError,
+            match=re.escape(
+                "Invalid axis value 100. Axis must be in range [-3, 2]"
+            ),
+        ):
+            op(
+                graph.inputs[0].tensor,
+                graph.inputs[1].tensor,
+                graph.inputs[2].tensor,
+                axis=100,
+            )
+
+
+# ---------------------------------------------------------------------------
+# scatter_nd_max / scatter_nd_min / scatter_nd_mul graph-level tests
+# ---------------------------------------------------------------------------
+
+_ND_REDUCTION_OPS = [
+    pytest.param(ops.scatter_nd_max, id="scatter_nd_max"),
+    pytest.param(ops.scatter_nd_min, id="scatter_nd_min"),
+    pytest.param(ops.scatter_nd_mul, id="scatter_nd_mul"),
+]
+
+
+@given(
+    input_type=tensor_types(shapes=st.lists(dims, min_size=1)),
+    num_updates=st.integers(min_value=0, max_value=10),
+    index_rank=st.integers(min_value=1, max_value=3),
+)
+@pytest.mark.parametrize("op", _ND_REDUCTION_OPS)
+def test_scatter_nd_reduction_shape_preservation(
+    op,  # noqa: ANN001
+    input_type: TensorType,
+    num_updates: int,
+    index_rank: int,
+) -> None:
+    """Tests that scatter_nd_max/min/mul preserve input shape and dtype."""
+    index_rank = min(index_rank, input_type.rank)
+
+    indices_type = TensorType(
+        DType.int64, [num_updates, index_rank], input_type.device
+    )
+    updates_shape = [num_updates] + list(input_type.shape[index_rank:])
+    updates_type = TensorType(
+        input_type.dtype, updates_shape, input_type.device
+    )
+
+    with Graph(
+        "scatter_nd_reduction",
+        input_types=[input_type, updates_type, indices_type],
+    ) as graph:
+        input_tensor, updates, indices = (inp.tensor for inp in graph.inputs)
+        result = op(input_tensor, updates, indices)
+        graph.output(result)
+
+        assert result.type.dtype == input_tensor.type.dtype
+        assert result.type.shape == input_tensor.type.shape
+
+
+@given(
+    input_type=tensor_types(),
+    updates_type=tensor_types(),
+    indices_type=tensor_types(
+        dtypes=st.sampled_from([DType.int32, DType.int64])
+    ),
+)
+@pytest.mark.parametrize("op", _ND_REDUCTION_OPS)
+def test_scatter_nd_reduction_dtype_mismatch(
+    op,  # noqa: ANN001
+    input_type: TensorType,
+    updates_type: TensorType,
+    indices_type: TensorType,
+) -> None:
+    """Tests that scatter_nd_max/min/mul raise on input/updates dtype mismatch."""
+    assume(input_type.dtype != updates_type.dtype)
+
+    with Graph(
+        "scatter_nd_reduction_dtype_mismatch",
+        input_types=[input_type, updates_type, indices_type],
+    ) as graph:
+        input_tensor, updates, indices = (inp.tensor for inp in graph.inputs)
+        with pytest.raises(ValueError):
+            op(input_tensor, updates, indices)
+
+
+@pytest.mark.parametrize("op", _ND_REDUCTION_OPS)
+def test_scatter_nd_reduction_invalid_indices_dtype(
+    op,  # noqa: ANN001
+) -> None:
+    """Tests that scatter_nd_max/min/mul raise on non-integer indices."""
+    with Graph(
+        "scatter_nd_reduction_invalid_indices",
+        input_types=[
+            TensorType(DType.float32, [5, 3], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [2, 3], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [2, 1], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        with pytest.raises(
+            ValueError,
+            match=re.escape(
+                "Invalid indices dtype: 'DType.float32'."
+                " Indices must be of type int32 or int64."
+            ),
+        ):
+            input_tensor, updates, indices = (
+                inp.tensor for inp in graph.inputs
+            )
+            op(input_tensor, updates, indices)
+
+
+@pytest.mark.parametrize("op", _ND_REDUCTION_OPS)
+def test_scatter_nd_reduction_device_mismatch(
+    op,  # noqa: ANN001
+) -> None:
+    """Tests that scatter_nd_max/min/mul raise on device mismatch."""
+    with Graph(
+        "scatter_nd_reduction_device_mismatch",
+        input_types=[
+            TensorType(DType.float32, [5, 3], device=DeviceRef.CPU()),
+            TensorType(DType.float32, [2, 3], device=DeviceRef.GPU()),
+            TensorType(DType.int64, [2, 1], device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        with pytest.raises(ValueError, match="must be on the same device"):
+            input_tensor, updates, indices = (
+                inp.tensor for inp in graph.inputs
+            )
+            op(input_tensor, updates, indices)

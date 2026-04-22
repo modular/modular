@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,14 +16,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def main():
+def main() raises:
     comptime res = test_debug_assert_compile_time()
 
     # CHECK: 33
     print(res)
 
 
-fn test_debug_assert_compile_time() -> Int:
+def test_debug_assert_compile_time() -> Int:
     debug_assert(True, "ok")
     debug_assert[assert_mode="safe"](True, "ok")
     debug_assert[assert_mode="safe", cpu_only=True](True, "ok")

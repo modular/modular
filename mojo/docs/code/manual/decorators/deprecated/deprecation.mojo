@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,12 +20,12 @@ struct MyStruct:
 
 @deprecated(use=Honkable)
 trait Quackable:
-    fn quack(self):
+    def quack(self):
         ...
 
 
 trait Honkable:
-    fn honk(self):
+    def honk(self):
         ...
 
 
@@ -34,10 +34,10 @@ struct OtherStruct:
     var y: Int
 
     @deprecated("Ignore. Deprecation test.")
-    fn function(self):
+    def function(self):
         pass
 
-    fn __init__(out self, x: Int):
+    def __init__(out self, x: Int):
         self.x = x
         self.y = 0
 
@@ -46,7 +46,7 @@ struct OtherStruct:
 comptime pi = 3.141592
 
 
-fn main():
+def main():
     _ = MyStruct(x=5)
 
     OtherStruct(2).function()

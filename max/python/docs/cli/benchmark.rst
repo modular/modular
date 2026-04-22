@@ -4,6 +4,8 @@
 
     Runs comprehensive benchmark tests on an active model server to measure
     performance metrics including throughput, latency, and resource utilization.
+    For a complete walkthrough, see the tutorial to [benchmark MAX on a
+    GPU](/max/deploy/benchmark).
 
     Before running this command, make sure the model server is running, via [`max
     serve`](/max/cli/serve).
@@ -44,7 +46,7 @@
     :::note
 
     The `max benchmark` command is a convenient packaging for our open-source
-    [`benchmark_serving.py`](https://github.com/modular/modular/tree/main/benchmark#benchmark-max)
+    [`benchmark_serving.py`](https://github.com/modular/modular/tree/main/max/python/max/benchmark#benchmark-max)
     script and accepts all the same options.
 
     :::
@@ -59,7 +61,7 @@
 
     This list of options is not exhaustive. For more information, run `max
     benchmark --help` or see the [benchmarking script source
-    code](https://github.com/modular/modular/tree/main/benchmark).
+    code](https://github.com/modular/modular/tree/main/max/python/max/benchmark).
 
     - Backend configuration:
 
@@ -221,7 +223,7 @@
     ```
 
     For more config file examples, see our [benchmark configs on
-    GitHub](https://github.com/modular/modular/tree/main/benchmark/configs).
+    GitHub](https://github.com/modular/modular/tree/main/max/python/max/benchmark/configs).
 
     For a walkthrough of setting up an endpoint and running a benchmark, see the
     [quickstart guide](/max/get-started).

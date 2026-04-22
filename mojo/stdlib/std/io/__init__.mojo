@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2024, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,7 +24,7 @@ use `print()` and file operations from this package, while library authors
 implement `Writable` to enable their types to work with any `Writer`.
 """
 
-from format import Writable, Writer
+from std.format import Writable, Writer
 from .file import FileHandle
 from .file_descriptor import FileDescriptor
 from .io import input, print

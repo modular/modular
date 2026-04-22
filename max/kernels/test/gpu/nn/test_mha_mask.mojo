@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,27 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from std.sys.info import CompilationTarget
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
-from sys.info import CompilationTarget
-
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from nn.mha_mask import (
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from nn.attention.mha_mask import (
     AndMask,
     CausalMask,
     NullMask,
     SlidingWindowCausalMask,
     TileMaskStatus,
 )
-from testing import assert_equal, assert_true
+from std.testing import assert_equal, assert_true
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
-def test_causal_mask():
+def test_causal_mask() raises:
     comptime type = DType.int32
 
     print("test_causal_mask")
@@ -41,7 +38,9 @@ def test_causal_mask():
     # TODO(KERN-782): should be -inf but softmax saturates with NaNs.
     var mask_val = -10000
     var masked_vec = mask.mask(Index(0, 0, 4, 3), SIMD[type, 4](0, 1, 2, 3))
-    assert_equal(masked_vec, SIMD[type, 4](0, 1, mask_val, mask_val))
+    assert_equal(
+        masked_vec, SIMD[type, 4](0, 1, Int32(mask_val), Int32(mask_val))
+    )
 
     masked_vec = mask.mask(Index(0, 0, 4, 0), SIMD[type, 4](0, 1, 2, 3))
     assert_equal(masked_vec, SIMD[type, 4](0, 1, 2, 3))
@@ -75,23 +74,25 @@ def test_causal_mask():
     )
 
 
-def test_causal_mask_asm():
+def test_causal_mask_asm() raises:
     """Verify mask comparison is not in 64 bits."""
 
     print("== test_causal_mask_asm")
 
-    fn kernel(q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32]):
+    def kernel(
+        q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32, MutAnyOrigin]
+    ):
         var mask = CausalMask()
         var vec = mask.mask(
-            IndexList[4, element_type = DType.uint32](
+            IndexList[4, element_type=DType.uint32](
                 0, 0, Int(q_idx), Int(k_idx)
             ),
             SIMD[DType.float32, 4](0),
         )
         if (
             mask.status(
-                Index[dtype = DType.uint32](q_idx, k_idx),
-                Index[dtype = DType.uint32](4, 5),
+                Index[dtype=DType.uint32](q_idx, k_idx),
+                Index[dtype=DType.uint32](4, 5),
             )
             == TileMaskStatus.PARTIAL_MASK
         ):
@@ -99,23 +100,22 @@ def test_causal_mask_asm():
 
         x[0] = vec[2]
 
-    var asm = _compile_code[kernel, target = get_gpu_target()]().asm
+    var asm = _compile_code[kernel, target=get_gpu_target()]().asm
     print(asm)
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         assert_true("setp.lt.u64" not in asm)
         assert_true("setp.lt.s64" not in asm)
     elif has_amd_gpu_accelerator():
         assert_true("s_cselect_b64" in asm)
         assert_true("v_cndmask_b32_e64" in asm)
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
         ]()
 
 
-def test_and_mask():
+def test_and_mask() raises:
     comptime type = DType.int32
 
     print("test_and_mask")
@@ -144,15 +144,13 @@ def test_and_mask():
         mask2.status(Index(64, 384), Index(64, 128))
         == TileMaskStatus.FULL_MASK,
         msg=String(
-            "lhs = ",
-            mask2.status(Index(0, 0), Index(0, 0)),
-            " rhs = ",
-            TileMaskStatus.FULL_MASK,
+            t"lhs = {mask2.status(Index(0, 0), Index(0, 0))} rhs ="
+            t" {TileMaskStatus.FULL_MASK}"
         ),
     )
 
 
-def test_sliding_window_causal_mask():
+def test_sliding_window_causal_mask() raises:
     print("test_sliding_window_causal_mask")
 
     comptime mask = SlidingWindowCausalMask[3]()
@@ -162,22 +160,12 @@ def test_sliding_window_causal_mask():
         offset: IndexList[2, ...],
         size: type_of(offset),
         expected: TileMaskStatus,
-    ):
+    ) raises:
         var status = mask.status(offset, size)
         assert_equal(
             status,
             expected,
-            msg=String(
-                "  ",
-                offset,
-                ", ",
-                size,
-                " > ",
-                status,
-                " (expected: ",
-                expected,
-                ")",
-            ),
+            msg=String(t"  {offset}, {size} > {status} (expected: {expected})"),
         )
 
         # K > 0 1 2 3 4 5 6 7 8
@@ -204,23 +192,25 @@ def test_sliding_window_causal_mask():
     check_status(Index(1, 4), Index(3, 2), TileMaskStatus.FULL_MASK)
 
 
-def test_sliding_window_causal_mask_asm():
+def test_sliding_window_causal_mask_asm() raises:
     """Verify mask comparison is not in 64 bits."""
 
     print("== test_sliding_window_causal_mask_asm")
 
-    fn kernel(q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32]):
+    def kernel(
+        q_idx: UInt32, k_idx: UInt32, x: UnsafePointer[Float32, MutAnyOrigin]
+    ):
         var mask = SlidingWindowCausalMask[8]()
         var vec = mask.mask(
-            IndexList[4, element_type = DType.uint32](
+            IndexList[4, element_type=DType.uint32](
                 0, 0, Int(q_idx), Int(k_idx)
             ),
             SIMD[DType.float32, 4](0),
         )
         if (
             mask.status(
-                Index[dtype = DType.uint32](q_idx, k_idx),
-                Index[dtype = DType.uint32](64, 32),
+                Index[dtype=DType.uint32](q_idx, k_idx),
+                Index[dtype=DType.uint32](64, 32),
             )
             == TileMaskStatus.PARTIAL_MASK
         ):
@@ -228,11 +218,10 @@ def test_sliding_window_causal_mask_asm():
 
         x[0] = vec[2]
 
-    var asm = _compile_code[kernel, target = get_gpu_target()]().asm
+    var asm = _compile_code[kernel, target=get_gpu_target()]().asm
     print(asm)
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
+    comptime if has_nvidia_gpu_accelerator():
         assert_true("setp.lt.u64" not in asm)
         assert_true("setp.lt.s64" not in asm)
     elif has_amd_gpu_accelerator():
@@ -240,12 +229,12 @@ def test_sliding_window_causal_mask_asm():
         assert_true("s_cselect_b64" in asm)
         assert_true("v_cndmask_b32_e64" in asm)
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
         ]()
 
 
-def main():
+def main() raises:
     test_causal_mask()
     test_causal_mask_asm()
     test_and_mask()

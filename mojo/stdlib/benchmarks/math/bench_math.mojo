@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import *
-from random import *
+from std.math import *
+from std.random import *
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
@@ -22,7 +22,7 @@ from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 comptime input_type = Float32
 
 
-fn make_inputs(
+def make_inputs(
     begin: input_type, end: input_type, num: input_type
 ) -> List[input_type]:
     if num == 1:
@@ -36,7 +36,7 @@ fn make_inputs(
     return result^
 
 
-fn make_int_inputs(begin: Int, end: Int, num: Int) -> List[Int]:
+def make_int_inputs(begin: Int, end: Int, num: Int) -> List[Int]:
     if num == 1:
         return [begin]
 
@@ -54,8 +54,8 @@ fn make_int_inputs(begin: Int, end: Int, num: Int) -> List[Int]:
 
 
 @parameter
-fn bench_math[
-    math_f1p: fn[dtype: DType, size: Int] (SIMD[dtype, size]) -> SIMD[
+def bench_math[
+    math_f1p: def[dtype: DType, size: Int](SIMD[dtype, size]) thin -> SIMD[
         dtype, size
     ]
 ](mut b: Bencher) raises:
@@ -63,7 +63,7 @@ fn bench_math[
 
     @always_inline
     @parameter
-    fn call_fn() raises:
+    def call_fn() raises:
         for input in inputs:
             var result = math_f1p(input)
             keep(result)
@@ -77,16 +77,16 @@ fn bench_math[
 # Benchmark fma
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_math3[
-    math_f3p: fn[dtype: DType, size: Int] (
+def bench_math3[
+    math_f3p: def[dtype: DType, size: Int](
         SIMD[dtype, size], SIMD[dtype, size], SIMD[dtype, size]
-    ) -> SIMD[dtype, size]
+    ) thin -> SIMD[dtype, size]
 ](mut b: Bencher) raises:
     var inputs = make_inputs(0, 10_000, 1_000_000)
 
     @always_inline
     @parameter
-    fn call_fn() raises:
+    def call_fn() raises:
         for input in inputs:
             var result = math_f3p(input, input, input)
             keep(result)
@@ -100,14 +100,16 @@ fn bench_math3[
 # Benchmark lcm/gcd
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_math2[math_f2p: fn (Int, Int, /) -> Int](mut b: Bencher) raises:
+def bench_math2[math_f2p: def(Int, Int, /) thin -> Int](mut b: Bencher) raises:
     var int_inputs = make_int_inputs(0, 10_000_000, 1_000_000)
 
     @always_inline
     @parameter
-    fn call_fn() raises:
+    def call_fn() raises:
         for i, input_val in enumerate(List(int_inputs[: len(int_inputs) // 2])):
-            var result = keep(math_f2p(input_val, int_inputs[-(i + 1)]))
+            var result = keep(
+                math_f2p(input_val, int_inputs[len(int_inputs) - (i + 1)])
+            )
             keep(result)
 
     b.iter[call_fn]()
@@ -118,7 +120,7 @@ fn bench_math2[math_f2p: fn (Int, Int, /) -> Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     seed()
     var m = Bench(BenchConfig(num_repetitions=1))
     m.bench_function[bench_math[sin]](BenchId("bench_math_sin"))

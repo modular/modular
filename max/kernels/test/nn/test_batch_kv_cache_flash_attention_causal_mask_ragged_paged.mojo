@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from math import ceildiv, rsqrt
-from random import random_ui64, seed
+from std.collections import Set
+from std.math import ceildiv, rsqrt
+from std.random import random_ui64, seed
 
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -22,13 +22,13 @@ from kv_cache.types import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from memory import alloc, memcpy
-from nn.flash_attention import flash_attention_kv_cache
-from nn.mha_mask import CausalMask
-from testing import assert_almost_equal
-from sys import size_of
+from std.memory import alloc, memcpy
+from nn.attention.cpu.mha import flash_attention_kv_cache
+from nn.attention.mha_mask import CausalMask
+from std.testing import assert_almost_equal
+from std.sys import size_of
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime replit_num_q_heads = 24
@@ -45,7 +45,7 @@ def execute_ragged_flash_attention[
     cache_lengths: List[Int],
     num_layers: Int,
     layer_idx: Int,
-):
+) raises:
     comptime num_continuous_blocks = 32
     comptime page_size = 512
     comptime num_paged_blocks = 512
@@ -58,10 +58,9 @@ def execute_ragged_flash_attention[
         num_continuous_blocks,
         ")",
     )
-    debug_assert(
-        len(valid_lengths) == len(cache_lengths),
-        "expected valid_lengths and cache_lengths size to be equal",
-    )
+    assert len(valid_lengths) == len(
+        cache_lengths
+    ), "expected valid_lengths and cache_lengths size to be equal"
 
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     var input_row_offsets_heap = alloc[Scalar[DType.uint32]](batch_size + 1)
@@ -79,44 +78,44 @@ def execute_ragged_flash_attention[
     var max_full_context_length = 0
     var max_prompt_length = 0
     for i in range(batch_size):
-        input_row_offsets[i] = total_length
-        cache_lengths_nd[i] = cache_lengths[i]
+        input_row_offsets[i] = UInt32(total_length)
+        cache_lengths_nd[i] = UInt32(cache_lengths[i])
         max_full_context_length = max(
             max_full_context_length, cache_lengths[i] + valid_lengths[i]
         )
         max_prompt_length = max(max_prompt_length, valid_lengths[i])
         total_length += valid_lengths[i]
-    input_row_offsets[batch_size] = total_length
+    input_row_offsets[batch_size] = UInt32(total_length)
 
     comptime layout_3d = Layout.row_major[3]()
     var q_ragged_heap = alloc[Scalar[dtype]](
-        total_length * num_q_heads * Int(kv_params.head_size)
+        total_length * num_q_heads * kv_params.head_size
     )
     var q_ragged = LayoutTensor[dtype, layout_3d](
         q_ragged_heap,
         RuntimeLayout[layout_3d].row_major(
-            IndexList[3](total_length, num_q_heads, Int(kv_params.head_size))
+            IndexList[3](total_length, num_q_heads, kv_params.head_size)
         ),
     )
     random(q_ragged)
 
     # initialize reference output
     var test_output_heap = alloc[Scalar[dtype]](
-        total_length * num_q_heads * Int(kv_params.head_size)
+        total_length * num_q_heads * kv_params.head_size
     )
     var test_output = LayoutTensor[dtype, layout_3d](
         test_output_heap,
         RuntimeLayout[layout_3d].row_major(
-            IndexList[3](total_length, num_q_heads, Int(kv_params.head_size))
+            IndexList[3](total_length, num_q_heads, kv_params.head_size)
         ),
     ).fill(0)
     var ref_output_heap = alloc[Scalar[dtype]](
-        total_length * num_q_heads * Int(kv_params.head_size)
+        total_length * num_q_heads * kv_params.head_size
     )
     var ref_output = LayoutTensor[dtype, layout_3d](
         ref_output_heap,
         RuntimeLayout[layout_3d].row_major(
-            IndexList[3](total_length, num_q_heads, Int(kv_params.head_size))
+            IndexList[3](total_length, num_q_heads, kv_params.head_size)
         ),
     ).fill(0)
 
@@ -126,8 +125,8 @@ def execute_ragged_flash_attention[
         2,
         num_layers,
         max_seq_len_cache,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_heap = alloc[Scalar[dtype]](block_shape.flattened_length())
     kv_block_continuous = LayoutTensor[dtype, Layout.row_major[6]()](
@@ -188,8 +187,8 @@ def execute_ragged_flash_attention[
                 lookup_table_continuous.runtime_layout.stride.value,
             ),
         ),
-        max_prompt_length,
-        max_full_context_length,
+        UInt32(max_prompt_length),
+        UInt32(max_full_context_length),
     )
 
     kv_block_paged_heap = alloc[Scalar[dtype]](
@@ -197,8 +196,8 @@ def execute_ragged_flash_attention[
         * 2
         * num_layers
         * page_size
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
     var kv_block_paged = LayoutTensor[dtype, Layout.row_major[6]()](
         kv_block_paged_heap,
@@ -208,8 +207,8 @@ def execute_ragged_flash_attention[
                 2,
                 num_layers,
                 page_size,
-                Int(kv_params.num_heads),
-                Int(kv_params.head_size),
+                kv_params.num_heads,
+                kv_params.head_size,
             ),
         ),
     )
@@ -236,7 +235,7 @@ def execute_ragged_flash_attention[
                 randval = Int(random_ui64(0, num_paged_blocks - 1))
 
             paged_lut_set.add(randval)
-            paged_lut[bs, block_idx] = randval
+            paged_lut[bs, block_idx] = UInt32(randval)
 
             for kv_idx in range(2):
                 var dest = kv_block_paged.ptr + kv_block_paged._offset(
@@ -252,25 +251,20 @@ def execute_ragged_flash_attention[
                         0,
                     )
                 )
-                var dest_byte_offset = UInt(Int(dest)) - UInt(
-                    Int(kv_block_paged.ptr)
+                var dest_byte_offset = Int(dest) - Int(kv_block_paged.ptr)
+                var src_byte_offset = Int(src) - Int(kv_block_continuous.ptr)
+                var dest_len = (
+                    kv_block_paged.size() * size_of[kv_block_paged.dtype]()
+                    - dest_byte_offset
                 )
-                var src_byte_offset = UInt(Int(src)) - UInt(
-                    Int(kv_block_continuous.ptr)
-                )
-                var dest_len = kv_block_paged.size() * size_of[
-                    kv_block_paged.dtype
-                ]() - Int(dest_byte_offset)
-                var src_len = kv_block_continuous.size() - Int(src_byte_offset)
+                var src_len = kv_block_continuous.size() - src_byte_offset
                 memcpy(
                     dest=dest,
                     src=src,
                     count=min(
                         dest_len // size_of[dest.type](),
                         src_len // size_of[src.type](),
-                        page_size
-                        * Int(kv_params.num_heads)
-                        * Int(kv_params.head_size),
+                        page_size * kv_params.num_heads * kv_params.head_size,
                     ),
                 )
 
@@ -298,8 +292,8 @@ def execute_ragged_flash_attention[
                 paged_lut.runtime_layout.stride.value,
             ),
         ),
-        max_prompt_length,
-        max_full_context_length,
+        UInt32(max_prompt_length),
+        UInt32(max_full_context_length),
     )
 
     # continuous execution
@@ -338,8 +332,8 @@ def execute_ragged_flash_attention[
                 for hd in range(kv_params.head_size):
                     try:
                         assert_almost_equal(
-                            ref_out[ragged_offset + s, h, Int(hd)][0],
-                            test_out[ragged_offset + s, h, Int(hd)][0],
+                            ref_out[ragged_offset + s, h, hd][0],
+                            test_out[ragged_offset + s, h, hd][0],
                             atol=1e-2,
                         )
                     except e:
@@ -349,8 +343,8 @@ def execute_ragged_flash_attention[
                             s,
                             h,
                             hd,
-                            ref_out[ragged_offset + s, h, Int(hd)][0],
-                            test_out[ragged_offset + s, h, Int(hd)][0],
+                            ref_out[ragged_offset + s, h, hd][0],
+                            test_out[ragged_offset + s, h, hd][0],
                         )
                         raise e^
 
@@ -368,7 +362,7 @@ def execute_ragged_flash_attention[
 comptime dtype = DType.float32
 
 
-def execute_flash_attention_suite():
+def execute_flash_attention_suite() raises:
     for bs in [1, 16]:
         ce_cache_sizes = List[Int]()
         ce_seq_lens = List[Int]()
@@ -398,6 +392,6 @@ def execute_flash_attention_suite():
     )
 
 
-def main():
+def main() raises:
     seed(42)
     execute_flash_attention_suite()

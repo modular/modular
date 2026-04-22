@@ -1,5 +1,5 @@
 ##===----------------------------------------------------------------------===##
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,9 +18,9 @@ on:
   workflow_dispatch:
   push:
     branches:
-    - main
+      - main
     paths:
-    - "bazel/mojo.MODULE.bazel"
+      - "bazel/mojo.MODULE.bazel"
 
 permissions:
   contents: read
@@ -65,8 +65,11 @@ jobs:
             )
           fi
 
+          # Print CPU info for debugging purposes
+          lscpu || true
+
           # NOTE: Skip the buildbuddy sidecar on linux where the machine is too small.
           # TODO: Remove this once upstream has fixed the issue.
-          BB_DISABLE_SIDECAR=1 ./bazelw test --config=ci --config=public-cache "${args[@]}" --build_tag_filters=-skip-external-ci-${{ matrix.os }},-requires-network --test_tag_filters=-skip-external-ci-${{ matrix.os }},-requires-network -- //...
+          BB_DISABLE_SIDECAR=1 ./bazelw test --config=ci --config=public-cache "${args[@]}" --build_tag_filters=-skip-external-ci,-requires-network --test_tag_filters=-skip-external-ci,-requires-network -- //...
         env:
           BUILDBUDDY_TOKEN: ${{ secrets.BUILDBUDDY_TOKEN }}

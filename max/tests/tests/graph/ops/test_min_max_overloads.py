@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -110,7 +110,7 @@ def test_min_fail__y_and_axis_provided(
     with graph_builder(input_types=input_types) as graph:
         x, y = graph.inputs
         with pytest.raises(ValueError):
-            result = ops.min(x, y, axis=axis)
+            ops.min(x, y, axis=axis)
 
 
 @example(
@@ -129,4 +129,4 @@ def test_max_fail__y_and_axis_provided(
     with graph_builder(input_types=input_types) as graph:
         x, y = graph.inputs
         with pytest.raises(ValueError):
-            result = ops.max(x, y, axis=axis)
+            ops.max(x, y, axis=axis)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .causal_attention_mask import causal_attention_mask
-from .causal_attention_mask_with_alibi import causal_attention_mask_with_alibi
+from .causal_attention_mask import (
+    causal_attention_mask,
+    causal_attention_mask_with_token_mask,
+)
 from .collate_batch import (
     PaddingDirection,
     batch_padded_tokens_and_mask,
@@ -24,7 +26,7 @@ __all__ = [
     "PaddingDirection",
     "batch_padded_tokens_and_mask",
     "causal_attention_mask",
-    "causal_attention_mask_with_alibi",
+    "causal_attention_mask_with_token_mask",
     "collate_batch",
     "max_tokens_to_generate",
 ]

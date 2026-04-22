@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,68 +11,36 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.intrinsics import prefetch
+from std.sys.intrinsics import prefetch
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_true
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.testing import assert_true
 
 
-fn do_prefetch[
+def do_prefetch[
     dtype: DType, *, offset: Int = 0
-](addr: UnsafePointer[Scalar[dtype]]):
+](addr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin]):
     prefetch(addr + offset)
 
 
-def test_prefetch_mi300x():
-    assert_true(
-        "llvm.prefetch "
-        in _compile_code[
-            do_prefetch[DType.float16], target = get_gpu_target["mi300x"]()
-        ]()
-    )
-    assert_true(
-        "llvm.prefetch "
-        in _compile_code[
-            do_prefetch[DType.float32], target = get_gpu_target["mi300x"]()
-        ]()
-    )
-    assert_true(
-        "llvm.prefetch "
-        in _compile_code[
-            do_prefetch[DType.int32], target = get_gpu_target["mi300x"]()
-        ]()
-    )
-
-    assert_true(
-        "llvm.prefetch "
-        in _compile_code[
-            do_prefetch[DType.int64, offset=42],
-            target = get_gpu_target["mi300x"](),
-        ]()
-    )
-
-
-def test_prefetch_nvidia():
+def test_prefetch_nvidia() raises:
     assert_true(
         "prefetch.global.L2 "
         in _compile_code[
-            do_prefetch[DType.float16], target = get_gpu_target["sm_80"]()
+            do_prefetch[DType.float16], target=get_gpu_target["sm_80"]()
         ]()
     )
     assert_true(
         "prefetch.global.L2 "
         in _compile_code[
-            do_prefetch[DType.float32], target = get_gpu_target["sm_80"]()
+            do_prefetch[DType.float32], target=get_gpu_target["sm_80"]()
         ]()
     )
     assert_true(
         "prefetch.global.L2 "
         in _compile_code[
-            do_prefetch[DType.int32], target = get_gpu_target["sm_80"]()
+            do_prefetch[DType.int32], target=get_gpu_target["sm_80"]()
         ]()
     )
 
@@ -80,10 +48,10 @@ def test_prefetch_nvidia():
         "prefetch.global.L2 "
         in _compile_code[
             do_prefetch[DType.int64, offset=42],
-            target = get_gpu_target["sm_80"](),
+            target=get_gpu_target["sm_80"](),
         ]()
     )
 
 
-def main():
+def main() raises:
     test_prefetch_nvidia()

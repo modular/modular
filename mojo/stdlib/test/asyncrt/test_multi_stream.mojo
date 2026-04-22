@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,30 +12,30 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from gpu import *
-from gpu.host import DeviceContext
-from testing import TestSuite, assert_equal
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
+from std.testing import TestSuite, assert_equal
 
 
-fn vec_func(
+def vec_func(
     in0: UnsafePointer[Float32, MutAnyOrigin],
     in1: UnsafePointer[Float32, MutAnyOrigin],
     output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = in0[tid] + in1[tid]
 
 
-def test_concurrent_copy():
+def test_concurrent_copy() raises:
     var ctx1 = create_test_device_context()
     var ctx2 = create_test_device_context()
     _run_test_concurrent_copy(ctx1, ctx2)
 
 
-fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
+def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     comptime length = 1 * 1024 * 1024
     comptime T = DType.float32
 
@@ -47,9 +47,9 @@ fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     with in0_dev1.map_to_host() as in_host1, in0_dev2.map_to_host() as in_host2, in0_dev3.map_to_host() as in_host3:
         for i in range(length):
             var index = i % 2048
-            in_host1[i] = index
-            in_host2[i] = 2 * index
-            in_host3[i] = 3 * index
+            in_host1[i] = Float32(index)
+            in_host2[i] = Float32(2 * index)
+            in_host3[i] = Float32(3 * index)
 
     # Initialize the fixed (right) inputs.
     in1_dev1 = ctx1.enqueue_create_buffer[T](length)
@@ -133,7 +133,7 @@ fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
             print("at index", i, "the value is", out_host3[i])
         assert_equal(
             out_host1[i],
-            Float32(index + 1.0),
+            Float32(Float64(index) + 1.0),
             String(
                 "out_host1[",
                 i,
@@ -143,7 +143,7 @@ fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         )
         assert_equal(
             out_host2[i],
-            Float32(2.0 * index + 2.0),
+            Float32(2.0 * Float64(index) + 2.0),
             String(
                 "out_host2[",
                 i,
@@ -153,7 +153,7 @@ fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         )
         assert_equal(
             out_host3[i],
-            Float32(3.0 * index + 3.0),
+            Float32(3.0 * Float64(index) + 3.0),
             String(
                 "out_host3[",
                 i,
@@ -163,13 +163,13 @@ fn _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         )
 
 
-def test_concurrent_func():
+def test_concurrent_func() raises:
     var ctx1 = create_test_device_context()
     var ctx2 = create_test_device_context()
     _run_test_concurrent_func(ctx1, ctx2)
 
 
-fn _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
+def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     comptime length = 20 * 1024 * 1024
     comptime T = DType.float32
 
@@ -180,9 +180,9 @@ fn _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     with in_dev1.map_to_host() as in_host1, in_dev2.map_to_host() as in_host2, in_dev3.map_to_host() as in_host3:
         for i in range(length):
             var index = i % 2048
-            in_host1[i] = index
-            in_host2[i] = 2 * index
-            in_host3[i] = 3 * index
+            in_host1[i] = Float32(index)
+            in_host2[i] = Float32(2 * index)
+            in_host3[i] = Float32(3 * index)
 
     # Initialize the fixed (right) inputs.
     var in_dev4 = ctx1.enqueue_create_buffer[T](length)
@@ -295,7 +295,7 @@ fn _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         )
 
 
-def main():
+def main() raises:
     # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
     # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()

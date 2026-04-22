@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import exp
+from std.math import exp
 
 from layout import Layout, LayoutTensor, stack_allocation_like
 from layout._fillers import arange
@@ -19,11 +19,11 @@ from layout.math import max, sum
 
 
 # CHECK-LABEL: test_reduce_sum
-fn test_reduce_sum():
+def test_reduce_sum():
     print("== test_reduce_sum")
 
     # this also tests that ops works for abstract types
-    fn test_reduce_sum_impl(tensor: LayoutTensor[mut=True, ...]):
+    def test_reduce_sum_impl(tensor: LayoutTensor[mut=True, ...]):
         arange(tensor)
         # CHECK: 6.0
         # CHECK: 22.0
@@ -46,10 +46,10 @@ fn test_reduce_sum():
 
 
 # CHECK-LABEL: test_reduce_max
-fn test_reduce_max():
+def test_reduce_max():
     print("== test_reduce_max")
 
-    fn test_reduce_max_impl(tensor: LayoutTensor[mut=True, ...]):
+    def test_reduce_max_impl(tensor: LayoutTensor[mut=True, ...]):
         arange(tensor)
         var tensor_4_0 = max[axis=0](tensor)
         # CHECK: 12.0
@@ -73,7 +73,7 @@ fn test_reduce_max():
 
 
 # CHECK-LABEL: test_reduce_res_allocated
-fn test_reduce_res_allocated():
+def test_reduce_res_allocated():
     print("== test_reduce_res_allocated")
     var tensor_4x4_storage = InlineArray[Float32, 4 * 4](uninitialized=True)
     var tensor_4x4 = LayoutTensor[DType.float32, Layout.row_major(4, 4)](
@@ -93,7 +93,7 @@ fn test_reduce_res_allocated():
 
 
 # CHECK-LABEL: test_exp
-fn test_exp():
+def test_exp():
     print("== test_exp")
     var tensor_4x4_storage = InlineArray[Float32, 4 * 4](uninitialized=True)
     var tensor_4x4 = LayoutTensor[DType.float32, Layout.row_major(4, 4)](
@@ -108,7 +108,7 @@ fn test_exp():
 
 
 # CHECK-LABEL: test_unary_scalar
-fn test_unary_scalar():
+def test_unary_scalar():
     print("== test_unary_scalar")
     var tensor_4x4_storage = InlineArray[Float32, 4 * 4](uninitialized=True)
     var tensor_4x4 = LayoutTensor[DType.float32, Layout.row_major(4, 4)](
@@ -184,7 +184,7 @@ fn test_unary_scalar():
 
 
 # CHECK-LABEL: test_binary_same_rank
-fn test_binary_same_rank():
+def test_binary_same_rank():
     print("== test_binary_same_rank")
     var tensor_4x5_storage = InlineArray[Float32, 4 * 5](uninitialized=True)
     var tensor_4x5 = LayoutTensor[DType.float32, Layout.row_major(4, 5)](
@@ -243,7 +243,7 @@ fn test_binary_same_rank():
 
 
 # CHECK-LABEL: test_binary_broadcast_inner
-fn test_binary_broadcast_inner():
+def test_binary_broadcast_inner():
     print("== test_binary_broadcast_inner")
     var tensor_4x5_storage = InlineArray[Float32, 4 * 5](uninitialized=True)
     var tensor_4x5 = LayoutTensor[DType.float32, Layout.row_major(4, 5)](
@@ -270,7 +270,7 @@ fn test_binary_broadcast_inner():
 
 
 # CHECK-LABEL: test_softmax_math
-fn test_softmax_math():
+def test_softmax_math():
     print("== test_softmax_math")
     var tensor_5x4 = LayoutTensor[
         DType.float32, Layout.row_major(5, 4), MutAnyOrigin
@@ -289,7 +289,7 @@ fn test_softmax_math():
 
 
 # CHECK: test_max_elemntwise
-fn test_max_elemntwise():
+def test_max_elemntwise():
     print("== test_max_elemntwise")
     var tensor_4x4_a = LayoutTensor[
         DType.float32, Layout.row_major(4, 4), MutAnyOrigin
@@ -309,7 +309,7 @@ fn test_max_elemntwise():
     print(max(tensor_4x4_a, tensor_4x4_b))
 
 
-fn main():
+def main():
     test_reduce_sum()
     test_reduce_max()
     test_reduce_res_allocated()

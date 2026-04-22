@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,26 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from linalg.fp4_quantization import (
     block_scales_interleave_fp4,
 )
-from testing import assert_equal
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from std.testing import assert_equal
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE, lt_to_tt
 from layout._fillers import random
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
     SF_MN_GROUP_SIZE,
+    MXFP4_SF_VECTOR_SIZE,
+    MXFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
     NVFP4_SF_DTYPE,
     get_scale_factor,
 )
-from math import ceildiv, align_up
-from utils import IndexList
+from std.math import ceildiv, align_up
+from std.utils import IndexList
 
 
-fn test_block_scales_interleave_fp4[
+def test_block_scales_interleave_fp4[
     scales_dtype: DType,
     SF_VECTOR_SIZE: Int,
     M: Optional[Int],
@@ -94,8 +96,8 @@ fn test_block_scales_interleave_fp4[
 
     block_scales_interleave_fp4[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
         ctx,
-        input_scales_tensor.as_any_origin(),
-        output_scales_tensor.as_any_origin(),
+        lt_to_tt(input_scales_tensor).as_any_origin(),
+        lt_to_tt(output_scales_tensor).as_any_origin(),
     )
 
     ctx.synchronize()
@@ -128,28 +130,51 @@ fn test_block_scales_interleave_fp4[
                             swizzled_sf.cast[DType.float64](),
                         )
                     else:
+                        # Compare against the dtype's stored zero representation
+                        # instead of raw Float64(0.0). MXFP4's E8M0 scale format
+                        # round-trips a different exact bit pattern here.
+                        var zero_sf = Scalar[scales_dtype](0.0)
                         assert_equal(
-                            Float64(0.0), swizzled_sf.cast[DType.float64]()
+                            zero_sf.cast[DType.float64](),
+                            swizzled_sf.cast[DType.float64](),
                         )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N = Int(4)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(4)
         ](ctx, 128, 4)
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N = Int(4)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(4)
         ](ctx, 129, 4)
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N = Int(5)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(5)
         ](ctx, 129, 5)
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N = Int(1024)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(1024)
         ](ctx, 1024, 1024)
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N = Int(3328)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(3328)
         ](ctx, 16384, 3328)
         test_block_scales_interleave_fp4[
-            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N = Int(1024)
+            NVFP4_SF_DTYPE, NVFP4_SF_VECTOR_SIZE, M=None, N=Int(1024)
+        ](ctx, 53248, 1024)
+        test_block_scales_interleave_fp4[
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(4)
+        ](ctx, 128, 4)
+        test_block_scales_interleave_fp4[
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(4)
+        ](ctx, 129, 4)
+        test_block_scales_interleave_fp4[
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(5)
+        ](ctx, 129, 5)
+        test_block_scales_interleave_fp4[
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(1024)
+        ](ctx, 1024, 1024)
+        test_block_scales_interleave_fp4[
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(3328)
+        ](ctx, 16384, 3328)
+        test_block_scales_interleave_fp4[
+            MXFP4_SF_DTYPE, MXFP4_SF_VECTOR_SIZE, M=None, N=Int(1024)
         ](ctx, 53248, 1024)

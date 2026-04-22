@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,13 +15,14 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import Deque
-from collections.deque import _DequeIter
-from collections.dict import _DictEntryIter, _DictKeyIter, _DictValueIter
-from collections.list import _ListIter
-from hashlib import Hasher
+from std.collections import Deque
+from std.collections.deque import _DequeIter
+from std.collections.dict import _DictEntryIter, _DictKeyIter, _DictValueIter
+from std.collections.list import _ListIter
+from std.collections.inline_array import _InlineArrayIter
+from std.hashlib import Hasher
 
-from memory.span import Span, _SpanIter
+from std.memory.span import Span, _SpanIter
 
 from .range import _StridedRange
 
@@ -47,7 +48,7 @@ trait ReversibleRange:
     # iterators currently check __len__() instead of raising an exception
     # so there is no ReversibleRaising trait yet.
 
-    fn __reversed__(self) -> _StridedRange:
+    def __reversed__(self) -> _StridedRange:
         """Get a reversed iterator for the type.
 
         **Note**: iterators are currently non-raising.
@@ -63,7 +64,7 @@ trait ReversibleRange:
 # ===----------------------------------------------------------------------=== #
 
 
-fn reversed[T: ReversibleRange](value: T) -> _StridedRange:
+def reversed[T: ReversibleRange](value: T) -> _StridedRange:
     """Get a reversed iterator of the input range.
 
     **Note**: iterators are currently non-raising.
@@ -80,7 +81,7 @@ fn reversed[T: ReversibleRange](value: T) -> _StridedRange:
     return value.__reversed__()
 
 
-fn reversed[
+def reversed[
     T: Copyable
 ](ref value: List[T, ...]) -> _ListIter[T, origin_of(value), False]:
     """Get a reversed iterator of the input list.
@@ -99,7 +100,29 @@ fn reversed[
     return value.__reversed__()
 
 
-fn reversed[
+def reversed[
+    T: Copyable, size: Int
+](ref value: InlineArray[T, size]) -> _InlineArrayIter[
+    T, size, origin_of(value), False
+]:
+    """Get a reversed iterator of the input array.
+
+    **Note**: iterators are currently non-raising.
+
+    Parameters:
+        T: The type of the elements in the array.
+        size: The size of the array.
+
+    Args:
+        value: The array to get the reversed iterator of.
+
+    Returns:
+        The reversed iterator of the array.
+    """
+    return value.__reversed__()
+
+
+def reversed[
     T: Copyable & ImplicitlyDestructible
 ](ref value: Deque[T]) -> _DequeIter[T, origin_of(value), False]:
     """Get a reversed iterator of the deque.
@@ -118,7 +141,7 @@ fn reversed[
     return value.__reversed__()
 
 
-fn reversed[
+def reversed[
     K: KeyElement,
     V: Copyable & ImplicitlyDestructible,
     H: Hasher,
@@ -141,7 +164,7 @@ fn reversed[
     return value.__reversed__()
 
 
-fn reversed[
+def reversed[
     dict_mutability: Bool,
     //,
     K: KeyElement,
@@ -171,7 +194,7 @@ fn reversed[
     return value.__reversed__()
 
 
-fn reversed[
+def reversed[
     dict_mutability: Bool,
     //,
     K: KeyElement,
@@ -200,14 +223,14 @@ fn reversed[
     """
     var src = value.src
     return _DictEntryIter[K, V, H, dict_origin, False](
-        src[]._reserved() - 1, 0, src
+        len(src[]._order) - 1, 0, src
     )
 
 
 @always_inline
-fn reversed[
+def reversed[
     T: Copyable
-](value: Span[T]) -> _SpanIter[T, value.origin, forward=False]:
+](value: Span[T, _]) -> _SpanIter[T, value.origin, forward=False]:
     """Get a reversed iterator of the input Span.
 
     **Note**: iterators are currently non-raising.
@@ -221,4 +244,6 @@ fn reversed[
     Returns:
         The reversed iterator of the Span.
     """
-    return value.__reversed__()
+    return rebind[_SpanIter[T, value.origin, forward=False]](
+        value.__reversed__()
+    )

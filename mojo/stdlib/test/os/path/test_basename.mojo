@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path import basename
-from pathlib import Path
+from std.os.path import basename
+from std.pathlib import Path
 
-from reflection import source_location
-from testing import TestSuite, assert_equal
+from std.reflection import source_location
+from std.testing import TestSuite, assert_equal
 
 
-def test_basename():
+def test_basename() raises:
     # Root directories
     assert_equal("", basename("/"))
 
@@ -78,11 +78,11 @@ def test_basename():
     assert_equal(".hiddenfile", basename("/path/to/.hiddenfile"))
     assert_equal(".hiddenfile", basename("/path/to/dir/.hiddenfile"))
 
-    assert_equal("test_basename.mojo", basename(source_location().file_name))
+    assert_equal("test_basename.mojo", basename(source_location().file_name()))
     assert_equal(
         "some_file.txt", basename(Path.home() / "dir" / "some_file.txt")
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .._mlir._mlir_libs._mlir.ir import (  # type: ignore[attr-defined]
+from .._mlir._mlir_libs._mlir.ir import (
     ArrayAttr,
     Attribute,
     Block,
@@ -24,8 +24,6 @@ from .._mlir._mlir_libs._mlir.ir import (  # type: ignore[attr-defined]
     InsertionPoint,
     IntegerAttr,
     Location,
-    # This one is super strange: It's not actually defined (in the stubfiles)
-    # but importing not only works, but other things fail without it.
     MLIRError,
     Module,
     Operation,

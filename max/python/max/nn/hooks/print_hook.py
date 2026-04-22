@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,6 +20,8 @@ from collections import deque
 from collections.abc import Generator
 from typing import Any
 
+from max.experimental.nn import Module as ModuleV3
+from max.experimental.tensor import Tensor
 from max.graph import TensorValue
 from max.nn._identity import IdentitySet
 from max.nn.layer import Layer, add_layer_hook, clear_hooks
@@ -58,11 +60,27 @@ class PrintHook(BasePrintHook):
             return None
         return os.path.join(self._export_path, str(self._current_step))
 
+    def name_layers_v3(self, model: ModuleV3[..., Any]) -> None:
+        """Create names for all v3 Module layers based on nested attributes."""
+        self.add_layer(model, "model")
+        for rel_name, module in model.descendants:
+            self.add_layer(module, f"model.{rel_name}")
+
     def print_value(self, name: str, value: Any) -> bool:
         if isinstance(value, TensorValue):
             value.print(name)
             return True
-        return False
+        if not isinstance(value, Tensor):
+            return False
+        # Only non-real (symbolic) tensors carry a graph TensorValue that can
+        # be printed. Real (eager) tensors are backed by concrete storage and
+        # have no graph value to emit. Tensor.real is False exactly when the
+        # tensor was created inside an active graph-tracing context and still
+        # holds a RealizationState pointing at a graph value.
+        if value.real:
+            return False
+        TensorValue(value).print(name)
+        return True
 
     def remove(self) -> None:
         super().remove()

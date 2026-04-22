@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm.functional import elementwise
-from random import NormalRandom
-from runtime.asyncrt import DeviceContextPtr
-from tensor._indexing import _dot_prod, _row_major_strides
+from std.algorithm.functional import elementwise
+from std.random import NormalRandom
+from std.runtime.asyncrt import DeviceContextPtr
+from tensor._indexing import _dot_prod
 
-from utils import IndexList
+from std.utils import IndexList
 
 
-fn random_normal[
+def random_normal[
     dtype: DType,
     rank: Int,
     //,
-    output_fn: fn[width: Int, _rank: Int] (
+    output_fn: def[width: SIMDSize, _rank: Int](
         idx: IndexList[_rank], val: SIMD[dtype, width]
-    ) capturing [_],
+    ) capturing[_],
     target: StaticString,
 ](
     shape: IndexList[rank],
@@ -54,17 +54,15 @@ fn random_normal[
     if stddev <= 0:
         raise Error("stddev must be positive")
 
-    var strides = _row_major_strides(shape)
+    var strides = shape.get_row_major_strides()
 
     @parameter
     @always_inline
     @__copy_capture(strides)
-    fn generate[
+    def generate[
         width: Int, _rank: Int, alignment: Int = 1
     ](idx: IndexList[_rank],):
-        __comptime_assert (
-            width <= 8
-        )  # NormalRandom generates 8 values at a time
+        comptime assert width <= 8  # NormalRandom generates 8 values at a time
 
         var offset = _dot_prod(rebind[type_of(strides)](idx), strides)
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,7 +29,9 @@ from max.interfaces import (
     TokenBuffer,
     TokenSlice,
 )
+from max.kv_cache import DummyKVCache, PagedKVCacheManager
 from max.pipelines.core import TextContext
+from max.pipelines.lib import build_eos_tracker_for_request
 
 
 @dataclass
@@ -128,13 +130,16 @@ class EchoPipelineTokenizer(
         token_buffer = TokenBuffer(
             array=encoded_prompt.astype(np.int64, copy=False),
         )
-
         # Create TextContext manually
         context = TextContext(
             request_id=request.request_id,
             max_length=max_length,
             tokens=token_buffer,
-            eos_token_ids={self.eos},  # Set containing the EOS token
+            eos_tracker=await build_eos_tracker_for_request(
+                {self.eos},
+                request,
+                self.encode,
+            ),
             log_probabilities=request.logprobs,
             log_probabilities_echo=request.echo,
             sampling_params=request.sampling_params,
@@ -152,6 +157,12 @@ class EchoTokenGenerator(
     def __init__(self) -> None:
         # Track the echo index for each request (0-based, counts how many tokens we've echoed)
         self._echo_indices: dict[RequestID, int] = {}
+        self._kv_manager = DummyKVCache()
+
+    @property
+    def kv_manager(self) -> PagedKVCacheManager:
+        """Returns the KV cache manager for this pipeline."""
+        return self._kv_manager
 
     def execute(
         self,
@@ -159,7 +170,8 @@ class EchoTokenGenerator(
     ) -> dict[RequestID, TextGenerationOutput]:
         responses = {}
 
-        for request_id, context in inputs.batch.items():
+        for context in inputs.flat_batch:
+            request_id = context.request_id
             if request_id not in responses:
                 responses[request_id] = TextGenerationOutput(
                     request_id=request_id,

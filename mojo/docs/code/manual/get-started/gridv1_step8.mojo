@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,7 +18,7 @@ struct Grid(Copyable):
     var cols: Int
     var data: List[List[Int]]
 
-    fn grid_str(self) -> String:
+    def grid_str(self) -> String:
         # Create an empty String
         str = String()
 

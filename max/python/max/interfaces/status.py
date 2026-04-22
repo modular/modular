@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -32,6 +32,6 @@ class GenerationStatus(str, Enum):
         """Returns True if the generation process is complete (not ACTIVE).
 
         Returns:
-            bool: True if the status is not ACTIVE, indicating completion.
+            ``True`` if the status is not ``ACTIVE``, indicating completion.
         """
         return self is not GenerationStatus.ACTIVE

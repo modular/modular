@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,15 +21,13 @@ from .attention_with_rope import (
 from .interfaces import DistributedAttentionImpl
 from .mask_config import (
     AttentionMaskVariant,
-    MHAMaskConfig,
     MHAMaskVariant,
-    PositionalEncodingVariant,
 )
 from .multi_latent_attention import (
     LatentAttentionWithRope,
     TensorParallelLatentAttentionWithRope,
 )
-from .multihead_attention import MultiheadAttention
+from .multihead_attention import MultiheadAttention, num_heads_for_device
 from .ragged_attention import RaggedAttention
 
 __all__ = [
@@ -39,11 +37,10 @@ __all__ = [
     "GGUFQAttentionWithRope",
     "GPTQAttentionWithRope",
     "LatentAttentionWithRope",
-    "MHAMaskConfig",
     "MHAMaskVariant",
     "MultiheadAttention",
-    "PositionalEncodingVariant",
     "RaggedAttention",
     "TensorParallelAttentionWithRope",
     "TensorParallelLatentAttentionWithRope",
+    "num_heads_for_device",
 ]

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,23 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from os import Atomic
+from std.math import ceildiv
+from std.atomic import Atomic
 
-from gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx
-from gpu.host.info import is_cpu
-from gpu.host import DeviceBuffer
-from gpu.memory import AddressSpace
-from memory import stack_allocation
-from runtime.asyncrt import DeviceContextPtr
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx
+from std.gpu.host.info import is_cpu
+from std.gpu.host import DeviceBuffer
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 comptime bin_width = Int(UInt8.MAX)
 
 
-fn _histogram_cpu(output: ManagedTensorSlice, input: ManagedTensorSlice):
+def _histogram_cpu(output: ManagedTensorSlice, input: ManagedTensorSlice):
     for i in range(output.dim_size(0)):
         output[i] = 0
 
@@ -35,7 +35,7 @@ fn _histogram_cpu(output: ManagedTensorSlice, input: ManagedTensorSlice):
         output[Int(input[i])] += 1
 
 
-fn _histogram_gpu(
+def _histogram_gpu(
     output: ManagedTensorSlice,
     input: ManagedTensorSlice,
     ctx_ptr: DeviceContextPtr,
@@ -46,21 +46,21 @@ fn _histogram_gpu(
     # Set the maximum number of threads per block to the block dimension.
     # This is equivalent to the `__launch_bounds__` attribute in CUDA.
     @__llvm_metadata(
-        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](block_dim)
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_dim))
     )
-    fn kernel(
+    def kernel(
         output: UnsafePointer[Int64, MutAnyOrigin],
         input: UnsafePointer[UInt8, MutAnyOrigin],
         n: Int,
     ):
         var tid = global_idx.x
 
-        if tid >= UInt(n):
+        if tid >= n:
             return
 
         # Allocate shared memory for the histogram
         var shared_mem = stack_allocation[
-            bin_width, Int64, address_space = AddressSpace.SHARED
+            bin_width, Int64, address_space=AddressSpace.SHARED
         ]()
 
         # Initialize the shared memory to 0
@@ -84,12 +84,8 @@ fn _histogram_gpu(
 
     var ctx = ctx_ptr.get_device_context()
 
-    var output_device = DeviceBuffer[output.dtype](
-        ctx, output.unsafe_ptr(), output.size(), owning=False
-    )
-    var input_device = DeviceBuffer[input.dtype](
-        ctx, input.unsafe_ptr(), input.size(), owning=False
-    )
+    var output_device = output.to_device_buffer(ctx)
+    var input_device = input.to_device_buffer(ctx)
 
     # Zero initialize the output buffer
     ctx.enqueue_memset(output_device, 0)
@@ -106,15 +102,14 @@ fn _histogram_gpu(
 @compiler.register("histogram")
 struct Histogram:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString
     ](
-        output: OutputTensor[dtype = DType.int64, rank=1],
-        input: InputTensor[dtype = DType.uint8, rank=1],
+        output: OutputTensor[dtype=DType.int64, rank=1, ...],
+        input: InputTensor[dtype=DType.uint8, rank=1, ...],
         ctx: DeviceContextPtr,
     ) raises:
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             _histogram_cpu(output, input)
         else:
             _histogram_gpu(output, input, ctx)

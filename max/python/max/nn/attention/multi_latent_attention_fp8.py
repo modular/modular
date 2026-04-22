@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,23 +29,18 @@ from max.graph import (
 )
 from max.support.math import ceildiv
 
-from ..comm import Allreduce
-from ..float8_config import Float8Config
-from ..float8_ops import matmul_float8
 from ..kernels import (
     flare_mla_prefill_plan,
-    fused_qk_ragged_rope,
-    fused_qkv_ragged_matmul_scaled_float8,
-    mla_decode_branch_fp8,
-    mla_prefill_branch_fp8,
-    mla_prefill_decode_graph_fp8,
-    quantize_dynamic_scaled_float8,
-    rms_norm_key_cache,
+    mla_decode_graph,
+    mla_prefill_decode_graph,
+    mla_prefill_graph,
 )
 from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import Module, Shardable
 from ..linear import Linear
 from ..norm import RMSNorm
+from ..quant_config import QuantConfig, fp4_packed_k
+from ..quant_ops import quantized_matmul
 from ..rotary_embedding import RotaryEmbedding
 from .mask_config import MHAMaskVariant
 from .multi_latent_attention import MLAPrefillMetadata
@@ -67,7 +62,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         num_key_value_heads: int,
         hidden_size: int,
         kv_params: KVCacheParams,
-        float8_config: Float8Config,
+        quant_config: QuantConfig,
         devices: list[DeviceRef] | None = None,
         linear_cls: Callable[..., Linear] = Linear,
         scale: float | None = None,
@@ -78,6 +73,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         v_head_dim: int = 128,
         buffer_size: int = 16384,
         graph_mode: str | None = None,
+        norm_dtype: DType = DType.bfloat16,
     ) -> None:
         """Initializes the latent attention layer.
 
@@ -102,6 +98,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 prefill, in unit of tokens.
             graph_mode: Pipeline role to use for the attention layer. Should be
                 "prefill", "decode", or "auto".
+            norm_dtype: DType of the weights for normalization layers.
         """
         super().__init__()
 
@@ -111,15 +108,16 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 f"Invalid graph_mode '{_role}'. Use 'prefill', 'decode', or 'auto'."
             )
         if (
-            not float8_config.weight_scale.is_block
-            or not float8_config.input_scale.is_block
+            not quant_config.weight_scale.is_block
+            or not quant_config.input_scale.is_block
         ):
             raise ValueError(
                 "Weight scale and input scale must be block-wise for LatentAttentionWithRopeFp8"
             )
 
         self.graph_mode = _role
-        self.float8_config = float8_config
+        self.quant_config = quant_config
+        self.norm_dtype = norm_dtype
 
         self.rope = rope
         self.n_heads = num_attention_heads
@@ -138,40 +136,34 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
         self.BUFFER_TOK_SIZE = buffer_size
 
-        self._scale = scale if scale else math.sqrt(1.0 / self.qk_head_dim)
+        self._scale = (
+            scale if scale is not None else math.sqrt(1.0 / self.qk_head_dim)
+        )
         self.scale = self.rope.compute_scale(self._scale)
         self.devices = devices or [DeviceRef.CPU()]
-        assert float8_config.weight_scale.block_size is not None
-        assert float8_config.input_scale.block_size is not None
-        self.weight_block_size = float8_config.weight_scale.block_size
+        assert quant_config.weight_scale.block_size is not None
+        assert quant_config.input_scale.block_size is not None
+        self.weight_block_size = quant_config.weight_scale.block_size
+        input_k_block = quant_config.input_scale.block_size[1]
 
-        if float8_config.input_scale.block_size[1] != self.weight_block_size[1]:
-            raise ValueError(
-                "Input scale and weight scale must have the same K block size"
-            )
-        self.scales_granularity_mnk = (
-            float8_config.input_scale.block_size[0],
-            self.weight_block_size[0],
-            self.weight_block_size[1],
-        )
-
+        proj_dtype = DType.float8_e4m3fn
         self.q_a_proj = Weight(
             name="q_a_proj.weight",
-            dtype=DType.float8_e4m3fn,
+            dtype=proj_dtype,
             shape=(self.q_lora_rank, self.hidden_size),
             device=self.devices[0],
         )
         self.q_a_proj_scale = Weight(
             name="q_a_proj.weight_scale",
-            dtype=float8_config.weight_scale.dtype,
+            dtype=quant_config.weight_scale.dtype,
             shape=(
                 ceildiv(
                     int(self.q_a_proj.shape[0]),
-                    float8_config.weight_scale.block_size[0],
+                    quant_config.weight_scale.block_size[0],
                 ),
                 ceildiv(
                     int(self.q_a_proj.shape[1]),
-                    float8_config.weight_scale.block_size[1],
+                    input_k_block,
                 ),
             ),
             device=self.devices[0],
@@ -179,28 +171,28 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
         self.q_a_layernorm = RMSNorm(
             dim=self.q_lora_rank,
-            dtype=DType.bfloat16,
+            dtype=self.norm_dtype,
             eps=1e-6,
             multiply_before_cast=False,
         )
 
         self.q_b_proj = Weight(
             name="q_b_proj.weight",
-            dtype=DType.float8_e4m3fn,
+            dtype=proj_dtype,
             shape=(self.n_heads * self.qk_head_dim, self.q_lora_rank),
             device=self.devices[0],
         )
         self.q_b_proj_scale = Weight(
             name="q_b_proj.weight_scale",
-            dtype=float8_config.weight_scale.dtype,
+            dtype=quant_config.weight_scale.dtype,
             shape=(
                 ceildiv(
                     int(self.q_b_proj.shape[0]),
-                    float8_config.weight_scale.block_size[0],
+                    quant_config.weight_scale.block_size[0],
                 ),
                 ceildiv(
                     int(self.q_b_proj.shape[1]),
-                    float8_config.weight_scale.block_size[1],
+                    input_k_block,
                 ),
             ),
             device=self.devices[0],
@@ -208,20 +200,20 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
         self.kv_a_proj_layernorm = Weight(
             name="kv_a_layernorm.weight",
-            dtype=DType.bfloat16,
+            dtype=self.norm_dtype,
             shape=(self.kv_lora_rank,),
             device=self.devices[0],
         )
 
         self.kv_a_proj_with_mqa = Weight(
             name="kv_a_proj_with_mqa.weight",
-            dtype=DType.float8_e4m3fn,
+            dtype=proj_dtype,
             shape=(self.cache_head_dim, self.hidden_size),
             device=self.devices[0],
         )
         self.kv_a_proj_with_mqa_scale = Weight(
             name="kv_a_proj_with_mqa.weight_scale",
-            dtype=float8_config.weight_scale.dtype,
+            dtype=quant_config.weight_scale.dtype,
             shape=(
                 ceildiv(
                     int(self.kv_a_proj_with_mqa.shape[0]),
@@ -229,7 +221,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 ),
                 ceildiv(
                     int(self.kv_a_proj_with_mqa.shape[1]),
-                    self.weight_block_size[1],
+                    input_k_block,
                 ),
             ),
             device=self.devices[0],
@@ -237,7 +229,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
         self.kv_b_proj = Weight(
             name="kv_b_proj.weight",
-            dtype=DType.float8_e4m3fn,
+            dtype=proj_dtype,
             shape=(
                 self.n_heads * (self.qk_nope_head_dim + self.v_head_dim),
                 self.kv_lora_rank,
@@ -246,7 +238,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         )
         self.kv_b_proj_scale = Weight(
             name="kv_b_proj.weight_scale",
-            dtype=float8_config.weight_scale.dtype,
+            dtype=quant_config.weight_scale.dtype,
             shape=(
                 ceildiv(
                     int(self.kv_b_proj.shape[0]),
@@ -254,23 +246,38 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 ),
                 ceildiv(
                     int(self.kv_b_proj.shape[1]),
-                    self.weight_block_size[1],
+                    input_k_block,
                 ),
             ),
             device=self.devices[0],
         )
 
+        o_proj_quant_config = quant_config
+        o_proj_in_dim = fp4_packed_k(
+            self.n_heads * self.v_head_dim, quant_config
+        )
         self.o_proj = linear_cls(
-            in_dim=self.n_heads * self.v_head_dim,
+            in_dim=o_proj_in_dim,
             out_dim=self.hidden_size,
-            dtype=DType.float8_e4m3fn,
+            dtype=proj_dtype,
             device=self.devices[0],
-            float8_config=float8_config,
+            quant_config=o_proj_quant_config,
         )
 
     def create_mla_prefill_metadata(
         self, input_row_offsets: TensorValue, kv_collection: PagedCacheValues
     ) -> MLAPrefillMetadata:
+        """Creates the prefill planning metadata required by FP8 MLA prefill kernels.
+
+        Args:
+            input_row_offsets: Ragged row offsets tensor describing token
+                boundaries for each sequence in the batch.
+            kv_collection: Paged KV cache values for the current device.
+
+        Returns:
+            An :class:`MLAPrefillMetadata` instance containing buffer row
+            offsets, cache offsets, and buffer lengths for the prefill step.
+        """
         (buffer_row_offsets, cache_offsets, buffer_lengths) = (
             flare_mla_prefill_plan(
                 self.kv_params,
@@ -300,60 +307,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         Args:
             strategy: The strategy describing the Module sharding.
         """
-        if strategy.is_tensor_parallel:
-            self._sharding_strategy = strategy
-
-            if (self.n_heads / strategy.num_devices) % 16 != 0:
-                raise ValueError(
-                    "MLA head per device must be a multiple of 16."
-                )
-
-            self.q_a_proj.sharding_strategy = ShardingStrategy.replicate(
-                strategy.num_devices
-            )
-            self.q_a_proj_scale.sharding_strategy = ShardingStrategy.replicate(
-                strategy.num_devices
-            )
-            self.q_a_layernorm.weight.sharding_strategy = (
-                ShardingStrategy.replicate(strategy.num_devices)
-            )
-
-            self.q_b_proj.sharding_strategy = ShardingStrategy.rowwise(
-                strategy.num_devices
-            )
-            self.q_b_proj_scale.sharding_strategy = ShardingStrategy.rowwise(
-                strategy.num_devices
-            )
-
-            self.kv_a_proj_layernorm.sharding_strategy = (
-                ShardingStrategy.replicate(strategy.num_devices)
-            )
-            self.kv_a_proj_with_mqa.sharding_strategy = (
-                ShardingStrategy.replicate(strategy.num_devices)
-            )
-            self.kv_a_proj_with_mqa_scale.sharding_strategy = (
-                ShardingStrategy.replicate(strategy.num_devices)
-            )
-
-            self.kv_b_proj.sharding_strategy = ShardingStrategy.rowwise(
-                strategy.num_devices
-            )
-            self.kv_b_proj_scale.sharding_strategy = ShardingStrategy.rowwise(
-                strategy.num_devices
-            )
-
-            self.o_proj.weight.sharding_strategy = ShardingStrategy.columnwise(
-                strategy.num_devices
-            )
-            if self.o_proj.input_scale is not None:
-                self.o_proj.input_scale.sharding_strategy = (
-                    ShardingStrategy.replicate(strategy.num_devices)
-                )
-            if self.o_proj.weight_scale is not None:
-                self.o_proj.weight_scale.sharding_strategy = (
-                    ShardingStrategy.columnwise(strategy.num_devices)
-                )
-        elif strategy.is_replicate:
+        if strategy.is_replicate:
             # Data parallelism: replicate the entire module's weights to each device.
             self._sharding_strategy = strategy
 
@@ -382,7 +336,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 )
         else:
             raise ValueError(
-                "Only tensor parallel or replicate sharding strategies are supported for LatentAttentionWithRope"
+                "Only replicate sharding strategy is supported for LatentAttentionWithRopeFp8"
             )
 
     def shard(
@@ -435,7 +389,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                     num_key_value_heads=self.num_key_value_heads,
                     hidden_size=self.hidden_size,
                     kv_params=self.kv_params,
-                    float8_config=self.float8_config,
+                    quant_config=self.quant_config,
                     devices=[device],
                     graph_mode=self.graph_mode,
                     linear_cls=self.linear_cls,
@@ -446,6 +400,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                     qk_rope_head_dim=self.qk_rope_head_dim,
                     v_head_dim=self.v_head_dim,
                     buffer_size=self.BUFFER_TOK_SIZE,
+                    norm_dtype=self.norm_dtype,
                 )
 
                 sharded.q_a_proj = q_a_proj_shards[shard_idx]
@@ -513,7 +468,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                     num_key_value_heads=self.num_key_value_heads,
                     hidden_size=self.hidden_size,
                     kv_params=self.kv_params,
-                    float8_config=self.float8_config,
+                    quant_config=self.quant_config,
                     devices=[device],
                     graph_mode=self.graph_mode,
                     linear_cls=self.linear_cls,
@@ -524,6 +479,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                     qk_rope_head_dim=self.qk_rope_head_dim,
                     v_head_dim=self.v_head_dim,
                     buffer_size=self.BUFFER_TOK_SIZE,
+                    norm_dtype=self.norm_dtype,
                 )
 
                 replica.q_a_proj = q_a_proj_shards[shard_idx]
@@ -564,7 +520,6 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
     @property
     def wqkv(self) -> tuple[TensorValue, TensorValue]:
         """The concatenation of q_a_proj and kv_a_proj_with_mqa weight vectors."""
-
         wqkv = ops.concat((self.q_a_proj, self.kv_a_proj_with_mqa))
         wqkv_scale = ops.concat(
             (self.q_a_proj_scale, self.kv_a_proj_with_mqa_scale)
@@ -573,70 +528,100 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         return (wqkv, wqkv_scale)
 
     @property
-    def w_uk_uv(self) -> list[TensorValue]:
-        """The concatenation of q, k, and v weight vectors."""
+    def _kv_b_proj_weight(self) -> TensorValue:
+        """Returns `kv_b_proj` reshaped for per-head projection slicing."""
         kv_b_proj_weight: TensorValue = self.kv_b_proj.transpose(0, 1)
-
         kv_b_proj_weight = kv_b_proj_weight.reshape(
-            (
-                self.kv_lora_rank,
-                self.n_heads,
-                (self.qk_nope_head_dim + self.v_head_dim),
-            )
+            (self.kv_lora_rank, self.n_heads, -1)
         )
+        return kv_b_proj_weight
 
-        w_uk, w_uv = ops.split(
-            kv_b_proj_weight, [self.qk_nope_head_dim, self.v_head_dim], axis=2
-        )
-        w_uv = w_uv.permute([1, 2, 0])
-        w_uk_t = w_uk.transpose(0, 1)
+    @property
+    def _qk_nope_head_scale_dim(self) -> int:
+        return self.qk_nope_head_dim // self.weight_block_size[0]
 
-        # Transform the scales the same way
+    @property
+    def _v_head_scale_dim(self) -> int:
+        return self.v_head_dim // self.weight_block_size[0]
+
+    @property
+    def _kv_b_proj_weight_scale(self) -> TensorValue:
+        """Returns reshaped `kv_b_proj_scale` aligned with `_kv_b_proj_weight`."""
         kv_b_proj_weight_scale = self.kv_b_proj_scale.transpose(0, 1)
-
-        qk_nope_head_scale_dim = (
-            self.qk_nope_head_dim // self.weight_block_size[0]
-        )
-        v_head_scale_dim = self.v_head_dim // self.weight_block_size[0]
         kv_b_proj_weight_scale = kv_b_proj_weight_scale.reshape(
-            (
-                self.kv_lora_rank // self.weight_block_size[0],
-                self.n_heads,
-                qk_nope_head_scale_dim + v_head_scale_dim,
-            )
+            (self.kv_lora_rank // self.weight_block_size[0], self.n_heads, -1)
         )
-        w_uk_scale, w_uv_scale = ops.split(
-            kv_b_proj_weight_scale,
-            [qk_nope_head_scale_dim, v_head_scale_dim],
-            axis=2,
+        return kv_b_proj_weight_scale
+
+    @property
+    def w_uk(self) -> tuple[TensorValue, TensorValue]:
+        """Returns decode K-projection tensor/scale with shape [H, kv_rank, qk_nope_dim]."""
+        w_uk_base = self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
+        w_uk = w_uk_base.transpose(0, 1)
+
+        w_uk_scale_base = self._kv_b_proj_weight_scale[
+            ..., : self._qk_nope_head_scale_dim
+        ]
+        w_uk_scale = w_uk_scale_base.transpose(0, 1)
+        return (w_uk, w_uk_scale)
+
+    @property
+    def w_uv(self) -> tuple[TensorValue, TensorValue]:
+        """Returns decode V-projection tensor/scale with shape [H, v_dim, kv_rank]."""
+        w_uv_base = self._kv_b_proj_weight[..., self.qk_nope_head_dim :]
+        w_uv = w_uv_base.permute([1, 2, 0])
+
+        w_uv_scale_base = self._kv_b_proj_weight_scale[
+            ..., self._qk_nope_head_scale_dim :
+        ]
+        w_uv_scale = w_uv_scale_base.permute([1, 2, 0])
+        return (w_uv, w_uv_scale)
+
+    @property
+    def w_k(self) -> tuple[TensorValue, TensorValue]:
+        """Returns prefill K-projection tensor/scale with shape [H*qk_nope_dim, kv_rank]."""
+        w_uk_base = self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
+        w_k = w_uk_base.permute([1, 2, 0]).reshape((-1, self.kv_lora_rank))
+
+        w_uk_scale_base = self._kv_b_proj_weight_scale[
+            ..., : self._qk_nope_head_scale_dim
+        ]
+        w_k_scale = w_uk_scale_base.permute([1, 2, 0]).reshape(
+            (-1, self.kv_lora_rank // self.weight_block_size[0])
         )
-        w_uv_scale = w_uv_scale.permute([1, 2, 0])
-        w_uk_t_scale = w_uk_scale.transpose(0, 1)
-        return [w_uk_t, w_uk_t_scale, w_uv, w_uv_scale]
+        return (w_k, w_k_scale)
 
     def _mla_impl(
         self,
-        xq_nope: TensorValue,
-        xq_rope: TensorValue,
+        xq: TensorValue,
+        kv: TensorValue,
         kv_collection: PagedCacheValues,
         layer_idx: TensorValue,
         input_row_offsets: TensorValue,
+        freqs_cis: TensorValue,
+        kv_a_proj_layernorm: TensorValue,
         _mla_prefill_metadata: MLAPrefillMetadata | None = None,
     ) -> TensorValue:
         # Prepare the inputs and weights for the prefill and decode branches.
         attn_kwargs: dict[str, Any] = {
-            "q_nope": xq_nope,
-            "q_rope": xq_rope,
+            "q": xq,
+            "kv": kv,
             "input_row_offsets": input_row_offsets,
+            "freqs_cis": freqs_cis,
+            "kv_norm_gamma": kv_a_proj_layernorm,
             "kv_params": self.kv_params,
             "kv_collection": kv_collection,
             "layer_idx": layer_idx,
+            "epsilon": 1e-6,
             "mask_variant": MHAMaskVariant.CAUSAL_MASK,
             "scale": self.scale,
             "v_head_dim": self.v_head_dim,
-            "float8_config": self.float8_config,
+            "quant_config": self.quant_config,
         }
 
+        w_k, w_k_scale = self.w_k
+        w_uk, w_uk_scale = self.w_uk
+        w_uv, w_uv_scale = self.w_uv
         if self.graph_mode in ["prefill", "auto"]:
             if _mla_prefill_metadata is None:
                 mla_prefill_metadata = self.create_mla_prefill_metadata(
@@ -652,22 +637,27 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             attn_kwargs["buffer_length"] = (
                 mla_prefill_metadata.buffer_lengths.to(DeviceRef.CPU())
             )
-            attn_kwargs["kv_b_proj"] = self.kv_b_proj
-            attn_kwargs["kv_b_proj_scale"] = self.kv_b_proj_scale
+            attn_kwargs["w_k"] = w_k
+            attn_kwargs["w_k_scale"] = w_k_scale
+            attn_kwargs["w_uv"] = w_uv
+            attn_kwargs["w_uv_scale"] = w_uv_scale
 
         if self.graph_mode in ["decode", "auto"]:
-            w_uk, w_uk_scale, w_uv, w_uv_scale = self.w_uk_uv
             attn_kwargs["w_uk"] = w_uk
             attn_kwargs["w_uk_scale"] = w_uk_scale
             attn_kwargs["w_uv"] = w_uv
             attn_kwargs["w_uv_scale"] = w_uv_scale
+            assert kv_collection.attention_dispatch_metadata is not None
+            attn_kwargs["scalar_args"] = (
+                kv_collection.attention_dispatch_metadata
+            )
 
         if self.graph_mode == "prefill":
-            result = mla_prefill_branch_fp8(**attn_kwargs)
+            result = mla_prefill_graph(**attn_kwargs)
         elif self.graph_mode == "decode":
-            result = mla_decode_branch_fp8(**attn_kwargs)
+            result = mla_decode_graph(**attn_kwargs)
         else:
-            result = mla_prefill_decode_graph_fp8(**attn_kwargs)
+            result = mla_prefill_decode_graph(**attn_kwargs)
 
         return result.reshape((-1, self.n_heads * self.v_head_dim))
 
@@ -680,169 +670,49 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         input_row_offsets: TensorValue,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
     ) -> TensorValue:
-        # Get attributes from input.
-        total_seq_len = x.shape[0]
-
-        x, x_scales = quantize_dynamic_scaled_float8(
-            x,
-            self.float8_config.input_scale,
-            self.float8_config.weight_scale,
-            scales_type=self.kv_a_proj_with_mqa_scale.dtype,
-            group_size_or_per_token=self.scales_granularity_mnk[2],
-            out_type=self.kv_a_proj_with_mqa.dtype,
-        )
-
         # First FP8 matmul: x @ q_a_proj.T, fused with x @ kv_a_proj_with_mqa.T
         wqkv, wqkv_scale = self.wqkv
-        q_a_out = fused_qkv_ragged_matmul_scaled_float8(
-            self.kv_params,
-            x,
-            input_row_offsets,
-            wqkv,
-            kv_collection,
-            layer_idx,
-            self.n_heads,
-            x_scales,
-            wqkv_scale,
-            float8_config=self.float8_config,
-            _output_dim=self.q_lora_rank,
+        qkv = quantized_matmul(
+            x=x,
+            weight=wqkv,
+            weight_scale=wqkv_scale,
+            input_scale=None,  # Dynamic scaling
+            quant_config=self.quant_config,
+        )
+
+        q_a_out, kv = ops.split(
+            qkv, [self.q_lora_rank, self.cache_head_dim], axis=1
         )
 
         # Apply layer norm
         q_a_normed = self.q_a_layernorm(q_a_out)
 
         # Second FP8 matmul: q_a_normed @ q_b_proj.T
-        xq = matmul_float8(
+        xq = quantized_matmul(
             x=q_a_normed,
             weight=self.q_b_proj,
             weight_scale=self.q_b_proj_scale,
             input_scale=None,  # Dynamic scaling
-            float8_config=self.float8_config,
-            group_size_or_per_token=self.scales_granularity_mnk[2],
-        )
-
-        rms_norm_key_cache(
-            self.kv_params,
-            kv_collection=kv_collection,
-            gamma=self.kv_a_proj_layernorm,
-            epsilon=1e-6,
-            layer_idx=layer_idx,
-            total_seq_len=total_seq_len,
-            input_row_offsets=input_row_offsets,
-            rms_norm_cols=self.kv_lora_rank,
-            weight_offset=0.0,
-            multiply_before_cast=False,
+            quant_config=self.quant_config,
         )
 
         xq = xq.reshape((-1, self.n_heads, self.qk_head_dim))
 
-        xq_nope, xq_rope = ops.split(
-            xq, [self.qk_nope_head_dim, self.qk_rope_head_dim], axis=2
-        )
-
-        # Apply rope.
+        # QK RoPE and RMSNorm of K cache are handled inside the MLA kernel.
         freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
 
-        xq_rope = fused_qk_ragged_rope(
-            self.kv_params,
-            xq_rope,
-            input_row_offsets,
-            kv_collection,
-            freqs_cis=freqs_cis,
-            layer_idx=layer_idx,
-            interleaved=True,
-        )
-
         attn_out = self._mla_impl(
-            xq_nope,
-            xq_rope,
+            xq,
+            kv,
             kv_collection,
             layer_idx,
             input_row_offsets,
+            freqs_cis,
+            self.kv_a_proj_layernorm,
             mla_prefill_metadata,
         )
 
         return self.o_proj(attn_out)
-
-
-class TensorParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
-    """Distributed tensor parallel implementation of the Latent Attention with
-    Rope (FP8). Note that using tensor parallelism for MLA will cause the
-    KV-cache to be duplicated across all devices, which is not efficient.
-    """
-
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
-        num_devices = len(self.devices)
-        self.sharding_strategy = ShardingStrategy.tensor_parallel(num_devices)
-        self.allreduce = Allreduce(num_devices)
-        self.list_of_attentions = self.shard(self.devices)
-
-    def create_mla_prefill_metadata(  # type: ignore[override]
-        self,
-        input_row_offsets_: list[TensorValue],
-        kv_collections: list[PagedCacheValues],
-    ) -> list[MLAPrefillMetadata]:
-        multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
-
-        for input_row_offsets, kv_collection in zip(
-            input_row_offsets_, kv_collections, strict=True
-        ):
-            multi_mla_prefill_metadata.append(
-                super().create_mla_prefill_metadata(
-                    input_row_offsets, kv_collection
-                )
-            )
-
-        return multi_mla_prefill_metadata
-
-    def __call__(  # type: ignore[override]
-        self,
-        layer_idx: TensorValue,
-        xs: Sequence[TensorValue],
-        signal_buffers: Sequence[BufferValue],
-        kv_collections: Sequence[PagedCacheValues],
-        freqs_cis: Sequence[TensorValue],
-        input_row_offsets: Sequence[TensorValue],
-        mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
-    ) -> list[TensorValue]:
-        if not self.devices:
-            raise ValueError("devices cannot be None or empty")
-        if len(input_row_offsets) != len(self.devices):
-            raise ValueError(
-                f"Expected {len(self.devices)} input_row_offsets, got {len(input_row_offsets)}"
-            )
-        if not all(isinstance(x, TensorValue) for x in input_row_offsets):
-            raise TypeError(
-                "All elements in input_row_offsets must be TensorValue instances"
-            )
-
-        n = len(self.devices)
-        inputs: list[TensorValue] = []
-        for i in range(n):
-            mla_prefill_metadata_i: MLAPrefillMetadata | None
-            if (
-                mla_prefill_metadata is not None
-                and len(mla_prefill_metadata) == n
-            ):
-                mla_prefill_metadata_i = mla_prefill_metadata[i]
-            else:
-                mla_prefill_metadata_i = None
-            inputs.append(
-                self.list_of_attentions[i](
-                    layer_idx,
-                    xs[i],
-                    kv_collections[i],
-                    freqs_cis=freqs_cis[i],
-                    input_row_offsets=input_row_offsets[i],
-                    mla_prefill_metadata=mla_prefill_metadata_i,
-                )
-            )
-
-        return self.allreduce(
-            inputs=inputs,
-            signal_buffers=signal_buffers,
-        )
 
 
 class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
@@ -874,6 +744,15 @@ class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         input_row_offsets_: list[TensorValue],
         kv_collections: list[PagedCacheValues],
     ) -> list[MLAPrefillMetadata]:
+        """Creates per-device FP8 MLA prefill metadata for data-parallel execution.
+
+        Args:
+            input_row_offsets_: Per-device ragged row offset tensors.
+            kv_collections: Per-device paged KV cache values.
+
+        Returns:
+            A list of :class:`MLAPrefillMetadata` instances, one per device.
+        """
         multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
 
         for input_row_offsets, kv_collection in zip(
@@ -926,6 +805,10 @@ class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             ):
                 mla_prefill_metadata_i = mla_prefill_metadata[i]
             else:
+                assert (
+                    mla_prefill_metadata is None
+                    or len(mla_prefill_metadata) == 0
+                )
                 mla_prefill_metadata_i = None
 
             outs.append(

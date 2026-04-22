@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,7 @@
 
 # Docs example *only* includes the signature, to show the elements of a
 # parameter list.
-fn my_sort[
+def my_sort[
     # infer-only parameters
     dtype: DType,
     width: Int,
@@ -23,7 +23,7 @@ fn my_sort[
     values: SIMD[dtype, width],
     /,
     # positional-or-keyword parameter
-    compare: fn (Scalar[dtype], Scalar[dtype]) -> Int,
+    compare: def(Scalar[dtype], Scalar[dtype]) thin -> Int,
     *,
     # keyword-only parameter
     reverse: Bool = False,
@@ -46,7 +46,7 @@ def main():
     comptime dtype = DType.int32
     comptime input2 = SIMD[dtype, 8](9, 3, 3, 1, 11, 10, 5, 2)
 
-    fn compare(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Int:
+    def compare(lhs: Scalar[dtype], rhs: Scalar[dtype]) -> Int:
         if lhs == rhs:
             return 0
         else:

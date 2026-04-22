@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,7 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""DeepSeek-V2 mixture-of-experts architecture for text generation."""
 
 from .arch import deepseekV2_arch
+from .model import DeepseekV2Inputs, DeepseekV2Model
+from .model_config import DeepseekV2Config
 
-__all__ = ["deepseekV2_arch"]
+__all__ = [
+    "DeepseekV2Config",
+    "DeepseekV2Inputs",
+    "DeepseekV2Model",
+    "deepseekV2_arch",
+]

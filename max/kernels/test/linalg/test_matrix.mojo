@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,79 +11,52 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
-
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-
-from utils.index import Index, IndexList
+from std.math import iota
 
 
-fn test(m: NDBuffer[mut=True, DType.int32, 2, _, DimList(4, 4)]):
-    # CHECK: [0, 1, 2, 3]
-    print(m.load[width=4](0, 0))
-    # CHECK: [4, 5, 6, 7]
-    print(m.load[width=4](1, 0))
-    # CHECK: [8, 9, 10, 11]
-    print(m.load[width=4](2, 0))
-    # CHECK: [12, 13, 14, 15]
-    print(m.load[width=4](3, 0))
-
-    var v = iota[DType.int32, 4]()
-    m.store[width=4](IndexList[2](3, 0), v)
-    # CHECK: [0, 1, 2, 3]
-    print(m.load[width=4](3, 0))
-
-
-fn test_dynamic_shape(
-    m: NDBuffer[mut=True, DType.int32, 2, _, DimList.create_unknown[2]()]
+def test_matrix(
+    ptr: UnsafePointer[Scalar[DType.int32], MutAnyOrigin], rows: Int, cols: Int
 ):
     # CHECK: [0, 1, 2, 3]
-    print(m.load[width=4](0, 0))
+    print(ptr.load[width=4](0 * cols + 0))
     # CHECK: [4, 5, 6, 7]
-    print(m.load[width=4](1, 0))
+    print(ptr.load[width=4](1 * cols + 0))
     # CHECK: [8, 9, 10, 11]
-    print(m.load[width=4](2, 0))
+    print(ptr.load[width=4](2 * cols + 0))
     # CHECK: [12, 13, 14, 15]
-    print(m.load[width=4](3, 0))
+    print(ptr.load[width=4](3 * cols + 0))
 
     var v = iota[DType.int32, 4]()
-    m.store[width=4](IndexList[2](3, 0), v)
+    ptr.store[width=4](3 * cols + 0, v)
     # CHECK: [0, 1, 2, 3]
-    print(m.load[width=4](3, 0))
+    print(ptr.load[width=4](3 * cols + 0))
 
 
-fn test_matrix_static():
+def test_matrix_static():
     print("== test_matrix_static")
-    var a = NDBuffer[DType.int32, 1, MutAnyOrigin, 16].stack_allocation()
-    var m = NDBuffer[DType.int32, 2, _, DimList(4, 4)](a.data)
+    var data = InlineArray[Int32, 16](uninitialized=True)
     for i in range(16):
-        a[i] = i
-    test(m)
+        data[i] = Int32(i)
+    test_matrix(data.unsafe_ptr().as_any_origin(), 4, 4)
 
 
-fn test_matrix_dynamic():
+def test_matrix_dynamic():
     print("== test_matrix_dynamic")
-    var a = NDBuffer[DType.int32, 1, MutAnyOrigin, 16].stack_allocation()
-    var m = NDBuffer[DType.int32, 2, _, DimList(4, 4)](a.data)
+    var data = InlineArray[Int32, 16](uninitialized=True)
     for i in range(16):
-        a[i] = i
-    test(m)
+        data[i] = Int32(i)
+    test_matrix(data.unsafe_ptr().as_any_origin(), 4, 4)
 
 
-fn test_matrix_dynamic_shape():
+def test_matrix_dynamic_shape():
     print("== test_matrix_dynamic_shape")
-    var a = NDBuffer[DType.int32, 1, MutAnyOrigin, 16].stack_allocation()
-    # var m = Matrix[DimList(4, 4), DType.int32, False](a.data, Index(4,4), DType.int32)
-    var m = NDBuffer[DType.int32, 2, _, DimList.create_unknown[2]()](
-        a.data, Index(4, 4)
-    )
+    var data = InlineArray[Int32, 16](uninitialized=True)
     for i in range(16):
-        a[i] = i
-    test_dynamic_shape(m)
+        data[i] = Int32(i)
+    test_matrix(data.unsafe_ptr().as_any_origin(), 4, 4)
 
 
-fn main():
+def main():
     test_matrix_static()
     test_matrix_dynamic()
     test_matrix_dynamic_shape()

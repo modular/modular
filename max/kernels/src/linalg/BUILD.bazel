@@ -13,7 +13,9 @@ mojo_library(
         "//max:comm",
         "//max:internal_utils",
         "//max:layout",
+        "//max:pipeline",
         "//max:register",
+        "//max:structured_kernels",
         "@mojo//:std",
     ],
 )

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,35 +13,33 @@
 
 # DOC: mojo/docs/manual/layout/tensors.mdx
 
-from gpu import (
+from std.gpu import (
     thread_idx,
     block_idx,
     global_idx,
-    block_dim,
-    grid_dim,
     barrier,
     lane_id,
     WARP_SIZE,
 )
-from gpu.memory import async_copy_wait_all
-from gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
+from std.gpu.memory import async_copy_wait_all
+from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from layout import Layout, LayoutTensor, print_layout
 from layout.layout_tensor import copy_sram_to_local
-from memory import UnsafePointer
-from sys import has_accelerator
-from sys.info import (
+from std.memory import UnsafePointer
+from std.sys import has_accelerator
+from std.sys.info import (
     has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_apple_gpu,
     is_nvidia_gpu,
     simd_width_of,
 )
-from testing import assert_equal, assert_false, assert_true
-from sys import exit
+from std.testing import assert_equal, assert_false, assert_true
+from std.sys import exit
 
 
 # start-initialize-tensor-from-cpu-example
-def initialize_tensor_from_cpu_example():
+def initialize_tensor_from_cpu_example() raises:
     comptime dtype = DType.float32
     comptime rows = 32
     comptime cols = 8
@@ -51,9 +49,10 @@ def initialize_tensor_from_cpu_example():
     comptime input_layout = Layout.row_major(rows, cols)
     comptime size: Int = rows * cols
 
-    fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
-        if global_idx.y < UInt(tensor.shape[0]()) and global_idx.x < UInt(
-            tensor.shape[1]()
+    def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
+        if (
+            global_idx.y < tensor.shape[0]()
+            and global_idx.x < tensor.shape[1]()
         ):
             tensor[global_idx.y, global_idx.x] = (
                 tensor[global_idx.y, global_idx.x] + 1
@@ -95,17 +94,17 @@ def initialize_tensor_from_cpu_example():
 # end-initialize-tensor-from-cpu-example
 
 
-def shared_memory_alloc_example():
+def shared_memory_alloc_example() raises:
     comptime dtype = DType.float32
     comptime in_size = 128
     comptime block_size = 16
     comptime num_blocks = in_size // block_size  # number of block in one dimension
     comptime input_layout = Layout.row_major(in_size, in_size)
 
-    fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
+    def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
         # extract a tile from the input tensor.
         var global_tile = tensor.tile[block_size, block_size](
-            Int(block_idx.y), Int(block_idx.x)
+            block_idx.y, block_idx.x
         )
         # start-shared-memory-alloc-example
         comptime tile_layout = Layout.row_major(block_size, block_size)
@@ -113,7 +112,7 @@ def shared_memory_alloc_example():
             dtype,
             tile_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ].stack_allocation()
         # end-shared-memory-alloc-example
 
@@ -149,7 +148,7 @@ def shared_memory_alloc_example():
         ctx.enqueue_copy(host_buf, dev_buf)
         ctx.synchronize()
         for i in range(in_size * in_size):
-            if host_buf[i] != i:
+            if host_buf[i] != Float32(i):
                 raise Error(
                     String("Error at position {} expected {} got {}").format(
                         i, i, host_buf[i]
@@ -159,16 +158,16 @@ def shared_memory_alloc_example():
         print(error)
 
 
-fn simd_width_example():
+def simd_width_example():
     # start-simd-width-example
-    from sys.info import simd_width_of
-    from gpu.host.compile import get_gpu_target
+    from std.sys.info import simd_width_of
+    from std.gpu.host.compile import get_gpu_target
 
     comptime simd_width = simd_width_of[DType.float32, get_gpu_target()]
     # end-simd-width-example
 
 
-def layout_tensor_vectorized_example():
+def layout_tensor_vectorized_example() raises:
     comptime dtype = DType.int32
     comptime vector_width = 4
 
@@ -177,7 +176,7 @@ def layout_tensor_vectorized_example():
     comptime layout = Layout.row_major(rows, columns)
     var storage = InlineArray[Scalar[dtype], rows * columns](uninitialized=True)
     for i in range(rows * columns):
-        storage[i] = i
+        storage[i] = Int32(i)
     var tensor = LayoutTensor[dtype, layout](storage)
     # start-vectorize-tensor-example
     var vectorized_tensor = tensor.vectorize[1, vector_width]()
@@ -190,13 +189,13 @@ def layout_tensor_vectorized_example():
     )
 
 
-fn layout_tensor_distribute_example():
+def layout_tensor_distribute_example():
     comptime rows = 4
     comptime columns = 8
     comptime layout = Layout.row_major(rows, columns)
     comptime dtype = DType.int32
 
-    fn kernel(tensor: LayoutTensor[dtype, layout, MutAnyOrigin]):
+    def kernel(tensor: LayoutTensor[dtype, layout, MutAnyOrigin]):
         var fragment = tensor.vectorize[1, 4]().distribute[
             Layout.row_major(2, 2)
         ](lane_id())
@@ -209,7 +208,7 @@ fn layout_tensor_distribute_example():
             rows * columns
         )
         for i in range(rows * columns):
-            host_buf[i] = i
+            host_buf[i] = Int32(i)
         var tensor = LayoutTensor[dtype, layout](dev_buf)
         ctx.enqueue_copy(dev_buf, host_buf)
         ctx.enqueue_function[kernel, kernel](
@@ -222,7 +221,7 @@ fn layout_tensor_distribute_example():
 
 
 # TODO: Add simple copy example to doc
-fn simple_copy_example():
+def simple_copy_example():
     comptime dtype = DType.float32
     comptime rows = 128
     comptime cols = 128
@@ -231,17 +230,17 @@ fn simple_copy_example():
     comptime num_col_blocks = cols // block_size
     comptime input_layout = Layout.row_major(rows, cols)
 
-    fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
+    def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
         # extract a tile from the input tensor.
         var global_tile = tensor.tile[block_size, block_size](
-            Int(block_idx.y), Int(block_idx.x)
+            block_idx.y, block_idx.x
         )
         comptime tile_layout = Layout.row_major(block_size, block_size)
         var shared_tile = LayoutTensor[
             dtype,
             tile_layout,
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ].stack_allocation()
 
         if global_idx.y < rows and global_idx.x < cols:
@@ -268,7 +267,7 @@ fn simple_copy_example():
         var host_buf = ctx.enqueue_create_host_buffer[dtype](rows * cols)
         var dev_buf = ctx.enqueue_create_buffer[dtype](rows * cols)
         for i in range(rows * cols):
-            host_buf[i] = i
+            host_buf[i] = Float32(i)
         ctx.enqueue_copy(dev_buf, host_buf)
         var tensor = LayoutTensor[dtype, input_layout](dev_buf)
 
@@ -280,7 +279,7 @@ fn simple_copy_example():
         ctx.enqueue_copy(host_buf, dev_buf)
         ctx.synchronize()
         for i in range(rows * cols):
-            if host_buf[i] != i * 2:
+            if host_buf[i] != Float32(i * 2):
                 raise Error(
                     String("Unexpected value ", host_buf[i], " at position ", i)
                 )
@@ -290,9 +289,8 @@ fn simple_copy_example():
 
 # TODO: improve thread layout example and explanations
 # start-copy-from-async-example
-fn copy_from_async_example():
-    @parameter
-    if not has_apple_gpu_accelerator():
+def copy_from_async_example():
+    comptime if not has_apple_gpu_accelerator():
         comptime dtype = DType.float32
         comptime rows = 128
         comptime cols = 128
@@ -302,17 +300,17 @@ fn copy_from_async_example():
         comptime input_layout = Layout.row_major(rows, cols)
         comptime simd_width = 4
 
-        fn kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
+        def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
             # extract a tile from the input tensor.
             var global_tile = tensor.tile[block_size, block_size](
-                Int(block_idx.y), Int(block_idx.x)
+                block_idx.y, block_idx.x
             )
             comptime tile_layout = Layout.row_major(block_size, block_size)
             var shared_tile = LayoutTensor[
                 dtype,
                 tile_layout,
                 MutAnyOrigin,
-                address_space = AddressSpace.SHARED,
+                address_space=AddressSpace.SHARED,
             ].stack_allocation()
 
             # Create thread layouts for copying
@@ -328,8 +326,7 @@ fn copy_from_async_example():
 
             shared_fragment.copy_from_async(global_fragment)
 
-            @parameter
-            if is_nvidia_gpu():
+            comptime if is_nvidia_gpu():
                 async_copy_wait_all()
             barrier()
 
@@ -346,7 +343,7 @@ fn copy_from_async_example():
             var host_buf = ctx.enqueue_create_host_buffer[dtype](rows * cols)
             var dev_buf = ctx.enqueue_create_buffer[dtype](rows * cols)
             for i in range(rows * cols):
-                host_buf[i] = i
+                host_buf[i] = Float32(i)
             var tensor = LayoutTensor[dtype, input_layout](dev_buf)
             ctx.enqueue_copy(dev_buf, host_buf)
             ctx.enqueue_function[kernel, kernel](
@@ -357,7 +354,7 @@ fn copy_from_async_example():
             ctx.enqueue_copy(host_buf, dev_buf)
             ctx.synchronize()
             for i in range(rows * cols):
-                if host_buf[i] != i + 1:
+                if host_buf[i] != Float32(i + 1):
                     raise Error(
                         String(
                             "Unexpected value ", host_buf[i], " at position ", i
@@ -372,7 +369,7 @@ fn copy_from_async_example():
 # TODO: Currently doesn't run on Apple silicon GPU
 
 
-def main():
+def main() raises:
     if has_accelerator():
         initialize_tensor_from_cpu_example()
         shared_memory_alloc_example()

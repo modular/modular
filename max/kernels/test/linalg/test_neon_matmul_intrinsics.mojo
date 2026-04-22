@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,13 +17,13 @@
 # REQUIRES: neon_matmul
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from sys.info import CompilationTarget
+from std.sys.info import CompilationTarget
 
 from linalg.arch.cpu.neon_intrinsics import _neon_matmul
 
 
 # CHECK-LABEL: test_has_neon_int8_matmul
-fn test_has_neon_int8_matmul():
+def test_has_neon_int8_matmul():
     print("== test_has_neon_int8_matmul")
 
     # CHECK: True
@@ -31,7 +31,7 @@ fn test_has_neon_int8_matmul():
 
 
 # CHECK-LABEL: test_s8s8_matmul
-fn test_s8s8_matmul():
+def test_s8s8_matmul():
     print("== test_s8s8_matmul")
 
     var a = SIMD[DType.int8, 16](
@@ -47,7 +47,7 @@ fn test_s8s8_matmul():
 
 
 # CHECK-LABEL: test_u8u8_matmul
-fn test_u8u8_matmul():
+def test_u8u8_matmul():
     print("== test_u8u8_matmul")
 
     var a = SIMD[DType.uint8, 16](
@@ -63,7 +63,7 @@ fn test_u8u8_matmul():
 
 
 # CHECK-LABEL: test_u8s8_matmul
-fn test_u8s8_matmul():
+def test_u8s8_matmul():
     print("== test_u8s8_matmul")
 
     var a = SIMD[DType.uint8, 16](
@@ -78,7 +78,7 @@ fn test_u8s8_matmul():
     print(_neon_matmul(c, a, b))
 
 
-fn main():
+def main():
     test_has_neon_int8_matmul()
     test_s8s8_matmul()
     test_u8u8_matmul()

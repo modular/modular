@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
 
 @always_inline("nodebug")
-fn get_sliding_window_out_dim[
+def get_sliding_window_out_dim[
     ceil_mode: Bool = False,
 ](in_dim: Int, ft_dim: Int, dilation: Int, stride: Int, pad: Int) -> Int:
     """
@@ -36,8 +36,7 @@ fn get_sliding_window_out_dim[
 
     """
 
-    @parameter
-    if ceil_mode:
+    comptime if ceil_mode:
         return 1 + ceildiv(in_dim + pad - (1 + dilation * (ft_dim - 1)), stride)
     else:
         return 1 + (in_dim + pad - (1 + dilation * (ft_dim - 1))) // stride

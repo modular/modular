@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -77,7 +77,6 @@ def bench(
 
     assert num_query_heads % num_kv_heads == 0
     seq_lens = [seq_len for _ in range(num_seqs)]
-    max_seq_len = max(seq_lens)
     seq_lens = torch.tensor(seq_lens, dtype=torch.int, device=device)
 
     # Create the block tables.

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -38,7 +38,7 @@
 # NO-STACK-ALLOC-NOT: alloca {{.*}}[23 x double]
 
 
-fn test_number_parsing() raises -> String:
+def test_number_parsing() raises -> String:
     """Test that number parsing functions work correctly with optimized lookup tables.
     """
     var result = String()
@@ -57,10 +57,10 @@ fn test_number_parsing() raises -> String:
     return result
 
 
-fn main() raises:
+def main() raises:
     var results = test_number_parsing()
 
     # We don't actually need to print the results for the test,
     # but we need to use them so they don't get optimized away
-    if len(results) > 0:
+    if results.byte_length() > 0:
         pass

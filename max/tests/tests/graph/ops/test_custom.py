@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -144,7 +144,7 @@ class TestCustomOp:
         """Test custom operation with no input values."""
         output_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
-        with graph_builder() as graph:
+        with graph_builder():
             with pytest.raises(ValueError):
                 ops.custom(
                     name="test_kernel",
@@ -159,7 +159,7 @@ class TestCustomOp:
         """Test custom operation with None values."""
         output_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
 
-        with graph_builder() as graph:
+        with graph_builder():
             with pytest.raises(TypeError):
                 ops.custom(
                     name="test_kernel",
@@ -210,7 +210,7 @@ class TestInplaceCustomOp:
         self, graph_builder: GraphBuilder
     ) -> None:
         """Test inplace custom operation with no input values."""
-        with graph_builder() as graph:
+        with graph_builder():
             with pytest.raises(TypeError):
                 ops.inplace_custom(
                     name="test_kernel",
@@ -266,7 +266,7 @@ class TestInplaceCustomOp:
         self, graph_builder: GraphBuilder
     ) -> None:
         """Test inplace custom operation with None values."""
-        with graph_builder() as graph:
+        with graph_builder():
             with pytest.raises(TypeError):
                 ops.inplace_custom(
                     name="test_kernel",
@@ -283,7 +283,7 @@ class TestInplaceCustomOp:
         with graph_builder(input_types=[buffer_type]) as graph:
             # This will fail at kernel verification but should succeed at graph construction
             with pytest.raises(ValueError) as exc_info:
-                result = ops.inplace_custom(
+                ops.inplace_custom(
                     name="test_kernel",
                     device=DeviceRef.CPU(),
                     values=[graph.inputs[0]],
@@ -363,7 +363,7 @@ class TestInplaceCustomOp:
         with graph_builder(input_types=[buffer_type]) as graph:
             # This should construct the operation properly (but fail at verification)
             with pytest.raises(ValueError) as exc_info:
-                result = ops.inplace_custom(
+                ops.inplace_custom(
                     name="test_kernel",
                     device=DeviceRef.CPU(),
                     values=[graph.inputs[0]],
@@ -484,6 +484,29 @@ class TestCustomParameterValidation:
             # Should fail due to missing kernel, not parameter validation
             error_msg = str(exc_info.value).lower()
             assert "kernel" in error_msg or "mojo" in error_msg
+
+    def test_custom__shadowed_parameter_name(
+        self, graph_builder: GraphBuilder
+    ) -> None:
+        """Test custom with a parameter whose name shadows a function definition."""
+        custom_ops_path = _custom_ops_path()
+
+        input_type = TensorType(DType.float32, (2, 3), DeviceRef.CPU())
+
+        with Graph(
+            "test_custom__shadowed_parameter_name",
+            input_types=[input_type],
+            custom_extensions=[custom_ops_path],
+        ) as graph:
+            out = ops.custom(
+                name="parameter_name_overload",
+                device=DeviceRef.CPU(),
+                values=[graph.inputs[0].tensor],
+                out_types=[input_type],
+                parameters={"top_k": 0},  # Empty dict
+            )[0].tensor
+
+            graph.output(out)
 
 
 class TestCustomGraphStateConsistency:
@@ -644,7 +667,7 @@ class TestCustomPropertyBased:
         graph_builder: GraphBuilder,
         input_type: TensorType,
         kernel_name: str,
-        parameters: dict,
+        parameters: dict,  # type: ignore[type-arg]
     ) -> None:
         """Property test: custom operations should construct consistently with valid inputs."""
         # Generate matching output type with same shape and dtype
@@ -832,7 +855,7 @@ class TestInplaceCustomPropertyBased:
         graph_builder: GraphBuilder,
         buffer_type: BufferType,
         kernel_name: str,
-        parameters: dict,
+        parameters: dict,  # type: ignore[type-arg]
     ) -> None:
         """Property test: inplace custom operations should construct consistently with valid buffer inputs."""
         with graph_builder(input_types=[buffer_type]) as graph:
@@ -996,7 +1019,7 @@ class TestCustomParameterPropertyBased:
         self,
         graph_builder: GraphBuilder,
         input_type: TensorType,
-        empty_params: dict,
+        empty_params: dict,  # type: ignore[type-arg]
         none_params,  # noqa: ANN001
     ) -> None:
         """Property test: custom operations should handle parameter edge cases consistently."""

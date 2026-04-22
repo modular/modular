@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,6 +19,8 @@ from ..dim import DimLike
 from ..graph import Graph
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
+from .transfer_to import transfer_to
+from .validation import _check_device_placement
 
 
 def nonzero(x: TensorValueLike, out_dim: DimLike) -> TensorValue:
@@ -38,19 +40,27 @@ def nonzero(x: TensorValueLike, out_dim: DimLike) -> TensorValue:
 
     Returns:
         A symbolic tensor of indices
+
+    Raises:
+        ValueError: If ``x`` is scalar, or if ``x`` is on a non-CPU device and
+            ``strict_device_placement=DevicePlacementPolicy.Error``.
     """
     x = TensorValue(x)
 
     if x.rank == 0:
         raise ValueError("Scalar inputs not supported")
 
-    # TODO(GEX-2041): Add support for GPU kernel for nonzero and remove manual transfers
-    original_device = x.type.device
-    x = x.to(DeviceRef.CPU())
-    answer = Graph.current._add_op_generated(
+    old_device = x.device if not x.device.is_cpu() else None
+    if old_device is not None:
+        _check_device_placement("ops.nonzero", "TODO(GEX-2041).")
+        x = transfer_to(x, DeviceRef.CPU())
+    # TODO(GEX-2041): Add GPU kernel support for nonzero.
+    result = Graph.current._add_op_generated(
         rmo.MoArgNonzeroOp,
         TensorType(dtype=DType.int64, shape=[out_dim, x.rank], device=x.device),
         TensorValue(x),
         kgen.ParamDeclArrayAttr([]),
     )[0].tensor
-    return answer.to(original_device)
+    if old_device is not None:
+        return transfer_to(result, old_device)
+    return result

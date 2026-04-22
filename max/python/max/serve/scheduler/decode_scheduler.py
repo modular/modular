@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -37,7 +37,7 @@ from max.kv_cache import (
     TransferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import PipelineConfig, get_paged_manager
+from max.pipelines.lib import PipelineConfig, TextGenerationPipeline
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.scheduler.base import (
@@ -45,11 +45,13 @@ from max.serve.scheduler.base import (
     PrefillRequest,
     PrefillResponse,
 )
-from max.serve.scheduler.di_dispatchers import DecodeDispatcherClientV2
+from max.serve.scheduler.di_dispatchers import DecodeDispatcherClient
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
+from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
+from .dp_padding import DPBatchPadder
 from .utils import SchedulerLogger, get_cancelled_reqs
 
 logger = logging.getLogger("max.serve")
@@ -62,19 +64,20 @@ class DecodeScheduler(Scheduler):
             TextGenerationInputs[TextContext], TextGenerationOutput
         ],
         scheduler_config: TokenGenerationSchedulerConfig,
-        paged_manager: PagedKVCacheManager,
+        kv_cache: PagedKVCacheManager,
         *,
         request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
         response_queue: MAXPushQueue[
             dict[RequestID, SchedulerResult[TextGenerationOutput]]
         ],
         cancel_queue: MAXPullQueue[list[RequestID]],
-        dispatcher: DecodeDispatcherClientV2,
+        dispatcher: DecodeDispatcherClient,
+        dp_padder: DPBatchPadder | None = None,
     ) -> None:
         # Initialize Pipeline and Config
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
-        self.paged_manager = paged_manager
+        self.kv_cache = kv_cache
 
         # Initialize Queues
         self.request_queue = request_queue
@@ -85,19 +88,39 @@ class DecodeScheduler(Scheduler):
 
         # Initialize Scheduler state.
         self.pending_reqs: OrderedDict[RequestID, TextContext] = OrderedDict()
-        self.prefill_reqs: dict[RequestID, TextContext] = {}
+        self.prefill_reqs: dict[RequestID, tuple[TextContext, int]] = {}
         self.inflight_transfers: dict[RequestID, TransferReqData] = {}
+        self.prefill_reqs_per_replica: list[int] = [
+            0 for _ in range(scheduler_config.data_parallel_degree)
+        ]
 
         self.transfer_engine = KVTransferEngine(
             name=f"decode_agent_{uuid.uuid4()}",
-            tensors=self.paged_manager.device_tensors,
-            total_num_pages=self.paged_manager.total_num_pages,
+            # TODO: Also support scales tensors
+            tensors=[
+                self.kv_cache.get_device_buffer(replica_idx).values
+                for replica_idx in range(scheduler_config.data_parallel_degree)
+            ],
+            # Assume all replicas have the same number of pages.
+            total_num_pages=self.kv_cache.get_num_pages(replica_idx=0),
         )
+
+        # Register draft KV cache blocks for speculative decoding so that
+        # target and draft KV are bundled into a single NIXL transfer.
+        draft_kv_blocks = getattr(pipeline, "draft_kv_blocks", None)
+        if isinstance(draft_kv_blocks, list):
+            self.transfer_engine.register_tensor_group(
+                name="draft",
+                tensors=[[buf] for buf in draft_kv_blocks],
+                total_num_pages=self.kv_cache.get_num_pages(replica_idx=0),
+            )
 
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
             pipeline=pipeline,
-            paged_cache=paged_manager,
+            kv_cache=kv_cache,
+            batch_scheduling_strategy=BatchSchedulingStrategy.DECODE_FIRST,
+            dp_padder=dp_padder,
         )
         self.scheduler_logger = SchedulerLogger()
         # None corresponds to the default destination address.
@@ -113,10 +136,31 @@ class DecodeScheduler(Scheduler):
 
     def handle_prefill_response(self, message: PrefillResponse) -> None:
         """Handles a prefill response from the dispatcher."""
-        # Update the context with the generated token
         request_id = message.id
-        context = self.prefill_reqs[request_id]
+
+        # The request may have been cancelled while the prefill response
+        # was in-flight over ZMQ.  Discard the stale response
+        if request_id not in self.prefill_reqs:
+            return
+
+        # Update the context with the generated token
+        context, _ = self.prefill_reqs[request_id]
         context.update(message.generated_token_id)
+
+        # Restore draft tokens from Eagle/MTP prefill so the first
+        # decode iteration can verify them without re-running draft prefill.
+        # When speculative decoding is active, the prefill worker always
+        # sends draft tokens.
+        if self.scheduler_config.num_speculative_tokens > 0:
+            if message.draft_tokens is None:
+                raise ValueError(
+                    f"Expected draft tokens in PrefillResponse for request "
+                    f"{request_id} with speculative decoding enabled, but "
+                    f"none were received."
+                )
+            context.spec_decoding_state.draft_tokens_to_verify = (
+                message.draft_tokens
+            )
 
         # Send singular token to the API process
         output = context.to_generation_output()
@@ -163,9 +207,12 @@ class DecodeScheduler(Scheduler):
         )
 
         # Set dst_idx to -1 to denote pages which the decode already has due to
-        # prefix caching.
+        # prefix caching. processed_length is in tokens; divide by page_size to
+        # convert to blocks before accounting for data-parallel degree.
         for i in range(
-            data.tokens.processed_length // self.paged_manager.page_size
+            data.tokens.processed_length
+            // self.kv_cache.params.page_size
+            // self.scheduler_config.data_parallel_degree
         ):
             dst_idxs[i] = -1
 
@@ -197,8 +244,15 @@ class DecodeScheduler(Scheduler):
             )
             < self.scheduler_config.max_batch_size
             and (
-                self.paged_manager is None
-                or self.paged_manager.free_blocks_pct > 0.1
+                self.kv_cache is None
+                or any(
+                    self.kv_cache.get_num_used_pages(replica_idx)
+                    / self.kv_cache.get_num_pages(replica_idx)
+                    < 0.9
+                    for replica_idx in range(
+                        self.scheduler_config.data_parallel_degree
+                    )
+                )
             )
         ):
             # Pop off request queue
@@ -207,31 +261,36 @@ class DecodeScheduler(Scheduler):
             del self.pending_reqs[req_id]
 
             # Claim the slot with the paged manager
-            if not self.paged_manager.contains(req_id):
-                replica_idx = self.batch_constructor.get_next_replica_idx(
-                    use_paged_cache_counts=True
-                )
-                self.paged_manager.claim(req_id, replica_idx=replica_idx)
+            replica_idx = self.batch_constructor.get_next_replica_idx(
+                external_requests_per_replica=self.prefill_reqs_per_replica
+            )
+            self.kv_cache.claim(req_id, replica_idx=replica_idx)
 
             # Allocate enough memory needed to run the request for one step.
             # The blocks allocated here will be written via a KVCache transfer
-            # from prefill -> decode.
+            # from prefill -> decode.  When speculative decoding is active,
+            # the prefill node generates extra KV entries for draft tokens,
+            # so we must allocate matching blocks on the decode side.
             try:
-                self.paged_manager.alloc(context, 1)
+                self.kv_cache.alloc(
+                    context,
+                    replica_idx=replica_idx,
+                    num_steps=1,
+                )
             except InsufficientBlocksError:
                 # If we don't have enough space, we will return this to the request queue.
                 self.pending_reqs[req_id] = context
                 self.pending_reqs.move_to_end(req_id, last=False)
-                self.paged_manager.release(req_id)
+                self.kv_cache.release(req_id, replica_idx=replica_idx)
                 break
 
             # Send to the Prefill Node
-            dst_replica_idx = self.paged_manager.get_replica(req_id)
-            dst_idxs = self.paged_manager.get_req_blocks(req_id)
-            self.prefill_reqs[req_id] = context
-            self.send_prefill_request(
-                req_id, context, dst_idxs, dst_replica_idx
+            dst_idxs = self.kv_cache.get_req_blocks(
+                req_id, replica_idx=replica_idx
             )
+            self.prefill_reqs[req_id] = (context, replica_idx)
+            self.prefill_reqs_per_replica[replica_idx] += 1
+            self.send_prefill_request(req_id, context, dst_idxs, replica_idx)
 
     def _handle_cancelled_requests(self) -> None:
         for req_id in get_cancelled_reqs(self.cancel_queue):
@@ -245,10 +304,15 @@ class DecodeScheduler(Scheduler):
 
             # If it is pending prefill, remove the pending request.
             elif req_id in self.prefill_reqs:
-                data = self.prefill_reqs[req_id]
+                data, dst_replica_idx = self.prefill_reqs[req_id]
 
                 # Remove from pending requests.
                 del self.prefill_reqs[req_id]
+                self.prefill_reqs_per_replica[dst_replica_idx] -= 1
+
+                # Release the KV cache blocks that were allocated on the
+                # decode GPU before sending this request to prefill
+                self.kv_cache.release(req_id, replica_idx=dst_replica_idx)
 
                 # TODO: Do not crash the scheduler if a request does not have a target endpoint.
                 #       Instead we should validate this in the frontend.
@@ -299,8 +363,8 @@ class DecodeScheduler(Scheduler):
                 continue
 
             # Remove from pending prefill requests and add to TG requests.
-            context = self.prefill_reqs.pop(request_id)
-            dst_replica_idx = self.paged_manager.get_replica(request_id)
+            context, dst_replica_idx = self.prefill_reqs.pop(request_id)
+            self.prefill_reqs_per_replica[dst_replica_idx] -= 1
             self.batch_constructor.enqueue_new_request(context, dst_replica_idx)
 
         # Manage for cancelled requests
@@ -316,13 +380,16 @@ class DecodeScheduler(Scheduler):
         assert len(inputs.batches) > 0
         responses = self.pipeline.execute(inputs)
 
-        pruned_ids = (
-            self.batch_constructor.advance_requests_and_collect_invalid_ids(
-                inputs.batches
-            )
-        )
-        for request_id in pruned_ids:
-            del responses[request_id]
+        # Filter out responses for already-released requests. With the
+        # overlap pipeline, the previous batch may produce a token for a
+        # request that already hit EOS and was released.
+        responses = {
+            req_id: response
+            for req_id, response in responses.items()
+            if self.batch_constructor.contains(req_id)
+        }
+
+        self.batch_constructor.advance_requests(inputs)
 
         # Release terminated requests
         num_terminated_requests = 0
@@ -331,16 +398,18 @@ class DecodeScheduler(Scheduler):
                 self.batch_constructor.release_request(request_id)
                 num_terminated_requests += 1
 
-        # send the responses to the API process
-        self.response_queue.put_nowait(
-            {
-                req_id: SchedulerResult.create(response)
-                for req_id, response in responses.items()
-            }
-        )
+        # Send the responses to the API process
+        if responses:
+            self.response_queue.put_nowait(
+                {
+                    req_id: SchedulerResult.create(response)
+                    for req_id, response in responses.items()
+                }
+            )
 
         return num_terminated_requests
 
+    @traced
     def run_iteration(self) -> SchedulerProgress:
         """Main scheduling loop that processes decode requests.
 
@@ -374,13 +443,21 @@ class DecodeScheduler(Scheduler):
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
 
-        # If the batch is empty, skip
-        if len(inputs.batch) == 0:
+        # Check whether the overlap pipeline has deferred outputs that must
+        # be drained even when the current batch is empty.
+        has_pending_outputs = (
+            hasattr(self.pipeline, "has_pending_outputs")
+            and self.pipeline.has_pending_outputs()
+        )
+        if not (inputs or has_pending_outputs):
             return SchedulerProgress.NO_PROGRESS
 
         # Schedule the batch
         t0 = time.monotonic()
-        with Tracer(f"_schedule({inputs})"):
+        if inputs:
+            with Tracer(f"_schedule({inputs})"):
+                num_terminated_reqs = self.schedule(inputs)
+        else:
             num_terminated_reqs = self.schedule(inputs)
         t1 = time.monotonic()
         batch_execution_time_s = t1 - t0
@@ -389,19 +466,22 @@ class DecodeScheduler(Scheduler):
         self.scheduler_logger.log_metrics(
             sch_config=self.scheduler_config,
             inputs=inputs,
-            paged_cache=self.paged_manager,
+            kv_cache=self.kv_cache,
             batch_creation_time_s=batch_creation_time_s,
             batch_execution_time_s=batch_execution_time_s,
             num_pending_reqs=len(self.pending_reqs) + len(self.prefill_reqs),
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
+            speculative_decoding_metrics=self.pipeline.spec_decode_metrics()
+            if hasattr(self.pipeline, "spec_decode_metrics")
+            else None,
         )
 
         return SchedulerProgress.MADE_PROGRESS
 
 
 def load_decode_scheduler(
-    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+    pipeline: TextGenerationPipeline[TextContext],
     pipeline_config: PipelineConfig,
     request_queue: MAXPullQueue[TextContext | TextAndVisionContext],
     response_queue: MAXPushQueue[
@@ -415,20 +495,27 @@ def load_decode_scheduler(
         pipeline_config
     )
 
-    # Retrieve Paged Manager
-    paged_manager = get_paged_manager(pipeline)
-
-    if paged_manager is None:
-        raise RuntimeError(
-            "A paged KV cache manager must be present to use the DecodeScheduler"
+    # Build DP batch padder when DP > 1 with device graph capture.
+    dp_padder: DPBatchPadder | None = None
+    if (
+        scheduler_config.data_parallel_degree > 1
+        and pipeline_config.runtime.device_graph_capture
+    ):
+        dp_padder = DPBatchPadder(
+            dp_size=scheduler_config.data_parallel_degree,
+            kv_manager=pipeline.kv_manager,
+            max_length=pipeline._pipeline_model.max_seq_len,
+            model_name=pipeline_config.model.model_name,
+            pipeline=pipeline,
         )
 
     return DecodeScheduler(
         pipeline=pipeline,
         scheduler_config=scheduler_config,
-        paged_manager=paged_manager,
+        kv_cache=pipeline.kv_manager,
         request_queue=request_queue,
         response_queue=response_queue,
         cancel_queue=cancel_queue,
-        dispatcher=DecodeDispatcherClientV2(bind_addr=settings.di_bind_address),
+        dispatcher=DecodeDispatcherClient(bind_addr=settings.di_bind_address),
+        dp_padder=dp_padder,
     )

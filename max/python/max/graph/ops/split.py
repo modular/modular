@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -25,6 +25,7 @@ from ..shape import Shape
 from ..type import DeviceRef
 from ..value import TensorType, TensorValue, TensorValueLike
 from .constant import constant
+from .validation import assert_valid_axis
 
 
 def split(
@@ -51,8 +52,7 @@ def split(
     x = TensorValue(x)
     sizes = [int(Dim(size)) for size in split_sizes]
 
-    if not (-x.rank <= axis < x.rank):
-        raise IndexError(f"Axis out of range {axis=}, {x.rank=}")
+    assert_valid_axis(x, axis)
 
     if axis < 0:
         axis += x.rank

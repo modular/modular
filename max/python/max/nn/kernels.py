@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,54 +23,55 @@ from max.dtype import DType
 from max.graph import (
     BufferValue,
     BufferValueLike,
+    DeviceKind,
     DeviceRef,
     Dim,
     StaticDim,
     TensorType,
     TensorValue,
     TensorValueLike,
+    Type,
     Value,
     ops,
 )
 from max.graph.ops import assert_same_device
 from max.graph.ops.quantized import repack_gguf_quantized_weights
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.nn.float8_config import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8WeightScaleSpec,
-)
+from max.nn.quant_config import InputScaleSpec, QuantConfig, WeightScaleSpec
 
-from .attention.mask_config import (
-    AttentionMaskVariant,
-    MHAMaskConfig,
-    MHAMaskVariant,
-    PositionalEncodingVariant,
-)
-from .kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
+from .attention.mask_config import AttentionMaskVariant, MHAMaskVariant
+from .kv_cache import KVCacheParams, PagedCacheValues
 
-_MHA_MASK_CONFIG_DICT = {
-    MHAMaskVariant.CAUSAL_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.CAUSAL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
+_MHA_MASK_VARIANT_TO_ATTENTION_MASK = {
+    MHAMaskVariant.CAUSAL_MASK: AttentionMaskVariant.CAUSAL_MASK,
+    MHAMaskVariant.NULL_MASK: AttentionMaskVariant.NULL_MASK,
+    MHAMaskVariant.CHUNKED_CAUSAL_MASK: (
+        AttentionMaskVariant.CHUNKED_CAUSAL_MASK
     ),
-    MHAMaskVariant.CAUSAL_ALIBI_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.CAUSAL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.ALIBI_POS,
-    ),
-    MHAMaskVariant.NULL_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.NULL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
-    ),
-    MHAMaskVariant.CHUNKED_CAUSAL_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.CHUNKED_CAUSAL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
-    ),
-    MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK: MHAMaskConfig(
-        attention_mask_variant=AttentionMaskVariant.SLIDING_WINDOW_CAUSAL_MASK,
-        positional_encoding_variant=PositionalEncodingVariant.NO_POS,
+    MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK: (
+        AttentionMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
     ),
 }
+
+KEY_CACHE_INDEX = 0
+VALUE_CACHE_INDEX = 1
+
+
+def _mask_str(mask_variant: MHAMaskVariant) -> str:
+    return _MHA_MASK_VARIANT_TO_ATTENTION_MASK[mask_variant].value
+
+
+def _mha_parameters(
+    mask_variant: MHAMaskVariant,
+    *,
+    local_window_size: int | None = None,
+) -> dict[str, int | str | DType]:
+    parameters: dict[str, int | str | DType] = {
+        "mask_str": _mask_str(mask_variant)
+    }
+    if local_window_size is not None:
+        parameters["local_window_size"] = local_window_size
+    return parameters
 
 
 def ceildiv(n: Dim, d: Dim) -> Dim:
@@ -144,18 +145,16 @@ def fused_qkv_padded_matmul(
             f"expected valid_lengths to have rank 1 [batch], was rank {valid_lengths.rank}"
         )
 
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
-        raise ValueError(
-            f"unsupported cache strategy for fused_qkv_padded_matmul: {kv_params.cache_strategy}"
-        )
-
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-    op_name = f"mo.fused_qkv_matmul.padded.{cache_strategy_str}"
-
     return ops.inplace_custom(
-        op_name,
+        "mo.fused_qkv_matmul.padded.paged",
         device=input.device,
-        values=[input, wqkv, *kv_collection, layer_idx, valid_lengths],
+        values=[
+            input,
+            wqkv,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
+            layer_idx,
+            valid_lengths,
+        ],
         out_types=[
             TensorType(
                 dtype=input.dtype,
@@ -175,15 +174,27 @@ def fused_qkv_ragged_matmul(
     layer_idx: TensorValue,
     n_heads: int,
     bias: TensorValue | None = None,
+    _output_dim: int | None = None,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with ragged input.
 
-    `input` and `input_row_offsets` are used together to implement the ragged
-    tensor.
-    `input_row_offsets` indicates where each batch starts and ends in `input`
+    Args:
+        kv_params: KVCacheParams object containing key-value cache parameters.
+        input: TensorValue representing the input tensor with shape
+            [total_seq_len, hidden_dim].
+        input_row_offsets: TensorValue indicating the start and end of each
+            request in the input tensor with shape [batch_size + 1].
+        wqkv: The concatenated Q, K and V projection weights.
+        kv_collection: PagedCacheValues object for managing key-value cache.
+        layer_idx: TensorValue representing the layer index, expected to have
+            dtype uint32.
+        n_heads: Number of Query attention heads.
+        bias: Optional bias vector concatenated as [q, k, v].
+        _output_dim: Optional output dimension. If not provided, the output
+            dimension will be [n_heads * head_dim].
 
-    Raises:
-        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    Returns:
+        Query projection tensor.
     """
     if input.dtype != wqkv.dtype:
         raise ValueError(
@@ -208,20 +219,22 @@ def fused_qkv_ragged_matmul(
             f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
         )
 
-    if kv_params.cache_strategy not in {
-        KVCacheStrategy.PAGED,
-    }:
-        raise ValueError(
-            f"unsupported cache strategy for fused_qkv_ragged_matmul: {kv_params.cache_strategy}"
-        )
-
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-    op_name = f"mo.fused_qkv_matmul.ragged.{cache_strategy_str}"
-    values = [input, input_row_offsets, wqkv, *kv_collection, layer_idx]
+    op_name = "mo.fused_qkv_matmul.ragged.paged"
+    values = [
+        input,
+        input_row_offsets,
+        wqkv,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+    ]
 
     if bias is not None:
         op_name += ".bias"
         values.append(bias)
+
+    output_dim = (
+        _output_dim if _output_dim is not None else n_heads * kv_params.head_dim
+    )
 
     return ops.inplace_custom(
         op_name,
@@ -230,14 +243,267 @@ def fused_qkv_ragged_matmul(
         out_types=[
             TensorType(
                 dtype=input.dtype,
-                shape=input.shape[:-1] + [n_heads * kv_params.head_dim],
+                shape=input.shape[:-1] + [output_dim],
                 device=input.device,
             )
         ],
     )[0].tensor
 
 
-def fused_qkv_ragged_matmul_scaled_float8(
+def rope_split_store_ragged(
+    kv_params: KVCacheParams,
+    qkv: TensorValue,
+    input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    n_heads: int,
+    interleaved: bool = True,
+    position_ids: TensorValue | None = None,
+    mrope_section: list[int] | None = None,
+    fuse: bool = True,
+) -> TensorValue:
+    """Apply rope to Q and K from flat QKV buffer, store K/V to cache.
+
+    Reads from a flat QKV matmul output, applies RoPE to Q and K regions,
+    stores K/V to the paged KV cache, and writes roped Q to the output.
+
+    Args:
+        kv_params: KV cache parameters.
+        qkv: Flat QKV matmul output [total_seq_len, q_dim + k_dim + v_dim].
+        input_row_offsets: Ragged offsets [batch_size + 1].
+        freqs_cis: RoPE frequencies [max_seq_len, head_dim].
+        kv_collection: Paged KV cache.
+        layer_idx: Layer index.
+        n_heads: Number of query attention heads.
+        interleaved: Whether freqs_cis uses interleaved (re, im) format.
+        position_ids: Optional ragged 2D array of position IDs. If None,
+            defaults to cache_length + token_idx for each token. When
+            ``num_sections > 1``, ``mrope_section`` must be provided.
+            Shape: [num_sections, total_seq_len].
+        mrope_section: Optional list of ints indicating the section of the
+            head_dim to apply RoPE to. Must be used with ``position_ids``.
+        fuse: If True (default), emit a single fused custom op. If False,
+            emit separate split, rope, and store ops for testing graph
+            compiler fusion.
+
+    Returns:
+        Roped Q output [total_seq_len, n_heads * head_dim].
+    """
+    if qkv.rank != 2:
+        raise ValueError(f"expected qkv to have rank 2, was {qkv.rank}")
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
+
+    if kv_params.quantized_kv_cache:
+        raise ValueError("rope_split_store does not support quantized KV cache")
+
+    if freqs_cis.rank != 2:
+        raise ValueError(
+            f"expected freqs_cis to have rank 2, was {freqs_cis.rank}"
+        )
+
+    head_dim = kv_params.head_dim
+    q_dim = n_heads * head_dim
+
+    if not fuse:
+        return _rope_split_store_ragged_unfused(
+            kv_params=kv_params,
+            qkv=qkv,
+            input_row_offsets=input_row_offsets,
+            freqs_cis=freqs_cis,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
+            n_heads=n_heads,
+            interleaved=interleaved,
+        )
+
+    parameters: dict[str, bool | int | str | DType] = {
+        "interleaved": interleaved,
+    }
+
+    if mrope_section is not None and position_ids is None:
+        raise ValueError("mrope_section requires position_ids to be provided")
+
+    if position_ids is not None:
+        if position_ids.dtype != DType.uint32:
+            raise ValueError(
+                f"expected position_ids to have dtype uint32, was {position_ids.dtype}"
+            )
+        if position_ids.rank != 2:
+            raise ValueError(
+                f"expected position_ids to be 2D, got rank {position_ids.rank}"
+            )
+        if mrope_section is not None:
+            if len(mrope_section) != position_ids.shape[0]:
+                raise ValueError(
+                    f"expected mrope_section to have length"
+                    f" {position_ids.shape[0]}, was {len(mrope_section)}"
+                )
+            scaled = [x * 2 for x in mrope_section]
+            prefix_sums = [sum(scaled[: i + 1]) for i in range(len(scaled))]
+            parameters["mrope_section"] = "_".join(str(x) for x in prefix_sums)
+        else:
+            parameters["mrope_section"] = ""
+
+    if position_ids is not None:
+        op_name = "mo.rope_split_store.ragged.paged.with_position_id"
+        values = [
+            qkv,
+            input_row_offsets,
+            freqs_cis,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
+            position_ids,
+            layer_idx,
+        ]
+    else:
+        op_name = "mo.rope_split_store.ragged.paged"
+        values = [
+            qkv,
+            input_row_offsets,
+            freqs_cis,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
+            layer_idx,
+        ]
+
+    return ops.inplace_custom(
+        op_name,
+        device=qkv.device,
+        values=values,
+        out_types=[
+            TensorType(
+                dtype=qkv.dtype,
+                shape=qkv.shape[:-1] + [q_dim],
+                device=qkv.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
+def store_k_scale_cache_ragged(
+    kv_collection: PagedCacheValues,
+    x_k_scale: TensorValue,
+    input_row_offsets: TensorValue,
+    layer_idx: TensorValue,
+    quantization_granularity: int,
+) -> None:
+    """Store key scale tensor into the paged KV cache."""
+    if kv_collection.kv_scales is None:
+        raise ValueError(
+            "kv_collection.kv_scales is None, expected a buffer value"
+        )
+    ops.inplace_custom(
+        "mo.kv_cache.store_k_scales.paged.ragged",
+        device=x_k_scale.device,
+        values=[
+            x_k_scale,
+            kv_collection.kv_blocks,
+            kv_collection.cache_lengths,
+            kv_collection.lookup_table,
+            input_row_offsets,
+            kv_collection.max_lengths,
+            kv_collection.kv_scales,
+            layer_idx,
+        ],
+        parameters={
+            "quantization_granularity": quantization_granularity,
+        },
+    )
+
+
+def _rope_split_store_ragged_unfused(
+    kv_params: KVCacheParams,
+    qkv: TensorValue,
+    input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    n_heads: int,
+    interleaved: bool,
+) -> TensorValue:
+    """Unfused rope + split + store for testing graph compiler fusion.
+
+    Emits separate slice, rope, and store ops instead of a single fused
+    custom op, so the graph compiler can attempt to fuse them.
+    """
+    head_dim = kv_params.head_dim
+    n_kv_heads = kv_params.n_kv_heads
+    q_dim = n_heads * head_dim
+    kv_dim = n_kv_heads * head_dim
+
+    # Split QKV into Q, K, V.
+    x_q, x_k, x_v = ops.split(qkv, [q_dim, kv_dim, kv_dim], axis=-1)
+
+    # Reshape to [total_seq_len, num_heads, head_dim] for rope.
+    x_q = x_q.reshape((-1, n_heads, head_dim))
+    x_k = x_k.reshape((-1, n_kv_heads, head_dim))
+    x_v = x_v.reshape((-1, n_kv_heads, head_dim))
+
+    # Apply RoPE to Q and K individually.
+    xq_rope = rope_ragged(
+        x_q,
+        input_row_offsets,
+        kv_collection.cache_lengths,
+        freqs_cis,
+        interleaved=interleaved,
+    )
+    xk_rope = rope_ragged(
+        x_k,
+        input_row_offsets,
+        kv_collection.cache_lengths,
+        freqs_cis,
+        interleaved=interleaved,
+    )
+
+    # Store K and V to cache individually.
+    kv_blocks = kv_collection.kv_blocks
+    cache_lengths = kv_collection.cache_lengths
+    lookup_table = kv_collection.lookup_table
+    max_lengths = kv_collection.max_lengths
+    ops.inplace_custom(
+        "mo.kv_cache.store.paged.ragged",
+        device=xk_rope.device,
+        values=[
+            xk_rope,
+            kv_blocks,
+            cache_lengths,
+            lookup_table,
+            input_row_offsets,
+            max_lengths,
+            layer_idx,
+        ],
+        parameters={"key_or_value": 0},
+    )
+    ops.inplace_custom(
+        "mo.kv_cache.store.paged.ragged",
+        device=x_v.device,
+        values=[
+            x_v,
+            kv_blocks,
+            cache_lengths,
+            lookup_table,
+            input_row_offsets,
+            max_lengths,
+            layer_idx,
+        ],
+        parameters={"key_or_value": 1},
+    )
+
+    # Return flat roped Q [total_seq_len, n_heads * head_dim].
+    return xq_rope.reshape((-1, q_dim))
+
+
+def _fused_qkv_ragged_matmul_scaled_float8(
     kv_params: KVCacheParams,
     input: TensorValue,
     input_row_offsets: TensorValue,
@@ -248,7 +514,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
     input_scale: TensorValue,
     weight_scale: TensorValue,
     bias: TensorValue | None = None,
-    float8_config: Float8Config | None = None,
+    quant_config: QuantConfig | None = None,
     _output_dim: int | None = None,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with scaled float8 input and weights.
@@ -270,7 +536,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
         weight_scale: TensorValue representing the weight scale tensor. Shape
             varies depending on the quantization config.
         bias: Optional bias vector concatenated as [q, k, v].
-        float8_config: Optional Float8Config object containing float8
+        quant_config: Optional QuantConfig object containing scaled
             quantization parameters. If not provided, the quantization config
             will be inferred from the input and weight scale shapes.
         _output_dim: Optional output dimension. If not provided, the output
@@ -334,10 +600,11 @@ def fused_qkv_ragged_matmul_scaled_float8(
         weight_scale = weight_scale.reshape([1, 1])
 
     # Try to infer the quantization config
-    if float8_config is not None:
-        scales_granularity_mnk = float8_config.scales_granularity_mnk
+    if quant_config is not None:
+        scales_granularity_mnk = quant_config.scales_granularity_mnk
     else:
-        # with out float8_config, we either use per-tensor or per-channel quantization
+        # with out quant_config, we either use per-tensor or per-channel quantization
+        # both dynamic and static tensor wise quantization have weight shape [1, 1]
         if (
             input_scale.shape[0] == 1
             and input_scale.shape[1] == 1
@@ -350,7 +617,7 @@ def fused_qkv_ragged_matmul_scaled_float8(
         else:
             raise ValueError(
                 "Can not infer the quantization config from the input tensor shapes",
-                "Please provide a float8_config",
+                "Please provide a quant_config",
             )
 
     assert kv_params.page_size is not None
@@ -368,12 +635,148 @@ def fused_qkv_ragged_matmul_scaled_float8(
         wqkv,
         input_scale,
         weight_scale,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
     ]
     if bias is not None:
         op_name += ".bias"
         values.append(bias)
+
+    output_dim = (
+        _output_dim if _output_dim is not None else n_heads * kv_params.head_dim
+    )
+
+    return ops.inplace_custom(
+        op_name,
+        device=input.device,
+        values=values,
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=input.shape[:-1] + [output_dim],
+                device=input.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
+def _fused_qkv_ragged_matmul_scaled_float4(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    wqkv: TensorValue,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    n_heads: int,
+    input_scale: TensorValue,
+    weight_scale: TensorValue,
+    tensor_sf: float | TensorValue,
+    kv_scales: TensorValue | None = None,
+    sf_vector_size: int = 16,
+    _output_dim: int | None = None,
+) -> TensorValue:
+    """Computes fused query, key, and value projections with scaled float4 input and weights.
+
+    Args:
+        kv_params: KVCacheParams object containing key-value cache parameters.
+        input: TensorValue representing the input tensor with shape
+            [M=total_seq_len, K=hidden_dim].
+        input_row_offsets: TensorValue indicating the start and end of each
+            batch in the input tensor with shape [batch_size + 1].
+        wqkv: TensorValue representing the weight tensor with shape
+            [N=(num_heads + 2 * num_kv_heads) * head_dim, K=hidden_dim].
+        kv_collection: PagedCacheValues object for managing key-value cache.
+        layer_idx: TensorValue representing the layer index, expected to have
+            dtype uint32.
+        n_heads: Number of attention heads.
+        input_scale: TensorValue representing the input scale tensor. Shape
+            for blockwise scaling is 5D, for example, [2, 3, 32, 4, 4].
+        weight_scale: TensorValue representing the weight scale tensor. Shape
+            for blockwise scaling is 5D, for example, [2, 34, 32, 4, 4]
+        tensor_sf: Buffer-wise scaling factor equal to weight_scale_2 * input_scale (pre-quantization, non-inverted).
+        kv_scales: TBD, used in NVFP4 KV cache, see: https://github.com/NVIDIA/TensorRT-LLM/blob/0ffa77af51b272ba27424564ed253096d6f0f11a/tensorrt_llm/_torch/modules/linear.py#L690
+        _output_dim: Optional output dimension. If not provided, the output
+            dimension will be [n_heads * head_dim].
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+    if input.dtype != wqkv.dtype:
+        raise ValueError(
+            "expected input and wqkv to have the same dtype, but got"
+            f" {input.dtype} and {wqkv.dtype}, respectively."
+        )
+
+    input_rank_expected = 2
+    if input.rank != input_rank_expected:
+        raise ValueError(
+            f"expected input to have rank {input_rank_expected}, was {input.rank}"
+        )
+
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
+
+    # Device check - all tensors must be on the same device
+    tensors_to_check = [wqkv, input_row_offsets, input_scale, weight_scale]
+
+    if not all(t.device == input.device for t in tensors_to_check):
+        raise ValueError(
+            f"expected all tensors to be on the same device as input ({input.device}), "
+            f"but got:\n"
+            f"  wqkv={wqkv.device}\n"
+            f"  input_row_offsets={input_row_offsets.device}\n"
+            f"  input_scale={input_scale.device}\n"
+            f"  weight_scale={weight_scale.device}"
+        )
+
+    # layer_idx must be a scalar on CPU as it's used for indexing
+    if layer_idx.device != DeviceRef.CPU():
+        raise ValueError(
+            f"expected layer_idx to be on CPU device, but got {layer_idx.device}"
+        )
+
+    # tensor_sf must be a scalar on CPU as it's used for per-tensor scaling
+    if isinstance(tensor_sf, float):
+        tensor_sf = ops.constant(
+            tensor_sf, DType.float32, device=DeviceRef.CPU()
+        )
+    elif isinstance(tensor_sf, TensorValue):
+        tensor_sf = (
+            tensor_sf.cast(DType.float32).to(DeviceRef.CPU()).reshape(())
+        )
+    else:
+        raise ValueError(
+            "tensor_sf must be either float or a float32 CPU tensor of rank 0."
+        )
+
+    assert kv_params.page_size is not None
+    parameters: dict[str, int | str | DType] = {
+        "dtype": DType.uint8,
+        "scale_type": DType.float8_e4m3fn,
+        "kv_type": kv_params.dtype,
+        "SF_VECTOR_SIZE": sf_vector_size,
+    }
+
+    op_name = "mo.fused_qkv_matmul.ragged.paged.scale.float4"
+    values = [
+        input,
+        input_row_offsets,
+        wqkv,
+        input_scale,
+        weight_scale,
+        tensor_sf,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+    ]
 
     output_dim = (
         _output_dim if _output_dim is not None else n_heads * kv_params.head_dim
@@ -409,16 +812,15 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
     layer_idx: TensorValue,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with ragged input and
-    quantized weight matrices. A `quantization_config` must be provided.
+    quantized weight matrices. A ``quantization_config`` must be provided.
 
-    `input` and `input_row_offsets` are used together to implement the ragged
+    ``input`` and ``input_row_offsets`` are used together to implement the ragged
     tensor.
-    `input_row_offsets` indicates where each batch starts and ends in `input`
+    ``input_row_offsets`` indicates where each batch starts and ends in ``input``
 
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
-
     input_rank_expected = 2
     if input.rank != input_rank_expected:
         raise ValueError(
@@ -441,11 +843,6 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
             f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
         )
 
-    if kv_params.cache_strategy not in {KVCacheStrategy.PAGED}:
-        raise ValueError(
-            f"unsupported cache strategy for fused_qkv_ragged_matmul: {kv_params.cache_strategy}"
-        )
-
     if (
         not quantization_encoding_q.is_gguf
         or not quantization_encoding_k.is_gguf
@@ -462,9 +859,8 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
         "quantization_encoding_v": quantization_encoding_v.name,
     }
 
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
     return ops.inplace_custom(
-        name=f"mo.unfused_qkv_matmul.ragged.{cache_strategy_str}.gguf_quantized",
+        "mo.unfused_qkv_matmul.ragged.paged.gguf_quantized",
         device=input.device,
         values=[
             input,
@@ -472,7 +868,7 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
             repack_gguf_quantized_weights(q_weight, quantization_encoding_q),
             repack_gguf_quantized_weights(k_weight, quantization_encoding_k),
             repack_gguf_quantized_weights(v_weight, quantization_encoding_v),
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ],
         out_types=[
@@ -499,16 +895,15 @@ def fused_qkv_ragged_matmul_quantized(
     bias: TensorValue | None = None,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with ragged input and
-    quantized weight matrices. A `quantization_config` must be provided.
+    quantized weight matrices. A ``quantization_config`` must be provided.
 
-    `input` and `input_row_offsets` are used together to implement the ragged
+    ``input`` and ``input_row_offsets`` are used together to implement the ragged
     tensor.
-    `input_row_offsets` indicates where each batch starts and ends in `input`
+    ``input_row_offsets`` indicates where each batch starts and ends in ``input``
 
     Raises:
         ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
-
     input_rank_expected = 2
     if input.rank != input_rank_expected:
         raise ValueError(
@@ -524,13 +919,6 @@ def fused_qkv_ragged_matmul_quantized(
     if layer_idx.dtype != DType.uint32:
         raise ValueError(
             f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
-        )
-
-    if kv_params.cache_strategy not in {
-        KVCacheStrategy.PAGED,
-    }:
-        raise ValueError(
-            f"unsupported cache strategy for fused_qkv_ragged_matmul: {kv_params.cache_strategy}"
         )
 
     # In the group-wise quantization scheme, every `group_size` quantized weights
@@ -572,16 +960,20 @@ def fused_qkv_ragged_matmul_quantized(
             ],
         )[0].tensor
 
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-
-    args = [input, input_row_offsets, wqkv, *kv_collection, layer_idx]
+    args = [
+        input,
+        input_row_offsets,
+        wqkv,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+    ]
     if bias is not None:
         args.append(bias)
         bias_name_str = "bias."
     else:
         bias_name_str = ""
 
-    op_name = f"mo.fused_qkv_matmul.ragged.{cache_strategy_str}.{bias_name_str}quantized"
+    op_name = f"mo.fused_qkv_matmul.ragged.paged.{bias_name_str}quantized"
 
     return ops.inplace_custom(
         op_name,
@@ -631,13 +1023,7 @@ def matmul_kv_cache_ragged(
             f" {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
-        raise ValueError(
-            f"unsupported cache strategy for matmul_kv_cache_ragged: {kv_params.cache_strategy}"
-        )
-
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-    op_name = f"mo.kv_matmul.ragged.{cache_strategy_str}"
+    op_name = "mo.kv_matmul.ragged.paged"
 
     ops.inplace_custom(
         name=op_name,
@@ -646,7 +1032,7 @@ def matmul_kv_cache_ragged(
             hidden_states,
             input_row_offsets,
             weight,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ],
     )
@@ -685,13 +1071,7 @@ def matmul_k_cache_ragged(
             f" {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
-        raise ValueError(
-            f"unsupported cache strategy for matmul_kv_cache_ragged: {kv_params.cache_strategy}"
-        )
-
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-    op_name = f"mo.k_matmul.ragged.{cache_strategy_str}"
+    op_name = "mo.k_matmul.ragged.paged"
 
     ops.inplace_custom(
         name=op_name,
@@ -700,7 +1080,7 @@ def matmul_k_cache_ragged(
             hidden_states,
             input_row_offsets,
             weight,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ],
     )
@@ -738,8 +1118,7 @@ def matmul_k_cache_ragged_scaled_float8(
             dtype uint32.
 
     Raises:
-        ValueError: on input shapes/dtypes that are invalid for the kernel,
-            or when the cache strategy is not supported.
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
     """
     if hidden_states.dtype != weight.dtype:
         raise ValueError(
@@ -765,13 +1144,7 @@ def matmul_k_cache_ragged_scaled_float8(
             f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
         )
 
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
-        raise ValueError(
-            f"unsupported cache strategy for matmul_kv_cache_ragged: {kv_params.cache_strategy}"
-        )
-
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-    op_name = f"mo.k_matmul.ragged.{cache_strategy_str}.scale"
+    op_name = "mo.k_matmul.ragged.paged.scale"
 
     parameters: dict[str, bool | int | str | DType] = {
         "m_scale_granularity": scales_granularity_mnk[0],
@@ -788,7 +1161,7 @@ def matmul_k_cache_ragged_scaled_float8(
             weight,
             input_scale,
             weight_scale,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ],
         parameters=parameters,
@@ -833,7 +1206,6 @@ def fused_qk_ragged_rope(
     calculation (cache_length + token_idx) with explicit position values. This is useful for
     3D RoPE in models like Qwen2.5-VL that need custom position encoding.
     """
-
     if input_row_offsets.dtype != DType.uint32:
         raise ValueError(
             "expected input_row_offsets to have dtype uint32, was"
@@ -845,15 +1217,9 @@ def fused_qk_ragged_rope(
             f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
         )
 
-    if kv_params.cache_strategy not in {
-        KVCacheStrategy.PAGED,
-    }:
-        raise ValueError(
-            f"unsupported cache strategy for fused_qk_ragged_rope: {kv_params.cache_strategy}"
-        )
-
     parameters: dict[str, bool | int | str | DType] = {
         "interleaved": interleaved,
+        "cache_dtype": kv_params.dtype,
     }
 
     if position_ids is not None:
@@ -884,26 +1250,22 @@ def fused_qk_ragged_rope(
         else:
             parameters["mrope_section"] = ""
 
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-
     if position_ids is not None:
-        op_name = (
-            f"mo.fused_qk_rope.ragged.{cache_strategy_str}.with_position_id"
-        )
+        op_name = "mo.fused_qk_rope.ragged.paged.with_position_id"
         values = [
             input,
             input_row_offsets,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             freqs_cis,
             position_ids,
             layer_idx,
         ]
     else:
-        op_name = f"mo.fused_qk_rope.ragged.{cache_strategy_str}"
+        op_name = "mo.fused_qk_rope.ragged.paged"
         values = [
             input,
             input_row_offsets,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             freqs_cis,
             layer_idx,
         ]
@@ -965,11 +1327,6 @@ def fused_qk_padded_rope(
             f"expected valid_lengths to have dtype uint32, was {valid_lengths.dtype}"
         )
 
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
-        raise ValueError(
-            f"unsupported cache strategy for fused_qk_padded_rope: {kv_params.cache_strategy}"
-        )
-
     if input.rank != 4:
         raise ValueError(
             f"expected input to have rank 4 [batch, seq_len, n_heads, head_dim], was rank {input.rank}"
@@ -985,14 +1342,12 @@ def fused_qk_padded_rope(
     }
 
     # Use custom op that calls the Mojo fused_qk_rope kernel with paged cache
-    op_name = "mo.fused_qk_rope.padded.paged"
-
     return ops.inplace_custom(
-        op_name,
+        "mo.fused_qk_rope.padded.paged",
         device=input.device,
         values=[
             input,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             freqs_cis,
             layer_idx,
             valid_lengths,
@@ -1004,6 +1359,472 @@ def fused_qk_padded_rope(
         ],
         parameters=parameters,
     )[0].tensor
+
+
+def _validate_kv_cache_store_common(
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    key_or_value: int,
+) -> None:
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(
+            f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        )
+    if layer_idx.rank != 0:
+        raise ValueError(
+            f"expected layer_idx to be a scalar (rank 0), was rank {layer_idx.rank}"
+        )
+    if kv_collection.kv_blocks.rank != 6:
+        raise ValueError(
+            f"expected kv_blocks to have rank 6, was {kv_collection.kv_blocks.rank}"
+        )
+    if kv_collection.cache_lengths.rank != 1:
+        raise ValueError(
+            f"expected cache_lengths to have rank 1, was {kv_collection.cache_lengths.rank}"
+        )
+    if kv_collection.lookup_table.rank != 2:
+        raise ValueError(
+            f"expected lookup_table to have rank 2, was {kv_collection.lookup_table.rank}"
+        )
+    if kv_collection.max_lengths.rank != 2:
+        raise ValueError(
+            f"expected max_lengths to have rank 2, was {kv_collection.max_lengths.rank}"
+        )
+    if key_or_value not in (KEY_CACHE_INDEX, VALUE_CACHE_INDEX):
+        raise ValueError(
+            "expected key_or_value to be KEY_CACHE_INDEX or VALUE_CACHE_INDEX, "
+            f"was {key_or_value}"
+        )
+
+
+def kv_cache_store_paged_ragged(
+    kv_collection: PagedCacheValues,
+    x_cache: TensorValue,
+    input_row_offsets: TensorValue,
+    layer_idx: TensorValue,
+    *,
+    key_or_value: int,
+) -> None:
+    """Stores key or value tensor into the paged KV cache (ragged inputs)."""
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+    if x_cache.rank != 3:
+        raise ValueError(f"expected x_cache to have rank 3, was {x_cache.rank}")
+    if input_row_offsets.rank != 1:
+        raise ValueError(
+            f"expected input_row_offsets to have rank 1, was {input_row_offsets.rank}"
+        )
+    _validate_kv_cache_store_common(kv_collection, layer_idx, key_or_value)
+
+    parameters: dict[str, int | str | DType] = {
+        "key_or_value": key_or_value,
+    }
+
+    ops.inplace_custom(
+        "mo.kv_cache.store.paged.ragged",
+        device=x_cache.device,
+        values=[
+            x_cache,
+            kv_collection.kv_blocks,
+            kv_collection.cache_lengths,
+            kv_collection.lookup_table,
+            input_row_offsets,
+            kv_collection.max_lengths,
+            layer_idx,
+        ],
+        parameters=parameters,
+    )
+
+
+def store_k_cache_ragged(
+    kv_collection: PagedCacheValues,
+    x_k: TensorValue,
+    input_row_offsets: TensorValue,
+    layer_idx: TensorValue,
+) -> None:
+    """Stores the key tensor into the paged KV cache for ragged inputs.
+
+    Args:
+        kv_collection: The paged KV cache collection to write into.
+        x_k: The key tensor of rank 3 containing the new key projections.
+        input_row_offsets: Ragged tensor row offsets of shape ``[batch + 1]``
+            indicating where each sequence starts and ends. Must have dtype
+            ``uint32``.
+        layer_idx: The scalar layer index (dtype ``uint32``) identifying which
+            transformer layer's cache to update.
+    """
+    kv_cache_store_paged_ragged(
+        kv_collection,
+        x_k,
+        input_row_offsets,
+        layer_idx,
+        key_or_value=KEY_CACHE_INDEX,
+    )
+
+
+def store_v_cache_ragged(
+    kv_collection: PagedCacheValues,
+    x_v: TensorValue,
+    input_row_offsets: TensorValue,
+    layer_idx: TensorValue,
+) -> None:
+    """Stores the value tensor into the paged KV cache for ragged inputs.
+
+    Args:
+        kv_collection: The paged KV cache collection to write into.
+        x_v: The value tensor of rank 3 containing the new value projections.
+        input_row_offsets: Ragged tensor row offsets of shape ``[batch + 1]``
+            indicating where each sequence starts and ends. Must have dtype
+            ``uint32``.
+        layer_idx: The scalar layer index (dtype ``uint32``) identifying which
+            transformer layer's cache to update.
+    """
+    kv_cache_store_paged_ragged(
+        kv_collection,
+        x_v,
+        input_row_offsets,
+        layer_idx,
+        key_or_value=VALUE_CACHE_INDEX,
+    )
+
+
+def kv_cache_store_paged_padded(
+    kv_collection: PagedCacheValues,
+    x_cache: TensorValue,
+    valid_lengths: TensorValue,
+    layer_idx: TensorValue,
+    *,
+    key_or_value: int,
+) -> None:
+    """Stores key or value tensor into the paged KV cache (padded inputs)."""
+    if valid_lengths.dtype != DType.uint32:
+        raise ValueError(
+            f"expected valid_lengths to have dtype uint32, was {valid_lengths.dtype}"
+        )
+    if x_cache.rank != 4:
+        raise ValueError(f"expected x_cache to have rank 4, was {x_cache.rank}")
+    if valid_lengths.rank != 1:
+        raise ValueError(
+            f"expected valid_lengths to have rank 1, was {valid_lengths.rank}"
+        )
+    _validate_kv_cache_store_common(kv_collection, layer_idx, key_or_value)
+
+    parameters: dict[str, int | str | DType] = {
+        "key_or_value": key_or_value,
+    }
+
+    ops.inplace_custom(
+        "mo.kv_cache.store.paged.padded",
+        device=x_cache.device,
+        values=[
+            x_cache,
+            kv_collection.kv_blocks,
+            kv_collection.cache_lengths,
+            kv_collection.lookup_table,
+            valid_lengths,
+            kv_collection.max_lengths,
+            layer_idx,
+        ],
+        parameters=parameters,
+    )
+
+
+def store_k_cache_padded(
+    kv_collection: PagedCacheValues,
+    x_k: TensorValue,
+    valid_lengths: TensorValue,
+    layer_idx: TensorValue,
+) -> None:
+    """Stores the key tensor into the paged KV cache for padded inputs.
+
+    Args:
+        kv_collection: The paged KV cache collection to write into.
+        x_k: The key tensor of rank 4 containing the new key projections.
+        valid_lengths: Buffer of shape ``[batch]`` (dtype ``uint32``)
+            indicating the actual (non-padded) sequence length for each
+            batch element.
+        layer_idx: The scalar layer index (dtype ``uint32``) identifying which
+            transformer layer's cache to update.
+    """
+    kv_cache_store_paged_padded(
+        kv_collection,
+        x_k,
+        valid_lengths,
+        layer_idx,
+        key_or_value=KEY_CACHE_INDEX,
+    )
+
+
+def store_v_cache_padded(
+    kv_collection: PagedCacheValues,
+    x_v: TensorValue,
+    valid_lengths: TensorValue,
+    layer_idx: TensorValue,
+) -> None:
+    """Stores the value tensor into the paged KV cache for padded inputs.
+
+    Args:
+        kv_collection: The paged KV cache collection to write into.
+        x_v: The value tensor of rank 4 containing the new value projections.
+        valid_lengths: Buffer of shape ``[batch]`` (dtype ``uint32``)
+            indicating the actual (non-padded) sequence length for each
+            batch element.
+        layer_idx: The scalar layer index (dtype ``uint32``) identifying which
+            transformer layer's cache to update.
+    """
+    kv_cache_store_paged_padded(
+        kv_collection,
+        x_v,
+        valid_lengths,
+        layer_idx,
+        key_or_value=VALUE_CACHE_INDEX,
+    )
+
+
+def rope_ragged(
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    start_pos: TensorValue,
+    freqs_cis: TensorValue,
+    *,
+    interleaved: bool = True,
+) -> TensorValue:
+    """Applies RoPE to ragged input using the standard rope kernel."""
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+    if start_pos.dtype != DType.uint32:
+        raise ValueError(
+            f"expected start_pos to have dtype uint32, was {start_pos.dtype}"
+        )
+    if input.rank != 3:
+        raise ValueError(f"expected input to have rank 3, was {input.rank}")
+    if input_row_offsets.rank != 1:
+        raise ValueError(
+            f"expected input_row_offsets to have rank 1, was {input_row_offsets.rank}"
+        )
+    if start_pos.rank != 1:
+        raise ValueError(
+            f"expected start_pos to have rank 1, was {start_pos.rank}"
+        )
+    if freqs_cis.rank != 2:
+        raise ValueError(
+            f"expected freqs_cis to have rank 2, was {freqs_cis.rank}"
+        )
+
+    parameters: dict[str, bool | int | str | DType] = {
+        "interleaved": interleaved,
+    }
+
+    return ops.custom(
+        "mo.rope.ragged",
+        device=input.device,
+        values=[
+            input,
+            input_row_offsets,
+            start_pos,
+            freqs_cis,
+        ],
+        out_types=[
+            TensorType(
+                dtype=input.dtype, shape=input.shape, device=input.device
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
+def _apply_rope_with_freqs_cis(
+    input: TensorValue,
+    freqs_cis: TensorValue,
+    *,
+    interleaved: bool = True,
+) -> TensorValue:
+    """Applies RoPE using per-token freqs_cis (no KV cache coupling)."""
+    if freqs_cis.rank == 2:
+        head_dim = input.shape[-1]
+        freqs_cis = freqs_cis.reshape((freqs_cis.shape[0], head_dim // 2, 2))
+    freqs_cis = ops.cast(freqs_cis, input.dtype)
+    freqs_cis = ops.unsqueeze(freqs_cis, 1)  # [T, 1, D/2, 2]
+
+    if interleaved:
+        x_complex = ops.as_interleaved_complex(input)
+        x_re = x_complex[..., 0]
+        x_im = x_complex[..., 1]
+    else:
+        half_dim = input.shape[-1] // 2
+        x_re = input[..., :half_dim]
+        x_im = input[..., half_dim:]
+
+    freqs_re = freqs_cis[..., 0]
+    freqs_im = freqs_cis[..., 1]
+    rope_re = (x_re * freqs_re) - (x_im * freqs_im)
+    rope_im = (x_re * freqs_im) + (x_im * freqs_re)
+
+    if interleaved:
+        rope_complex = ops.stack([rope_re, rope_im], axis=-1)
+    else:
+        rope_complex = ops.concat((rope_re, rope_im), axis=-1)
+
+    return ops.cast(ops.reshape(rope_complex, input.shape), input.dtype)
+
+
+def _freqs_cis_from_position_ids(
+    freqs_cis: TensorValue,
+    position_ids: TensorValue,
+    *,
+    mrope_section: list[int] | None = None,
+) -> TensorValue:
+    """Builds per-token freqs_cis from a freqs table and explicit position_ids."""
+    if position_ids.dtype != DType.uint32:
+        raise ValueError(
+            f"expected position_ids to have dtype uint32, was {position_ids.dtype}"
+        )
+    if position_ids.rank == 1:
+        position_ids = ops.unsqueeze(position_ids, 0)
+    if position_ids.rank != 2:
+        raise ValueError(
+            f"expected position_ids to be 1D or 2D, got rank {position_ids.rank}"
+        )
+
+    freqs_by_section = ops.gather(input=freqs_cis, indices=position_ids, axis=0)
+    if mrope_section is None:
+        if position_ids.shape[0] != 1:
+            raise ValueError(
+                "mrope_section must be provided when position_ids has multiple sections"
+            )
+        return freqs_by_section[0]
+
+    if len(mrope_section) != int(position_ids.shape[0]):
+        raise ValueError(
+            "expected mrope_section to have length "
+            f"{position_ids.shape[0]}, was {len(mrope_section)}"
+        )
+
+    head_dim = freqs_cis.shape[-1]
+    freqs_by_section = freqs_by_section.reshape(
+        (position_ids.shape[0], position_ids.shape[1], head_dim // 2, 2)
+    )
+    freqs_t = freqs_by_section[0]
+
+    h_offset = 1
+    w_offset = 2
+    step = 3
+    h_length = mrope_section[h_offset] * step
+    w_length = mrope_section[w_offset] * step
+
+    h_indices = ops.range(
+        h_offset,
+        h_length,
+        step,
+        device=position_ids.device,
+        dtype=DType.int64,
+        out_dim=(h_length + 1) // step,
+    )
+    w_indices = ops.range(
+        w_offset,
+        w_length,
+        step,
+        device=position_ids.device,
+        dtype=DType.int64,
+        out_dim=(w_length + 1) // step,
+    )
+
+    total_seq_len = position_ids.shape[1]
+    freqs_h_selected = ops.gather(
+        input=freqs_by_section[h_offset], indices=h_indices, axis=1
+    )
+    h_indices_for_scatter = ops.tile(
+        ops.unsqueeze(h_indices, 0), (total_seq_len, 1)
+    )
+    freqs_t = ops.scatter(
+        input=freqs_t,
+        updates=freqs_h_selected,
+        indices=h_indices_for_scatter,
+        axis=1,
+    )
+
+    freqs_w_selected = ops.gather(
+        input=freqs_by_section[w_offset], indices=w_indices, axis=1
+    )
+    w_indices_for_scatter = ops.tile(
+        ops.unsqueeze(w_indices, 0), (total_seq_len, 1)
+    )
+    freqs_t = ops.scatter(
+        input=freqs_t,
+        updates=freqs_w_selected,
+        indices=w_indices_for_scatter,
+        axis=1,
+    )
+
+    return ops.reshape(freqs_t, (total_seq_len, head_dim))
+
+
+def rope_ragged_with_position_ids(
+    input: TensorValue,
+    freqs_cis: TensorValue,
+    position_ids: TensorValue,
+    *,
+    mrope_section: list[int] | None = None,
+    interleaved: bool = True,
+) -> TensorValue:
+    """Applies RoPE using explicit position_ids (no KV cache coupling)."""
+    if position_ids.dtype != DType.uint32:
+        raise ValueError(
+            f"expected position_ids to have dtype uint32, was {position_ids.dtype}"
+        )
+    if position_ids.rank == 1:
+        position_ids = ops.unsqueeze(position_ids, 0)
+    if position_ids.rank != 2:
+        raise ValueError(
+            f"expected position_ids to be 1D or 2D, got rank {position_ids.rank}"
+        )
+
+    # Fast path: invoke kernel directly when mrope_section is not used.
+    if mrope_section is None:
+        total_tokens = ops.cast(
+            ops.shape_to_tensor(input.shape)[0], DType.uint32
+        ).to(input.device)
+        row_offsets = ops.stack(
+            [
+                ops.constant(0, dtype=DType.uint32, device=input.device),
+                total_tokens,
+            ],
+            axis=0,
+        )
+        start_pos = ops.constant([0], dtype=DType.uint32, device=input.device)
+        return ops.custom(
+            "mo.rope.ragged.with_position_id",
+            device=input.device,
+            values=[
+                input,
+                row_offsets,
+                start_pos,
+                freqs_cis,
+                position_ids,
+            ],
+            out_types=[
+                TensorType(
+                    dtype=input.dtype, shape=input.shape, device=input.device
+                )
+            ],
+            parameters={"interleaved": interleaved},
+        )[0].tensor
+
+    # Fallback path for mRoPE sections, keep existing graph implementation.
+    per_token_freqs = _freqs_cis_from_position_ids(
+        freqs_cis,
+        position_ids,
+        mrope_section=mrope_section,
+    )
+    return _apply_rope_with_freqs_cis(
+        input, per_token_freqs, interleaved=interleaved
+    )
 
 
 def flash_attention_padded_kv_cache(
@@ -1054,28 +1875,16 @@ def flash_attention_padded_kv_cache(
             f"q batch size ({q.shape[0]})"
         )
 
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
-        raise ValueError(
-            f"unsupported cache strategy for flash_attention_padded_kv_cache: "
-            f"{kv_params.cache_strategy}"
-        )
-
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    parameters: dict[str, int | str | DType] = {
-        "mask_str": mha_mask_config.attention_mask_variant.value,
-        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
-        "local_window_size": local_window_size,
-    }
-
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-    op_name = f"mo.mha.padded.{cache_strategy_str}"
+    parameters = _mha_parameters(
+        mask_variant, local_window_size=local_window_size
+    )
 
     return ops.inplace_custom(
-        op_name,
+        "mo.mha.padded.paged",
         device=q.device,
         values=[
             q,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
             valid_lengths,
             ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -1083,6 +1892,143 @@ def flash_attention_padded_kv_cache(
         out_types=[TensorType(dtype=q.dtype, shape=q.shape, device=q.device)],
         parameters=parameters,
     )[0].tensor
+
+
+def _validate_argument_tensor(
+    name: str,
+    tensor: TensorValue | BufferValue,
+    dtype: DType | None = None,
+    rank: int | None = None,
+    device: DeviceRef | None = None,
+    device_type: DeviceKind | None = None,
+) -> None:
+    errors = []
+    if dtype is not None and tensor.dtype != dtype:
+        errors.append(
+            f"{name}.dtype was expected to be {dtype} but got {tensor.dtype}"
+        )
+    if rank is not None and tensor.rank != rank:
+        errors.append(
+            f"{name}.rank was expected to be {rank} but got {tensor.rank}"
+        )
+    if device is not None and tensor.device != device:
+        errors.append(
+            f"{name}.device was expected to be {device} but got {tensor.device}"
+        )
+    if device_type is not None and tensor.device.device_type != device_type:
+        errors.append(
+            f"{name}'s device type was expected to be {device_type} but got {tensor.device.device_type}"
+        )
+    if errors:
+        raise ValueError("\n".join(errors))
+
+
+def mla_fp8_index_top_k(
+    q: TensorValue,
+    q_s: TensorValue,
+    input_row_offsets: TensorValue,
+    k_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    top_k: int,
+    quantization_granularity: int,
+    mask_variant: MHAMaskVariant = MHAMaskVariant.CAUSAL_MASK,
+) -> TensorValue:
+    """Computes top-k indices for MLA FP8 indexed attention scores.
+
+    This function computes FP8 matmul between queries and cached keys (with scales),
+    applies masking, and returns the indices of the top-k highest-scoring keys per token.
+    Scores are aggregated (summed) across all attention heads.
+
+    Args:
+        q: Query tensor of shape [total_seq_len, num_heads, head_dim] in FP8.
+        q_s: Query scales tensor of shape [total_seq_len, num_heads] in float32.
+        input_row_offsets: Input row offsets tensor of shape [batch_size + 1].
+        k_collection: Paged KV cache collection. Must be FP8 quantized with scales.
+        layer_idx: Layer index for cache lookup.
+        top_k: Requested number of top indices per token.
+        quantization_granularity: Quantization granularity for the K cache.
+        mask_variant: The mask variant to use (NULL or CAUSAL_MASK).
+
+    Returns:
+        Output tensor of shape [total_seq_len, effective_k] containing top-k key
+        indices per token, where effective_k = min(top_k, max_num_keys).
+        Invalid positions are filled with -1.
+    """
+    _validate_argument_tensor(
+        "q", q, dtype=DType.float8_e4m3fn, rank=3, device_type=DeviceKind.GPU
+    )
+    _validate_argument_tensor(
+        "q_s", q_s, dtype=DType.float32, rank=2, device=q.device
+    )
+
+    _validate_argument_tensor(
+        "input_row_offsets",
+        input_row_offsets,
+        dtype=DType.uint32,
+        rank=1,
+        device=q.device,
+    )
+    _validate_argument_tensor(
+        "k_collection.kv_blocks",
+        k_collection.kv_blocks,
+        dtype=DType.float8_e4m3fn,
+        rank=6,
+        device=q.device,
+    )
+    assert k_collection.kv_scales is not None, (
+        "FP8 k_collection must have kv_scales"
+    )
+    _validate_argument_tensor(
+        "k_collection.kv_scales",
+        k_collection.kv_scales,
+        dtype=DType.float32,
+        rank=6,
+        device=q.device,
+    )
+
+    _validate_argument_tensor(
+        "layer_idx", layer_idx, dtype=DType.uint32, device=DeviceRef.CPU()
+    )
+    if top_k <= 0:
+        raise ValueError(f"top_k must be greater than 0, got {top_k}")
+
+    # Validate mask_variant is supported
+    if mask_variant not in (
+        MHAMaskVariant.NULL_MASK,
+        MHAMaskVariant.CAUSAL_MASK,
+    ):
+        raise ValueError(
+            f"mask_variant must be NULL_MASK or CAUSAL_MASK, got {mask_variant}"
+        )
+
+    mask_str = _mask_str(mask_variant)
+    result = ops.inplace_custom(
+        "mo.mla.indexer.ragged.float8.paged",
+        device=q.device,
+        values=[
+            q,
+            q_s,
+            input_row_offsets,
+            *k_collection.flatten_without_attention_dispatch_metadata(),
+            layer_idx,
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=(q.shape[0], top_k),
+                device=q.device,
+            )
+        ],
+        parameters={
+            "num_heads": int(q.shape[1]),
+            "depth": int(q.shape[2]),
+            "k": top_k,
+            "quantization_granularity": quantization_granularity,
+            "mask_str": mask_str,
+        },
+    )[0].tensor
+
+    return result
 
 
 def flash_attention_gpu(
@@ -1149,13 +2095,9 @@ def flash_attention_gpu(
                 f"q batch size ({q.shape[0]})"
             )
 
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    parameters: dict[str, int | str | DType] = {}
-    parameters["mask_str"] = mha_mask_config.attention_mask_variant.value
-    parameters["score_mod_str"] = (
-        mha_mask_config.positional_encoding_variant.value
+    parameters = _mha_parameters(
+        mask_variant, local_window_size=local_window_size
     )
-    parameters["local_window_size"] = local_window_size
 
     op_name = "mo.mha.no_cache"
     values = [q, k, v]
@@ -1171,6 +2113,107 @@ def flash_attention_gpu(
         values=values,
         out_types=[TensorType(dtype=q.dtype, shape=q.shape, device=q.device)],
         parameters=parameters,
+        device=q.device,
+    )[0].tensor
+
+
+def masked_flash_attention_gpu(
+    q: TensorValue,
+    k: TensorValue,
+    v: TensorValue,
+    mask: TensorValue,
+    scale: float,
+) -> TensorValue:
+    """Computes flash attention using a materialized additive mask.
+
+    Args:
+        q: Query tensor of shape [batch, q_seq_len, num_heads, head_dim]
+        k: Key tensor of shape [batch, kv_seq_len, num_heads, head_dim]
+        v: Value tensor of shape [batch, kv_seq_len, num_heads, head_dim]
+        mask: Additive mask tensor. Rank 3 of shape
+            [batch, q_seq_len, kv_seq_len] broadcasts across attention
+            heads. Rank 4 of shape [batch, num_heads, q_seq_len,
+            kv_seq_len] applies a per-head bias.
+        scale: Scaling factor for attention scores.
+
+    Returns:
+        Output tensor of shape [batch, q_seq_len, num_heads, head_dim]
+    """
+    if q.dtype != k.dtype or q.dtype != v.dtype:
+        raise ValueError(
+            "q, k, v must have matching dtypes. Got "
+            f"q.dtype={q.dtype}, k.dtype={k.dtype}, v.dtype={v.dtype}"
+        )
+
+    expected_rank = 4
+    for name, tensor in [("q", q), ("k", k), ("v", v)]:
+        if tensor.rank != expected_rank:
+            raise ValueError(
+                f"{name} must be rank {expected_rank}, got {tensor.rank}"
+            )
+
+    if mask.rank not in (3, 4):
+        raise ValueError(
+            "mask must be rank 3 (broadcast across heads) or rank 4 "
+            f"(per-head), got {mask.rank}"
+        )
+
+    if q.shape[0] != k.shape[0] or q.shape[0] != v.shape[0]:
+        raise ValueError(
+            "q, k, v batch sizes must match. Got "
+            f"q: {q.shape[0]}, k: {k.shape[0]}, v: {v.shape[0]}"
+        )
+
+    if mask.shape[0] != q.shape[0]:
+        raise ValueError(
+            f"mask batch size ({mask.shape[0]}) must match q batch size ({q.shape[0]})"
+        )
+
+    # Rank-4 masks are per-head: validate num_heads dim matches q.
+    if mask.rank == 4:
+        num_heads = q.shape[2]  # q is BSHD
+        if mask.shape[1] != num_heads:
+            raise ValueError(
+                f"mask num_heads ({mask.shape[1]}) must match q num_heads "
+                f"({num_heads})"
+            )
+
+    q_seq_idx = 2 if mask.rank == 4 else 1
+    kv_seq_idx = 3 if mask.rank == 4 else 2
+
+    if mask.shape[q_seq_idx] != q.shape[1]:
+        raise ValueError(
+            f"mask query length ({mask.shape[q_seq_idx]}) must match q "
+            f"sequence length ({q.shape[1]})"
+        )
+
+    if mask.shape[kv_seq_idx] != k.shape[1]:
+        raise ValueError(
+            f"mask key length ({mask.shape[kv_seq_idx]}) must match k "
+            f"sequence length ({k.shape[1]})"
+        )
+
+    head_dim = q.shape[-1]
+    if k.shape[-1] != head_dim or v.shape[-1] != head_dim:
+        raise ValueError(
+            "All inputs must have same head_dim. Got "
+            f"q: {head_dim}, k: {k.shape[-1]}, v: {v.shape[-1]}"
+        )
+
+    _validate_argument_tensor("k", k, device=q.device)
+    _validate_argument_tensor("v", v, device=q.device)
+    _validate_argument_tensor("mask", mask, device=q.device)
+
+    return ops.custom(
+        "masked_flash_attention_gpu",
+        values=[
+            q,
+            k,
+            v,
+            mask,
+            ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[TensorType(dtype=q.dtype, shape=q.shape, device=q.device)],
         device=q.device,
     )[0].tensor
 
@@ -1228,11 +2271,10 @@ def flash_attention_ragged(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy not in {
-        KVCacheStrategy.PAGED,
-    }:
+    dispatch_metadata = kv_collection.attention_dispatch_metadata
+    if dispatch_metadata is None:
         raise ValueError(
-            f"unsupported cache strategy for flash_attention_ragged: {kv_params.cache_strategy}"
+            "Expected attention_dispatch_metadata in kv_collection"
         )
 
     if sink_weights is not None:
@@ -1247,30 +2289,26 @@ def flash_attention_ragged(
                 f"got {sink_weights.shape}"
             )
 
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
+    parameters = _mha_parameters(
+        mask_variant, local_window_size=local_window_size
+    )
 
-    # Select kernel based on whether sink_weights is provided
-    op_name = f"mo.mha.ragged.{cache_strategy_str}"
+    # Select kernel based on whether sink_weights is provided.
+    op_name = "mo.mha.ragged.paged"
 
     if sink_weights is not None:
-        op_name += ".sink_weights"
-    parameters: dict[str, int | str | DType] = {
-        "mask_str": mha_mask_config.attention_mask_variant.value,
-        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
-        "local_window_size": local_window_size,
-    }
-
+        op_name = "mo.mha.ragged.paged.sink_weights"
     values: MutableSequence[Value[Any]] = [
         input,
         input_row_offsets,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         # NOTE: The scale argument to flash attention is constrained to float32.
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
     if sink_weights is not None:
         values.append(sink_weights)
+    values.append(dispatch_metadata.tensor)
 
     return ops.inplace_custom(
         op_name,
@@ -1358,13 +2396,13 @@ def flash_attention_ragged_gpu(
             f"input_row_offsets must be rank 1, got {input_row_offsets.rank}"
         )
 
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    parameters: dict[str, int | str | DType] = {}
-    parameters["mask_str"] = mha_mask_config.attention_mask_variant.value
-    parameters["score_mod_str"] = (
-        mha_mask_config.positional_encoding_variant.value
+    _validate_argument_tensor(
+        "max_seq_len", max_seq_len, dtype=DType.uint32, device=DeviceRef.CPU()
     )
-    parameters["local_window_size"] = local_window_size
+
+    parameters = _mha_parameters(
+        mask_variant, local_window_size=local_window_size
+    )
 
     op_name = "mo.mha.ragged.no_cache"
     values = [q, k, v, input_row_offsets, max_seq_len]
@@ -1395,6 +2433,8 @@ def flare_mla_decode_ragged(
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
+    scalar_args: TensorValue,
+    *,
     qk_rope_dim: int = 64,
 ) -> TensorValue:
     """Computes flash (self) attention provided the `!mo.opaque` KV Cache.
@@ -1415,9 +2455,106 @@ def flare_mla_decode_ragged(
             f"expected input of rank {input_rank_expected} but got {input.rank}"
         )
 
-    if input.dtype != kv_params.dtype:
+    # FP8 KVCache: Q can be bf16 (legacy) or fp8 (native FP8).
+    # The underlying Mojo kernel handles both cases natively.
+    # Output is always bfloat16 when Q is FP8 (native FP8 path).
+
+    if layer_idx.dtype != DType.uint32:
+        raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
+
+    if input_row_offsets.dtype != DType.uint32:
         raise ValueError(
-            f"expected input to be dtype: {kv_params.dtype}, got {input.dtype}"
+            f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
+        )
+
+    if kv_collection.kv_blocks.shape[1] != 1:
+        raise ValueError(
+            f"expected kv_collection.kv_blocks.shape[1] to be 1, got {kv_collection.kv_blocks.shape[1]}"
+        )
+
+    assert kv_params.page_size is not None
+    parameters = _mha_parameters(mask_variant)
+
+    # Output dtype: always bfloat16 for FP8 Q (native FP8 path produces
+    # bfloat16 output), same as input dtype otherwise.
+    output_dtype = (
+        DType.bfloat16 if input.dtype == DType.float8_e4m3fn else input.dtype
+    )
+
+    input_values: MutableSequence[Value[Any]] = [
+        input,
+        input_row_offsets,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+        # NOTE: The scale argument to flash attention is constrained to float32.
+        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+    ]
+
+    op_name = "mo.mla.decode.ragged.paged"
+    input_values.append(scalar_args)
+
+    return ops.inplace_custom(
+        op_name,
+        device=input.device,
+        values=input_values,
+        out_types=[
+            TensorType(
+                dtype=output_dtype,
+                shape=[
+                    input.shape[0],
+                    input.shape[1],
+                    input.shape[2] - qk_rope_dim,
+                ],
+                device=input.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
+def flare_mla_decode_ragged_scaled(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    kv_collection: PagedCacheValues,
+    kv_scales: BufferValue,
+    q_scales: TensorValue,
+    layer_idx: TensorValue,
+    mask_variant: MHAMaskVariant,
+    scale: float,
+    scalar_args: TensorValue,
+    qk_rope_dim: int = 64,
+    per_token_scale_rope_aware: bool = False,
+    quantization_granularity: int = 640,
+) -> TensorValue:
+    """MLA decode with explicit per-token KV and Q scale tensors.
+
+    Like ``flare_mla_decode_ragged`` but accepts explicit scale tensors so the
+    per-token-scale rope-aware kernel receives real (non-identity) scales.
+
+    Args:
+        kv_params: KV cache parameters.
+        input: Query tensor [total_tokens, num_heads, head_dim].
+        input_row_offsets: Ragged row offsets [batch_size + 1].
+        kv_collection: Paged KV cache collection.
+        kv_scales: Per-token KV scales buffer
+            [num_blocks, 1, 1, page_size, 1, 1] float32.
+        q_scales: Per-token Q scales tensor [total_tokens] float32.
+        layer_idx: Layer index (uint32, on CPU).
+        mask_variant: Attention mask variant.
+        scale: Softmax scale (typically 1/sqrt(d_qk)).
+        qk_rope_dim: Rope head dimension (default 64).
+        per_token_scale_rope_aware: Use FP8+BF16 interleaved layout.
+        quantization_granularity: Granularity for KV scale quantization.
+            Should equal the KV cache head_dim (640 for rope-aware).
+
+    Returns:
+        Output tensor [total_tokens, num_heads, output_dim].
+    """
+    input_rank_expected = 3
+    if input.rank != input_rank_expected:
+        raise ValueError(
+            f"expected input of rank {input_rank_expected} but got {input.rank}"
         )
 
     if layer_idx.dtype != DType.uint32:
@@ -1428,43 +2565,47 @@ def flare_mla_decode_ragged(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
-        raise ValueError(
-            f"unsupported cache strategy for flash_attention_ragged: {kv_params.cache_strategy}"
-        )
-
     if kv_collection.kv_blocks.shape[1] != 1:
         raise ValueError(
-            f"expected kv_collection.kv_blocks.shape[1] to be 1, got {kv_collection.kv_blocks.shape[1]}"
+            f"expected kv_collection.kv_blocks.shape[1] to be 1, got"
+            f" {kv_collection.kv_blocks.shape[1]}"
         )
 
     assert kv_params.page_size is not None
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    parameters: dict[str, int | str | DType] = {
-        "mask_str": mha_mask_config.attention_mask_variant.value,
-        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
-    }
+    parameters = _mha_parameters(mask_variant)
+    if per_token_scale_rope_aware:
+        parameters["per_token_scale_rope_aware"] = 1
+    parameters["quantization_granularity"] = quantization_granularity
 
-    op_name = "mo.mla.decode.ragged.paged"
+    output_dtype = (
+        DType.bfloat16 if input.dtype == DType.float8_e4m3fn else input.dtype
+    )
+
+    if per_token_scale_rope_aware:
+        output_last_dim = input.shape[2] - qk_rope_dim * 2
+    else:
+        output_last_dim = input.shape[2] - qk_rope_dim
 
     return ops.inplace_custom(
-        op_name,
+        "mo.mla.decode.ragged.paged.scaled",
         device=input.device,
         values=[
             input,
             input_row_offsets,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
+            kv_scales,
+            q_scales,
             layer_idx,
-            # NOTE: The scale argument to flash attention is constrained to float32.
             ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+            scalar_args,
         ],
         out_types=[
             TensorType(
-                dtype=input.dtype,
+                dtype=output_dtype,
                 shape=[
                     input.shape[0],
                     input.shape[1],
-                    input.shape[2] - qk_rope_dim,
+                    output_last_dim,
                 ],
                 device=input.device,
             )
@@ -1521,11 +2662,6 @@ def flare_mla_prefill_ragged(
             f"expected input of rank {input_rank_expected} but got {input.rank}"
         )
 
-    if input.dtype != kv_params.dtype:
-        raise ValueError(
-            f"expected input to be dtype: {kv_params.dtype}, got {input.dtype}"
-        )
-
     if layer_idx.dtype != DType.uint32:
         raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
 
@@ -1534,19 +2670,8 @@ def flare_mla_prefill_ragged(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
-        raise ValueError(
-            f"unsupported cache strategy for flare_mla_prefill_ragged: {kv_params.cache_strategy}"
-        )
-
     assert kv_params.page_size is not None
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    parameters: dict[str, int | str | DType] = {
-        "mask_str": mha_mask_config.attention_mask_variant.value,
-        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
-    }
-
-    op_name = "mo.mla.prefill.ragged.paged"
+    parameters = _mha_parameters(mask_variant)
 
     input_values: MutableSequence[Value[Any]] = [
         input,
@@ -1555,13 +2680,13 @@ def flare_mla_prefill_ragged(
         buffer_row_offsets,
         cache_offsets,
         input_row_offsets,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
 
     results = ops.inplace_custom(
-        op_name,
+        "mo.mla.prefill.ragged.paged",
         device=input.device,
         values=input_values,
         out_types=[
@@ -1600,7 +2725,6 @@ def flare_mla_prefill_plan(
         2. Cache offsets for each sequence in each chunk
         3. Total buffer lengths for each processing iteration
     """
-
     if layer_idx.dtype != DType.uint32:
         raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
 
@@ -1609,23 +2733,19 @@ def flare_mla_prefill_plan(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
-        raise ValueError(
-            f"unsupported cache strategy for flare_mla_prefill_plan: {kv_params.cache_strategy}"
-        )
-
     assert kv_params.page_size is not None
 
     buffer_size_tensor = ops.constant(
         buffer_size, DType.uint32, device=DeviceRef.CPU()
     )
 
+    op_name = "mo.mla.prefill.ragged.plan"
     results = ops.inplace_custom(
-        "mo.mla.prefill.ragged.plan",
+        op_name,
         device=input_row_offsets.device,
         values=[
             input_row_offsets,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
             buffer_size_tensor,
         ],
@@ -1651,69 +2771,25 @@ def flare_mla_prefill_plan(
     return results[0].tensor, results[1].tensor, results[2].tensor
 
 
-def mla_prefill_branch_fp8(
-    q_nope: TensorValue,
-    q_rope: TensorValue,
+def _validate_mla_prefill_decode_graph_inputs(
+    q: TensorValue,
+    kv: TensorValue,
     input_row_offsets: TensorValue,
-    buffer_row_offsets: TensorValue,
-    cache_offsets: TensorValue,
-    buffer_length: TensorValue,
-    kv_b_proj: TensorValue,
-    kv_b_proj_scale: TensorValue,
     kv_params: KVCacheParams,
-    kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
-    mask_variant: MHAMaskVariant,
-    scale: float,
-    v_head_dim: int,
-    float8_config: Float8Config,
-) -> TensorValue:
-    """
-    This is a manually fused kernel that performs the following operations:
-    - Copy the KV latent values from PagedKVCache to a contiguous buffer.
-    - Quantize the KV latent values to fp8.
-    - Up-project the latent KV values to full K and V through a matmul.
-    - Split the concatenated KV into K and V.
-    - Perform MLA prefill.
-
-    Args:
-        q_nope: Non-rope part of the query tensor. Shape: [tot_seq_len, num_heads,
-            qk_nope_head_dim].
-        q_rope: Rope part of the query tensor. Shape: [tot_seq_len, num_heads,
-            qk_rope_head_dim].
-        input_row_offsets: Indicates where each request starts and ends in
-            `input`. This is a 1D tensor of shape [num_batches + 1].
-        buffer_row_offsets: Indicates where each request's KV latent values
-            should be stored in the contiguous buffer. This is a 1D tensor of
-            shape [num_batches + 1].
-        cache_offsets: Indicates the starting token position in the KV cache
-            from which to copy KV latent values for each request. This is a 1D
-            tensor of shape [num_batches + 1].
-        buffer_length: The total number of tokens in the KV cache. Scalar.
-        kv_b_proj: Weight matrix for up-projecting the KV latent values to full
-            K and V. Shape: [num_heads * (qk_nope_head_dim + v_head_dim),
-            kv_latent_dim].
-        kv_b_proj_scale: The scale for the weight matrix. Shape varies
-            depending on the float8_config.
-        kv_params: KVCacheParams
-        kv_collection: Paged KV Cache object.
-        layer_idx: Layer index.
-        mask_variant: Mask variant.
-        scale: scale for the attention calculation.
-        v_head_dim: Dimension of the V heads.
-        float8_config: Float8Config for the weight matrix.
-    """
-
+    *,
+    op_name: str,
+    tensor_name: str = "q",
+    expected_dtype: DType | None = None,
+) -> None:
     input_rank_expected = 3
-    if q_nope.rank != input_rank_expected:
+    if q.rank != input_rank_expected:
         raise ValueError(
-            f"expected q_nope of rank {input_rank_expected} but got {q_nope.rank}"
+            f"expected {tensor_name} of rank {input_rank_expected} but got {q.rank}"
         )
 
-    if q_nope.dtype != kv_params.dtype:
-        raise ValueError(
-            f"expected q_nope to be dtype: {kv_params.dtype}, got {q_nope.dtype}"
-        )
+    if kv.rank != 2:
+        raise ValueError(f"expected kv of rank 2 but got {kv.rank}")
 
     if layer_idx.dtype != DType.uint32:
         raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
@@ -1723,74 +2799,248 @@ def mla_prefill_branch_fp8(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
-        raise ValueError(
-            f"unsupported cache strategy for mla_prefill_branch_fp8: {kv_params.cache_strategy}"
-        )
-
     assert kv_params.page_size is not None
-    assert float8_config.input_scale.block_size is not None
-    assert float8_config.weight_scale.block_size is not None
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    parameters: dict[str, int | str | DType] = {
-        "m_scale_granularity": float8_config.input_scale.block_size[0],
-        "n_scale_granularity": float8_config.weight_scale.block_size[0],
-        "k_scale_granularity": float8_config.weight_scale.block_size[1],
-        "mask_str": mha_mask_config.attention_mask_variant.value,
-        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
-    }
-
-    input_values: MutableSequence[Value[Any]] = [
-        q_nope,
-        q_rope,
-        input_row_offsets,
-        buffer_row_offsets[0],  # one-shot prefill.
-        cache_offsets[0],  # one-shot prefill.
-        buffer_length[0],  # one-shot prefill.
-        kv_b_proj,
-        kv_b_proj_scale,
-        *kv_collection,
-        layer_idx,
-        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
-    ]
-    return ops.inplace_custom(
-        "mo.mla.graph.prefill.paged",
-        device=q_nope.device,
-        values=input_values,
-        out_types=[
-            TensorType(
-                dtype=q_nope.dtype,
-                shape=[
-                    q_nope.shape[0],
-                    q_nope.shape[1],
-                    v_head_dim,
-                ],
-                device=q_nope.device,
-            )
-        ],
-        parameters=parameters,
-    )[0].tensor
 
 
-def mla_decode_branch_fp8(
-    q_nope: TensorValue,
-    q_rope: TensorValue,
+def _build_mla_prefill_decode_out_type(
+    q: TensorValue,
+    v_head_dim: int,
+) -> TensorType:
+    return TensorType(
+        dtype=q.dtype,
+        shape=[q.shape[0], q.shape[1], v_head_dim],
+        device=q.device,
+    )
+
+
+def mla_prefill_graph(
+    q: TensorValue,
+    kv: TensorValue,
     input_row_offsets: TensorValue,
-    w_uk: TensorValue,
-    w_uk_scale: TensorValue,
+    freqs_cis: TensorValue,
+    kv_norm_gamma: TensorValue,
+    buffer_row_offsets: TensorValue,
+    cache_offsets: TensorValue,
+    buffer_length: TensorValue,
+    w_k: TensorValue,
     w_uv: TensorValue,
-    w_uv_scale: TensorValue,
     kv_params: KVCacheParams,
     kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
+    epsilon: float,
     v_head_dim: int,
-    float8_config: Float8Config,
+    *,
+    w_k_scale: TensorValue | None = None,
+    w_uv_scale: TensorValue | None = None,
+    quant_config: QuantConfig | None = None,
 ) -> TensorValue:
-    """
-    This is a manually fused kernel that performs the following operations:
+    """This is a manually fused kernel that performs the following operations:
+    - Apply RoPE to the query and the key cache (in-place).
+    - Apply RMSNorm to the non-rope portion of the key cache (in-place).
+    - Copy the KV latent values from PagedKVCache to a contiguous buffer.
+    - Quantize the KV latent values to fp8.
+    - Up-project the latent KV values to full K and V through two matmuls.
+    - Perform MLA prefill.
 
+    Args:
+        q: Combined query tensor containing both nope and rope parts. Shape:
+            [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
+        kv: KV latent tensor from the first projection. Shape:
+            [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
+            qk_rope_head_dim.
+        input_row_offsets: Indicates where each request starts and ends in
+            `input`. This is a 1D tensor of shape [num_batches + 1].
+        freqs_cis: Precomputed RoPE frequency values for rotary position
+            embeddings. Shape: [max_seq_len, qk_rope_head_dim].
+        kv_a_proj_layernorm: RMSNorm gamma weights for normalizing the KV cache.
+            Shape: [kv_lora_rank].
+        buffer_row_offsets: Indicates where each request's KV latent values
+            should be stored in the contiguous buffer. This is a 1D tensor of
+            shape [num_batches + 1].
+        cache_offsets: Indicates the starting token position in the KV cache
+            from which to copy KV latent values for each request. This is a 1D
+            tensor of shape [num_batches + 1].
+        buffer_length: The total number of tokens in the KV cache. Scalar.
+        w_k: Weight matrix for up-projecting latent KV values to full K.
+            Shape: [num_heads * qk_nope_head_dim, kv_latent_dim].
+        w_uv: Weight tensor for up-projecting latent KV values to full V.
+            Shape: [num_heads, v_head_dim, kv_latent_dim].
+        kv_params: KVCacheParams
+        kv_collection: Paged KV Cache object.
+        layer_idx: Layer index.
+        mask_variant: The attention mask variant controlling masking behavior.
+        scale: Scale for the attention calculation.
+        epsilon: Small constant for numerical stability in RMSNorm.
+        v_head_dim: Dimension of the V heads.
+        w_k_scale: Optional FP8 scale tensor for `w_k`.
+        w_uv_scale: Optional FP8 scale tensor for `w_uv`.
+        quant_config: Optional quantization config. When set, scales are required.
+
+    Returns:
+        Tensor of shape [total_seq_len, num_heads, v_head_dim].
+    """
+    _validate_mla_prefill_decode_graph_inputs(
+        q,
+        kv,
+        input_row_offsets,
+        kv_params,
+        layer_idx,
+        op_name="mla_prefill_graph",
+        expected_dtype=kv_params.dtype,
+    )
+    parameters = _mha_parameters(mask_variant)
+
+    input_values: MutableSequence[Value[Any]] = [
+        q,
+        kv,
+        input_row_offsets,
+        freqs_cis,
+        kv_norm_gamma,
+        buffer_row_offsets[0],  # one-shot prefill.
+        cache_offsets[0],  # one-shot prefill.
+        buffer_length[0],  # one-shot prefill.
+        w_k,
+        w_uv,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
+        layer_idx,
+        ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
+    ]
+    op_name = "mo.mla.graph.prefill.paged"
+
+    if quant_config is not None:
+        assert w_k_scale is not None and w_uv_scale is not None
+        assert quant_config.input_scale.block_size is not None
+        assert quant_config.weight_scale.block_size is not None
+        parameters.update(
+            {
+                "m_scale_granularity": quant_config.input_scale.block_size[0],
+                "n_scale_granularity": quant_config.weight_scale.block_size[0],
+                "k_scale_granularity": quant_config.weight_scale.block_size[1],
+            }
+        )
+        op_name += ".fp8"
+        input_values += [w_k_scale, w_uv_scale]
+    else:
+        assert w_k_scale is None and w_uv_scale is None, (
+            "w_k_scale and w_uv_scale must be None when quant_config is not set"
+        )
+
+    return ops.inplace_custom(
+        op_name,
+        device=q.device,
+        values=input_values,
+        out_types=[_build_mla_prefill_decode_out_type(q, v_head_dim)],
+        parameters=parameters,
+    )[0].tensor
+
+
+def compute_mla_dispatch_args_scalar(
+    batch_size: TensorValue,
+    max_cache_valid_length: TensorValue,
+    q_max_seq_len: TensorValue,
+    num_heads: int,
+    device: DeviceRef,
+    is_fp8_kv: bool = False,
+) -> TensorValue:
+    """Computes scalar dispatch arguments for the MLA decode kernel.
+
+    Produces a CPU tensor of shape ``[3]`` containing pre-computed integer
+    arguments used by the capturable MLA decode kernel variant to enable CUDA
+    graph capture.
+
+    Args:
+        batch_size: Scalar tensor indicating the current batch size.
+        max_cache_valid_length: Scalar tensor with the maximum valid cache
+            sequence length across all requests in the batch.
+        q_max_seq_len: Scalar tensor with the maximum query sequence length
+            in the current batch.
+        num_heads: Number of query attention heads.
+        device: The :class:`~max.graph.DeviceRef` on which to run the op.
+
+    Returns:
+        A CPU :class:`~max.graph.TensorValue` of shape ``[3]`` and dtype
+        ``int64`` containing the dispatch scalar arguments.
+    """
+    results = ops.custom(
+        "mo.mla.compute_dispatch_args.scalar",
+        device=device,
+        values=[batch_size, max_cache_valid_length, q_max_seq_len],
+        out_types=[
+            TensorType(shape=[3], dtype=DType.int64, device=DeviceRef.CPU()),
+        ],
+        parameters={"num_heads": num_heads, "is_fp8_kv": is_fp8_kv},
+    )
+    return results[0].tensor
+
+
+def compute_mha_decode_num_partitions(
+    batch_size: TensorValue,
+    max_cache_valid_length: TensorValue,
+    n_kv_heads: int,
+    device: DeviceRef,
+) -> TensorValue:
+    """Computes the MHA decode partition count inside a graph.
+
+    Wraps the ``mo.mha.decode.get_num_partitions`` kernel as a graph op so
+    that the partition heuristic can be evaluated dynamically during graph
+    execution rather than only at graph-build time.
+
+    Args:
+        batch_size: Scalar int64 tensor with the current batch size.
+        max_cache_valid_length: Scalar int64 tensor with the maximum valid
+            cache length across all requests.
+        n_kv_heads: Number of key-value attention heads per device
+            (compile-time constant).
+        device: The :class:`~max.graph.DeviceRef` whose hardware info
+            determines the partition heuristic.
+
+    Returns:
+        A CPU :class:`~max.graph.TensorValue` of shape ``[1]`` and dtype
+        ``int64`` containing the computed partition count.
+    """
+    request = ops.stack(
+        [batch_size.reshape([]), max_cache_valid_length.reshape([])], axis=0
+    )
+    results = ops.custom(
+        "mo.mha.decode.get_num_partitions",
+        device=device,
+        values=[request],
+        out_types=[
+            TensorType(shape=[1], dtype=DType.int64, device=DeviceRef.CPU()),
+        ],
+        parameters={"n_kv_heads": n_kv_heads},
+    )
+    return results[0].tensor
+
+
+def mla_decode_graph(
+    q: TensorValue,
+    kv: TensorValue,
+    input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_norm_gamma: TensorValue,
+    w_uk: TensorValue,
+    w_uv: TensorValue,
+    kv_params: KVCacheParams,
+    kv_collection: PagedCacheValues,
+    layer_idx: TensorValue,
+    mask_variant: MHAMaskVariant,
+    scale: float,
+    epsilon: float,
+    v_head_dim: int,
+    scalar_args: TensorValue,
+    *,
+    w_uk_scale: TensorValue | None = None,
+    w_uv_scale: TensorValue | None = None,
+    quant_config: QuantConfig | None = None,
+) -> TensorValue:
+    """This is a manually fused kernel that performs the following operations:
+
+    - Apply RoPE to the query and the key cache (in-place).
+    - Apply RMSNorm to the non-rope portion of the key cache (in-place).
     - Project q_nope to kv_latent_dim through a fp8 batched matmul:
       q_nope_proj = q_nope_t @ w_uk
     - Concatenate q_nope_proj and q_rope:
@@ -1800,192 +3050,202 @@ def mla_decode_branch_fp8(
       output = raw_output_t @ w_uv
 
     Args:
-        q_nope: Non-rope part of the query tensor. Shape: [tot_seq_len, num_heads,
-            qk_nope_head_dim].
-        q_rope: Rope part of the query tensor. Shape: [tot_seq_len, num_heads,
-            qk_rope_head_dim].
+        q: Combined query tensor containing both nope and rope parts. Shape:
+            [tot_seq_len, num_heads, qk_nope_head_dim + qk_rope_head_dim].
+        kv: KV latent tensor from the first projection. Shape:
+            [num_tokens, cache_head_dim] where cache_head_dim = kv_lora_rank +
+            qk_rope_head_dim.
         input_row_offsets: Indicates where each request starts and ends in
             `input`. This is a 1D tensor of shape [num_batches + 1].
+        freqs_cis: Precomputed RoPE frequency values for rotary position
+            embeddings. Shape: [max_seq_len, qk_rope_head_dim].
+        kv_a_proj_layernorm: RMSNorm gamma weights for normalizing the KV cache.
+            Shape: [kv_lora_rank].
         w_uk: Weight matrix for projecting q_nope to kv_latent_dim. Shape:
             [num_heads, kv_latent_dim, qk_nope_head_dim].
-        w_uk_scale: The scale for the weight matrix. Shape varies depending on
-            the float8_config.
         w_uv: Weight matrix for projecting MLA decode output to v_head_dim.
             Shape: [num_heads, v_head_dim, kv_latent_dim].
-        w_uv_scale: The scale for the weight matrix. Shape varies depending on
-            the float8_config.
         kv_params: KVCacheParams
         kv_collection: Paged KV Cache object.
         layer_idx: Layer index.
-        mask_variant: Mask variant.
-        scale: scale for the attention calculation.
+        mask_variant: The attention mask variant controlling masking behavior.
+        scale: Scale for the attention calculation.
+        epsilon: Small constant for numerical stability in RMSNorm.
         v_head_dim: Dimension of the V heads.
-        float8_config: Float8Config for the weight matrix.
+        scalar_args: Pre-computed dispatch scalar args (GPU buffer) for CUDA graph capture.
+        w_uk_scale: Optional FP8 scale tensor for `w_uk`.
+        w_uv_scale: Optional FP8 scale tensor for `w_uv`.
+        quant_config: Optional quantization config. When set, scales are required.
+
+    Returns:
+        Tensor of shape [total_seq_len, num_heads, v_head_dim].
     """
-
-    input_rank_expected = 3
-    if q_nope.rank != input_rank_expected:
-        raise ValueError(
-            f"expected q_nope of rank {input_rank_expected} but got {q_nope.rank}"
-        )
-
-    if q_nope.dtype != kv_params.dtype:
-        raise ValueError(
-            f"expected q_nope to be dtype: {kv_params.dtype}, got {q_nope.dtype}"
-        )
-
-    if layer_idx.dtype != DType.uint32:
-        raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
-
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
-        )
-
-    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
-        raise ValueError(
-            f"unsupported cache strategy for mla_prefill_branch_fp8: {kv_params.cache_strategy}"
-        )
-
-    assert kv_params.page_size is not None
-    assert float8_config.input_scale.block_size is not None
-    assert float8_config.weight_scale.block_size is not None
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    parameters: dict[str, int | str | DType] = {
-        "m_scale_granularity": float8_config.input_scale.block_size[0],
-        "n_scale_granularity": float8_config.weight_scale.block_size[0],
-        "k_scale_granularity": float8_config.weight_scale.block_size[1],
-        "mask_str": mha_mask_config.attention_mask_variant.value,
-        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
-    }
+    _validate_mla_prefill_decode_graph_inputs(
+        q,
+        kv,
+        input_row_offsets,
+        kv_params,
+        layer_idx,
+        op_name="mla_decode_graph",
+        expected_dtype=kv_params.dtype,
+    )
+    parameters = _mha_parameters(mask_variant)
 
     input_values: MutableSequence[Value[Any]] = [
-        q_nope,
-        q_rope,
+        q,
+        kv,
         input_row_offsets,
+        freqs_cis,
+        kv_norm_gamma,
         w_uk,
-        w_uk_scale,
         w_uv,
-        w_uv_scale,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
+    op_name = "mo.mla.graph.decode.paged"
+
+    if quant_config is not None:
+        assert w_uk_scale is not None and w_uv_scale is not None
+        assert quant_config.input_scale.block_size is not None
+        assert quant_config.weight_scale.block_size is not None
+        parameters.update(
+            {
+                "m_scale_granularity": quant_config.input_scale.block_size[0],
+                "n_scale_granularity": quant_config.weight_scale.block_size[0],
+                "k_scale_granularity": quant_config.weight_scale.block_size[1],
+            }
+        )
+        op_name += ".fp8"
+        input_values += [w_uk_scale, w_uv_scale]
+
+    input_values.append(scalar_args)
+
     return ops.inplace_custom(
-        "mo.mla.graph.decode.paged",
-        device=q_nope.device,
+        op_name,
+        device=q.device,
         values=input_values,
-        out_types=[
-            TensorType(
-                dtype=q_nope.dtype,
-                shape=[
-                    q_nope.shape[0],
-                    q_nope.shape[1],
-                    v_head_dim,
-                ],
-                device=q_nope.device,
-            )
-        ],
+        out_types=[_build_mla_prefill_decode_out_type(q, v_head_dim)],
         parameters=parameters,
     )[0].tensor
 
 
-def mla_prefill_decode_graph_fp8(
-    q_nope: TensorValue,
-    q_rope: TensorValue,
+def mla_prefill_decode_graph(
+    q: TensorValue,
+    kv: TensorValue,
     input_row_offsets: TensorValue,
+    freqs_cis: TensorValue,
+    kv_norm_gamma: TensorValue,
     buffer_row_offsets: TensorValue,
     cache_offsets: TensorValue,
     buffer_length: TensorValue,
-    kv_b_proj: TensorValue,
-    kv_b_proj_scale: TensorValue,
+    w_k: TensorValue,
     w_uk: TensorValue,
-    w_uk_scale: TensorValue,
     w_uv: TensorValue,
-    w_uv_scale: TensorValue,
     kv_params: KVCacheParams,
     kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
     mask_variant: MHAMaskVariant,
     scale: float,
+    epsilon: float,
     v_head_dim: int,
-    float8_config: Float8Config,
+    scalar_args: TensorValue,
+    *,
+    w_k_scale: TensorValue | None = None,
+    w_uk_scale: TensorValue | None = None,
+    w_uv_scale: TensorValue | None = None,
+    quant_config: QuantConfig | None = None,
 ) -> TensorValue:
+    """Fused MLA prefill/decode kernel for FP8.
+
+    Switches between prefill and decode based on the maximum sequence length in
+    the batch. See `mla_prefill_graph` and `mla_decode_graph` for the dedicated
+    paths.
+
+    Args:
+        q: Combined query tensor with nope+rope parts.
+        kv: KV latent tensor for current sequence.
+        input_row_offsets: Row offsets for the batch.
+        freqs_cis: RoPE frequencies tensor.
+        kv_norm_gamma: RMSNorm gamma for KV cache.
+        buffer_row_offsets: One-shot prefill buffer row offsets.
+        cache_offsets: One-shot prefill cache offsets.
+        buffer_length: One-shot prefill buffer length tensor.
+        w_k: Prefill K up-projection weights.
+        w_uk: Decode query-projection weights.
+        w_uv: Decode output-projection / prefill V-projection weights.
+        kv_params: KV cache parameters.
+        kv_collection: Paged KV cache values.
+        layer_idx: Layer index (uint32).
+        mask_variant: Attention mask variant.
+        scale: Attention scale.
+        epsilon: RMSNorm epsilon.
+        v_head_dim: Value head dimension for output tensor shape.
+        scalar_args: Pre-computed dispatch scalar args (GPU buffer) for CUDA graph capture.
+        w_k_scale: Optional FP8 scale tensor for `w_k`.
+        w_uk_scale: Optional FP8 scale tensor for `w_uk`.
+        w_uv_scale: Optional FP8 scale tensor for `w_uv`.
+        quant_config: Optional quantization config. When set, scales are required.
+
+    Returns:
+        Tensor of shape [total_seq_len, num_heads, v_head_dim].
     """
-    This is a manually fused kernel that performs attention calculation for the MultiLatentAttentionWithRopeFp8 Module.
-    It will automatically switch between prefill and decode compute paths based on the maximum sequence length in this batch.
-
-    See `mla_prefill_branch_fp8` and `mla_decode_branch_fp8` for the prefill and decode compute paths respectively.
-    """
-
-    input_rank_expected = 3
-    if q_nope.rank != input_rank_expected:
-        raise ValueError(
-            f"expected q_nope of rank {input_rank_expected} but got {q_nope.rank}"
-        )
-
-    if q_nope.dtype != kv_params.dtype:
-        raise ValueError(
-            f"expected q_nope to be dtype: {kv_params.dtype}, got {q_nope.dtype}"
-        )
-
-    if layer_idx.dtype != DType.uint32:
-        raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
-
-    if input_row_offsets.dtype != DType.uint32:
-        raise ValueError(
-            f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
-        )
-
-    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
-        raise ValueError(
-            f"unsupported cache strategy for mla_prefill_branch_fp8: {kv_params.cache_strategy}"
-        )
-
-    assert kv_params.page_size is not None
-    assert float8_config.input_scale.block_size is not None
-    assert float8_config.weight_scale.block_size is not None
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    parameters: dict[str, int | str | DType] = {
-        "m_scale_granularity": float8_config.input_scale.block_size[0],
-        "n_scale_granularity": float8_config.weight_scale.block_size[0],
-        "k_scale_granularity": float8_config.weight_scale.block_size[1],
-        "mask_str": mha_mask_config.attention_mask_variant.value,
-        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
-    }
+    _validate_mla_prefill_decode_graph_inputs(
+        q,
+        kv,
+        input_row_offsets,
+        kv_params,
+        layer_idx,
+        op_name="mla_prefill_decode_graph",
+        expected_dtype=kv_params.dtype,
+    )
+    parameters = _mha_parameters(mask_variant)
 
     input_values: MutableSequence[Value[Any]] = [
-        q_nope,
-        q_rope,
+        q,
+        kv,
         input_row_offsets,
+        freqs_cis,
+        kv_norm_gamma,
         buffer_row_offsets[0],  # one-shot prefill.
         cache_offsets[0],  # one-shot prefill.
         buffer_length[0],  # one-shot prefill.
-        kv_b_proj,
-        kv_b_proj_scale,
+        w_k,
         w_uk,
-        w_uk_scale,
         w_uv,
-        w_uv_scale,
-        *kv_collection,
+        *kv_collection.flatten_without_attention_dispatch_metadata(),
         layer_idx,
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
+        ops.constant(epsilon, dtype=DType.float32, device=DeviceRef.CPU()),
     ]
+    op_name = "mo.mla.graph.prefill.decode.paged"
+
+    if quant_config is not None:
+        assert (
+            w_k_scale is not None
+            and w_uk_scale is not None
+            and w_uv_scale is not None
+        )
+        assert quant_config.input_scale.block_size is not None
+        assert quant_config.weight_scale.block_size is not None
+        parameters.update(
+            {
+                "m_scale_granularity": quant_config.input_scale.block_size[0],
+                "n_scale_granularity": quant_config.weight_scale.block_size[0],
+                "k_scale_granularity": quant_config.weight_scale.block_size[1],
+            }
+        )
+        op_name += ".fp8"
+        input_values += [w_k_scale, w_uk_scale, w_uv_scale]
+
+    input_values.append(scalar_args)
+
     return ops.inplace_custom(
-        "mo.mla.graph.prefill.decode.paged",
-        device=q_nope.device,
+        op_name,
+        device=q.device,
         values=input_values,
-        out_types=[
-            TensorType(
-                dtype=q_nope.dtype,
-                shape=[
-                    q_nope.shape[0],
-                    q_nope.shape[1],
-                    v_head_dim,
-                ],
-                device=q_nope.device,
-            )
-        ],
+        out_types=[_build_mla_prefill_decode_out_type(q, v_head_dim)],
         parameters=parameters,
     )[0].tensor
 
@@ -2013,18 +3273,12 @@ def flare_mla_decompress_k_cache(
         A tensor of shape [buffer_size, weight.shape[0]] containing the decompressed
         keys. Note that only the first buffer_length tokens are valid.
     """
-
     if layer_idx.dtype != DType.uint32:
         raise ValueError(f"expected uint32 layer_idx but got {layer_idx.dtype}")
 
     if cache_offsets_1d.dtype != DType.uint32:
         raise ValueError(
             f"expected uint32 cache_offsets but got {cache_offsets_1d.dtype}"
-        )
-
-    if kv_params.cache_strategy is not KVCacheStrategy.PAGED:
-        raise ValueError(
-            f"unsupported cache strategy for flare_mla_decompress_k_cache: {kv_params.cache_strategy}"
         )
 
     assert kv_params.page_size is not None
@@ -2037,7 +3291,7 @@ def flare_mla_decompress_k_cache(
             cache_offsets_1d,
             buffer_length,
             weight,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
         ],
         out_types=[
@@ -2055,24 +3309,6 @@ def flare_mla_decompress_k_cache(
     )
 
     return results[1].tensor
-
-
-def kv_cache_get_max_seq_len(
-    kv_params: KVCacheParams,
-    kv_collection: PagedCacheValues,
-) -> TensorValue:
-    """This kernel returns the maximum sequence length."""
-
-    assert kv_params.page_size is not None
-
-    return ops.inplace_custom(
-        "mo.kv_cache.get_max_seq_len.paged",
-        device=DeviceRef.CPU(),
-        values=[*kv_collection],
-        out_types=[
-            TensorType(dtype=DType.uint32, shape=[1], device=DeviceRef.CPU())
-        ],
-    )[0].tensor[0]
 
 
 def cross_attention_ragged(
@@ -2116,30 +3352,19 @@ def cross_attention_ragged(
             f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
         )
 
-    if kv_params.cache_strategy not in {
-        KVCacheStrategy.PAGED,
-    }:
-        raise ValueError(
-            f"unsupported cache strategy for cross_attention_ragged: {kv_params.cache_strategy}"
-        )
+    _validate_argument_tensor(
+        "q_max_seq_len",
+        q_max_seq_len,
+        dtype=DType.uint32,
+        device=DeviceRef.CPU(),
+    )
 
-    if q_max_seq_len and (q_max_seq_len.dtype != DType.uint32):
-        raise ValueError(
-            f"expected q_max_seq_len to be uint32 but got {q_max_seq_len.dtype}"
-        )
-
-    mha_mask_config = _MHA_MASK_CONFIG_DICT[mask_variant]
-    parameters: dict[str, int | str | DType] = {
-        "local_window_size": local_window_size,
-        "mask_str": mha_mask_config.attention_mask_variant.value,
-        "score_mod_str": mha_mask_config.positional_encoding_variant.value,
-    }
-
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-    op_name = f"mo.cross_attention.ragged.{cache_strategy_str}"
+    parameters = _mha_parameters(
+        mask_variant, local_window_size=local_window_size
+    )
 
     return ops.inplace_custom(
-        op_name,
+        "mo.cross_attention.ragged.paged",
         device=input.device,
         values=[
             input,
@@ -2149,7 +3374,7 @@ def cross_attention_ragged(
             # on the kv_collection, but that isn't the case for cross attention.
             q_max_seq_len,
             kv_input_row_offsets,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             layer_idx,
             # NOTE: The scale argument to flash attention is constrained to float32.
             ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU()),
@@ -2160,55 +3385,6 @@ def cross_attention_ragged(
             )
         ],
         parameters=parameters,
-    )[0].tensor
-
-
-def swish_glu(
-    a: TensorValueLike, b0: TensorValueLike, b1: TensorValueLike
-) -> TensorValue:
-    """Computes swish(a@b0.t()) * (a@b1.t())"""
-    a = TensorValue(a)
-    b0 = TensorValue(b0)
-    b1 = TensorValue(b1)
-    a_rank_expected = 2
-    if a.rank != a_rank_expected:
-        raise ValueError(
-            f"expected a to have rank {a_rank_expected}, was {a.rank}"
-        )
-
-    b0_rank_expected = 2
-    if b0.rank != b0_rank_expected:
-        raise ValueError(
-            f"expected b0 to have rank {b0_rank_expected}, was {b0.rank}"
-        )
-
-    b1_rank_expected = 2
-    if b1.rank != b1_rank_expected:
-        raise ValueError(
-            f"expected b1 to have rank {b1_rank_expected}, was {b1.rank}"
-        )
-
-    m = a.shape[0]
-    n = b0.shape[0]
-    if b0.shape[1] != a.shape[1]:
-        raise ValueError(
-            f"a.shape[1] == {a.shape[1]} != {b0.shape[1]} == b0.shape[1]"
-        )
-
-    if b0.shape != b1.shape:
-        raise ValueError(f"b0.shape == {b0.shape} != {b1.shape} == b1.shape")
-
-    if a.dtype != b0.dtype or a.dtype != b1.dtype:
-        raise ValueError(
-            "Element types of all arguments must be equal, but received"
-            f" {a.dtype}, {b0.dtype}, and {b1.dtype}."
-        )
-
-    return ops.custom(
-        "swishGLU",
-        device=a.device,
-        values=[a, b0, b1],
-        out_types=[TensorType(dtype=a.dtype, shape=[m, n], device=a.device)],
     )[0].tensor
 
 
@@ -2232,18 +3408,12 @@ def kv_cache_ragged_radd(
         batch_offset: The batch to start applying the r-add to.
         layer_idx: The layer index to add to.
     """
-
     if a.rank != 2:
         raise ValueError(f"Expected a to have rank 2 but got {a.rank}")
 
     if input_row_offsets.rank != 1:
         raise ValueError(
             f"Expected input_row_offsets to have rank 1 but got {input_row_offsets.rank}"
-        )
-
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
-        raise ValueError(
-            f"Expected kv_params to have cache strategy PAGED but got {kv_params.cache_strategy}"
         )
 
     if kv_params.page_size is None:
@@ -2255,16 +3425,12 @@ def kv_cache_ragged_radd(
         [(slice(batch_offset, None), Dim("input_row_offsets_slice_len"))],
     )
 
-    op_name = (
-        f"mo.kv_cache.ragged.{kv_params.cache_strategy.kernel_substring()}.radd"
-    )
-
     ops.inplace_custom(
-        op_name,
+        "mo.kv_cache.ragged.paged.radd",
         device=input_row_offsets.device,
         values=[
             a,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             input_row_offsets,
             batch_offset,
             ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
@@ -2304,9 +3470,6 @@ def rms_norm_key_cache(
     until cache length increment, which happens after model forward.
     So use `input_row_offsets` to do this bookkeeping.
     """
-    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
-    op_name = f"mo.rms_norm_kv_cache.ragged.{cache_strategy_str}"
-
     gamma_rank_expected = 1
     if gamma.rank != gamma_rank_expected:
         raise ValueError(
@@ -2330,6 +3493,7 @@ def rms_norm_key_cache(
                 f"expected gamma of size {rms_norm_cols} but got {gamma.shape[0]}"
             )
 
+    # TODO: Remove this check once FP8 KVCache is supported (KERN-2394).
     if gamma.dtype != kv_params.dtype:
         raise TypeError(
             f"expected gamma dtype {gamma.dtype} to match KV dtype {kv_params.dtype}"
@@ -2339,14 +3503,75 @@ def rms_norm_key_cache(
         "multiply_before_cast": multiply_before_cast,
         "per_head_norm": per_head_norm,
     }
-    if kv_params.cache_strategy == KVCacheStrategy.PAGED:
-        assert kv_params.page_size is not None
+    assert kv_params.page_size is not None
 
     ops.inplace_custom(
-        op_name,
+        "mo.rms_norm_kv_cache.ragged.paged",
         device=input_row_offsets.device,
         values=[
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
+            gamma,
+            ops.constant(epsilon, gamma.dtype, device=DeviceRef.CPU()),
+            layer_idx,
+            ops.cast(TensorValue(total_seq_len), DType.uint32),
+            input_row_offsets,
+            ops.constant(weight_offset, gamma.dtype, device=DeviceRef.CPU()),
+        ],
+        parameters=parameters,
+    )
+
+
+def rms_norm_value_cache(
+    kv_params: KVCacheParams,
+    kv_collection: PagedCacheValues,
+    gamma: TensorValue,
+    epsilon: float | np.floating[Any],
+    layer_idx: TensorValue,
+    total_seq_len: Dim,
+    input_row_offsets: TensorValue,
+    weight_offset: float | np.floating[Any],
+    rms_norm_cols: int | None = None,
+    multiply_before_cast: bool = True,
+    per_head_norm: bool = True,
+) -> None:
+    """Applies RMSNorm in place to the _new_ entries in the value cache.
+    Semantics match :func:`rms_norm_key_cache`, but updates the value tensor
+    for the layer instead of the key tensor.
+    """
+    gamma_rank_expected = 1
+    if gamma.rank != gamma_rank_expected:
+        raise ValueError(
+            f"expected gamma of rank {gamma_rank_expected} but got {gamma.rank}"
+        )
+    if input_row_offsets.dtype != DType.uint32:
+        raise ValueError(
+            f"expected uint32 input_row_offsets but got {input_row_offsets.dtype}"
+        )
+    if gamma.shape[0] != kv_params.head_dim and per_head_norm:
+        if rms_norm_cols is None:
+            raise ValueError(
+                "Size of gamma doesn't match head_dim. Please pass rms_norm_cols "
+                "explicitly if you intend to apply RMSNorm to only a subset of "
+                "head dimensions"
+            )
+        elif rms_norm_cols != gamma.shape[0]:
+            raise ValueError(
+                f"expected gamma of size {rms_norm_cols} but got {gamma.shape[0]}"
+            )
+    if gamma.dtype != kv_params.dtype:
+        raise TypeError(
+            f"expected gamma dtype {gamma.dtype} to match KV dtype {kv_params.dtype}"
+        )
+    parameters: dict[str, int | str | DType | bool] = {
+        "multiply_before_cast": multiply_before_cast,
+        "per_head_norm": per_head_norm,
+    }
+    assert kv_params.page_size is not None
+    ops.inplace_custom(
+        "mo.rms_norm_value_cache.ragged.paged",
+        device=input_row_offsets.device,
+        values=[
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             gamma,
             ops.constant(epsilon, gamma.dtype, device=DeviceRef.CPU()),
             layer_idx,
@@ -2361,7 +3586,10 @@ def rms_norm_key_cache(
 def moe_create_indices(
     topk_ids: TensorValue,
     num_local_experts: int,
-) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue, TensorValue]:
+    *,
+    needs_scales_offset: bool = False,
+    scales_alignment: int = 128,
+) -> tuple[TensorValue, ...]:
     """Creates indices for the MoE layer.
 
     Args:
@@ -2380,37 +3608,52 @@ def moe_create_indices(
             and the number of active experts.
     """
 
+    op_name = "mo.moe.create.indices"
+    if needs_scales_offset:
+        op_name += ".with.scales.offset"
+
+    out_types: list[Type[Any]] = [
+        TensorType(
+            dtype=DType.uint32,
+            shape=[topk_ids.shape[0]],
+            device=topk_ids.device,
+        ),  # token_expert_order
+        TensorType(
+            dtype=DType.uint32,
+            shape=[num_local_experts + 1],
+            device=topk_ids.device,
+        ),  # expert_start_indices
+        TensorType(
+            dtype=DType.uint32,
+            shape=[topk_ids.shape[0]],
+            device=topk_ids.device,
+        ),  # restore_token_order
+        TensorType(
+            dtype=DType.int32,
+            shape=[num_local_experts],
+            device=topk_ids.device,
+        ),  # expert_ids
+        TensorType(
+            dtype=DType.uint32, shape=[2], device=topk_ids.device
+        ),  # expert_usage_stats
+    ]
+
+    if needs_scales_offset:
+        out_types.append(
+            TensorType(
+                dtype=DType.uint32,
+                shape=[num_local_experts],
+                device=topk_ids.device,
+            ),
+        )
+
     results = ops.custom(
-        "mo.moe.create.indices",
+        op_name,
         device=topk_ids.device,
         values=[
             topk_ids,
         ],
-        out_types=[
-            TensorType(
-                dtype=DType.uint32,
-                shape=[topk_ids.shape[0]],
-                device=topk_ids.device,
-            ),  # token_expert_order
-            TensorType(
-                dtype=DType.uint32,
-                shape=[num_local_experts + 1],
-                device=topk_ids.device,
-            ),  # expert_start_indices
-            TensorType(
-                dtype=DType.uint32,
-                shape=[topk_ids.shape[0]],
-                device=topk_ids.device,
-            ),  # restore_token_order
-            TensorType(
-                dtype=DType.int32,
-                shape=[num_local_experts],
-                device=topk_ids.device,
-            ),  # expert_ids
-            TensorType(
-                dtype=DType.uint32, shape=[2], device=topk_ids.device
-            ),  # expert_usage_stats
-        ],
+        out_types=out_types,
     )
 
     return (
@@ -2419,6 +3662,7 @@ def moe_create_indices(
         results[2].tensor,
         results[3].tensor,
         results[4].tensor,
+        *([results[5].tensor] if needs_scales_offset else []),
     )
 
 
@@ -2433,6 +3677,12 @@ def moe_router_group_limited(
     routed_scaling_factor: float,
 ) -> tuple[TensorValue, TensorValue]:
     """Group limited MoE router.
+    When `n_groups > 1`, selects up to `topk_group` expert groups, then
+    picks ``n_experts_per_tok`` experts within those groups (DeepSeek-V3 style).
+    When ``n_groups == 1``, there is only one group, so group selection is
+    skipped and routing uses the dedicated GPU single-group path
+    (``mo.moe.single.group.router``, implemented as ``single_group_router`` in
+    Mojo). In that case ``topk_group`` is not used by the kernel.
 
     Reference: https://github.com/deepseek-ai/DeepSeek-V3/blob/9b4e9788e4a3a731f7567338ed15d3ec549ce03b/inference/model.py#L566.
 
@@ -2447,8 +3697,11 @@ def moe_router_group_limited(
             n_routed_experts.
         topk_group: The maximum number of expert groups that a token will be
             routed to.
-        norm_weights: Whether to normalize the selected expert weights.
-        routed_scaling_factor: The scaling factor for the routed expert weights.
+        norm_weights: Whether to normalize the selected expert weights when
+            n_groups > 1. When n_groups == 1, normalization is currently
+            always enabled (norm_weights is treated as True) so behavior
+            matches the previous graph path that always divided weights by their
+            sum per token.
 
     Returns:
         A tuple of two tensors:
@@ -2457,14 +3710,6 @@ def moe_router_group_limited(
         - expert_weights: The weights of the routed experts for each token.
             Shape: [num_tokens, n_experts_per_tok].
     """
-
-    parameters: dict[str, int | str | DType | bool] = {
-        "n_routed_experts": n_routed_experts,
-        "n_experts_per_tok": n_experts_per_tok,
-        "n_groups": n_groups,
-        "topk_group": topk_group,
-        "norm_weights": norm_weights,
-    }
 
     if expert_bias.rank != 1:
         raise ValueError(
@@ -2475,8 +3720,25 @@ def moe_router_group_limited(
             f"expected expert_bias of shape [num_experts] but got {expert_bias.shape}"
         )
 
+    if n_groups == 1:
+        parameters: dict[str, int | str | DType | bool] = {
+            "n_routed_experts": n_routed_experts,
+            "n_experts_per_tok": n_experts_per_tok,
+            "norm_weights": norm_weights,
+        }
+        op_name = "mo.moe.single.group.router"
+    else:
+        parameters = {
+            "n_routed_experts": n_routed_experts,
+            "n_experts_per_tok": n_experts_per_tok,
+            "n_groups": n_groups,
+            "topk_group": topk_group,
+            "norm_weights": norm_weights,
+        }
+        op_name = "mo.moe.router.group.limited"
+
     results = ops.custom(
-        "mo.moe.router.group.limited",
+        op_name,
         device=expert_scores.device,
         values=[
             expert_scores,
@@ -2522,7 +3784,6 @@ def grouped_matmul_ragged(
     expert, and the number of active experts.
 
     """
-
     if weight.rank != 3:
         raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
 
@@ -2562,6 +3823,331 @@ def grouped_matmul_ragged(
     return output
 
 
+def grouped_dynamic_scaled_mxfp4_matmul(
+    hidden_states: TensorValue,
+    weight: TensorValue,
+    a_scales: TensorValue,
+    b_scales: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    expert_usage_stats_host: TensorValue,
+    out_type: DType = DType.bfloat16,
+    estimated_total_m: TensorValue | None = None,
+) -> TensorValue:
+    """Performs grouped NVFP4 matmul for MoE layers.
+
+    Performs a grouped matmul with MXFP4 (4-bit) quantized inputs and weights.
+    The inputs are packed as uint8 (2 MXFP4 values per byte) with float8_e8m0fnu
+    scaling factors. MXFP4 uses fixed 1D block scaling with 32 elements per
+    scale factor along the K dimension.
+
+    ``hidden_states`` and ``expert_start_indices`` together implement the ragged
+    tensor representation for variable-length expert inputs.
+
+    Args:
+        hidden_states: The input activations with shape ``[total_tokens, K/2]``
+            where K is the unpacked hidden dimension. Dtype must be uint8
+            (packed MXFP4).
+        weight: The expert weights with shape ``[num_experts, N, K/2]``.
+            Dtype must be uint8 (packed MXFP4).
+        a_scales: Scaling factors for inputs with shape
+            ``[num_scale_rows, K/32]``. Dtype must be float8_e8m0fnu.
+        b_scales: Scaling factors for weights with shape
+            ``[num_experts, N, K/32]``. Dtype must be float8_e8m0fnu.
+        expert_start_indices: Indices indicating where each expert's tokens
+            start in ``hidden_states``.
+        expert_ids: The expert ID for each group.
+        expert_usage_stats_host: A tensor containing [max_tokens_per_expert,
+            num_active_experts].
+        out_type: Output dtype. Defaults to bfloat16.
+        estimated_total_m: The estimated total number of tokens.
+
+    Returns:
+        The matmul result with shape ``[total_tokens, N]`` and dtype ``out_type``.
+    """
+    if weight.rank != 3:
+        raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
+
+    if hidden_states.rank != 2:
+        raise ValueError(
+            f"expected hidden_states of rank 2 but got {hidden_states.rank}"
+        )
+
+    weight_k = weight.shape[2]
+    hidden_k = hidden_states.shape[1]
+    if weight_k != hidden_k or weight.shape[0] != expert_ids.shape[0]:
+        raise ValueError(
+            "expected weight is of shape [num_experts, *, "
+            f"{hidden_k}] but got {weight.shape}"
+        )
+
+    if (hidden_states.dtype != DType.uint8) or (weight.dtype != DType.uint8):
+        raise TypeError(
+            "hidden_states and weight dtypes must be uint8 for MXFP4, but got "
+            f"{hidden_states.dtype}, {weight.dtype}"
+        )
+
+    if (a_scales.dtype != b_scales.dtype) or (
+        a_scales.dtype != DType.float8_e8m0fnu
+    ):
+        raise TypeError(
+            "a_scales and b_scales dtypes must be float8_e8m0fnu for MXFP4, "
+            f"but got {a_scales.dtype}, {b_scales.dtype}"
+        )
+
+    if expert_ids.dtype != DType.int32:
+        raise TypeError(
+            f"expert_ids dtype must be int32, but got {expert_ids.dtype}"
+        )
+
+    if expert_ids.rank != 1:
+        raise ValueError(
+            f"expected expert_ids of rank 1 but got {expert_ids.rank}"
+        )
+    if expert_start_indices.dtype != DType.uint32:
+        raise TypeError(
+            "expert_start_indices dtype must be uint32, but got"
+            f" {expert_start_indices.dtype}"
+        )
+    if expert_start_indices.rank != 1:
+        raise ValueError(
+            "expected expert_start_indices of rank 1 but got"
+            f" {expert_start_indices.rank}"
+        )
+
+    if a_scales.rank != 2 or b_scales.rank != 3:
+        raise ValueError(
+            "expected a_scales of rank 2 and b_scales of rank 3 but got"
+            f" {a_scales.rank} and {b_scales.rank}"
+        )
+
+    MXFP4_SF_VECTOR_SIZE = 32
+
+    a_scales_dim_1 = ceildiv(
+        hidden_states.shape[1] * 2, Dim(MXFP4_SF_VECTOR_SIZE)
+    )
+    if a_scales.shape[1] != a_scales_dim_1:
+        raise ValueError(
+            "a_scales shape must be "
+            f"[*, {a_scales_dim_1}]"
+            f" but got {a_scales.shape}"
+        )
+
+    b_scales_dim_2 = ceildiv(weight.shape[2] * 2, Dim(MXFP4_SF_VECTOR_SIZE))
+    if (
+        b_scales.shape[0] != weight.shape[0]
+        or b_scales.shape[1] != weight.shape[1]
+        or b_scales.shape[2] != b_scales_dim_2
+    ):
+        raise ValueError(
+            "b_scales shape must be "
+            f"[{weight.shape[0]}, {weight.shape[1]}, {b_scales_dim_2}] but got {b_scales.shape}"
+        )
+
+    output = ops.custom(
+        "mo.grouped.matmul.block.scaled.mxfp4",
+        device=hidden_states.device,
+        values=[
+            hidden_states,
+            weight,
+            a_scales,
+            b_scales,
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats_host[1],
+        ],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[hidden_states.shape[0], weight.shape[1]],
+                device=hidden_states.device,
+            ),
+        ],
+    )[0].tensor
+
+    return output
+
+
+def grouped_matmul_block_scaled(
+    hidden_states: TensorValue,
+    weight: TensorValue,
+    a_scales: TensorValue,
+    b_scales: TensorValue,
+    expert_start_indices: TensorValue,
+    a_scale_offsets: TensorValue,
+    expert_ids: TensorValue,
+    expert_scales: TensorValue,
+    expert_usage_stats_host: TensorValue,
+    out_type: DType = DType.bfloat16,
+    estimated_total_m: TensorValue | None = None,
+) -> TensorValue:
+    """Performs grouped NVFP4 matmul for MoE layers.
+
+    Performs a grouped matmul with NVFP4 (4-bit) quantized inputs and weights.
+    The inputs are packed as uint8 (2 NVFP4 values per byte) with float8_e4m3fn
+    scaling factors. NVFP4 uses fixed 1D block scaling with 16 elements per
+    scale factor along the K dimension.
+
+    ``hidden_states`` and ``expert_start_indices`` together implement the ragged
+    tensor representation for variable-length expert inputs.
+
+    Args:
+        hidden_states: The input activations with shape ``[total_tokens, K/2]``
+            where K is the unpacked hidden dimension. Dtype must be uint8
+            (packed NVFP4).
+        weight: The expert weights with shape ``[num_experts, N, K/2]``.
+            Dtype must be uint8 (packed NVFP4).
+        a_scales: Scaling factors for inputs with shape
+            ``[num_scale_rows, K_groups, 32, 4, 4]``. Dtype must be float8_e4m3fn.
+        b_scales: Scaling factors for weights with shape
+            ``[num_experts, N_groups, K_groups, 32, 4, 4]``. Dtype must be
+            float8_e4m3fn.
+        expert_start_indices: Indices indicating where each expert's tokens
+            start in ``hidden_states``.
+        a_scale_offsets: The offsets of the input scale tiles for each expert.
+        expert_ids: The expert ID for each group.
+        expert_scales: Per-expert scaling factors with shape ``[num_experts]``.
+            Dtype must be float32. Multiplied with the matmul output in the
+            epilogue.
+        expert_usage_stats_host: A tensor containing [max_tokens_per_expert,
+            num_active_experts].
+        out_type: Output dtype. Defaults to bfloat16.
+        estimated_total_m: The estimated total number of tokens.
+
+    Returns:
+        The matmul result with shape ``[total_tokens, N]`` and dtype ``out_type``.
+    """
+    if weight.rank != 3:
+        raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
+
+    if hidden_states.rank != 2:
+        raise ValueError(
+            f"expected hidden_states of rank 2 but got {hidden_states.rank}"
+        )
+
+    weight_k = weight.shape[2]
+    hidden_k = hidden_states.shape[1]
+    if weight_k != hidden_k or weight.shape[0] != expert_ids.shape[0]:
+        raise ValueError(
+            "expected weight is of shape [num_experts, *, "
+            f"{hidden_k}] but got {weight.shape}"
+        )
+
+    if (hidden_states.dtype != DType.uint8) or (weight.dtype != DType.uint8):
+        raise TypeError(
+            "hidden_states and weight dtypes must be uint8 for NVFP4, but got "
+            f"{hidden_states.dtype}, {weight.dtype}"
+        )
+
+    if a_scales.dtype != b_scales.dtype:
+        raise TypeError(
+            "a_scales and b_scales dtypes must match, "
+            f"but got {a_scales.dtype}, {b_scales.dtype}"
+        )
+    if a_scales.dtype not in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
+        raise TypeError(
+            "a_scales dtype must be float8_e4m3fn (NVFP4) or"
+            f" float8_e8m0fnu (MXFP4), but got {a_scales.dtype}"
+        )
+
+    if expert_ids.dtype != DType.int32:
+        raise TypeError(
+            f"expert_ids dtype must be int32, but got {expert_ids.dtype}"
+        )
+
+    if expert_ids.rank != 1:
+        raise ValueError(
+            f"expected expert_ids of rank 1 but got {expert_ids.rank}"
+        )
+    if expert_start_indices.dtype != DType.uint32:
+        raise TypeError(
+            "expert_start_indices dtype must be uint32, but got"
+            f" {expert_start_indices.dtype}"
+        )
+    if expert_start_indices.rank != 1:
+        raise ValueError(
+            "expected expert_start_indices of rank 1 but got"
+            f" {expert_start_indices.rank}"
+        )
+
+    if a_scales.rank != 5 or b_scales.rank != 6:
+        raise ValueError(
+            "expected a_scales of rank 5 and b_scales of rank 6 but got"
+            f" {a_scales.rank} and {b_scales.rank}"
+        )
+
+    if expert_scales.dtype != DType.float32:
+        raise TypeError(
+            f"expert_scales dtype must be float32, but got {expert_scales.dtype}"
+        )
+    if expert_scales.rank != 1:
+        raise ValueError(
+            f"expected expert_scales of rank 1 but got {expert_scales.rank}"
+        )
+
+    SF_ATOM_M = [32, 4]
+    SF_ATOM_K = 4
+    # Infer SF_VECTOR_SIZE from scale dtype: NVFP4=16, MXFP4=32
+    SF_VECTOR_SIZE = 32 if a_scales.dtype == DType.float8_e8m0fnu else 16
+    SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+    SF_K_GROUP_SIZE = SF_ATOM_K * SF_VECTOR_SIZE
+
+    a_scales_dim_1 = ceildiv(hidden_states.shape[1] * 2, Dim(SF_K_GROUP_SIZE))
+    if (
+        a_scales.shape[1] != a_scales_dim_1
+        or a_scales.shape[2] != SF_ATOM_M[0]
+        or a_scales.shape[3] != SF_ATOM_M[1]
+        or a_scales.shape[4] != SF_ATOM_K
+    ):
+        raise ValueError(
+            "a_scales shape must be "
+            f"[*, {a_scales_dim_1}, {SF_ATOM_M[0]}, {SF_ATOM_M[1]}, {SF_ATOM_K}]"
+            f" but got {a_scales.shape}"
+        )
+
+    b_scales_dim_1 = ceildiv(weight.shape[1], Dim(SF_MN_GROUP_SIZE))
+    b_scales_dim_2 = ceildiv(weight.shape[2] * 2, Dim(SF_K_GROUP_SIZE))
+    if (
+        b_scales.shape[0] != weight.shape[0]
+        or b_scales.shape[1] != b_scales_dim_1
+        or b_scales.shape[2] != b_scales_dim_2
+        or b_scales.shape[3] != SF_ATOM_M[0]
+        or b_scales.shape[4] != SF_ATOM_M[1]
+        or b_scales.shape[5] != SF_ATOM_K
+    ):
+        raise ValueError(
+            "b_scales shape must be "
+            f"[{weight.shape[0]}, {b_scales_dim_1}, {b_scales_dim_2}, "
+            f"{SF_ATOM_M[0]}, {SF_ATOM_M[1]}, {SF_ATOM_K}] but got {b_scales.shape}"
+        )
+
+    output = ops.custom(
+        "mo.grouped.matmul.block.scaled",
+        device=hidden_states.device,
+        values=[
+            hidden_states,
+            weight,
+            a_scales,
+            b_scales,
+            expert_start_indices,
+            expert_ids,
+            a_scale_offsets,
+            expert_scales,
+            estimated_total_m or expert_usage_stats_host[0],
+            expert_usage_stats_host[1],
+        ],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[hidden_states.shape[0], weight.shape[1]],
+                device=hidden_states.device,
+            ),
+        ],
+    )[0].tensor
+
+    return output
+
+
 def grouped_dynamic_scaled_fp8_matmul(
     hidden_states: TensorValue,
     weight: TensorValue,
@@ -2570,8 +4156,8 @@ def grouped_dynamic_scaled_fp8_matmul(
     expert_start_indices: TensorValue,
     expert_ids: TensorValue,
     expert_usage_stats_host: TensorValue,
-    input_scale_spec: Float8InputScaleSpec,
-    weight_scale_spec: Float8WeightScaleSpec,
+    input_scale_spec: InputScaleSpec,
+    weight_scale_spec: WeightScaleSpec,
     out_type: DType = DType.bfloat16,
     tokens_padded_per_expert: bool = False,
 ) -> TensorValue:
@@ -2593,10 +4179,10 @@ def grouped_dynamic_scaled_fp8_matmul(
         weight_scale_spec: The scaling granularity for the weight tensor.
         tokens_padded_per_expert: If True, It's guaranteed that the number of tokens for each local expert will be
             padded, so that `a_scales` is aligned to 16 bytes. This is needed by the optimized grouped matmul kernel.
+
     Returns:
         The result of the matmul operation.
     """
-
     if weight.rank != 3:
         raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
 
@@ -2620,9 +4206,11 @@ def grouped_dynamic_scaled_fp8_matmul(
             f"hidden_states and weight dtypes must be float8_e4m3fn, but got {hidden_states.dtype}, {weight.dtype}"
         )
 
-    if (a_scales.dtype != b_scales.dtype) or (a_scales.dtype != DType.float32):
+    if (a_scales.dtype != b_scales.dtype) or (
+        a_scales.dtype not in (DType.float32, DType.bfloat16)
+    ):
         raise TypeError(
-            f"a_scales and b_scales dtypes must be float32, but got {a_scales.dtype}, {b_scales.dtype}"
+            f"a_scales and b_scales dtypes must be float32 or bfloat16 and match, but got {a_scales.dtype}, {b_scales.dtype}"
         )
 
     if expert_ids.dtype != DType.int32:
@@ -2723,12 +4311,11 @@ def batched_dynamic_scaled_fp8_matmul(
     b: TensorValue,
     a_scales: TensorValue,
     b_scales: TensorValue,
-    input_scale_spec: Float8InputScaleSpec,
-    weight_scale_spec: Float8WeightScaleSpec,
+    input_scale_spec: InputScaleSpec,
+    weight_scale_spec: WeightScaleSpec,
     out_type: DType = DType.bfloat16,
 ) -> TensorValue:
-    """
-    Perform a batched blockwise scaled matmul of two tensors with scaling factors.
+    """Performs a batched blockwise scaled matmul of two tensors with scaling factors.
 
     Args:
         a: The first tensor to multiply (3D tensor).
@@ -2830,6 +4417,25 @@ def quantize_static_scaled_float8(
     scale_is_inverted: bool = True,
     out_type: DType = DType.float8_e4m3fn,
 ) -> TensorValue:
+    """Quantizes a rank-2 tensor to float8 using a static per-tensor scale.
+
+    Args:
+        x: Input tensor to quantize. Must be rank 2 with dtype ``float16``,
+            ``bfloat16``, or ``float32``.
+        scale: Scalar scale factor (shape ``[]`` or ``[1]``) residing on CPU.
+        scale_is_inverted: When ``True`` (default), ``scale`` is interpreted
+            as ``1 / max_val`` (inverted). When ``False``, it is the raw
+            absolute-max scale.
+        out_type: Output dtype. Defaults to ``DType.float8_e4m3fn``.
+
+    Returns:
+        A quantized :class:`~max.graph.TensorValue` with shape equal to ``x``
+        and dtype ``out_type``.
+
+    Raises:
+        ValueError: If ``scale`` is not a scalar, ``x`` is not rank 2, ``x``
+            dtype is unsupported, or ``scale`` is not on CPU.
+    """
     if scale.shape not in [[], [1]]:
         raise ValueError(
             f"expected scale to be a scalar, but got shape of {scale.shape}"
@@ -2855,17 +4461,16 @@ def quantize_static_scaled_float8(
     )[0].tensor
 
 
-def quantize_dynamic_scaled_float8(
+def quantize_tensor_dynamic_scaled_float8(
     input: TensorValue,
-    input_scale_spec: Float8InputScaleSpec,
-    weight_scale_spec: Float8WeightScaleSpec,
+    input_scale_spec: InputScaleSpec,
+    weight_scale_spec: WeightScaleSpec,
     scale_ub: float = 1200.0,
     group_size_or_per_token: int = -1,
     out_type: DType = DType.float8_e4m3fn,
     scales_type: DType = DType.bfloat16,
 ) -> tuple[TensorValue, TensorValue]:
-    """
-    Dynamically quantize the input tensor to fp8.
+    """Quantizes a rank-2 tensor to float8 using a dynamic per-tensor scale.
 
     Args:
         input: The input tensor to quantize.
@@ -2878,7 +4483,76 @@ def quantize_dynamic_scaled_float8(
     Returns:
         The quantized tensor and the scales.
     """
+    if input.rank != 2:
+        raise ValueError("input must be rank 2 tensor")
 
+    if out_type not in (DType.float8_e4m3fn,):
+        raise ValueError("out_type must be float8_e4m3fn")
+
+    if not isinstance(input.shape[1], StaticDim):
+        raise ValueError(
+            f"input.shape[1] must be a statically known dimension. Input shape received: {input.shape}"
+        )
+
+    if not (input_scale_spec.is_tensor and weight_scale_spec.is_tensor):
+        raise ValueError(
+            "both input and weight must be tensor scaled for tensor scaling"
+        )
+
+    if group_size_or_per_token != -1:
+        raise ValueError(
+            "group_size_or_per_token should be -1 for dynamic tensor scaling so group_size == num_cols == input.shape[1]"
+        )
+
+    result = ops.custom(
+        "mo.quantize_tensor_dynamic_scaled_float8",
+        device=input.device,
+        values=[
+            input,
+            ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[input.shape[0], input.shape[1]],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=scales_type,
+                shape=[1, input.shape[0]],
+                device=input.device,
+            ),
+        ],
+        parameters={
+            "group_size_or_per_token": group_size_or_per_token,
+        },
+    )
+
+    return result[0].tensor, result[1].tensor
+
+
+def quantize_dynamic_scaled_float8(
+    input: TensorValue,
+    input_scale_spec: InputScaleSpec,
+    weight_scale_spec: WeightScaleSpec,
+    scale_ub: float = 1200.0,
+    group_size_or_per_token: int = -1,
+    out_type: DType = DType.float8_e4m3fn,
+    scales_type: DType = DType.bfloat16,
+) -> tuple[TensorValue, TensorValue]:
+    """Dynamically quantize the input tensor to fp8.
+
+    Args:
+        input: The input tensor to quantize.
+        scale_ub: The upper bound of the scale factor.
+        group_size_or_per_token: The group size for quantization. When set to -1,
+            the quantization is column-wise.
+        out_type: The type of the output tensor.
+        scales_type: The type of the scales tensor.
+
+    Returns:
+        The quantized tensor and the scales.
+    """
     if input.rank != 2:
         raise ValueError("input must be rank 2 tensor")
 
@@ -2939,100 +4613,16 @@ def quantize_dynamic_scaled_float8(
     return result[0].tensor, result[1].tensor
 
 
-def batched_quantize_dynamic_scaled_float8(
-    input: TensorValue,
-    input_scale_spec: Float8InputScaleSpec,
-    weight_scale_spec: Float8WeightScaleSpec,
-    scale_ub: float = 1200.0,
-    group_size_or_per_token: int = -1,
-    out_type: DType = DType.float8_e4m3fn,
-    scales_type: DType = DType.bfloat16,
-) -> tuple[TensorValue, TensorValue]:
-    """
-    Dynamically quantize the input tensor to fp8.
-
-    Args:
-        input: The input tensor to quantize. Shape: [batch_size, seq_len, hidden_size]
-        scale_ub: The upper bound of the scale factor.
-        group_size_or_per_token: The group size for quantization. When set to -1,
-            the quantization is column-wise.
-        out_type: The type of the output tensor.
-        scales_type: The type of the scales tensor.
-
-    Returns:
-        The quantized tensor and the scales.
-    """
-
-    if input.rank != 3:
-        raise ValueError("input must be rank 3 tensor")
-
-    if out_type not in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
-        raise ValueError("out_type must be float8_e4m3fn or float8_e4m3fnuz")
-
-    if scales_type not in (DType.float32, DType.bfloat16, DType.float16):
-        raise ValueError("scales_type must be float32, bfloat16, or float16")
-
-    group_size = (
-        group_size_or_per_token
-        if group_size_or_per_token != -1
-        else input.shape[2]
-    )
-
-    a_scales_dim1 = input.shape[1]
-    if input_scale_spec.is_block or weight_scale_spec.is_block:
-        if not (input_scale_spec.is_block and weight_scale_spec.is_block):
-            raise ValueError(
-                "both input and weight must be blockwise scaled for blockwise scaling"
-            )
-
-        # For blockwise scaling pad the a_scales to 16 Bytes. This is required by NVIDIA SM90+ TMA instructions
-        padding_size = 16 // scales_type.size_in_bytes
-        a_scales_dim1 = (
-            (input.shape[1] + padding_size - 1) // padding_size
-        ) * padding_size
-
-    result = ops.custom(
-        "mo.batched.quantize.dynamic.scaled.fp8",
-        device=input.device,
-        values=[
-            input,
-            ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
-        ],
-        out_types=[
-            TensorType(
-                dtype=out_type,
-                shape=[input.shape[0], input.shape[1], input.shape[2]],
-                device=input.device,
-            ),
-            TensorType(
-                dtype=scales_type,
-                shape=[
-                    input.shape[0],
-                    input.shape[2] // group_size,
-                    a_scales_dim1,
-                ],
-                device=input.device,
-            ),
-        ],
-        parameters={
-            "group_size_or_per_token": group_size_or_per_token,
-        },
-    )
-
-    return result[0].tensor, result[1].tensor
-
-
 def dynamic_scaled_matmul(
     a: TensorValue,
     b: TensorValue,
     a_scales: TensorValue,
     b_scales: TensorValue,
-    input_scale_spec: Float8InputScaleSpec,
-    weight_scale_spec: Float8WeightScaleSpec,
+    input_scale_spec: InputScaleSpec,
+    weight_scale_spec: WeightScaleSpec,
     out_type: DType = DType.bfloat16,
 ) -> TensorValue:
-    """
-    Perform a matmul of two tensors with scaling factors. Currently only
+    """Performs a matmul of two tensors with scaling factors. Currently only
     supports channel-wise scaling for weights and per-token scaling for inputs.
 
     Args:
@@ -3044,7 +4634,6 @@ def dynamic_scaled_matmul(
     Returns:
         The result of the matmul operation.
     """
-
     if a.rank != 2 or b.rank != 2 or a_scales.rank != 2 or b_scales.rank != 2:
         raise ValueError("All arguments must be rank 2 tensors")
 
@@ -3054,16 +4643,22 @@ def dynamic_scaled_matmul(
         )
 
     if input_scale_spec.is_tensor and weight_scale_spec.is_tensor:
-        if not (
-            a_scales.shape[0]
-            == a_scales.shape[1]
-            == b_scales.shape[0]
-            == b_scales.shape[1]
-            == 1
-        ):
-            raise ValueError(
-                "scaler tensors must be of shape [1, 1] for tensor scaling"
-            )
+        if input_scale_spec.origin.is_dynamic:
+            if not (b_scales.shape[0] == b_scales.shape[1] == 1):
+                raise ValueError(
+                    "scaler weight tensors must be of shape [1, 1] for dynamic tensor scaling"
+                )
+        else:
+            if not (
+                a_scales.shape[0]
+                == a_scales.shape[1]
+                == b_scales.shape[0]
+                == b_scales.shape[1]
+                == 1
+            ):
+                raise ValueError(
+                    "scaler tensors must be of shape [1, 1] for tensor scaling"
+                )
 
     elif input_scale_spec.is_colwise and weight_scale_spec.is_rowwise:
         if a_scales.shape[0] != 1:
@@ -3143,8 +4738,7 @@ def dynamic_block_scaled_matmul_fp4(
     sf_vector_size: int = 16,
     out_type: DType = DType.bfloat16,
 ) -> TensorValue:
-    """
-    Perform a matmul of two FP4 tensors with 1D-block scaled scaling factors.
+    """Performs a matmul of two FP4 tensors with 1D-block scaled scaling factors.
 
     Args:
         a: The first tensor to multiply.
@@ -3156,7 +4750,6 @@ def dynamic_block_scaled_matmul_fp4(
     Returns:
         The result of the matmul operation.
     """
-
     if a.rank != 2 or b.rank != 2:
         raise ValueError("Both a and b must be rank 2 tensors")
     if a_scales.rank != 5 or b_scales.rank != 5:
@@ -3227,6 +4820,14 @@ def dynamic_block_scaled_matmul_fp4(
             f" got a_scales.shape={a_scales.shape} and b_scales.shape={b_scales.shape}"
         )
 
+    tensor_sf_value: TensorValue
+    if isinstance(tensor_sf, float):
+        tensor_sf_value = ops.constant(
+            tensor_sf, DType.float32, device=DeviceRef.CPU()
+        )
+    else:
+        tensor_sf_value = TensorValue(tensor_sf)
+
     result = ops.custom(
         "mo.matmul.dynamic.block.scaled",
         device=a.device,
@@ -3235,9 +4836,7 @@ def dynamic_block_scaled_matmul_fp4(
             b,
             a_scales,
             b_scales,
-            ops.constant(tensor_sf, DType.float32, device=DeviceRef.CPU())
-            if isinstance(tensor_sf, float)
-            else tensor_sf,
+            tensor_sf_value,
         ],
         out_types=[
             TensorType(
@@ -3252,6 +4851,139 @@ def dynamic_block_scaled_matmul_fp4(
     return result
 
 
+def dynamic_block_scaled_matmul_mxfp4(
+    a: TensorValue,
+    b: TensorValue,
+    a_scales: TensorValue,
+    b_scales: TensorValue,
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """Performs a matmul of two FP4 tensors with 1D-block scaled scaling factors.
+
+    Args:
+        a: The first tensor to multiply.
+        b: The second tensor to multiply, must be transposed.
+        a_scales: The scaling factors for the first tensor.
+        b_scales: The scaling factors for the second tensor.
+
+    Returns:
+        The result of the matmul operation.
+    """
+    if a.rank != 2 or b.rank != 2:
+        raise ValueError("Both a and b must be rank 2 tensors")
+    if a_scales.rank != 2 or b_scales.rank != 2:
+        raise ValueError("Both a_scales and b_scales must be rank 2 tensors")
+
+    if a.shape[1] != b.shape[1]:
+        raise ValueError(
+            "The second dimension of b must match the second dimension of a"
+        )
+
+    if (a.dtype != b.dtype) or (a_scales.dtype != b_scales.dtype):
+        raise TypeError(
+            f"a and b dtypes {a.dtype}, {b.dtype} must match, "
+            f"as do a and b scales dtypes {a_scales.dtype}, {b_scales.dtype}"
+        )
+
+    if a.dtype != DType.uint8:
+        raise ValueError("A dtype must be uint8 (fp4-e2m1fnX2)")
+
+    if a_scales.dtype != DType.float8_e8m0fnu:
+        raise ValueError("a_scales dtype must be float8_e4m3fn")
+
+    result = ops.custom(
+        "mo.matmul.dynamic.block.scaled.mxfp4",
+        device=a.device,
+        values=[
+            a,
+            b,
+            a_scales,
+            b_scales,
+        ],
+        out_types=[
+            TensorType(
+                dtype=out_type, shape=[a.shape[0], b.shape[0]], device=a.device
+            )
+        ],
+    )[0].tensor
+
+    return result
+
+
+def mxfp4_dequant(
+    packed_weights: TensorValue,
+    scales: TensorValue,
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """Dequantizes MXFP4 packed weights to BF16 or FP8 on GPU.
+
+    Supports rank 2 ``[N, K//2]`` and rank 3 ``[E, N, K//2]`` inputs.
+    For rank 3, leading dims are flattened to 2D, dequantized, and reshaped back.
+
+    Args:
+        packed_weights: Packed weights in uint8 (2 FP4 values per byte).
+            Shape ``[N, K//2]`` or ``[E, N, K//2]``.
+        scales: Block scales in float8_e8m0fnu.
+            Shape ``[N, K//32]`` or ``[E, N, K//32]``.
+        out_type: Output dtype (bfloat16 or float8_e4m3fn).
+
+    Returns:
+        Dequantized tensor ``[N, K]`` or ``[E, N, K]`` in out_type.
+    """
+    if packed_weights.rank not in (2, 3):
+        raise ValueError(
+            f"packed_weights must be rank 2 or 3, got {packed_weights.rank}"
+        )
+    if scales.rank != packed_weights.rank:
+        raise ValueError(
+            f"scales rank ({scales.rank}) must match packed_weights rank"
+            f" ({packed_weights.rank})"
+        )
+    if packed_weights.dtype != DType.uint8:
+        raise ValueError(
+            f"packed_weights must be uint8, got {packed_weights.dtype}"
+        )
+
+    # Flatten leading dims if rank 3
+    is_batched_weights = packed_weights.rank == 3
+    if is_batched_weights:
+        e = packed_weights.shape[0]
+        n = packed_weights.shape[1]
+        k_packed = packed_weights.shape[2]
+        packed_weights = ops.reshape(packed_weights, [e * n, k_packed])
+        scales = ops.reshape(scales, [e * n, scales.shape[2]])
+
+    rows = packed_weights.shape[0]
+    k = packed_weights.shape[1] * 2  # Unpacked column count
+
+    result = ops.custom(
+        "mo.dequant.mxfp4",
+        device=packed_weights.device,
+        values=[packed_weights, scales],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[rows, k],
+                device=packed_weights.device,
+            )
+        ],
+    )[0].tensor
+
+    # Reshape back if originally rank 3
+    if is_batched_weights:
+        result = ops.reshape(result, [e, n, k])
+
+    return result
+
+
+def _is_sm10x_gpu() -> bool:
+    """Checks if the current accelerator is NVIDIA SM100+ (Blackwell)."""
+    try:
+        return accelerator_architecture_name().startswith("sm_10")
+    except Exception:
+        return False
+
+
 def quantize_dynamic_block_scaled_fp4(
     input: TensorValue,
     tensor_sf: TensorValue | float,
@@ -3259,20 +4991,23 @@ def quantize_dynamic_block_scaled_fp4(
     scales_type: DType = DType.float8_e4m3fn,
     out_type: DType = DType.uint8,  # fp4-e2m1fnX2
 ) -> tuple[TensorValue, TensorValue]:
-    """
-    Dynamically quantize the input tensor to fp4-e2m1fn.
+    """Dynamically quantize the input tensor to fp4-e2m1fn.
 
     Args:
         input: The input tensor to quantize. Shape: [seq_len, hidden_size]
-        tensor_sf: The tensor-wise scale factor (inverted as per quantization kernel requirement).
+        tensor_sf: The tensor-wise scale factor (inverted as per
+            quantization kernel requirement).
         sf_vector_size: The block size for the scaling factors.
+            16 for NVFP4, 32 for MXFP4.
         out_type: The type of the output tensor.
         scales_type: The type of the scales tensor.
+            ``float8_e4m3fn`` for NVFP4, ``float8_e8m0fnu`` for MXFP4.
 
     Returns:
-        The quantized tensor in [seq_len, hidden_size // 2] layout and the scales in [ceildiv(seq_len, 128), ceildiv(hidden_size, sf_vector_size * 4), 32, 4, 4] layout.
+        The quantized tensor and scales. Scales layout depends on hardware:
+        rank-5 interleaved on NVIDIA SM100, rank-2 ``[M, K // sf_vector_size]``
+        otherwise.
     """
-
     if input.rank != 2:
         raise ValueError("input tensor must be rank 2 tensor")
 
@@ -3282,38 +5017,202 @@ def quantize_dynamic_block_scaled_fp4(
     if out_type not in (DType.uint8,):
         raise ValueError("out_type must be uint8 (fp4-e2m1fnX2)")
 
-    if scales_type not in (DType.float8_e4m3fn,):
-        raise ValueError("scales_type must be float8_e4m3fn for NVFP4")
-
-    if sf_vector_size != 16:
-        raise ValueError("sf_vector_size must be 16 for NVFP4")
-
-    if int(input.shape[1]) % (sf_vector_size // 2) != 0:
+    if scales_type not in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
         raise ValueError(
-            "input.shape[1] must be a multiple of (sf_vector_size // 2)"
+            "scales_type must be float8_e4m3fn (NVFP4) or float8_e8m0fnu (MXFP4)"
+        )
+
+    if sf_vector_size not in (16, 32):
+        raise ValueError("sf_vector_size must be 16 (NVFP4) or 32 (MXFP4)")
+
+    # MXFP4 (sf_vector_size=32) requires K % 32 because the kernel's
+    # 4-thread cooperative scale reduction operates on 32-element groups.
+    # NVFP4 (sf_vector_size=16) only requires K % 8.
+    k_alignment = (
+        sf_vector_size if sf_vector_size == 32 else sf_vector_size // 2
+    )
+    if int(input.shape[1]) % k_alignment != 0:
+        raise ValueError(f"input.shape[1] must be a multiple of {k_alignment}")
+
+    if _is_sm10x_gpu():
+        # SM100 TCGEN05: rank-5 interleaved scales layout.
+        SF_ATOM_M = [32, 4]
+        SF_ATOM_K = 4
+        SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+        SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
+        scales_shape: list[Dim | int] = [
+            ceildiv(input.shape[0], Dim(SF_MN_GROUP_SIZE)),
+            ceildiv(input.shape[1], Dim(SF_K_GROUP_SIZE)),
+            SF_ATOM_M[0],
+            SF_ATOM_M[1],
+            SF_ATOM_K,
+        ]
+    else:
+        # Default: rank-2 scales [M, K // sf_vector_size].
+        # TODO: 2D is a proxy for CDNA4. The optimized layout is likely
+        # 6D (32x32 tiles) or 7D (16x16 tiles).
+        scales_shape = [
+            input.shape[0],
+            ceildiv(input.shape[1], Dim(sf_vector_size)),
+        ]
+
+    tensor_sf_value: TensorValue
+    if isinstance(tensor_sf, float):
+        tensor_sf_value = ops.constant(
+            tensor_sf, DType.float32, device=DeviceRef.CPU()
+        )
+    else:
+        tensor_sf_value = TensorValue(tensor_sf)
+
+    result = ops.custom(
+        "mo.quantize.dynamic.block.scaled",
+        device=input.device,
+        values=[input, tensor_sf_value],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[
+                    input.shape[0],
+                    input.shape[1] // 2,  # each uint8 packs 2 fp4 values
+                ],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=scales_type,
+                shape=scales_shape,
+                device=input.device,
+            ),
+        ],
+        parameters={
+            "SF_VECTOR_SIZE": sf_vector_size,
+        },
+    )
+
+    return result[0].tensor, result[1].tensor
+
+
+def grouped_quantize_dynamic_block_scaled_fp4(
+    input: TensorValue,
+    row_offsets: TensorValue,
+    scales_offsets: TensorValue,
+    expert_ids: TensorValue,
+    sf_tensor: TensorValue,
+    sf_vector_size: int = 16,
+    scales_type: DType = DType.float8_e4m3fn,
+    out_type: DType = DType.uint8,
+) -> tuple[TensorValue, TensorValue]:
+    """Grouped dynamic FP4 quantization for MoE experts.
+
+    Quantizes a concatenated token tensor where different row ranges belong
+    to different experts, each with its own tensor-wise scale factor.
+
+    Args:
+        input: The concatenated input tensor. Shape: ``[total_tokens, K]``,
+            dtype ``bfloat16``.
+        row_offsets: Cumulative token offsets per expert.
+            Shape: ``[num_experts + 1]``, dtype ``uint32``.
+        scales_offsets: Per-expert scale tile offset corrections.
+            Shape: ``[num_experts]``, dtype ``uint32``.
+        expert_ids: Expert ID mapping (typically identity).
+            Shape: ``[num_experts]``, dtype ``int32``.
+        sf_tensor: Per-expert tensor-wise scale factors.
+            Shape: ``[num_experts]``, dtype ``float32``.
+        sf_vector_size: The block size for the scaling factors.
+        scales_type: Scale factor dtype. ``float8_e4m3fn`` for NVFP4.
+        out_type: Output dtype. ``uint8`` for packed FP4.
+
+    Returns:
+        The quantized tensor ``[total_tokens, K // 2]`` and scales in
+        rank-5 interleaved layout
+        ``[total_m_tiles, K_tiles, 32, 4, 4]``.
+    """
+    if input.rank != 2:
+        raise ValueError("input tensor must be rank 2")
+
+    if input.dtype != DType.bfloat16:
+        raise ValueError("input tensor dtype must be bfloat16")
+
+    if not _is_sm10x_gpu():
+        # route to the fallback kernel
+        return quantize_dynamic_block_scaled_fp4(
+            input, sf_tensor[0], sf_vector_size, scales_type, out_type
         )
 
     SF_ATOM_M = [32, 4]
     SF_ATOM_K = 4
     SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
-    SF_K_GROUP_SIZE = SF_ATOM_K * sf_vector_size
+    SF_K_GROUP_SIZE = SF_ATOM_K * 16
 
-    # scales tensor shape: [ceildiv(M, SF_MN_GROUP_SIZE), ceildiv(N, sf_vector_size * 4), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K]
-    scales_dim_0 = ceildiv(input.shape[0], Dim(SF_MN_GROUP_SIZE))
-    scales_dim_1 = ceildiv(input.shape[1], Dim(SF_K_GROUP_SIZE))
-    scales_dim_2 = SF_ATOM_M[0]
-    scales_dim_3 = SF_ATOM_M[1]
-    scales_dim_4 = SF_ATOM_K
+    total_m_tiles = ceildiv(input.shape[0], Dim(SF_MN_GROUP_SIZE))
+    total_m_tiles += expert_ids.shape[0]  # add one padding tile for each group
+    scales_shape: list[Dim | int] = [
+        total_m_tiles,
+        ceildiv(input.shape[1], Dim(SF_K_GROUP_SIZE)),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
+    ]
 
     result = ops.custom(
-        "mo.quantize.dynamic.block.scaled",
+        "mo.grouped.quantize.dynamic.block.scaled",
         device=input.device,
-        values=[
-            input,
-            ops.constant(tensor_sf, DType.float32, device=DeviceRef.CPU())
-            if isinstance(tensor_sf, float)
-            else tensor_sf,
+        values=[input, row_offsets, scales_offsets, expert_ids, sf_tensor],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[input.shape[0], input.shape[1] // 2],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=scales_type,
+                shape=scales_shape,
+                device=input.device,
+            ),
         ],
+    )
+
+    return result[0].tensor, result[1].tensor
+
+
+def quantize_dynamic_block_scaled_mxfp4(
+    input: TensorValue,
+    scales_type: DType = DType.float8_e8m0fnu,
+    out_type: DType = DType.uint8,  # fp4-e2m1fnX2
+) -> tuple[TensorValue, TensorValue]:
+    """Dynamically quantize the input tensor to fp4-e2m1fn.
+
+    Args:
+        input: The input tensor to quantize. Shape: [seq_len, hidden_size]
+        out_type: The type of the output tensor.
+        scales_type: The type of the scales tensor.
+
+    Returns:
+        The quantized tensor in [seq_len, hidden_size // 2] layout and the scales in
+        [seq_len, hidden_size // 32] layout.
+    """
+    if input.rank != 2:
+        raise ValueError("input tensor must be rank 2 tensor")
+
+    if input.dtype != DType.bfloat16:
+        raise ValueError("input tensor dtype must be bfloat16")
+
+    if out_type not in (DType.uint8,):
+        raise ValueError("out_type must be uint8 (fp4-e2m1fnX2)")
+
+    if scales_type not in (DType.float8_e8m0fnu,):
+        raise ValueError("scales_type must be float8_e8m0fnu for MXFP4")
+
+    MXFP4_SF_VECTOR_SIZE = 32
+
+    if int(input.shape[1]) % MXFP4_SF_VECTOR_SIZE != 0:
+        raise ValueError(
+            "input.shape[1] must be a multiple of MXFP4_SF_VECTOR_SIZE"
+        )
+
+    result = ops.custom(
+        "mo.quantize.dynamic.block.scaled.mxfp4",
+        device=input.device,
+        values=[input],
         out_types=[
             TensorType(
                 dtype=out_type,
@@ -3326,18 +5225,12 @@ def quantize_dynamic_block_scaled_fp4(
             TensorType(
                 dtype=scales_type,
                 shape=[
-                    scales_dim_0,
-                    scales_dim_1,
-                    scales_dim_2,
-                    scales_dim_3,
-                    scales_dim_4,
+                    input.shape[0],
+                    ceildiv(input.shape[1], Dim(MXFP4_SF_VECTOR_SIZE)),
                 ],
                 device=input.device,
             ),
         ],
-        parameters={
-            "SF_VECTOR_SIZE": sf_vector_size,
-        },
     )
 
     return result[0].tensor, result[1].tensor
@@ -3346,33 +5239,41 @@ def quantize_dynamic_block_scaled_fp4(
 def block_scales_interleave(
     scales: TensorValue,
     sf_vector_size: int = 16,
-    scales_type: DType = DType.float8_e4m3fn,
 ) -> TensorValue:
-    """
-    Interleave the block scales tensor in [M, N] layout to [ceildiv(M, 128), ceildiv(N, sf_vector_size * 4), 32, 4, 4] layout.
+    """Interleaves rank-2 FP4 block scales into the rank-5 TCGEN layout.
 
     Args:
-        scales: The scales tensor to interleave in [M, N] layout.
-        sf_vector_size: The block size for the scaling factors.
+        scales: Rank-2 block scales in ``[M, K // sf_vector_size]`` layout.
+            Supported dtypes are ``float8_e4m3fn`` for NVFP4 and
+            ``float8_e8m0fnu`` for MXFP4.
+        sf_vector_size: Scale-factor vector size: 16 for NVFP4 or 32 for MXFP4.
 
     Returns:
-        The interleaved scales tensor in [ceildiv(M, 128), ceildiv(N, sf_vector_size * 4), 32, 4, 4] layout.
+        The interleaved scales tensor in
+        ``[ceildiv(M, 128), ceildiv(K // sf_vector_size, 4), 32, 4, 4]`` layout.
     """
-
     if scales.rank != 2:
-        raise ValueError("Both a and b must be rank 2 tensors")
+        raise ValueError("scales must be a rank 2 tensor")
 
-    if scales.dtype != DType.float8_e4m3fn:
-        raise ValueError("scales dtype must be float8_e4m3fn")
+    if scales.dtype not in (DType.float8_e4m3fn, DType.float8_e8m0fnu):
+        raise ValueError(
+            "scales dtype must be float8_e4m3fn (NVFP4) or float8_e8m0fnu (MXFP4)"
+        )
 
-    if sf_vector_size != 16:
-        raise ValueError("sf_vector_size must be 16 for NVFP4")
+    expected_sf_vector_size = 32 if scales.dtype == DType.float8_e8m0fnu else 16
+    if sf_vector_size != expected_sf_vector_size:
+        raise ValueError(
+            "sf_vector_size must match scales dtype:"
+            " 16 for float8_e4m3fn (NVFP4),"
+            " 32 for float8_e8m0fnu (MXFP4)"
+        )
 
     SF_ATOM_M = [32, 4]
     SF_ATOM_K = 4
     SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
 
-    # scales tensor shape: [ceildiv(M, SF_MN_GROUP_SIZE), ceildiv(N, sf_vector_size * 4), SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K]
+    # Interleaved scales shape:
+    # [ceildiv(M, 128), ceildiv(num_scale_cols, 4), 32, 4, 4].
     scales_dim_0 = ceildiv(scales.shape[0], Dim(SF_MN_GROUP_SIZE))
     scales_dim_1 = ceildiv(scales.shape[1], Dim(SF_ATOM_K))
     scales_dim_2 = SF_ATOM_M[0]
@@ -3385,7 +5286,7 @@ def block_scales_interleave(
         values=[scales],
         out_types=[
             TensorType(
-                dtype=scales_type,
+                dtype=scales.dtype,
                 shape=[
                     scales_dim_0,
                     scales_dim_1,
@@ -3410,6 +5311,30 @@ def matmul_static_scaled_float8(
     input_scale: TensorValue,
     weight_scale: TensorValue,
 ) -> TensorValue:
+    """Performs a static-scaled float8 matrix multiplication.
+
+    Computes ``input @ weight.T`` where both tensors are float8, dequantized
+    using the provided per-tensor CPU scalar scales before accumulation.
+    The output is always ``bfloat16``.
+
+    Args:
+        input: Input tensor of rank 2 and dtype ``float8_e4m3fn`` or
+            ``float8_e4m3fnuz``.
+        weight: Weight tensor of rank 2 and matching float8 dtype, laid out
+            so that the K dimension matches ``input.shape[1]``.
+        input_scale: Scalar scale factor for ``input`` (shape ``[]`` or
+            ``[1]``), must reside on CPU.
+        weight_scale: Scalar scale factor for ``weight`` (shape ``[]`` or
+            ``[1]``), must reside on CPU.
+
+    Returns:
+        A :class:`~max.graph.TensorValue` of shape
+        ``[input.shape[0], weight.shape[0]]`` and dtype ``bfloat16``.
+
+    Raises:
+        ValueError: If scale shapes are not scalar, input or weight are not
+            rank 2, K dimensions do not match, or scales are not on CPU.
+    """
     if input_scale.shape not in [[], [1]]:
         raise ValueError(
             f"expected input_scale to be a scalar, but got shape of {input_scale.shape}"
@@ -3466,10 +5391,10 @@ def matmul_static_scaled_float8(
 
 
 def needs_fp8_fnuz_conversion() -> bool:
-    """Check if we need to convert FP8 E4M3FN to FNUZ for AMD GPUs.
+    """Checks if FP8 E4M3FN to FNUZ conversion is needed for AMD GPUs.
 
     Returns:
-        True if running on AMD GPU with CDNA3 architecture, False otherwise.
+        ``True`` if running on AMD GPU with CDNA3 architecture, ``False`` otherwise.
     """
     try:
         return "gfx94" in accelerator_architecture_name()
@@ -3481,7 +5406,7 @@ def normalize_e4m3fn_to_e4m3fnuz(
     weight: TensorValue,
     weight_scale: TensorValue,
 ) -> tuple[TensorValue, TensorValue]:
-    """Convert E4M3FN weights to E4M3FNUZ format for AMD GPUs.
+    """Converts E4M3FN weights to E4M3FNUZ format for AMD GPUs.
 
     This conversion is necessary because AMD GPUs use the E4M3FNUZ format
     while NVIDIA GPUs use E4M3FN. The key differences are:
@@ -3533,7 +5458,7 @@ def convert_weights_to_fp8_fnuz_if_needed(
     weight: TensorValue,
     weight_scale: TensorValue,
 ) -> tuple[TensorValue, TensorValue]:
-    """Convert weights and scales to FP8 FNUZ format if needed for AMD GPUs.
+    """Converts weights and scales to FP8 FNUZ format if needed for AMD GPUs.
 
     This utility function checks if FP8 FNUZ conversion is needed, currently onli AMD MI300 GPUs,
     and performs the conversion if required. This centralizes the conversion logic
@@ -3577,8 +5502,6 @@ def merge_ragged_tensors(
                 [total_a_rows + total_b_rows, ...].
             - The merged row offsets with the same shape as input row offsets.
 
-    Example:
-
     .. code-block:: python
 
         a = [1, 2, 3, 4, 5, 6]
@@ -3592,7 +5515,6 @@ def merge_ragged_tensors(
         merged_tensor = [1, 2, 7, 8, 9, 3, 4, 5, 6, 10]
         merged_row_offsets = [0, 5, 10]
     """
-
     if a.dtype != b.dtype:
         raise ValueError("a and b must have the same dtype")
 
@@ -3618,6 +5540,36 @@ def merge_ragged_tensors(
     return results[0].tensor, results[1].tensor
 
 
+def eagle_prefill_shift_tokens(
+    tokens: TensorValue,
+    offsets: TensorValue,
+    shift_next_tokens: TensorValue,
+) -> TensorValue:
+    """Shifts ragged tokens left by 1 per request, appending bonus tokens.
+
+    Args:
+        tokens: Flat ragged token sequence of shape ``[total_seq_len]``,
+            dtype int64.
+        offsets: Row offsets of shape ``[batch_size + 1]``, dtype uint32.
+        shift_next_tokens: One token per request of shape ``[batch_size]``,
+            dtype int64, to append after shifting.
+
+    Returns:
+        Shifted (or copied) tokens with the same shape as ``tokens``.
+    """
+    results = ops.custom(
+        "mo.eagle_prefill_shift_tokens",
+        device=tokens.device,
+        values=[tokens, offsets, shift_next_tokens],
+        out_types=[
+            TensorType(
+                dtype=tokens.dtype, shape=tokens.shape, device=tokens.device
+            ),
+        ],
+    )
+    return results[0].tensor
+
+
 def apply_penalties_to_logits(
     logits_buffer: BufferValue,
     frequency_data: TensorValue,
@@ -3627,8 +5579,7 @@ def apply_penalties_to_logits(
     presence_penalty: TensorValueLike = 0.0,
     repetition_penalty: TensorValueLike = 1.0,
 ) -> None:
-    """
-    Applies penalties to the logits.
+    """Applies penalties to the logits.
 
     Args:
         logits_buffer: The buffer to apply penalties to.
@@ -3649,7 +5600,6 @@ def apply_penalties_to_logits(
             appeared in prompt and generated text at least once by dividing the
             logits by the repetition penalty.
     """
-
     if logits_buffer.rank != 2:
         raise ValueError("logits_buffer must be a 2d buffer")
 
@@ -3726,8 +5676,7 @@ def update_frequency_data(
     frequency_offsets: TensorValue,
     tokens: TensorValue,
 ) -> None:
-    """
-    Updates the frequency data.
+    """Updates the frequency data.
 
     Args:
         frequency_data: 2d tensor of shape [unique_tokens, 2], where
@@ -3737,7 +5686,6 @@ def update_frequency_data(
             start of each sequence's data.
         tokens: The tokens to update the frequency data with.
     """
-
     if frequency_data.rank != 2:
         raise ValueError("frequency_data must be a 2d buffer")
 
@@ -3763,9 +5711,7 @@ def scatter_set_constant(
     indices: TensorValueLike,
     fill_val: float,
 ) -> None:
-    """
-    Scatters values into a tensor at specified indices.
-    """
+    """Scatters values into a tensor at specified indices."""
     data = BufferValue(data)
     indices = TensorValue(indices)
 
@@ -3790,16 +5736,16 @@ def scatter_set_constant(
     )
 
 
-def scatter_nd_skip_neg_indices(
+def scatter_nd_skip_oob_indices(
     input: TensorValueLike,
     updates: TensorValueLike,
     indices: TensorValueLike,
 ) -> TensorValue:
-    """
-    Creates a new symbolic tensor where the updates are scattered into input at specified indices.
+    """Creates a new symbolic tensor where the updates are scattered into input at specified indices.
 
-    This differs from scatter_nd in that it handles negative indices by skipping
-    the update for that index.
+    This differs from scatter_nd in that it handles oob indices by skipping
+    the update for that index. Oob indices are those which fall outside of
+    the range [-dim, dim).
 
     Args:
         input: The input symbolic tensor to write elements to.
@@ -3844,6 +5790,7 @@ def topk_fused_sampling(
     max_k: TensorValueLike | None = None,
     min_top_p: TensorValueLike | None = None,
     top_p: TensorValueLike = 1.0,
+    min_p: TensorValueLike | None = None,
     seed: TensorValueLike = 0,
 ) -> TensorValue:
     """Performs top-k sampling with temperature scaling.
@@ -3851,18 +5798,23 @@ def topk_fused_sampling(
     Args:
         logits: Input logits tensor of shape [batch_size, vocab_size].
         top_k: Number of top tokens to consider for sampling. Can be a scalar
-            (which will be expanded to batch_size) or a tensor of shape [batch_size].
+            (which will be expanded to batch_size) or a tensor of shape
+            [batch_size].
         temperature: Temperature for scaling logits before sampling.
-        max_k: Maximum value of k across the batch. Required when top_k is a tensor.
+        max_k: Maximum value of k across the batch. Required when top_k is a
+            tensor.
         top_p: Top-p (nucleus) sampling threshold. Can be a scalar or tensor.
+        min_p: Per-row min_p probability filtering threshold of shape
+            [batch_size]. Tokens with probability below
+            ``min_p * max_prob`` are zeroed before sampling.
         seed: Seed for the random number generator. Can be a scalar or tensor.
+
     Returns:
         Sampled tokens tensor of shape [batch_size, 1].
 
     Raises:
         ValueError: If input validation fails.
     """
-
     batch_size = logits.shape[0]
     device = logits.device
     max_k_tensor = max_k
@@ -3934,6 +5886,19 @@ def topk_fused_sampling(
             )
         min_top_p_tensor = TensorValue(min_top_p)
 
+    # Handle min_p parameter - per-row tensor
+    if min_p is None:
+        min_p_tensor = ops.broadcast_to(
+            ops.constant(0.0, dtype=DType.float32, device=device),
+            [batch_size],
+        )
+    else:
+        min_p_tensor = TensorValue(min_p)
+        if min_p_tensor.shape[0] != batch_size:
+            raise ValueError(
+                f"min_p tensor shape {min_p_tensor.shape} does not match batch_size {batch_size}"
+            )
+
     # Handle seed parameter - can be scalar or tensor
     if isinstance(seed, int):
         seed_tensor = ops.broadcast_to(
@@ -3957,6 +5922,7 @@ def topk_fused_sampling(
             temperature_tensor,
             top_p_tensor,
             min_top_p_tensor,
+            min_p_tensor,
             seed_tensor,
             logits,
         ],
@@ -3978,14 +5944,14 @@ def sgmv_kernel(  # noqa: ANN201
     lora_end_idx: TensorValue | None = None,
     bias: TensorValue | None = None,
 ):
-    """
-    Performs the SGMV kernel for LoRA. This is LoRA agnostic, meaning that
+    """Performs the SGMV kernel for LoRA. This is LoRA agnostic, meaning that
     we can perform LoRA A or B from this kernel call.
+
     Args:
-        input: The input tensor
-        lora: The LoRA tensor
+        input: The input tensor.
+        lora: The LoRA tensor.
         lora_ids: Ids of the LoRAs used for each sequence
-        lora_ranks: The ranks of the LoRAs ihn the batch
+        lora_ranks: The ranks of the LoRAs in the batch.
         input_row_offsets: The sequence offsets that use LoRA
         max_lora_seq_len: The maximum sequence length of any given LoRA in the batch
         bias: The LoRA bias
@@ -4049,8 +6015,7 @@ def sgmv_lora_kernel(
     max_lora_seq_len: int,
     bias: TensorValue | None = None,
 ) -> TensorValue:
-    """
-    Computes the SGMV LoRA kernel for some number of LoRAs A and B given the input.
+    """Computes the SGMV LoRA kernel for some number of LoRAs A and B given the input.
 
     out = Wx + xAB
 
@@ -4071,7 +6036,7 @@ def sgmv_lora_kernel(
         lora_a: The LoRA tensor for A
         lora_b: The LoRA tensor for B
         lora_ids: Ids of the LoRAs used for each sequence
-        lora_ranks: The ranks of the LoRAs ihn the batch
+        lora_ranks: The ranks of the LoRAs in the batch.
         grouped_row_offsets: The grouped sequence offsets that use LoRA
         max_lora_seq_len: The maximum sequence length of any given LoRA in the batch
         bias: The LoRA bias
@@ -4227,8 +6192,7 @@ def sgmv_qkv_lora_kernel(
     max_rank: int,
     bias: TensorValue | None = None,
 ) -> TensorValue:
-    """
-    Computes the SGMV QKV LoRA kernel for Q, K, V projections with LoRA.
+    """Computes the SGMV QKV LoRA kernel for Q, K, V projections with LoRA.
 
     Args:
         input: The input tensor.
@@ -4244,7 +6208,7 @@ def sgmv_qkv_lora_kernel(
         lora_ids_kv: LoRA IDs for KV projections (with offset for V portion).
         lora_grouped_offsets_kv: Grouped offsets for KV LoRA sequences.
         kv_collection: The KV cache.
-        kv_params: The KV params.
+        kv_params: The key-value cache configuration parameters.
         layer_idx: The layer index to retrieve the KV cache.
         max_lora_seq_len: The maximum sequence length of any given LoRA in the batch.
         max_rank: The maximum rank for the LoRAs.
@@ -4306,14 +6270,6 @@ def sgmv_qkv_lora_kernel(
         raise ValueError(
             f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
         )
-
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
-        raise ValueError(
-            f"unsupported cache strategy for sgmv_qkv_lora_kernel: {kv_params.cache_strategy}"
-        )
-
-    if kv_params.page_size is None:
-        raise ValueError("expected kv_params.page_size to be set")
 
     # shrink GMM:      [M, K] @ [G, 3*N, K]     // unchanged
     # transpose:       [M, 3, N] => [3, M, N]   // shall be fused into above
@@ -4389,8 +6345,7 @@ def kv_cache_ragged_2m_iadd(
     of tokens.
 
     Args:
-        kv_params: KV cache configuration parameters. Must have cache_strategy
-            set to PAGED and page_size must be defined.
+        kv_params: KV cache configuration parameters.
         a: Input tensor with interleaved K/V data, shape (2*m, hidden_size) where
             m is the number of tokens. Rows [0, m) are keys, rows [m, 2m) are values.
         kv_collection: The paged KV cache collection containing cache blocks,
@@ -4405,10 +6360,7 @@ def kv_cache_ragged_2m_iadd(
     Raises:
         ValueError: If `a` does not have rank 2.
         ValueError: If `input_row_offsets` does not have rank 1.
-        ValueError: If `kv_params.cache_strategy` is not PAGED.
-        ValueError: If `kv_params.page_size` is None.
     """
-
     if a.rank != 2:
         raise ValueError(f"Expected a to have rank 2 but got {a.rank}")
 
@@ -4417,20 +6369,12 @@ def kv_cache_ragged_2m_iadd(
             f"Expected input_row_offsets to have rank 1 but got {input_row_offsets.rank}"
         )
 
-    if kv_params.cache_strategy != KVCacheStrategy.PAGED:
-        raise ValueError(
-            f"Expected kv_params to have cache strategy PAGED but got {kv_params.cache_strategy}"
-        )
-
-    if kv_params.page_size is None:
-        raise ValueError("Expected kv_params.page_size to be set")
-
     ops.inplace_custom(
         "mo.kv_cache.ragged.paged.2m_iadd",
         device=input_row_offsets.device,
         values=[
             a,
-            *kv_collection,
+            *kv_collection.flatten_without_attention_dispatch_metadata(),
             input_row_offsets,
             lora_end_idx,
             batch_seq_len,
@@ -4510,6 +6454,63 @@ def spatial_merge(
     )[0].tensor
 
 
+def learnable_2d_interp_pos_emb(
+    x: TensorValue,
+    weight: TensorValue,
+    grid_thws: TensorValue,
+    time_weight: TensorValue,
+) -> TensorValue:
+    """Applies learnable 2D interpolated position embedding (Kimi K2.5).
+
+    For each video described by ``grid_thws``, bicubic-interpolates ``weight``
+    from (H, W) to (h, w), optionally adds temporal sincos embedding when
+    ``t > 1``, and adds the result element-wise to ``x``.
+
+    Args:
+        x: Patch embeddings of shape ``(L, dim)``.
+        weight: Learnable 2D grid of shape ``(H, W, dim)``.
+        grid_thws: Per-video ``(t, h, w)`` of shape ``(N, 3)``, dtype int64.
+        time_weight: 1D sincos temporal embedding of shape
+            ``(num_frames, dim)``, dtype float32.
+
+    Returns:
+        Tensor of shape ``(L, dim)`` with position embeddings added.
+
+    Raises:
+        ValueError: On invalid input shapes or dtypes.
+    """
+    if x.rank != 2:
+        raise ValueError(f"expected x to have rank 2, got {x.rank}")
+    if weight.rank != 3:
+        raise ValueError(f"expected weight to have rank 3, got {weight.rank}")
+    if grid_thws.rank != 2 or grid_thws.shape[1] != 3:
+        raise ValueError(
+            "expected grid_thws of shape (N, 3), got rank="
+            f"{grid_thws.rank} shape[1]={grid_thws.shape[1]}"
+        )
+    if grid_thws.dtype != DType.int64:
+        raise ValueError(
+            f"expected grid_thws dtype int64, got {grid_thws.dtype}"
+        )
+    if time_weight.rank != 2:
+        raise ValueError(
+            f"expected time_weight to have rank 2, got {time_weight.rank}"
+        )
+
+    return ops.custom(
+        "learnable_2d_interp_pos_emb",
+        device=x.device,
+        values=[x, weight, grid_thws, time_weight],
+        out_types=[
+            TensorType(
+                dtype=x.dtype,
+                shape=x.shape,
+                device=x.device,
+            )
+        ],
+    )[0].tensor
+
+
 def sliced_add(
     x: TensorValue,
     y: TensorValue,
@@ -4577,3 +6578,225 @@ def kv_cache_copy_pages_d2h(
             ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
         ],
     )
+
+
+def sleep(duration_sec: BufferValue, device_ref: DeviceRef) -> None:
+    """Sleep for the given duration in seconds.
+
+    This kernel is supported on CPUs and GPUs. However, the timing may be completely
+    inaccurate on AMD GPUs due to limitation of current time.sleep(...) impl.
+
+    Args:
+        duration_sec: The duration to sleep in seconds.
+    """
+    # FIXME(GEX-3080): Convert duration_sec to a 0-d scalar instead of 1-d buffer.
+    # We currently use 1-d buffer to prevent sleep op from being DCE'd away.
+    if duration_sec.shape.static_dims != [1]:
+        raise ValueError(
+            f"Expected duration_sec to have shape [1] but got {duration_sec.shape.static_dims}"
+        )
+    if duration_sec.dtype != DType.float64:
+        raise ValueError(
+            f"Expected duration_sec to have DType.float64 but got {duration_sec.dtype}"
+        )
+    if duration_sec.device != DeviceRef.CPU():
+        raise ValueError(
+            f"Expected duration_sec to be on cpu but got {duration_sec.device}"
+        )
+
+    ops.inplace_custom(
+        "mo.sleep",
+        device=device_ref,
+        values=[duration_sec],
+        out_types=[],
+    )
+
+
+def lmcache_offload(
+    output: BufferValue,
+    paged_cache: TensorValue,
+    slot_mapping: TensorValue,
+    start_token: TensorValue,
+    end_token: TensorValue,
+    page_size: int,
+    num_kv_heads: int,
+    head_dim: int,
+    kv_dim: int,
+    device_ref: DeviceRef,
+) -> None:
+    """Offload KV cache data from paged format to external contiguous format.
+
+    Used by LMCache connector to copy KV data from MAX's paged cache layout
+    to LMCache's contiguous KV_2LTD format for external storage.
+
+    Args:
+        output: Output buffer [kv_dim, num_layers, num_tokens, hidden_dim]
+            where hidden_dim = num_kv_heads * head_dim.
+        paged_cache: Input tensor [total_num_blocks, kv_dim, num_layers, page_size, num_kv_heads, head_dim].
+        slot_mapping: Token to slot mapping [total_tokens].
+        start_token: Starting token index scalar [1].
+        end_token: Ending token index (exclusive) scalar [1].
+        page_size: Number of tokens per page in the paged cache.
+        num_kv_heads: Number of KV attention heads.
+        head_dim: Dimension of each attention head.
+        kv_dim: KV dimension (2 for standard K/V, 1 for MLA).
+        device_ref: Device reference for the operation.
+    """
+    parameters: dict[str, int | str | DType] = {
+        "page_size": page_size,
+        "num_kv_heads": num_kv_heads,
+        "head_dim": head_dim,
+        "kv_dim": kv_dim,
+    }
+    ops.inplace_custom(
+        name="mo.lmcache.offload",
+        device=device_ref,
+        values=[output, paged_cache, slot_mapping, start_token, end_token],
+        parameters=parameters,
+    )
+
+
+def lmcache_onload(
+    paged_cache: BufferValue,
+    input_tensor: TensorValue,
+    slot_mapping: TensorValue,
+    start_token: TensorValue,
+    end_token: TensorValue,
+    page_size: int,
+    num_kv_heads: int,
+    head_dim: int,
+    kv_dim: int,
+    device_ref: DeviceRef,
+) -> None:
+    """Onload KV cache data from external contiguous format to paged format.
+
+    Used by LMCache connector to copy KV data from LMCache's contiguous
+    KV_2LTD format into MAX's paged cache layout.
+
+    Args:
+        paged_cache: Output buffer [total_num_blocks, kv_dim, num_layers, page_size, num_kv_heads, head_dim].
+        input_tensor: Input tensor [kv_dim, num_layers, num_tokens, hidden_dim]
+            where hidden_dim = num_kv_heads * head_dim.
+        slot_mapping: Token to slot mapping [total_tokens].
+        start_token: Starting token index scalar [1].
+        end_token: Ending token index (exclusive) scalar [1].
+        page_size: Number of tokens per page in the paged cache.
+        num_kv_heads: Number of KV attention heads.
+        head_dim: Dimension of each attention head.
+        kv_dim: KV dimension (2 for standard K/V, 1 for MLA).
+        device_ref: Device reference for the operation.
+    """
+    parameters: dict[str, int | str | DType] = {
+        "page_size": page_size,
+        "num_kv_heads": num_kv_heads,
+        "head_dim": head_dim,
+        "kv_dim": kv_dim,
+    }
+    ops.inplace_custom(
+        name="mo.lmcache.onload",
+        device=device_ref,
+        values=[
+            paged_cache,
+            input_tensor,
+            slot_mapping,
+            start_token,
+            end_token,
+        ],
+        parameters=parameters,
+    )
+
+
+def tpool_patch_merger(
+    input: TensorValue,
+    grid_thws: TensorValue,
+    kH: int,
+    kW: int,
+    max_h: int | TensorValue,
+    max_w: int | TensorValue,
+) -> TensorValue:
+    """Performs temporal pooling patch merger on ragged video tokens.
+
+    For each video in the batch, averages the input across the temporal (T)
+    dimension and rearranges the result according to the spatial merge kernel
+    (kH, kW).  Each video's T*H*W input tokens are reduced to H*W output
+    tokens.  All videos are concatenated contiguously in the output.
+
+    Args:
+        input: Input tensor of shape ``[total_input_tokens, D]`` where
+            ``total_input_tokens = sum(T_i * H_i * W_i)`` over all videos.
+        grid_thws: Grid dimensions tensor of shape ``[n_videos, 3]`` with
+            ``(T, H, W)`` per video.  Must have dtype ``int64``.
+        kH: Merge kernel height.
+        kW: Merge kernel width.
+        max_h: Maximum ``H`` across all videos in the batch (for grid sizing).
+            May be a Python int (baked as a graph constant) or a
+            ``TensorValue`` computed at runtime (e.g. via ``ops.max``).
+        max_w: Maximum ``W`` across all videos in the batch (for grid sizing).
+            May be a Python int or a ``TensorValue``.
+    Returns:
+        Output tensor of shape ``[sum(H_i * W_i), D]``.
+
+    Raises:
+        ValueError: On invalid input shapes or dtypes.
+    """
+    if input.rank != 2:
+        raise ValueError(f"expected input to have rank 2, got {input.rank}")
+
+    if grid_thws.dtype != DType.int64:
+        raise ValueError(
+            f"expected grid_thws to have dtype int64, got {grid_thws.dtype}"
+        )
+
+    if grid_thws.rank != 2:
+        raise ValueError(
+            f"expected grid_thws to have rank 2, got {grid_thws.rank}"
+        )
+
+    if grid_thws.shape[1] != 3:
+        raise ValueError(
+            f"expected grid_thws.shape[1] to be 3, got {grid_thws.shape[1]}"
+        )
+
+    D = input.shape[-1]
+
+    max_h_val = (
+        ops.constant(max_h, dtype=DType.int32, device=DeviceRef.CPU())
+        if isinstance(max_h, int)
+        else max_h
+    )
+    max_w_val = (
+        ops.constant(max_w, dtype=DType.int32, device=DeviceRef.CPU())
+        if isinstance(max_w, int)
+        else max_w
+    )
+    # Compute exact merged row count dynamically and feed it to the custom-op
+    # shape function as an integer scalar tensor.
+    total_output_patches = ops.reshape(
+        ops.sum(
+            grid_thws[:, 1].cast(DType.int32)
+            * grid_thws[:, 2].cast(DType.int32),
+            axis=0,
+        ),
+        [],
+    ).to(DeviceRef.CPU())
+
+    return ops.custom(
+        "tpool_patch_merger",
+        device=input.device,
+        values=[
+            input,
+            grid_thws,
+            ops.constant(kH, dtype=DType.int32, device=DeviceRef.CPU()),
+            ops.constant(kW, dtype=DType.int32, device=DeviceRef.CPU()),
+            max_h_val,
+            max_w_val,
+            total_output_patches,
+        ],
+        out_types=[
+            TensorType(
+                dtype=input.dtype,
+                shape=["total_output_patches", D],
+                device=input.device,
+            )
+        ],
+    )[0].tensor

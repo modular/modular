@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import Python, PythonObject
-from python._cpython import Py_ssize_t, PyObjectPtr
-from python.bindings import PythonModuleBuilder
-from testing import (
+from std.python import Python, PythonObject
+from std.python._cpython import Py_ssize_t, PyObjectPtr
+from std.python.bindings import PythonModuleBuilder
+from std.testing import (
     assert_equal,
     assert_equal_pyobj,
     assert_false,
@@ -24,7 +24,7 @@ from testing import (
 )
 
 
-def _test_dunder_methods(mut python: Python):
+def _test_dunder_methods(mut python: Python) raises:
     var a = PythonObject(34)
     var b = PythonObject(10)
     var d = PythonObject(2)
@@ -139,16 +139,16 @@ def _test_dunder_methods(mut python: Python):
     assert_equal_pyobj(c, -35)
 
 
-def _test_inplace_dunder_methods(mut python: Python):
+def _test_inplace_dunder_methods(mut python: Python) raises:
     # test dunder methods that don't fall back to their non-inplace counterparts
     var list_obj: PythonObject = [1, 2]
 
     # FIXME: list literal can be converted to `PythonObject`? We might turn list
-    # into `non-materializable-target` too early?
+    # into nonmaterializable target too early?
     # Given:
     #
     # @always_inline
-    # fn __init__[
+    # def __init__[
     #    *Ts: ConvertibleToPython & Copyable
     # ](out self, var *values: *Ts, __list_literal__: ()) raises:
     #     pass
@@ -168,15 +168,15 @@ def _test_inplace_dunder_methods(mut python: Python):
     assert_equal_pyobj(a, 1)
 
 
-def test_num_conversion():
+def test_num_conversion() raises:
     comptime n = UInt64(0xFEDC_BA09_8765_4321)
     comptime n_str = String(n)
     assert_equal(n_str, String(py=PythonObject(n)))
 
 
-def test_boolean_operations():
+def test_boolean_operations() raises:
     # Test boolean conversion and context
-    var x: PythonObject = PythonObject(1)
+    var x: PythonObject = 1
     assert_true(x == 1)
     assert_false(x == 0)
     assert_true(x == 0 or x == 1)
@@ -196,7 +196,7 @@ def test_boolean_operations():
     assert_false(Python.none().__bool__())
 
 
-fn _test_string_conversions(mut python: Python) raises -> None:
+def _test_string_conversions(mut python: Python) raises -> None:
     # static string
     var static_str: StaticString = "mojo"
     var py_str = PythonObject(static_str)
@@ -219,7 +219,7 @@ fn _test_string_conversions(mut python: Python) raises -> None:
     assert_equal(String(py=type_obj), "<class 'float'>")
 
 
-def test_len():
+def test_len() raises:
     var empty_list: PythonObject = []
     assert_equal(len(empty_list), 0)
 
@@ -234,7 +234,7 @@ def test_len():
         _ = len(x)
 
 
-def test_is():
+def test_is() raises:
     var x = PythonObject(500)
     var y = PythonObject(500)
     assert_false(x is y)
@@ -254,7 +254,7 @@ def test_is():
     assert_true(l1 is not l2)
 
 
-def test_nested_object():
+def test_nested_object() raises:
     var a: PythonObject = [1, 2, 3]
     var b: PythonObject = [4, 5, 6]
     var nested_list: PythonObject = [a, b]
@@ -264,7 +264,7 @@ def test_nested_object():
     assert_equal(String(py=nested_tuple), "([1, 2, 3], [4, 5, 6])")
 
 
-fn test_iter() raises:
+def test_iter() raises:
     var list_obj: PythonObject = ["apple", "orange", "banana"]
     var i = 0
     for fruit in list_obj:
@@ -280,7 +280,7 @@ fn test_iter() raises:
     for _ in list2:
         raise Error("This should not be reachable as the list is empty.")
 
-    var not_iterable = PythonObject(3)
+    var not_iterable: PythonObject = 3
     with assert_raises():
         for _ in not_iterable:
             assert_false(
@@ -306,29 +306,23 @@ fn test_iter() raises:
         _ = it.__next__()  # raises StopIteration
 
 
-fn test_setitem() raises:
+def test_setitem() raises:
     var ll: PythonObject = [1, 2, 3, "food"]
     assert_equal(String(py=ll), "[1, 2, 3, 'food']")
-    # TODO(MOCO-2851): This should work with the RHS being a string literal
-    ll[1] = PythonObject("nomnomnom")
+    ll[1] = "nomnomnom"
     assert_equal(String(py=ll), "[1, 'nomnomnom', 3, 'food']")
 
 
-fn test_dict() raises:
+def test_dict() raises:
     # Test Python.dict from keyword arguments.
     # TODO(MOCO-2945): Heterogenous convertible kwargs should work
     var dd = Python.dict(food=PythonObject(123), fries=PythonObject("yes"))
     assert_equal(String(py=dd), "{'food': 123, 'fries': 'yes'}")
 
-    # TODO(MOCO-2945): Heterogenous convertible kwargs should work
-    var dd2: PythonObject = {
-        PythonObject("food"): PythonObject(123),
-        PythonObject("fries"): PythonObject("yes"),
-    }
+    var dd2: PythonObject = {"food": 123, "fries": "yes"}
     assert_equal(String(py=dd2), "{'food': 123, 'fries': 'yes'}")
 
-    # TODO(MOCO-2851): This should work w/ keys and value being string literals
-    dd[PythonObject("food")] = PythonObject("salad")
+    dd["food"] = "salad"
     dd[42] = Python.list(4, 2)
     assert_equal(String(py=dd), "{'food': 'salad', 'fries': 'yes', 42: [4, 2]}")
 
@@ -366,7 +360,7 @@ fn test_dict() raises:
     _ = d
 
 
-fn test_set() raises:
+def test_set() raises:
     # Test Python set literals.
     var dd: PythonObject = {123, "yes"}
     var dd2 = Python.evaluate("{123, 'yes'}")
@@ -378,13 +372,13 @@ fn test_set() raises:
     assert_false(42 in dd)
 
 
-fn test_none() raises:
+def test_none() raises:
     var n = Python.none()
     assert_equal(String(py=n), "None")
     assert_true(n is PythonObject(None))
 
 
-fn test_none_implicit_conversion() raises:
+def test_none_implicit_conversion() raises:
     # Test implicit conversion from None literal to PythonObject.
 
     # Direct assignment.
@@ -399,13 +393,13 @@ fn test_none_implicit_conversion() raises:
     assert_equal(String(b), "None")
 
     # Function argument.
-    fn takes_python_object(obj: PythonObject) raises -> String:
+    def takes_python_object(obj: PythonObject) raises -> String:
         return String(obj)
 
     assert_equal(takes_python_object(None), "None")
 
     # Return value.
-    fn returns_none() -> PythonObject:
+    def returns_none() -> PythonObject:
         return None
 
     assert_true(returns_none() is Python.none())
@@ -417,7 +411,7 @@ fn test_none_implicit_conversion() raises:
     assert_equal(String(list), "[None]")
 
 
-fn test_getitem_raises() raises:
+def test_getitem_raises() raises:
     custom_indexable = Python.import_module("custom_indexable")
 
     var a = PythonObject(2)
@@ -475,36 +469,36 @@ fn test_getitem_raises() raises:
         _ = with_2d[3]
 
 
-def test_setitem_raises():
+def test_setitem_raises() raises:
     custom_indexable = Python.import_module("custom_indexable")
     t = Python.evaluate("(1,2,3)")
     with assert_raises(
         contains="'tuple' object does not support item assignment"
     ):
-        t[0] = PythonObject(0)
+        t[0] = 0
 
     lst = Python.evaluate("[1, 2, 3]")
     with assert_raises(contains="list assignment index out of range"):
-        lst[10] = PythonObject(4)
+        lst[10] = 4
 
     s = Python.evaluate('"hello"')
     with assert_raises(
         contains="'str' object does not support item assignment"
     ):
-        s[3] = PythonObject("xy")
+        s[3] = "xy"
 
     with_out = custom_indexable.Simple()
     with assert_raises(
         contains="'Simple' object does not support item assignment"
     ):
-        with_out[0] = PythonObject(0)
+        with_out[0] = 0
 
     d = Python.evaluate("{}")
     with assert_raises(contains="unhashable type: 'list'"):
         d[Python.list(1, 2, 3)] = 5
 
 
-fn test_py_slice() raises:
+def test_py_slice() raises:
     custom_indexable = Python.import_module("custom_indexable")
     var a: PythonObject = [1, 2, 3, 4, 5]
     assert_equal("[2, 3]", String(py=a[1:3]))
@@ -583,7 +577,7 @@ fn test_py_slice() raises:
         _ = with_2d[0:1][4]
 
 
-def test_contains_dunder():
+def test_contains_dunder() raises:
     with assert_raises(contains="'int' object is not iterable"):
         var z = PythonObject(0)
         _ = 5 in z
@@ -607,24 +601,16 @@ def test_contains_dunder():
 
 
 @fieldwise_init
-struct Person(Defaultable, Movable, Representable):
+struct Person(Defaultable, Movable, Writable):
     var name: String
     var age: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.name = ""
         self.age = 0
 
-    fn __repr__(self) -> String:
-        return String("Person(", self.name, ", ", self.age, ")")
 
-
-def test_python_mojo_object_operations():
-    # TODO(MOTO-1186): Fix test case on Python 3.9 and remove this return.
-    var sys = Python.import_module("sys")
-    if sys.version.startswith("3.9"):
-        return
-
+def test_python_mojo_object_operations() raises:
     # Type registration
     var b = PythonModuleBuilder("fake_module")
     _ = b.add_type[Person]("Person")
@@ -639,7 +625,7 @@ def test_python_mojo_object_operations():
     assert_equal(person_ptr[].name, "John Smith")
 
 
-def test_conversion_to_simd():
+def test_conversion_to_simd() raises:
     var py_float = PythonObject(0.123456789121212)
     var py_int = PythonObject(256)
 
@@ -663,7 +649,7 @@ def test_conversion_to_simd():
     assert_equal(UInt8(py=py_int), UInt8(0))
 
 
-def test_hash():
+def test_hash() raises:
     # Test __hash__ method
     var obj1 = PythonObject(42)
     var obj2 = PythonObject(42)
@@ -681,7 +667,7 @@ def test_hash():
         _ = list_obj.__hash__()
 
 
-def test_call_with_kwargs():
+def test_call_with_kwargs() raises:
     # Test calling Python functions with keyword arguments
     var print_func = Python.import_module("builtins").print
 
@@ -694,10 +680,9 @@ def test_call_with_kwargs():
     assert_equal(String(py=output).strip(), "test")
 
 
-def test_attribute_access():
+def test_attribute_access() raises:
     # Test __getattr__ and __setattr__
-    # TODO(MOCO-2945): Heterogenous convertible kwargs should work
-    var test_dict: PythonObject = {PythonObject("attr"): PythonObject("value")}
+    var test_dict: PythonObject = {"attr": "value"}
 
     # Test getting attributes that exist
     var attr_value = test_dict.__getattr__("get")
@@ -714,7 +699,7 @@ def test_attribute_access():
         _ = test_dict.__getattr__("nonexistent")
 
 
-def test_copy():
+def test_copy() raises:
     # Test that copy constructor works correctly
     var original = PythonObject(42)
     var copied = original
@@ -731,7 +716,7 @@ def test_copy():
     assert_true(list_original is list_copied)
 
 
-def _test_python_eval_and_evaluate(mut python: Python):
+def _test_python_eval_and_evaluate(mut python: Python) raises:
     # Test Python.eval() method
     var success = python.eval("x = 42")
     assert_true(success)
@@ -741,7 +726,7 @@ def _test_python_eval_and_evaluate(mut python: Python):
     assert_equal_pyobj(result, 5)
 
 
-def test_python_module_operations():
+def test_python_module_operations() raises:
     # Test Python.import_module()
     var math_module = Python.import_module("math")
     var pi_value = math_module.pi
@@ -753,7 +738,7 @@ def test_python_module_operations():
     Python.add_to_path(".")
 
 
-def test_python_type_functions():
+def test_python_type_functions() raises:
     # Test Python.type()
     var int_obj = PythonObject(42)
     var int_type = Python.type(int_obj)
@@ -774,7 +759,7 @@ def test_python_type_functions():
     assert_equal_pyobj(float_result, 42.0)
 
 
-def test_advanced_slicing():
+def test_advanced_slicing() raises:
     # Test more complex slicing scenarios
     var data: PythonObject = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
@@ -791,7 +776,7 @@ def test_advanced_slicing():
     # but this might not be supported in current implementation
 
 
-def test_error_handling():
+def test_error_handling() raises:
     # Test various error conditions
     var zero = PythonObject(0)
     var one = PythonObject(1)
@@ -806,27 +791,27 @@ def test_error_handling():
         _ = none_obj + one
 
 
-def test_with_python_dunder_methods():
+def test_with_python_dunder_methods() raises:
     var python = Python()
     _test_dunder_methods(python)
 
 
-def test_with_python_inplace_dunder_methods():
+def test_with_python_inplace_dunder_methods() raises:
     var python = Python()
     _test_inplace_dunder_methods(python)
 
 
-def test_with_python_string_conversions():
+def test_with_python_string_conversions() raises:
     var python = Python()
     _test_string_conversions(python)
 
 
-def test_with_python_eval_and_evaluate():
+def test_with_python_eval_and_evaluate() raises:
     var python = Python()
     _test_python_eval_and_evaluate(python)
 
 
-def test_python_object_string():
+def test_python_object_string() raises:
     var s = String(py=PythonObject("hello"))
     assert_equal(s, "hello")
 
@@ -837,5 +822,17 @@ def test_python_object_string():
         _ = String(py=a)
 
 
-def main():
+def test_python_object_write_repr_to() raises:
+    var obj = PythonObject(42)
+    var s = String()
+    obj.write_repr_to(s)
+    assert_equal(s, "PythonObject(42)")
+
+    var str_obj = PythonObject("hello")
+    s = String()
+    str_obj.write_repr_to(s)
+    assert_equal(s, "PythonObject('hello')")
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -41,7 +41,7 @@ def test_profiling() -> None:
 def test_profiling_disabled() -> None:
     with unittest.mock.patch(
         "max.profiler.tracing.is_profiling_enabled", return_value=False
-    ) as m:
+    ):
         test_profiling()
 
 

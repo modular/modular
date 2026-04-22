@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,22 +16,22 @@
 You can import these APIs from the `algorithm` package. For example:
 
 ```mojo
-from algorithm import parallel_memcpy
+from std.algorithm import parallel_memcpy
 ```
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
-from memory import memcpy
-from runtime.asyncrt import parallelism_level
+from std.memory import memcpy
+from std.runtime.asyncrt import parallelism_level
 
 
-fn parallel_memcpy[
+def parallel_memcpy[
     dtype: DType
 ](
     *,
-    dest: UnsafePointer[mut=True, Scalar[dtype]],
-    src: UnsafePointer[mut=False, Scalar[dtype]],
+    dest: OptionalUnsafePointer[mut=True, Scalar[dtype], _],
+    src: OptionalUnsafePointer[Scalar[dtype], _],
     count: Int,
     count_per_task: Int,
     num_tasks: Int,
@@ -52,7 +52,7 @@ fn parallel_memcpy[
 
     @parameter
     @always_inline
-    fn _parallel_copy(thread_id: Int):
+    def _parallel_copy(thread_id: Int):
         var begin = count_per_task * thread_id
         var end = min(
             count_per_task * (thread_id + 1),
@@ -64,17 +64,21 @@ fn parallel_memcpy[
         if to_copy <= 0:
             return
 
-        memcpy(dest=dest + begin, src=src + begin, count=to_copy)
+        memcpy(
+            dest=dest.unsafe_value() + begin,
+            src=src.unsafe_value() + begin,
+            count=to_copy,
+        )
 
     sync_parallelize[_parallel_copy](num_tasks)
 
 
-fn parallel_memcpy[
+def parallel_memcpy[
     dtype: DType,
 ](
     *,
-    dest: UnsafePointer[mut=True, Scalar[dtype]],
-    src: UnsafePointer[mut=False, Scalar[dtype]],
+    dest: OptionalUnsafePointer[mut=True, Scalar[dtype], _],
+    src: OptionalUnsafePointer[Scalar[dtype], _],
     count: Int,
 ):
     """Copies `count` elements from a memory buffer `src` to `dest` in parallel.

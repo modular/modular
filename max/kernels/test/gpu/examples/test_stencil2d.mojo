@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,19 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from gpu import barrier, block_dim, global_idx, thread_idx
-from gpu.host import DeviceContext
-
-from utils.index import Index
+from std.gpu import barrier, global_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.memory import stack_allocation
+from layout import TileTensor, Coord, Idx, row_major
 
 comptime BLOCK_DIM = 4
 
 
-fn stencil2d(
+def stencil2d(
     a_ptr: UnsafePointer[Float32, MutAnyOrigin],
     b_ptr: UnsafePointer[Float32, MutAnyOrigin],
     arr_size: Int,
@@ -38,26 +36,24 @@ fn stencil2d(
     var tidx = global_idx.x
     var tidy = global_idx.y
 
-    var a = NDBuffer[DType.float32, 1](a_ptr, Index(arr_size))
-    var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
+    var a = TileTensor(a_ptr, row_major(Coord(Idx(Int(arr_size)))))
+    var b = TileTensor(b_ptr, row_major(Coord(Idx(Int(arr_size)))))
 
-    if (
-        tidy > 0
-        and tidx > 0
-        and tidy < UInt(num_rows - 1)
-        and tidx < UInt(num_cols - 1)
-    ):
-        var idx = Int(tidy * UInt(num_cols) + tidx)
-        b[idx] = (
-            coeff0 * a[idx - 1]
-            + coeff1 * a[idx]
-            + coeff2 * a[idx + 1]
-            + coeff3 * a[Int((tidy - 1) * UInt(num_cols) + tidx)]
-            + coeff4 * a[Int((tidy + 1) * UInt(num_cols) + tidx)]
+    if tidy > 0 and tidx > 0 and tidy < num_rows - 1 and tidx < num_cols - 1:
+        var idx = tidy * num_cols + tidx
+        b.store(
+            Coord(Idx(idx)),
+            Float32(coeff0) * a.load[width=1](Coord(Idx(idx - 1)))
+            + Float32(coeff1) * a.load[width=1](Coord(Idx(idx)))
+            + Float32(coeff2) * a.load[width=1](Coord(Idx(idx + 1)))
+            + Float32(coeff3)
+            * a.load[width=1](Coord(Idx((tidy - 1) * num_cols + tidx)))
+            + Float32(coeff4)
+            * a.load[width=1](Coord(Idx((tidy + 1) * num_cols + tidx))),
         )
 
 
-fn stencil2d_smem(
+def stencil2d_smem(
     a_ptr: UnsafePointer[Float32, MutAnyOrigin],
     b_ptr: UnsafePointer[Float32, MutAnyOrigin],
     arr_size: Int,
@@ -74,59 +70,72 @@ fn stencil2d_smem(
     var lindex_x = thread_idx.x + 1
     var lindex_y = thread_idx.y + 1
 
-    var a = NDBuffer[DType.float32, 1](a_ptr, Index(arr_size))
-    var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
+    var a = TileTensor(a_ptr, row_major(Coord(Idx(Int(arr_size)))))
+    var b = TileTensor(b_ptr, row_major(Coord(Idx(Int(arr_size)))))
 
-    var a_shared = NDBuffer[
+    var a_shared_ptr = stack_allocation[
+        (BLOCK_DIM + 2) * (BLOCK_DIM + 2),
         DType.float32,
-        2,
-        MutAnyOrigin,
-        DimList(BLOCK_DIM + 2, BLOCK_DIM + 2),
-        address_space = AddressSpace.SHARED,
-    ].stack_allocation()
+        address_space=AddressSpace.SHARED,
+    ]()
+    var a_shared = TileTensor(
+        a_shared_ptr, row_major[BLOCK_DIM + 2, BLOCK_DIM + 2]()
+    )
 
     # Each element is loaded in shared memory.
-    a_shared[Index(lindex_y, lindex_x)] = a[Int(tidy * UInt(num_cols) + tidx)]
+    a_shared.store(
+        Coord(Idx(lindex_y), Idx(lindex_x)),
+        a.load[width=1](Coord(Idx(tidy * num_cols + tidx))),
+    )
 
     # First column also loads elements left and right to the block.
     if thread_idx.x == 0:
-        var idx = Int(tidy * UInt(num_cols) + (tidx - 1))
-        a_shared[Index(lindex_y, 0)] = a[idx] if 0 <= idx < arr_size else 0
+        var idx = tidy * num_cols + (tidx - 1)
+        a_shared.store(
+            Coord(Idx(lindex_y), Idx(0)),
+            a.load[width=1](Coord(Idx(idx))) if 0 <= idx < arr_size else 0,
+        )
 
-        idx = Int(tidy * UInt(num_cols) + tidx + BLOCK_DIM)
-        a_shared[Index(Int(lindex_y), BLOCK_DIM + 1)] = (
-            a[idx] if 0 <= idx < arr_size else 0
+        idx = tidy * num_cols + tidx + BLOCK_DIM
+        a_shared.store(
+            Coord(Idx(lindex_y), Idx(BLOCK_DIM + 1)),
+            a.load[width=1](Coord(Idx(idx))) if 0 <= idx < arr_size else 0,
         )
 
     # First row also loads elements above and below the block.
     if thread_idx.y == 0:
-        var idx = Int((tidy - 1) * UInt(num_cols) + tidx)
-        a_shared[Index(0, lindex_x)] = a[idx] if 0 < idx < arr_size else 0
+        var idx = (tidy - 1) * num_cols + tidx
+        a_shared.store(
+            Coord(Idx(0), Idx(lindex_x)),
+            a.load[width=1](Coord(Idx(idx))) if 0 < idx < arr_size else 0,
+        )
 
-        idx = Int((tidy + BLOCK_DIM) * UInt(num_cols) + tidx)
-        a_shared[Index(BLOCK_DIM + 1, lindex_x)] = (
-            a[idx] if 0 <= idx < arr_size else 0
+        idx = (tidy + BLOCK_DIM) * num_cols + tidx
+        a_shared.store(
+            Coord(Idx(BLOCK_DIM + 1), Idx(lindex_x)),
+            a.load[width=1](Coord(Idx(idx))) if 0 <= idx < arr_size else 0,
         )
 
     barrier()
 
-    if (
-        tidy > 0
-        and tidx > 0
-        and tidy < UInt(num_rows - 1)
-        and tidx < UInt(num_cols - 1)
-    ):
-        b[Int(tidy * UInt(num_cols) + tidx)] = (
-            coeff0 * a_shared[Index(lindex_y, lindex_x - 1)]
-            + coeff1 * a_shared[Index(lindex_y, lindex_x)]
-            + coeff2 * a_shared[Index(lindex_y, lindex_x + 1)]
-            + coeff3 * a_shared[Index(lindex_y - 1, lindex_x)]
-            + coeff4 * a_shared[Index(lindex_y + 1, lindex_x)]
+    if tidy > 0 and tidx > 0 and tidy < num_rows - 1 and tidx < num_cols - 1:
+        b.store(
+            Coord(Idx(tidy * num_cols + tidx)),
+            Float32(coeff0)
+            * a_shared.load[width=1](Coord(Idx(lindex_y), Idx(lindex_x - 1)))
+            + Float32(coeff1)
+            * a_shared.load[width=1](Coord(Idx(lindex_y), Idx(lindex_x)))
+            + Float32(coeff2)
+            * a_shared.load[width=1](Coord(Idx(lindex_y), Idx(lindex_x + 1)))
+            + Float32(coeff3)
+            * a_shared.load[width=1](Coord(Idx(lindex_y - 1), Idx(lindex_x)))
+            + Float32(coeff4)
+            * a_shared.load[width=1](Coord(Idx(lindex_y + 1), Idx(lindex_x))),
         )
 
 
 # CHECK-LABEL: run_stencil2d
-fn run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
+def run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
     print("== run_stencil2d")
 
     comptime m = 64
@@ -144,7 +153,7 @@ fn run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
     var b_host = alloc[Float32](m)
 
     for i in range(m):
-        a_host[i] = i
+        a_host[i] = Float32(i)
         b_host[i] = 0
 
     var a_device = ctx.enqueue_create_buffer[DType.float32](m)
@@ -192,14 +201,8 @@ fn run_stencil2d[smem: Bool](ctx: DeviceContext) raises:
             print(b_host[i * num_cols + j], ",", end="")
         print()
 
-    _ = a_device
-    _ = b_device
 
-    _ = a_host
-    _ = b_host
-
-
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_stencil2d[False](ctx)
         run_stencil2d[True](ctx)

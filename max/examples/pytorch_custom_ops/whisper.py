@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,7 +16,7 @@ from pathlib import Path
 import torch
 import transformers
 from datasets import load_dataset
-from max.torch import CustomOpLibrary
+from max.experimental.torch import CustomOpLibrary
 from torch import nn
 from transformers import (
     CompileConfig,

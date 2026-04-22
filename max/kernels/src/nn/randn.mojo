@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import randn
+from std.random import randn
 
-from layout import LayoutTensor
+from layout import TileTensor
 
 
-fn random_normal[
+def random_normal[
     dtype: DType,
     mean: Float64,
     variance: Float64,
-](output: LayoutTensor[mut=True, dtype, ...]):
+](output: TileTensor[mut=True, dtype, ...]):
     """
     Fill `output` with values generated from Normal(mean, variance) distribution.
 
     Args:
         output: The output buffer.
     """
-    randn(output.ptr, output.size(), mean, variance)
+    randn(output.ptr, output.num_elements(), mean, variance)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,12 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import has_accelerator
+from std.sys import has_accelerator
 
 
 def main():
-    @parameter
-    if has_accelerator():
+    comptime if has_accelerator():
         print("GPU detected")
         # Enable GPU processing
     else:

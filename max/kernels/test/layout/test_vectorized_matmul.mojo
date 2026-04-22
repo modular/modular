@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,7 +15,7 @@ from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange
 
 
-fn outer_product[
+def outer_product[
     TM: Int, TN: Int
 ](
     lhs: SIMD[DType.float32, TM],
@@ -31,7 +31,7 @@ fn outer_product[
     return res
 
 
-fn test_tiled_and_vectorized_matmul():
+def test_tiled_and_vectorized_matmul():
     print("== test_tiled_and_vectorized_matmul")
     comptime M = 8
     comptime N = 8
@@ -81,7 +81,7 @@ fn test_tiled_and_vectorized_matmul():
     print(tensor_c)
 
 
-fn main():
+def main():
     # CHECK-LABEL: test_tiled_and_vectorized_matmul
     # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0
     # CHECK: 2912.0   3004.0   3096.0   3188.0   3280.0   3372.0   3464.0   3556.0

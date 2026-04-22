@@ -40,6 +40,8 @@ Before you start your first pull request, please complete this checklist:
 
 - Read this entire contributor guide.
 - Read the [Code of Conduct](./CODE_OF_CONDUCT.md).
+- If you are using AI to assist with coding, read our
+  [AI Tool Use Policy](./AI_TOOL_POLICY.md).
 
 ### Step 1: Evaluate and get buy-in on the change
 
@@ -56,8 +58,8 @@ For example, we accept contributions to the following sections where you can
 find specific contribution guidelines:
 
 - [Mojo standard library](mojo/CONTRIBUTING.md)
-- [MAX API and models](max/CONTRIBUTING.md)
-- [MAX AI kernels](max/kernels/CONTRIBUTING.md)
+- [MAX API and models](/max/CONTRIBUTING.md)
+- [MAX AI kernels](/max/kernels/CONTRIBUTING.md)
 - [Code examples](examples#contributing)
 - [Mojo documentation](mojo/docs#contributing)
 
@@ -76,6 +78,48 @@ If you're experienced with GitHub, here's the basic process:
 
 4. Skip to [Step 3: PR triage and review](#step-3-pr-triage-and-review).
 
+#### Format your changes
+
+Please make sure your changes are formatted before submitting a pull request.
+Otherwise, CI will fail in its lint and formatting checks. `bazel` setup
+provides a `format` command. So, you can format your changes like so:
+
+```bash
+./bazelw run format
+```
+
+It is advised, to avoid forgetting, to set-up `pre-commit`, which will format
+your changes automatically at each commit, and will also ensure that you
+always have the latest linting tools applied.
+
+To do so, install pre-commit:
+
+```bash
+pixi x pre-commit install
+```
+
+If you need to manually apply the `pre-commit`, for example, if you made a
+commit with the github UI, you can do `pixi x pre-commit run --all-files`, and
+it will apply the formatting to all Mojo and Python files.
+
+You can also consider setting up your editor to automatically format
+Mojo and Python files upon saving.
+
+#### Validate your changes
+
+Before submitting, make sure your changes are correct and complete:
+
+- **Run the relevant tests.** If you changed code, run the tests for the
+  affected area. For the Mojo standard library, see the
+  [development guide](mojo/stdlib/docs/development.md) for instructions.
+- **Check for regressions.** Run a broader test pass if your change touches
+  shared infrastructure or has wide impact.
+- **Assess quality.** Review your diff as a maintainer would. Is the logic
+  clear? Are edge cases handled? Is the change well-scoped?
+
+Contributors are responsible for the correctness and quality of their
+submissions regardless of whether AI tools were used to produce them.
+
 #### Pull request walkthrough
 
 For more specifics, here's a detailed walkthrough of the process to create a
@@ -83,37 +127,37 @@ pull request:
 
 1. Fork and clone this repo:
 
-    Go to the [modular repo home](https://github.com/modular/modular) and click
-    the **Fork** button at the top.
+   Go to the [modular repo home](https://github.com/modular/modular) and click
+   the **Fork** button at the top.
 
-    Your fork will be accessible at `https://github.com/<your-username>/modular`.
+   Your fork will be accessible at `https://github.com/<your-username>/modular`.
 
-    Clone your forked repo to your computer:
+   Clone your forked repo to your computer:
 
     ```bash
     git clone git@github.com:<your-username>/modular.git
     cd modular
     ```
 
-    To clarify, you're working with three repo entities:
+   To clarify, you're working with three repo entities:
 
-    - This repo (`https://github.com/modular/modular`) is known as the upstream
+   - This repo (`https://github.com/modular/modular`) is known as the upstream
       repo. In Git terminology, it's the *upstream remote*.
-    - Your fork on GitHub is known as *origin* (also remote).
-    - Your local clone is stored on our computer.
+   - Your fork on GitHub is known as *origin* (also remote).
+   - Your local clone is stored on your computer.
 
-    Because a fork can diverge from the upstream repo it was forked from, it is
-    crucial to configure our local clone to track upstream changes:
+     Because a fork can diverge from the upstream repo it was forked from, it is
+     crucial to configure your local clone to track upstream changes:
 
-    ```bash
-    git remote add upstream git@github.com:modular/modular.git
-    ```
+     ```bash
+     git remote add upstream <git@github.com>:modular/modular.git
+     ```
 
-    Then sync your fork to the latest code from upstream:
+     Then sync your fork to the latest code from upstream:
 
-    ```bash
-    git pull --rebase upstream
-    ```
+     ```bash
+     git pull --rebase upstream
+     ```
 
 2. Create a branch off `main` to work on your change:
 
@@ -135,40 +179,40 @@ pull request:
 
 3. Create a pull request:
 
-    When you're code is ready, create a pull request into the `main` branch.
+   When your code is ready, create a pull request into the `main` branch.
 
-    First push the local changes to your origin on GitHub:
+   First push the local changes to your origin on GitHub:
 
     ```bash
     git push -u origin my-fix
     ```
 
-    You'll see a link to create a PR:
+   You'll see a link to create a PR:
 
     ```plaintext
     remote: Create a pull request for 'my-fix' on GitHub by visiting:
     remote:      https://github.com/[your-username]/modular/pull/new/my-fix
     ```
 
-    You can open that URL or visit your fork on GitHub and click **Contribute** to
-    start a pull request.
+   You can open that URL or visit your fork on GitHub and click **Contribute**
+   to start a pull request.
 
-    GitHub should automatically set the base repository to `modular/modular`
-    and the base (branch) to `main`. If not, you can select it from the drop-down.
-    Then click **Create pull request**.
+   GitHub should automatically set the base repository to `modular/modular` and
+   the base (branch) to `main`. If not, you can select it from the drop-down.
+   Then click **Create pull request**.
 
-    Now fill out the pull request details in the GitHub UI:
+   Now fill out the pull request details in the GitHub UI:
 
-    - Add a short commit title describing the change.
-    - Add a detailed commit description that includes rationalization for the change
-      and/or explanation of the problem that it solves, with a link to any relevant
-      GitHub issues.
+   - Add a short commit title describing the change.
+   - Add a detailed commit description that includes rationalization for the
+     change and/or explanation of the problem that it solves, with a link to any
+     relevant GitHub issues.
 
-    Click **Create pull request**.
+     Click **Create pull request**.
 
 ### Step 3: PR triage and review
 
-A Modular team member will take an initial look the the pull request and
+A Modular team member will take an initial look at the pull request and
 determine how to proceed. This may include:
 
 - **Leaving the PR as-is** (e.g. if it's a draft).
@@ -193,8 +237,8 @@ This process is transparent to you as a contributor. You'll see a bot
   repository
 - `Merged internally` - when your change has been merged internally into our
   repository
-- `Merged externally` - when your change has gone out with the latest nightly and
-  is now available upstream in the `main` branch.
+- `Merged externally` - when your change has gone out with the latest nightly
+  and is now available upstream in the `main` branch.
 
 These messages help track the lifecycle of your contribution across our systems.
 
@@ -208,7 +252,7 @@ If we need changes from you, we'll leave clear comments with action items.
 Once everything is approved and CI checks pass, we'll take care of the final
 steps to get your PR merged.
 
-Merged changes will generally show up in the the next nightly build (or docs
+Merged changes will generally show up in the next nightly build (or docs
 website), a day or two after it's merged.
 
 ## Guidelines for review time
@@ -216,12 +260,12 @@ website), a day or two after it's merged.
 1. Pull Request (PR) Review Timeline
 
    Initial Review:
-    - Maintainers will provide an initial review or feedback within 3 weeks of
-      the PR submission.  At times, it may be significantly quicker, but it
+   - Maintainers will provide an initial review or feedback within 3 weeks of
+      the PR submission. At times, it may be significantly quicker, but it
       depends on a variety of factors.
 
    Subsequent Reviews:
-    - Once a contributor addresses feedback, maintainers will review updates as
+   - Once a contributor addresses feedback, maintainers will review updates as
       soon as they can, typically within 5 business days.
 
 1. Issue Triage Timeline
@@ -232,16 +276,17 @@ website), a day or two after it's merged.
 
 1. Proposals
 
-   - Proposals take more time for the team to review, discuss, and make sure this
-    is in line with the overall strategy and vision for the standard library.
-    These will get discussed in the team's weekly design meetings internally and
-    feedback will be communicated back on the relevant proposal.  As a team, we'll
-    ensure these get reviewed and discussed within 6 weeks of submission.
+   - Proposals take more time for the team to review, discuss, and make sure
+     this is in line with the overall strategy and vision for the standard
+     library. These will get discussed in the team's weekly design meetings
+     internally and feedback will be communicated back on the relevant proposal.
+     As a team, we'll ensure these get reviewed and discussed within 6 weeks of
+     submission.
 
 ### Exceptions
 
 While we strive our best to adhere to these timelines, there may be occasional
-delays due any of the following:
+delays due to any of the following:
 
 - High volume of contributions.
 - Maintainers' availability (e.g. holidays, team events).
@@ -249,28 +294,29 @@ delays due any of the following:
   the team's weekly design discussion meetings).
 
 Note that just because a pull request has been reviewed does not necessarily
-mean it will be able to be merged internally immediately.  This could be due to a
+mean it will be able to be merged internally immediately. This could be due to a
 variety of reasons, such as:
 
-- Mojo compiler bugs.  These take time to find a minimal reproducer, file an
+- Mojo compiler bugs. These take time to find a minimal reproducer, file an
   issue with the compiler team, and then get prioritized and fixed.
 - Internal bugs that get exposed due to a changeset.
-- Massive refactorings due to an external changeset.  These also take time to
+- Massive refactorings due to an external changeset. These also take time to
   fix - remember, we have the largest Mojo codebase in the world internally.
 
 If delays occur, we'll provide status updates in the relevant thread (pull
-request or GitHub issue).  Please bear with us as Mojo is an early language.
+request or GitHub issue). Please bear with us as Mojo is an early language.
 We look forward to working together with you in making Mojo better for everyone!
 
 ### How you can help
 
 To ensure quicker reviews:
 
-- **Ensure your PR is small and focused.** See the [pull request size section](#about-pull-request-sizes)
-  for more info.
-- Write a good commit message/PR summary outlining the motivation and describing
-  the changes.  In the near future, we'll provide a pull request template to
-  clarify this further.
+- **Ensure your PR is small and focused.** See the
+  [pull request size section](mojo/CONTRIBUTING.md#about-pull-request-sizes) for
+  more info.
+- Write a good commit message/PR description outlining the motivation and
+  describing the changes. Use the
+  [pull request template](.github/PULL_REQUEST_TEMPLATE.md) as a guide.
 - Use descriptive titles and comments for clarity.
 - Code-review other contributor pull requests and help each other.
 

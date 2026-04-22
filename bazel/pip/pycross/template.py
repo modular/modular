@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,7 +24,6 @@ load("@platforms//host:constraints.bzl", "HOST_CONSTRAINTS")
 load("@@rules_pycross+//pycross:defs.bzl", "pycross_wheel_build", "pycross_wheel_library")
 
 _TESTONLY_DEPS = [
-    "accelerate",
     "einx",
     "frozendict",
     "hypothesis",
@@ -35,6 +34,7 @@ _TESTONLY_DEPS = [
     "pygame-ce",
     "reference_residual_fsq",
     "sentence-transformers",
+    "sglang",
     "soxr",
     "timm",
     "torchmetrics",
@@ -62,21 +62,25 @@ def targets():
     native.alias(
         name = "torch@multiple",
         actual = select({{
-            "@@//:amd_gpu": ":torch@2.9.1.dev20251204+rocm7.0.2.lw.git351ff442",
-            "@@//:nvidia_gpu": ":torch@2.9.0+cu128",
-            "@platforms//os:macos": ":torch@2.9.0",
-            "//conditions:default": ":torch@2.9.0+cpu",
+            "@@//:use_sglang_setting": ":torch@2.9.1+cu128",
+            "@@//:use_vllm_setting": ":torch@2.10.0+cu128",
+            "@@//:amd_gpu": ":torch@2.10.0+rocm7.1.1.lw.gitd9556b05",
+            "@@//:nvidia_gpu": ":torch@2.10.0+cu128",
+            "@platforms//os:macos": ":torch@2.10.0",
+            "//conditions:default": ":torch@2.10.0+cpu",
         }}),
     )
 
     native.alias(
         name = "torchaudio@multiple",
         actual = select({{
-            "@@//:amd_gpu": ":torchaudio@2.9.0+rocm7.0.2.gite3c6ee2b",
-            "@@//:nvidia_gpu": ":torchaudio@2.9.0+cu128",
-            "@platforms//os:macos": ":torchaudio@2.9.0",
-            "@@//:linux_aarch64": ":torchaudio@2.9.0",
-            "//conditions:default": ":torchaudio@2.9.0+cpu",
+            "@@//:use_sglang_setting": ":torchaudio@2.9.1+cu128",
+            "@@//:use_vllm_setting": ":torchaudio@2.10.0+cu128",
+            "@@//:amd_gpu": ":torchaudio@2.10.0+rocm7.1.1.git5047768f",
+            "@@//:nvidia_gpu": ":torchaudio@2.10.0+cu128",
+            "@platforms//os:macos": ":torchaudio@2.10.0",
+            "@@//:linux_aarch64": ":torchaudio@2.10.0",
+            "//conditions:default": ":torchaudio@2.10.0+cpu",
         }}),
     )
 
@@ -84,11 +88,13 @@ def targets():
         name = "torchvision@multiple",
         testonly = True,
         actual = select({{
-            "@@//:amd_gpu": ":torchvision@0.24.0+rocm7.0.2.gitb919bd0c",
-            "@@//:nvidia_gpu": ":torchvision@0.24.0+cu128",
-            "@platforms//os:macos": ":torchvision@0.24.0",
-            "@@//:linux_aarch64": ":torchvision@0.24.0",
-            "//conditions:default": ":torchvision@0.24.0+cpu",
+            "@@//:use_sglang_setting": ":torchvision@0.24.1+cu128",
+            "@@//:use_vllm_setting": ":torchvision@0.25.0+cu128",
+            "@@//:amd_gpu": ":torchvision@0.25.0+rocm7.1.1.git82df5f59",
+            "@@//:nvidia_gpu": ":torchvision@0.25.0+cu128",
+            "@platforms//os:macos": ":torchvision@0.25.0",
+            "@@//:linux_aarch64": ":torchvision@0.25.0+cpu",
+            "//conditions:default": ":torchvision@0.25.0+cpu",
         }}),
     )
 
@@ -96,9 +102,57 @@ def targets():
         name = "triton@multiple",
         testonly = True,
         actual = select({{
-            "@@//:amd_gpu": ":triton@3.5.1+rocm7.0.2.gita272dfa8",
-            "//conditions:default": ":triton@3.5.0",
+            "@@//:use_sglang_setting": ":triton@3.5.1",
+            "@@//:amd_gpu": ":triton@3.6.0+rocm7.1.1.gitba5c1517",
+            "//conditions:default": ":triton@3.6.0",
         }}),
+    )
+
+    native.alias(
+        name = "llguidance@multiple",
+        testonly = True,
+        actual = select({{
+            "@@//:use_sglang_setting": ":llguidance@0.7.30",
+            "//conditions:default": ":llguidance@1.3.0",
+        }}),
+    )
+
+    native.alias(
+        name = "outlines-core@multiple",
+        testonly = True,
+        target_compatible_with = select({{
+            "@@//:use_sglang_setting": [],
+            "@@//:use_vllm_setting": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }}),
+        actual = select({{
+            "@@//:use_sglang_setting": ":outlines-core@0.1.26",
+            "@@//:use_vllm_setting": ":outlines-core@0.2.11",
+        }}),
+    )
+
+    native.alias(
+        name = "nvidia-nvshmem-cu12@multiple",
+        testonly = True,
+        actual = select({{
+            # Uses torch 2.9.1, which uses this version
+            "@@//:use_sglang_setting": ":nvidia-nvshmem-cu12@3.3.20",
+            "//conditions:default": ":nvidia-nvshmem-cu12@3.4.5",
+        }}),
+    )
+
+    native.alias(
+        name = "sglang@multiple",
+        testonly = True,
+        actual = ":sglang@0.5.10.post1",
+        target_compatible_with = ["@@//:nvidia_gpu"],
+    )
+
+    native.alias(
+        name = "vllm@multiple",
+        testonly = True,
+        actual = ":vllm@0.17.0",
+        target_compatible_with = ["@@//:nvidia_gpu"],
     )
 
     native.alias(

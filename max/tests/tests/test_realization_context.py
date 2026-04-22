@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -104,7 +104,7 @@ def test_lazy_context_explicit_realize() -> None:
 
 def test_lazy_context_sync_realize_via_item() -> None:
     with rc.LazyRealizationContext() as ctx, realization_context(ctx):
-        a = Tensor.constant(42)
+        a = Tensor(42)
 
     assert not a.real
     assert a.item() == 42
@@ -113,7 +113,7 @@ def test_lazy_context_sync_realize_via_item() -> None:
 
 def test_lazy_context_sync_realize_via_dlpack() -> None:
     with rc.LazyRealizationContext() as ctx, realization_context(ctx):
-        a = Tensor.constant(42)
+        a = Tensor(42)
 
     assert not a.real
     _ = a.__dlpack__()
@@ -148,7 +148,7 @@ def test_graph_context_cannot_realize() -> None:
 def test_functional_uses_graph_context() -> None:
     input_type = TensorType(DType.float32, [3, 3], CPU())
     with Graph("test", input_types=[input_type]) as graph:
-        x = Tensor.constant(1)
+        x = Tensor(1)
         y = x + 1
         assert not y.real
         assert y.state
@@ -161,7 +161,7 @@ def test_graph_context_using_realized_tensors() -> None:
     """Realized tensors become constants when added as sources."""
     input_type = TensorType(DType.float32, [3, 3], CPU())
 
-    eager = Tensor.constant(5.0, dtype=DType.float32, device=CPU())
+    eager = Tensor(5.0, dtype=DType.float32, device=CPU())
     assert eager.real
 
     with Graph("test", input_types=[input_type]) as graph:
@@ -178,7 +178,7 @@ def test_graph_context_using_lazy_tensors() -> None:
     input_type = TensorType(DType.float32, [3, 3], CPU())
 
     with F.lazy():
-        lazy = Tensor.constant(5.0, dtype=DType.float32, device=CPU())
+        lazy = Tensor(5.0, dtype=DType.float32, device=CPU())
     assert not lazy.real
 
     with Graph("test", input_types=[input_type]) as graph:
@@ -194,7 +194,7 @@ def test_graph_context_using_lazy_tensors() -> None:
 
 def test_composing_eager_and_lazy() -> None:
     with F.lazy():
-        lazy = Tensor.constant(5.0, dtype=DType.float32, device=CPU())
+        lazy = Tensor(5.0, dtype=DType.float32, device=CPU())
     assert not lazy.real
 
     eager = lazy + 1

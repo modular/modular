@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -43,7 +43,7 @@ def get_package_root() -> Path | None:
     # wheels this is just a generated wrapper script, which we shouldn't call
     # from here since we'd end up in an infinite loop.
     for root in (wheel_root, conda_root):
-        if (root / "bin" / "mojo").exists():
+        if (root / "bin/mojo").exists():
             logging.debug(f"Located Modular SDK assets at {root}")
             return root
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,146 +13,113 @@
 
 from __future__ import annotations
 
-import logging
+import itertools
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any, TypeGuard, TypeVar, overload
+from typing import Any, Generic, TypeVar
 
 from max.driver import Buffer
+from max.dtype import DType
 from max.graph import BufferType, BufferValue, TensorType, TensorValue
 
-logger = logging.getLogger("max.pipelines")
+_Tensor = TypeVar("_Tensor", TensorValue, TensorType, Buffer)
+_Buffer = TypeVar("_Buffer", BufferValue, BufferType, Buffer)
 
 
 @dataclass
-class NestedIterableDataclass:
-    """
-    Base class for input symbols for KV cache managers.
+class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
+    """Symbolic graph input types for a single device's paged KV cache."""
 
-    The derived class is responsible for defining the input symbols for the
-    specific KV cache manager.
-    For example, here's a derived class for a text KV cache manager:
+    kv_blocks: _Buffer
+    cache_lengths: _Tensor
+    lookup_table: _Tensor
+    max_lengths: _Tensor
+    kv_scales: _Buffer | None = None  # KV scales for FP8 quantization
+    attention_dispatch_metadata: _Tensor | None = None
+    draft_attention_dispatch_metadata: _Tensor | None = None
 
-    .. code-block:: python
+    def __post_init__(self) -> None:
+        tensor = self.attention_dispatch_metadata
+        if tensor is not None:
+            if tensor.dtype != DType.int64:
+                raise ValueError(
+                    "expected attention_dispatch_metadata dtype int64, got "
+                    f"{tensor.dtype}"
+                )
+            if tensor.rank != 1:
+                raise ValueError(
+                    "expected attention_dispatch_metadata rank 1, got "
+                    f"{tensor.rank}"
+                )
 
-        @dataclass
-        class PagedCacheValues(NestedIterableDataclass):
-            kv_blocks: TensorType
-            cache_lengths: TensorType
-            lookup_table: TensorType
-            max_lengths: TensorType
-    """
+    def flatten(self) -> list[_Tensor | _Buffer]:
+        return [
+            self.kv_blocks,
+            self.cache_lengths,
+            self.lookup_table,
+            self.max_lengths,
+            *((self.kv_scales,) if self.kv_scales else ()),
+            *(
+                (self.attention_dispatch_metadata,)
+                if self.attention_dispatch_metadata
+                else ()
+            ),
+            *(
+                (self.draft_attention_dispatch_metadata,)
+                if self.draft_attention_dispatch_metadata
+                else ()
+            ),
+        ]
 
-    def __iter__(self) -> Iterator[Any]:
-        """Iterates through each field in order."""
-        for field in self.__dataclass_fields__:
-            value = getattr(self, field)
-            if isinstance(value, NestedIterableDataclass):
-                yield from value
-            else:
-                yield value
+    # TODO: FIX THIS HACK!!!
+    def flatten_without_attention_dispatch_metadata(
+        self,
+    ) -> list[_Tensor | _Buffer]:
+        return [
+            self.kv_blocks,
+            self.cache_lengths,
+            self.lookup_table,
+            self.max_lengths,
+            *((self.kv_scales,) if self.kv_scales else ()),
+        ]
 
-    def __getitem__(self, index: int | slice) -> Any:
-        return list(self)[index]
-
-
-@dataclass
-class PagedCacheInputSymbols(NestedIterableDataclass):
-    kv_blocks: BufferType
-    cache_lengths: TensorType
-    lookup_table: TensorType
-    max_lengths: TensorType
-
-
-@dataclass
-class PagedCacheValues(NestedIterableDataclass):
-    kv_blocks: BufferValue
-    cache_lengths: TensorValue
-    lookup_table: TensorValue
-    max_lengths: TensorValue
-
-
-_T = TypeVar("_T")
+    def unflatten(
+        self, it: Iterator[Any]
+    ) -> KVCacheInputsPerDevice[TensorValue, BufferValue]:
+        return KVCacheInputsPerDevice(
+            kv_blocks=next(it),
+            cache_lengths=next(it),
+            lookup_table=next(it),
+            max_lengths=next(it),
+            kv_scales=next(it) if self.kv_scales else None,
+            attention_dispatch_metadata=next(it)
+            if self.attention_dispatch_metadata
+            else None,
+            draft_attention_dispatch_metadata=next(it)
+            if self.draft_attention_dispatch_metadata
+            else None,
+        )
 
 
-def _is_sequence_of(x: Any, ty: type[_T]) -> TypeGuard[Sequence[_T]]:
-    return isinstance(x, Sequence) and all(isinstance(item, ty) for item in x)
-
-
-@dataclass
-class KVCacheInputs:
-    """
-    A base class that holds KV cache related (Tensor) inputs.
-
-    It is meant to be subclassed by concrete KV cache input types.
-    For example, here's a derived class for a text KV cache manager:
-
-    .. code-block:: python
-
-        @dataclass
-        class RaggedKVCacheInputs(KVCacheInputs):
-            blocks: Buffer
-            cache_lengths: Buffer
-            lookup_table: Buffer
-            max_lengths: Buffer
-    """
-
-    def __iter__(self) -> Iterator[Buffer]:
-        """Iterates through each Type in order."""
-        for field in self.__dataclass_fields__:
-            value = getattr(self, field)
-            if isinstance(value, KVCacheInputs):
-                yield from value
-            elif _is_sequence_of(value, KVCacheInputs):
-                for item in value:
-                    yield from item
-            else:
-                assert isinstance(value, Buffer)
-                yield value
-
-    @overload
-    def __getitem__(self, index: int) -> Buffer: ...
-
-    @overload
-    def __getitem__(self, index: slice) -> Sequence[Buffer]: ...
-
-    def __getitem__(self, index: Any) -> Any:
-        return list(self)[index]
-
-    def __len__(self) -> int:
-        count = 0
-        # Iterate over all fields in the dataclass. If we run into a sequence of
-        # KVCacheInputs, we expand and recursively call `len` on the KVCacheInputs
-        # elements.
-        for field in self.__dataclass_fields__:
-            value = getattr(self, field)
-            if _is_sequence_of(value, KVCacheInputs):
-                count += sum(len(x) for x in value)
-            else:
-                count += 1
-        return count
+PagedCacheValues = KVCacheInputsPerDevice[TensorValue, BufferValue]
 
 
 @dataclass
-class RaggedKVCacheInputs(KVCacheInputs):
-    """
-    ``RaggedKVCacheInputs`` is a class that holds the inputs for
-    KV cache when used together with ragged tensors.
-    """
+class KVCacheInputs(Generic[_Tensor, _Buffer]):
+    """Symbolic graph input types for all devices' paged KV cache."""
 
-    blocks: Buffer
-    cache_lengths: Buffer
-    lookup_table: Buffer
-    max_lengths: Buffer
+    inputs: Sequence[KVCacheInputsPerDevice[_Tensor, _Buffer]]
 
+    def flatten(self) -> list[_Tensor | _Buffer]:
+        return list(
+            itertools.chain.from_iterable(
+                item.flatten() for item in self.inputs
+            )
+        )
 
-@dataclass
-class KVCacheInputsSequence(KVCacheInputs):
-    """
-    ``KVCacheInputsSequence`` is a sequence of :obj:`KVCacheInputs`.
-
-    It is primarily used in our multistep execution to represent batched
-    KVCacheInputs.
-    """
-
-    kv_cache_inputs: Sequence[KVCacheInputs]
+    def unflatten(
+        self, it: Iterator[Any]
+    ) -> KVCacheInputs[TensorValue, BufferValue]:
+        return KVCacheInputs(
+            inputs=[item.unflatten(it) for item in self.inputs]
+        )

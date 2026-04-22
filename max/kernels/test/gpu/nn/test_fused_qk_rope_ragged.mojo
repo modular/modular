@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,27 +11,34 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from math import ceildiv
-from random import random_ui64
+from std.collections import Set
+from std.math import ceildiv
+from std.random import random_ui64
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout._fillers import random
-from memory import LegacyUnsafePointer, memcpy
+from std.memory import memcpy
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from testdata.fused_qk_rope_goldens import freqs_cis_table_input
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import Index, IndexList
+from std.utils import Index, IndexList
 
 
 def execute_fused_qk_rope_ragged(
     ctx: DeviceContext,
-):
+) raises:
     comptime num_q_heads = 32
     comptime kv_params = KVCacheStaticParams(num_heads=8, head_size=128)
     comptime dtype = DType.float32
@@ -82,27 +89,21 @@ def execute_fused_qk_rope_ragged(
         true_ce_total_length += true_ce_prompt_lens[i]
         mixed_ce_total_length += mixed_ce_prompt_lens[i]
 
-    # Define layouts
-    comptime row_offsets_layout = Layout.row_major(UNKNOWN_VALUE)
+    # Define layouts for LayoutTensor (used for KV cache)
     comptime cache_lengths_layout = Layout.row_major(UNKNOWN_VALUE)
-    comptime q_ragged_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
-    )
-    comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, Int(kv_params.head_size)
-    )
     comptime kv_block_layout = Layout.row_major(
         UNKNOWN_VALUE,
         2,
         UNKNOWN_VALUE,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     comptime paged_lut_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    comptime freqs_layout = Layout.row_major(
-        max_seq_len, Int(kv_params.head_size)
-    )
+
+    # Define TileTensor layouts (compile-time static where possible)
+    var row_offsets_tile_layout = row_major(Idx(batch_size + 1))
+    comptime freqs_tile_layout = row_major[max_seq_len, kv_params.head_size]()
 
     # Create shapes
     var true_ce_row_offsets_shape = Index(batch_size + 1)
@@ -110,63 +111,42 @@ def execute_fused_qk_rope_ragged(
     var true_ce_cache_lengths_shape = Index(batch_size)
     var mixed_ce_cache_lengths_shape = Index(batch_size)
     var true_ce_q_ragged_shape = IndexList[3](
-        true_ce_total_length, num_q_heads, Int(kv_params.head_size)
+        true_ce_total_length, num_q_heads, kv_params.head_size
     )
     var mixed_ce_q_ragged_shape = IndexList[3](
-        mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
+        mixed_ce_total_length, num_q_heads, kv_params.head_size
     )
     var true_ce_output_shape = IndexList[3](
-        true_ce_total_length, num_q_heads, Int(kv_params.head_size)
+        true_ce_total_length, num_q_heads, kv_params.head_size
     )
     var mixed_ce_output_shape = IndexList[3](
-        mixed_ce_total_length, num_q_heads, Int(kv_params.head_size)
+        mixed_ce_total_length, num_q_heads, kv_params.head_size
     )
     var kv_block_shape = IndexList[6](
         num_paged_blocks,
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var paged_lut_shape = IndexList[2](
         batch_size, ceildiv(true_ce_max_full_context_length, page_size)
     )
-    var freqs_shape = IndexList[2](max_seq_len, Int(kv_params.head_size))
+    var freqs_shape = IndexList[2](max_seq_len, kv_params.head_size)
 
-    # Create runtime layouts
-    var true_ce_row_offsets_runtime_layout = RuntimeLayout[
-        row_offsets_layout
-    ].row_major(true_ce_row_offsets_shape)
-    var mixed_ce_row_offsets_runtime_layout = RuntimeLayout[
-        row_offsets_layout
-    ].row_major(mixed_ce_row_offsets_shape)
+    # Create runtime layouts for LayoutTensor
     var true_ce_cache_lengths_runtime_layout = RuntimeLayout[
         cache_lengths_layout
     ].row_major(true_ce_cache_lengths_shape)
     var mixed_ce_cache_lengths_runtime_layout = RuntimeLayout[
         cache_lengths_layout
     ].row_major(mixed_ce_cache_lengths_shape)
-    var true_ce_q_ragged_runtime_layout = RuntimeLayout[
-        q_ragged_layout
-    ].row_major(true_ce_q_ragged_shape)
-    var mixed_ce_q_ragged_runtime_layout = RuntimeLayout[
-        q_ragged_layout
-    ].row_major(mixed_ce_q_ragged_shape)
-    var true_ce_output_runtime_layout = RuntimeLayout[output_layout].row_major(
-        true_ce_output_shape
-    )
-    var mixed_ce_output_runtime_layout = RuntimeLayout[output_layout].row_major(
-        mixed_ce_output_shape
-    )
     var kv_block_runtime_layout = RuntimeLayout[kv_block_layout].row_major(
         kv_block_shape
     )
     var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
         paged_lut_shape
-    )
-    var freqs_runtime_layout = RuntimeLayout[freqs_layout].row_major(
-        freqs_shape
     )
 
     # Create device buffers
@@ -208,29 +188,23 @@ def execute_fused_qk_rope_ragged(
     )
 
     # Allocate host pointers for row offsets (need to keep for verification)
-    var true_ce_row_offsets_host_ptr = UnsafePointer[UInt32].alloc(
-        batch_size + 1
-    )
-    var mixed_ce_row_offsets_host_ptr = UnsafePointer[UInt32].alloc(
-        batch_size + 1
-    )
-    var true_ce_cache_lengths_host_ptr = UnsafePointer[UInt32].alloc(batch_size)
-    var mixed_ce_cache_lengths_host_ptr = UnsafePointer[UInt32].alloc(
-        batch_size
-    )
+    var true_ce_row_offsets_host_ptr = alloc[UInt32](batch_size + 1)
+    var mixed_ce_row_offsets_host_ptr = alloc[UInt32](batch_size + 1)
+    var true_ce_cache_lengths_host_ptr = alloc[UInt32](batch_size)
+    var mixed_ce_cache_lengths_host_ptr = alloc[UInt32](batch_size)
 
     # Initialize row offsets and cache lengths
     var true_ce_offset = 0
     var mixed_ce_offset = 0
     for i in range(batch_size):
-        true_ce_row_offsets_host_ptr[i] = true_ce_offset
-        mixed_ce_row_offsets_host_ptr[i] = mixed_ce_offset
-        true_ce_cache_lengths_host_ptr[i] = true_ce_cache_lens[i]
-        mixed_ce_cache_lengths_host_ptr[i] = mixed_ce_cache_lens[i]
+        true_ce_row_offsets_host_ptr[i] = UInt32(true_ce_offset)
+        mixed_ce_row_offsets_host_ptr[i] = UInt32(mixed_ce_offset)
+        true_ce_cache_lengths_host_ptr[i] = UInt32(true_ce_cache_lens[i])
+        mixed_ce_cache_lengths_host_ptr[i] = UInt32(mixed_ce_cache_lens[i])
         true_ce_offset += true_ce_prompt_lens[i]
         mixed_ce_offset += mixed_ce_prompt_lens[i]
-    true_ce_row_offsets_host_ptr[batch_size] = true_ce_offset
-    mixed_ce_row_offsets_host_ptr[batch_size] = mixed_ce_offset
+    true_ce_row_offsets_host_ptr[batch_size] = UInt32(true_ce_offset)
+    mixed_ce_row_offsets_host_ptr[batch_size] = UInt32(mixed_ce_offset)
 
     ctx.enqueue_copy(true_ce_row_offsets_device, true_ce_row_offsets_host_ptr)
     ctx.enqueue_copy(mixed_ce_row_offsets_device, mixed_ce_row_offsets_host_ptr)
@@ -239,6 +213,26 @@ def execute_fused_qk_rope_ragged(
     )
     ctx.enqueue_copy(
         mixed_ce_cache_lengths_device, mixed_ce_cache_lengths_host_ptr
+    )
+
+    # Define runtime layouts for q_ragged and output (these have UNKNOWN_VALUE dims)
+    comptime q_ragged_layout = Layout.row_major(
+        UNKNOWN_VALUE, num_q_heads, kv_params.head_size
+    )
+    comptime output_layout = Layout.row_major(
+        UNKNOWN_VALUE, num_q_heads, kv_params.head_size
+    )
+    var true_ce_q_ragged_runtime_layout = RuntimeLayout[
+        q_ragged_layout
+    ].row_major(true_ce_q_ragged_shape)
+    var mixed_ce_q_ragged_runtime_layout = RuntimeLayout[
+        q_ragged_layout
+    ].row_major(mixed_ce_q_ragged_shape)
+    var true_ce_output_runtime_layout = RuntimeLayout[output_layout].row_major(
+        true_ce_output_shape
+    )
+    var mixed_ce_output_runtime_layout = RuntimeLayout[output_layout].row_major(
+        mixed_ce_output_shape
     )
 
     # Initialize true_ce_q_ragged with random data
@@ -262,10 +256,10 @@ def execute_fused_qk_rope_ragged(
                 true_ce_src_offset = (
                     (true_ce_row_offset + mixed_ce_cache_len)
                     * num_q_heads
-                    * Int(kv_params.head_size)
+                    * kv_params.head_size
                 )
                 mixed_ce_dest_offset = (
-                    mixed_ce_row_offset * num_q_heads * Int(kv_params.head_size)
+                    mixed_ce_row_offset * num_q_heads * kv_params.head_size
                 )
 
                 memcpy(
@@ -273,7 +267,7 @@ def execute_fused_qk_rope_ragged(
                     src=true_ce_q_ragged_tensor.ptr + true_ce_src_offset,
                     count=mixed_ce_prompt_len
                     * num_q_heads
-                    * Int(kv_params.head_size),
+                    * kv_params.head_size,
                 )
 
     # Initialize freqs_cis_table with golden values
@@ -288,7 +282,7 @@ def execute_fused_qk_rope_ragged(
     # Initialize KV blocks with random data using regular host memory
     # (not host-pinned memory via map_to_host) to avoid exhausting
     # the limited host-pinned memory buffer cache
-    var kv_block_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    var kv_block_host_ptr = alloc[Scalar[dtype]](
         kv_block_shape.flattened_length()
     )
     var kv_block_host_tensor = LayoutTensor[dtype, kv_block_layout](
@@ -313,15 +307,58 @@ def execute_fused_qk_rope_ragged(
                 while randval in paged_lut_set:
                     randval = Int(random_ui64(0, num_paged_blocks - 1))
                 paged_lut_set.add(randval)
-                paged_lut_tensor[bs, block_idx] = randval
+                paged_lut_tensor[bs, block_idx] = UInt32(randval)
 
-    # Create layout tensors for GPU operations
-    var true_ce_row_offsets_tensor = LayoutTensor[
-        DType.uint32, row_offsets_layout
-    ](true_ce_row_offsets_device, true_ce_row_offsets_runtime_layout)
-    var mixed_ce_row_offsets_tensor = LayoutTensor[
-        DType.uint32, row_offsets_layout
-    ](mixed_ce_row_offsets_device, mixed_ce_row_offsets_runtime_layout)
+    # Create TileTensors for row offsets, q_ragged, output, and freqs
+    var true_ce_row_offsets_tensor = TileTensor(
+        true_ce_row_offsets_device, row_offsets_tile_layout
+    )
+    var mixed_ce_row_offsets_tensor = TileTensor(
+        mixed_ce_row_offsets_device, row_offsets_tile_layout
+    )
+    var true_ce_q_ragged_tensor = TileTensor(
+        true_ce_q_ragged_device,
+        row_major(
+            (
+                Idx(true_ce_total_length),
+                Idx[num_q_heads](),
+                Idx[kv_params.head_size](),
+            )
+        ),
+    )
+    var mixed_ce_q_ragged_tensor = TileTensor(
+        mixed_ce_q_ragged_device,
+        row_major(
+            (
+                Idx(mixed_ce_total_length),
+                Idx[num_q_heads](),
+                Idx[kv_params.head_size](),
+            )
+        ),
+    )
+    var true_ce_output_tensor = TileTensor(
+        true_ce_output_device,
+        row_major(
+            (
+                Idx(true_ce_total_length),
+                Idx[num_q_heads](),
+                Idx[kv_params.head_size](),
+            )
+        ),
+    )
+    var mixed_ce_output_tensor = TileTensor(
+        mixed_ce_output_device,
+        row_major(
+            (
+                Idx(mixed_ce_total_length),
+                Idx[num_q_heads](),
+                Idx[kv_params.head_size](),
+            )
+        ),
+    )
+    var freqs_tensor = TileTensor(freqs_device, freqs_tile_layout)
+
+    # Create LayoutTensors for KV cache (still uses LayoutTensor)
     var true_ce_cache_lengths_tensor = LayoutTensor[
         DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
     ](
@@ -338,18 +375,6 @@ def execute_fused_qk_rope_ragged(
             mixed_ce_cache_lengths_shape
         ),
     )
-    var true_ce_q_ragged_tensor = LayoutTensor[dtype, q_ragged_layout](
-        true_ce_q_ragged_device, true_ce_q_ragged_runtime_layout
-    )
-    var mixed_ce_q_ragged_tensor = LayoutTensor[dtype, q_ragged_layout](
-        mixed_ce_q_ragged_device, mixed_ce_q_ragged_runtime_layout
-    )
-    var true_ce_output_tensor = LayoutTensor[dtype, output_layout](
-        true_ce_output_device, true_ce_output_runtime_layout
-    )
-    var mixed_ce_output_tensor = LayoutTensor[dtype, output_layout](
-        mixed_ce_output_device, mixed_ce_output_runtime_layout
-    )
     var true_ce_kv_block_tensor = LayoutTensor[dtype, kv_block_layout](
         true_ce_kv_block_device, kv_block_runtime_layout
     )
@@ -361,9 +386,6 @@ def execute_fused_qk_rope_ragged(
     ](
         paged_lut_device.unsafe_ptr(),
         RuntimeLayout[Layout.row_major[2]()].row_major(paged_lut_shape),
-    )
-    var freqs_tensor = LayoutTensor[dtype, freqs_layout](
-        freqs_device, freqs_runtime_layout
     )
 
     var true_ce_k_cache_collection = PagedKVCacheCollection[
@@ -378,8 +400,8 @@ def execute_fused_qk_rope_ragged(
         ),
         true_ce_cache_lengths_tensor,
         paged_lut_tensor,
-        true_ce_max_prompt_length,
-        true_ce_max_cache_length,
+        UInt32(true_ce_max_prompt_length),
+        UInt32(true_ce_max_cache_length),
     )
 
     var mixed_ce_k_cache_collection = PagedKVCacheCollection[
@@ -394,8 +416,8 @@ def execute_fused_qk_rope_ragged(
         ),
         mixed_ce_cache_lengths_tensor,
         paged_lut_tensor,
-        mixed_ce_max_prompt_length,
-        mixed_ce_max_cache_length,
+        UInt32(mixed_ce_max_prompt_length),
+        UInt32(mixed_ce_max_cache_length),
     )
 
     # "true CE" execution
@@ -403,12 +425,12 @@ def execute_fused_qk_rope_ragged(
     fused_qk_rope_ragged[
         mixed_ce_k_cache_collection.CacheType, interleaved=False, target="gpu"
     ](
-        true_ce_q_ragged_tensor,
-        true_ce_row_offsets_tensor,
-        true_ce_k_cache_collection,
-        freqs_tensor,
-        None,
-        layer_idx,
+        q_proj=true_ce_q_ragged_tensor,
+        input_row_offsets=true_ce_row_offsets_tensor,
+        kv_collection=true_ce_k_cache_collection,
+        freqs_cis=freqs_tensor,
+        position_ids=None,
+        layer_idx=UInt32(layer_idx),
         output=true_ce_output_tensor,
         context=ctx,
     )
@@ -418,12 +440,12 @@ def execute_fused_qk_rope_ragged(
     fused_qk_rope_ragged[
         mixed_ce_k_cache_collection.CacheType, interleaved=False, target="gpu"
     ](
-        mixed_ce_q_ragged_tensor,
-        mixed_ce_row_offsets_tensor,
-        mixed_ce_k_cache_collection,
-        freqs_tensor,
-        None,
-        layer_idx,
+        q_proj=mixed_ce_q_ragged_tensor,
+        input_row_offsets=mixed_ce_row_offsets_tensor,
+        kv_collection=mixed_ce_k_cache_collection,
+        freqs_cis=freqs_tensor,
+        position_ids=None,
+        layer_idx=UInt32(layer_idx),
         output=mixed_ce_output_tensor,
         context=ctx,
     )
@@ -459,28 +481,26 @@ def execute_fused_qk_rope_ragged(
                                 mixed_ce_out_tensor[
                                     mixed_ce_batch_start_idx + tok_idx,
                                     head_idx,
-                                    Int(head_dim),
+                                    head_dim,
                                 ],
                                 true_ce_out_tensor[
                                     true_ce_batch_start_idx
                                     + mixed_ce_cache_len
                                     + tok_idx,
                                     head_idx,
-                                    Int(head_dim),
+                                    head_dim,
                                 ],
                             )
 
     # Copy KV blocks back to host for K comparison
     ctx.enqueue_copy(kv_block_host_ptr, true_ce_kv_block_device)
-    var mixed_kv_block_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    var mixed_kv_block_host_ptr = alloc[Scalar[dtype]](
         kv_block_shape.flattened_length()
     )
     ctx.enqueue_copy(mixed_kv_block_host_ptr, mixed_ce_kv_block_device)
 
     # Also need paged_lut on host for K cache comparison
-    var paged_lut_host_ptr = UnsafePointer[UInt32].alloc(
-        paged_lut_shape.flattened_length()
-    )
+    var paged_lut_host_ptr = alloc[UInt32](paged_lut_shape.flattened_length())
     ctx.enqueue_copy(paged_lut_host_ptr, paged_lut_device)
     ctx.synchronize()
 
@@ -514,8 +534,8 @@ def execute_fused_qk_rope_ragged(
             paged_lut_host_tensor.ptr,
             RuntimeLayout[Layout.row_major[2]()].row_major(paged_lut_shape),
         ),
-        true_ce_max_prompt_length,
-        true_ce_max_cache_length,
+        UInt32(true_ce_max_prompt_length),
+        UInt32(true_ce_max_cache_length),
     )
     var true_ce_k_cache = true_ce_k_cache_collection_host.get_key_cache(
         layer_idx
@@ -541,8 +561,8 @@ def execute_fused_qk_rope_ragged(
             paged_lut_host_tensor.ptr,
             RuntimeLayout[Layout.row_major[2]()].row_major(paged_lut_shape),
         ),
-        mixed_ce_max_prompt_length,
-        mixed_ce_max_cache_length,
+        UInt32(mixed_ce_max_prompt_length),
+        UInt32(mixed_ce_max_cache_length),
     )
     var mixed_ce_k_cache = mixed_ce_k_cache_collection_host.get_key_cache(
         layer_idx
@@ -558,15 +578,15 @@ def execute_fused_qk_rope_ragged(
                     assert_almost_equal(
                         true_ce_k_cache.load[width=1](
                             bs_idx,
-                            Int(head_idx),
+                            head_idx,
                             mixed_ce_cache_len + tok_idx,
-                            Int(head_dim),
+                            head_dim,
                         ),
                         mixed_ce_k_cache.load[width=1](
                             bs_idx,
-                            Int(head_idx),
+                            head_idx,
                             mixed_ce_cache_len + tok_idx,
-                            Int(head_dim),
+                            head_dim,
                         ),
                     )
 
@@ -600,7 +620,7 @@ def execute_fused_qk_rope_ragged(
 # and the first 128 elements in each head are simply copied from the input Q tensor.
 # For KV cache, we confirm that the only the last 64 elements in each head are correctly roped,
 # and the first 512 elements are left unchanged.
-def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
+def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
     comptime num_q_heads = 16
     comptime q_head_size = 192
     comptime kv_params = KVCacheStaticParams(num_heads=1, head_size=576)
@@ -616,39 +636,37 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     comptime seq_len = 200
     comptime batch_size = 1
 
-    # Define layouts
-    comptime q_ragged_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, q_head_size
-    )
-    comptime q_ragged_64_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, rope_dim
-    )
+    # Define layouts for LayoutTensor (used for KV cache)
     comptime kv_block_layout = Layout.row_major(
         num_paged_blocks,
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     comptime kv_block_64_layout = Layout.row_major(
         num_paged_blocks,
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
+        kv_params.num_heads,
         rope_dim,
     )
-    comptime freqs_layout = Layout.row_major(max_seq_len, rope_dim)
-    comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, q_head_size
-    )
-    comptime output_64_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, rope_dim
-    )
-    comptime row_offsets_layout = Layout.row_major(UNKNOWN_VALUE)
     comptime paged_lut_layout = Layout.row_major(batch_size, 2)
     comptime cache_lengths_layout = Layout.row_major(UNKNOWN_VALUE)
+
+    # Define TileTensor layouts
+    comptime q_ragged_tile_layout = row_major[
+        seq_len, num_q_heads, q_head_size
+    ]()
+    comptime q_ragged_64_tile_layout = row_major[
+        seq_len, num_q_heads, rope_dim
+    ]()
+    comptime freqs_tile_layout = row_major[max_seq_len, rope_dim]()
+    comptime output_tile_layout = row_major[seq_len, num_q_heads, q_head_size]()
+    comptime output_64_tile_layout = row_major[seq_len, num_q_heads, rope_dim]()
+    comptime row_offsets_tile_layout = row_major[batch_size + 1]()
 
     # Create shapes
     var q_ragged_shape = IndexList[3](seq_len, num_q_heads, q_head_size)
@@ -658,15 +676,15 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var kv_block_64_shape = IndexList[6](
         num_paged_blocks,
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
+        kv_params.num_heads,
         rope_dim,
     )
     var freqs_shape = IndexList[2](max_seq_len, rope_dim)
@@ -676,31 +694,13 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     var paged_lut_shape = IndexList[2](batch_size, 2)
     var cache_lengths_shape = Index(batch_size)
 
-    # Create runtime layouts
-    var q_ragged_runtime_layout = RuntimeLayout[q_ragged_layout].row_major(
-        q_ragged_shape
-    )
-    var q_ragged_64_runtime_layout = RuntimeLayout[
-        q_ragged_64_layout
-    ].row_major(q_ragged_64_shape)
+    # Create runtime layouts for LayoutTensor
     var kv_block_runtime_layout = RuntimeLayout[kv_block_layout].row_major(
         kv_block_shape
     )
     var kv_block_64_runtime_layout = RuntimeLayout[
         kv_block_64_layout
     ].row_major(kv_block_64_shape)
-    var freqs_runtime_layout = RuntimeLayout[freqs_layout].row_major(
-        freqs_shape
-    )
-    var output_runtime_layout = RuntimeLayout[output_layout].row_major(
-        output_shape
-    )
-    var output_64_runtime_layout = RuntimeLayout[output_64_layout].row_major(
-        output_64_shape
-    )
-    var row_offsets_runtime_layout = RuntimeLayout[
-        row_offsets_layout
-    ].row_major(row_offsets_shape)
     var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
         paged_lut_shape
     )
@@ -740,8 +740,22 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
         batch_size
     )
 
+    # Define runtime layouts for q_ragged (used for random initialization)
+    comptime q_ragged_layout = Layout.row_major(
+        seq_len, num_q_heads, q_head_size
+    )
+    comptime q_ragged_64_layout = Layout.row_major(
+        seq_len, num_q_heads, rope_dim
+    )
+    var q_ragged_runtime_layout = RuntimeLayout[q_ragged_layout].row_major(
+        q_ragged_shape
+    )
+    var q_ragged_64_runtime_layout = RuntimeLayout[
+        q_ragged_64_layout
+    ].row_major(q_ragged_64_shape)
+
     # Allocate host pointer for q_ragged (needed for verification)
-    var q_ragged_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    var q_ragged_host_ptr = alloc[Scalar[dtype]](
         q_ragged_shape.flattened_length()
     )
     var q_ragged_host_tensor = LayoutTensor[dtype, q_ragged_layout](
@@ -773,7 +787,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
                 )
 
     # Allocate host pointer for kv_block (needed for verification)
-    var kv_block_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    var kv_block_host_ptr = alloc[Scalar[dtype]](
         kv_block_shape.flattened_length()
     )
     var kv_block_host_tensor = LayoutTensor[dtype, kv_block_layout](
@@ -797,22 +811,22 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
                                 * 2
                                 * num_layers
                                 * page_size
-                                * Int(kv_params.num_heads)
+                                * kv_params.num_heads
                                 * Int(kv_params.head_size)
                                 + kv_idx
                                 * num_layers
                                 * page_size
-                                * Int(kv_params.num_heads)
-                                * Int(kv_params.head_size)
+                                * kv_params.num_heads
+                                * kv_params.head_size
                                 + layer_idx
                                 * page_size
-                                * Int(kv_params.num_heads)
-                                * Int(kv_params.head_size)
+                                * kv_params.num_heads
+                                * kv_params.head_size
                                 + tok_idx
-                                * Int(kv_params.num_heads)
-                                * Int(kv_params.head_size)
-                                + Int(head_idx) * Int(kv_params.head_size)
-                                + Int(kv_params.head_size)
+                                * kv_params.num_heads
+                                * kv_params.head_size
+                                + head_idx * kv_params.head_size
+                                + kv_params.head_size
                                 - rope_dim
                             )
                             var dest_offset = (
@@ -820,19 +834,19 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
                                 * 2
                                 * num_layers
                                 * page_size
-                                * Int(kv_params.num_heads)
+                                * kv_params.num_heads
                                 * rope_dim
                                 + kv_idx
                                 * num_layers
                                 * page_size
-                                * Int(kv_params.num_heads)
+                                * kv_params.num_heads
                                 * rope_dim
                                 + layer_idx
                                 * page_size
-                                * Int(kv_params.num_heads)
+                                * kv_params.num_heads
                                 * rope_dim
-                                + tok_idx * Int(kv_params.num_heads) * rope_dim
-                                + Int(head_idx) * rope_dim
+                                + tok_idx * kv_params.num_heads * rope_dim
+                                + head_idx * rope_dim
                             )
                             memcpy(
                                 dest=kv_block_64_tensor.ptr + dest_offset,
@@ -841,6 +855,10 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
                             )
 
     # Initialize freqs_cis with random data
+    comptime freqs_layout = Layout.row_major(max_seq_len, rope_dim)
+    var freqs_runtime_layout = RuntimeLayout[freqs_layout].row_major(
+        freqs_shape
+    )
     with freqs_device.map_to_host() as freqs_host:
         var freqs_tensor = LayoutTensor[dtype, freqs_layout](
             freqs_host, freqs_runtime_layout
@@ -864,30 +882,24 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     var max_prompt_length = Int(seq_len)
     var max_cache_length = Int(0)
 
-    # Create layout tensors for GPU operations
-    var q_ragged_tensor = LayoutTensor[dtype, q_ragged_layout](
-        q_ragged_device, q_ragged_runtime_layout
+    # Create TileTensors for q_ragged, output, row_offsets, and freqs
+    var q_ragged_tensor = TileTensor(q_ragged_device, q_ragged_tile_layout)
+    var q_ragged_64_tensor = TileTensor(
+        q_ragged_device_64, q_ragged_64_tile_layout
     )
-    var q_ragged_64_tensor = LayoutTensor[dtype, q_ragged_64_layout](
-        q_ragged_device_64, q_ragged_64_runtime_layout
+    var output_tensor = TileTensor(output_device, output_tile_layout)
+    var output_ref_tensor = TileTensor(output_device_ref, output_64_tile_layout)
+    var row_offsets_tensor = TileTensor(
+        row_offsets_device, row_offsets_tile_layout
     )
+    var freqs_tensor = TileTensor(freqs_device, freqs_tile_layout)
+
+    # Create LayoutTensors for KV cache (still uses LayoutTensor)
     var kv_block_tensor = LayoutTensor[dtype, kv_block_layout](
         kv_block_device, kv_block_runtime_layout
     )
     var kv_block_64_tensor = LayoutTensor[dtype, kv_block_64_layout](
         kv_block_device_64, kv_block_64_runtime_layout
-    )
-    var freqs_tensor = LayoutTensor[dtype, freqs_layout](
-        freqs_device, freqs_runtime_layout
-    )
-    var output_tensor = LayoutTensor[dtype, output_layout](
-        output_device, output_runtime_layout
-    )
-    var output_ref_tensor = LayoutTensor[dtype, output_64_layout](
-        output_device_ref, output_64_runtime_layout
-    )
-    var row_offsets_tensor = LayoutTensor[DType.uint32, row_offsets_layout](
-        row_offsets_device, row_offsets_runtime_layout
     )
     var cache_lengths_tensor = LayoutTensor[
         DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
@@ -914,8 +926,8 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
         ),
         cache_lengths_tensor,
         paged_lut_tensor,
-        max_prompt_length,
-        max_cache_length,
+        UInt32(max_prompt_length),
+        UInt32(max_cache_length),
     )
 
     var k_cache_collection_64 = PagedKVCacheCollection[
@@ -930,19 +942,19 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
         ),
         cache_lengths_tensor,
         paged_lut_tensor,
-        max_prompt_length,
-        max_cache_length,
+        UInt32(max_prompt_length),
+        UInt32(max_cache_length),
     )
 
     fused_qk_rope_ragged[
         k_cache_collection.CacheType, interleaved=True, target="gpu"
     ](
-        q_ragged_tensor,
-        row_offsets_tensor,
-        k_cache_collection,
-        freqs_tensor,
-        None,
-        layer_idx,
+        q_proj=q_ragged_tensor,
+        input_row_offsets=row_offsets_tensor,
+        kv_collection=k_cache_collection,
+        freqs_cis=freqs_tensor,
+        position_ids=None,
+        layer_idx=layer_idx,
         output=output_tensor,
         context=ctx,
     )
@@ -951,17 +963,27 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     fused_qk_rope_ragged[
         k_cache_collection_64.CacheType, interleaved=True, target="gpu"
     ](
-        q_ragged_64_tensor,
-        row_offsets_tensor,
-        k_cache_collection_64,
-        freqs_tensor,
-        None,
-        layer_idx,
+        q_proj=q_ragged_64_tensor,
+        input_row_offsets=row_offsets_tensor,
+        kv_collection=k_cache_collection_64,
+        freqs_cis=freqs_tensor,
+        position_ids=None,
+        layer_idx=layer_idx,
         output=output_ref_tensor,
         context=ctx,
     )
 
     ctx.synchronize()
+
+    # Define output layouts for verification
+    comptime output_layout = Layout.row_major(seq_len, num_q_heads, q_head_size)
+    comptime output_64_layout = Layout.row_major(seq_len, num_q_heads, rope_dim)
+    var output_runtime_layout = RuntimeLayout[output_layout].row_major(
+        output_shape
+    )
+    var output_64_runtime_layout = RuntimeLayout[output_64_layout].row_major(
+        output_64_shape
+    )
 
     # Verify Q output
     with output_device.map_to_host() as output_host:
@@ -996,11 +1018,11 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
                         )
 
     # Verify KV cache
-    var kv_block_out_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    var kv_block_out_host_ptr = alloc[Scalar[dtype]](
         kv_block_shape.flattened_length()
     )
     ctx.enqueue_copy(kv_block_out_host_ptr, kv_block_device)
-    var kv_block_64_out_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    var kv_block_64_out_host_ptr = alloc[Scalar[dtype]](
         kv_block_64_shape.flattened_length()
     )
     ctx.enqueue_copy(kv_block_64_out_host_ptr, kv_block_device_64)
@@ -1030,16 +1052,16 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
                                         kv_idx,
                                         layer_idx,
                                         tok_idx,
-                                        Int(head_idx),
-                                        Int(head_dim_idx),
+                                        head_idx,
+                                        head_dim_idx,
                                     ],
                                     kv_block_host_tensor[
                                         page_idx,
                                         kv_idx,
                                         layer_idx,
                                         tok_idx,
-                                        Int(head_idx),
-                                        Int(head_dim_idx),
+                                        head_idx,
+                                        head_dim_idx,
                                     ],
                                 )
                             # Last 64 elements should match reference
@@ -1050,19 +1072,17 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
                                         kv_idx,
                                         layer_idx,
                                         tok_idx,
-                                        Int(head_idx),
-                                        Int(
-                                            kv_params.head_size
-                                            - rope_dim
-                                            + UInt(head_dim_idx)
-                                        ),
+                                        head_idx,
+                                        kv_params.head_size
+                                        - rope_dim
+                                        + head_dim_idx,
                                     ],
                                     kv_block_64_out_tensor[
                                         page_idx,
                                         kv_idx,
                                         layer_idx,
                                         tok_idx,
-                                        Int(head_idx),
+                                        head_idx,
                                         head_dim_idx,
                                     ],
                                 )
@@ -1086,7 +1106,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext):
     _ = cache_lengths_device^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         execute_fused_qk_rope_ragged(ctx)
         execute_fused_qk_rope_ragged_mla(ctx)

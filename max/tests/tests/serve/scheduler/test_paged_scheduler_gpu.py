@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import pytest
 from max.driver import Accelerator
+from max.nn.kv_cache import KVConnectorType
 from tests.serve.scheduler.common import (
     CE,
     TG,
@@ -27,9 +28,9 @@ from tests.serve.scheduler.common import (
 )
 
 
-@pytest.mark.parametrize("enable_kvcache_swapping_to_host", [True, False])
+@pytest.mark.parametrize("kv_connector", [KVConnectorType.local, None])
 def test_paged_scheduler_paging_to_host(
-    enable_kvcache_swapping_to_host: bool,
+    kv_connector: KVConnectorType | None,
 ) -> None:
     num_prompts = 3
     prompt_len = 550
@@ -46,7 +47,7 @@ def test_paged_scheduler_paging_to_host(
         page_size=page_size,
         max_batch_size=200,
         target_tokens_per_batch_ce=200,
-        enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
+        kv_connector=kv_connector,
         max_seq_len=prompt_len + num_new_tokens,
         device=device,
     )
@@ -72,7 +73,7 @@ def test_paged_scheduler_paging_to_host(
     actual = run_until_completion(scheduler)
 
     # fmt: off
-    if enable_kvcache_swapping_to_host:
+    if kv_connector is not None:
         # When paging to host is enabled, our effective cache size increases so
         # we can get cache hits on the latter CE iterations.
         expected = [

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,7 +21,23 @@ def flatten(
     """Flattens the specified dims of a symbolic tensor.
 
     The number and order of the elements in the tensor is unchanged.
-    All dimensions from start_dim to end_dim (inclusive) are merged into a single output dim.
+    All dimensions from ``start_dim`` to ``end_dim`` (inclusive) are merged
+    into a single output dim.
+
+    Args:
+        x: The input symbolic tensor to flatten.
+        start_dim: The first dimension to flatten. Supports negative indexing.
+            Defaults to 0.
+        end_dim: The last dimension to flatten (inclusive). Supports negative
+            indexing. Defaults to -1.
+
+    Returns:
+        A symbolic tensor with the same elements as the input, but with
+        dimensions ``start_dim`` through ``end_dim`` merged into one.
+
+    Raises:
+        IndexError: If ``start_dim`` or ``end_dim`` are out of range.
+        ValueError: If ``start_dim`` comes after ``end_dim``.
     """
     x = TensorValue(x)
     shape = x.shape

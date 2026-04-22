@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -25,7 +25,6 @@ package for path functions or the `pathlib` package for the object-oriented
 `Path` type.
 """
 
-from .atomic import Atomic
 from .env import getenv, setenv, unsetenv
 from .fstat import lstat, stat, stat_result
 from .os import (

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OwnedKwargsDict
-from os import abort
+from std.collections import OwnedKwargsDict
+from std.os import abort
 
-from python import Python, PythonObject
-from python.bindings import PythonModuleBuilder
+from std.python import Python, PythonObject
+from std.python.bindings import PythonModuleBuilder
 
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     try:
         var b = PythonModuleBuilder("mojo_module")
 
@@ -59,25 +59,16 @@ fn PyInit_mojo_module() -> PythonObject:
 
 
 @fieldwise_init
-struct Person(Defaultable, ImplicitlyCopyable, Representable):
+struct Person(Defaultable, ImplicitlyCopyable, Writable):
     var name: String
     var age: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.name = "John Smith"
         self.age = 123
 
-    fn __repr__(self) -> String:
-        return String(
-            "Person(",
-            repr(self.name),
-            ", ",
-            repr(self.age),
-            ")",
-        )
-
     @staticmethod
-    fn _get_self_ptr(
+    def _get_self_ptr(
         py_self: PythonObject,
     ) -> UnsafePointer[Self, MutAnyOrigin]:
         try:
@@ -94,7 +85,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
             )
 
     @staticmethod
-    fn get_name(py_self: PythonObject) raises -> PythonObject:
+    def get_name(py_self: PythonObject) raises -> PythonObject:
         # TODO: replace with property once we have them
         var self_ptr = Self._get_self_ptr(py_self)
 
@@ -107,26 +98,26 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
         return PythonObject(self_ptr[].name)
 
     @staticmethod
-    fn split_name(
+    def split_name(
         py_self: PythonObject, sep: PythonObject
     ) raises -> PythonObject:
         var self_ptr = Self._get_self_ptr(py_self)
         return Python.list(self_ptr[].name.split(String(py=sep)))
 
     @staticmethod
-    fn _with(
+    def _with(
         py_self: PythonObject, name: PythonObject, age: PythonObject
     ) raises -> PythonObject:
         Self.set_name_and_age(py_self, name, age)
         return py_self
 
     @staticmethod
-    fn get_age(py_self: PythonObject) -> PythonObject:
+    def get_age(py_self: PythonObject) -> PythonObject:
         # TODO: replace with property once we have them
         return PythonObject(Self._get_self_ptr(py_self)[].age)
 
     @staticmethod
-    fn _get_birth_year(
+    def _get_birth_year(
         py_self: PythonObject, this_year: PythonObject
     ) -> PythonObject:
         var self_ptr = Self._get_self_ptr(py_self)
@@ -136,7 +127,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
             abort(String("failed to get birth year: ", e))
 
     @staticmethod
-    fn _with_first_last_name(
+    def _with_first_last_name(
         py_self: PythonObject, first_name: PythonObject, last_name: PythonObject
     ) -> PythonObject:
         var self_ptr = Self._get_self_ptr(py_self)
@@ -147,7 +138,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
         return py_self
 
     @staticmethod
-    fn erase_name(py_self: PythonObject) raises:
+    def erase_name(py_self: PythonObject) raises:
         var self_ptr = Self._get_self_ptr(py_self)
         if not self_ptr[].name:
             raise Error("cannot erase name if it's already empty")
@@ -155,7 +146,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
         self_ptr[].name = String()
 
     @staticmethod
-    fn set_age(py_self: PythonObject, age: PythonObject) raises:
+    def set_age(py_self: PythonObject, age: PythonObject) raises:
         var self_ptr = Self._get_self_ptr(py_self)
         try:
             self_ptr[].age = Int(py=age)
@@ -163,7 +154,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
             raise Error("cannot set age to ", String(py=age))
 
     @staticmethod
-    fn set_name_and_age(
+    def set_name_and_age(
         py_self: PythonObject, name: PythonObject, age: PythonObject
     ) raises:
         var self_ptr = Self._get_self_ptr(py_self)
@@ -171,13 +162,13 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
         Self.set_age(py_self, age)
 
     @staticmethod
-    fn reset(py_self: PythonObject):
+    def reset(py_self: PythonObject):
         var self_ptr = Self._get_self_ptr(py_self)
         self_ptr[].name = "John Smith"
         self_ptr[].age = 123
 
     @staticmethod
-    fn set_name(py_self: PythonObject, name: PythonObject):
+    def set_name(py_self: PythonObject, name: PythonObject):
         # TODO: replace with property once we have them
         try:
             Self._get_self_ptr(py_self)[].name = String(py=name)
@@ -185,7 +176,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
             abort(String("failed to set name: ", e))
 
     @staticmethod
-    fn _set_age_from_dates(
+    def _set_age_from_dates(
         py_self: PythonObject, birth_year: PythonObject, this_year: PythonObject
     ):
         var self_ptr = Self._get_self_ptr(py_self)
@@ -195,7 +186,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
             abort(String("failed to set age: ", e))
 
     @staticmethod
-    fn set_name_auto(
+    def set_name_auto(
         self_ptr: UnsafePointer[Self, MutAnyOrigin],
         name: PythonObject,
     ):
@@ -205,13 +196,13 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
             abort(String("failed to set name: ", e))
 
     @staticmethod
-    fn get_name_auto(
+    def get_name_auto(
         self_ptr: UnsafePointer[Self, MutAnyOrigin]
     ) raises -> PythonObject:
         return PythonObject(self_ptr[].name)
 
     @staticmethod
-    fn increment_age_auto(
+    def increment_age_auto(
         self_ptr: UnsafePointer[Self, MutAnyOrigin],
         increment: PythonObject,
     ) raises -> PythonObject:
@@ -219,12 +210,12 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
         return PythonObject(self_ptr[].age)
 
     @staticmethod
-    fn reset_auto(self_ptr: UnsafePointer[Self, MutAnyOrigin]):
+    def reset_auto(self_ptr: UnsafePointer[Self, MutAnyOrigin]):
         self_ptr[].name = "Auto Reset Person"
         self_ptr[].age = 999
 
     @staticmethod
-    fn sum_kwargs_ints(
+    def sum_kwargs_ints(
         py_self: PythonObject, kwargs: OwnedKwargsDict[PythonObject]
     ) raises -> PythonObject:
         """Test method that takes kwargs, adds them to person's age and returns the new age.
@@ -233,7 +224,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
         return Self.add_kwargs_to_age_auto(self_ptr, kwargs)
 
     @staticmethod
-    fn sum_kwargs_ints_py(
+    def sum_kwargs_ints_py(
         py_self: PythonObject, py_args: PythonObject, py_kwargs: PythonObject
     ) raises -> PythonObject:
         """Test def_py_method that takes kwargs, adds them to person's age and returns the new age.
@@ -247,7 +238,7 @@ struct Person(Defaultable, ImplicitlyCopyable, Representable):
         return PythonObject(self_ptr[].age)
 
     @staticmethod
-    fn add_kwargs_to_age_auto(
+    def add_kwargs_to_age_auto(
         self_ptr: UnsafePointer[Self, MutAnyOrigin],
         kwargs: OwnedKwargsDict[PythonObject],
     ) raises -> PythonObject:

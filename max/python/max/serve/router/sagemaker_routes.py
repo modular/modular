@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -35,6 +35,6 @@ async def ping() -> Response:
 @router.post("/invocations", response_model=None)
 async def invocations(
     request: Request,
-) -> CreateChatCompletionResponse | EventSourceResponse:
+) -> CreateChatCompletionResponse | EventSourceResponse | Response:
     """proxy to /v1/chat/completions"""
     return await openai_create_chat_completion(request)

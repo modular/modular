@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,10 +15,10 @@
 # RUN: %mojo-no-debug --target-accelerator=some_amd:300 %s | FileCheck --check-prefix=CHECK-A300 %s
 # RUN: %mojo-no-debug --target-accelerator=quantum:3000 %s | FileCheck --check-prefix=CHECK-Q3000 %s
 
-from sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch
 
 
-def main():
+def main() raises:
     # CHECK-NV80: nvidia:sm80
     # CHECK-NV90: nvidia:sm90
     # CHECK-A300: some_amd:300

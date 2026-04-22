@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,28 +14,28 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import ReturnLogits
+from max.nn.transformer import ReturnLogits
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
     ModelInputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
 )
-from transformers import AutoConfig
 
 from .graph import build_graph
 
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class WhisperInputs(ModelInputs):
     """A class representing inputs for the Whisper model.
 
@@ -61,8 +61,6 @@ class Whisper(PipelineModel[Any]):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -72,8 +70,6 @@ class Whisper(PipelineModel[Any]):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -86,21 +82,20 @@ class Whisper(PipelineModel[Any]):
         """
         Load the Whisper speech recognition model.
         """
-        timer = CompilationTimer("model")
-        if self.adapter:
-            state_dict = self.adapter(dict(self.weights.items()))
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-        graph = build_graph(
-            state_dict,
-            self.huggingface_config,
-            self.encoding.dtype,
-            DeviceRef.from_device(self.devices[0]),
-        )
-        timer.mark_build_complete()
-        model = session.load(graph, weights_registry=state_dict)
-        timer.done()
+        with CompilationTimer("model") as timer:
+            if self.adapter:
+                state_dict = self.adapter(dict(self.weights.items()))
+            else:
+                state_dict = {
+                    key: value.data() for key, value in self.weights.items()
+                }
+            graph = build_graph(
+                state_dict,
+                self.huggingface_config,
+                self.dtype,
+                DeviceRef.from_device(self.devices[0]),
+            )
+            timer.mark_build_complete()
+            model = session.load(graph, weights_registry=state_dict)
 
         return model

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,15 +18,14 @@ import math
 from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
-from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
+from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
+from max.nn.attention import num_heads_for_device
 from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.float8_config import Float8Config
 from max.nn.kernels import flash_attention_ragged_gpu
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
-from max.pipelines.architectures.internvl.layers.attention import (
-    compute_heads_per_device,
-)
+from max.nn.quant_config import QuantConfig
+from max.nn.stacked_linear import StackedLinear
 
 
 class DistributedVisionWindowAttention(Module, Shardable):
@@ -50,7 +49,7 @@ class DistributedVisionWindowAttention(Module, Shardable):
         head_dim: int,
         flash_attention: bool = False,
         devices: Sequence[DeviceRef] | None = None,
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
     ):
         super().__init__()
         self.dtype = dtype
@@ -61,19 +60,16 @@ class DistributedVisionWindowAttention(Module, Shardable):
         # Add explicit scaling factor
         self.scaling = math.sqrt(1.0 / self.head_dim)
         self.flash_attention = flash_attention
-        self.float8_config = float8_config
+        self.quant_config = quant_config
 
-        self.qkv_proj = Weight(
-            name="qkv.weight",
+        self.qkv_proj = StackedLinear(
+            in_dim=hidden_size,
+            out_dims=[hidden_size, hidden_size, hidden_size],
+            names=["q_proj", "k_proj", "v_proj"],
             dtype=self.dtype,
-            shape=(3 * hidden_size, hidden_size),
             device=self.devices[0],
-        )
-        self.qkv_proj_bias = Weight(
-            name="qkv.bias",
-            dtype=self.dtype,
-            shape=(3 * hidden_size,),
-            device=self.devices[0],
+            stacked=True,
+            has_bias=True,
         )
 
         self.proj = Linear(
@@ -82,18 +78,8 @@ class DistributedVisionWindowAttention(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=True,
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
-
-    @property
-    def wqkv(self) -> TensorValue:
-        """The concatenation of q, k, and v weight vectors."""
-        return self.qkv_proj
-
-    @property
-    def wqkv_bias(self) -> TensorValue | None:
-        """The concatenation of q, k, and v bias weight vectors."""
-        return self.qkv_proj_bias
 
     def _compute_qkv(
         self, x: TensorValue
@@ -102,10 +88,8 @@ class DistributedVisionWindowAttention(Module, Shardable):
         # x: [seq_len, hidden_size]
         seq_len = x.shape[0]
 
-        # Fused in-projection for Q, K, V using stacked weights
-        qkv = x @ self.wqkv.T
-        if self.wqkv_bias is not None:
-            qkv += self.wqkv_bias
+        # Fused in-projection for Q, K, V via StackedLinear.
+        qkv = self.qkv_proj(x)
         # For tensor parallel attention with uneven head distribution,
         # the QKV output dimension matches the weight's row dimension
         # which is 3 * (num_heads_for_this_device * head_dim)
@@ -214,18 +198,13 @@ class DistributedVisionWindowAttention(Module, Shardable):
             strategy: The sharding strategy to apply.
         """
         if strategy.is_replicate:
-            # For replicate strategy, all weights use the same strategy
             self.qkv_proj.sharding_strategy = strategy
-            self.qkv_proj_bias.sharding_strategy = strategy
             self.proj.sharding_strategy = strategy
         else:
             # For tensor parallel: QKV stacked sharding, output column-wise
             num_devices = strategy.num_devices
 
             self.qkv_proj.sharding_strategy = ShardingStrategy.stacked_qkv(
-                num_devices, self.n_heads, self.head_dim
-            )
-            self.qkv_proj_bias.sharding_strategy = ShardingStrategy.stacked_qkv(
                 num_devices, self.n_heads, self.head_dim
             )
             self.proj.sharding_strategy = (
@@ -252,15 +231,13 @@ class DistributedVisionWindowAttention(Module, Shardable):
 
         # Get sharded weights
         qkv_proj_shards = self.qkv_proj.shard(devices)
-        qkv_proj_bias_shards = self.qkv_proj_bias.shard(devices)
-
         proj_shards = self.proj.shard(devices)
 
         shards = []
         for shard_idx, device in enumerate(devices):
             # Calculate sharded dimensions - handle uneven head distribution
-            sharded_num_heads = compute_heads_per_device(
-                total_heads=self.n_heads,
+            sharded_num_heads = num_heads_for_device(
+                num_heads=self.n_heads,
                 device_idx=shard_idx,
                 num_devices=self.sharding_strategy.num_devices,
             )
@@ -273,13 +250,11 @@ class DistributedVisionWindowAttention(Module, Shardable):
                 devices=[device],
                 dtype=self.dtype,
                 flash_attention=self.flash_attention,
-                float8_config=self.float8_config,
+                quant_config=self.quant_config,
             )
 
             # Assign sharded weights
             sharded.qkv_proj = qkv_proj_shards[shard_idx]
-            sharded.qkv_proj_bias = qkv_proj_bias_shards[shard_idx]
-
             sharded.proj = proj_shards[shard_idx]
 
             shards.append(sharded)

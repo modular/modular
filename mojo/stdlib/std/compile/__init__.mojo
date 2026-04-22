@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,9 +28,9 @@ This package is particularly useful for:
 
 Example:
 ```mojo
-from compile import compile_info
+from std.compile import compile_info
 
-fn my_func():
+def my_func():
     print("Hello")
 
 # Get assembly for the function
@@ -42,4 +42,4 @@ print(info.asm)
 from .compile import CompiledFunctionInfo, compile_info
 
 # Re-export from reflection module for backwards compatibility
-from reflection import get_linkage_name, get_type_name
+from std.reflection import get_linkage_name, get_type_name

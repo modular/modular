@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,14 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import WARP_SIZE, lane_id
-from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor
-from layout._fillers import arange
-from layout.tensor_core import TensorCore
+from std.gpu.host import DeviceContext
 from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
 
-from utils.index import Index, IndexList
+from std.utils.index import Index
 
 comptime fp8_dtype = DType.float8_e4m3fnuz
 comptime bf8_dtype = DType.float8_e5m2fnuz
@@ -130,7 +126,7 @@ comptime bf8_dtype = DType.float8_e5m2fnuz
 # CHECK: 521.9414 552.2539 583.3594 613.41406 644.3125 674.21875 704.4219 735.6719 763.90625 796.53125 826.46875 856.875 888.3125 916.34375 948.875 978.59375
 
 
-def test_load_and_mma_f32_f8_16x16x32(ctx: DeviceContext):
+def test_load_and_mma_f32_f8_16x16x32(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f8_16x16x32")
     test_load_and_mma_and_multiply_operands[
         DType.float32, fp8_dtype, Index(16, 16, 32), False
@@ -243,14 +239,14 @@ def test_load_and_mma_f32_f8_16x16x32(ctx: DeviceContext):
 # CHECK: 803.8828 821.6367 835.71875 852.91406 866.5078 883.21875 899.5156 914.9531 930.71875 945.8125 961.1406 978.78125 992.8281 1010.03125 1023.5625 1040.5781
 
 
-def test_load_and_mma_f32_f8_16x16x32_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_f8_16x16x32_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f8_16x16x32_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, fp8_dtype, Index(16, 16, 32), True
     ](ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_load_and_mma_f32_f8_16x16x32(ctx)
         test_load_and_mma_f32_f8_16x16x32_transpose(ctx)

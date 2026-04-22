@@ -10,6 +10,9 @@ modular_py_library(
     data = [
         "@mojo//:std",
     ],
+    ignore_unresolved_imports = [
+        # Optional dependency for notebook support
+        "IPython",
+    ],
     imports = [".."],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
 )

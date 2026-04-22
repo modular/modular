@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,7 +24,7 @@ The target DType for promoting a value `x` and `y` is:
 Where category is an ordered hierarchy of: `bool < unsigned int < signed int < float`
 
 If all input dtypes can be fully represented by the target dtype, the promotion is successful.
-If an input can not be guaranteed representable (e.g. `uint8` -> `int8`), an error is raised.
+If an input can not be guaranteed representable (for example, ``uint8`` -> `int8`), an error is raised.
 
 DType promotion of a max object and a non-max object will only ever promote to the max object DType.
 An error will be raised if the values in the non-max object are not precisely representable in the max object DType.
@@ -39,6 +39,7 @@ from max.dtype import DType
 
 from ..driver import Buffer, DLPackArray
 from . import ops
+from .dim import StaticDim
 from .graph import DeviceRef
 from .value import TensorValue, TensorValueLike, _is_strong_tensor_value_like
 
@@ -77,7 +78,6 @@ def _promote_weak_dtypes(
     Finally, if a mix of weak and strong types are given, place weak types
     on the strong type's device.
     """
-
     x_was_strong = _is_strong_tensor_value_like(x)
     y_was_strong = _is_strong_tensor_value_like(y)
 
@@ -119,6 +119,9 @@ def _promote_to_strong(
     If the input value is already strong, its dtype will not be changed.
     Instead, strong dtype promotion will be handled by the individual ops in RMO.
     """
+    if isinstance(value, StaticDim):
+        value = int(value)
+
     if _is_strong_tensor_value_like(value):
         return TensorValue(value)
     elif isinstance(value, int | np.integer):

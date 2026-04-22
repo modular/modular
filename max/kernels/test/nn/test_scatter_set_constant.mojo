@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,20 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, LayoutTensor
+from layout import TileTensor, row_major
 from nn.gather_scatter import scatter_set_constant
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
 
-fn test_scatter_set_constant() raises:
+def test_scatter_set_constant() raises:
     # TODO not sure why this doesn't work with InlineArray?
     var data_stack = InlineArray[Float32, 9](uninitialized=True)
-    var data = LayoutTensor[DType.float32, Layout.row_major(3, 3)](
-        data_stack
-    ).fill(0.0)
+    var data = TileTensor(data_stack, row_major[3, 3]()).fill(0.0)
 
     var array = InlineArray[Int32, 4 * 2](uninitialized=True)
-    var indices = LayoutTensor[DType.int32, Layout.row_major(4, 2)](array)
+    var indices = TileTensor(array, row_major[4, 2]())
 
     indices[0, 0] = 0
     indices[0, 1] = 1
@@ -37,8 +35,8 @@ fn test_scatter_set_constant() raises:
 
     var fill_value: Float32 = 5.0
     var expected_output_stack = InlineArray[Float32, 3 * 3](uninitialized=True)
-    var expected_output = LayoutTensor[DType.float32, Layout.row_major(3, 3)](
-        expected_output_stack
+    var expected_output = TileTensor(
+        expected_output_stack, row_major[3, 3]()
     ).fill(0.0)
 
     expected_output[0, 1] = 5.0
@@ -65,5 +63,5 @@ fn test_scatter_set_constant() raises:
                 )
 
 
-def main():
+def main() raises:
     test_scatter_set_constant()

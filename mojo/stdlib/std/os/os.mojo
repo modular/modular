@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,15 +16,18 @@ file system operations.
 You can import a method from the `os` package. For example:
 
 ```mojo
-from os import listdir
+from std.os import listdir
 ```
 """
 
-from collections import InlineArray, List
-from collections.string.string_slice import _unsafe_strlen
-from io import FileDescriptor
-from sys import CompilationTarget, external_call, is_gpu
-from sys.ffi import c_char, c_int, get_errno
+from std.collections import InlineArray, List
+from std.collections.string.string_slice import _unsafe_strlen
+from std.format.tstring import TString
+from std.io import FileDescriptor
+from std.ffi import c_char, c_int, external_call, get_errno, _CPointer
+from std.reflection import SourceLocation, call_location
+from std.gpu import thread_idx, block_idx
+from std.sys import CompilationTarget, is_gpu, is_apple_gpu
 
 from .path import isdir, split
 from .pathlike import PathLike
@@ -87,7 +90,7 @@ struct _DirHandle:
 
     var _handle: OpaquePointer[MutExternalOrigin]
 
-    fn __init__(out self, var path: String) raises:
+    def __init__(out self, var path: String) raises:
         """Construct the _DirHandle using the path provided.
 
         Args:
@@ -96,11 +99,11 @@ struct _DirHandle:
         if not isdir(path):
             raise Error("the directory '", path, "' does not exist")
 
-        self._handle = external_call["opendir", type_of(self._handle)](
-            path.as_c_string_slice().unsafe_ptr()
-        )
+        var handle = external_call[
+            "opendir", _CPointer[NoneType, ExternalOrigin[mut=True]]
+        ](path.as_c_string_slice().unsafe_ptr())
 
-        if not self._handle:
+        if not handle:
             var err = get_errno()
             raise Error(
                 "unable to open the directory '",
@@ -110,24 +113,25 @@ struct _DirHandle:
                 String(err),
             )
 
-    fn __del__(deinit self):
+        self._handle = handle.value()
+
+    def __del__(deinit self):
         """Closes the handle opened via popen."""
         _ = external_call["closedir", Int32](self._handle)
 
-    fn list(self) -> List[String]:
+    def list(self) -> List[String]:
         """Reads all the data from the handle.
 
         Returns:
           A string containing the output of running the command.
         """
 
-        @parameter
-        if CompilationTarget.is_linux():
+        comptime if CompilationTarget.is_linux():
             return self._list_linux()
         else:
             return self._list_macos()
 
-    fn _list_linux(self) -> List[String]:
+    def _list_linux(self) -> List[String]:
         """Reads all the data from the handle.
 
         Returns:
@@ -137,11 +141,11 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", UnsafePointer[_dirent_linux, MutExternalOrigin]
+                "readdir", _CPointer[_dirent_linux, MutExternalOrigin]
             ](self._handle)
             if not ep:
                 break
-            ref name = ep.take_pointee().name
+            ref name = ep.unsafe_value().take_pointee().name
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
                 ptr=name_ptr,
@@ -155,7 +159,7 @@ struct _DirHandle:
 
         return res^
 
-    fn _list_macos(self) -> List[String]:
+    def _list_macos(self) -> List[String]:
         """Reads all the data from the handle.
 
         Returns:
@@ -165,11 +169,11 @@ struct _DirHandle:
 
         while True:
             var ep = external_call[
-                "readdir", UnsafePointer[_dirent_macos, MutExternalOrigin]
+                "readdir", _CPointer[_dirent_macos, MutExternalOrigin]
             ](self._handle)
             if not ep:
                 break
-            ref name = ep.take_pointee().name
+            ref name = ep.unsafe_value().take_pointee().name
             var name_ptr = name.unsafe_ptr().bitcast[Byte]()
             var name_str = StringSlice[origin_of(name)](
                 ptr=name_ptr,
@@ -187,7 +191,7 @@ struct _DirHandle:
 # ===----------------------------------------------------------------------=== #
 # getuid
 # ===----------------------------------------------------------------------=== #
-fn getuid() -> Int:
+def getuid() -> Int:
     """Retrieve the user ID of the calling process.
 
     Returns:
@@ -204,7 +208,7 @@ fn getuid() -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn listdir[PathLike: os.PathLike](path: PathLike) raises -> List[String]:
+def listdir[PathLike: os.PathLike](path: PathLike) raises -> List[String]:
     """Gets the list of entries contained in the path provided.
 
     Parameters:
@@ -229,7 +233,7 @@ fn listdir[PathLike: os.PathLike](path: PathLike) raises -> List[String]:
 
 
 @always_inline
-fn abort() -> Never:
+def abort() -> Never:
     """Terminates execution, using a target dependent trap instruction if
     available.
     """
@@ -242,7 +246,56 @@ fn abort() -> Never:
 
 
 @always_inline
-fn abort[*, prefix: StaticString = "ABORT:"](message: String) -> Never:
+def _abort_impl[
+    *, prefix: StaticString
+](message: Some[Writable], *, location: Optional[SourceLocation] = {}) -> Never:
+    var loc = location.or_else(call_location[inline_count=2]())
+
+    comptime if is_apple_gpu():
+        # FIXME: Remove after MOCO-3697 is fixed.
+        pass
+    elif is_gpu():
+        # On GPU, gate the print to a single thread to avoid flooding the
+        # printf buffer with identical messages from thousands of threads.
+        if (
+            thread_idx.x == 0
+            and thread_idx.y == 0
+            and thread_idx.z == 0
+            and block_idx.x == 0
+            and block_idx.y == 0
+            and block_idx.z == 0
+        ):
+            print(
+                prefix,
+                " ",
+                loc,
+                ": block: [",
+                block_idx.x,
+                ",",
+                block_idx.y,
+                ",",
+                block_idx.z,
+                "] thread: [",
+                thread_idx.x,
+                ",",
+                thread_idx.y,
+                ",",
+                thread_idx.z,
+                "]: ",
+                message,
+                sep="",
+                flush=True,
+            )
+    else:
+        print(prefix, " ", loc, ": ", message, sep="", flush=True)
+
+    abort()
+
+
+@always_inline
+def abort[
+    *, prefix: StaticString = "ABORT:"
+](message: String, *, location: Optional[SourceLocation] = {}) -> Never:
     """Calls a target dependent trap instruction if available.
 
     Parameters:
@@ -250,19 +303,31 @@ fn abort[*, prefix: StaticString = "ABORT:"](message: String) -> Never:
 
     Args:
         message: The message to include when aborting.
+        location: The optional source location to include.
     """
+    _abort_impl[prefix=prefix](message, location=location)
 
-    @parameter
-    if not is_gpu():
-        print(prefix, message, flush=True)
 
-    abort()
+@always_inline
+def abort[
+    *, prefix: StaticString = "ABORT:"
+](message: TString, *, location: Optional[SourceLocation] = {}) -> Never:
+    """Calls a target dependent trap instruction if available.
+
+    Parameters:
+        prefix: A static string prefix to include before the message.
+
+    Args:
+        message: The t-string message to include when aborting.
+        location: The optional source location to include.
+    """
+    _abort_impl[prefix=prefix](message, location=location)
 
 
 # ===----------------------------------------------------------------------=== #
 # remove/unlink
 # ===----------------------------------------------------------------------=== #
-fn remove[PathLike: os.PathLike](path: PathLike) raises:
+def remove[PathLike: os.PathLike](path: PathLike) raises:
     """Removes the specified file.
 
     If the path is a directory or it can not be deleted, an error is raised.
@@ -288,7 +353,7 @@ fn remove[PathLike: os.PathLike](path: PathLike) raises:
         raise Error("Can not remove file: ", fspath, " Err: ", String(err))
 
 
-fn unlink[PathLike: os.PathLike](path: PathLike) raises:
+def unlink[PathLike: os.PathLike](path: PathLike) raises:
     """Removes the specified file.
 
     If the path is a directory or it can not be deleted, an error is raised.
@@ -312,7 +377,7 @@ fn unlink[PathLike: os.PathLike](path: PathLike) raises:
 # ===----------------------------------------------------------------------=== #
 
 
-fn symlink[
+def symlink[
     TargetType: os.PathLike, LinkType: os.PathLike
 ](target: TargetType, linkpath: LinkType) raises:
     """Creates a symlink.
@@ -356,7 +421,7 @@ fn symlink[
 # ===----------------------------------------------------------------------=== #
 
 
-fn link[
+def link[
     OldType: os.PathLike, NewType: os.PathLike
 ](oldpath: OldType, newpath: NewType) raises:
     """Creates a new hard-link to an existing file.
@@ -366,7 +431,7 @@ fn link[
         NewType: The path type of the file to create.
 
     Args:
-        oldpath: The exsting file.
+        oldpath: The existing file.
         newpath: The new file.
 
     Raises:
@@ -397,7 +462,7 @@ fn link[
 # ===----------------------------------------------------------------------=== #
 
 
-fn mkdir[PathLike: os.PathLike](path: PathLike, mode: Int = 0o777) raises:
+def mkdir[PathLike: os.PathLike](path: PathLike, mode: Int = 0o777) raises:
     """Creates a directory at the specified path.
 
     If the directory can not be created an error is raised.
@@ -423,7 +488,7 @@ fn mkdir[PathLike: os.PathLike](path: PathLike, mode: Int = 0o777) raises:
         raise Error("Can not create directory: ", fspath, " Err: ", String(err))
 
 
-fn makedirs[
+def makedirs[
     PathLike: os.PathLike
 ](path: PathLike, mode: Int = 0o777, exist_ok: Bool = False) raises -> None:
     """Creates a specified leaf directory along with any necessary intermediate
@@ -464,7 +529,7 @@ fn makedirs[
             raise Error("path not created: ", path.__fspath__(), "\n", e)
 
 
-fn rmdir[PathLike: os.PathLike](path: PathLike) raises:
+def rmdir[PathLike: os.PathLike](path: PathLike) raises:
     """Removes the specified directory.
 
     If the path is not a directory or it can not be deleted, an error is raised.
@@ -488,7 +553,7 @@ fn rmdir[PathLike: os.PathLike](path: PathLike) raises:
         raise Error("Can not remove directory: ", fspath, " Err: ", String(err))
 
 
-fn removedirs[PathLike: os.PathLike](path: PathLike) raises -> None:
+def removedirs[PathLike: os.PathLike](path: PathLike) raises -> None:
     """Removes a leaf directory and all empty intermediate ones.
 
     Directories corresponding to rightmost path segments will be pruned away
@@ -521,7 +586,7 @@ fn removedirs[PathLike: os.PathLike](path: PathLike) raises -> None:
 # ===----------------------------------------------------------------------=== #
 
 
-fn isatty(fd: Int) -> Bool:
+def isatty(fd: Int) -> Bool:
     """Checks whether a file descriptor refers to a terminal.
 
     Returns `True` if the file descriptor `fd` is open and connected to a
@@ -536,7 +601,7 @@ fn isatty(fd: Int) -> Bool:
 
     Examples:
         ```mojo
-        from os import isatty
+        from std.os import isatty
 
         # Check if stdout (fd=1) is a terminal
         if isatty(1):

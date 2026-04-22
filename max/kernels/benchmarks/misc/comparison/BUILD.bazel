@@ -23,6 +23,8 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "bench_baseline_lib",
     srcs = [
+        "bench_allreduce_subgraph.py",
+        "bench_allreduce_subgraph_max.py",
         "bench_blackwell_grouped_gemm.py",
         "bench_blackwell_mla_decode.py",
         "bench_blackwell_prefill.py",
@@ -30,7 +32,7 @@ modular_py_library(
     # Add nvidia_cutlass_dsl/python_packages to sys.path for cutlass imports.
     # nvidia-cutlass-dsl uses a .pth file which Bazel doesn't process.
     # Path is relative from _main/max/kernels/benchmarks/misc/comparison/ in runfiles:
-    imports = ["../../../../../../rules_pycross++lock_file+modular_pip_lock_file_repo/deps/nvidia-cutlass-dsl@4.3.0/site-packages/nvidia_cutlass_dsl/python_packages"],
+    imports = ["../../../../../../rules_pycross++lock_file+modular_pip_lock_file_repo/deps/nvidia-cutlass-dsl-libs-base@4.4.1/site-packages/nvidia_cutlass_dsl/python_packages"],
     tags = ["no-pydeps"],  # The wheels do not behave well with our pydeps enforcer, see import above
     deps = [
         blackwell_bench_wheel("flash-attn"),
@@ -43,6 +45,7 @@ modular_py_library(
         "//max/kernels/benchmarks/misc/blackwell_bench:cutlass-imports",
         "//max/kernels/benchmarks/misc/utils:bench_utils",
         "//max/python/max",
+        "//max/python/max/experimental/torch",
     ],
 )
 
@@ -70,6 +73,7 @@ modular_py_library(
         requirement("torch"),
         "//max/kernels/benchmarks/autotune:bencher_utils",
         "//max/python/max",
+        "//max/python/max/experimental/torch",
     ],
 )
 
@@ -112,23 +116,16 @@ modular_py_binary(
 # AllReduce benchmark: NCCL vs SGLang custom allreduce
 # SGLang's custom allreduce (cross_device_reduce_1stage) is optimized for
 # small message sizes (<256KB) using NVLink P2P communication.
-# Run with torchrun for multi-GPU benchmarks:
-#   pip install sglang[all]
-#   torchrun --nproc_per_node=4 $(bazel-bin path) --num-bytes 16384 262144
+# Moved to kbench. Please run the following:
+# kbench bench_allreduce_subgraph.yaml --mpirun-np 8
+
 modular_py_binary(
-    name = "bench_allreduce",
-    srcs = ["bench_allreduce.py"],
-    ignore_unresolved_imports = [
-        "sglang",  # Not a hard failure if sglang is not installed
-    ],
-    main = "bench_allreduce.py",
+    name = "install_sglang",
+    srcs = ["install_sglang.py"],
+    main = "install_sglang.py",
     tags = [
         "gpu",
         "manual",
-    ],
-    deps = [
-        requirement("torch"),
-        "//max/python/max/support",
     ],
 )
 
@@ -149,5 +146,6 @@ modular_py_binary(
         requirement("torch"),
         "//max/kernels/benchmarks/misc/utils:bench_utils",
         "//max/python/max",
+        "//max/python/max/experimental/torch",
     ],
 )

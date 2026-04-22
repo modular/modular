@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -189,7 +189,7 @@ def apply_hf_config_override(
     the HuggingFace config. In a future version of the MAXModelConfig class,
     we should be able to edit the object directly.
     """
-    from max.pipelines.lib.model_config import MAXModelConfig
+    from max.pipelines.lib.config.model_config import MAXModelConfig
 
     orig_hf_prop = MAXModelConfig.huggingface_config
     if not isinstance(orig_hf_prop, property) or orig_hf_prop.fget is None:
@@ -213,8 +213,8 @@ def apply_hf_config_override(
 @contextmanager
 def apply_non_strict_load() -> Iterator[None]:
     """Wrap load_state_dict methods to use strict=False."""
+    from max.experimental.nn import Module as ModuleV3
     from max.nn.layer import Module
-    from max.nn.module_v3.module import Module as ModuleV3
 
     def _wrap_non_strict(original_fn: Any) -> Any:
         def _wrapped(self: Any, *args: Any, **kwargs: Any) -> Any:

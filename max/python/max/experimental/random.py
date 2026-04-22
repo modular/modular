@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,17 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Provides experimental random tensor generation utilities.
-
-.. caution::
-    This module contains experimental APIs that are subject to change or
-    removal in future versions. Use with caution in production environments.
+"""Provides random tensor generation utilities.
 
 This module provides functions for generating random tensors with various
 distributions. All functions support specifying data type and device,
 with sensible defaults based on the target device.
 
-You can generate random tensors using different distributions::
+You can generate random tensors using different distributions:
+
+.. code-block:: python
 
     from max.experimental import random
     from max.dtype import DType
@@ -35,11 +33,15 @@ You can generate random tensors using different distributions::
 
 from __future__ import annotations
 
-from ..driver import Device
-from ..dtype import DType
-from ..graph import DeviceRef, ShapeLike, ops
-from .functional import functional
-from .tensor import TensorType, defaults
+from max.driver import Device
+from max.dtype import DType
+from max.experimental.functional import functional
+from max.experimental.realization_context import seed, set_seed
+from max.experimental.tensor import TensorType, defaults
+from max.graph import DeviceRef, ShapeLike, ops
+
+__all__ = ["gaussian", "normal", "seed", "set_seed", "uniform"]
+
 
 #: Generates random values from a uniform distribution for tensors of a given type.
 #: See :func:`max.graph.ops.random.uniform` for details.
@@ -61,9 +63,6 @@ def uniform(  # noqa: ANN201
     device: Device | None = None,
 ):
     """Creates a tensor filled with random values from a uniform distribution.
-
-    .. caution::
-        This is an experimental API that may change in future versions.
 
     Generates a tensor with values uniformly distributed between the specified
     minimum and maximum bounds. This is useful for initializing weights,
@@ -93,7 +92,7 @@ def uniform(  # noqa: ANN201
             Defaults to ``None``.
 
     Returns:
-        A :class:`~max.experimental.tensor` with random values sampled from
+        A :class:`~max.experimental.tensor.Tensor` with random values sampled from
         the uniform distribution.
 
     Raises:
@@ -114,9 +113,6 @@ def gaussian(  # noqa: ANN201
     device: Device | None = None,
 ):
     """Creates a tensor filled with random values from a Gaussian (normal) distribution.
-
-    .. caution::
-        This is an experimental API that may change in future versions.
 
     Generates a tensor with values sampled from a normal (Gaussian) distribution
     with the specified mean and standard deviation. This is commonly used for
@@ -146,7 +142,7 @@ def gaussian(  # noqa: ANN201
             Defaults to ``None``.
 
     Returns:
-        A :class:`~max.experimental.tensor` with random values sampled from
+        A :class:`~max.experimental.tensor.Tensor` with random values sampled from
         the Gaussian distribution.
 
     Raises:

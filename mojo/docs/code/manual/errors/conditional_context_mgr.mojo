@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,28 +10,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-import time
+import std.time
 
 
 @fieldwise_init
 struct ConditionalTimer(ImplicitlyCopyable):
     var start_time: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.start_time = 0
 
-    fn __enter__(mut self) -> Self:
-        self.start_time = Int(time.perf_counter_ns())
+    def __enter__(mut self) -> Self:
+        self.start_time = Int(std.time.perf_counter_ns())
         return self
 
-    fn __exit__(mut self):
-        end_time = time.perf_counter_ns()
+    def __exit__(mut self):
+        end_time = std.time.perf_counter_ns()
         elapsed_time_ms = round(
             Float64(end_time - UInt(self.start_time)) / 1e6, 3
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
-    fn __exit__(mut self, e: Error) raises -> Bool:
+    def __exit__(mut self, e: Error) -> Bool:
         if String(e) == "just a warning":
             print("Suppressing error:", e)
             self.__exit__()
@@ -42,7 +42,7 @@ struct ConditionalTimer(ImplicitlyCopyable):
             return False
 
 
-def flaky_identity(n: Int) -> Int:
+def flaky_identity(n: Int) raises -> Int:
     if (n % 4) == 0:
         raise "really bad"
     elif (n % 2) == 0:
@@ -51,13 +51,13 @@ def flaky_identity(n: Int) -> Int:
         return n
 
 
-def main():
+def main() raises:
     for i in range(1, 9):
         with ConditionalTimer():
             print("\nBeginning execution")
 
             print("i =", i)
-            time.sleep(0.1)
+            std.time.sleep(0.1)
 
             if i == 3:
                 print("continue executed")

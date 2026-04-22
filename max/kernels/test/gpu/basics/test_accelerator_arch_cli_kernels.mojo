@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,24 +14,24 @@
 # RUN: %mojo-no-debug --target-accelerator=nvidia:sm_90a %s | FileCheck --check-prefix=CHECK-NV90 %s
 # RUN: %mojo-no-debug --target-accelerator=nvidia:sm_120a %s | FileCheck --check-prefix=CHECK-NV120 %s
 
-from sys.info import _accelerator_arch, _is_sm_9x, _is_sm_9x_or_newer
+from std.sys.info import _accelerator_arch, _is_sm_9x, _is_sm_9x_or_newer
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from testing import *
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.testing import *
 
 
-fn check_sm9x() -> Bool:
+def check_sm9x() -> Bool:
     comptime v = _is_sm_9x()
     return v
 
 
-fn check_sm9x_or_newer() -> Bool:
+def check_sm9x_or_newer() -> Bool:
     comptime v = _is_sm_9x_or_newer()
     return v
 
 
-def main():
+def main() raises:
     comptime accelerator_arch = _accelerator_arch()
 
     # CHECK-NV80: ret i1 false
@@ -41,7 +41,7 @@ def main():
         _compile_code[
             check_sm9x,
             emission_kind="llvm",
-            target = get_gpu_target[_accelerator_arch()](),
+            target=get_gpu_target[_accelerator_arch()](),
         ]()
     )
 
@@ -52,6 +52,6 @@ def main():
         _compile_code[
             check_sm9x_or_newer,
             emission_kind="llvm",
-            target = get_gpu_target[_accelerator_arch()](),
+            target=get_gpu_target[_accelerator_arch()](),
         ]()
     )

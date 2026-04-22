@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .null_cache_manager import NullKVCacheManager
-from .paged_cache import (
+from .paged_kv_cache import (
+    DummyKVCache,
+    IncrementCacheLengthsProcessor,
     InsufficientBlocksError,
     KVTransferEngine,
     KVTransferEngineMetadata,
@@ -20,21 +21,17 @@ from .paged_cache import (
     TransferReqData,
     available_port,
 )
-from .registry import (
-    estimate_kv_cache_size,
-    infer_optimal_batch_size,
-    load_kv_manager,
-)
+from .registry import load_kv_manager, load_multi_kv_managers
 
 __all__ = [
+    "DummyKVCache",
+    "IncrementCacheLengthsProcessor",
     "InsufficientBlocksError",
     "KVTransferEngine",
     "KVTransferEngineMetadata",
-    "NullKVCacheManager",
     "PagedKVCacheManager",
     "TransferReqData",
     "available_port",
-    "estimate_kv_cache_size",
-    "infer_optimal_batch_size",
     "load_kv_manager",
+    "load_multi_kv_managers",
 ]

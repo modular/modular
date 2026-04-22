@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,41 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
 
-@register_passable("trivial")
-struct Property:
+struct Property(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime MAJOR_VERSION = Self(0)
     comptime MINOR_VERSION = Self(1)
     comptime PATCH_LEVEL = Self(2)
 
-    fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
+    def __init__(out self, value: Int):
+        self._value = Int32(value)
 
     @no_inline
-    fn __str__(self) -> String:
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.MAJOR_VERSION:
-            return "MAJOR_VERSION"
+            return writer.write_string("MAJOR_VERSION")
         if self == Self.MINOR_VERSION:
-            return "MINOR_VERSION"
+            return writer.write_string("MINOR_VERSION")
         if self == Self.PATCH_LEVEL:
-            return "PATCH_LEVEL"
+            return writer.write_string("PATCH_LEVEL")
         abort("invalid Property entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
 
-@register_passable("trivial")
-struct DataType:
+struct DataType(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime R_16F = Self(2)
     comptime C_16F = Self(6)
@@ -83,89 +75,83 @@ struct DataType:
     comptime R_6F_E3M2 = Self(32)
     comptime R_4F_E2M1 = Self(33)
 
-    fn __init__(out self, value: Int):
-        self._value = value
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self._value == other._value
-
-    fn __ne__(self, other: Self) -> Bool:
-        return not (self == other)
+    def __init__(out self, value: Int):
+        self._value = Int32(value)
 
     @no_inline
-    fn __str__(self) -> String:
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.R_16F:
-            return "R_16F"
+            return writer.write_string("R_16F")
         if self == Self.C_16F:
-            return "C_16F"
+            return writer.write_string("C_16F")
         if self == Self.R_16BF:
-            return "R_16BF"
+            return writer.write_string("R_16BF")
         if self == Self.C_16BF:
-            return "C_16BF"
+            return writer.write_string("C_16BF")
         if self == Self.R_32F:
-            return "R_32F"
+            return writer.write_string("R_32F")
         if self == Self.C_32F:
-            return "C_32F"
+            return writer.write_string("C_32F")
         if self == Self.R_64F:
-            return "R_64F"
+            return writer.write_string("R_64F")
         if self == Self.C_64F:
-            return "C_64F"
+            return writer.write_string("C_64F")
         if self == Self.R_8I:
-            return "R_8I"
+            return writer.write_string("R_8I")
         if self == Self.C_8I:
-            return "C_8I"
+            return writer.write_string("C_8I")
         if self == Self.R_8U:
-            return "R_8U"
+            return writer.write_string("R_8U")
         if self == Self.C_8U:
-            return "C_8U"
+            return writer.write_string("C_8U")
         if self == Self.R_32I:
-            return "R_32I"
+            return writer.write_string("R_32I")
         if self == Self.C_32I:
-            return "C_32I"
+            return writer.write_string("C_32I")
         if self == Self.R_4I:
-            return "R_4I"
+            return writer.write_string("R_4I")
         if self == Self.C_4I:
-            return "C_4I"
+            return writer.write_string("C_4I")
         if self == Self.R_4U:
-            return "R_4U"
+            return writer.write_string("R_4U")
         if self == Self.C_4U:
-            return "C_4U"
+            return writer.write_string("C_4U")
         if self == Self.R_16I:
-            return "R_16I"
+            return writer.write_string("R_16I")
         if self == Self.C_16I:
-            return "C_16I"
+            return writer.write_string("C_16I")
         if self == Self.R_16U:
-            return "R_16U"
+            return writer.write_string("R_16U")
         if self == Self.C_16U:
-            return "C_16U"
+            return writer.write_string("C_16U")
         if self == Self.R_32U:
-            return "R_32U"
+            return writer.write_string("R_32U")
         if self == Self.C_32U:
-            return "C_32U"
+            return writer.write_string("C_32U")
         if self == Self.R_64I:
-            return "R_64I"
+            return writer.write_string("R_64I")
         if self == Self.C_64I:
-            return "C_64I"
+            return writer.write_string("C_64I")
         if self == Self.R_64U:
-            return "R_64U"
+            return writer.write_string("R_64U")
         if self == Self.C_64U:
-            return "C_64U"
+            return writer.write_string("C_64U")
         if self == Self.R_8F_E4M3:
-            return "R_8F_E4M3"
+            return writer.write_string("R_8F_E4M3")
         if self == Self.R_8F_E5M2:
-            return "R_8F_E5M2"
+            return writer.write_string("R_8F_E5M2")
         if self == Self.R_8F_UE4M3:
-            return "R_8F_UE4M3"
+            return writer.write_string("R_8F_UE4M3")
         if self == Self.R_8F_UE8M0:
-            return "R_8F_UE8M0"
+            return writer.write_string("R_8F_UE8M0")
         if self == Self.R_6F_E2M3:
-            return "R_6F_E2M3"
+            return writer.write_string("R_6F_E2M3")
         if self == Self.R_6F_E3M2:
-            return "R_6F_E3M2"
+            return writer.write_string("R_6F_E3M2")
         if self == Self.R_4F_E2M1:
-            return "R_4F_E2M1"
+            return writer.write_string("R_4F_E2M1")
 
         abort("invalid DataType entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)

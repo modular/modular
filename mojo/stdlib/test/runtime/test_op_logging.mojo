@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,9 +13,9 @@
 # RUN: %mojo-no-debug -D LOGGING_LEVEL=trace %s 2>&1 | FileCheck %s
 
 
-from collections.optional import OptionalReg
+from std.collections.optional import OptionalReg
 
-from runtime.tracing import Trace, TraceLevel
+from std.runtime.tracing import Trace, TraceLevel
 
 
 def test_op_logging[
@@ -24,13 +24,13 @@ def test_op_logging[
     op_name: StaticString,
     detail: StaticString = "",
     task_id: OptionalReg[Int] = None,
-):
+) raises:
     with Trace[level, target=target](op_name, detail, task_id=task_id):
         pass
 
 
 # CHECK-LABEL: test_op_logging
-def main():
+def main() raises:
     print("== test_op_logging")
 
     # CHECK-NOT: [OP]

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -61,10 +61,6 @@ available_features: list[str] = json.loads("""{available_features}""")
 for feature in available_features:
     assert not feature.startswith("$"), f"invalid feature: {feature}"
     llvm_config.config.available_features.add(feature)
-
-# Add emit-mojo feature when EMIT_MOJO environment variable is set
-if os.environ.get("EMIT_MOJO"):
-    llvm_config.config.available_features.add("emit-mojo")
 
 
 def _replace_substitution(

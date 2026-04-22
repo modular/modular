@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceil, floor, log2
+from std.math import ceil, floor, log2
 
-from bit import (
+from std.bit import (
     bit_not,
     bit_reverse,
     bit_width,
@@ -28,11 +28,11 @@ from bit import (
     rotate_bits_left,
     rotate_bits_right,
 )
-from testing import assert_equal
-from testing import TestSuite
+from std.testing import assert_equal
+from std.testing import TestSuite
 
 
-def test_count_leading_zeros():
+def test_count_leading_zeros() raises:
     assert_equal(count_leading_zeros(-(2**59)), 0)
     assert_equal(count_leading_zeros(-(2**20)), 0)
     assert_equal(count_leading_zeros(-1), 0)
@@ -46,24 +46,30 @@ def test_count_leading_zeros():
     assert_equal(count_leading_zeros(2**59), 4)
 
 
-def test_count_leading_zeros_simd():
+def test_count_leading_zeros_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
     comptime int32_t = DType.int32
     comptime int64_t = DType.int64
 
-    comptime var1 = SIMD[int8_t, simd_width](-(2**6), 0, -1, 2**6)
+    comptime var1 = SIMD[int8_t, simd_width](
+        Int8(-(2**6)), 0, -1, Int8(2**6)
+    )
     assert_equal(
         count_leading_zeros(var1), SIMD[int8_t, simd_width](0, 8, 0, 1)
     )
 
-    comptime var3 = SIMD[int16_t, simd_width](-(2**14), 0, -1, 2**14)
+    comptime var3 = SIMD[int16_t, simd_width](
+        Int16(-(2**14)), 0, -1, Int16(2**14)
+    )
     assert_equal(
         count_leading_zeros(var3), SIMD[int16_t, simd_width](0, 16, 0, 1)
     )
 
-    comptime var5 = SIMD[int32_t, simd_width](-(2**30), 0, -1, 2**30)
+    comptime var5 = SIMD[int32_t, simd_width](
+        Int32(-(2**30)), 0, -1, Int32(2**30)
+    )
     assert_equal(
         count_leading_zeros(var5), SIMD[int32_t, simd_width](0, 32, 0, 1)
     )
@@ -81,7 +87,7 @@ def test_count_leading_zeros_simd():
     assert_equal(alias7, SIMD[DType.uint8, 4](8, 8, 8, 8))
 
 
-def test_count_trailing_zeros():
+def test_count_trailing_zeros() raises:
     assert_equal(count_trailing_zeros(-(2**59)), 59)
     assert_equal(count_trailing_zeros(-(2**20)), 20)
     assert_equal(count_trailing_zeros(-1), 0)
@@ -94,24 +100,30 @@ def test_count_trailing_zeros():
     assert_equal(count_trailing_zeros(2**59), 59)
 
 
-def test_count_trailing_zeros_simd():
+def test_count_trailing_zeros_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
     comptime int32_t = DType.int32
     comptime int64_t = DType.int64
 
-    comptime var1 = SIMD[int8_t, simd_width](-(2**6), 0, -1, 2**6)
+    comptime var1 = SIMD[int8_t, simd_width](
+        Int8(-(2**6)), 0, -1, Int8(2**6)
+    )
     assert_equal(
         count_trailing_zeros(var1), SIMD[int8_t, simd_width](6, 8, 0, 6)
     )
 
-    comptime var3 = SIMD[int16_t, simd_width](-(2**14), 0, -1, 2**14)
+    comptime var3 = SIMD[int16_t, simd_width](
+        Int16(-(2**14)), 0, -1, Int16(2**14)
+    )
     assert_equal(
         count_trailing_zeros(var3), SIMD[int16_t, simd_width](14, 16, 0, 14)
     )
 
-    comptime var5 = SIMD[int32_t, simd_width](-(2**30), 0, -1, 2**30)
+    comptime var5 = SIMD[int32_t, simd_width](
+        Int32(-(2**30)), 0, -1, Int32(2**30)
+    )
     assert_equal(
         count_trailing_zeros(var5), SIMD[int32_t, simd_width](30, 32, 0, 30)
     )
@@ -126,7 +138,7 @@ def test_count_trailing_zeros_simd():
     )
 
 
-def test_bit_reverse():
+def test_bit_reverse() raises:
     assert_equal(bit_reverse(-(2**32)), 4294967295)
     assert_equal(bit_reverse(-1), -1)
     assert_equal(bit_reverse(0), 0)
@@ -136,7 +148,7 @@ def test_bit_reverse():
     assert_equal(bit_reverse(2**63), 1)
 
 
-def test_bit_reverse_simd():
+def test_bit_reverse_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
@@ -166,7 +178,7 @@ def test_bit_reverse_simd():
     )
 
 
-def test_byte_swap():
+def test_byte_swap() raises:
     assert_equal(byte_swap(0x0000), 0x0000000000000000)
     assert_equal(byte_swap(0x0102), 0x0201000000000000)
     assert_equal(byte_swap(0x0201), 0x0102000000000000)
@@ -176,7 +188,7 @@ def test_byte_swap():
     assert_equal(byte_swap(0x23456789ABCDEF01), 0x01EFCDAB89674523)
 
 
-def test_byte_swap_simd():
+def test_byte_swap_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
@@ -219,7 +231,7 @@ def test_byte_swap_simd():
     )
 
 
-def test_pop_count():
+def test_pop_count() raises:
     assert_equal(pop_count(-111444444), 51)
     assert_equal(pop_count(0), 0)
     assert_equal(pop_count(1), 1)
@@ -230,20 +242,20 @@ def test_pop_count():
     assert_equal(pop_count(3000000), 10)
 
 
-def test_pop_count_simd():
+def test_pop_count_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
     comptime int32_t = DType.int32
     comptime int64_t = DType.int64
 
-    comptime var1 = SIMD[int8_t, simd_width](-114, 0, 100, 2**6)
+    comptime var1 = SIMD[int8_t, simd_width](-114, 0, 100, Int8(2**6))
     assert_equal(pop_count(var1), SIMD[int8_t, simd_width](4, 0, 3, 1))
 
-    comptime var2 = SIMD[int16_t, simd_width](-11444, 0, 3000, 2**13)
+    comptime var2 = SIMD[int16_t, simd_width](-11444, 0, 3000, Int16(2**13))
     assert_equal(pop_count(var2), SIMD[int16_t, simd_width](8, 0, 7, 1))
 
-    comptime var3 = SIMD[int32_t, simd_width](-111444, 0, 30000, 2**29)
+    comptime var3 = SIMD[int32_t, simd_width](-111444, 0, 30000, Int32(2**29))
     assert_equal(pop_count(var3), SIMD[int32_t, simd_width](22, 0, 7, 1))
 
     # TODO: use this line after #2882 is fixed
@@ -254,22 +266,22 @@ def test_pop_count_simd():
     assert_equal(pop_count(var4), SIMD[int64_t, simd_width](51, 0, 10, 1))
 
 
-def test_bit_not_simd():
+def test_bit_not_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
     comptime int32_t = DType.int32
     comptime int64_t = DType.int64
 
-    comptime var1 = SIMD[int8_t, simd_width](-114, 0, 100, 2**6)
+    comptime var1 = SIMD[int8_t, simd_width](-114, 0, 100, Int8(2**6))
     assert_equal(bit_not(var1), SIMD[int8_t, simd_width](113, -1, -101, -65))
 
-    comptime var2 = SIMD[int16_t, simd_width](-11444, 0, 3000, 2**13)
+    comptime var2 = SIMD[int16_t, simd_width](-11444, 0, 3000, Int16(2**13))
     assert_equal(
         bit_not(var2), SIMD[int16_t, simd_width](11443, -1, -3001, -8193)
     )
 
-    comptime var3 = SIMD[int32_t, simd_width](-111444, 0, 30000, 2**29)
+    comptime var3 = SIMD[int32_t, simd_width](-111444, 0, 30000, Int32(2**29))
     assert_equal(
         bit_not(var3), SIMD[int32_t, simd_width](111443, -1, -30001, -536870913)
     )
@@ -281,11 +293,13 @@ def test_bit_not_simd():
     )
     assert_equal(
         bit_not(var4),
-        SIMD[int64_t, simd_width](111444443, -1, -3000001, -(2**59) - 1),
+        SIMD[int64_t, simd_width](
+            111444443, -1, -3000001, Int64(-(2**59) - 1)
+        ),
     )
 
 
-def test_bit_width():
+def test_bit_width() raises:
     assert_equal(bit_width(-(2**59)), 59)
     assert_equal(bit_width(-2), 1)
     assert_equal(bit_width(-1), 0)
@@ -297,20 +311,20 @@ def test_bit_width():
     assert_equal(bit_width(2**59), 60)
 
 
-def test_bit_width_simd():
+def test_bit_width_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
     comptime int32_t = DType.int32
     comptime int64_t = DType.int64
 
-    comptime var1 = SIMD[int8_t, simd_width](-114, 0, 100, 2**6)
+    comptime var1 = SIMD[int8_t, simd_width](-114, 0, 100, Int8(2**6))
     assert_equal(bit_width(var1), SIMD[int8_t, simd_width](7, 0, 7, 7))
 
-    comptime var2 = SIMD[int16_t, simd_width](-11444, 0, 3000, 2**13)
+    comptime var2 = SIMD[int16_t, simd_width](-11444, 0, 3000, Int16(2**13))
     assert_equal(bit_width(var2), SIMD[int16_t, simd_width](14, 0, 12, 14))
 
-    comptime var3 = SIMD[int32_t, simd_width](-111444, 0, 30000, 2**29)
+    comptime var3 = SIMD[int32_t, simd_width](-111444, 0, 30000, Int32(2**29))
     assert_equal(bit_width(var3), SIMD[int32_t, simd_width](17, 0, 15, 30))
 
     # TODO: use this line after #2882 is fixed
@@ -321,7 +335,7 @@ def test_bit_width_simd():
     assert_equal(bit_width(var4), SIMD[int64_t, simd_width](27, 0, 22, 60))
 
 
-def test_next_power_of_two():
+def test_next_power_of_two() raises:
     # test for Int
     assert_equal(next_power_of_two(Int(-(2**59))), 1)
     assert_equal(next_power_of_two(Int(-2)), 1)
@@ -342,42 +356,49 @@ def test_next_power_of_two():
     assert_equal(next_power_of_two(UInt(2**59 - 3)), UInt(2) ** 59)
 
 
-def test_next_power_of_two_simd():
+def test_next_power_of_two_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
     comptime int32_t = DType.int32
     comptime int64_t = DType.int64
 
-    comptime var1 = SIMD[int8_t, simd_width](-114, 0, 2**7 - 3, 2**6)
+    comptime var1 = SIMD[int8_t, simd_width](
+        -114, 0, Int8(2**7 - 3), Int8(2**6)
+    )
     assert_equal(
-        next_power_of_two(var1), SIMD[int8_t, simd_width](1, 1, 2**7, 2**6)
+        next_power_of_two(var1),
+        SIMD[int8_t, simd_width](1, 1, Int8(2**7), Int8(2**6)),
     )
 
-    comptime var2 = SIMD[int16_t, simd_width](-11444, 0, 2**12 - 3, 2**13)
+    comptime var2 = SIMD[int16_t, simd_width](
+        -11444, 0, Int16(2**12 - 3), Int16(2**13)
+    )
     assert_equal(
         next_power_of_two(var2),
-        SIMD[int16_t, simd_width](1, 1, 2**12, 2**13),
+        SIMD[int16_t, simd_width](1, 1, Int16(2**12), Int16(2**13)),
     )
 
-    comptime var3 = SIMD[int32_t, simd_width](-111444, 0, 2**14 - 3, 2**29)
+    comptime var3 = SIMD[int32_t, simd_width](
+        -111444, 0, Int32(2**14 - 3), Int32(2**29)
+    )
     assert_equal(
         next_power_of_two(var3),
-        SIMD[int32_t, simd_width](1, 1, 2**14, 2**29),
+        SIMD[int32_t, simd_width](1, 1, Int32(2**14), Int32(2**29)),
     )
 
     # TODO: use this line after #2882 is fixed
     # alias var4 = SIMD[int64_t, simd_width](-111444444, 1, 2**22-3, 2**59)
     comptime var4 = SIMD[int64_t, simd_width](
-        -111444444, 1, 2**22 - 3, 576460752303423488
+        -111444444, 1, Int64(2**22 - 3), 576460752303423488
     )
     assert_equal(
         next_power_of_two(var4),
-        SIMD[int64_t, simd_width](1, 1, 2**22, 2**59),
+        SIMD[int64_t, simd_width](1, 1, Int64(2**22), Int64(2**59)),
     )
 
 
-def test_prev_power_of_two():
+def test_prev_power_of_two() raises:
     assert_equal(prev_power_of_two(-(2**59)), 0)
     assert_equal(prev_power_of_two(-2), 0)
     assert_equal(prev_power_of_two(1), 1)
@@ -387,42 +408,49 @@ def test_prev_power_of_two():
     assert_equal(prev_power_of_two(2**59), 2**59)
 
 
-def test_prev_power_of_two_simd():
+def test_prev_power_of_two_simd() raises:
     comptime simd_width = 4
     comptime int8_t = DType.int8
     comptime int16_t = DType.int16
     comptime int32_t = DType.int32
     comptime int64_t = DType.int64
 
-    comptime var1 = SIMD[int8_t, simd_width](-114, 0, 2**5 + 3, 2**6)
+    comptime var1 = SIMD[int8_t, simd_width](
+        -114, 0, Int8(2**5 + 3), Int8(2**6)
+    )
     assert_equal(
-        prev_power_of_two(var1), SIMD[int8_t, simd_width](0, 0, 2**5, 2**6)
+        prev_power_of_two(var1),
+        SIMD[int8_t, simd_width](0, 0, Int8(2**5), Int8(2**6)),
     )
 
-    comptime var2 = SIMD[int16_t, simd_width](-11444, 0, 2**12 + 3, 2**13)
+    comptime var2 = SIMD[int16_t, simd_width](
+        -11444, 0, Int16(2**12 + 3), Int16(2**13)
+    )
     assert_equal(
         prev_power_of_two(var2),
-        SIMD[int16_t, simd_width](0, 0, 2**12, 2**13),
+        SIMD[int16_t, simd_width](0, 0, Int16(2**12), Int16(2**13)),
     )
 
-    comptime var3 = SIMD[int32_t, simd_width](-111444, 0, 2**14 + 3, 2**29)
+    comptime var3 = SIMD[int32_t, simd_width](
+        -111444, 0, Int32(2**14 + 3), Int32(2**29)
+    )
     assert_equal(
         prev_power_of_two(var3),
-        SIMD[int32_t, simd_width](0, 0, 2**14, 2**29),
+        SIMD[int32_t, simd_width](0, 0, Int32(2**14), Int32(2**29)),
     )
 
     # TODO: use this line after #2882 is fixed
     # alias var4 = SIMD[int64_t, simd_width](-111444444, 1, 2**22+3, 2**59)
     comptime var4 = SIMD[int64_t, simd_width](
-        -111444444, 1, 2**22 + 3, 576460752303423488
+        -111444444, 1, Int64(2**22 + 3), 576460752303423488
     )
     assert_equal(
         prev_power_of_two(var4),
-        SIMD[int64_t, simd_width](0, 1, 2**22, 2**59),
+        SIMD[int64_t, simd_width](0, 1, Int64(2**22), Int64(2**59)),
     )
 
 
-def test_rotate_bits_int():
+def test_rotate_bits_int() raises:
     assert_equal(rotate_bits_left[0](104), 104)
     assert_equal(rotate_bits_left[2](104), 416)
     assert_equal(rotate_bits_left[-2](104), 26)
@@ -436,7 +464,7 @@ def test_rotate_bits_int():
     assert_equal(rotate_bits_right[-8](104), 26624)
 
 
-def test_rotate_bits_simd():
+def test_rotate_bits_simd() raises:
     comptime simd_width = 1
     comptime dtype = DType.uint8
 
@@ -472,23 +500,23 @@ def test_rotate_bits_simd():
     assert_equal(rotate_bits_right[6](Scalar[dtype](96)), 129)
 
 
-fn _log2_floor(n: Int) -> Int:
+def _log2_floor(n: Int) -> Int:
     return Int(floor(log2(Float64(n))))
 
 
 @always_inline
-fn _log2_ceil(n: Int) -> Int:
+def _log2_ceil(n: Int) -> Int:
     """Computes ceil(log_2(d))."""
 
     return Int(_log2_ceil(Scalar[DType.int](n)))
 
 
 @always_inline
-fn _log2_ceil(n: Scalar) -> type_of(n):
+def _log2_ceil(n: Scalar) -> type_of(n):
     return {ceil(log2(Float64(n)))}
 
 
-def test_log2_floor():
+def test_log2_floor() raises:
     for i in range(1, 100):
         assert_equal(
             log2_floor(i),
@@ -503,9 +531,18 @@ def test_log2_floor():
             ),
         )
 
+    # test UInt
+    assert_equal(log2_floor(UInt(0)), UInt.MAX)  # returns MAX for 0
+    assert_equal(log2_floor(UInt(1)), 0)
+    assert_equal(log2_floor(UInt(2)), 1)
+    assert_equal(log2_floor(UInt(3)), 1)
+    assert_equal(log2_floor(UInt(4)), 2)
+    assert_equal(log2_floor(UInt(5)), 2)
+    assert_equal(log2_floor(UInt(2**59)), 59)
+    assert_equal(log2_floor(UInt(2**63)), 63)
+
     # test dtypes
-    @parameter
-    for dtype in [
+    comptime for dtype in [
         DType.int8,
         DType.uint8,
         DType.int16,
@@ -525,8 +562,7 @@ def test_log2_floor():
 
         assert_equal(value, log2_floor(Scalar[dtype](0)), String(dtype))
 
-        @parameter
-        if dtype.is_signed():
+        comptime if dtype.is_signed():
             assert_equal(value, log2_floor(Scalar[dtype](-1)))
             assert_equal(value, log2_floor(Scalar[dtype](-2)))
             assert_equal(value, log2_floor(Scalar[dtype](-3)))
@@ -538,7 +574,7 @@ def test_log2_floor():
                 msg=String("mismatching value for the input value of ", i),
             )
 
-    fn _check_alias[n: Int](expected: Int) raises:
+    def _check_alias[n: Int](expected: Int) raises:
         comptime res = log2_floor(n)
         assert_equal(
             res,
@@ -559,7 +595,7 @@ def test_log2_floor():
     _check_alias[32](5)
 
 
-def test_log2_ceil():
+def test_log2_ceil() raises:
     assert_equal(log2_ceil(0), 0)
     for i in range(1, 100):
         assert_equal(
@@ -575,7 +611,7 @@ def test_log2_ceil():
             ),
         )
 
-    fn _check_alias[n: Int](expected: Int) raises:
+    def _check_alias[n: Int](expected: Int) raises:
         comptime res = log2_ceil(n)
         assert_equal(
             res,
@@ -597,7 +633,7 @@ def test_log2_ceil():
     _check_alias[32](5)
 
 
-def test_log2_ceil32():
+def test_log2_ceil32() raises:
     assert_equal(log2_ceil(Int32(0)), 0)
     for i in range(Int32(1), Int32(100)):
         assert_equal(
@@ -613,7 +649,7 @@ def test_log2_ceil32():
             ),
         )
 
-    fn _check_alias[n: Int32](expected: Int32) raises:
+    def _check_alias[n: Int32](expected: Int32) raises:
         comptime res = log2_ceil(n)
         assert_equal(
             res,
@@ -635,5 +671,5 @@ def test_log2_ceil32():
     _check_alias[32](5)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

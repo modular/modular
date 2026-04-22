@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,76 +11,61 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import DimList, NDBuffer
-from gpu import thread_idx
-from gpu.host import DeviceContext
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
-from utils import IndexList
+from std.gpu import thread_idx
+from std.gpu.host import DeviceContext
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout._utils import ManagedLayoutTensor
+from std.utils import IndexList
 
 
-@register_passable("trivial")
-trait BaseT:
-    fn get_val(self, idx: Int) -> Float32:
+trait BaseT(TrivialRegisterPassable):
+    def get_val(self, idx: Int) -> Float32:
         ...
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ImplT(BaseT, ImplicitlyCopyable):
+struct ImplT(BaseT):
     var values: LayoutTensor[DType.float32, Layout(UNKNOWN_VALUE), MutAnyOrigin]
 
     def __init__(
         out self,
-        buf: LayoutTensor[mut=True, DType.float32, Layout(UNKNOWN_VALUE)],
-    ):
+        buf: LayoutTensor[mut=True, DType.float32, Layout(UNKNOWN_VALUE), _],
+    ) raises:
         self.values = buf.as_any_origin()
 
-    fn get_val(self, idx: Int) -> Float32:
+    def get_val(self, idx: Int) -> Float32:
         return self.values[idx][0]
 
 
-def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int):
+def trait_repro_sub[t: BaseT](thing: t, ctx: DeviceContext, size: Int) raises:
     @parameter
     @__copy_capture(thing)
-    fn kernel_fn():
-        var idx = Int(thread_idx.x)
-        print(Float32(thing.get_val(idx)) * 2)
+    def kernel_fn():
+        var idx = thread_idx.x
+        print(thing.get_val(idx) * 2)
 
     comptime kernel = kernel_fn
     ctx.enqueue_function_experimental[kernel](grid_dim=(1,), block_dim=(size))
 
 
-def trait_repro(ctx: DeviceContext):
+def trait_repro(ctx: DeviceContext) raises:
     comptime size = 5
-    var stack = InlineArray[Float32, size](uninitialized=True)
-    var host_buf = LayoutTensor[DType.float32, Layout(UNKNOWN_VALUE)](
-        stack,
+    var managed_buf = ManagedLayoutTensor[DType.float32, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](size)),
+        ctx,
     )
+    var host_buf = managed_buf.tensor[update=False]()
     for i in range(size):
-        host_buf[i] = i
+        host_buf[i] = Float32(i)
 
-    var device_buf = ctx.enqueue_create_buffer[DType.float32](size)
-    with device_buf.map_to_host() as mapped:
-        for i in range(size):
-            mapped[i] = host_buf[i][0]
-    var device_nd = LayoutTensor[DType.float32, Layout(UNKNOWN_VALUE)](
-        device_buf,
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](size)),
-    )
-    var thing = ImplT(device_nd)
+    var thing = ImplT(managed_buf.device_tensor())
     trait_repro_sub(thing, ctx, size)
-    with device_buf.map_to_host() as mapped:
-        for i in range(size):
-            host_buf[i] = mapped[i]
-    ctx.synchronize()
+    host_buf = managed_buf.tensor()
 
     for i in range(size):
         print(host_buf[i])
 
-    _ = device_buf^
 
-
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         trait_repro(ctx)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,13 +17,14 @@ retrieving their output, similar to Python's `subprocess` module. It handles
 process creation, output capture, and resource cleanup automatically.
 """
 
-import sys._libc as libc
-from sys import external_call
-from sys._libc import FILE_ptr, pclose, popen
-from sys.ffi import c_char
-from sys.info import CompilationTarget
+import std.sys._libc as libc
+from std.ffi import external_call, _CPointer
+from std.memory.unsafe_pointer import unsafe_cast
+from std.sys._libc import FILE_ptr, pclose, popen
+from std.ffi import c_char
+from std.sys.info import CompilationTarget
 
-from memory import Span
+from std.memory import Span
 
 
 struct _POpenHandle:
@@ -31,7 +32,7 @@ struct _POpenHandle:
 
     var _handle: FILE_ptr
 
-    fn __init__(out self, var cmd: String, var mode: String = "r") raises:
+    def __init__(out self, var cmd: String, var mode: String = "r") raises:
         """Construct the _POpenHandle using the command and mode provided.
 
         Args:
@@ -49,11 +50,11 @@ struct _POpenHandle:
         if not self._handle:
             raise Error("unable to execute the command `", cmd, "`")
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Closes the handle opened via popen."""
         _ = pclose(self._handle)
 
-    fn read(self) raises -> String:
+    def read(self) raises -> String:
         """Reads all the data from the handle.
 
         Returns:
@@ -65,7 +66,7 @@ struct _POpenHandle:
             * The data written by the subprocess is not valid UTF-8.
         """
         var len: Int = 0
-        var line = UnsafePointer[c_char, MutExternalOrigin]()
+        var line = _CPointer[c_char, MutExternalOrigin]()
         var res = String()
 
         while True:
@@ -77,16 +78,14 @@ struct _POpenHandle:
 
             # Note: This will raise if the subprocess yields non-UTF-8 bytes.
             res += StringSlice(
-                from_utf8=Span(ptr=line.bitcast[Byte](), length=read)
+                from_utf8=Span(ptr=line.value().bitcast[Byte](), length=read)
             )
 
-        if line:
-            libc.free(line.bitcast[NoneType]())
-
+        libc.free(unsafe_cast[Type=NoneType](line))
         return String(res.rstrip())
 
 
-fn run(cmd: String) raises -> String:
+def run(cmd: String) raises -> String:
     """Runs the specified command and returns the output as a string.
 
     This function executes the given command in a subprocess, captures its

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,37 +23,37 @@ could use compile-time constants.
 After the fix, both should produce equivalent code.
 """
 
-from compile import compile_info
-from gpu.host import get_gpu_target
+from std.compile import compile_info
+from std.gpu.host import get_gpu_target
 from layout import Layout, LayoutTensor
-from testing import assert_true
-from utils import Index
+from std.testing import assert_true
+from std.utils import Index
 
 
 comptime layout_2d = Layout.row_major(10, 20)
 
 
-fn test_store_codegen_equivalence() raises:
+def test_store_codegen_equivalence() raises:
     """Test that store(IndexList) produces equivalent code to store(m, n)."""
 
-    fn variadic_kernel(
+    def variadic_kernel(
         output: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
     ):
         output.store[1](2, 3, 1234)
 
-    fn indexlist_kernel(
+    def indexlist_kernel(
         output: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
     ):
         output.store[1](Index(2, 3), 1234)
 
     var variadic_asm = String(
         compile_info[
-            variadic_kernel, emission_kind="asm", target = get_gpu_target()
+            variadic_kernel, emission_kind="asm", target=get_gpu_target()
         ]()
     )
     var indexlist_asm = String(
         compile_info[
-            indexlist_kernel, emission_kind="asm", target = get_gpu_target()
+            indexlist_kernel, emission_kind="asm", target=get_gpu_target()
         ]()
     )
 
@@ -75,17 +75,17 @@ fn test_store_codegen_equivalence() raises:
         )
 
 
-fn test_load_codegen_equivalence() raises:
+def test_load_codegen_equivalence() raises:
     """Test that load(IndexList) produces equivalent code to load(m, n)."""
 
-    fn variadic_kernel(
+    def variadic_kernel(
         input: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
         output: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
     ):
         var val = input.load[1](2, 3)
         output.store[1](0, 0, val)
 
-    fn indexlist_kernel(
+    def indexlist_kernel(
         input: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
         output: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
     ):
@@ -94,12 +94,12 @@ fn test_load_codegen_equivalence() raises:
 
     var variadic_asm = String(
         compile_info[
-            variadic_kernel, emission_kind="asm", target = get_gpu_target()
+            variadic_kernel, emission_kind="asm", target=get_gpu_target()
         ]()
     )
     var indexlist_asm = String(
         compile_info[
-            indexlist_kernel, emission_kind="asm", target = get_gpu_target()
+            indexlist_kernel, emission_kind="asm", target=get_gpu_target()
         ]()
     )
 
@@ -119,18 +119,18 @@ fn test_load_codegen_equivalence() raises:
         )
 
 
-fn test_aligned_load_codegen_equivalence() raises:
+def test_aligned_load_codegen_equivalence() raises:
     """Test that aligned_load(IndexList) produces equivalent code to aligned_load(m, n).
     """
 
-    fn variadic_kernel(
+    def variadic_kernel(
         input: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
         output: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
     ):
         var val = input.aligned_load[1](2, 3)
         output.store[1](0, 0, val)
 
-    fn indexlist_kernel(
+    def indexlist_kernel(
         input: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
         output: LayoutTensor[DType.int32, layout_2d, MutAnyOrigin],
     ):
@@ -139,12 +139,12 @@ fn test_aligned_load_codegen_equivalence() raises:
 
     var variadic_asm = String(
         compile_info[
-            variadic_kernel, emission_kind="asm", target = get_gpu_target()
+            variadic_kernel, emission_kind="asm", target=get_gpu_target()
         ]()
     )
     var indexlist_asm = String(
         compile_info[
-            indexlist_kernel, emission_kind="asm", target = get_gpu_target()
+            indexlist_kernel, emission_kind="asm", target=get_gpu_target()
         ]()
     )
 
@@ -164,7 +164,7 @@ fn test_aligned_load_codegen_equivalence() raises:
         )
 
 
-def main():
+def main() raises:
     test_store_codegen_equivalence()
     test_load_codegen_equivalence()
     test_aligned_load_codegen_equivalence()

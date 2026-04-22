@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,7 +16,7 @@ This test file validates the public API of the random module, including
 random number generation, seeding, and shuffle functionality.
 """
 
-from random import (
+from std.random import (
     randn_float64,
     random_float64,
     random_si64,
@@ -25,10 +25,10 @@ from random import (
     shuffle,
 )
 
-from testing import assert_equal, assert_false, assert_true, TestSuite
+from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 
-def test_random():
+def test_random() raises:
     """Test basic random number generation for all numeric types.
 
     This is a smoke test verifying that random number generators produce
@@ -86,7 +86,7 @@ def test_random():
         )
 
 
-def test_seed_normal():
+def test_seed_normal() raises:
     """Test that `randn_float64` produces a proper normal distribution.
 
     This validates that the Box-Muller transform implementation correctly
@@ -103,13 +103,13 @@ def test_seed_normal():
     for sample in samples:
         sum += sample
 
-    var mean: Float64 = sum / num_samples
+    var mean: Float64 = sum / Float64(num_samples)
 
     var sum_sq: Float64 = 0.0
     for sample in samples:
         sum_sq += (sample - mean) ** 2
 
-    var variance = sum_sq / num_samples
+    var variance = sum_sq / Float64(num_samples)
 
     # Calculate absolute differences (errors)
     var mean_error = abs(mean)
@@ -137,7 +137,7 @@ def test_seed_normal():
     )
 
 
-def test_seed():
+def test_seed() raises:
     """Test that seeding produces reproducible random sequences."""
     seed(5)
     var some_float = random_float64(0, 1)
@@ -150,7 +150,7 @@ def test_seed():
     assert_equal(some_unsigned_integer, random_ui64(0, 255))
 
 
-def test_shuffle():
+def test_shuffle() raises:
     """Test the Fisher-Yates shuffle implementation.
 
     This validates that `shuffle()` correctly randomizes list order while
@@ -251,7 +251,7 @@ def test_shuffle():
     assert_true(l != m)
 
 
-def test_random_edge_cases():
+def test_random_edge_cases() raises:
     """Test edge cases in random number generation.
 
     This validates correct behavior for unusual but valid inputs that often
@@ -305,7 +305,7 @@ def test_random_edge_cases():
     assert_equal(edge1, edge2)
 
 
-def test_random_float64_special_values():
+def test_random_float64_special_values() raises:
     """Test random_float64 with extreme and special IEEE 754 values."""
     # Test with very large ranges (near infinity)
     # These should not overflow or produce inf/nan
@@ -321,7 +321,7 @@ def test_random_float64_special_values():
     assert_true(near_zero <= 1e-100)
 
 
-def test_uniformity_basic():
+def test_uniformity_basic() raises:
     """Basic test for uniform distribution of random numbers.
 
     This performs a simple chi-square-like test to verify that random_ui64
@@ -383,7 +383,7 @@ def test_uniformity_basic():
     assert_equal(sum_samples, total_samples)
 
 
-def test_normal_distribution_edge_cases():
+def test_normal_distribution_edge_cases() raises:
     """Test edge cases for normal distribution generation.
 
     The Box-Muller transform can behave unexpectedly with extreme parameters.
@@ -492,5 +492,25 @@ def test_normal_distribution_edge_cases():
     assert_true(abs(large_mean - 1e100) < 10.0)
 
 
-def main():
+def test_full_range_integers() raises:
+    """Test random integers with full type range don't always return min."""
+    seed(42)
+
+    # Generate multiple samples and verify we don't always get min
+    var got_non_zero = False
+    for _ in range(100):
+        if random_ui64(0, UInt64.MAX) != 0:
+            got_non_zero = True
+            break
+    assert_true(got_non_zero, "Full-range UInt64 should not always return 0")
+
+    var got_non_min = False
+    for _ in range(100):
+        if random_si64(Int64.MIN, Int64.MAX) != Int64.MIN:
+            got_non_min = True
+            break
+    assert_true(got_non_min, "Full-range Int64 should not always return MIN")
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

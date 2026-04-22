@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,47 +13,36 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import sys
-from collections.abc import AsyncGenerator, Coroutine
+from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, cast
 
 import numpy as np
 import numpy.typing as npt
 from max.interfaces import (
     AudioGenerationOutput,
     AudioGenerationRequest,
-    BaseContext,
+    BaseContextType,
     EmbeddingsGenerationOutput,
     GenerationStatus,
     LogProbabilities,
-    PipelineOutput,
+    PipelineOutputType,
     PipelineTokenizer,
-    Request,
+    ReasoningParser,
+    RequestType,
     TextGenerationOutput,
     TextGenerationRequest,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
+from max.pipelines.lib import reasoning
 from max.profiler import Tracer
-from max.serve.pipelines.stop_detection import StopDetector
-from max.serve.queue.lora_queue import LoRAQueue
-from max.serve.scheduler.queues import EngineQueue, SchedulerZmqConfigs
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
-from typing_extensions import Self
-
-if sys.version_info < (3, 11):
-    from taskgroup import TaskGroup
-else:
-    from asyncio import TaskGroup
+from max.serve.worker_interface import ModelWorkerProxy
+from max.serve.worker_interface.lora_queue import LoRAQueue
 
 logger = logging.getLogger("max.serve")
-
-ContextType = TypeVar("ContextType", bound=BaseContext)
-RequestType = TypeVar("RequestType", bound=Request)
-OutputType = TypeVar("OutputType", bound=PipelineOutput)
 
 
 @dataclass(frozen=True)
@@ -63,30 +52,34 @@ class TokenGeneratorOutput:
     When yielded from next_token_chunk(), contains combined decoded text from
     all tokens in a single scheduler response. The chunk size equals
     len(response.tokens) from the model worker.
+
+    Unless otherwise indicated, statistics and containers do not consider
+    prompt or reasoning tokens.
     """
 
     status: GenerationStatus
     # Combined decoded text from all tokens in this chunk
     decoded_tokens: str | None = None
+    # Combined decoded text from all reasoning tokens in this chunk
+    decoded_reasoning_tokens: str | None = None
     # Number of tokens in this chunk (1 for single token, N for chunk)
     token_count: int = 1
+    # TODO: (MODELS-1118) determine whether to include logprobs for reasoning tokens in the response delta
     token_log_probabilities: list[float] | None = None
     top_log_probabilities: list[dict[str, float]] | None = None
     prompt_token_count: int | None = None
+    reasoning_token_count: int | None = None
     stop_sequence: str | None = None
-    is_done: bool = False
 
 
-class BasePipeline(Generic[ContextType, RequestType, OutputType], TaskGroup):
+class BasePipeline(Generic[BaseContextType, RequestType, PipelineOutputType]):
     def __init__(
         self,
         model_name: str,
-        tokenizer: PipelineTokenizer[ContextType, Any, RequestType],
-        scheduler_zmq_configs: SchedulerZmqConfigs,
+        tokenizer: PipelineTokenizer[BaseContextType, Any, RequestType],
+        model_worker: ModelWorkerProxy[BaseContextType, PipelineOutputType],
         lora_queue: LoRAQueue | None = None,
     ) -> None:
-        super().__init__()  # TaskGroup
-
         self.logger = logging.getLogger(
             self.__class__.__module__ + "." + self.__class__.__qualname__
         )
@@ -96,72 +89,46 @@ class BasePipeline(Generic[ContextType, RequestType, OutputType], TaskGroup):
         self.model_name = model_name
         self.tokenizer = tokenizer
         self.lora_queue = lora_queue
-
-        self.engine_queue = EngineQueue[ContextType, OutputType](
-            scheduler_zmq_configs=scheduler_zmq_configs,
-        )
-
-        self.tasks: set[asyncio.Task[Any]] = set()
-
-    async def __aenter__(self) -> Self:
-        await super().__aenter__()  # TaskGroup
-
-        self.logger.debug("%s: Starting workers:", self.model_name)
-
-        # Add global fanout worker.
-        self.create_background_task(self.engine_queue.response_worker())
-
-        self.logger.debug("%s: Started workers", self.model_name)
-        return self
-
-    async def __aexit__(
-        self, et: type[BaseException] | None, exc: BaseException | None, tb: Any
-    ) -> bool | None:
-        # If parent wants to exit this context for any reason
-        # we stop / cancel all our child tasks
-        for t in self.tasks:
-            if not t.done():
-                t.cancel()
-        self.tasks.clear()
-        self.logger.info("Pipeline completed: %s", self.model_name)
-        return await super().__aexit__(et, exc, tb)
-
-    def create_background_task(
-        self, coro: Coroutine[Any, Any, None]
-    ) -> asyncio.Task[Any]:
-        task = super().create_task(coro, name=coro.__name__)
-        task.add_done_callback(self.log_task_done)
-        self.tasks.add(task)
-        self.logger.debug(
-            "%s: Task Added: %s", self.model_name, task.get_name()
-        )
-        return task
-
-    def log_task_done(self, task: asyncio.Task[Any]) -> None:
-        self.logger.debug(
-            "%s: Task completed: %s", self.model_name, task.get_name()
-        )
+        self.model_worker = model_worker
 
 
 class TokenGeneratorPipeline(
     BasePipeline[
         TextAndVisionContext | TextContext,
         TextGenerationRequest,
-        TokenGeneratorOutput,
+        TextGenerationOutput,
     ]
 ):
     """Base class for LLM text generation pipelines."""
 
-    async def _collect_log_probs(
+    def __init__(
+        self,
+        *args,
+        reasoning_parser_name: str | None = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._reasoning_parser_name = reasoning_parser_name
+        self._cached_reasoning_parser: ReasoningParser | None = None
+
+    async def _reasoning_parser(self) -> ReasoningParser | None:
+        if self._reasoning_parser_name is None:
+            return None
+        if self._cached_reasoning_parser is None:
+            self._cached_reasoning_parser = await reasoning.create(
+                self._reasoning_parser_name, self.tokenizer
+            )
+        return self._cached_reasoning_parser
+
+    async def _top_log_probs(
         self,
         log_prob: LogProbabilities,
         skip_special_tokens: bool,
-    ) -> tuple[list[float], list[dict[str, float]]]:
-        token_log_probabilities = log_prob.token_log_probabilities
+    ) -> list[dict[str, float]]:
         top_log_probabilities = []
-        for top_log_probs in log_prob.top_log_probabilities:
+        for top_token_log_probs in log_prob.top_log_probabilities:
             decoded_log_probs = {}
-            for token_id, value in top_log_probs.items():
+            for token_id, value in top_token_log_probs.items():
                 decoded_log_probs[
                     await self.tokenizer.decode(
                         token_id, skip_special_tokens=skip_special_tokens
@@ -169,7 +136,7 @@ class TokenGeneratorPipeline(
                 ] = value
             top_log_probabilities.append(decoded_log_probs)
 
-        return (token_log_probabilities, top_log_probabilities)
+        return top_log_probabilities
 
     async def next_token_chunk(
         self, request: TextGenerationRequest
@@ -197,68 +164,132 @@ class TokenGeneratorPipeline(
         # Track whether we've yielded the first chunk (for TTFT metric)
         first_chunk_yielded = False
 
+        # For reasoning models, we assume that there is always a reasoning span at the very start
+        # We do not support multiple reasoning spans per response
+        # We also do not support reasoning spans that are not at the very start of the response
+        # This is consistent with vLLM
+        # TODO: (MODELS-1115) assume that the reasoning tokens are at the start of the reasoning section
+        reasoning_parser = await self._reasoning_parser()
+        is_still_reasoning = reasoning_parser is not None
+
         try:
             with record_ms(METRICS.input_time):
                 context = await self.tokenizer.new_context(request)
 
-            METRICS.input_tokens(context.tokens.active_length)
+            METRICS.input_tokens(context.tokens.prompt_length)
+
+            if is_still_reasoning:
+                # Check if reasoning was disabled in the prompt
+                assert reasoning_parser is not None
+                _, is_still_reasoning = reasoning_parser.stream(
+                    cast(Sequence[int], context.tokens.prompt)
+                )
 
             with record_ms(METRICS.output_time):
-                # stop detector is stateful, so new it up here for
-                # use in the response stream
-                stop_detector = StopDetector(stop=request.sampling_params.stop)
-                has_stop_sequences = len(stop_detector.stop) > 0
+                has_stop_sequences = bool(context.eos_tracker.eos_stop_strings)
 
-                async for response in self.engine_queue.stream(
+                async for responses in self.model_worker.stream(
                     context.request_id, context
                 ):
-                    assert isinstance(response, TextGenerationOutput)
+                    assert isinstance(responses, list)
+                    assert len(responses) > 0
+                    assert isinstance(responses[0], TextGenerationOutput)
+                    response = TextGenerationOutput.merge(responses)
 
-                    if len(response.tokens) == 0:
-                        yield TokenGeneratorOutput(
-                            status=response.final_status,
-                            token_count=0,
+                    tokens: list[int] | None = response.tokens
+                    token_log_probs = response.log_probabilities
+                    reasoning_tokens = None
+
+                    if is_still_reasoning:
+                        assert reasoning_parser is not None
+                        reasoning_span, is_still_reasoning = (
+                            reasoning_parser.stream(response.tokens)
                         )
+                        tokens = (
+                            reasoning_span.extract_content(response.tokens)
+                            or None
+                        )
+                        if response.log_probabilities is not None:
+                            token_log_probs = (
+                                reasoning_span.extract_content(
+                                    response.log_probabilities
+                                )
+                                or None
+                            )
+                        reasoning_tokens = (
+                            reasoning_span.extract_reasoning(response.tokens)
+                            or None
+                        )
+
+                    if tokens is None and reasoning_tokens is None:
+                        # If the status is not done and there were no tokens,
+                        # this indicates that the chunk contained only stripped
+                        # tokens, such as reasoning delimiters. In this case,
+                        # hold off on yielding a chunk.
+                        if response.final_status.is_done:
+                            yield TokenGeneratorOutput(
+                                status=response.final_status,
+                                token_count=0,
+                            )
                         continue
 
-                    # Decode all tokens in chunk at once - single decode call
-                    with Tracer("tokenizer.decode_chunk"):
-                        decoded_tokens = await self.tokenizer.decode(
-                            np.array(response.tokens),
-                            skip_special_tokens=skip_special_tokens,
+                    token_count = len(tokens) if tokens is not None else 0
+                    reasoning_token_count = (
+                        len(reasoning_tokens)
+                        if reasoning_tokens is not None
+                        else 0
+                    )
+
+                    with Tracer(
+                        f"tokenizer.decode_chunk({token_count + reasoning_token_count} toks)"
+                    ):
+                        decoded_tokens = (
+                            None
+                            if tokens is None
+                            else await self.tokenizer.decode(
+                                np.array(tokens),
+                                skip_special_tokens=skip_special_tokens,
+                            )
                         )
 
-                    # Check for stop sequences if configured
-                    stop_sequence_match = None
-                    if has_stop_sequences:
-                        with Tracer("stop_detector.step"):
-                            if stop_sequence_match := stop_detector.step(
-                                decoded_tokens
-                            ):
-                                self.engine_queue.cancel_queue.put_nowait(
-                                    [request.request_id]
-                                )
-                                logger.debug(
-                                    f"Cancelling {request.request_id} because stop "
-                                    f"sequence ({stop_sequence_match}) detected"
-                                )
+                        decoded_reasoning_tokens = (
+                            None
+                            if reasoning_tokens is None
+                            else await self.tokenizer.decode(
+                                np.array(reasoning_tokens),
+                                skip_special_tokens=skip_special_tokens,
+                            )
+                        )
 
-                    # Collect log probabilities if present (still per-token)
-                    all_token_log_probs = None
-                    all_top_log_probs = None
-                    if response.log_probabilities:
-                        all_token_log_probs = []
-                        all_top_log_probs = []
-                        for log_prob in response.log_probabilities:
+                    # Check for stop sequences if configured (EOSTracker)
+                    stop_sequence_match = None
+                    if has_stop_sequences and decoded_tokens is not None:
+                        with Tracer("eos_tracker.is_eos_from_string"):
+                            if (
+                                stop_sequence_match
+                                := context.eos_tracker.is_eos_from_string(
+                                    decoded_tokens
+                                )
+                            ):
+                                self.model_worker.cancel(request.request_id)
+
+                    # Collect log probability values if present (still per-token)
+                    # Does not consider reasoning tokens
+                    token_log_prob_values: list[float] | None = None
+                    top_token_log_prob_values: list[dict[str, float]] | None = (
+                        None
+                    )
+                    if token_log_probs is not None:
+                        token_log_prob_values = []
+                        top_token_log_prob_values = []
+                        for log_prob in token_log_probs:
                             with Tracer("collect_log_probs"):
-                                (
-                                    token_probs,
-                                    top_probs,
-                                ) = await self._collect_log_probs(
+                                token_probs = log_prob.token_log_probabilities
+                                top_probs = await self._top_log_probs(
                                     log_prob, skip_special_tokens
                                 )
-                                all_token_log_probs.extend(token_probs)
-                                all_top_log_probs.extend(top_probs)
+                                token_log_prob_values.extend(token_probs)
+                                top_token_log_prob_values.extend(top_probs)
 
                     # Record metrics - one TTFT/ITL per chunk
                     if not first_chunk_yielded:
@@ -271,10 +302,12 @@ class TokenGeneratorPipeline(
                     yield TokenGeneratorOutput(
                         status=response.final_status,
                         decoded_tokens=decoded_tokens,
-                        token_count=len(response.tokens),
-                        token_log_probabilities=all_token_log_probs,
-                        top_log_probabilities=all_top_log_probs,
-                        prompt_token_count=len(context.tokens),
+                        decoded_reasoning_tokens=decoded_reasoning_tokens,
+                        token_count=token_count,
+                        token_log_probabilities=token_log_prob_values,
+                        top_log_probabilities=top_token_log_prob_values,
+                        prompt_token_count=context.tokens.prompt_length,
+                        reasoning_token_count=reasoning_token_count,
                         stop_sequence=stop_sequence_match,
                     )
         finally:
@@ -307,11 +340,26 @@ class TokenGeneratorPipeline(
                 context = await self.tokenizer.new_context(request)
 
             with record_ms(METRICS.output_time):
-                async for response in self.engine_queue.stream(
+                # For embeddings tasks, the model worker runs an EmbeddingsPipeline which
+                # returns EmbeddingsGenerationOutput. The EngineQueue correctly deserializes
+                # this based on the model_worker_interface pipeline_task.
+                async for responses in self.model_worker.stream(
                     request.request_id, context
                 ):
-                    assert isinstance(response, EmbeddingsGenerationOutput)
-                    return response
+                    for response in responses:
+                        # At runtime, response should be EmbeddingsGenerationOutput for embeddings tasks
+                        # Cast to handle the generic type parameter mismatch
+                        if isinstance(response, EmbeddingsGenerationOutput):
+                            return response
+                        self.logger.error(
+                            f"Unexpected response type for embeddings task: {type(response).__name__}, "
+                            f"expected EmbeddingsGenerationOutput. Response: {response}"
+                        )
+                        raise RuntimeError(
+                            f"Expected EmbeddingsGenerationOutput for embeddings task but got "
+                            f"{type(response).__name__}. This may indicate a mismatch between "
+                            f"the API server pipeline task and the model worker pipeline."
+                        )
 
                 raise RuntimeError(
                     f"No embeddings were generated for request {request.request_id}"
@@ -346,10 +394,11 @@ class AudioGeneratorPipeline(
                 context = await self.tokenizer.new_context(request)
 
             with record_ms(METRICS.output_time):
-                async for response in self.engine_queue.stream(
+                async for responses in self.model_worker.stream(
                     request.request_id, context
                 ):
-                    yield response
+                    for response in responses:
+                        yield response
         finally:
             if self.debug_logging:
                 self.logger.debug(
@@ -365,7 +414,7 @@ class AudioGeneratorPipeline(
         audio_chunks: list[AudioGenerationOutput] = []
         np_chunks: list[npt.NDArray[np.floating[Any]]] = []
         async for chunk in self.next_chunk(request):
-            if chunk.audio_data.size == 0 or chunk.audio_data.size == 0:
+            if chunk.audio_data.size == 0:
                 continue
             np_chunks.append(chunk.audio_data)
             audio_chunks.append(chunk)

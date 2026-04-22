@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA compilation operations."""
 
-import subprocess
-import tempfile
-from pathlib import Path
-from sys.info import CompilationTarget, _accelerator_arch, _TargetType
+import std.subprocess
+import std.tempfile
+from std.pathlib import Path
+from std.sys.info import CompilationTarget, _accelerator_arch, _TargetType
 
-from compile import CompiledFunctionInfo, compile_info
+from std.compile import CompiledFunctionInfo, compile_info
 
 from .info import A100, GPUInfo
 
@@ -27,7 +27,7 @@ from .info import A100, GPUInfo
 
 
 @always_inline
-fn get_gpu_target[
+def get_gpu_target[
     # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
     target_arch: StaticString = _accelerator_arch(),
 ]() -> _TargetType:
@@ -39,7 +39,7 @@ fn get_gpu_target[
     Returns:
         Target type information for the specified GPU architecture.
     """
-    __comptime_assert (
+    comptime assert (
         target_arch != ""
     ), "target_arch must be a valid GPU architecture."
     return GPUInfo.from_name[target_arch]().target()
@@ -51,13 +51,13 @@ fn get_gpu_target[
 
 
 @always_inline("nodebug")
-fn _cross_compilation() -> Bool:
+def _cross_compilation() -> Bool:
     return __mlir_attr.`#kgen.param.expr<cross_compilation> : i1`
 
 
 @always_inline
-fn _compile_code[
-    func_type: __TypeOfAllTypes,
+def _compile_code[
+    func_type: TrivialRegisterPassable,
     //,
     func: func_type,
     /,
@@ -67,11 +67,13 @@ fn _compile_code[
     compile_options: StaticString = CompilationTarget[
         target
     ].default_compile_options(),
+    link_options: StaticString = "",
 ]() -> CompiledFunctionInfo[func_type, func, target]:
     return compile_info[
         func,
         emission_kind=emission_kind,
         compile_options=compile_options,
+        link_options=link_options,
         target=target,
     ]()
 
@@ -82,7 +84,7 @@ fn _compile_code[
 
 
 @no_inline
-fn _to_sass[
+def _to_sass[
     target: _TargetType = get_gpu_target()
 ](asm: String, *, nvdisasm_opts: String = "") raises -> String:
     comptime nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
@@ -90,14 +92,14 @@ fn _to_sass[
         raise Error(
             "the `nvdisasm` binary does not exist in '", nvdisasm_path, "'"
         )
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
+    with std.tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         var elf_file = Path(tmpdir) / "output.elf"
         _ = _ptxas_compile(
             asm,
             output_file=elf_file,
         )
-        return subprocess.run(
-            String(nvdisasm_path, " -ndf -c ", nvdisasm_opts, " ", elf_file)
+        return std.subprocess.run(
+            String(t"{nvdisasm_path} -ndf -c {nvdisasm_opts} {elf_file}")
         )
     return ""
 
@@ -108,7 +110,7 @@ fn _to_sass[
 
 
 @no_inline
-fn _ptxas_compile[
+def _ptxas_compile[
     target: _TargetType = get_gpu_target()
 ](
     asm: String, *, options: String = "", output_file: Optional[Path] = None
@@ -117,11 +119,11 @@ fn _ptxas_compile[
     if not ptxas_path.exists():
         raise Error("the `ptxas` binary does not exist in '", ptxas_path, "'")
     # Compile the PTX code to an ELF file. Here we care about the diagnostics.
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
+    with std.tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         var ptx_file = Path(tmpdir) / "output.ptx"
         var elf_file = Path(tmpdir) / "output.elf"
         ptx_file.write_text(asm)
-        return subprocess.run(
+        return std.subprocess.run(
             String(
                 ptxas_path,
                 " --gpu-name ",

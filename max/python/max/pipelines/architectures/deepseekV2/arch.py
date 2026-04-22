@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,16 +13,15 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
 from . import weight_adapters
 from .model import DeepseekV2Model
+from .model_config import DeepseekV2Config
 
 deepseekV2_arch = SupportedArchitecture(
     name="DeepseekV2ForCausalLM",
@@ -30,9 +29,9 @@ deepseekV2_arch = SupportedArchitecture(
     example_repo_ids=[
         "deepseek-ai/DeepSeek-V2-Lite-Chat",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        "bfloat16",
     },
     multi_gpu_supported=True,
     pipeline_model=DeepseekV2Model,
@@ -42,4 +41,6 @@ deepseekV2_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    requires_max_batch_context_length=True,
+    config=DeepseekV2Config,
 )

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,19 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.sys import has_nvidia_gpu_accelerator
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import has_nvidia_gpu_accelerator
-
-from benchmark import Bench
-from gpu.host import DeviceBuffer, DeviceContext
-from layout.layout_tensor import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    UNKNOWN_VALUE,
-)
+from std.benchmark import Bench
+from std.gpu.host import DeviceBuffer, DeviceContext
+from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import random
 from matmul_kernels import (
     run_cublas,
@@ -35,16 +27,16 @@ from matmul_kernels import (
     run_gemm_kernel_6,
     run_gemm_kernel_tc,
 )
-from testing import assert_almost_equal
-from utils import IndexList
+from std.testing import assert_almost_equal
+from std.utils import IndexList
 
-comptime run_gemm_kernel_type = fn (
+comptime run_gemm_kernel_type = def(
     mut m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,
     b: LayoutTensor,
     c: LayoutTensor,
-) raises -> None
+) thin raises -> None
 
 
 struct test_matmul[
@@ -64,7 +56,7 @@ struct test_matmul[
     var c_device_buffer: DeviceBuffer[Self.dtype]
     var c_device_buffer_ref: DeviceBuffer[Self.dtype]
 
-    fn __init__(out self, mut m: Bench, ctx: DeviceContext) raises:
+    def __init__(out self, mut m: Bench, ctx: DeviceContext) raises:
         self.ctx = ctx
         self.M = Self.a_layout.shape[0].value()
         self.N = Self.b_layout.shape[1].value()
@@ -119,17 +111,17 @@ struct test_matmul[
             self.c_device_buffer_ref.unsafe_ptr(),
         )
 
-    fn run_test[gemm: run_gemm_kernel_type](self, mut m: Bench) raises:
+    def run_test[gemm: run_gemm_kernel_type](self, mut m: Bench) raises:
         print("=== test_matmul")
 
         var ctx = self.ctx
 
-        fn create_tensor[
+        def create_tensor[
             layout: Layout
         ](
             m: Int,
             n: Int,
-            ptr: UnsafePointer[Scalar[Self.dtype]],
+            ptr: UnsafePointer[Scalar[Self.dtype], _],
             out result: LayoutTensor[Self.dtype, layout, ptr.origin],
         ):
             var dynamic_layout = type_of(result.runtime_layout)(
@@ -158,11 +150,11 @@ struct test_matmul[
                         c_host[i],
                         atol=0.0001,
                         rtol=0.01,
-                        msg=String("not equal at index: ", i),
+                        msg=String(t"not equal at index: {i}"),
                     )
 
 
-def main():
+def main() raises:
     comptime N = 4096
     comptime M = N
     comptime K = M

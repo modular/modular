@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,8 +29,7 @@ for examples that retrieve `DeviceAttribute` values.
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct DeviceAttribute:
+struct DeviceAttribute(TrivialRegisterPassable):
     """
     Represents CUDA device attributes that can be queried from a GPU device.
 

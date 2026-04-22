@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,9 +18,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams
-from max.pipelines.lib import KVCacheConfig, PipelineConfig, SupportedEncoding
+from max.nn.transformer import ReturnLogits
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers import AutoConfig
 
 from ..mistral.model import MistralModel
@@ -33,8 +33,6 @@ class Mistral3Model(MistralModel):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -44,14 +42,11 @@ class Mistral3Model(MistralModel):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
             adapter,
             return_logits,
-            text_huggingface_config=huggingface_config.text_config,
         )
 
     @classmethod
@@ -70,10 +65,6 @@ class Mistral3Model(MistralModel):
             kv_cache_config,
             cache_dtype,
         )
-
-    @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return super().get_num_layers(huggingface_config.text_config)
 
     @classmethod
     def calculate_max_seq_len(

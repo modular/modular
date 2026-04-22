@@ -12,7 +12,8 @@ however its current API has several flaws.
 ## Current Issues with `UnsafePointer`
 
 1. **Unsafe implicit conversions**
-   - `immutable` → `mutable` ([GitHub issue #4386](https://github.com/modular/modular/issues/4386))
+   - `immutable` → `mutable`
+     ([GitHub issue #4386](https://github.com/modular/modular/issues/4386))
    - `origin_of(a)` → `origin_of(b)`
    - `AnyOrigin` → `origin_of(a)`
 
@@ -68,14 +69,13 @@ support implicit conversions to avoid breaking existing code.
 ## `UnsafePointer` API (current)
 
 ```mojo
-@register_passable("trivial")
 struct UnsafePointer[
     type: AnyType,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     mut: Bool = True,  # ⚠️ Defaulted to mutable
     origin: Origin[mut] = Origin[mut].cast_from[MutAnyOrigin],  # ⚠️ Defaulted to AnyOrigin
-]:
+](TrivialRegisterPassable):
     ...
 ```
 
@@ -109,10 +109,10 @@ alias ImmutUnsafePointer[...] = UnsafePointer[mut=False, ...]
 
 ### Cross-language Comparison
 
-| Mojo | C++ | Rust |
-| --- | --- | --- |
+| Mojo                    | C++        | Rust       |
+|-------------------------|------------|------------|
 | `ImmutUnsafePointer[T]` | `const T*` | `*const T` |
-| `MutUnsafePointer[T]` | `T*` | `*mut T` |
+| `MutUnsafePointer[T]`   | `T*`       | `*mut T`   |
 
 ---
 
@@ -166,7 +166,7 @@ path, allowing incremental migration and validation before replacing
 ## Migration Guide: From `LegacyUnsafePointer` to the New `UnsafePointer`
 
 This guide walks through updating your Mojo codebase to use the new, safer
-`UnsafePointer` API.  
+`UnsafePointer` API.
 
 ### Step 1 — Rename Old `UnsafePointer` to `LegacyUnsafePointer`
 
@@ -178,7 +178,7 @@ This is a mechanical rename and does not change runtime semantics.
 ### Step 2 — Migrate Code to the New `UnsafePointer`
 
 Once the old type is renamed, begin replacing `LegacyUnsafePointer` with the new
-`UnsafePointer`.  
+`UnsafePointer`.
 The new pointer type requires you to explicitly specify the mutability and
 origin to make pointer behavior clearer and safer.
 
@@ -247,7 +247,7 @@ struct MyList:
     var _len: Int
 
     fn unsafe_ptr[
-        mut: Bool, 
+        mut: Bool,
         origin: Origin[mut], //
     ](ref [origin] self) -> UnsafePointer[Int, origin]:
         return self._data
@@ -297,6 +297,6 @@ def main():
         var size = 128
         var buf = ctx.enqueue_create_buffer[DType.float32](size)
         ctx.enqueue_function_experimental[kernel](buf)
-        
+
         # ...
 ```

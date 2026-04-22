@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,25 +15,25 @@
 You can import these APIs from the `utils` package. For example:
 
 ```mojo
-from utils.numerics import FPUtils
+from std.utils.numerics import FPUtils
 ```
 """
 
-from sys import CompilationTarget, bit_width_of, llvm_intrinsic
-from sys._assembly import inlined_assembly
-from sys.ffi import _external_call_const
+from std.sys import CompilationTarget, bit_width_of, llvm_intrinsic
+from std.sys._assembly import inlined_assembly
+from std.ffi import _external_call_const
 
-from builtin.dtype import _integral_type_of, _unsigned_integral_type_of
-from builtin.simd import _simd_apply
-from memory import bitcast
+from std.builtin.dtype import _integral_type_of, _unsigned_integral_type_of
+from std.builtin.simd import _simd_apply
+from std.memory import bitcast
 
 # ===----------------------------------------------------------------------=== #
 # FPUtils
 # ===----------------------------------------------------------------------=== #
 
 
-fn _constrain_fp_type[dtype: DType]():
-    __comptime_assert (
+def _constrain_fp_type[dtype: DType]():
+    comptime assert (
         dtype.is_floating_point()
     ), "dtype must be a floating point type"
 
@@ -59,7 +59,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline("nodebug")
-    fn mantissa_width() -> Int:
+    def mantissa_width() -> Int:
         """Returns the mantissa width of a floating point type.
 
         Returns:
@@ -69,7 +69,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline("nodebug")
-    fn max_exponent() -> Int:
+    def max_exponent() -> Int:
         """Returns the max exponent of a floating point dtype without accounting
         for inf representations. This is not
         the maximum representable exponent, which is generally equal to
@@ -82,7 +82,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline("nodebug")
-    fn exponent_width() -> Int:
+    def exponent_width() -> Int:
         """Returns the exponent width of a floating point type.
 
         Returns:
@@ -92,7 +92,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn exponent_bias() -> Int:
+    def exponent_bias() -> Int:
         """Returns the exponent bias of a floating point type.
 
         Returns:
@@ -102,7 +102,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn mantissa_mask() -> Int:
+    def mantissa_mask() -> Int:
         """Returns the mantissa mask of a floating point type.
 
         Returns:
@@ -112,7 +112,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn sign_mask() -> Int:
+    def sign_mask() -> Int:
         """Returns the sign mask of a floating point type.
 
         It is computed by `1 << (exponent_width + mantissa_width)`.
@@ -120,12 +120,11 @@ struct FPUtils[
         Returns:
             The sign mask.
         """
-        # convert to `Int` first to bypass overflow check
-        return 1 << Int(Self.exponent_width() + Self.mantissa_width())
+        return 1 << (Self.exponent_width() + Self.mantissa_width())
 
     @staticmethod
     @always_inline
-    fn exponent_mask() -> Int:
+    def exponent_mask() -> Int:
         """Returns the exponent mask of a floating point type.
 
         It is computed by `~(sign_mask | mantissa_mask)`.
@@ -137,7 +136,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn exponent_mantissa_mask() -> Int:
+    def exponent_mantissa_mask() -> Int:
         """Returns the exponent and mantissa mask of a floating point type.
 
         It is computed by `exponent_mask | mantissa_mask`.
@@ -149,7 +148,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn quiet_nan_mask() -> Int:
+    def quiet_nan_mask() -> Int:
         """Returns the quiet NaN mask for a floating point type.
 
         The mask is defined by evaluating:
@@ -168,7 +167,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn bitcast_to_integer(value: Scalar[Self.dtype]) -> Int:
+    def bitcast_to_integer(value: Scalar[Self.dtype]) -> Int:
         """Bitcasts the floating-point value to an integer.
 
         Args:
@@ -181,7 +180,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn bitcast_to_uint(value: Scalar[Self.dtype]) -> Scalar[Self.uint_type]:
+    def bitcast_to_uint(value: Scalar[Self.dtype]) -> Scalar[Self.uint_type]:
         """Bitcasts the floating-point value to an integer.
 
         Args:
@@ -194,7 +193,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn bitcast_from_integer(value: Int) -> Scalar[Self.dtype]:
+    def bitcast_from_integer(value: Int) -> Scalar[Self.dtype]:
         """Bitcasts the floating-point value from an integer.
 
         Args:
@@ -207,7 +206,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn get_sign(value: Scalar[Self.dtype]) -> Bool:
+    def get_sign(value: Scalar[Self.dtype]) -> Bool:
         """Returns the sign of the floating point value.
 
         Args:
@@ -220,7 +219,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn set_sign(value: Scalar[Self.dtype], sign: Bool) -> Scalar[Self.dtype]:
+    def set_sign(value: Scalar[Self.dtype], sign: Bool) -> Scalar[Self.dtype]:
         """Sets the sign of the floating point value.
 
         Args:
@@ -239,7 +238,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn get_exponent(value: Scalar[Self.dtype]) -> Int:
+    def get_exponent(value: Scalar[Self.dtype]) -> Int:
         """Returns the exponent bits of the floating-point value.
 
         Args:
@@ -254,7 +253,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn get_exponent_biased(value: Scalar[Self.dtype]) -> Int:
+    def get_exponent_biased(value: Scalar[Self.dtype]) -> Int:
         """Returns the biased exponent of the floating-point value as an Int,
         this is how the value is stored before subtracting the exponent bias.
 
@@ -265,13 +264,14 @@ struct FPUtils[
             The biased exponent as an Int.
         """
         return Int(
-            Self.bitcast_to_uint(value) >> Self.mantissa_width()
-            & ((1 << Self.exponent_width()) - 1)
+            Self.bitcast_to_uint(value)
+            >> Scalar[Self.uint_type](Self.mantissa_width())
+            & Scalar[Self.uint_type]((1 << Self.exponent_width()) - 1)
         )
 
     @staticmethod
     @always_inline
-    fn set_exponent(
+    def set_exponent(
         value: Scalar[Self.dtype], exponent: Int
     ) -> Scalar[Self.dtype]:
         """Sets the exponent bits of the floating-point value.
@@ -290,7 +290,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn get_mantissa(value: Scalar[Self.dtype]) -> Int:
+    def get_mantissa(value: Scalar[Self.dtype]) -> Int:
         """Gets the mantissa bits of the floating-point value.
 
         Args:
@@ -303,7 +303,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn get_mantissa_uint(value: Scalar[Self.dtype]) -> Scalar[Self.uint_type]:
+    def get_mantissa_uint(value: Scalar[Self.dtype]) -> Scalar[Self.uint_type]:
         """Gets the mantissa bits of the floating-point value.
 
         Args:
@@ -312,11 +312,13 @@ struct FPUtils[
         Returns:
             The mantissa bits.
         """
-        return Self.bitcast_to_uint(value) & Self.mantissa_mask()
+        return Self.bitcast_to_uint(value) & Scalar[Self.uint_type](
+            Self.mantissa_mask()
+        )
 
     @staticmethod
     @always_inline
-    fn set_mantissa(
+    def set_mantissa(
         value: Scalar[Self.dtype], mantissa: Int
     ) -> Scalar[Self.dtype]:
         """Sets the mantissa bits of the floating-point value.
@@ -335,7 +337,7 @@ struct FPUtils[
 
     @staticmethod
     @always_inline
-    fn pack(sign: Bool, exponent: Int, mantissa: Int) -> Scalar[Self.dtype]:
+    def pack(sign: Bool, exponent: Int, mantissa: Int) -> Scalar[Self.dtype]:
         """Construct a floating-point value from its constituent sign, exponent,
         and mantissa.
 
@@ -367,24 +369,23 @@ struct FlushDenormals(Defaultable):
     """The current state."""
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initializes the FlushDenormals."""
         self.state = Self._current_state()
 
     @always_inline
-    fn __enter__(self):
+    def __enter__(self):
         """Enters the context. This will set denormals to zero."""
         self._set_flush(True)
 
     @always_inline
-    fn __exit__(self):
+    def __exit__(self):
         """Exits the context. This will restore the prior FPState."""
         self._set_flush(False, True)
 
     @always_inline
-    fn _set_flush(self, enable: Bool, force: Bool = False):
-        @parameter
-        if (
+    def _set_flush(self, enable: Bool, force: Bool = False):
+        comptime if (
             not CompilationTarget.has_sse4()
             and not CompilationTarget.has_neon()
         ):  # not supported, so skip
@@ -399,8 +400,7 @@ struct FlushDenormals(Defaultable):
         # value, otherwise we are in an exit state and we need to restore
         # the prior value.
 
-        @parameter
-        if CompilationTarget.has_sse4():
+        comptime if CompilationTarget.has_sse4():
             var mxcsr = self.state
             if enable:
                 mxcsr |= 0x8000  # flush to zero
@@ -424,9 +424,8 @@ struct FlushDenormals(Defaultable):
         ](fpcr)
 
     @always_inline
-    fn _is_set(self, state: Int32) -> Bool:
-        @parameter
-        if CompilationTarget.has_sse4():
+    def _is_set(self, state: Int32) -> Bool:
+        comptime if CompilationTarget.has_sse4():
             return (state & 0x8000) != 0 and (state & 0x40) != 0
 
         comptime ARM_FPCR_FZ = Int32(1) << 24
@@ -434,18 +433,16 @@ struct FlushDenormals(Defaultable):
 
     @always_inline
     @staticmethod
-    fn _current_state() -> Int32:
+    def _current_state() -> Int32:
         """Gets the current denormal state."""
 
-        @parameter
-        if (
+        comptime if (
             not CompilationTarget.has_sse4()
             and not CompilationTarget.has_neon()
         ):  # not supported, so skip
             return 0
 
-        @parameter
-        if CompilationTarget.has_sse4():
+        comptime if CompilationTarget.has_sse4():
             var mxcsr = Int32()
             llvm_intrinsic["llvm.x86.sse.stmxcsr", NoneType](
                 UnsafePointer[Int32](to=mxcsr)
@@ -468,7 +465,7 @@ struct FlushDenormals(Defaultable):
 
 
 @always_inline("nodebug")
-fn nan[dtype: DType]() -> Scalar[dtype]:
+def nan[dtype: DType]() -> Scalar[dtype]:
     """Gets a NaN value for the given dtype.
 
     Constraints:
@@ -480,12 +477,11 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
     Returns:
         The NaN value of the given dtype.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "Only floating point dtypes support NaN."
 
-    @parameter
-    if dtype == DType.float8_e4m3fn:
+    comptime if dtype == DType.float8_e4m3fn:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f8e4m3fn>`,
         )
@@ -522,8 +518,7 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
             __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<f64>`,
         )
     else:
-        constrained[False, "unsupported float type"]()
-        return {}
+        comptime assert False, "unsupported float type"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -532,8 +527,8 @@ fn nan[dtype: DType]() -> Scalar[dtype]:
 
 
 @always_inline("nodebug")
-fn isnan[
-    dtype: DType, width: Int, //
+def isnan[
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
     """Checks if the value is Not a Number (NaN).
 
@@ -548,8 +543,7 @@ fn isnan[
         True if val is NaN and False otherwise.
     """
 
-    @parameter
-    if not dtype.is_floating_point() or dtype in (
+    comptime if not dtype.is_floating_point() or dtype in (
         DType.float8_e4m3fnuz,
         DType.float8_e5m2fnuz,
     ):
@@ -581,7 +575,7 @@ fn isnan[
 
 
 @always_inline("nodebug")
-fn inf[dtype: DType]() -> Scalar[dtype]:
+def inf[dtype: DType]() -> Scalar[dtype]:
     """Gets a +inf value for the given dtype.
 
     Constraints:
@@ -593,12 +587,11 @@ fn inf[dtype: DType]() -> Scalar[dtype]:
     Returns:
         The +inf value of the given dtype.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "Only floating point dtypes support +inf."
 
-    @parameter
-    if dtype == DType.float8_e4m3fnuz:
+    comptime if dtype == DType.float8_e4m3fnuz:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f8e4m3fnuz>`,
         )
@@ -627,8 +620,7 @@ fn inf[dtype: DType]() -> Scalar[dtype]:
             __mlir_attr.`#pop.simd<"inf"> : !pop.scalar<f64>`,
         )
     else:
-        constrained[False, "unsupported float type"]()
-        return {}
+        comptime assert False, "unsupported float type"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -637,7 +629,7 @@ fn inf[dtype: DType]() -> Scalar[dtype]:
 
 
 @always_inline("nodebug")
-fn neg_inf[dtype: DType]() -> Scalar[dtype]:
+def neg_inf[dtype: DType]() -> Scalar[dtype]:
     """Gets a -inf value for the given dtype.
 
     Constraints:
@@ -649,12 +641,11 @@ fn neg_inf[dtype: DType]() -> Scalar[dtype]:
     Returns:
         The -inf value of the given dtype.
     """
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "Only floating point dtypes support -inf."
 
-    @parameter
-    if dtype == DType.float8_e4m3fn:
+    comptime if dtype == DType.float8_e4m3fn:
         return rebind[Scalar[dtype]](
             __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f8e4m3fn>`,
         )
@@ -687,8 +678,7 @@ fn neg_inf[dtype: DType]() -> Scalar[dtype]:
             __mlir_attr.`#pop.simd<"-inf"> : !pop.scalar<f64>`,
         )
     else:
-        constrained[False, "unsupported float type"]()
-        return {}
+        comptime assert False, "unsupported float type"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -697,7 +687,7 @@ fn neg_inf[dtype: DType]() -> Scalar[dtype]:
 
 
 @always_inline("nodebug")
-fn max_finite[dtype: DType]() -> Scalar[dtype]:
+def max_finite[dtype: DType]() -> Scalar[dtype]:
     """Returns the maximum finite value of type.
 
     Parameters:
@@ -708,8 +698,7 @@ fn max_finite[dtype: DType]() -> Scalar[dtype]:
         for floating-point types.
     """
 
-    @parameter
-    if dtype.is_unsigned():
+    comptime if dtype.is_unsigned():
         return ~Scalar[dtype](0)
     elif dtype.is_integral():
         return Scalar[dtype](
@@ -734,8 +723,7 @@ fn max_finite[dtype: DType]() -> Scalar[dtype]:
     elif dtype == DType.bool:
         return Scalar(True)._refine[dtype]()
     else:
-        constrained[False, "max_finite() called on unsupported dtype"]()
-        return {}
+        comptime assert False, "max_finite() called on unsupported dtype"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -744,7 +732,7 @@ fn max_finite[dtype: DType]() -> Scalar[dtype]:
 
 
 @always_inline
-fn min_finite[dtype: DType]() -> Scalar[dtype]:
+def min_finite[dtype: DType]() -> Scalar[dtype]:
     """Returns the minimum (lowest) finite value of type.
 
     Parameters:
@@ -755,8 +743,7 @@ fn min_finite[dtype: DType]() -> Scalar[dtype]:
         infinity for floating-point types.
     """
 
-    @parameter
-    if dtype.is_unsigned():
+    comptime if dtype.is_unsigned():
         return 0
     elif dtype.is_integral():
         return -max_finite[dtype]() - 1
@@ -765,8 +752,7 @@ fn min_finite[dtype: DType]() -> Scalar[dtype]:
     elif dtype == DType.bool:
         return Scalar(False)._refine[dtype]()
     else:
-        constrained[False, "min_finite() called on unsupported dtype"]()
-        return {}
+        comptime assert False, "min_finite() called on unsupported dtype"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -775,7 +761,7 @@ fn min_finite[dtype: DType]() -> Scalar[dtype]:
 
 
 @always_inline("nodebug")
-fn max_or_inf[dtype: DType]() -> Scalar[dtype]:
+def max_or_inf[dtype: DType]() -> Scalar[dtype]:
     """Returns the maximum (potentially infinite) value of type.
 
     Parameters:
@@ -786,8 +772,7 @@ fn max_or_inf[dtype: DType]() -> Scalar[dtype]:
         floating-point types.
     """
 
-    @parameter
-    if dtype.is_floating_point():
+    comptime if dtype.is_floating_point():
         # TODO: some floating point types don't support inf
         return inf[dtype]()
     else:
@@ -800,7 +785,7 @@ fn max_or_inf[dtype: DType]() -> Scalar[dtype]:
 
 
 @always_inline("nodebug")
-fn min_or_neg_inf[dtype: DType]() -> Scalar[dtype]:
+def min_or_neg_inf[dtype: DType]() -> Scalar[dtype]:
     """Returns the minimum (potentially negative infinite) value of type.
 
     Parameters:
@@ -811,8 +796,7 @@ fn min_or_neg_inf[dtype: DType]() -> Scalar[dtype]:
         infinity for floating-point types.
     """
 
-    @parameter
-    if dtype.is_floating_point():
+    comptime if dtype.is_floating_point():
         # TODO: some floating point types don't support inf
         return neg_inf[dtype]()
     else:
@@ -825,8 +809,8 @@ fn min_or_neg_inf[dtype: DType]() -> Scalar[dtype]:
 
 
 @always_inline("nodebug")
-fn isinf[
-    dtype: DType, width: Int, //
+def isinf[
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
     """Checks if the value is infinite.
 
@@ -843,8 +827,7 @@ fn isinf[
         True if val is infinite and False otherwise.
     """
 
-    @parameter
-    if not dtype.is_floating_point() or dtype in (
+    comptime if not dtype.is_floating_point() or dtype in (
         DType.float8_e4m3fnuz,
         DType.float8_e5m2fnuz,
     ):
@@ -867,8 +850,8 @@ fn isinf[
 
 
 @always_inline("nodebug")
-fn isfinite[
-    dtype: DType, width: Int, //
+def isfinite[
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[DType.bool, width]:
     """Checks if the value is not infinite.
 
@@ -885,8 +868,7 @@ fn isfinite[
         True if val is finite and False otherwise.
     """
 
-    @parameter
-    if not dtype.is_floating_point():
+    comptime if not dtype.is_floating_point():
         return SIMD[DType.bool, width](fill=True)
 
     return llvm_intrinsic[
@@ -900,7 +882,7 @@ fn isfinite[
 
 
 @always_inline
-fn get_accum_type[
+def get_accum_type[
     dtype: DType, *, preferred_accum_type: DType = DType.float32
 ]() -> DType:
     """Returns the recommended dtype for accumulation operations.
@@ -927,11 +909,8 @@ fn get_accum_type[
         dtype and the preferred accumulation type.
     """
 
-    @parameter
-    if dtype.is_float8():
-
-        @parameter
-        if preferred_accum_type == DType.float32:
+    comptime if dtype.is_float8():
+        comptime if preferred_accum_type == DType.float32:
             return DType.float32
         else:
             return DType.bfloat16
@@ -940,8 +919,7 @@ fn get_accum_type[
     elif dtype == DType.float16:
         # fp16 accumulation can be done in fp16 or fp32. Use fp16 by default for better
         # performance and use fp32 only when it's specified via preferred type.
-        @parameter
-        if preferred_accum_type == DType.float32:
+        comptime if preferred_accum_type == DType.float32:
             return DType.float32
         else:
             return DType.float16
@@ -954,8 +932,8 @@ fn get_accum_type[
 # ===----------------------------------------------------------------------=== #
 
 
-fn nextafter[
-    dtype: DType, width: Int, //
+def nextafter[
+    dtype: DType, width: SIMDSize, //
 ](arg0: SIMD[dtype, width], arg1: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes next representable value of `arg0` in the direction of `arg1`.
 
@@ -973,14 +951,14 @@ fn nextafter[
     Returns:
         The `nextafter` of the inputs.
     """
-    __comptime_assert dtype in (
+    comptime assert dtype in (
         DType.float32,
         DType.float64,
     ), "nextafter only supports float32 and float64 types"
 
     @always_inline("nodebug")
     @parameter
-    fn _float32_dispatch[
+    def _float32_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["nextafterf", Scalar[result_type]](
@@ -989,18 +967,17 @@ fn nextafter[
 
     @always_inline("nodebug")
     @parameter
-    fn _float64_dispatch[
+    def _float64_dispatch[
         lhs_type: DType, rhs_type: DType, result_type: DType
     ](arg0: Scalar[lhs_type], arg1: Scalar[rhs_type]) -> Scalar[result_type]:
         return _external_call_const["nextafter", Scalar[result_type]](
             arg0, arg1
         )
 
-    __comptime_assert (
+    comptime assert (
         dtype.is_floating_point()
     ), "input dtype must be floating point"
 
-    @parameter
-    if dtype == DType.float64:
+    comptime if dtype == DType.float64:
         return _simd_apply[_float64_dispatch, result_dtype=dtype](arg0, arg1)
     return _simd_apply[_float32_dispatch, result_dtype=dtype](arg0, arg1)

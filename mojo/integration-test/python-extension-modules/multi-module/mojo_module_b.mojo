@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
 from common import TestStruct
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
 
 
 @export
-fn PyInit_mojo_module_b() -> PythonObject:
+def PyInit_mojo_module_b() -> PythonObject:
     try:
         var m = PythonModuleBuilder("mojo_module_b")
         m.def_function[print_test_struct]("print_test_struct")
@@ -29,11 +29,11 @@ fn PyInit_mojo_module_b() -> PythonObject:
         abort(String("failed to create Python module: ", e))
 
 
-fn print_test_struct(s: PythonObject) -> None:
+def print_test_struct(s: PythonObject) -> None:
     var self_ptr = TestStruct._get_self_ptr(s)
     self_ptr[].print()
 
 
-fn add(s: PythonObject) -> PythonObject:
+def add(s: PythonObject) -> PythonObject:
     var self_ptr = TestStruct._get_self_ptr(s)
     return self_ptr[].a + self_ptr[].b

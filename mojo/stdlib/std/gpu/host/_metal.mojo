@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,8 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import external_call
-from gpu.host.device_context import _ConstCharPtr, _checked, _DeviceContextPtr
+from std.ffi import external_call
+from std.gpu.host.device_context import (
+    _CString,
+    _checked,
+    _DeviceContextPtr,
+)
 
 
 struct _MTLDevice:
@@ -26,18 +30,16 @@ comptime MTLDevice = UnsafePointer[_MTLDevice, MutAnyOrigin]
 # Use `var metal_device: MTLDevice = metal_device(ctx)` where ctx is a `DeviceContext` to get access to the
 # underlying MTLDevice.
 @always_inline
-fn metal_device(ctx: DeviceContext) raises -> MTLDevice:
-    var result = MTLDevice()
+def metal_device(ctx: DeviceContext) raises -> MTLDevice:
+    var result = Optional[MTLDevice]()
     # const char *AsyncRT_DeviceContext_metal_device(MTL::Device **result, const DeviceContext *ctx)
     _checked(
         external_call[
             "AsyncRT_DeviceContext_metal_device",
-            _ConstCharPtr,
-            UnsafePointer[MTLDevice, origin_of(result)],
-            _DeviceContextPtr,
+            _CString[],
         ](
             UnsafePointer(to=result),
             ctx._handle,
         )
     )
-    return result
+    return result.unsafe_value()

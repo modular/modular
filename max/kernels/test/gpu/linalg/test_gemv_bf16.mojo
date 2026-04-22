@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,42 +11,37 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-import gpu.primitives.warp as warp
-from gpu import WARP_SIZE
-from gpu.host import DeviceContext
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor
-from layout.runtime_layout import RuntimeLayout
+import std.gpu.primitives.warp as warp
+from std.gpu import WARP_SIZE
+from std.gpu.host import DeviceContext
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.gemv import gemv_kernel
 from linalg.matmul.gpu import matmul_kernel_naive
-from memory import LegacyUnsafePointer
+from std.testing import assert_false
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_false
-
-from utils.index import IndexList
-from utils.numerics import isnan
+from std.utils.numerics import isnan
 
 
-fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
+def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     print("== run_matvec kernel")
 
     var iterations = 100
-    var a_host = UnsafePointer[BFloat16].alloc(M * K)
-    var b_host = UnsafePointer[BFloat16].alloc(K * N)
-    var c_host = UnsafePointer[Float32].alloc(M * N)
-    var a_host_n = UnsafePointer[Float32].alloc(M * K)
-    var b_host_n = UnsafePointer[Float32].alloc(K * N)
-    var c_host_n = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[BFloat16](M * K)
+    var b_host = alloc[BFloat16](K * N)
+    var c_host = alloc[Float32](M * N)
+    var a_host_n = alloc[Float32](M * K)
+    var b_host_n = alloc[Float32](K * N)
+    var c_host_n = alloc[Float32](M * N)
 
     for i in range(M * K):
-        a_host[i] = i
-        a_host_n[i] = i
+        a_host[i] = BFloat16(i)
+        a_host_n[i] = Float32(i)
 
     for i in range(K * N):
-        b_host[i] = i + 1
-        b_host_n[i] = i + 1
+        b_host[i] = BFloat16(i + 1)
+        b_host_n[i] = Float32(i + 1)
 
     for i in range(M * N):
         c_host[i] = 0
@@ -69,7 +64,7 @@ fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
 
     @always_inline
     @parameter
-    fn run_func_gemv(ctx: DeviceContext) raises:
+    def run_func_gemv(ctx: DeviceContext) raises:
         ctx.enqueue_function_experimental[kernel](
             c_device,
             a_device,
@@ -84,10 +79,10 @@ fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     var kernelType = "GEMV"
     var nstime = ctx.execution_time[run_func_gemv](iterations)
     var flops = 2 * M * N * K
-    var sectime = (nstime / iterations) / 1000000000
+    var sectime = Float64(nstime) / Float64(iterations) / 1000000000
     print(kernelType, "KERNEL:")
     print(sectime, "sec")
-    print(flops * 1e-9 / sectime, " GFLOPS")
+    print(Float64(flops) * 1e-9 / sectime, " GFLOPS")
     print()
 
     ctx.enqueue_copy(c_host, c_device)
@@ -98,41 +93,46 @@ fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
 
     comptime BLOCK_DIM = 16
 
-    # Create layout tensors for the naive kernel
-    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+    # Create TileTensors for the naive kernel.
+    # a/b are constructed as immutable to match the ImmutAnyOrigin
+    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # requires exact type matches).
+    from std.memory import UnsafePointer
 
-    var c_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        c_device_n.unsafe_ptr(),
-        RuntimeLayout[layout].row_major(IndexList[2](M, N)),
+    var c_tt = TileTensor(
+        c_device_n,
+        row_major(Coord(Idx(M), Idx(N))),
     )
-
-    var a_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        a_device_n.unsafe_ptr(),
-        RuntimeLayout[layout].row_major(IndexList[2](M, K)),
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device_n.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
     )
-
-    var b_tensor = LayoutTensor[DType.float32, layout, MutAnyOrigin](
-        b_device_n.unsafe_ptr(),
-        RuntimeLayout[layout].row_major(IndexList[2](K, N)),
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device_n.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(K), Idx(N))),
     )
 
     @always_inline
     @parameter
-    fn run_func_naive(ctx: DeviceContext) raises:
+    def run_func_naive(ctx: DeviceContext) raises:
         comptime kernel = matmul_kernel_naive[
             DType.float32,
             DType.float32,
             DType.float32,
-            c_tensor.layout,
-            a_tensor.layout,
-            b_tensor.layout,
+            type_of(c_tt).LayoutType,
+            type_of(a_tt).LayoutType,
+            type_of(b_tt).LayoutType,
             BLOCK_DIM,
         ]
 
         ctx.enqueue_function_experimental[kernel](
-            c_tensor,
-            a_tensor,
-            b_tensor,
+            c_tt,
+            a_tt,
+            b_tt,
             M,
             N,
             K,
@@ -141,10 +141,10 @@ fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
         )
 
     nstime = ctx.execution_time[run_func_naive](iterations)
-    var sectime2 = (nstime / iterations) / 1000000000
+    var sectime2 = Float64(nstime) / Float64(iterations) / 1000000000
     print("SHMEM MATMUL:")
     print(sectime2, "sec")
-    print(flops * 1e-9 / sectime2, " GFLOPS")
+    print(Float64(flops) * 1e-9 / sectime2, " GFLOPS")
     print()
 
     ctx.enqueue_copy(c_host_n, c_device_n)
@@ -190,6 +190,6 @@ fn run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     _ = c_host_n
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_matvec(4096, 1, 4096, ctx=ctx)

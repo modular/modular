@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,37 +11,36 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm.functional import (
+from std.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     elementwise,
 )
-from testing import assert_equal, assert_true
-from testing import TestSuite
+from std.testing import assert_equal, assert_true
+from std.testing import TestSuite
 
-from utils.index import IndexList, Index
+from std.utils.index import IndexList, Index
 
 
-fn _linear_index[
+def _linear_index[
     rank: Int
 ](coords: IndexList[rank], shape: IndexList[rank]) -> Int:
     """Convert multi-dimensional coordinates to linear index (row-major)."""
     var linear_idx = 0
     var stride = 1
 
-    @parameter
-    for i in reversed(range(rank)):
+    comptime for i in reversed(range(rank)):
         linear_idx += coords[i] * stride
         stride *= shape[i]
     return linear_idx
 
 
-def test_elementwise():
+def test_elementwise() raises:
     def run_elementwise[
         numelems: Int,
         outer_rank: Int,
         is_blocking: Bool,
         shape: IndexList[outer_rank],
-    ]():
+    ]() raises:
         var memory1 = InlineArray[Float32, numelems](uninitialized=True)
         var buffer1 = Span[Float32](memory1)
 
@@ -61,7 +60,7 @@ def test_elementwise():
         @always_inline
         @__copy_capture(buffer1, buffer2, out_buffer, shape)
         @parameter
-        fn func[
+        def func[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             var index = rebind[IndexList[outer_rank]](idx)
@@ -77,7 +76,9 @@ def test_elementwise():
         )
 
         for i2 in range(min(numelems, 64)):
-            assert_equal((out_buffer.unsafe_ptr() + i2).load(), 2 * (i2 + 1))
+            assert_equal(
+                (out_buffer.unsafe_ptr() + i2).load(), Float32(2 * (i2 + 1))
+            )
 
     run_elementwise[16, 1, False, Index(16)]()
     run_elementwise[16, 1, True, Index(16)]()
@@ -93,17 +94,17 @@ def test_elementwise():
     run_elementwise[131072, 2, True, Index(1024, 128)]()
 
 
-def test_elementwise_implicit_runtime():
+def test_elementwise_implicit_runtime() raises:
     var vector_stack = InlineArray[Scalar[DType.int], 20](uninitialized=True)
     var vector = Span[Scalar[DType.int]](vector_stack)
 
     for i in range(len(vector)):
-        vector.unsafe_ptr()[i] = i
+        vector.unsafe_ptr()[i] = Scalar[DType.int](i)
 
     @always_inline
     @__copy_capture(vector)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         vector.unsafe_ptr()[idx[0]] = 42
@@ -114,7 +115,7 @@ def test_elementwise_implicit_runtime():
         assert_equal(vector.unsafe_ptr()[i], 42)
 
 
-def test_indices_conversion():
+def test_indices_conversion() raises:
     var shape = IndexList[4](3, 4, 5, 6)
     assert_equal(
         _get_start_indices_of_nth_subvolume[0](10, shape),
@@ -138,5 +139,5 @@ def test_indices_conversion():
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

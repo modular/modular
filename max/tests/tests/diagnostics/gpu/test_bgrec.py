@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,6 +19,10 @@ from max.diagnostics.gpu import BackgroundRecorder
 
 
 def test_smoke() -> None:
-    with BackgroundRecorder() as recorder:
+    with BackgroundRecorder() as recorder1:
         time.sleep(3)
-    assert len(recorder.stats) > 0
+    assert len(recorder1.stats) > 0
+
+    with BackgroundRecorder(interval=0.1) as recorder2:
+        time.sleep(3)
+    assert len(recorder2.stats) > len(recorder1.stats)

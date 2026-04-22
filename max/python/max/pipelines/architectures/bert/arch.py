@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,13 +15,11 @@
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    SupportedEncoding,
-)
+from max.pipelines.lib import SupportedArchitecture
 
 from . import weight_adapters
 from .model import BertPipelineModel
+from .model_config import BertModelConfig
 from .tokenizer import BertTokenizer
 
 bert_arch = SupportedArchitecture(
@@ -31,10 +29,10 @@ bert_arch = SupportedArchitecture(
         "sentence-transformers/all-MiniLM-L6-v2",
         "sentence-transformers/all-MiniLM-L12-v2",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.float32: [],
-        SupportedEncoding.bfloat16: [],
+        "float32",
+        "bfloat16",
     },
     pipeline_model=BertPipelineModel,
     tokenizer=BertTokenizer,
@@ -44,4 +42,5 @@ bert_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
     required_arguments={"enable_prefix_caching": False},
+    config=BertModelConfig,
 )

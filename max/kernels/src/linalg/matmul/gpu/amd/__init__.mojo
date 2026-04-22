@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,4 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """Provides the AMD GPU backend implementations for matmuls."""
 
-from .matmul import gemm_kernel_amd
+from .mxfp4_dequant_matmul_amd import mxfp4_dequant_matmul_amd
+from .mxfp4_grouped_matmul_amd import mxfp4_grouped_matmul_amd
+from .mxfp4_matmul_amd import mxfp4_block_scaled_matmul_amd, MXFP4MatmulAMD
+from .amd_matmul import AMDMatmul
+from .amd_ping_pong_matmul import (
+    AMDPingPongMatmul,
+    KernelConfig,
+    structured_ping_pong_matmul,
+)

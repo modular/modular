@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,7 +26,7 @@ class LocalBenchmarkDataset(BenchmarkDataset):
     It handles automatic dataset fetching and provides a standardized interface for sampling requests.
     """
 
-    dataset_mode = DatasetMode.LOCAL
+    dataset_mode: DatasetMode = "local"
 
     def fetch(self) -> None:
         # For local mode, dataset_path should already be set and validated

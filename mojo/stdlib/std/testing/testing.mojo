@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,9 +15,9 @@
 You can import these APIs from the `testing` package. For example:
 
 ```mojo
-from testing import assert_true
+from std.testing import assert_true
 
-def main():
+def main() raises:
     x = 1
     y = 2
     try:
@@ -31,12 +31,13 @@ def main():
 ```
 """
 
-from math import isclose
+from std.math import isclose
+from std.reflection.traits import AllWritable
 
-from reflection import call_location, SourceLocation
-from memory import memcmp
-from python import PythonObject, ConvertibleToPython
-from utils._ansi import Color, Text
+from std.reflection import call_location, SourceLocation
+from std.memory import memcmp
+from std.python import PythonObject, ConvertibleToPython
+from std.utils._ansi import Color, Text
 
 # ===----------------------------------------------------------------------=== #
 # Assertions
@@ -44,12 +45,12 @@ from utils._ansi import Color, Text
 
 
 @always_inline
-fn _assert_error[T: Writable](msg: T, loc: SourceLocation) -> Error:
-    return Error(loc.prefix(String("AssertionError: ", msg)))
+def _assert_error[T: Writable](msg: T, loc: SourceLocation) -> Error:
+    return Error(loc.prefix(t"AssertionError: {msg}"))
 
 
 @always_inline
-fn assert_true[
+def assert_true[
     T: Boolable, //
 ](
     val: T,
@@ -75,7 +76,7 @@ fn assert_true[
 
 
 @always_inline
-fn assert_false[
+def assert_false[
     T: Boolable, //
 ](
     val: T,
@@ -101,8 +102,9 @@ fn assert_false[
 
 
 @always_inline
-fn assert_equal[
-    T: Equatable & Stringable, //
+def assert_equal[
+    T: Equatable & Writable,
+    //,
 ](
     lhs: T,
     rhs: T,
@@ -143,8 +145,8 @@ fn assert_equal[
 #   StringSlice such that string slices with different origin types can be
 #   compared, then drop this overload.
 @always_inline
-fn assert_equal[
-    O1: Origin, O2: Origin
+def assert_equal[
+    O1: ImmutOrigin, O2: ImmutOrigin
 ](
     lhs: List[StringSlice[O1]],
     rhs: List[StringSlice[O2]],
@@ -174,17 +176,17 @@ fn assert_equal[
 
     if lhs != rhs_origin_casted:
         raise _assert_cmp_error["`left == right` comparison"](
-            lhs.__str__(),
-            rhs.__str__(),
+            String(lhs),
+            String(rhs),
             msg=msg,
             loc=location.or_else(call_location()),
         )
 
 
 @always_inline
-fn assert_equal(
-    lhs: StringSlice[mut=False],
-    rhs: StringSlice[mut=False],
+def assert_equal(
+    lhs: StringSlice[mut=False, _],
+    rhs: StringSlice[mut=False, _],
     msg: String = "",
     *,
     location: Optional[SourceLocation] = None,
@@ -202,15 +204,15 @@ fn assert_equal(
     """
     if lhs != rhs:
         raise _assert_cmp_error["`left == right` comparison"](
-            lhs.__str__(),
-            rhs.__str__(),
+            String(lhs),
+            String(rhs),
             msg=msg,
             loc=location.or_else(call_location()),
         )
 
 
 @always_inline
-fn assert_equal_pyobj[
+def assert_equal_pyobj[
     LHS: ConvertibleToPython & Copyable, RHS: ConvertibleToPython & Copyable
 ](
     lhs: LHS,
@@ -248,8 +250,9 @@ fn assert_equal_pyobj[
 
 
 @always_inline
-fn assert_not_equal[
-    T: Equatable & Stringable, //
+def assert_not_equal[
+    T: Equatable & Writable,
+    //,
 ](
     lhs: T,
     rhs: T,
@@ -282,34 +285,8 @@ fn assert_not_equal[
 
 
 @always_inline
-fn assert_not_equal(
-    lhs: String,
-    rhs: String,
-    msg: String = "",
-    *,
-    location: Optional[SourceLocation] = None,
-) raises:
-    """Asserts that the input values are not equal. If it is not then an
-    an Error is raised.
-
-    Args:
-        lhs: The lhs of the inequality.
-        rhs: The rhs of the inequality.
-        msg: The message to be printed if the assertion fails.
-        location: The location of the error (defaults to `call_location`).
-
-    Raises:
-        An Error with the provided message if assert fails and `None` otherwise.
-    """
-    if lhs == rhs:
-        raise _assert_cmp_error["`left != right` comparison"](
-            lhs, rhs, msg=msg, loc=location.or_else(call_location())
-        )
-
-
-@always_inline
-fn assert_almost_equal[
-    dtype: DType, size: Int
+def assert_almost_equal[
+    dtype: DType, size: SIMDSize
 ](
     lhs: SIMD[dtype, size],
     rhs: SIMD[dtype, size],
@@ -347,7 +324,7 @@ fn assert_almost_equal[
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
     """
-    __comptime_assert (
+    comptime assert (
         dtype == DType.bool or dtype.is_integral() or dtype.is_floating_point()
     ), "type must be boolean, integral, or floating-point"
 
@@ -358,8 +335,7 @@ fn assert_almost_equal[
     if not all(almost_equal):
         var err = String(lhs, " is not close to ", rhs)
 
-        @parameter
-        if dtype.is_integral() or dtype.is_floating_point():
+        comptime if dtype.is_integral() or dtype.is_floating_point():
             err += String(" with a diff of ", abs(lhs - rhs))
 
         if msg:
@@ -369,8 +345,8 @@ fn assert_almost_equal[
 
 
 @always_inline
-fn assert_is[
-    T: Stringable & Identifiable
+def assert_is[
+    T: Identifiable & Writable, //
 ](
     lhs: T,
     rhs: T,
@@ -382,7 +358,7 @@ fn assert_is[
     then an Error is raised.
 
     Parameters:
-        T: A Stringable and Identifiable type.
+        T: A Writable and Identifiable type.
 
     Args:
         lhs: The lhs of the `is` statement.
@@ -403,8 +379,8 @@ fn assert_is[
 
 
 @always_inline
-fn assert_is_not[
-    T: Stringable & Identifiable
+def assert_is_not[
+    T: Identifiable & Writable, //
 ](
     lhs: T,
     rhs: T,
@@ -416,7 +392,7 @@ fn assert_is_not[
     then an Error is raised.
 
     Parameters:
-        T: A Stringable and Identifiable type.
+        T: A Writable and Identifiable type.
 
     Args:
         lhs: The lhs of the `is not` statement.
@@ -436,8 +412,8 @@ fn assert_is_not[
         )
 
 
-fn _colorize_diff_string[color: Color](s: String, other: String) -> String:
-    """Colorizes a string by highlighting characters that differ from another string.
+def _colorize_diff_string[color: Color](s: String, other: String) -> String:
+    """Colorizes a string by highlighting codepoints that differ from another string.
 
     Parameters:
         color: The color to use for highlighting differences.
@@ -450,18 +426,19 @@ fn _colorize_diff_string[color: Color](s: String, other: String) -> String:
         A string with differences highlighted in the specified color.
     """
     var result = String()
-    for i in range(len(s)):
-        var char = s[byte=i]
-        if i < len(other) and char == other[byte=i]:
-            # Characters match - no color
-            result += char
+    var other_codepoints = other.codepoints()
+    for s_codepoint in s.codepoints():
+        var other_codepoint = other_codepoints.next()
+        if other_codepoint and s_codepoint == other_codepoint.value():
+            # Codepoints match - no color
+            result.append(s_codepoint)
         else:
-            # Character differs - apply color
-            result += String(Text[color](char))
+            # Codepoint differs or other string is shorter - apply color
+            result += String(Text[color](s_codepoint))
     return result
 
 
-fn _create_colored_diff(lhs: String, rhs: String) -> String:
+def _create_colored_diff(lhs: String, rhs: String) -> String:
     """Creates a colored character-by-character diff of two strings.
 
     Highlights differences in red for the left string and green for the right string.
@@ -481,7 +458,7 @@ fn _create_colored_diff(lhs: String, rhs: String) -> String:
     )
 
 
-fn _assert_cmp_error[
+def _assert_cmp_error[
     cmp: String
 ](lhs: String, rhs: String, *, msg: String, loc: SourceLocation) -> Error:
     var err = cmp + " failed:"
@@ -498,10 +475,11 @@ struct assert_raises:
     """Context manager that asserts that the block raises an exception.
 
     You can use this to test expected error cases, and to test that the correct
-    errors are raised. For instance:
+    errors are raised. Works with `Error` and any custom `Writable` error type.
+    For instance:
 
     ```mojo
-    from testing import assert_raises
+    from std.testing import assert_raises
 
     # Good! Caught the raised error, test passes
     with assert_raises():
@@ -528,7 +506,7 @@ struct assert_raises:
     """Assigned the value returned by call_locations() at Self.__init__."""
 
     @always_inline
-    fn __init__(out self, *, location: Optional[SourceLocation] = None):
+    def __init__(out self, *, location: Optional[SourceLocation] = None):
         """Construct a context manager with no message pattern.
 
         Args:
@@ -538,7 +516,7 @@ struct assert_raises:
         self.call_location = location.or_else(call_location())
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         *,
         contains: String,
@@ -554,11 +532,11 @@ struct assert_raises:
         self.message_contains = contains
         self.call_location = location.or_else(call_location())
 
-    fn __enter__(self):
+    def __enter__(self):
         """Enter the context manager."""
         pass
 
-    fn __exit__(self) raises:
+    def __exit__(self) raises:
         """Exit the context manager with no error.
 
         Raises:
@@ -566,18 +544,32 @@ struct assert_raises:
         """
         raise Error("AssertionError: Didn't raise at ", self.call_location)
 
-    fn __exit__(self, error: Error) raises -> Bool:
+    def __exit__[E: AnyType](self, error: E) raises -> Bool:
         """Exit the context manager with an error.
+
+        Works with `Error` and any custom `Writable` error type. When
+        `contains` is specified, the error type must be `Writable` so
+        it can be converted to a string for matching.
+
+        Parameters:
+            E: The error type.
 
         Args:
             error: The error raised.
 
         Raises:
-            Error: If the error raised doesn't include the expected string.
+            Error: If `contains` is set and the error message doesn't
+                include the expected string, or if `contains` is set
+                but the error type is not `Writable`.
 
         Returns:
-            True if the error message contained the expected string.
+            True if the error was successfully caught and matched.
         """
         if self.message_contains:
-            return self.message_contains.value() in String(error)
+            comptime assert conforms_to(
+                E, Writable
+            ), "assert_raises(contains=...) requires a Writable error type"
+            return self.message_contains.value() in String.write(
+                trait_downcast[Writable](error)
+            )
         return True

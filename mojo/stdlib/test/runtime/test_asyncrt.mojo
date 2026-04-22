@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from runtime.asyncrt import create_task
+from std.runtime.asyncrt import create_raising_task, create_task
 
-from testing import TestSuite
+from std.testing import assert_equal, TestSuite
 
 
 # CHECK-LABEL: test_runtime_task
-def test_runtime_task():
+def test_runtime_task() raises:
     print("== test_runtime_task")
 
     @parameter
-    async fn test_asyncrt_add[lhs: Int](rhs: Int) -> Int:
+    async def test_asyncrt_add[lhs: Int](rhs: Int) -> Int:
         return lhs + rhs
 
     @parameter
-    async fn test_asyncrt_add_two_of_them(a: Int, b: Int) -> Int:
+    async def test_asyncrt_add_two_of_them(a: Int, b: Int) -> Int:
         return await create_task(test_asyncrt_add[1](a)) + await create_task(
             test_asyncrt_add[2](b)
         )
@@ -36,15 +36,15 @@ def test_runtime_task():
 
 
 # CHECK-LABEL: test_runtime_taskgroup
-def test_runtime_taskgroup():
+def test_runtime_taskgroup() raises:
     print("== test_runtime_taskgroup")
 
     @parameter
-    async fn return_value[value: Int]() -> Int:
+    async def return_value[value: Int]() -> Int:
         return value
 
     @parameter
-    async fn run_as_group() -> Int:
+    async def run_as_group() -> Int:
         var t0 = create_task(return_value[1]())
         var t1 = create_task(return_value[2]())
         return await t0 + await t1
@@ -55,5 +55,20 @@ def test_runtime_taskgroup():
     print(t0.wait() + t1.wait())
 
 
-def main():
+# CHECK-LABEL: test_runtime_unified_async_memory_result_raises
+def test_runtime_unified_async_memory_result_raises() raises:
+    print("== test_runtime_unified_async_memory_result_raises")
+    var prefix = String("hello")
+
+    async def build_message() raises unified {mut prefix} -> String:
+        return prefix + String(" world")
+
+    var task = create_raising_task(build_message())
+    var result = task^.wait()
+    # CHECK: hello world
+    print(result)
+    assert_equal(result, "hello world")
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,14 +15,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys import CompilationTarget, is_big_endian, is_little_endian
-from sys.info import _macos_version
+from std.sys import CompilationTarget, is_big_endian, is_little_endian
+from std.sys.info import _macos_version
 
-from testing import assert_false, assert_true
-from testing import TestSuite
+from std.testing import assert_false, assert_true
+from std.testing import TestSuite
 
 
-fn test_os_query() raises:
+def test_os_query() raises:
     assert_true(CompilationTarget.is_macos())
     assert_false(CompilationTarget.is_linux())
 
@@ -33,7 +33,7 @@ fn test_os_query() raises:
     assert_false(is_big_endian())
 
 
-def test_os_version():
+def test_os_version() raises:
     var major, minor, patch = _macos_version()
 
     assert_true(major >= 12)
@@ -41,5 +41,5 @@ def test_os_version():
     assert_true(patch >= 0)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

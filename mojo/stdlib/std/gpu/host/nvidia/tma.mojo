@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,22 +21,22 @@ features like swizzling for bank conflict avoidance, L2 cache promotion hints, a
 support for various data types and memory layouts.
 """
 
-from sys import external_call, size_of
+from std.ffi import external_call
+from std.sys import size_of
 
-from gpu._utils import to_llvm_ptr
-from gpu.host.device_context import (
-    _ConstCharPtr,
+from std.gpu._utils import to_llvm_ptr
+from std.gpu.host.device_context import (
+    _CString,
     _checked,
     _DeviceBufferPtr,
 )
 
-from utils import IndexList, StaticTuple
-from builtin.device_passable import DevicePassable
+from std.utils import IndexList, StaticTuple
+from std.builtin.device_passable import DevicePassable
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct TensorMapDataType:
+struct TensorMapDataType(TrivialRegisterPassable):
     """Data type enumeration for TMA tensor map descriptors.
 
     Specifies the element data type for TMA operations. The TMA hardware supports
@@ -73,39 +73,53 @@ struct TensorMapDataType:
     """TensorFloat-32 with flush-to-zero for denormals."""
 
     @staticmethod
-    fn from_dtype[dtype: DType]() -> Self:
+    def from_dtype[dtype: DType]() -> Self:
         """Converts a Mojo `DType` to the corresponding TMA data type.
 
         Parameters:
             dtype: The Mojo data type to convert. Must be one of `DType.float32`,
-                `DType.bfloat16`, or `DType.float8_e4m3fn`.
+                `DType.float16`, `DType.bfloat16`, `DType.uint8`, `DType.uint16`,
+                `DType.int64`, `DType.uint64`,
+                `DType.float8_e4m3fn`, or `DType.float8_e8m0fnu`.
 
         Constraints:
-            The dtype must be float32, bfloat16, or float8_e4m3fn.
+            The dtype must be one of the supported types listed above.
 
         Returns:
             The corresponding `TensorMapDataType` value.
         """
-        __comptime_assert dtype in (
+        comptime assert dtype in (
             DType.float32,
+            DType.float16,
             DType.bfloat16,
             DType.uint8,
+            DType.uint16,
+            DType.int64,
+            DType.uint64,
             DType.float8_e4m3fn,
             DType.float8_e8m0fnu,
         ), "Unsupported dtype"
 
-        @parameter
-        if dtype == DType.float32:
+        comptime if dtype == DType.float32:
             return Self.FLOAT32
+        elif dtype == DType.float16:
+            return Self.FLOAT16
+        elif dtype == DType.uint16:
+            return Self.UINT16
         elif dtype in (DType.float8_e4m3fn, DType.float8_e8m0fnu, DType.uint8):
             return Self.UINT8
+        elif dtype == DType.uint16:
+            return Self.UINT16
+        elif dtype == DType.int64:
+            return Self.INT64
+        elif dtype == DType.uint64:
+            return Self.UINT64
         else:
             return Self.BFLOAT16
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct TensorMapInterleave:
+struct TensorMapInterleave(TrivialRegisterPassable):
     """Interleave mode for TMA tensor map descriptors.
 
     Specifies how data elements are interleaved in memory for TMA operations.
@@ -123,12 +137,12 @@ struct TensorMapInterleave:
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
 struct TensorMapSwizzle(
     Equatable,
+    Hashable,
     ImplicitlyCopyable,
     Intable,
-    Stringable,
+    TrivialRegisterPassable,
     Writable,
 ):
     """Swizzle mode for TMA tensor map descriptors.
@@ -150,7 +164,7 @@ struct TensorMapSwizzle(
     """128-byte swizzle pattern."""
 
     @always_inline("nodebug")
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """Converts the swizzle mode to an integer value.
 
         Returns:
@@ -159,7 +173,7 @@ struct TensorMapSwizzle(
         return Int(self._value)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Checks if two swizzle modes are equal.
 
         Args:
@@ -171,7 +185,7 @@ struct TensorMapSwizzle(
         return self._value == other._value
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Checks if two swizzle modes are not equal.
 
         Args:
@@ -183,7 +197,7 @@ struct TensorMapSwizzle(
         return self._value != other._value
 
     @always_inline
-    fn bytes(self) -> Int:
+    def bytes(self) -> Int:
         """Gets the swizzle size in bytes.
 
         Returns:
@@ -191,17 +205,8 @@ struct TensorMapSwizzle(
         """
         return Int((2**self._value) * 16)
 
-    @no_inline
-    fn __str__(self) -> String:
-        """Converts the swizzle mode to a string representation.
-
-        Returns:
-            A string describing the swizzle mode.
-        """
-        return String.write(self)
-
     @always_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the swizzle mode to a writer.
 
         Args:
@@ -220,8 +225,7 @@ struct TensorMapSwizzle(
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct TensorMapL2Promotion:
+struct TensorMapL2Promotion(TrivialRegisterPassable):
     """L2 cache promotion hint for TMA tensor map descriptors.
 
     Specifies how much data to promote into the L2 cache during TMA operations.
@@ -242,8 +246,7 @@ struct TensorMapL2Promotion:
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct TensorMapFloatOOBFill:
+struct TensorMapFloatOOBFill(TrivialRegisterPassable):
     """Out-of-bounds fill mode for floating-point TMA operations.
 
     Specifies how out-of-bounds memory accesses are handled for floating-point
@@ -278,11 +281,11 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
     comptime device_type: AnyType = TMADescriptor
     """The device-side type for this TMA descriptor."""
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """Gets the type name for this descriptor.
 
         Returns:
@@ -290,17 +293,8 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
         """
         return "TMADescriptor"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """Gets the device type name for this descriptor.
-
-        Returns:
-            The string "TMADescriptor".
-        """
-        return Self.get_type_name()
-
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initializes an empty TMA descriptor.
 
         The descriptor data is uninitialized and must be filled using
@@ -309,16 +303,16 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
         self.data = StaticTuple[UInt8, 128]()
 
     @always_inline
-    fn __copyinit__(out self, other: Self):
+    def __init__(out self, *, copy: Self):
         """Creates a copy of a TMA descriptor.
 
         Args:
-            other: The descriptor to copy.
+            copy: The descriptor to copy.
         """
-        self.data = other.data
+        self.data = copy.data
 
 
-fn prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False]):
+def prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False, _]):
     """Prefetches a TMA descriptor into the constant cache.
 
     Issues a hardware prefetch instruction to bring the TMA descriptor into
@@ -328,16 +322,17 @@ fn prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False]):
     Args:
         desc_ptr: Pointer to the TMA descriptor to prefetch.
     """
-    __mlir_op.`nvvm.prefetch`[tensormap = __mlir_attr.unit](
+    __mlir_op.`nvvm.prefetch`[tensormap=__mlir_attr.unit](
         to_llvm_ptr(desc_ptr),
     )
 
 
 @always_inline
-fn create_tma_descriptor[
+def create_tma_descriptor[
     dtype: DType,
     rank: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
 ](
     global_buf: DeviceBuffer[dtype],
     global_shape: IndexList[rank],
@@ -358,6 +353,7 @@ fn create_tma_descriptor[
         dtype: The element data type of the tensor.
         rank: The number of dimensions (1-5).
         swizzle_mode: The swizzle pattern to apply in shared memory.
+        l2_promotion: L2 cache promotion hint for TMA loads. Defaults to NONE.
 
     Args:
         global_buf: Device buffer containing the global memory tensor.
@@ -382,14 +378,15 @@ fn create_tma_descriptor[
     var box_dim_arg = InlineArray[Int32, rank](uninitialized=True)
     var element_stride_arg = InlineArray[Int32, rank](fill=1)
 
-    @parameter
-    for i in range(rank):
-        global_dim_arg[i] = global_shape[rank - i - 1]
-        global_strides_arg[i] = global_strides[rank - i - 1] * size_of[dtype]()
-        box_dim_arg[i] = shared_mem_shape[rank - i - 1]
+    comptime for i in range(rank):
+        global_dim_arg[i] = Int64(global_shape[rank - i - 1])
+        global_strides_arg[i] = Int64(
+            global_strides[rank - i - 1] * size_of[dtype]()
+        )
+        box_dim_arg[i] = Int32(shared_mem_shape[rank - i - 1])
 
     debug_assert(
-        global_strides_arg[0] == size_of[dtype](),
+        global_strides_arg[0] == Int64(size_of[dtype]()),
         "TMA GMEM should be row-major, global stride",
         " at dim 0 should be size_of[dtype](): ",
         size_of[dtype](),
@@ -405,11 +402,11 @@ fn create_tma_descriptor[
     _checked(
         external_call[
             "AsyncRT_cuda_tensorMapEncodeTiled",
-            _ConstCharPtr,
+            _CString[],
             OpaquePointer[MutAnyOrigin],  # tensorMap
             Int32,  # tensorDataType
             Int32,  # tensorRank
-            _DeviceBufferPtr,  #  globalAddress
+            type_of(global_buf._handle),  #  globalAddress
             UnsafePointer[Int64, MutAnyOrigin],  # globalDim
             UnsafePointer[Int64, MutAnyOrigin],  # globalStrides
             UnsafePointer[Int32, MutAnyOrigin],  # boxDim
@@ -421,7 +418,7 @@ fn create_tma_descriptor[
         ](
             tensor_map_ptr,
             TensorMapDataType.from_dtype[dtype]()._value,
-            rank,
+            Int32(rank),
             global_buf._handle,
             global_dim_arg.unsafe_ptr(),
             # global_strides_arg[0] is implicitly size_of[dtype]()
@@ -430,7 +427,7 @@ fn create_tma_descriptor[
             element_stride_arg.unsafe_ptr(),
             TensorMapInterleave.INTERLEAVE_NONE._value,
             swizzle_mode._value,
-            TensorMapL2Promotion.NONE._value,
+            l2_promotion._value,
             TensorMapFloatOOBFill.NONE._value,
         )
     )

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,7 +24,7 @@ class HuggingFaceBenchmarkDataset(BenchmarkDataset):
     It handles automatic dataset fetching and provides a standardized interface for sampling requests.
     """
 
-    dataset_mode = DatasetMode.HUGGINGFACE
+    dataset_mode: DatasetMode = "huggingface"
 
     def fetch(self) -> None:
         pass

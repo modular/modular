@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -25,16 +25,24 @@ trait Floatable:
     For example:
 
     ```mojo
+    @fieldwise_init
     struct Foo(Floatable):
         var i: Float64
 
-        fn __float__(self) -> Float64:
+        def __float__(self) -> Float64:
             return self.i
     ```
 
     A `Foo` can now be converted to a `Float64`:
 
     ```mojo
+    @fieldwise_init
+    struct Foo(Floatable):
+        var i: Float64
+
+        def __float__(self) -> Float64:
+            return self.i
+
     var f = Float64(Foo(5.5))
     ```
 
@@ -43,7 +51,7 @@ trait Floatable:
     trait instead.
     """
 
-    fn __float__(self) -> Float64:
+    def __float__(self) -> Float64:
         """Get the float point representation of the value.
 
         Returns:
@@ -62,12 +70,13 @@ trait FloatableRaising:
     For example:
 
     ```mojo
-    from utils import Variant
+    from std.utils import Variant
 
+    @fieldwise_init
     struct MaybeFloat(FloatableRaising):
         var value: Variant[Float64, NoneType]
 
-        fn __float__(self) raises -> Float64:
+        def __float__(self) raises -> Float64:
             if self.value.isa[NoneType]():
                 raise "Float expected"
             return self.value[Float64]
@@ -76,6 +85,17 @@ trait FloatableRaising:
     A `MaybeFloat` can now be converted to `Float64`:
 
     ```mojo
+    from std.utils import Variant
+
+    @fieldwise_init
+    struct MaybeFloat(FloatableRaising):
+        var value: Variant[Float64, NoneType]
+
+        def __float__(self) raises -> Float64:
+            if self.value.isa[NoneType]():
+                raise "Float expected"
+            return self.value[Float64]
+
     try:
         print(Float64(MaybeFloat(4.6)))
     except:
@@ -83,7 +103,7 @@ trait FloatableRaising:
     ```
     """
 
-    fn __float__(self) raises -> Float64:
+    def __float__(self) raises -> Float64:
         """Get the float point representation of the value.
 
         Returns:

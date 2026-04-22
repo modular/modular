@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,8 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Qwen3-VL vision-language architecture for multimodal text generation."""
 
 from .arch import qwen3vl_arch, qwen3vl_moe_arch
+from .model import Qwen3VLModel
 from .model_config import Qwen3VLConfig
 
-__all__ = ["Qwen3VLConfig", "qwen3vl_arch", "qwen3vl_moe_arch"]
+__all__ = ["Qwen3VLConfig", "Qwen3VLModel", "qwen3vl_arch", "qwen3vl_moe_arch"]

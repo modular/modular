@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# Re-export ToolParser protocol and generic types from interfaces
+from max.interfaces import (
+    ParsedToolCall,
+    ParsedToolCallDelta,
+    ParsedToolResponse,
+    ToolParser,
+)
+
 from .json_utils import parse_json_from_text
 from .llama_tool_parser import LlamaToolParser
 
-__all__ = ["LlamaToolParser", "parse_json_from_text"]
+__all__ = [
+    "LlamaToolParser",
+    "ParsedToolCall",
+    "ParsedToolCallDelta",
+    "ParsedToolResponse",
+    "ToolParser",
+    "parse_json_from_text",
+]

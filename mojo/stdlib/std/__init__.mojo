@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,3 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Mojo standard library.
+
+The standard library provides nearly everything you'll need for
+writing Mojo programs, including basic data types like
+[`Int`](/mojo/std/builtin/int/Int) and
+[`SIMD`](/mojo/std/builtin/simd/SIMD), collection types like
+[`List`](/mojo/std/collections/list/List), reusable
+[algorithms](/mojo/std/algorithm/), and modules to support
+[GPU programming](/mojo/std/gpu)."""

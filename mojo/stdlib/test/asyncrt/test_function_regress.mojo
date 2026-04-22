@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,89 +11,82 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import is_gpu
+from std.sys import is_gpu
 
 from asyncrt_test_utils import create_test_device_context
-from builtin.device_passable import DevicePassable
-from gpu import *
-from gpu.host import DeviceContext
-from testing import TestSuite, assert_equal
-from sys import has_apple_gpu_accelerator
+from std.builtin.device_passable import DevicePassable
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
+from std.testing import TestSuite, assert_equal
+from std.sys import has_apple_gpu_accelerator
 
 comptime T = DType.float32 if has_apple_gpu_accelerator() else DType.float64
 comptime S = Scalar[T]
 
 
-@register_passable("trivial")
-trait MaybeZeroSized:
-    fn value(self) -> S:
+trait MaybeZeroSized(TrivialRegisterPassable):
+    def value(self) -> S:
         ...
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
+struct ZeroSized(
+    DevicePassable, MaybeZeroSized, TrivialRegisterPassable, Writable
+):
     comptime device_type: AnyType = Self
 
-    fn _to_device_type[
+    def _to_device_type[
         origin: MutOrigin
     ](self, target: UnsafePointer[NoneType, origin]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return "ZeroSized"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @always_inline
-    fn value(self) -> S:
+    def value(self) -> S:
         return 2
 
-    fn write_to(self, mut writer: Some[Writer]):
-        __comptime_assert not is_gpu(), "ZeroSized is not supported on GPUs"
+    def write_to(self, mut writer: Some[Writer]):
+        comptime assert not is_gpu(), "ZeroSized is not supported on GPUs"
         writer.write("ZeroSized(")
         writer.write(self.value())
         writer.write(")")
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
+struct NotZeroSized(
+    DevicePassable, MaybeZeroSized, TrivialRegisterPassable, Writable
+):
     comptime device_type: AnyType = Self
 
-    fn _to_device_type[
+    def _to_device_type[
         origin: MutOrigin
     ](self, target: UnsafePointer[NoneType, origin]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return "ZeroSized"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     var val: S
 
-    fn __init__(out self):
+    def __init__(out self):
         self.val = 2
 
     @always_inline
-    fn value(self) -> S:
+    def value(self) -> S:
         return self.val
 
-    fn write_to(self, mut writer: Some[Writer]):
-        __comptime_assert not is_gpu(), "ZeroSized is not supported on GPUs"
+    def write_to(self, mut writer: Some[Writer]):
+        comptime assert not is_gpu(), "ZeroSized is not supported on GPUs"
         writer.write("NotZeroSized(")
         writer.write(self.value())
         writer.write(")")
 
 
-fn _vec_func_zero(
+def _vec_func_zero(
     zs: ZeroSized,
     in0: UnsafePointer[S, MutAnyOrigin],
     in1: UnsafePointer[S, MutAnyOrigin],
@@ -101,12 +94,12 @@ fn _vec_func_zero(
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = in0[tid] + in1[tid] + zs.value()
 
 
-fn _vec_func_not_zero(
+def _vec_func_not_zero(
     zs: NotZeroSized,
     in0: UnsafePointer[S, MutAnyOrigin],
     in1: UnsafePointer[S, MutAnyOrigin],
@@ -114,12 +107,12 @@ fn _vec_func_not_zero(
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = in0[tid] + in1[tid] + zs.value()
 
 
-fn _vec_func[
+def _vec_func[
     zero_sized_t: MaybeZeroSized
 ](
     zs: zero_sized_t,
@@ -129,17 +122,17 @@ fn _vec_func[
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = in0[tid] + in1[tid] + zs.value()
 
 
-def test_function_compilation():
+def test_function_compilation() raises:
     var ctx = create_test_device_context()
     _run_test_function_compilation(ctx)
 
 
-fn _run_test_function_compilation(ctx: DeviceContext) raises:
+def _run_test_function_compilation(ctx: DeviceContext) raises:
     # Compile all combinations with and without declaring the trait in
     # the signature.
 
@@ -169,12 +162,12 @@ fn _run_test_function_compilation(ctx: DeviceContext) raises:
     _ = compiled_vec_func_3
 
 
-def test_function_checked():
+def test_function_checked() raises:
     var ctx = create_test_device_context()
     _run_test_function_checked(ctx)
 
 
-fn _run_test_function_checked(ctx: DeviceContext) raises:
+def _run_test_function_checked(ctx: DeviceContext) raises:
     comptime length = 1024
     comptime block_dim = 32
 
@@ -193,8 +186,8 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
     var out = ctx.enqueue_create_buffer[T](length)
     with in0.map_to_host() as in0_host, out.map_to_host() as out_host:
         for i in range(length):
-            in0_host[i] = i
-            out_host[i] = length + i
+            in0_host[i] = Scalar[T](i)
+            out_host[i] = Scalar[T](length + i)
     var in1 = ctx.enqueue_create_buffer[T](length)
     in1.enqueue_fill(scalar)
 
@@ -218,7 +211,7 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
                 print("at index", i, "the value is", out_host[i])
             assert_equal(
                 out_host[i],
-                i + 4,
+                Scalar[T](i + 4),
                 String(
                     "at index ",
                     i,
@@ -228,7 +221,7 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
             )
 
 
-def main():
+def main() raises:
     # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
     # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()

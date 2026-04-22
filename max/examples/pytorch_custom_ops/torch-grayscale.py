@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,16 +12,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: /max/api/python/torch.py
+# DOC: max/api/python/experimental/torch.py
 
-import max.torch
+import max.experimental.torch
 import numpy as np
 import torch
 from max.dtype import DType
 from max.graph import ops
 
 
-@max.torch.graph_op
+@max.experimental.torch.graph_op
 def max_grayscale(pic: max.graph.TensorValue):  # noqa: ANN201
     scaled = pic.cast(DType.float32) * np.array([0.21, 0.71, 0.07])
     grayscaled = ops.sum(scaled, axis=-1).cast(pic.dtype)

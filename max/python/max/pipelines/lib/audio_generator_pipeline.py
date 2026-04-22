@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, no_type_check
+from typing import TYPE_CHECKING
 
 from max.driver import load_devices
 from max.interfaces import (
@@ -23,8 +23,8 @@ from max.interfaces import (
     Pipeline,
     RequestID,
 )
-from max.kv_cache import NullKVCacheManager, PagedKVCacheManager
-from max.nn import ReturnLogits
+from max.kv_cache import PagedKVCacheManager
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TTSContext
 
 if TYPE_CHECKING:
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 from max.serve.telemetry.metrics import METRICS
 
-from .interfaces import PipelineModel
+from .interfaces import PipelineModel, PipelineModelWithKVCache
 
 AudioGeneratorPipelineType = Pipeline[
     AudioGenerationInputs[TTSContext], AudioGenerationOutput
@@ -43,43 +43,43 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
     """Converts text to speech.
 
     This pipeline passes all of the work through to the PipelineModel.
+
+    Args:
+        pipeline_config: The configuration for the pipeline.
+        pipeline_model: The pipeline model to use.
+        **unused_kwargs: Optional keyword arguments for API compatibility;
+            ignored.
     """
 
-    pipeline_model: PipelineModel[TTSContext]
+    pipeline_model: PipelineModelWithKVCache[TTSContext]
 
-    @no_type_check
     def __init__(
         self,
         pipeline_config: PipelineConfig,
-        pipeline_model: type[PipelineModel],
+        pipeline_model: type[PipelineModel[TTSContext]],
         **unused_kwargs,
     ) -> None:
-        """Initializes the TTS pipeline.
-
-        Args:
-            pipeline_config: The configuration for the pipeline.
-            pipeline_model: The pipeline model to use.
-        """
         # Create the pipeline model.
-        # None of the arguments are used except for the config and devices.
+        # None of the arguments are used except for the config and devices
         devices = load_devices(pipeline_config.model.device_specs)
         self.pipeline_model = pipeline_model(
             pipeline_config=pipeline_config,
-            session=None,
-            huggingface_config=None,
-            encoding=None,
+            session=None,  # type: ignore
             devices=devices,
-            kv_cache_config=None,
-            weights=None,
+            kv_cache_config=None,  # type: ignore
+            weights=None,  # type: ignore
             adapter=None,
             return_logits=ReturnLogits.ALL,
         )
         assert hasattr(self.pipeline_model, "speech_lm_pipeline")
         self.speech_lm_pipeline = self.pipeline_model.speech_lm_pipeline
+        assert hasattr(self.speech_lm_pipeline, "kv_manager")
+        self._kv_manager = self.speech_lm_pipeline.kv_manager
 
     def execute(
         self, inputs: AudioGenerationInputs[TTSContext]
     ) -> dict[RequestID, AudioGenerationOutput]:
+        """Runs the audio generation pipeline for the given inputs."""
         METRICS.input_tokens(
             sum(ctx.tokens.active_length for ctx in inputs.batch.values())
         )
@@ -100,10 +100,11 @@ class AudioGeneratorPipeline(AudioGeneratorPipelineType):
         return outputs
 
     def release(self, request_id: RequestID) -> None:
+        """Releases resources associated with the given request."""
         release = getattr(self.pipeline_model, "release")  # noqa: B009
         release(request_id)
 
     @property
-    def kv_manager(self) -> PagedKVCacheManager | NullKVCacheManager:
-        assert hasattr(self.pipeline_model, "kv_manager")
-        return self.pipeline_model.kv_manager
+    def kv_manager(self) -> PagedKVCacheManager:
+        """Returns the KV cache manager for this pipeline."""
+        return self._kv_manager

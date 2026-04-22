@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib import default_comp_time_hasher
-from os import abort
-from sys import size_of
+from std.hashlib import default_comp_time_hasher
+from std.os import abort
+from std.sys import size_of
 
-from python import Python, PythonObject
-from python._cpython import PyObjectPtr
-from python.bindings import PythonModuleBuilder
+from std.python import Python, PythonObject
+from std.python._cpython import PyObjectPtr
+from std.python.bindings import PythonModuleBuilder
 
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     """Create a Python module with function bindings for `mojo_block_hasher`."""
     try:
         var b = PythonModuleBuilder("mojo_module")
@@ -56,7 +56,7 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     # version dependent private members are omitted
     # ...
 
-    fn num_elts(self) -> Int:
+    def num_elts(self) -> Int:
         var num_elts = 1
         for i in range(self.nd):
             num_elts *= self.dimensions[i]
@@ -64,11 +64,11 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
 
 
 @always_inline
-fn _mojo_block_hasher[
+def _mojo_block_hasher[
     dtype: DType,
     //,
 ](
-    py_array_object_ptr: UnsafePointer[PyArrayObject[dtype]],
+    py_array_object_ptr: UnsafePointer[PyArrayObject[dtype], _],
     block_size: Int,
 ) -> PythonObject:
     # Compute number of hashes
@@ -82,7 +82,7 @@ fn _mojo_block_hasher[
     var result_py_list = cpython.PyList_New(num_hashes)
 
     # Initial hash seed value
-    comptime initial_hash = hash[HasherType=default_comp_time_hasher]("None")
+    comptime initial_hash = hash[default_comp_time_hasher]("None")
 
     # Performing hashing
     var prev_hash = initial_hash
@@ -91,11 +91,11 @@ fn _mojo_block_hasher[
     for block_idx in range(num_hashes):
         var hash_ptr_ints = hash_ptr_base + block_idx * block_size
         var hash_ptr_bytes = hash_ptr_ints.bitcast[Byte]()
-        var token_hash = hash[HasherType=default_comp_time_hasher](
+        var token_hash = hash[default_comp_time_hasher](
             hash_ptr_bytes, num_bytes
         )
         var pair_to_hash = SIMD[DType.uint64, 2](prev_hash, token_hash)
-        var curr_hash = hash[HasherType=default_comp_time_hasher](pair_to_hash)
+        var curr_hash = hash[default_comp_time_hasher](pair_to_hash)
         # Convert the hash result to a Python object and store it in our
         # uninitialized list.
         var curr_hash_obj = cpython.PyLong_FromSsize_t(Int(curr_hash))
@@ -107,7 +107,7 @@ fn _mojo_block_hasher[
 
 
 @export
-fn mojo_block_hasher(
+def mojo_block_hasher(
     py_array_object: PythonObject,
     block_size_obj: PythonObject,
 ) raises -> PythonObject:

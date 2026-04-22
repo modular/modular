@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,11 +13,11 @@
 
 from linalg.utils_gpu import block_swizzle
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 # CHECK-LABEL: test_block_swizzle
-fn test_block_swizzle():
+def test_block_swizzle():
     print("=== test_block_swizzle")
 
     var grid_dim0 = Index(3, 4)
@@ -56,5 +56,5 @@ fn test_block_swizzle():
         print()
 
 
-fn main():
+def main():
     test_block_swizzle()

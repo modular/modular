@@ -11,12 +11,16 @@ modular_py_test(
     name = "test_recordreplay",
     size = "small",
     srcs = glob(["**/*.py"]),
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    # TODO(SERVOPT-949): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/serve/recordreplay",
         requirement("fastapi"),
         requirement("httpx"),
-        requirement("msgspec"),
+        requirement("numpy"),
         requirement("pydantic"),
         requirement("pytest-asyncio"),
     ],

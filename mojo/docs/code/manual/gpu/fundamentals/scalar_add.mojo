@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
-from sys import exit, has_accelerator
+from std.math import iota
+from std.sys import exit, has_accelerator
 
-from gpu.host import DeviceContext
-from gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
 
 comptime num_elements = 20
 
 
-fn scalar_add(
+def scalar_add(
     vector: UnsafePointer[Float32, MutAnyOrigin], size: Int, scalar: Float32
 ):
     """
@@ -47,15 +47,14 @@ fn scalar_add(
     # Bounds checking: ensure we don't access memory beyond the vector size.
     # This is crucial when the number of threads doesn't exactly match vector
     # size.
-    if idx < UInt(size):
+    if idx < size:
         # Each thread adds the scalar to its corresponding vector element
         # This operation happens in parallel across all GPU threads
         vector[idx] += scalar
 
 
-def main():
-    @parameter
-    if not has_accelerator():
+def main() raises:
+    comptime if not has_accelerator():
         print("No GPUs detected")
         exit(0)
     else:
@@ -71,7 +70,7 @@ def main():
         ctx.synchronize()
 
         # Fill the host buffer with sequential numbers (0, 1, 2, ..., size-1).
-        iota(host_buffer.unsafe_ptr(), num_elements)
+        iota(host_buffer.as_span())
         print("Original host buffer:", host_buffer)
 
         # Create a buffer in device (GPU) memory to store data for computation.
@@ -81,7 +80,7 @@ def main():
         ctx.enqueue_copy(src_buf=host_buffer, dst_buf=device_buffer)
 
         # Compile the scalar_add kernel function for execution on the GPU.
-        scalar_add_kernel = ctx.compile_function_experimental[scalar_add]()
+        scalar_add_kernel = ctx.compile_function[scalar_add, scalar_add]()
 
         # Launch the GPU kernel with the following arguments:
         #

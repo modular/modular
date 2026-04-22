@@ -7,7 +7,7 @@ def custom_op_example_py_binary(
         srcs,
         extra_data = [],
         extra_deps = [],
-        target_compatible_with = None,
+        target_compatible_with = [],
         tags = []):
     modular_py_binary(
         name = name,
@@ -19,12 +19,9 @@ def custom_op_example_py_binary(
         mojo_deps = [
             "//max:compiler",
             "//max:layout",
-            "@mojo//:std",
             "//max:tensor",
-        ] + select({
-            "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
-            "//conditions:default": [],
-        }),
+            "@mojo//:std",
+        ],
         deps = [
             "//max/python/max/driver",
             "//max/python/max/dtype",
@@ -33,13 +30,20 @@ def custom_op_example_py_binary(
             requirement("numpy"),
         ] + extra_deps,
         target_compatible_with = target_compatible_with,
-        tags = ["no-pydeps"],  # TODO: Fix and re-enable
+        ignore_extra_deps = [
+            requirement("numpy"),  # Provided as a convenience, most examples use it
+            # Eager tensor API uses these, but doesn't need the direct dependencies
+            "//max/python/max/engine",
+            "//max/python/max/graph",
+        ],
     )
 
     # Run each example as a simple non-zero-exit-code test.
     modular_run_binary_test(
         name = name + ".example-test",
+        size = "large",
         args = [],
         binary = name,
         tags = ["gpu"] + tags,
+        target_compatible_with = target_compatible_with,
     )

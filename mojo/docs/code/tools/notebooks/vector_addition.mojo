@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,11 +14,10 @@
 # Tested on T4 GPU 2 Dec 2025
 
 
-from gpu import thread_idx
-from gpu.host import DeviceContext
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
-from sys import has_accelerator
+from std.gpu import thread_idx
+from std.gpu.host import DeviceContext
+from layout import Layout, LayoutTensor
+from std.sys import has_accelerator
 
 comptime VECTOR_WIDTH = 10
 comptime layout = Layout.row_major(VECTOR_WIDTH)
@@ -27,17 +26,14 @@ comptime Tensor = LayoutTensor[active_dtype, layout, MutAnyOrigin]
 
 
 # Elementwise vector addition on GPU threads
-fn vector_addition(left: Tensor, right: Tensor, output: Tensor):
+def vector_addition(left: Tensor, right: Tensor, output: Tensor):
     var idx = thread_idx.x
     output[idx] = left[idx] + right[idx]
 
 
-def main():
+def main() raises:
     # Ensure a supported GPU (NVIDIA or AMD) is available
-    constrained[
-        has_accelerator(),
-        "This example requires a supported GPU",
-    ]()
+    comptime assert has_accelerator(), "This example requires a supported GPU"
 
     # Create GPU device context
     var ctx = DeviceContext()
@@ -72,7 +68,7 @@ def main():
     _ = right_buffer.enqueue_fill(1)
 
     # Launch GPU kernel
-    ctx.enqueue_function_experimental[vector_addition](
+    ctx.enqueue_function[vector_addition, vector_addition](
         left_tensor,
         right_tensor,
         output_tensor,

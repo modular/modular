@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -107,6 +107,7 @@ def repeat_interleave(
             The dimension along which to repeat values. If axis is not
             specified or None (the default), flatten the input array
             and repeat the flattened values.
+        out_dim: Optional symbolic dimension for the output size (for graph validation).
 
     Returns:
         A symbolic tensor with the elements interleaved.

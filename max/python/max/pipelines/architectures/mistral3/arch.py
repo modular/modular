@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,12 +13,12 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
-from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
+from max.pipelines.lib import SupportedArchitecture
 
 from . import weight_adapters
 from .model import Mistral3Model
+from .model_config import Mistral3Config
 from .tokenizer import Mistral3Tokenizer
 
 mistral3_arch = SupportedArchitecture(
@@ -26,9 +26,9 @@ mistral3_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["mistralai/Mistral-Small-3.1-24B-Instruct-2503"],
     default_weights_format=WeightsFormat.safetensors,
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        "bfloat16",
     },
     multi_gpu_supported=True,
     pipeline_model=Mistral3Model,
@@ -37,4 +37,5 @@ mistral3_arch = SupportedArchitecture(
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    config=Mistral3Config,
 )

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,37 +12,32 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout
-from memory import LegacyUnsafePointer
+from std.gpu.host import DeviceContext
+from layout import Idx, TileTensor, row_major
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 from nn.argsort import argsort
-from testing import assert_equal
-
-from utils.index import IndexList
+from std.testing import assert_equal
 
 
-fn linear_filler(i: Int, n: Int) -> Float32:
-    return i
+def linear_filler(i: Int, n: Int) -> Float32:
+    return Float32(i)
 
 
-fn reverse_filler(i: Int, n: Int) -> Float32:
-    return n - i
+def reverse_filler(i: Int, n: Int) -> Float32:
+    return Float32(n - i)
 
 
-fn test_argsort[
+def test_argsort[
     dtype: DType = DType.float32,
     *,
-    filler: fn (Int, Int) -> Float32,
+    filler: def(Int, Int) thin -> Float32,
     ascending: Bool = True,
 ](ctx: DeviceContext, N: Int) raises:
     # Allocate host memory
-    comptime layout = Layout.row_major[1]()
-    var input_host_ptr = UnsafePointer[Scalar[dtype]].alloc(N)
-    var input_host = LayoutTensor[dtype, layout](
+    var input_host_ptr = alloc[Scalar[dtype]](N)
+    var input_host = TileTensor(
         input_host_ptr,
-        RuntimeLayout[layout].row_major(IndexList[1](N)),
+        row_major(Idx(N)),
     )
 
     for i in range(N):
@@ -54,13 +49,13 @@ fn test_argsort[
     ctx.enqueue_copy(device_input, input_host_ptr)
 
     # Create device LayoutTensors
-    var device_indices_tensor = LayoutTensor[DType.int64, layout, MutAnyOrigin](
-        device_indices.unsafe_ptr(),
-        RuntimeLayout[layout].row_major(IndexList[1](N)),
+    var device_indices_tensor = TileTensor(
+        device_indices,
+        row_major(Idx(N)),
     )
-    var device_input_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
-        device_input.unsafe_ptr(),
-        RuntimeLayout[layout].row_major(IndexList[1](N)),
+    var device_input_tensor = TileTensor(
+        device_input,
+        row_major(Idx(N)),
     )
 
     argsort[ascending=ascending, target="gpu"](
@@ -68,15 +63,15 @@ fn test_argsort[
     )
 
     # Copy results back
-    var indices_host_ptr = UnsafePointer[Scalar[DType.int64]].alloc(N)
+    var indices_host_ptr = alloc[Scalar[DType.int64]](N)
     ctx.enqueue_copy(indices_host_ptr, device_indices)
     ctx.synchronize()
 
     # Test for correctness against CPU reference
-    var expected_indices_ptr = UnsafePointer[Scalar[DType.int64]].alloc(N)
-    var expected_indices = LayoutTensor[DType.int64, layout](
+    var expected_indices_ptr = alloc[Scalar[DType.int64]](N)
+    var expected_indices = TileTensor(
         expected_indices_ptr,
-        RuntimeLayout[layout].row_major(IndexList[1](N)),
+        row_major(Idx(N)),
     )
     argsort[ascending=ascending](expected_indices, input_host)
 
@@ -85,20 +80,9 @@ fn test_argsort[
             indices_host_ptr[i],
             expected_indices_ptr[i],
             msg=String(
-                "indices[",
-                i,
-                "] = ",
-                indices_host_ptr[i],
-                " expected_indices[",
-                i,
-                "] = ",
-                expected_indices_ptr[i],
-                " N = ",
-                N,
-                " ascending = ",
-                ascending,
-                " at position ",
-                i,
+                t"indices[{i}] = {indices_host_ptr[i]} expected_indices[{i}] ="
+                t" {expected_indices_ptr[i]} N = {N} ascending = {ascending} at"
+                t" position {i}"
             ),
         )
 
@@ -112,10 +96,10 @@ fn test_argsort[
     _ = device_input^
 
 
-fn test_argsort_helper[
+def test_argsort_helper[
     *,
     dtype: DType,
-    filler: fn (Int, Int) -> Float32,
+    filler: def(Int, Int) thin -> Float32,
     ascending: Bool,
 ](ctx: DeviceContext) raises:
     test_argsort[dtype, filler=filler, ascending=ascending](ctx, N=3731)
@@ -125,17 +109,17 @@ fn test_argsort_helper[
     test_argsort[dtype, filler=filler, ascending=ascending](ctx, N=1024)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:  # argmax tests
         test_argsort_helper[
-            dtype = DType.float32, filler=linear_filler, ascending=True
+            dtype=DType.float32, filler=linear_filler, ascending=True
         ](ctx)
         test_argsort_helper[
-            dtype = DType.float32, filler=linear_filler, ascending=False
+            dtype=DType.float32, filler=linear_filler, ascending=False
         ](ctx)
         test_argsort_helper[
-            dtype = DType.float32, filler=reverse_filler, ascending=True
+            dtype=DType.float32, filler=reverse_filler, ascending=True
         ](ctx)
         test_argsort_helper[
-            dtype = DType.float32, filler=reverse_filler, ascending=False
+            dtype=DType.float32, filler=reverse_filler, ascending=False
         ](ctx)

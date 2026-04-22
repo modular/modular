@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -30,13 +30,9 @@ from .managed_tensor_slice import (
     OutputTensor,
     OutputVariadicTensors,
     StaticTensorSpec,
+    StaticTensorSpecList,
     VariadicTensors,
     _FusedComputeOutputTensor,
-    _input_fusion_hook_impl,
-    _mixed_precision_compute_output_fusion_hook_impl,
-    _mixed_precision_input_fusion_hook_impl,
-    _mixed_precision_output_fusion_hook_impl,
-    _output_fusion_hook_impl,
     foreach,
     simd_load_from_managed_tensor_slice,
     simd_load_from_tensor_pointer,
@@ -44,6 +40,7 @@ from .managed_tensor_slice import (
     simd_store_into_tensor_pointer,
     trace_slice_arg,
     view_copy_impl,
+    get_row_major_tensor_spec_static,
 )
 from .operation_traits import (
     ElementwiseBinaryComparisonOp,

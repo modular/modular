@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,4 +22,4 @@ generated documentation, hide internal implementation details, or manage the
 public API surface shown to users.
 """
 
-from .documentation import doc_private
+from .documentation import doc_hidden

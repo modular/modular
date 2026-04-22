@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,33 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isclose
-from random import rand
-from sys import simd_width_of, size_of
+from std.math import isclose
+from std.random import rand
+from std.sys import simd_width_of, size_of
 
-import benchmark
-from buffer import NDBuffer
-from buffer.dimlist import Dim
+import std.benchmark
+from layout import TileTensor
+from layout.tile_layout import row_major
 from linalg.gemv import gemv, naive_gemv
 from linalg.matmul import matmul
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_false
-
-from utils.index import Index
+from std.testing import assert_false
 
 comptime alignment = 64
 
 
 @parameter
-fn bench_run[
-    func: fn () raises capturing [_] -> None
-]() raises -> benchmark.Report:
-    return benchmark.run[func](2, 1_000_000, 1, 3)
+def bench_run[
+    func: def() raises capturing[_] -> None
+]() raises -> std.benchmark.Report:
+    return std.benchmark.run[func](2, 1_000_000, 1, 3)
 
 
-def test_gemv():
+def test_gemv() raises:
     print("== test_gemv")
     comptime type = DType.float32
     comptime absolute_tolerance = 1e-08
@@ -54,21 +49,17 @@ def test_gemv():
     comptime m = 4096
     comptime k = 11008
 
-    var lhs_storage = UnsafePointer[Scalar[type],].alloc(
-        m * k, alignment=alignment
-    )
-    var lhs = NDBuffer[type, 2](lhs_storage, Index(m, k))
+    var lhs_storage = alloc[Scalar[type],](m * k, alignment=alignment)
+    var lhs = TileTensor(lhs_storage.as_any_origin(), row_major[m, k]())
 
-    var rhs_storage = UnsafePointer[Scalar[type],].alloc(k, alignment=alignment)
-    var rhs = NDBuffer[type, 1, _, Dim(k)](rhs_storage)
+    var rhs_storage = alloc[Scalar[type],](k, alignment=alignment)
+    var rhs = TileTensor(rhs_storage.as_any_origin(), row_major[k]())
 
-    var out_storage = UnsafePointer[Scalar[type],].alloc(m, alignment=alignment)
-    var out = NDBuffer[type, 1, _, Dim(m)](out_storage)
+    var out_storage = alloc[Scalar[type],](m, alignment=alignment)
+    var out = TileTensor(out_storage.as_any_origin(), row_major[m]())
 
-    var ref_out_storage = UnsafePointer[Scalar[type]].alloc(
-        m, alignment=alignment
-    )
-    var ref_out = NDBuffer[type, 1, _, Dim(m)](ref_out_storage)
+    var ref_out_storage = alloc[Scalar[type]](m, alignment=alignment)
+    var ref_out = TileTensor(ref_out_storage.as_any_origin(), row_major[m]())
 
     rand[type](lhs_storage, m * k)
     rand[type](rhs_storage, k)
@@ -78,11 +69,11 @@ def test_gemv():
 
     # Validate results from serial and parallel implementations
 
-    out.zero()
+    _ = out.fill(0)
     gemv[parallelize=False](out, lhs, rhs)
 
     # Verify the result
-    for i in range(out.__len__()):
+    for i in range(out.num_elements()):
         var expect = ref_out[i]
         var actual = out[i]
         if not isclose(
@@ -94,11 +85,11 @@ def test_gemv():
 
     comptime threads = 0
 
-    out.zero()
+    _ = out.fill(0)
     gemv[parallelize=True](out, lhs, rhs)
 
     # Verify the result
-    for i in range(out.__len__()):
+    for i in range(out.num_elements()):
         var expect = ref_out[i]
         var actual = out[i]
         if not isclose(
@@ -115,12 +106,14 @@ def test_gemv():
     @always_inline
     @__copy_capture(out, rhs, lhs)
     @parameter
-    fn bench_fn_serial() raises:
+    def bench_fn_serial() raises:
         gemv[parallelize=False](out, lhs, rhs)
 
     var serial_perf = bench_run[bench_fn_serial]()
-    benchmark.keep(out[10])
-    var serial_bandwidth = (bytes_per_iteration / serial_perf.mean()) / gigabyte
+    std.benchmark.keep(out[10])
+    var serial_bandwidth = (
+        Float64(bytes_per_iteration) / serial_perf.mean()
+    ) / gigabyte
     print(
         "Serial GEMV Bandwidth: ",
         serial_bandwidth,
@@ -134,17 +127,19 @@ def test_gemv():
     @always_inline
     @__copy_capture(out, rhs, lhs)
     @parameter
-    fn bench_fn_parallel() raises:
+    def bench_fn_parallel() raises:
         gemv[parallelize=True](out, lhs, rhs)
 
     var par_perf = bench_run[bench_fn_parallel]()
-    benchmark.keep(out[10])
+    std.benchmark.keep(out[10])
 
-    var rhs_mat = NDBuffer[type, 2](rhs_storage, Index(k, 1))
-    var out_mat = NDBuffer[type, 2](out_storage, Index(m, 1))
+    var rhs_mat = TileTensor(rhs_storage.as_any_origin(), row_major[k, 1]())
+    var out_mat = TileTensor(out_storage.as_any_origin(), row_major[m, 1]())
 
     # Compute speedup and bandwidth stats
-    var par_bandwidth = (bytes_per_iteration / par_perf.mean()) / gigabyte
+    var par_bandwidth = (
+        Float64(bytes_per_iteration) / par_perf.mean()
+    ) / gigabyte
     print(
         "Parallel GEMV Bandwidth: ",
         par_bandwidth,
@@ -163,13 +158,13 @@ def test_gemv():
     @always_inline
     @__copy_capture(out_mat, rhs_mat, lhs)
     @parameter
-    fn bench_fn_matmul() raises:
+    def bench_fn_matmul() raises:
         matmul(out_mat, lhs, rhs_mat)
 
     bench_fn_matmul()
 
     var matmul_perf = bench_run[bench_fn_matmul]()
-    benchmark.keep(out[10])
+    std.benchmark.keep(out[10])
     matmul_perf.print()
     print("Matmul GEMV GFLOP/s", 1e-9 * ((2 * m * k) / matmul_perf.mean()))
 
@@ -179,5 +174,5 @@ def test_gemv():
     ref_out_storage.free()
 
 
-def main():
+def main() raises:
     test_gemv()

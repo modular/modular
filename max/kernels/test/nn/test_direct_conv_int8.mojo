@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,21 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import ceildiv, isclose
-from random import rand
-from sys.info import num_physical_cores, simd_width_of
+from std.math import ceildiv, isclose
+from std.random import rand
+from std.sys.info import num_physical_cores, simd_width_of
 
 from layout import Layout, LayoutTensor, RuntimeLayout
-from nn.conv import (
+from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
     Naive2dConvolution,
-    pack_filter,
+    pack_filter_lt,
 )
-from nn.conv_utils import (
+from nn.conv.conv_utils import (
     ConvShape,
     get_conv_num_partitions,
     get_conv_num_tasks,
@@ -33,7 +30,7 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime input_type = DType.uint8
 comptime filter_type = DType.int8
@@ -42,7 +39,7 @@ comptime simd_size: Int = simd_width_of[output_type]()
 
 
 # CHECK-LABEL: test_direct_conv
-fn test[
+def test[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -82,12 +79,10 @@ fn test[
         num_groups=1,
     )
 
-    var input_ptr = UnsafePointer[Scalar[input_type]].alloc(N * H * W * C)
-    var filter_ptr = UnsafePointer[Scalar[filter_type]].alloc(R * S * C * F)
-    var output_ptr = UnsafePointer[Scalar[output_type]].alloc(N * HO * WO * F)
-    var output_ref_ptr = UnsafePointer[Scalar[output_type]].alloc(
-        N * HO * WO * F
-    )
+    var input_ptr = alloc[Scalar[input_type]](N * H * W * C)
+    var filter_ptr = alloc[Scalar[filter_type]](R * S * C * F)
+    var output_ptr = alloc[Scalar[output_type]](N * HO * WO * F)
+    var output_ref_ptr = alloc[Scalar[output_type]](N * HO * WO * F)
 
     rand[input_type](input_ptr, N * H * W * C)
     rand[filter_type](filter_ptr, R * S * C * F)
@@ -105,9 +100,7 @@ fn test[
     # Rounded C and F size for pre-packed filter.
     comptime micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
-    var packed_filter_ptr = UnsafePointer[Scalar[filter_type]].alloc(
-        R * S * C * rounded_F
-    )
+    var packed_filter_ptr = alloc[Scalar[filter_type]](R * S * C * rounded_F)
 
     comptime layout_4d = Layout.row_major[4]()
     comptime layout_5d = Layout.row_major[5]()
@@ -136,9 +129,8 @@ fn test[
         output_ref_ptr, RuntimeLayout[layout_4d].row_major(Index(N, HO, WO, F))
     )
 
-    @parameter
-    if filter_packed:
-        pack_filter[simd_size, micro_kernel_f_size](
+    comptime if filter_packed:
+        pack_filter_lt[simd_size, micro_kernel_f_size](
             filter, packed_filter, conv_shape.num_groups
         )
 
@@ -161,15 +153,11 @@ fn test[
     # Test direct conv
     comptime conv_attr = ConvInfoStatic[2]()
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         ConvDirectNHWC[
             layout_4d,
             layout_5d,
             layout_4d,
-            _,
-            _,
-            _,
             input_type,
             filter_type,
             output_type,
@@ -186,9 +174,6 @@ fn test[
             layout_4d,
             layout_4d,
             layout_4d,
-            _,
-            _,
-            _,
             input_type,
             filter_type,
             output_type,
@@ -207,8 +192,7 @@ fn test[
                 for f in range(F):
                     var failed: Bool
 
-                    @parameter
-                    if output_type.is_floating_point():
+                    comptime if output_type.is_floating_point():
                         if isclose(
                             output_ref[n, ho, wo, f],
                             output[n, ho, wo, f],
@@ -237,7 +221,7 @@ fn test[
     print("Succeed")
 
 
-def main():
+def main() raises:
     """It only includes shapes where F is multiple simd_size."""
 
     # likely partition in n_ho_wo or sequential

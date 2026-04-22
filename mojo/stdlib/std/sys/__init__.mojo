@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,31 +10,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""System runtime: I/O, hardware info, FFI, intrinsics, compile-time utils.
+"""System runtime: I/O, hardware info, intrinsics, compile-time utils.
 
 The `sys` package provides low-level access to system functionality and runtime
 information. It includes tools for interacting with the operating system,
-querying hardware capabilities, interfacing with foreign code, and accessing
-compiler intrinsics. This package bridges Mojo code and the underlying system
-environment.
+querying hardware capabilities, and accessing compiler intrinsics. This package
+bridges Mojo code and the underlying system environment.
 
 Use this package for system-level programming, hardware-specific optimizations,
-interfacing with C libraries, or when you need direct access to platform
-capabilities and compiler features.
+or when you need direct access to platform capabilities and compiler features.
+For foreign function interface (FFI) functionality, use the `ffi` module.
 """
 
 from ._assembly import inlined_assembly
 from ._io import stderr, stdin, stdout
 from .arg import argv
-from .compile import codegen_unreachable, is_compile_time
+from .compile import codegen_unreachable
 from .debug import breakpointhook
-from .ffi import DEFAULT_RTLD, RTLD, OwnedDLHandle, external_call
 from .info import (
     CompilationTarget,
     align_of,
     bit_width_of,
     has_accelerator,
     has_amd_gpu_accelerator,
+    has_amd_rdna_gpu_accelerator,
     has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
@@ -67,11 +66,11 @@ from .intrinsics import (
     strided_load,
     strided_store,
 )
-from .param_env import (
-    env_get_bool,
-    env_get_dtype,
-    env_get_int,
-    env_get_string,
+from .defines import (
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
+    get_defined_string,
     is_defined,
 )
 from .terminate import exit

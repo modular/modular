@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,8 +21,7 @@ from ..value import TensorValue
 
 
 def print(value: str | TensorValue, label: str = "debug_tensor") -> None:
-    """
-    Prints the value of a tensor or a string during graph execution.
+    """Prints the value of a tensor or a string during graph execution.
 
     This function is used to output the current value of a tensor and is
     primarily used for debugging purposes within the context of the Max

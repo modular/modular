@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,20 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.optional import OptionalReg
-from layout import LayoutTensor, Layout
-from math import fma
-from sys import align_of, prefetch
-from sys.info import CompilationTarget
-from sys.intrinsics import PrefetchOptions
+from std.collections.optional import Optional
+from layout import TileTensor
+from std.math import fma
+from std.sys import align_of, prefetch
+from std.sys.info import CompilationTarget
+from std.sys.intrinsics import PrefetchOptions
 
-from algorithm.functional import tile
-from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
+from std.algorithm.functional import tile
+from linalg.utils import (
+    partial_simd_load,
+    partial_simd_store,
+)
+from std.memory import stack_allocation
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # ===-----------------------------------------------------------------------===#
@@ -48,86 +49,77 @@ struct _Accumulator[
     """
 
     comptime tile_columns = Self.num_cols * Self.simd_width
+    comptime _size = Self.num_rows * Self.num_cols * Self.simd_width
 
     # The output buffer, should have num_rows x num_cols x simd_width.
-    var _storage: NDBuffer[
-        Self.dtype,
-        1,
-        MutAnyOrigin,
-        Self.num_rows * Self.num_cols * Self.simd_width,
-    ]
+    var _storage: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
 
     @always_inline
-    fn __init__(out self):
-        __comptime_assert (
+    def __init__(out self):
+        comptime assert (
             (Self.num_cols > 0)
             and (Self.num_rows > 0)
             and (Self.simd_width > 0)
         )
         comptime alignment = align_of[SIMD[Self.dtype, Self.simd_width]]()
-        self._storage = NDBuffer[
-            Self.dtype,
-            1,
-            MutAnyOrigin,
-            Self.num_rows * Self.num_cols * Self.simd_width,
-        ].stack_allocation[alignment=alignment]()
+        self._storage = stack_allocation[
+            Self._size, Self.dtype, alignment=alignment
+        ]().unsafe_origin_cast[MutAnyOrigin]()
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
-        other_storage: NDBuffer[
-            Self.dtype, 1, _, Self.num_rows * Self.num_cols * Self.simd_width
-        ],
+        other_storage: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
     ):
-        __comptime_assert (
+        comptime assert (
             (Self.num_cols > 0)
             and (Self.num_rows > 0)
             and (Self.simd_width > 0)
         )
         self._storage = other_storage
 
-    # NOTE: This is NOT a deepcopy; self uses the same _storage as other.
+    # NOTE: This is NOT a deepcopy; self uses the same _storage as copy.
     @always_inline
-    fn __copyinit__(out self, other: Self):
-        __comptime_assert (
+    def __init__(out self, *, copy: Self):
+        comptime assert (
             (Self.num_cols > 0)
             and (Self.num_rows > 0)
             and (Self.simd_width > 0)
         )
-        self._storage = other._storage
+        self._storage = copy._storage
 
     @staticmethod
     @always_inline
-    fn _storage_index(m: Int, n: Int) -> Int:
+    def _storage_index(m: Int, n: Int) -> Int:
         return (m * Self.num_cols + n) * Self.simd_width
 
     @always_inline
-    fn __getitem__(self, m: Int, n: Int) -> SIMD[Self.dtype, Self.simd_width]:
-        return self._storage.load[width = Self.simd_width](
+    def __getitem__(self, m: Int, n: Int) -> SIMD[Self.dtype, Self.simd_width]:
+        return self._storage.load[width=Self.simd_width](
             self._storage_index(m, n)
         )
 
     @always_inline
-    fn __setitem__(
+    def __setitem__(
         mut self, m: Int, n: Int, value: SIMD[Self.dtype, Self.simd_width]
     ):
-        self._storage.store(IndexList[1](self._storage_index(m, n)), value)
+        self._storage.store(self._storage_index(m, n), value)
 
     @always_inline
-    fn _partial_set[
-        partial_width: Int
+    def _partial_set[
+        partial_width: SIMDSize
     ](mut self, offset: Int, value: SIMD[Self.dtype, partial_width]):
-        self._storage.store[width=partial_width](IndexList[1](offset), value)
+        self._storage.store[width=partial_width](offset, value)
 
     @always_inline
-    fn _partial_get[
+    def _partial_get[
         partial_width: Int
     ](mut self, idx: Int) -> SIMD[Self.dtype, partial_width]:
         return self._storage.load[width=partial_width](idx)
 
     # In c+=(a*b), each of a, b, and c can have different dtypes.
     @always_inline
-    fn fma[
+    def fma[
         a_dtype: DType, b_dtype: DType
     ](
         mut self,
@@ -142,35 +134,47 @@ struct _Accumulator[
         )
 
     @always_inline
-    fn _transfer[
-        func: fn (
-            m: Int, n: Int, ptr: UnsafePointer[Scalar[Self.dtype]]
+    def _transfer[
+        func: def(
+            # TODO: Ideally `ptr` should have same origin as `base_ptr`, but I cannot
+            # get it to compile successfully.
+            m: Int,
+            n: Int,
+            ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
         ) capturing -> None
-    ](mut self, base_ptr: UnsafePointer[Scalar[Self.dtype]], stride: Int):
+    ](mut self, base_ptr: UnsafePointer[Scalar[Self.dtype], _], stride: Int):
         var row_ptr = base_ptr
 
-        @parameter
-        for m in range(Self.num_rows):
-
-            @parameter
-            for n in range(Self.num_cols):
-                func(m, n, row_ptr + n * Self.simd_width)
+        comptime for m in range(Self.num_rows):
+            comptime for n in range(Self.num_cols):
+                func(
+                    m,
+                    n,
+                    (row_ptr + n * Self.simd_width).unsafe_mut_cast[True](),
+                )
             row_ptr += stride
 
     # TODO: merge with load
     @always_inline
-    fn load(mut self, base_ptr: UnsafePointer[Scalar[Self.dtype]], stride: Int):
+    def load(
+        mut self,
+        base_ptr: UnsafePointer[mut=False, Scalar[Self.dtype], _],
+        stride: Int,
+    ):
         @parameter
         @always_inline
-        fn do_transfer(m: Int, n: Int, ptr: UnsafePointer[Scalar[Self.dtype]]):
-            self[m, n] = ptr.load[width = Self.simd_width]()
+        def do_transfer(
+            m: Int, n: Int, ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+        ):
+            # TODO: Ideally `ptr` should be immutable, but origins aren't inferring correctly.
+            self[m, n] = ptr.load[width=Self.simd_width]()
 
         self._transfer[do_transfer](base_ptr, stride)
 
     @always_inline
-    fn load(
+    def load(
         mut self,
-        c_ptr: UnsafePointer[Scalar[Self.dtype]],
+        c_ptr: UnsafePointer[mut=False, Scalar[Self.dtype], _],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
@@ -181,9 +185,9 @@ struct _Accumulator[
         )
 
     @always_inline
-    fn store(
+    def store(
         mut self,
-        c_ptr: UnsafePointer[Scalar[Self.dtype]],
+        c_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
@@ -194,63 +198,62 @@ struct _Accumulator[
         )
 
     @always_inline
-    fn _transfer[
+    def _transfer[
         is_load: Bool
     ](
         mut self,
-        c_ptr: UnsafePointer[Scalar[Self.dtype]],
+        c_ptr: UnsafePointer[Scalar[Self.dtype], _],
         c_stride: Int,
         tile_n_idx: Int,
         c_bound: IndexList[2],
         skip_boundary_check: Bool,
     ):
+        comptime assert is_load or c_ptr.mut, "ahhh"
         var c_ptr_loc = c_ptr + tile_n_idx
 
         if skip_boundary_check:
-
-            @parameter
-            if is_load:
+            comptime if is_load:
                 self.load(c_ptr_loc, c_stride)
             else:
-                self.store(c_ptr_loc, c_stride)
+                self.store(c_ptr_loc.unsafe_mut_cast[True](), c_stride)
         else:
             var transfer_count = min(
                 c_bound[1] - tile_n_idx, Self.num_cols * Self.simd_width
             )
             var row_ptrs = InlineArray[
-                UnsafePointer[Scalar[Self.dtype]], Self.num_rows
+                UnsafePointer[Scalar[Self.dtype], AnyOrigin[mut=c_ptr.mut]],
+                Self.num_rows,
             ](uninitialized=True)
 
-            @parameter
-            for row in range(Self.num_rows):
-                row_ptrs[row] = c_ptr_loc + row * c_stride
+            comptime for row in range(Self.num_rows):
+                row_ptrs[row] = (c_ptr_loc + row * c_stride).as_any_origin()
 
             self._transfer_loop[0, is_load](
                 transfer_count, row_ptrs.unsafe_ptr(), c_stride
             )
 
     @always_inline
-    fn _transfer_columns[
+    def _transfer_columns[
+        origin: Origin,
+        //,
         base_column: Int,
         column_count: Int,
         is_load: Bool,
     ](
         mut self,
-        row_ptrs: UnsafePointer[UnsafePointer[Scalar[Self.dtype]]],
+        row_ptrs: UnsafePointer[UnsafePointer[Scalar[Self.dtype], origin], _],
         stride: Int,
     ):
         """Loads or stores one or more columns from the base column for each
         row of the tile."""
+        comptime assert is_load or origin.mut, "ahhh"
         comptime column_step = min(column_count, Self.simd_width)
 
         @parameter
         @always_inline
-        fn body(row: Int, col: Int):
-            @parameter
-            if is_load:
-
-                @parameter
-                if CompilationTarget.has_neon():
+        def body(row: Int, col: Int):
+            comptime if is_load:
+                comptime if CompilationTarget.has_neon():
                     var data = row_ptrs[row].load[width=column_step](col)
                     self._partial_set(row * Self.tile_columns + col, data)
                 else:
@@ -263,40 +266,39 @@ struct _Accumulator[
                     row * Self.tile_columns + col
                 )
 
-                @parameter
-                if CompilationTarget.has_neon():
-                    row_ptrs[row].store(col, data)
+                comptime if CompilationTarget.has_neon():
+                    row_ptrs[row].unsafe_mut_cast[True]().store(col, data)
                 else:
-                    row_ptrs[0].store(stride * row + col, data)
+                    row_ptrs[0].unsafe_mut_cast[True]().store(
+                        stride * row + col, data
+                    )
 
-        @parameter
-        for row in range(Self.num_rows):
+        comptime for row in range(Self.num_rows):
             # Iterate twice for a pairwise load/store or once for any other access.
 
-            @parameter
-            for col in range(
+            comptime for col in range(
                 base_column, base_column + column_count, column_step
             ):
                 body(row, col)
 
     @always_inline
-    fn _transfer_loop[
-        base_column: Int, is_load: Bool
+    def _transfer_loop[
+        origin: Origin, //, base_column: Int, is_load: Bool
     ](
         mut self,
         transfer_count: Int,
-        row_ptrs: UnsafePointer[UnsafePointer[Scalar[Self.dtype]]],
+        row_ptrs: UnsafePointer[UnsafePointer[Scalar[Self.dtype], origin], _],
         stride: Int,
     ):
         """Loads/stores all pairwise vectors of the tile and dispatches the
         remaining non-pairwise elements."""
+        comptime assert is_load or origin.mut, "ahhh"
         comptime tile_columns_remaining = Self.tile_columns - base_column
         # Support fusion of LDP/STP instructions by emitting pairs of load/store with neon
         comptime column_groups = 2 if CompilationTarget.has_neon() else 1
 
         # vector instructions.
-        @parameter
-        if tile_columns_remaining >= column_groups * Self.simd_width:
+        comptime if tile_columns_remaining >= column_groups * Self.simd_width:
             if transfer_count >= base_column + column_groups * Self.simd_width:
                 self._transfer_columns[
                     base_column, column_groups * Self.simd_width, is_load
@@ -306,11 +308,8 @@ struct _Accumulator[
                 ](transfer_count, row_ptrs, stride)
                 return
 
-        @parameter
-        if tile_columns_remaining >= Self.simd_width:
-
-            @parameter
-            if CompilationTarget.has_neon():
+        comptime if tile_columns_remaining >= Self.simd_width:
+            comptime if CompilationTarget.has_neon():
                 self._transfer_tail[base_column, Self.simd_width, is_load](
                     transfer_count, row_ptrs, stride
                 )
@@ -320,16 +319,17 @@ struct _Accumulator[
                 )
 
     @always_inline
-    fn _transfer_tail[
-        base_column: Int, tail_size: Int, is_load: Bool
+    def _transfer_tail[
+        origin: Origin, //, base_column: Int, tail_size: Int, is_load: Bool
     ](
         mut self,
         transfer_count: Int,
-        row_ptrs: UnsafePointer[UnsafePointer[Scalar[Self.dtype]]],
+        row_ptrs: UnsafePointer[UnsafePointer[Scalar[Self.dtype], origin], _],
         stride: Int,
     ):
         """Loads/stores the last elements of the tile that cannot be accessed
         pairwise."""
+        comptime assert is_load or origin.mut, "ahhh"
 
         if transfer_count & tail_size:
             self._transfer_columns[base_column, tail_size, is_load](
@@ -337,36 +337,34 @@ struct _Accumulator[
             )
             comptime tile_columns_remaining = Self.tile_columns - base_column - tail_size
 
-            @parameter
-            if tile_columns_remaining >= tail_size // 2 and tail_size > 1:
+            comptime if tile_columns_remaining >= tail_size // 2 and tail_size > 1:
                 self._transfer_tail[
                     base_column + tail_size, tail_size // 2, is_load
                 ](transfer_count, row_ptrs, stride)
             return
 
-        @parameter
-        if tail_size > 1:
+        comptime if tail_size > 1:
             self._transfer_tail[base_column, tail_size // 2, is_load](
                 transfer_count, row_ptrs, stride
             )
 
     @always_inline
-    fn _transfer_tail_mask[
-        base_column: Int, is_load: Bool
+    def _transfer_tail_mask[
+        origin: Origin, //, base_column: Int, is_load: Bool
     ](
         mut self,
         transfer_count: Int,
-        row_ptrs: UnsafePointer[UnsafePointer[Scalar[Self.dtype]]],
+        row_ptrs: UnsafePointer[UnsafePointer[Scalar[Self.dtype], origin], _],
         stride: Int,
     ):
+        comptime assert is_load or origin.mut, "ahhh"
+
         var tail_size = transfer_count - base_column
 
-        @parameter
-        for row in range(Self.num_rows):
+        comptime for row in range(Self.num_rows):
             comptime col = base_column // Self.simd_width
 
-            @parameter
-            if is_load:
+            comptime if is_load:
                 self[row, col] = partial_simd_load[Self.simd_width](
                     row_ptrs[0] + (stride * row + base_column),
                     0,
@@ -375,7 +373,9 @@ struct _Accumulator[
                 )
             else:
                 partial_simd_store(
-                    row_ptrs[0] + (stride * row + base_column),
+                    (
+                        row_ptrs[0] + (stride * row + base_column)
+                    ).unsafe_mut_cast[True](),
                     0,
                     tail_size,
                     self[row, col],
@@ -383,12 +383,16 @@ struct _Accumulator[
 
     # TODO: merge with store
     @always_inline
-    fn store(
-        mut self, base_ptr: UnsafePointer[Scalar[Self.dtype]], stride: Int
+    def store(
+        mut self,
+        base_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
+        stride: Int,
     ):
         @parameter
         @always_inline
-        fn do_transfer(m: Int, n: Int, ptr: UnsafePointer[Scalar[Self.dtype]]):
+        def do_transfer(
+            m: Int, n: Int, ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+        ):
             ptr.store(self[m, n])
 
         self._transfer[do_transfer](base_ptr, stride)
@@ -398,25 +402,21 @@ struct _Accumulator[
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn init(mut self):
-        @parameter
-        if Self.dtype.is_floating_point():
+    def init(mut self):
+        comptime if Self.dtype.is_floating_point():
             self.init(0.0)
         else:
             self.init(0)
 
     @always_inline
-    fn init(mut self, val: Scalar[Self.dtype]):
+    def init(mut self, val: Scalar[Self.dtype]):
         # TODO: refactor with _transfer
-        @parameter
-        for m in range(Self.num_rows):
-
-            @parameter
-            for n in range(Self.num_cols):
+        comptime for m in range(Self.num_rows):
+            comptime for n in range(Self.num_cols):
                 self[m, n] = val
 
     @always_inline
-    fn load[
+    def load[
         dt: DType,
         //,
         partial_load: Bool = False,
@@ -424,7 +424,7 @@ struct _Accumulator[
         mut self,
         input: UnsafePointer[Scalar[dt], ...],
         input_stride: Int,
-        partial_load_size: OptionalReg[Int] = None,
+        partial_load_size: Optional[Int] = None,
     ):
         """Load a register tile from the input buffer.
 
@@ -439,11 +439,8 @@ struct _Accumulator[
         """
 
         # TODO: could we lift partial_load_size out of the loop?
-        @parameter
-        for i in range(Self.num_rows):
-
-            @parameter
-            for j in range(Self.num_cols):
+        comptime for i in range(Self.num_rows):
+            comptime for j in range(Self.num_cols):
                 var input_ptr = input + i * input_stride + j * Self.simd_width
                 comptime partial_load_last_vec = partial_load and (
                     j == Self.num_cols - 1
@@ -455,15 +452,15 @@ struct _Accumulator[
                 ](input_ptr, 0, partial_load_size).cast[Self.dtype]()
 
     @always_inline
-    fn store[
+    def store[
         dt: DType,
         //,
         partial_store: Bool = False,
     ](
         mut self,
-        output: UnsafePointer[Scalar[dt], ...],
+        output: UnsafePointer[mut=True, Scalar[dt], ...],
         output_stride: Int,
-        partial_store_size: OptionalReg[Int] = None,
+        partial_store_size: Optional[Int] = None,
     ):
         """Load a register tile from the input buffer.
 
@@ -478,11 +475,8 @@ struct _Accumulator[
         """
 
         # TODO: could we lift partial_store_size out of the loop?
-        @parameter
-        for i in range(Self.num_rows):
-
-            @parameter
-            for j in range(Self.num_cols):
+        comptime for i in range(Self.num_rows):
+            comptime for j in range(Self.num_cols):
                 comptime partial_store_last_vec = partial_store and (
                     j == Self.num_cols - 1
                 )
@@ -499,11 +493,11 @@ struct _Accumulator[
     # Accumulation entry point.
     # ===-------------------------------------------------------------------===#
     @always_inline
-    fn accumulate[
+    def accumulate[
         a_type: DType,
         b_type: DType,
         //,
-        prefetch_offset: OptionalReg[Int] = None,
+        prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
         mut self,
@@ -512,7 +506,7 @@ struct _Accumulator[
         a_stride: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
+        partial_load_b_size: Optional[Int] = None,
     ):
         """Compute c += a * b with register tiling on SIMD ISAs.
 
@@ -530,8 +524,7 @@ struct _Accumulator[
             partial_load_b_size: The partial load B size.
         """
 
-        @parameter
-        if CompilationTarget.has_neon():
+        comptime if CompilationTarget.has_neon():
             self._accumulate_neon[
                 prefetch_offset=None,
                 partial_load_b=partial_load_b,
@@ -557,22 +550,22 @@ struct _Accumulator[
             )
 
     @always_inline
-    fn accumulate[
+    def accumulate[
         a_type: DType,
         b_type: DType,
         //,
         # TODO: move the following params to accumulate function.
-        prefetch_offset: OptionalReg[Int] = None,
+        prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
         mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: NDBuffer[DType.int32, 1, _, Self.num_rows],
+        a_base_offsets: TileTensor[DType.int32, ...],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
+        partial_load_b_size: Optional[Int] = None,
     ):
         """Compute c += a * b with register tiling on SIMD ISAs.
 
@@ -607,91 +600,11 @@ struct _Accumulator[
                                     ^                    ^
                                 a_offset        a_offset + length
         """
+        comptime assert (
+            a_base_offsets.flat_rank == 1
+        ), "a_base_offsets must be rank 1"
 
-        @parameter
-        if CompilationTarget.has_neon():
-            self._accumulate_neon[
-                prefetch_offset=None,
-                partial_load_b=partial_load_b,
-            ](
-                length,
-                a,
-                a_base_offsets,
-                a_offset,
-                b,
-                b_stride,
-                partial_load_b_size,
-            )
-        else:
-            self._accumulate_x86_simd[
-                prefetch_offset=prefetch_offset,
-                partial_load_b=partial_load_b,
-            ](
-                length,
-                a,
-                a_base_offsets,
-                a_offset,
-                b,
-                b_stride,
-                partial_load_b_size,
-            )
-
-    @always_inline
-    fn accumulate[
-        a_type: DType,
-        b_type: DType,
-        //,
-        # TODO: move the following params to accumulate function.
-        prefetch_offset: OptionalReg[Int] = None,
-        partial_load_b: Bool = False,
-    ](
-        mut self,
-        length: Int,
-        a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(Self.num_rows)
-        ],
-        a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], ...],
-        b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
-    ):
-        """Compute c += a * b with register tiling on SIMD ISAs.
-
-        This version applies to the cases where the rows in A are not separated
-        evenly by a single stride. E.x. pointwise conv with stride > 1.
-
-        Parameters:
-            a_type: DType of the a.
-            b_type: DType of the b.
-            prefetch_offset: The distance to  prefetch ahead.
-            partial_load_b: Whether use partial load for B.
-
-        Args:
-            length: Number of elements in accumulation.
-            a: The input buffer A.
-            a_base_offsets: Base offsets of rows in A.
-            a_offset: Offset into A rows.
-            b: The input buffer B.
-            b_stride: B's stride between each `num_cols x simd_width` segment.
-            partial_load_b_size: The partial load B size.
-
-
-        The A offsets work as follow:
-
-            a_base_offsets[0]: ------------------------------
-            a_base_offsets[1]: ------------------------------
-            ...
-            a_base_offsets[2]: ------------------------------
-            ...
-            ...
-            a_base_offsets[3]: ------------------------------
-                                    ^                    ^
-                                a_offset        a_offset + length
-        """
-
-        @parameter
-        if CompilationTarget.has_neon():
+        comptime if CompilationTarget.has_neon():
             self._accumulate_neon[
                 prefetch_offset=None,
                 partial_load_b=partial_load_b,
@@ -754,11 +667,11 @@ struct _Accumulator[
     # register renaming.
 
     @always_inline
-    fn _accumulate_x86_simd[
+    def _accumulate_x86_simd[
         a_type: DType,
         b_type: DType,
         //,
-        prefetch_offset: OptionalReg[Int] = None,
+        prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
         mut self,
@@ -767,22 +680,19 @@ struct _Accumulator[
         a_stride: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
+        partial_load_b_size: Optional[Int] = None,
     ):
         """Accumulation optimized for AVX512 and AVX2."""
 
-        __comptime_assert not CompilationTarget.has_neon()
+        comptime assert not CompilationTarget.has_neon()
 
         comptime kernel_width = Self.num_cols * Self.simd_width
         var b_ptr = b
 
         for l in range(length):
             # prefetch
-            @parameter
-            if prefetch_offset:
-
-                @parameter
-                for j in range(Self.num_cols):
+            comptime if prefetch_offset:
+                comptime for j in range(Self.num_cols):
                     prefetch[
                         PrefetchOptions()
                         .for_read()
@@ -794,15 +704,13 @@ struct _Accumulator[
                         + j * Self.simd_width
                     )
 
-            @parameter
-            for i in range(Self.row_start, Self.row_stop):
+            comptime for i in range(Self.row_start, Self.row_stop):
                 # Broadcast an scalar from A to a simd vector.
                 var a_splat_vec = SIMD[a_type, Self.simd_width](
                     a[l + i * a_stride]
                 )
 
-                @parameter
-                for j in range(Self.num_cols):
+                comptime for j in range(Self.num_cols):
                     # Load a simd vector from B.
                     var b_vec = _simd_load_maybe_partial[
                         Self.simd_width, partial_load_b
@@ -819,36 +727,36 @@ struct _Accumulator[
             b_ptr = b_ptr + b_stride
 
     @always_inline
-    fn _accumulate_x86_simd[
+    def _accumulate_x86_simd[
         a_type: DType,
         b_type: DType,
         //,
-        prefetch_offset: OptionalReg[Int] = None,
+        prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
         mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: NDBuffer[DType.int32, 1, _, Self.num_rows],
+        a_base_offsets: TileTensor[DType.int32, ...],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
+        partial_load_b_size: Optional[Int] = None,
     ):
         """Accumulation optimized for AVX512 and AVX2."""
 
-        __comptime_assert not CompilationTarget.has_neon()
+        comptime assert not CompilationTarget.has_neon()
+        comptime assert (
+            a_base_offsets.flat_rank == 1
+        ), "a_base_offsets must be rank 1"
 
         comptime kernel_width = Self.num_cols * Self.simd_width
         var b_ptr = b
 
         for l in range(length):
             # prefetch
-            @parameter
-            if prefetch_offset:
-
-                @parameter
-                for j in range(Self.num_cols):
+            comptime if prefetch_offset:
+                comptime for j in range(Self.num_cols):
                     prefetch[
                         PrefetchOptions()
                         .for_read()
@@ -860,81 +768,12 @@ struct _Accumulator[
                         + j * Self.simd_width
                     )
 
-            @parameter
-            for i in range(Self.row_start, Self.row_stop):
+            comptime for i in range(Self.row_start, Self.row_stop):
                 # Broadcast an scalar from A to a simd vector.
                 var a_idx = Int(a_base_offsets[i]) + a_offset + l
                 var a_splat_vec = SIMD[a_type, Self.simd_width](a[a_idx])
 
-                @parameter
-                for j in range(Self.num_cols):
-                    # Load a simd vector from B.
-                    var b_vec = _simd_load_maybe_partial[
-                        Self.simd_width, partial_load_b
-                    ](b_ptr, j * Self.simd_width, partial_load_b_size)
-
-                    # The following should be lifted to registers and show up as
-                    # FMA instructions.
-                    self[i, j] = fma(
-                        a_splat_vec.cast[Self.dtype](),
-                        b_vec.cast[Self.dtype](),
-                        self[i, j],
-                    )
-
-            b_ptr = b_ptr + b_stride
-
-    @always_inline
-    fn _accumulate_x86_simd[
-        a_type: DType,
-        b_type: DType,
-        //,
-        prefetch_offset: OptionalReg[Int] = None,
-        partial_load_b: Bool = False,
-    ](
-        mut self,
-        length: Int,
-        a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(Self.num_rows)
-        ],
-        a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], ...],
-        b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
-    ):
-        """Accumulation optimized for AVX512 and AVX2."""
-
-        __comptime_assert not CompilationTarget.has_neon()
-
-        comptime kernel_width = Self.num_cols * Self.simd_width
-        var b_ptr = b
-
-        for l in range(length):
-            # prefetch
-            @parameter
-            if prefetch_offset:
-
-                @parameter
-                for j in range(Self.num_cols):
-                    prefetch[
-                        PrefetchOptions()
-                        .for_read()
-                        .high_locality()
-                        .to_data_cache()
-                    ](
-                        b_ptr
-                        + prefetch_offset.value() * kernel_width
-                        + j * Self.simd_width
-                    )
-
-            @parameter
-            for i in range(Self.row_start, Self.row_stop):
-                # Broadcast an scalar from A to a simd vector.
-                var a_idx = Int(a_base_offsets[i]) + a_offset + l
-                var a_splat_vec = SIMD[a_type, Self.simd_width](a[a_idx])
-
-                @parameter
-                for j in range(Self.num_cols):
+                comptime for j in range(Self.num_cols):
                     # Load a simd vector from B.
                     var b_vec = _simd_load_maybe_partial[
                         Self.simd_width, partial_load_b
@@ -990,11 +829,11 @@ struct _Accumulator[
     # registers on Graviton2.
 
     @always_inline
-    fn _accumulate_neon[
+    def _accumulate_neon[
         a_type: DType,
         b_type: DType,
         //,
-        prefetch_offset: OptionalReg[Int] = None,
+        prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
         mut self,
@@ -1003,41 +842,36 @@ struct _Accumulator[
         a_stride: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
+        partial_load_b_size: Optional[Int] = None,
     ):
         """Accumulation optimized for NEON."""
-        __comptime_assert CompilationTarget.has_neon()
+        comptime assert CompilationTarget.has_neon()
 
         @parameter
         @always_inline
-        fn micro_kernel[num_lanes: Int](offset: Int):
+        def micro_kernel[num_lanes: Int](offset: Int):
             var a_vecs = InlineArray[SIMD[a_type, num_lanes], Self.num_rows](
                 uninitialized=True
             )
 
             # Load vectors of size num_lanes from input.
-            @parameter
-            for i in range(Self.row_start, Self.row_stop):
+            comptime for i in range(Self.row_start, Self.row_stop):
                 a_vecs[i] = a.load[width=num_lanes](offset + i * a_stride)
 
             var b_ptr = b + offset * b_stride
 
-            @parameter
-            for lane in range(num_lanes):
-
-                @parameter
-                for j in range(Self.num_cols):
+            comptime for lane in range(num_lanes):
+                comptime for j in range(Self.num_cols):
                     # Load a simd vector from B.
                     var b_vec = _simd_load_maybe_partial[
                         Self.simd_width, partial_load_b
                     ](b_ptr, j * Self.simd_width, partial_load_b_size)
 
-                    @parameter
-                    for i in range(Self.row_start, Self.row_stop):
+                    comptime for i in range(Self.row_start, Self.row_stop):
                         # The following should be lifted to registers and show up as
                         # FMA instructions.
                         self[i, j] = fma[
-                            dtype = Self.dtype, width = Self.simd_width
+                            dtype=Self.dtype, width=Self.simd_width
                         ](
                             a_vecs[i][lane].cast[Self.dtype](),
                             b_vec.cast[Self.dtype](),
@@ -1047,59 +881,57 @@ struct _Accumulator[
                 b_ptr = b_ptr + b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, VariadicList[Int](Self.simd_width, 1)](0, length)
+        tile[micro_kernel, [Self.simd_width, 1]](0, length)
 
     @always_inline
-    fn _accumulate_neon[
+    def _accumulate_neon[
         a_type: DType,
         b_type: DType,
         //,
-        prefetch_offset: OptionalReg[Int] = None,
+        prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
         mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: NDBuffer[DType.int32, 1, _, Self.num_rows],
+        a_base_offsets: TileTensor[DType.int32, ...],
         a_offset: Int,
         b: UnsafePointer[Scalar[b_type], ...],
         b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
+        partial_load_b_size: Optional[Int] = None,
     ):
         """Accumulation optimized for NEON."""
-        __comptime_assert CompilationTarget.has_neon()
+        comptime assert CompilationTarget.has_neon()
+        comptime assert (
+            a_base_offsets.flat_rank == 1
+        ), "a_base_offsets must be rank 1"
 
         @parameter
         @always_inline
-        fn micro_kernel[num_lanes: Int](offset: Int):
+        def micro_kernel[num_lanes: Int](offset: Int):
             var a_vecs = InlineArray[SIMD[a_type, num_lanes], Self.num_rows](
                 uninitialized=True
             )
 
             # Load vectors of size num_lanes from input.
-            @parameter
-            for i in range(Self.row_start, Self.row_stop):
+            comptime for i in range(Self.row_start, Self.row_stop):
                 var a_idx = Int(a_base_offsets[i]) + a_offset + offset
                 a_vecs[i] = a.load[width=num_lanes](a_idx)
 
             var b_ptr = b + offset * b_stride
 
-            @parameter
-            for lane in range(num_lanes):
-
-                @parameter
-                for j in range(Self.num_cols):
+            comptime for lane in range(num_lanes):
+                comptime for j in range(Self.num_cols):
                     # Load a simd vector from B.
                     var b_vec = _simd_load_maybe_partial[
                         Self.simd_width, partial_load_b
                     ](b_ptr, j * Self.simd_width, partial_load_b_size)
 
-                    @parameter
-                    for i in range(Self.row_start, Self.row_stop):
+                    comptime for i in range(Self.row_start, Self.row_stop):
                         # The following should be lifted to registers and show up as
                         # FMA instructions.
                         self[i, j] = fma[
-                            dtype = Self.dtype, width = Self.simd_width
+                            dtype=Self.dtype, width=Self.simd_width
                         ](
                             a_vecs[i][lane].cast[Self.dtype](),
                             b_vec.cast[Self.dtype](),
@@ -1109,80 +941,16 @@ struct _Accumulator[
                 b_ptr += b_stride
 
         # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, VariadicList[Int](Self.simd_width, 1)](0, length)
-
-    @always_inline
-    fn _accumulate_neon[
-        a_type: DType,
-        b_type: DType,
-        //,
-        prefetch_offset: OptionalReg[Int] = None,
-        partial_load_b: Bool = False,
-    ](
-        mut self,
-        length: Int,
-        a: UnsafePointer[Scalar[a_type], ...],
-        a_base_offsets: LayoutTensor[
-            DType.int32, Layout.row_major(Self.num_rows)
-        ],
-        a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], ...],
-        b_stride: Int,
-        partial_load_b_size: OptionalReg[Int] = None,
-    ):
-        """Accumulation optimized for NEON."""
-        __comptime_assert CompilationTarget.has_neon()
-
-        @parameter
-        @always_inline
-        fn micro_kernel[num_lanes: Int](offset: Int):
-            var a_vecs = InlineArray[SIMD[a_type, num_lanes], Self.num_rows](
-                uninitialized=True
-            )
-
-            # Load vectors of size num_lanes from input.
-            @parameter
-            for i in range(Self.row_start, Self.row_stop):
-                var a_idx = Int(a_base_offsets[i]) + a_offset + offset
-                a_vecs[i] = a.load[width=num_lanes](a_idx)
-
-            var b_ptr = b + offset * b_stride
-
-            @parameter
-            for lane in range(num_lanes):
-
-                @parameter
-                for j in range(Self.num_cols):
-                    # Load a simd vector from B.
-                    var b_vec = _simd_load_maybe_partial[
-                        Self.simd_width, partial_load_b
-                    ](b_ptr, j * Self.simd_width, partial_load_b_size)
-
-                    @parameter
-                    for i in range(Self.row_start, Self.row_stop):
-                        # The following should be lifted to registers and show up as
-                        # FMA instructions.
-                        self[i, j] = fma[
-                            dtype = Self.dtype, width = Self.simd_width
-                        ](
-                            a_vecs[i][lane].cast[Self.dtype](),
-                            b_vec.cast[Self.dtype](),
-                            self[i, j],
-                        )
-
-                b_ptr += b_stride
-
-        # Load vectors from A first. The remainder is handled one element at a time.
-        tile[micro_kernel, VariadicList[Int](Self.simd_width, 1)](0, length)
+        tile[micro_kernel, [Self.simd_width, 1]](0, length)
 
 
 @always_inline
-fn _simd_load_maybe_partial[
+def _simd_load_maybe_partial[
     dt: DType, //, simd_width: Int, partial_load: Bool
 ](
-    ptr: UnsafePointer[Scalar[dt], ...],
+    ptr: UnsafePointer[mut=False, Scalar[dt], ...],
     offset: Int,
-    partial_load_size: OptionalReg[Int] = None,
+    partial_load_size: Optional[Int] = None,
 ) -> SIMD[dt, simd_width]:
     """Load a simd vector. The vector may exceed the data's end, i.e.,
     offset + simd_width > end. In this case, if user specifies partial load, we
@@ -1194,8 +962,7 @@ fn _simd_load_maybe_partial[
     the filter near the end.
     """
 
-    @parameter
-    if partial_load:
+    comptime if partial_load:
         return partial_simd_load[simd_width](
             ptr + offset, 0, partial_load_size.value(), 0
         )
@@ -1204,21 +971,20 @@ fn _simd_load_maybe_partial[
 
 
 @always_inline
-fn _simd_store_maybe_partial[
-    dt: DType, //, simd_width: Int, partial_store: Bool
+def _simd_store_maybe_partial[
+    dt: DType, //, simd_width: SIMDSize, partial_store: Bool
 ](
-    ptr: UnsafePointer[Scalar[dt], ...],
+    ptr: UnsafePointer[mut=True, Scalar[dt], ...],
     offset: Int,
     vec: SIMD[dt, simd_width],
-    partial_store_size: OptionalReg[Int] = None,
+    partial_store_size: Optional[Int] = None,
 ):
     """Store a simd vector. The vector may exceed the data's end, i.e.,
     offset + simd_width > end. In this case, if user specifies partial_store, we
     will store `partial_store_size` lanes of input vector.
     """
 
-    @parameter
-    if partial_store:
+    comptime if partial_store:
         # TODO: check if partial_store_size is present.
         return partial_simd_store[simd_width](
             ptr + offset, 0, partial_store_size.value(), vec

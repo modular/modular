@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,12 +13,12 @@
 
 # DOC: mojo/docs/manual/get-started.mdx
 
-import random
-from collections import Optional
+from std import random
+from std.collections import Optional
 
 
 @fieldwise_init
-struct Grid(Copyable, Stringable):
+struct Grid(Copyable, Writable):
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -31,7 +31,7 @@ struct Grid(Copyable, Stringable):
     # Indexing
     # ===-------------------------------------------------------------------===#
 
-    fn __getitem__(self, row: Int, col: Int) -> Int:
+    def __getitem__(self, row: Int, col: Int) -> Int:
         return self.data[row][col]
 
     def __setitem__(mut self, row: Int, col: Int, value: Int) -> None:
@@ -41,28 +41,27 @@ struct Grid(Copyable, Stringable):
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __str__(self) -> String:
-        # Create an empty String
-        str = String()
-
+    def write_to(self, mut writer: Some[Writer]):
         # Iterate through rows 0 through rows-1
         for row in range(self.rows):
             # Iterate through columns 0 through cols-1
             for col in range(self.cols):
                 if self[row, col] == 1:
-                    str += "*"  # If cell is populated, append an asterisk
+                    # If cell is populated, write an asterisk
+                    writer.write_string("*")
                 else:
-                    str += " "  # If cell is not populated, append a space
+                    # If cell is not populated, write a space
+                    writer.write_string(" ")
             if row != self.rows - 1:
-                str += "\n"  # Add a newline between rows, but not at the end
-        return str
+                # Add a newline between rows, but not at the end
+                writer.write_string("\n")
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    fn glider() -> Self:
+    def glider() -> Self:
         var glider = [
             [0, 1, 0, 0, 0, 0, 0, 0],
             [0, 0, 1, 0, 0, 0, 0, 0],
@@ -76,7 +75,7 @@ struct Grid(Copyable, Stringable):
         return Grid(8, 8, glider^)
 
     @staticmethod
-    fn random(rows: Int, cols: Int, seed: Optional[Int] = None) -> Self:
+    def random(rows: Int, cols: Int, seed: Optional[Int] = None) -> Self:
         if seed:
             random.seed(seed.value())
         else:
@@ -98,7 +97,7 @@ struct Grid(Copyable, Stringable):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn evolve(self) -> Self:
+    def evolve(self) -> Self:
         next_generation = List[List[Int]]()
 
         for row in range(self.rows):

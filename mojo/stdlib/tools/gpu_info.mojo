@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.arg import argv
+from std.sys.arg import argv
 
-import gpu.host
-import gpu.host._nvidia_cuda as cuda
+import std.gpu.host
+import std.gpu.host._nvidia_cuda as cuda
 
 
-fn compute_capability_to_arch_name(major: Int, minor: Int) -> StaticString:
+def compute_capability_to_arch_name(major: Int, minor: Int) -> StaticString:
     if major == 1:
         return "tesla"
     if major == 2:
@@ -45,7 +45,7 @@ fn compute_capability_to_arch_name(major: Int, minor: Int) -> StaticString:
     return "Unknown"
 
 
-def main():
+def main() raises:
     var args = argv()
     var api: String = "cuda"
     var device_id: Int = 0
@@ -61,8 +61,7 @@ def main():
 
     var compute_capability = ctx.compute_capability()
     var arch_name = ctx.arch_name()
-    var major = compute_capability // 10
-    var minor = compute_capability % 10
+    var major, minor = divmod(compute_capability, 10)
 
     if ctx.api() == "cuda":
         print("GPUInfo(")

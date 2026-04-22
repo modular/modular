@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from itertools import count
-from testing import TestSuite, assert_equal
+from std.itertools import count
+from std.testing import TestSuite, assert_equal
 
 
-def test_count():
+def test_count() raises:
     var it = count()
     var elem = next(it)
     assert_equal(elem, 0)
@@ -23,7 +23,7 @@ def test_count():
     assert_equal(elem, 1)
 
 
-def test_count_strided():
+def test_count_strided() raises:
     var it = count(start=10, step=20)
     var elem = next(it)
     assert_equal(elem, 10)
@@ -31,5 +31,5 @@ def test_count_strided():
     assert_equal(elem, 30)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

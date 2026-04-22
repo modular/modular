@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -48,7 +48,7 @@ struct Point(Writable):
     var x: Float64
     var y: Float64
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("(", self.x, ", ", self.y, ")")
 
 var p = Point(1.5, 2.7)
@@ -65,7 +65,7 @@ struct Point(Writable):
     var x: Float64
     var y: Float64
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         writer.write("Point: x=", self.x, ", y=", self.y)
 
 var p = Point(1.5, 2.7)
@@ -73,23 +73,24 @@ print(repr(p)) # Point: x=1.5, y=2.7
 ```
 """
 
-from builtin.constrained import _constrained_field_conforms_to
-from memory import Span
-from reflection import (
+from std.builtin.constrained import _constrained_field_conforms_to
+from std.memory import Span
+from std.reflection import (
     struct_field_names,
     struct_field_types,
     struct_field_count,
     get_type_name,
 )
-from reflection.type_info import _unqualified_type_name
+from std.reflection.type_info import _unqualified_type_name
 
+from .repr import repr
 
 # ===-----------------------------------------------------------------------===#
 # Writer
 # ===-----------------------------------------------------------------------===#
 
 
-trait Writer:
+trait Writer(ImplicitlyDestructible):
     """A destination for formatted text output.
 
     `Writer` is implemented by types that can accept UTF-8 formatted text, such
@@ -103,10 +104,11 @@ trait Writer:
     Example:
 
     ```mojo
+    @fieldwise_init
     struct StringBuilder(Writer):
         var s: String
 
-        fn write_string(mut self, string: StringSlice):
+        def write_string(mut self, string: StringSlice):
             self.s += string
 
     var builder = StringBuilder("")
@@ -115,12 +117,7 @@ trait Writer:
     ```
     """
 
-    @deprecated("Writer only supports valid UTF-8, use `write_string` instead")
-    @doc_private
-    fn write_bytes(mut self, bytes: Span[Byte]):
-        self.write_string(StringSlice(unsafe_from_utf8=bytes))
-
-    fn write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSlice):
         """
         Write a `StringSlice` to this `Writer`.
 
@@ -129,7 +126,7 @@ trait Writer:
         """
         ...
 
-    fn write[*Ts: Writable](mut self, *args: *Ts):
+    def write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.
 
         Parameters:
@@ -139,8 +136,7 @@ trait Writer:
             args: Sequence of arguments to write to this Writer.
         """
 
-        @parameter
-        for i in range(args.__len__()):
+        comptime for i in range(args.__len__()):
             args[i].write_to(self)
 
 
@@ -149,7 +145,7 @@ trait Writer:
 # ===-----------------------------------------------------------------------===#
 
 
-trait Writable:
+trait Writable(ImplicitlyDestructible):
     """A trait for types that can format themselves as text.
 
     The `Writable` trait provides a simple, straightforward interface for types
@@ -179,19 +175,26 @@ trait Writable:
         var x: Float64
         var y: Float64
 
-        fn write_to(self, mut writer: Some[Writer]):
+        def write_to(self, mut writer: Some[Writer]):
             writer.write("(", self.x, ", ", self.y, ")")
 
-        fn write_repr_to(self, mut writer: Some[Writer]):
+        def write_repr_to(self, mut writer: Some[Writer]):
             writer.write("Point: x=", self.x, ", y=", self.y)
 
     var p = Point(1.5, 2.7)
     print(p)       # (1.5, 2.7)
     print(repr(p)) # Point: x=1.5, y=2.7
     ```
+
+    Note: The default reflection-based implementations iterate over all fields
+    at compile time. For mutually recursive types (e.g., struct `A` has a field
+    of type `List[B]` and struct `B` has a field of type `A`), this creates an
+    infinite monomorphization cycle that causes the compiler to hang. To fix
+    this, provide explicit `write_to()` and `write_repr_to()` implementations
+    for at least one type in the cycle.
     """
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write this value's text representation to a writer.
 
         This method is called by `print()`, `String()`, and format strings to
@@ -208,20 +211,25 @@ trait Writable:
         ## Example
 
         ```mojo
-        fn write_to(self, mut writer: Some[Writer]):
-            writer.write("(", self.x, ", ", self.y, ")")
+        @fieldwise_init
+        struct Point(Writable):
+            var x: Float64
+            var y: Float64
+
+            def write_to(self, mut writer: Some[Writer]):
+                writer.write("(", self.x, ", ", self.y, ")")
         ```
         """
 
         @always_inline
-        fn call_write_to[
+        def call_write_to[
             FieldType: Writable
         ](field: FieldType, mut writer: type_of(writer)):
             field.write_to(writer)
 
         _reflection_write_to[f=call_write_to](self, writer)
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Write this value's debug representation to a writer.
 
         This method is called by `repr(value)` or the `"{!r}"` format specifier
@@ -238,13 +246,23 @@ trait Writable:
         ## Example
 
         ```mojo
-        fn write_repr_to(self, mut writer: Some[Writer]):
-            writer.write("Point: x=", self.x, ", y=", self.y)
+        @fieldwise_init
+        struct Point(Writable):
+            var x: Float64
+            var y: Float64
+
+            def write_repr_to(self, mut writer: Some[Writer]):
+                writer.write("Point: x=", self.x, ", y=", self.y)
         ```
+
+        Notes:
+            Mojo's repr always prints single quotes (`'`) at the start and end
+            of the repr. Any single quote inside a string should be escaped
+            (`\\'`).
         """
 
         @always_inline
-        fn call_write_repr_to[
+        def call_write_repr_to[
             FieldType: Writable
         ](field: FieldType, mut writer: type_of(writer)):
             field.write_repr_to(writer)
@@ -253,11 +271,11 @@ trait Writable:
 
 
 @always_inline
-fn _reflection_write_to[
+def _reflection_write_to[
     T: Writable,
     W: Writer,
     //,
-    f: fn[FieldType: Writable] (field: FieldType, mut writer: W),
+    f: def[FieldType: Writable](field: FieldType, mut writer: W) thin,
 ](this: T, mut writer: W,):
     comptime names = struct_field_names[T]()
     comptime types = struct_field_types[T]()
@@ -265,8 +283,7 @@ fn _reflection_write_to[
     writer.write_string(type_name)
     writer.write_string("(")
 
-    @parameter
-    for i in range(names.size):
+    comptime for i in range(names.size):
         comptime FieldType = types[i]
         _constrained_field_conforms_to[
             conforms_to(FieldType, Writable),
@@ -275,13 +292,14 @@ fn _reflection_write_to[
             ParentConformsTo="Writable",
         ]()
 
-        @parameter
-        if i > 0:
+        comptime if i > 0:
             writer.write_string(", ")
         writer.write_string(materialize[names[i]]())
         writer.write_string("=")
 
-        ref field = trait_downcast[Writable](__struct_field_ref(i, this))
+        ref field = trait_downcast[Writable](
+            __struct_field_ref(i._int_mlir_index(), this)
+        )
         f(field, writer)
 
     writer.write_string(")")

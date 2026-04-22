@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -68,7 +68,7 @@ def test_case_create_mojo_type_instance() -> None:
 
     assert person.name() == "John Smith"
 
-    assert repr(person) == "Person('John Smith', 123)"
+    assert repr(person) == "Person(name='John Smith', age=Int(123))"
 
     with pytest.raises(Exception) as cm:
         person.change_name("John Modular")
@@ -97,7 +97,7 @@ def test_failed_mojo_object_creation_does_not_del() -> None:
 
     # Test that an error is raised if passing any arguments to the initializer
     with pytest.raises(ValueError) as cm:
-        result = feature_overview.FailToInitialize("illegal argument")
+        feature_overview.FailToInitialize("illegal argument")
 
     assert cm.value.args == (
         (
@@ -121,13 +121,13 @@ def test_case_create_mojo_object_in_mojo() -> None:
 
 def test_case_mutate_wrapped_object() -> None:
     mojo_int = feature_overview.Int()
-    assert repr(mojo_int) == "0"
+    assert repr(mojo_int) == "Int(0)"
 
     feature_overview.incr_int(mojo_int)
-    assert repr(mojo_int) == "1"
+    assert repr(mojo_int) == "Int(1)"
 
     feature_overview.incr_int(mojo_int)
-    assert repr(mojo_int) == "2"
+    assert repr(mojo_int) == "Int(2)"
 
     # --------------------------------
     # Test passing the wrong arguments
@@ -169,13 +169,13 @@ def test_case_mutate_wrapped_object() -> None:
 
 def test_case_mojo_value_convert_from_python() -> None:
     mojo_int = feature_overview.Int()
-    assert repr(mojo_int) == "0"
+    assert repr(mojo_int) == "Int(0)"
 
     feature_overview.add_to_int(mojo_int, 5)
-    assert repr(mojo_int) == "5"
+    assert repr(mojo_int) == "Int(5)"
 
     feature_overview.add_to_int(mojo_int, 3)
-    assert repr(mojo_int) == "8"
+    assert repr(mojo_int) == "Int(8)"
 
     #
     # Wrong type of argument

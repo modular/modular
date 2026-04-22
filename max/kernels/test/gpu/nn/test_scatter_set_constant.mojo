@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,29 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor
+from std.gpu.host import DeviceContext
+from layout import TileTensor, row_major
 from nn.gather_scatter import scatter_set_constant
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
 
-fn test_scatter_set_constant(ctx: DeviceContext) raises:
+def test_scatter_set_constant(ctx: DeviceContext) raises:
     # TODO not sure why this doesn't work with InlineArray?
     var data_stack = InlineArray[Float32, 9](uninitialized=True)
-    var data = LayoutTensor[
-        DType.float32, Layout.row_major(3, 3), MutAnyOrigin
-    ](data_stack).fill(0.0)
+    var data = TileTensor(data_stack, row_major[3, 3]()).fill(0.0)
     var data_ptr_gpu = ctx.enqueue_create_buffer[DType.float32](3 * 3)
-    ctx.enqueue_copy(data_ptr_gpu, data_stack.unsafe_ptr())
+    ctx.enqueue_copy(data_ptr_gpu, Span(data_stack))
 
-    var data_gpu = LayoutTensor[
-        DType.float32, Layout.row_major(3, 3), MutAnyOrigin
-    ](
-        data_ptr_gpu,
-    )
+    var data_gpu = TileTensor(data_ptr_gpu, row_major[3, 3]())
 
     var array = InlineArray[Int32, 4 * 2](uninitialized=True)
-    var indices = LayoutTensor[DType.int32, Layout.row_major(4, 2)](array)
+    var indices = TileTensor(array, row_major[4, 2]())
 
     indices[0, 0] = 0
     indices[0, 1] = 1
@@ -46,15 +40,13 @@ fn test_scatter_set_constant(ctx: DeviceContext) raises:
 
     var indices_ptr_gpu = ctx.enqueue_create_buffer[DType.int32](4 * 2)
     ctx.enqueue_copy(indices_ptr_gpu, indices.ptr)
-    var indices_gpu = LayoutTensor[DType.int32, Layout.row_major(4, 2)](
-        indices_ptr_gpu,
-    )
+    var indices_gpu = TileTensor(indices_ptr_gpu, row_major[4, 2]())
 
     var fill_value: Float32 = 5.0
     var expected_stack = InlineArray[Float32, 9](uninitialized=True)
-    var expected_output = LayoutTensor[DType.float32, Layout.row_major(3, 3)](
-        expected_stack,
-    ).fill(0.0)
+    var expected_output = TileTensor(expected_stack, row_major[3, 3]()).fill(
+        0.0
+    )
 
     expected_output[0, 1] = 5.0
     expected_output[1, 2] = 5.0
@@ -67,7 +59,7 @@ fn test_scatter_set_constant(ctx: DeviceContext) raises:
         data_gpu, indices_gpu, fill_value, ctx_ptr
     )
 
-    ctx.enqueue_copy(data_stack.unsafe_ptr(), data_ptr_gpu)
+    ctx.enqueue_copy(Span(data_stack), data_ptr_gpu)
 
     for i in range(3):
         for j in range(3):
@@ -84,6 +76,6 @@ fn test_scatter_set_constant(ctx: DeviceContext) raises:
                 )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_scatter_set_constant(ctx)

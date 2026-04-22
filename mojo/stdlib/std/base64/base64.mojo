@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,12 +15,12 @@
 You can import these APIs from the `base64` package. For example:
 
 ```mojo
-from base64 import b64encode
+from std.base64 import b64encode
 ```
 """
 
 
-from memory import Span
+from std.memory import Span
 
 from ._b64encode import _b64encode
 
@@ -30,7 +30,7 @@ from ._b64encode import _b64encode
 
 
 @always_inline
-fn _ascii_to_value[validate: Bool = False](char: Byte) raises -> Byte:
+def _ascii_to_value[validate: Bool = False](char: Byte) raises -> Byte:
     """Converts an ASCII character to its integer value for base64 decoding.
 
     Args:
@@ -64,9 +64,7 @@ fn _ascii_to_value[validate: Bool = False](char: Byte) raises -> Byte:
     elif char == `/`:
         return Byte(63)
     else:
-
-        @parameter
-        if validate:
+        comptime if validate:
             raise Error(
                 "ValueError: Unexpected character '",
                 chr(Int(char)),
@@ -81,7 +79,7 @@ fn _ascii_to_value[validate: Bool = False](char: Byte) raises -> Byte:
 
 
 @always_inline
-fn b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
+def b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
     """Performs base64 encoding on the input string.
 
     Args:
@@ -96,7 +94,7 @@ fn b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
 
 
 @always_inline
-fn b64encode(input_string: StringSlice[mut=False]) -> String:
+def b64encode(input_string: StringSlice[mut=False, _]) -> String:
     """Performs base64 encoding on the input string.
 
     Args:
@@ -109,7 +107,7 @@ fn b64encode(input_string: StringSlice[mut=False]) -> String:
 
 
 @always_inline
-fn b64encode(input_bytes: Span[mut=False, Byte]) -> String:
+def b64encode(input_bytes: Span[mut=False, Byte, _]) -> String:
     """Performs base64 encoding on the input string.
 
     Args:
@@ -128,9 +126,9 @@ fn b64encode(input_bytes: Span[mut=False, Byte]) -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-fn b64decode[
+def b64decode[
     *, validate: Bool = False
-](str: StringSlice[mut=False]) raises -> String:
+](str: StringSlice[mut=False, _]) raises -> String:
     """Performs base64 decoding on the input string.
 
     Parameters:
@@ -149,8 +147,7 @@ fn b64decode[
     var data = str.as_bytes()
     var n = str.byte_length()
 
-    @parameter
-    if validate:
+    comptime if validate:
         if n % 4 != 0:
             raise Error(
                 "ValueError: Input length '", n, "' must be divisible by 4"
@@ -181,7 +178,7 @@ fn b64decode[
 # ===-----------------------------------------------------------------------===#
 
 
-fn b16encode(str: StringSlice[mut=False]) -> String:
+def b16encode(str: StringSlice[mut=False, _]) -> String:
     """Performs base16 encoding on the input string slice.
 
     Args:
@@ -212,7 +209,7 @@ fn b16encode(str: StringSlice[mut=False]) -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-fn b16decode(str: StringSlice[mut=False]) -> String:
+def b16decode(str: StringSlice[mut=False, _]) -> String:
     """Performs base16 decoding on the input string.
 
     Args:
@@ -232,7 +229,7 @@ fn b16decode(str: StringSlice[mut=False]) -> String:
     # TODO: Measure perf against lookup table approach
     @parameter
     @always_inline
-    fn decode(c: Byte) -> Byte:
+    def decode(c: Byte) -> Byte:
         if `A` <= c <= `Z`:
             return c - `A` + Byte(10)
         elif `a` <= c <= `z`:

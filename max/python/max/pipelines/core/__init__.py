@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,10 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from .context import (
+    PixelContext,
+    SpecDecodingState,
     TextAndVisionContext,
     TextContext,
     TTSContext,
-    reserve_token_space_for_batch,
 )
 from .context_validators import (
     validate_aspect_ratio_args,
@@ -26,17 +27,26 @@ from .context_validators import (
     validate_requires_vision_context,
     validate_vision_position_ids,
 )
+from .pixel_context_validators import (
+    validate_flux1_max_pixel_area,
+    validate_flux2_max_pixel_area,
+    validate_wan_max_pixel_area,
+)
 
 __all__ = [
+    "PixelContext",
+    "SpecDecodingState",
     "TTSContext",
     "TextAndVisionContext",
     "TextContext",
-    "reserve_token_space_for_batch",
     "validate_aspect_ratio_args",
+    "validate_flux1_max_pixel_area",
+    "validate_flux2_max_pixel_area",
     "validate_image_grid_thw_args",
     "validate_image_shape_5d",
     "validate_initial_prompt_has_image",
     "validate_only_one_image",
     "validate_requires_vision_context",
     "validate_vision_position_ids",
+    "validate_wan_max_pixel_area",
 ]

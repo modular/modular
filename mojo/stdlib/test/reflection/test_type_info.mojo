@@ -12,29 +12,32 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for type and function name introspection APIs."""
 
-from sys.info import CompilationTarget, _current_target
+from std.sys.info import CompilationTarget, _current_target, is_64bit
 
-from reflection import (
+from std.collections import List, Optional
+
+from std.reflection import (
     get_linkage_name,
     get_type_name,
     get_function_name,
+    get_base_type_name,
 )
-from reflection.type_info import _unqualified_type_name
-from testing import assert_equal
-from testing import TestSuite
+from std.reflection.type_info import _unqualified_type_name
+from std.testing import assert_equal, assert_true, assert_false
+from std.testing import TestSuite
 
 
-fn my_func() -> Int:
+def my_func() -> Int:
     return 0
 
 
-def test_get_linkage_name():
+def test_get_linkage_name() raises:
     var name = get_linkage_name[my_func]()
     assert_equal(name, "test_type_info::my_func()")
 
 
-def test_get_linkage_name_nested():
-    fn nested_func(x: Int) -> Int:
+def test_get_linkage_name_nested() raises:
+    def nested_func(x: Int) -> Int:
         return x
 
     var name = get_linkage_name[nested_func]()
@@ -44,39 +47,54 @@ def test_get_linkage_name_nested():
     )
 
 
-fn your_func[x: Int]() raises -> Int:
+def your_func[x: Int]() raises -> Int:
     return x
 
 
-def test_get_linkage_name_parameterized():
+def test_get_linkage_name_parameterized() raises:
     var name = get_linkage_name[your_func[7]]()
     assert_equal(name, "test_type_info::your_func[::Int](),x=7")
 
 
-def test_get_linkage_name_on_itself():
+def test_get_linkage_name_on_itself() raises:
     var name = get_linkage_name[_current_target]()
     assert_equal(name, "std::sys::info::_current_target()")
 
 
-def test_get_function_name():
+@export("export_as_other_name")
+def export_func():
+    pass
+
+
+def test_get_linkage_name_export() raises:
+    var name = get_linkage_name[export_func]()
+    assert_equal(name, "export_as_other_name")
+
+
+def test_get_function_name() raises:
     var name = get_function_name[my_func]()
     assert_equal(name, "my_func")
 
 
-def test_get_function_name_nested():
-    fn nested_func(x: Int) -> Int:
+def test_get_function_name_nested() raises:
+    def nested_func(x: Int) -> Int:
         return x
 
     var name2 = get_function_name[nested_func]()
     assert_equal(name2, "nested_func")
 
 
-def test_get_function_name_parameterized():
+def test_get_function_name_parameterized() raises:
     var name = get_function_name[your_func]()
     assert_equal(name, "your_func")
 
     var name2 = get_function_name[your_func[7]]()
     assert_equal(name2, "your_func")
+
+
+def test_get_function_name_export() raises:
+    var name = get_function_name[export_func]()
+    assert_equal(name, "export_func")
 
 
 struct WhatsMyName:
@@ -87,7 +105,7 @@ struct ImGeneric[T: AnyType]:
     pass
 
 
-def test_unqualified_type_name():
+def test_unqualified_type_name() raises:
     assert_equal(_unqualified_type_name[WhatsMyName](), "WhatsMyName")
     assert_equal(_unqualified_type_name[Int](), "Int")
     assert_equal(_unqualified_type_name[String](), "String")
@@ -100,7 +118,7 @@ def test_unqualified_type_name():
     )
 
 
-def test_get_type_name():
+def test_get_type_name() raises:
     var name = get_type_name[Int]()
     assert_equal(name, "Int")
 
@@ -108,15 +126,15 @@ def test_get_type_name():
     assert_equal(name, "std.builtin.int.Int")
 
 
-def test_get_type_name_nested():
-    fn nested_func[T: AnyType]() -> StaticString:
+def test_get_type_name_nested() raises:
+    def nested_func[T: AnyType]() -> StaticString:
         return get_type_name[T]()
 
     var name = nested_func[String]()
     assert_equal(name, "String")
 
 
-def test_get_type_name_simd():
+def test_get_type_name_simd() raises:
     var name = get_type_name[Float32]()
     assert_equal(name, "SIMD[DType.float32, 1]")
 
@@ -128,7 +146,7 @@ def test_get_type_name_simd():
 
 @fieldwise_init
 struct Bar[x: Int, f: Float32 = 1.3](Intable):
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return self.x
 
     var y: Int
@@ -142,7 +160,7 @@ struct Foo[
     pass
 
 
-def test_get_type_name_non_scalar_simd_value():
+def test_get_type_name_non_scalar_simd_value() raises:
     var name = get_type_name[
         Foo[SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0), True]
     ]()
@@ -167,7 +185,7 @@ def test_get_type_name_non_scalar_simd_value():
     )
 
 
-def test_get_type_name_struct():
+def test_get_type_name_struct() raises:
     var name = get_type_name[Foo[Bar[2](y=3, z=4.1), True]]()
     assert_equal(
         name,
@@ -180,19 +198,7 @@ def test_get_type_name_struct():
     )
 
 
-def test_get_type_name_partially_bound_type():
-    var name = get_type_name[Foo[Bar[2](y=3, z=0.125)]]()
-    assert_equal(
-        name,
-        (
-            "test_type_info.Foo["
-            "test_type_info.Bar[2, 1.29999995 : SIMD[DType.float32, 1]], "
-            '{3, 0.125 : SIMD[DType.float64, 1]}, ?, None, {"hello\0", 5}]'
-        ),
-    )
-
-
-def test_get_type_name_unprintable():
+def test_get_type_name_unprintable() raises:
     var name = get_type_name[CompilationTarget[_current_target()]]()
     assert_equal(name, "std.sys.info.CompilationTarget[<unprintable>]")
 
@@ -203,12 +209,11 @@ struct WrapperWithValue[T: AnyType, //, value: T]:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct SimpleParam:
+struct SimpleParam(TrivialRegisterPassable):
     var b: Bool
 
 
-def test_get_type_name_ctor_param_direct():
+def test_get_type_name_ctor_param_direct() raises:
     """Test that direct usage of types with constructor calls works."""
     var name = get_type_name[WrapperWithValue[SimpleParam(True)]]()
     assert_equal(
@@ -222,7 +227,12 @@ struct GenericWrapper[T: AnyType]:
     pass
 
 
-def test_get_type_name_nested_parametric_direct():
+# Generic struct with multiple type parameters
+struct Pair[T: AnyType, U: AnyType]:
+    pass
+
+
+def test_get_type_name_nested_parametric_direct() raises:
     """Test that directly using nested parametric types works."""
     # Direct usage works fine
     var name = get_type_name[GenericWrapper[List[String]]]()
@@ -236,31 +246,92 @@ def test_get_type_name_nested_parametric_direct():
     )
 
 
-def test_get_type_name_alias():
+def test_get_type_name_alias() raises:
     comptime T = Bar[5]
     var name = get_type_name[T]()
     assert_equal(
         name, "test_type_info.Bar[5, 1.29999995 : SIMD[DType.float32, 1]]"
     )
 
-    # Also test parametric aliases (i.e. unbound parameters).
-    comptime R = Bar[_]
-    name = get_type_name[R]()
-    assert_equal(
-        name, "test_type_info.Bar[?, 1.29999995 : SIMD[DType.float32, 1]]"
-    )
 
-
-fn _get_type_name_generic[T: AnyType]() -> StaticString:
+def _get_type_name_generic[T: AnyType]() -> StaticString:
     """Helper function to test get_type_name through generic parameter."""
     return get_type_name[T]()
 
 
-def test_get_type_name_through_generic():
+def test_get_type_name_through_generic() raises:
     """Test get_type_name through a generic function."""
     assert_equal(_get_type_name_generic[Int](), "Int")
     assert_equal(_get_type_name_generic[String](), "String")
 
 
-def main():
+struct UIndexParam[value: Scalar[DType.uint]]:
+    pass
+
+
+struct IndexParam[value: Scalar[DType.int]]:
+    pass
+
+
+def test_get_type_name_uint_int_simd_value() raises:
+    """Test that DType.uint and DType.int SIMD values are printed correctly."""
+
+    # Test unsigned uindex value - should print as large positive number
+    comptime uint_max: Scalar[DType.uint] = Scalar[DType.uint].MAX
+    var name = get_type_name[UIndexParam[uint_max]]()
+    if is_64bit():
+        assert_equal(
+            name,
+            (
+                "test_type_info.UIndexParam[18446744073709551615 :"
+                " SIMD[DType.uint, 1]]"
+            ),
+        )
+    else:
+        assert_equal(
+            name,
+            "test_type_info.UIndexParam[4294967295 : SIMD[DType.uint, 1]]",
+        )
+
+    # Test signed index value for comparison - should print as -1
+    comptime neg_one: Scalar[DType.int] = -1
+    name = get_type_name[IndexParam[neg_one]]()
+    assert_equal(
+        name,
+        "test_type_info.IndexParam[-1 : SIMD[DType.int, 1]]",
+    )
+
+
+# ===----------------------------------------------------------------------=== #
+# Base Type Reflection Tests (Issue #5735)
+# ===----------------------------------------------------------------------=== #
+
+
+def test_get_base_type_name_basic() raises:
+    """Test get_base_type_name with simple and parameterized types."""
+    # For non-parameterized types, get_base_type_name returns the type's name
+    assert_equal(get_base_type_name[Int](), "Int")
+
+    # For parameterized types, get_base_type_name returns the base type name
+    assert_equal(get_base_type_name[List[Int]](), "List")
+
+    # Different parameterizations of the same type have the same base name
+    assert_equal(
+        get_base_type_name[List[Int]](), get_base_type_name[List[String]]()
+    )
+
+
+def test_get_base_type_name_user_defined() raises:
+    """Test get_base_type_name with user-defined generic types."""
+    # User-defined generics should have the same base name
+    assert_equal(
+        get_base_type_name[GenericWrapper[Int]](),
+        get_base_type_name[GenericWrapper[String]](),
+    )
+
+    # Types with multiple parameters
+    assert_equal(get_base_type_name[Pair[Int, String]](), "Pair")
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

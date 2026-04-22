@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,20 +28,17 @@
 # CHECK: AddressSanitizer: heap-buffer-overflow on amdgpu device
 # CHECK: at {{.*}}test_amd_asan_oob.mojo:37
 
-from sys import argv
+from std.sys import argv
 
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.gpu.host import DeviceContext
 
 
-fn bad_func(ptr: UnsafePointer[Int32], i: Int):
+def bad_func(ptr: UnsafePointer[Int32, MutAnyOrigin], i: Int):
     # Potential out of bounds access
     ptr[i] = 42
 
 
-fn test(ctx: DeviceContext, i: Int) raises:
+def test(ctx: DeviceContext, i: Int) raises:
     comptime n = 4
     var buf = ctx.enqueue_create_buffer[DType.int32](n)
 
@@ -52,7 +49,7 @@ fn test(ctx: DeviceContext, i: Int) raises:
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     i = atol(argv()[1])
     with DeviceContext() as ctx:
         test(ctx, i)

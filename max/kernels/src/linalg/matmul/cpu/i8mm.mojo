@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
-from sys import prefetch
-from sys.info import align_of
-from sys.intrinsics import PrefetchOptions
+from std.math import align_up
+from std.sys import prefetch
+from std.sys.info import align_of
+from std.sys.intrinsics import PrefetchOptions
 
-from buffer.buffer import partial_simd_load, partial_simd_store
-from layout import Layout, LayoutTensor, RuntimeTuple
+from linalg.utils import partial_simd_load, partial_simd_store
+from layout import Coord, Idx, TileTensor
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from ...accumulate import _Accumulator
 from ...arch.cpu.neon_intrinsics import _neon_matmul
@@ -41,18 +41,18 @@ struct LoadStore_i8mm[
     var skip_boundary_check: Bool
 
     @always_inline
-    fn __init__(out self, skip_boundary_check: Bool):
+    def __init__(out self, skip_boundary_check: Bool):
         self.output_tile = _Accumulator[
             Self.dtype, Self.tile_rows, Self.num_simd_cols, Self.simd_size
         ]()
         self.skip_boundary_check = skip_boundary_check
 
     @always_inline
-    fn _initialize_c_tile(mut self):
+    def _initialize_c_tile(mut self):
         self.output_tile.init(0)
 
     @always_inline
-    fn _load_c_tile(
+    def _load_c_tile(
         mut self,
         c_ptr: UnsafePointer[Scalar[Self.dtype], ...],
         c_stride: Int,
@@ -61,11 +61,8 @@ struct LoadStore_i8mm[
     ):
         var c_ptr_loc = c_ptr + tile_n_idx
 
-        @parameter
-        for idx0 in range(Self.tile_rows):
-
-            @parameter
-            for idx1 in range(Self.tile_columns // Self.simd_size):
+        comptime for idx0 in range(Self.tile_rows):
+            comptime for idx1 in range(Self.tile_columns // Self.simd_size):
                 var c_data: SIMD[Self.dtype, Self.simd_size] = 0
                 if self.skip_boundary_check or (
                     idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
@@ -99,7 +96,7 @@ struct LoadStore_i8mm[
                 self.output_tile[idx0, idx1] = c_data
 
     @always_inline
-    fn _store_c_tile(
+    def _store_c_tile(
         mut self,
         c_ptr: UnsafePointer[mut=True, Scalar[Self.dtype], ...],
         c_stride: Int,
@@ -108,11 +105,8 @@ struct LoadStore_i8mm[
     ):
         var c_ptr_loc = c_ptr + tile_n_idx
 
-        @parameter
-        for idx0 in range(Self.tile_rows):
-
-            @parameter
-            for idx1 in range(Self.tile_columns // Self.simd_size):
+        comptime for idx0 in range(Self.tile_rows):
+            comptime for idx1 in range(Self.tile_columns // Self.simd_size):
                 var c_data = self.output_tile[idx0, idx1]
                 if self.skip_boundary_check or (
                     idx1 * 2 + 2 <= c_bound[1] - tile_n_idx
@@ -121,8 +115,7 @@ struct LoadStore_i8mm[
                         c_data.slice[2](),
                     )
 
-                    @parameter
-                    if not Self.single_row:
+                    comptime if not Self.single_row:
                         (
                             c_ptr_loc + (c_stride * (2 * idx0 + 1) + 2 * idx1)
                         ).store(
@@ -136,8 +129,7 @@ struct LoadStore_i8mm[
                         c_data.slice[2](),
                     )
 
-                    @parameter
-                    if not Self.single_row:
+                    comptime if not Self.single_row:
                         partial_simd_store(
                             c_ptr_loc + (c_stride * (2 * idx0 + 1) + 2 * idx1),
                             0,
@@ -153,12 +145,12 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
     # Parameters for global reference.
 
     @always_inline
-    fn _accumulate[
+    def _accumulate[
         simd_size: Int, kernel_rows: Int, kernel_cols: Int
     ](
         self,
-        a: LayoutTensor,
-        b_packed: LayoutTensor,
+        a: TileTensor,
+        b_packed: TileTensor,
         mut c_local: _Accumulator[
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
@@ -176,59 +168,53 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
-        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
 
         var n_outer_idx = tile_n_k_idx[0] // (kernel_cols // 2)
         var kl = tile_n_k_idx[1]
 
-        var b_offset = b_packed.runtime_layout(
-            RuntimeTuple[b_packed.layout.shape](Index(n_outer_idx, kl // 8, 0))
+        var b_ptr = b_packed.ptr_at_offset(
+            Coord(Idx(n_outer_idx), Idx(kl // 8), Idx(0))
         )
-        var b_ptr = b_packed.ptr + b_offset
 
         # This inner kernels works with non-transposed A.
-        var K = a.dim(1)
+        var K = Int(a.dim[1]())
         var a_ptr = a.ptr + (global_offset.M * K + 2 * global_offset.K + 2 * kl)
 
         # Prefetch B matrix.
         comptime prefetch_distance = get_matmul_prefetch_b_distance_k()
-        __comptime_assert simd_size == 4
+        comptime assert simd_size == 4
 
-        @parameter
-        if prefetch_distance > 0:
+        comptime if prefetch_distance > 0:
             comptime prefetch_offset = prefetch_distance * kernel_cols
 
-            @parameter
-            for idx in range(kernel_cols // simd_size):
+            comptime for idx in range(kernel_cols // simd_size):
                 prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ](b_ptr + (prefetch_offset + idx * simd_size))
 
         # Loop over local accumulator tiles.
-        @parameter
-        for idx0 in range(kernel_rows):
-
-            @parameter
-            for idx1 in range(kernel_cols // simd_size):
+        comptime for idx0 in range(kernel_rows):
+            comptime for idx1 in range(kernel_cols // simd_size):
                 comptime alignment = align_of[SIMD[c_local.dtype, simd_size]]()
-                var a_val = a_ptr.load[width = simd_size * 4](2 * idx0 * K)
+                var a_val = a_ptr.load[width=simd_size * 4](2 * idx0 * K)
                 var b_val = (b_ptr + 16 * idx1).load[
-                    width = simd_size * 4, alignment=alignment
+                    width=simd_size * 4, alignment=alignment
                 ]()
                 var c_val = c_local[idx0, idx1]
                 c_val = _neon_matmul(c_val, a_val, b_val)
                 c_local[idx0, idx1] = c_val
 
     @always_inline
-    fn __inner_matmul__[
+    def __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
         simd_size: Int,
     ](
         self,
-        c: LayoutTensor[mut=True, ...],
-        a: LayoutTensor,
-        b_packed: LayoutTensor,
+        c: TileTensor[mut=True, ...],
+        a: TileTensor,
+        b_packed: TileTensor,
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: IndexList[2],
@@ -237,12 +223,12 @@ struct Inner_matmul_i8mm(InnerMatmulKernel, Movable):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows2, TileN, TileK) tile.
         """
-        __comptime_assert b_packed.rank == 3, "b_packed must be rank 3"
+        comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
 
         comptime kernel_rows2 = kernel_rows // 2 if kernel_rows != 1 else kernel_rows
         comptime single_row = (kernel_rows == 1)
 
-        var c_stride = c.dim[1]()
+        var c_stride = Int(c.dim[1]())
 
         var c_ptr = c.ptr + (global_offset.M * c_stride + global_offset.N)
 

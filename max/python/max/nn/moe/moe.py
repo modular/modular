@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -27,10 +27,10 @@ from typing_extensions import Self
 
 from ..comm.ep import EPBatchManager
 from ..comm.ep.ep_kernels import fused_silu
-from ..float8_config import Float8Config
 from ..kernels import grouped_matmul_ragged, moe_create_indices
-from ..layer import LayerList, Module, Shardable
+from ..layer import Layer, LayerList, Module, Shardable
 from ..linear import MLP, Linear
+from ..quant_config import QuantConfig
 
 
 class MoEGate(Module):
@@ -44,14 +44,14 @@ class MoEGate(Module):
         num_experts_per_token: int,
         dtype: DType,
         is_sharding: bool = False,
+        linear_cls: Callable[..., Linear] = Linear,
     ) -> None:
-        """
-        Args:
-            devices: List of devices to use for the MoEGate.
-            hidden_dim: The dimension of the hidden state.
-            num_experts: The number of experts.
-            num_experts_per_token: The number of experts per token.
-            dtype: The data type of the MoEGate.
+        """Args:
+        devices: List of devices to use for the MoEGate.
+        hidden_dim: The dimension of the hidden state.
+        num_experts: The number of experts.
+        num_experts_per_token: The number of experts per token.
+        dtype: The data type of the MoEGate.
         """
         super().__init__()
         self.devices = devices
@@ -61,7 +61,7 @@ class MoEGate(Module):
         self.dtype = dtype
 
         if not is_sharding:
-            self.gate_score = Linear(
+            self.gate_score = linear_cls(
                 in_dim=hidden_dim,
                 out_dim=num_experts,
                 dtype=dtype,
@@ -71,8 +71,7 @@ class MoEGate(Module):
     def __call__(
         self, hidden_state: TensorValue
     ) -> tuple[TensorValue, TensorValue]:
-        """
-        Args:
+        """Args:
             hidden_state: The hidden state of the model.
 
         Returns:
@@ -110,7 +109,8 @@ class MoEGate(Module):
             devices: Iterable of devices to place the shards on.
 
         Returns:
-            List of sharded MoEGate instances, one for each device."""
+            List of sharded MoEGate instances, one for each device.
+        """
         if not self._sharding_strategy:
             raise ValueError(
                 "MoEGate module cannot be sharded because no sharding strategy was provided."
@@ -137,7 +137,34 @@ class MoEGate(Module):
 
 
 class MoE(Module, Shardable):
-    """Implementation of Mixture of Experts (MoE)."""
+    """Implementation of Mixture of Experts (MoE).
+
+    Args:
+        devices: The list of devices to use for the MoE.
+        hidden_dim: The dimension of the hidden state.
+        num_experts: The number of experts.
+        num_experts_per_token: The number of experts per token.
+        moe_dim: The intermediate dimension of each expert.
+        gate_cls: The model-specific gate implementation. Defaults to
+            :class:`~max.nn.moe.moe.MoEGate`.
+        mlp_cls: The MLP class to use for experts. Defaults to
+            :class:`~max.nn.linear.MLP`.
+        has_shared_experts: Whether to use shared experts. Defaults to
+            ``False``.
+        shared_experts_dim: The dimension of the shared experts.
+            Defaults to ``0``.
+        ep_size: The expert parallelism size. Defaults to ``1``.
+        dtype: The data type of the MoE. Defaults to
+            ``DType.bfloat16``.
+        apply_router_weight_first: Whether to apply the router weight
+            first. Defaults to ``False``.
+        ep_batch_manager: The expert parallel batch manager. Defaults to
+            ``None``.
+        quant_config: The scaled quantization configuration. Defaults to
+            ``None``.
+        is_sharding: Whether the constructor is being called during
+            sharding. Defaults to ``False``.
+    """
 
     _ep_batch_manager: EPBatchManager | None = None
     """The expert parallel batch manager."""
@@ -148,6 +175,15 @@ class MoE(Module, Shardable):
     experts: LayerList
     """The list of experts."""
 
+    _all_experts: list[Layer]
+    """The list of all experts when using expert parallel strategy."""
+
+    shard_devices: list[DeviceRef] = []
+    """The list of devices the MoE layer was sharded to."""
+
+    shard_index: int = 0
+    """The index of the current shard (if the MoE layer was sharded)."""
+
     def __init__(
         self,
         devices: list[DeviceRef],
@@ -156,30 +192,17 @@ class MoE(Module, Shardable):
         num_experts_per_token: int,
         moe_dim: int,
         gate_cls: Callable[..., MoEGate] = MoEGate,
+        mlp_cls: Callable[..., MLP] = MLP,
         has_shared_experts: bool = False,
         shared_experts_dim: int = 0,
         ep_size: int = 1,
         dtype: DType = DType.bfloat16,
         apply_router_weight_first: bool = False,
+        swiglu_limit: float = 0.0,
         ep_batch_manager: EPBatchManager | None = None,
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
         is_sharding: bool = False,
     ):
-        """
-        Args:
-            devices: List of devices to use for the MoE.
-            hidden_dim: The dimension of the hidden state.
-            num_experts: The number of experts.
-            num_experts_per_token: The number of experts per token.
-            moe_dim: The intermediate dimension of each expert.
-            gate_cls: The model specific gate implementation.
-            has_shared_experts: Whether to use shared experts.
-            shared_experts_dim: The dimension of the shared experts.
-            ep_size: The expert parallelism size.
-            dtype: The data type of the MoE.
-            apply_router_weight_first: Whether to apply the router weight first.
-            ep_batch_manager: The expert parallel batch manager.
-        """
         super().__init__()
         self.devices = devices
         self.hidden_dim = hidden_dim
@@ -187,11 +210,13 @@ class MoE(Module, Shardable):
         self.num_experts_per_token = num_experts_per_token
         self.moe_dim = moe_dim
         self.gate_cls = gate_cls
+        self.mlp_cls = mlp_cls
         self.has_shared_experts = has_shared_experts
         self.shared_experts_dim = shared_experts_dim
         self.ep_size = ep_size
         self.dtype = dtype
         self.apply_router_weight_first = apply_router_weight_first
+        self.swiglu_limit = swiglu_limit
         self.gate = gate_cls(
             devices=devices,
             hidden_dim=hidden_dim,
@@ -200,19 +225,19 @@ class MoE(Module, Shardable):
             dtype=DType.bfloat16,
         )
         self.num_local_experts = num_experts // ep_size
-        self.float8_config = float8_config
+        self.quant_config = quant_config
 
         if has_shared_experts:
             assert shared_experts_dim > 0, (
                 "shared_experts_dim must be greater than 0"
             )
-            self.shared_experts = MLP(
+            self.shared_experts = mlp_cls(
                 dtype=dtype,
                 quantization_encoding=None,
                 hidden_dim=self.hidden_dim,
                 feed_forward_length=self.shared_experts_dim,
                 devices=self.devices,
-                float8_config=self.float8_config,
+                quant_config=self.quant_config,
             )
 
         if ep_batch_manager:
@@ -226,19 +251,19 @@ class MoE(Module, Shardable):
             self._init_experts()
 
     def _init_experts(self) -> None:
-        self.experts = LayerList(
-            [
-                MLP(
-                    dtype=self.dtype,
-                    quantization_encoding=None,
-                    hidden_dim=self.hidden_dim,
-                    feed_forward_length=self.moe_dim,
-                    devices=self.devices,
-                    float8_config=self.float8_config,
-                )
-                for _ in range(self.num_experts)
-            ]
-        )
+        self._all_experts = [
+            self.mlp_cls(
+                dtype=self.dtype,
+                quantization_encoding=None,
+                hidden_dim=self.hidden_dim,
+                feed_forward_length=self.moe_dim,
+                devices=self.devices,
+                quant_config=self.quant_config,
+            )
+            for _ in range(self.num_experts)
+        ]
+
+        self.experts = LayerList(self._all_experts)
 
     @property
     def ep_batch_manager(self) -> EPBatchManager:
@@ -290,7 +315,8 @@ class MoE(Module, Shardable):
             devices: Iterable of devices to place the shards on.
 
         Returns:
-            List of sharded MoE instances, one for each device."""
+            List of sharded MoE instances, one for each device.
+        """
         if not self._sharding_strategy:
             raise ValueError(
                 "MoE module cannot be sharded because no sharding strategy was provided."
@@ -302,14 +328,6 @@ class MoE(Module, Shardable):
         if self.has_shared_experts:
             shared_experts_shards = self.shared_experts.shard(devices)
 
-        # Shard each expert's MLP
-        expert_mlps_shards: list[list[MLP]] = []
-        if self._sharding_strategy.is_tensor_parallel:
-            # If use tensor parallel, each expert is sharded to all devices
-            expert_mlps_shards = [
-                expert.shard(devices) for expert in self.experts
-            ]
-
         shards = []
         num_devices = self._sharding_strategy.num_devices
         sharded_moe_dim = self.moe_dim // num_devices
@@ -317,6 +335,9 @@ class MoE(Module, Shardable):
         if self._sharding_strategy.is_expert_parallel:
             sharded_moe_dim = self.moe_dim
             sharded_shared_experts_dim = self.shared_experts_dim
+
+        devices = list(devices)
+
         for shard_idx, device in enumerate(devices):
             sharded = self.__class__(
                 devices=[device],
@@ -330,9 +351,13 @@ class MoE(Module, Shardable):
                 ep_size=self.ep_size,
                 dtype=self.dtype,
                 apply_router_weight_first=self.apply_router_weight_first,
-                float8_config=self.float8_config,
+                swiglu_limit=self.swiglu_limit,
+                quant_config=self.quant_config,
                 is_sharding=True,
             )
+
+            # Keep a reference to the original experts for sharded instances.
+            sharded._all_experts = self._all_experts
 
             # Replace layers and weights with sharded versions.
             sharded.gate = gate_shards[shard_idx]
@@ -340,13 +365,9 @@ class MoE(Module, Shardable):
                 sharded.shared_experts = shared_experts_shards[shard_idx]
 
             if self._sharding_strategy.is_tensor_parallel:
-                experts_for_shard = LayerList(
-                    [
-                        sharded_mlps[shard_idx]
-                        for sharded_mlps in expert_mlps_shards
-                    ]
-                )
-                sharded.experts = experts_for_shard
+                sharded.shard_index = shard_idx
+                sharded.shard_devices = devices
+                sharded.experts = LayerList(list(self.experts))
 
             elif self._sharding_strategy.is_expert_parallel:
                 curr_node_idx = self.ep_batch_manager.config.node_id
@@ -395,9 +416,19 @@ class MoE(Module, Shardable):
         for tensors in zip(gate_list, up_list, strict=True):
             gate_up_list.extend(tensors)
 
-        return ops.stack(gate_up_list, axis=0).reshape(
-            [len(gate_list), -1, self.hidden_dim]
-        )
+        # Use the actual weight K dimension to support packed formats (e.g. NVFP4).
+        k_dim = gate_list[0].shape[1]
+        if not self.shard_devices:
+            shard = ops.stack(gate_up_list, axis=0)
+        else:
+            # Create target devices for each shard - each shard goes to a
+            # different GPU. For tensor parallelism, total_shards == len(devices).
+            shard = ops.shard_and_stack(
+                gate_up_list,
+                devices=self.shard_devices,
+            )[self.shard_index]
+
+        return shard.reshape([len(gate_list), -1, k_dim])
 
     @property
     def down_proj(self) -> TensorValue:
@@ -414,61 +445,85 @@ class MoE(Module, Shardable):
                 self.shared_experts.down_proj.weight,
             ] + down_list
 
-        return ops.stack(down_list, axis=0)
+        if not self.shard_devices:
+            shard = ops.stack(down_list, axis=0)
+        else:
+            devices = [DeviceRef.CPU()] * len(self.shard_devices)
+            shard = ops.shard_and_stack(
+                down_list,
+                devices=devices,
+                axis=-1,
+            )[self.shard_index].to(self.devices[0])
 
-    def _ep_call(
+        return shard
+
+    def _ep_dispatch_input_scales(self) -> TensorValue | None:
+        """Returns quantized input scales for EP dispatch, or ``None``.
+
+        Overridden in :class:`MoEQuantized` for NVFP4 support.
+        """
+        return None
+
+    def _local_ep_compute(
         self,
+        expert_inputs: tuple[TensorValue, ...],
         x: TensorValue,
-        router_idx: TensorValue,
-        router_weight: TensorValue,
+        estimated_total_m: TensorValue,
     ) -> TensorValue:
-        device_id = self.devices[0].id
-        self.ep_batch_manager.ep_dispatch(x, router_idx, device_id)
-        expert_inputs = self.ep_batch_manager.ep_dispatch_cb(device_id)
+        """Runs local expert matmuls on dispatched tokens.
 
+        This is the computation between ``ep_dispatch`` and
+        ``ep_combine``.  ``x`` is unused by :class:`MoE` but accepted
+        for interface consistency with :class:`MoEQuantized`.
+
+        Args:
+            expert_inputs: Dispatch outputs (tokens, row_offsets, ...).
+            x: Original input (unused by base MoE, used by subclasses).
+            estimated_total_m: Estimated total received tokens for the current
+                device. Used as a matmul shape hint.
+        """
         gate_up_projs = grouped_matmul_ragged(
             expert_inputs[0],
             self.gate_up_proj,
             *expert_inputs[1:],
         )
-
-        silu_out = fused_silu(gate_up_projs, expert_inputs[1])
-
-        down_projs = grouped_matmul_ragged(
+        if self.swiglu_limit > 0:
+            gate = ops.silu(gate_up_projs[:, : self.moe_dim])
+            up = gate_up_projs[:, self.moe_dim :]
+            lim = ops.constant(
+                self.swiglu_limit, gate.dtype, device=gate.device
+            )
+            neg_lim = ops.constant(
+                -self.swiglu_limit, up.dtype, device=up.device
+            )
+            gate = ops.min(gate, lim)
+            up = ops.min(ops.max(up, neg_lim), lim)
+            silu_out = gate * up
+        else:
+            silu_out = fused_silu(gate_up_projs, expert_inputs[1])
+        return grouped_matmul_ragged(
             silu_out,
             self.down_proj,
             *expert_inputs[1:],
         )
 
-        self.ep_batch_manager.ep_combine(down_projs, device_id)
-        routed_expert_out = self.ep_batch_manager.ep_combine_cb(
-            router_weight, device_id
-        )
-
-        if (
-            self.has_shared_experts
-            and not self.ep_batch_manager.config.fused_shared_expert
-        ):
-            routed_expert_out += self.shared_experts(x)
-
-        return routed_expert_out.cast(x.dtype)
-
     def __call__(self, x: TensorValue) -> TensorValue:
-        """
-        Args:
+        """Args:
             x: (seq_len, hidden_dim)
 
         Returns:
             (seq_len, hidden_dim)
         """
+        if self._ep_batch_manager:
+            raise ValueError(
+                "Use forward_moe_sharded_layers for expert-parallel inference "
+                "instead of calling MoE directly."
+            )
+
         seq_len = x.shape[0]
 
         # Get the topk experts per token and their weights
         router_idx, router_weight = self.gate(x)
-        if self._ep_batch_manager:
-            return self._ep_call(
-                x, ops.cast(router_idx, DType.int32), router_weight
-            )
 
         router_idx = ops.reshape(
             router_idx, [-1]
@@ -505,10 +560,18 @@ class MoE(Module, Shardable):
             expert_usage_stats.to(DeviceRef.CPU()),
         )
 
-        gate_up_projs = (
-            ops.silu(gate_up_projs[:, : self.moe_dim])
-            * gate_up_projs[:, self.moe_dim :]
-        )
+        gate = ops.silu(gate_up_projs[:, : self.moe_dim])
+        up = gate_up_projs[:, self.moe_dim :]
+        if self.swiglu_limit > 0:
+            lim = ops.constant(
+                self.swiglu_limit, gate.dtype, device=gate.device
+            )
+            neg_lim = ops.constant(
+                -self.swiglu_limit, up.dtype, device=up.device
+            )
+            gate = ops.min(gate, lim)
+            up = ops.min(ops.max(up, neg_lim), lim)
+        gate_up_projs = gate * up
 
         down_projs = grouped_matmul_ragged(
             gate_up_projs,

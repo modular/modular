@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -79,6 +79,7 @@ def configure_cli_logging(
         "max.entrypoints",
         "max.pipelines",
         "max.serve",
+        "max.benchmark",
     ]
 
     def log_filter(record: logging.LogRecord) -> bool:

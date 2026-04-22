@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,25 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
 
-from gpu.host.compile import _compile_code
-from gpu.memory import CacheEviction, CacheOperation, load
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal, assert_true
+from std.gpu.host.compile import _compile_code
+from std.gpu.memory import CacheEviction, CacheOperation, load
+from std.testing import assert_equal, assert_true
 
 
-fn load_value[
+def load_value[
     *,
     dtype: DType = DType.uint32,
     width: Int = 1,
     read_only: Bool = False,
-    prefetch_size: OptionalReg[Int] = None,
+    prefetch_size: Optional[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-](ptr: UnsafePointer[Scalar[dtype]]) -> SIMD[dtype, width]:
+](ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin]) -> SIMD[dtype, width]:
     return load[
         width=width,
         read_only=read_only,
@@ -39,7 +35,7 @@ fn load_value[
     ](ptr)
 
 
-def test_load():
+def test_load() raises:
     assert_true(
         "ld.global "
         in _compile_code[
@@ -73,18 +69,18 @@ def test_load():
             _compile_code[
                 load_value[width=64, prefetch_size=128], emission_kind="asm"
             ]()
-        ).count("ld.global.L2::128B.v4.u32 "),
-        16,
+        ).count("ld.global.L2::128B.v8.u32 "),
+        8,
     )
 
     assert_true(
         "ld.global.lu.v2.u32 "
         in _compile_code[
             load_value[
-                dtype = DType.uint32,
+                dtype=DType.uint32,
                 width=2,
                 prefetch_size=None,
-                cache_policy = CacheOperation.LAST_USE,
+                cache_policy=CacheOperation.LAST_USE,
             ],
             emission_kind="asm",
         ]()
@@ -93,11 +89,11 @@ def test_load():
     assert_true(
         "ld.global.nc.v2.u32 "
         in _compile_code[
-            load_value[dtype = DType.uint32, width=2, read_only=True],
+            load_value[dtype=DType.uint32, width=2, read_only=True],
             emission_kind="asm",
         ]()
     )
 
 
-def main():
+def main() raises:
     test_load()

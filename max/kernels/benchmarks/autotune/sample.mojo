@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,33 +11,32 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_dtype, env_get_int
+from std.sys import get_defined_dtype, get_defined_int
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from internal_utils import (
     Mode,
     arg_parse,
-    env_get_shape,
+    get_defined_shape,
     int_list_to_tuple,
     update_bench_config_args,
 )
 
-from time import sleep
-from os import getenv
+from std.time import sleep
 
 # mojo build sample.mojo
 # mpirun -n 8 ./sample -o output.csv
 
 
-fn bench_func[
+def bench_func[
     dtype: DType, M: Int, N: Int, K: Int, stages: Int
 ](mut m: Bench, mode: Mode, pe_rank: Int) raises:
     @parameter
     @always_inline
-    fn bench_iter(mut b: Bencher):
+    def bench_iter(mut b: Bencher):
         @parameter
         @always_inline
-        fn call_fn():
+        def call_fn():
             sleep(0.01)
 
         b.iter[call_fn]()
@@ -58,11 +57,11 @@ fn bench_func[
         print("pretending to run the kernel...PASS")
 
 
-def main():
-    comptime dtype = env_get_dtype["dtype", DType.float16]()
-    comptime shape_int_list = env_get_shape["shape", "1024x1024x1024"]()
+def main() raises:
+    comptime dtype = get_defined_dtype["dtype", DType.float16]()
+    comptime shape_int_list = get_defined_shape["shape", "1024x1024x1024"]()
     comptime shape = int_list_to_tuple[shape_int_list]()
-    comptime stages = env_get_int["stages", 0]()
+    comptime stages = get_defined_int["stages", 0]()
 
     var runtime_x = arg_parse("x", 0)
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -71,7 +71,7 @@ def layer_norm(
     input, gamma = dtype_promotion._promote_weak_dtypes(input, gamma)
     input, beta = dtype_promotion._promote_weak_dtypes(input, beta)
     return Graph.current._add_op_generated(
-        mo.LayerNormOp,
+        mo.ReduceLayerNormOp,
         input._mlir_value.type,
         input,
         gamma,

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,30 +16,27 @@
 # compilation. The test can also be used to check the assembly to see
 # if compiler generates proper SIMD instructions and unrolling.
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import TileTensor, row_major
 from nn.gather_scatter import gather
-
-from utils.index import IndexList
 
 
 # CHECK-LABEL: test_gather
-fn test_gather() raises:
+def test_gather() raises:
     print("== test_gather")
 
     @always_inline
     @parameter
-    fn _test_gather[indices_type: DType]() raises:
+    def _test_gather[indices_type: DType]() raises:
         comptime num_rows = 16
         comptime row_size = 4
 
         # Setup input.
-        var input = LayoutTensor[
-            DType.float32,
-            Layout.row_major(num_rows, row_size),
-            MutAnyOrigin,
-        ].stack_allocation[stack_alignment=64]()
+        var input_stack = InlineArray[Float32, num_rows * row_size](
+            uninitialized=True
+        )
+        var input = TileTensor(input_stack, row_major[num_rows, row_size]())
 
         for i in range(num_rows):
             for j in range(row_size):
@@ -47,50 +44,31 @@ fn test_gather() raises:
 
         # Setup indices.
         comptime num_indices = 16
-        var indices = LayoutTensor[
-            indices_type,
-            Layout(num_indices),
-            MutAnyOrigin,
-        ].stack_allocation[stack_alignment=64]()
+        var indices_stack = InlineArray[Scalar[indices_type], num_indices](
+            uninitialized=True
+        )
+        var indices = TileTensor(indices_stack, row_major[num_indices]())
 
         for i in range(num_indices):
-            indices[i] = i // 2
+            indices[i] = Scalar[indices_type](i // 2)
         indices[0] = -1
         indices[1] = -num_rows
 
         # create output
-        var output = LayoutTensor[
-            DType.float32,
-            Layout.row_major(num_indices, row_size),
-            MutAnyOrigin,
-        ].stack_allocation[stack_alignment=64]()
+        var output_stack = InlineArray[Float32, num_indices * row_size](
+            uninitialized=True
+        )
+        var output = TileTensor(
+            output_stack, row_major[num_indices, row_size]()
+        )
 
         # Test gather
         comptime simd_width = simd_width_of[__mlir_type.`!pop.scalar<f32>`]()
 
-        comptime output_layout = Layout.row_major[output.rank]()
-        comptime input_layout = Layout.row_major[input.rank]()
-        comptime indices_layout = Layout.row_major[indices.rank]()
-
         gather[axis=0](
-            LayoutTensor[output.dtype, output_layout](
-                output.ptr,
-                RuntimeLayout[output_layout].row_major(
-                    output.runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[input.dtype, input_layout](
-                input.ptr,
-                RuntimeLayout[input_layout].row_major(
-                    input.runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[indices.dtype, indices_layout](
-                indices.ptr,
-                RuntimeLayout[indices_layout].row_major(
-                    indices.runtime_layout.shape.value
-                ),
-            ),
+            output.make_dynamic[DType.int64](),
+            input.make_dynamic[DType.int64](),
+            indices.make_dynamic[DType.int64](),
         )
 
         print(output[0, 0])
@@ -112,21 +90,20 @@ fn test_gather() raises:
     _test_gather[DType.int64]()
 
 
-fn test_gather_3d() raises:
+def test_gather_3d() raises:
     print("== test_gather_3d\n")
 
     @always_inline
     @parameter
-    fn _test_gather[indices_type: DType]() raises:
+    def _test_gather[indices_type: DType]() raises:
         comptime num_rows = 16
         comptime row_size = 4
 
         # Setup input.
-        var input = LayoutTensor[
-            DType.float32,
-            Layout.row_major(num_rows, row_size, 1),
-            MutAnyOrigin,
-        ].stack_allocation[stack_alignment=64]()
+        var input_stack = InlineArray[Float32, num_rows * row_size * 1](
+            uninitialized=True
+        )
+        var input = TileTensor(input_stack, row_major[num_rows, row_size, 1]())
 
         for i in range(num_rows):
             for j in range(row_size):
@@ -134,48 +111,29 @@ fn test_gather_3d() raises:
 
         # Setup indices.
         comptime num_indices = 16
-        var indices = LayoutTensor[
-            indices_type,
-            Layout.row_major(num_indices, 1),
-            MutAnyOrigin,
-        ].stack_allocation[stack_alignment=64]()
+        var indices_stack = InlineArray[Scalar[indices_type], num_indices * 1](
+            uninitialized=True
+        )
+        var indices = TileTensor(indices_stack, row_major[num_indices, 1]())
 
         for i in range(num_indices):
-            indices[i, 0] = i // 2
+            indices[i, 0] = Scalar[indices_type](i // 2)
 
         # create output
-        var output = LayoutTensor[
-            DType.float32,
-            Layout.row_major(num_indices, 1, row_size, 1),
-            MutAnyOrigin,
-        ].stack_allocation[stack_alignment=64]()
+        var output_stack = InlineArray[Float32, num_indices * 1 * row_size * 1](
+            uninitialized=True
+        )
+        var output = TileTensor(
+            output_stack, row_major[num_indices, 1, row_size, 1]()
+        )
 
         # Test gather
         comptime simd_width = simd_width_of[DType.float32]()
 
-        comptime output_layout = Layout.row_major[output.rank]()
-        comptime input_layout = Layout.row_major[input.rank]()
-        comptime indices_layout = Layout.row_major[indices.rank]()
-
         gather[axis=0](
-            LayoutTensor[output.dtype, output_layout](
-                output.ptr,
-                RuntimeLayout[output_layout].row_major(
-                    output.runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[input.dtype, input_layout](
-                input.ptr,
-                RuntimeLayout[input_layout].row_major(
-                    input.runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[indices.dtype, indices_layout](
-                indices.ptr,
-                RuntimeLayout[indices_layout].row_major(
-                    indices.runtime_layout.shape.value
-                ),
-            ),
+            output.make_dynamic[DType.int64](),
+            input.make_dynamic[DType.int64](),
+            indices.make_dynamic[DType.int64](),
         )
 
         print(output[0, 0, 0, 0])
@@ -196,26 +154,21 @@ fn test_gather_3d() raises:
 
 
 # CHECK-LABEL: test_gather_empty_indices
-fn test_gather_empty_indices() raises:
+def test_gather_empty_indices() raises:
     print("== test_gather_empty_indices")
 
     @always_inline
     @parameter
-    fn _test_gather[indices_type: DType]() raises:
+    def _test_gather[indices_type: DType]() raises:
         comptime num_rows = 16
         comptime row_size = 4
-        comptime input_size = 64
         comptime num_indices = 0
-        comptime indices_size = 0
-        comptime output_size = 0
 
         # Setup input.
         var input_stack = InlineArray[Float32, num_rows * row_size](
             uninitialized=True
         )
-        var input = LayoutTensor[
-            DType.float32, Layout.row_major(num_rows, row_size)
-        ](input_stack)
+        var input = TileTensor(input_stack, row_major[num_rows, row_size]())
 
         for i in range(num_rows):
             for j in range(row_size):
@@ -227,54 +180,33 @@ fn test_gather_empty_indices() raises:
         var indices_stack = InlineArray[Scalar[indices_type], 1](
             uninitialized=True
         )
-        var indices = LayoutTensor[indices_type, Layout(num_indices)](
-            indices_stack
-        )
+        var indices = TileTensor(indices_stack, row_major[num_indices]())
 
         for i in range(num_indices):
-            indices[i] = i // 2
+            indices[i] = Scalar[indices_type](i // 2)
 
         # create output
         var output_stack = InlineArray[Float32, num_rows * row_size](
             uninitialized=True
         )
-        var output = LayoutTensor[
-            DType.float32, Layout.row_major(num_indices, row_size)
-        ](output_stack)
+        var output = TileTensor(
+            output_stack, row_major[num_indices, row_size]()
+        )
 
         # Test gather
         comptime simd_width = simd_width_of[DType.float32]()
 
-        comptime output_layout = Layout.row_major[output.rank]()
-        comptime input_layout = Layout.row_major[input.rank]()
-        comptime indices_layout = Layout.row_major[indices.rank]()
-
         gather[axis=0](
-            LayoutTensor[output.dtype, output_layout](
-                output.ptr,
-                RuntimeLayout[output_layout].row_major(
-                    output.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            LayoutTensor[input.dtype, input_layout](
-                input.ptr,
-                RuntimeLayout[input_layout].row_major(
-                    input.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            LayoutTensor[indices.dtype, indices_layout](
-                indices.ptr,
-                RuntimeLayout[indices_layout].row_major(
-                    indices.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
+            output.make_dynamic[DType.int64](),
+            input.make_dynamic[DType.int64](),
+            indices.make_dynamic[DType.int64](),
         )
 
     _test_gather[DType.int32]()
     _test_gather[DType.int64]()
 
 
-def main():
+def main() raises:
     test_gather()
     test_gather_3d()
     test_gather_empty_indices()

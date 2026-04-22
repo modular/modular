@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,14 @@
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Accelerator, Buffer, DeviceStream, accelerator_api
+from max.driver import (
+    CPU,
+    Accelerator,
+    Buffer,
+    DevicePinnedBuffer,
+    DeviceStream,
+    accelerator_api,
+)
 from max.dtype import DType
 
 
@@ -159,7 +166,7 @@ def test_dlpack_device() -> None:
 def test_dlpack_device_pinned() -> None:
     gpu_device = Accelerator()
 
-    pinned_tensor = Buffer(DType.int32, (3, 3), device=gpu_device, pinned=True)
+    pinned_tensor = DevicePinnedBuffer(DType.int32, (3, 3), device=gpu_device)
     device_tuple = pinned_tensor.__dlpack_device__()
     assert len(device_tuple) == 2
     assert isinstance(device_tuple[0], int)
@@ -180,6 +187,21 @@ def test_scalar() -> None:
 
     host_scalar = scalar.to(CPU())
     assert host_scalar.item() == 5
+
+
+def test_pinned_zeros() -> None:
+    tensor = DevicePinnedBuffer.zeros((2, 1), DType.int32, device=Accelerator())
+    assert tensor.pinned
+    assert tensor[0, 0].item() == 0
+    assert tensor[1, 0].item() == 0
+
+    if accelerator_api() == "hip":
+        pytest.skip(
+            "FIXME SERVOPT-947: __setitem__ / __getitem__ is buggy on HIP."
+        )
+
+    tensor[1, 0] = 42
+    assert tensor[1, 0].item() == 42
 
 
 def test_accelerator_to_numpy() -> None:
@@ -216,9 +238,10 @@ def test_d2h_inplace_copy_from_tensor_view() -> None:
 
 @pytest.mark.parametrize("is_pinned", [True, False])
 def test_to_numpy_inplace(is_pinned: bool) -> None:
+    tensor: Buffer
     if is_pinned:
-        tensor = Buffer(
-            shape=(4,), dtype=DType.int32, device=Accelerator(), pinned=True
+        tensor = DevicePinnedBuffer(
+            shape=(4,), dtype=DType.int32, device=Accelerator()
         )
     else:
         tensor = Buffer(shape=(4,), dtype=DType.int32, device=CPU())
@@ -248,8 +271,8 @@ def test_pinned_concatenate() -> None:
         np.full((5,), 33, dtype=np.int32),
     ]
 
-    pinned = Buffer(
-        shape=(15,), dtype=DType.int32, device=Accelerator(), pinned=True
+    pinned = DevicePinnedBuffer(
+        shape=(15,), dtype=DType.int32, device=Accelerator()
     )
 
     pinned_np = pinned.to_numpy()

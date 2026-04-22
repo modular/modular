@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """
-GPU Launch Attributes for Kernel Execution Control
+GPU Launch Attributes for Kernel Execution Control.
 
 This module provides structures for configuring GPU kernel execution through launch attributes.
 It implements a Mojo interface to CUDA's launch attribute system, allowing fine-grained control
@@ -29,14 +29,13 @@ These structures enable optimizing GPU kernel performance by controlling executi
 at a granular level, similar to CUDA's native launch attribute system.
 """
 
-from sys import size_of
+from std.sys import size_of
 
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct LaunchAttributeID(Equatable, Writable):
+struct LaunchAttributeID(Equatable, TrivialRegisterPassable, Writable):
     """Identifies the type of launch attribute for GPU kernel execution.
 
     This struct represents the various types of launch attributes that can be specified
@@ -159,7 +158,7 @@ struct LaunchAttributeID(Equatable, Writable):
     the launch."""
 
     @always_inline("nodebug")
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Checks if two `LaunchAttribute` instances are equal.
 
         Compares the underlying integer values of the attributes.
@@ -173,7 +172,7 @@ struct LaunchAttributeID(Equatable, Writable):
         return self._value == other._value
 
     @always_inline("nodebug")
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Checks if two `LaunchAttribute` instances are not equal.
 
         Args:
@@ -185,16 +184,7 @@ struct LaunchAttributeID(Equatable, Writable):
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the `LaunchAttribute`.
-
-        Returns:
-            A string representation of the attribute.
-        """
-        return String.write(self)
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the string representation of the attribute to a writer.
 
         Args:
@@ -204,8 +194,7 @@ struct LaunchAttributeID(Equatable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct LaunchAttributeValue(Defaultable):
+struct LaunchAttributeValue(Defaultable, TrivialRegisterPassable):
     """Represents a value for a CUDA launch attribute.
 
     This struct emulates a C union to store different types of launch attribute values.
@@ -221,11 +210,11 @@ struct LaunchAttributeValue(Defaultable):
     var _storage: Self._storage_type
     """Internal storage for the attribute value, represented as a fixed-size byte array."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initializes a new `LaunchAttributeValue` with zeroed storage."""
         self._storage = StaticTuple[UInt8, 64](0)
 
-    fn __init__(out self, policy: AccessPolicyWindow):
+    def __init__(out self, policy: AccessPolicyWindow):
         """Initializes a `LaunchAttributeValue` from an `AccessPolicyWindow`.
 
         Args:
@@ -235,30 +224,31 @@ struct LaunchAttributeValue(Defaultable):
         var ptr = UnsafePointer(to=tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
 
-    fn __init__(out self, dim: Dim):
+    def __init__(out self, dim: Dim):
         """Initializes a LaunchAttributeValue from a Dim (dimension) object.
 
         Args:
             dim: The dimension specification to store in this attribute value.
         """
-        var tmp = StaticTuple[UInt32, 4](dim.x(), dim.y(), dim.z(), 0)
+        var tmp = StaticTuple[UInt32, 4](
+            UInt32(dim.x()), UInt32(dim.y()), UInt32(dim.z()), 0
+        )
         var ptr = UnsafePointer(to=tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
 
-    fn __init__(out self, value: Bool):
+    def __init__(out self, value: Bool):
         """Initializes a LaunchAttributeValue from a boolean object..
 
         Args:
             value: The boolean value to store in this attribute value.
         """
-        var tmp = StaticTuple[UInt32, 4](Int(value), 0, 0, 0)
+        var tmp = StaticTuple[UInt32, 4](UInt32(Int(value)), 0, 0, 0)
         var ptr = UnsafePointer(to=tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct AccessProperty(Equatable, Writable):
+struct AccessProperty(Equatable, TrivialRegisterPassable, Writable):
     """Specifies performance hint with AccessPolicyWindow for hit_prop and
     miss_prop fields.
 
@@ -281,7 +271,7 @@ struct AccessProperty(Equatable, Writable):
     """Persisting access is more likely to persist in cache, optimized for reused data."""
 
     @always_inline("nodebug")
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Compares two `AccessProperty` instances for equality.
 
         Args:
@@ -293,7 +283,7 @@ struct AccessProperty(Equatable, Writable):
         return self._value == other._value
 
     @always_inline("nodebug")
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Compares two `AccessProperty` instances for inequality.
 
         Args:
@@ -305,16 +295,7 @@ struct AccessProperty(Equatable, Writable):
         return not (self == other)
 
     @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the `AccessProperty`.
-
-        Returns:
-            A string representation of the `AccessProperty`.
-        """
-        return String.write(self)
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the `AccessProperty` to a writer.
 
         Args:
@@ -328,8 +309,7 @@ struct AccessProperty(Equatable, Writable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct LaunchAttribute(Defaultable, ImplicitlyCopyable):
+struct LaunchAttribute(Defaultable, TrivialRegisterPassable):
     """Represents a complete launch attribute with ID and value.
 
     This struct combines a `LaunchAttributeID` and `LaunchAttributeValue` to form
@@ -346,13 +326,13 @@ struct LaunchAttribute(Defaultable, ImplicitlyCopyable):
     var value: LaunchAttributeValue
     """The value associated with this launch attribute."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initializes a new LaunchAttribute with IGNORE ID and zeroed value."""
         self.id = LaunchAttributeID.IGNORE
         self.__pad = {}
         self.value = {}
 
-    fn __init__(out self, id: LaunchAttributeID, value: LaunchAttributeValue):
+    def __init__(out self, id: LaunchAttributeID, value: LaunchAttributeValue):
         """Initializes a `LaunchAttribute` with a specific ID and value.
 
         Args:
@@ -363,7 +343,7 @@ struct LaunchAttribute(Defaultable, ImplicitlyCopyable):
         self.__pad = {}
         self.value = value
 
-    fn __init__(out self, policy: AccessPolicyWindow):
+    def __init__(out self, policy: AccessPolicyWindow):
         """Initializes a `LaunchAttribute` from an `AccessPolicyWindow`.
 
         Creates a launch attribute with `ACCESS_POLICY_WINDOW` ID and the provided policy.
@@ -376,7 +356,7 @@ struct LaunchAttribute(Defaultable, ImplicitlyCopyable):
         self.value = LaunchAttributeValue(policy)
 
     @staticmethod
-    fn from_cluster_dim(dim: Dim) -> Self:
+    def from_cluster_dim(dim: Dim) -> Self:
         """Creates a `LaunchAttribute` for cluster dimensions.
 
         Creates a launch attribute with `CLUSTER_DIMENSION` ID and the provided dimensions.
@@ -393,8 +373,9 @@ struct LaunchAttribute(Defaultable, ImplicitlyCopyable):
         return res
 
 
-@register_passable("trivial")
-struct AccessPolicyWindow(Defaultable, Writable):
+struct AccessPolicyWindow(
+    Defaultable, ImplicitlyCopyable, RegisterPassable, Writable
+):
     """Specifies an access policy for a window of memory.
 
     This struct defines a contiguous extent of memory beginning at base_ptr and
@@ -411,7 +392,7 @@ struct AccessPolicyWindow(Defaultable, Writable):
         The CUDA driver may align the `base_ptr` and restrict the maximum size.
     """
 
-    var base_ptr: OpaquePointer[MutAnyOrigin]
+    var base_ptr: Optional[OpaquePointer[MutAnyOrigin]]
     """Starting address of the access policy window. Driver may align it."""
 
     var num_bytes: Int
@@ -429,15 +410,15 @@ struct AccessPolicyWindow(Defaultable, Writable):
     """AccessProperty applied to miss segments within the window.
     Must be either NORMAL or STREAMING."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initializes a new AccessPolicyWindow with default values."""
-        self.base_ptr = {}
+        self.base_ptr = None
         self.num_bytes = 0
         self.hit_ratio = 0
         self.hit_prop = AccessProperty.NORMAL
         self.miss_prop = AccessProperty.NORMAL
 
-    fn __init__[
+    def __init__[
         T: AnyType
     ](
         out self,
@@ -462,8 +443,8 @@ struct AccessPolicyWindow(Defaultable, Writable):
         """
         self.base_ptr = (
             base_ptr.bitcast[NoneType]()
+            .unsafe_mut_cast[True]()
             .address_space_cast[AddressSpace.GENERIC]()
-            .address
         )
         self.num_bytes = count * size_of[T]()
         self.hit_ratio = hit_ratio
@@ -471,16 +452,7 @@ struct AccessPolicyWindow(Defaultable, Writable):
         self.miss_prop = miss_prop
 
     @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the `AccessPolicyWindow`.
-
-        Returns:
-            A string representation of the `AccessPolicyWindow`.
-        """
-        return String.write(self)
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the `AccessPolicyWindow` to a writer.
 
         This method formats all the fields of the AccessPolicyWindow into a human-readable

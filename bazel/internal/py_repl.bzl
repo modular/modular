@@ -48,7 +48,13 @@ def _py_repl_impl(ctx):
         expanded_env["PYTHONPATH"] = python_path
 
     is_linux = ctx.target_platform_has_constraint(ctx.attr._linux_constraint[platform_common.ConstraintValueInfo])
-    env = ctx.attr.env | env_for_available_tools(os = "linux" if is_linux else "macos", location_specifier = "execpath")
+    is_x86_64 = ctx.target_platform_has_constraint(ctx.attr._x86_64_constraint[platform_common.ConstraintValueInfo])
+    os = "linux_aarch64"
+    if is_x86_64:
+        os = "linux_x86_64"
+    elif not is_linux:
+        os = "macos"
+    env = ctx.attr.env | env_for_available_tools(os = os, location_specifier = "execpath")
     for key, value in env.items():
         expanded_env[key] = ctx.expand_make_variables(
             "env",
@@ -92,6 +98,9 @@ _py_repl = rule(
         ),
         "_linux_constraint": attr.label(
             default = Label("@platforms//os:linux"),
+        ),
+        "_x86_64_constraint": attr.label(
+            default = Label("@platforms//cpu:x86_64"),
         ),
     },
     toolchains = [

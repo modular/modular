@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -25,13 +25,12 @@ The key scenarios tested:
 3. View tensors - stride[0] is UNKNOWN because actual stride depends on parent tensor
 """
 
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout.int_tuple import IntTuple
-from testing import TestSuite, assert_equal
-from utils import Index, IndexList
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from std.testing import TestSuite, assert_equal
+from std.utils import Index, IndexList
 
 
-fn test_ptr_at_offset_static_2d() raises:
+def test_ptr_at_offset_static_2d() raises:
     """Test that ptr_at_offset(IndexList) produces correct pointers for 2D layouts.
     """
     comptime layout = Layout.row_major(10, 20)
@@ -39,7 +38,7 @@ fn test_ptr_at_offset_static_2d() raises:
 
     var data = InlineArray[Int32, total_elems](uninitialized=True)
     for i in range(total_elems):
-        data[i] = i
+        data[i] = Int32(i)
 
     var tensor = LayoutTensor[DType.int32, layout, MutAnyOrigin](
         data.unsafe_ptr()
@@ -54,7 +53,7 @@ fn test_ptr_at_offset_static_2d() raises:
     assert_equal(ptr[], 115)
 
 
-fn test_ptr_at_offset_static_3d() raises:
+def test_ptr_at_offset_static_3d() raises:
     """Test that ptr_at_offset(IndexList) produces correct pointers for 3D layouts.
     """
     comptime layout = Layout.row_major(5, 10, 20)
@@ -62,7 +61,7 @@ fn test_ptr_at_offset_static_3d() raises:
 
     var data = InlineArray[Int32, total_elems](uninitialized=True)
     for i in range(total_elems):
-        data[i] = i
+        data[i] = Int32(i)
 
     var tensor = LayoutTensor[DType.int32, layout, MutAnyOrigin](
         data.unsafe_ptr()
@@ -73,7 +72,7 @@ fn test_ptr_at_offset_static_3d() raises:
     assert_equal(ptr[], 243)
 
 
-fn test_ptr_at_offset_static_4d() raises:
+def test_ptr_at_offset_static_4d() raises:
     """Test that ptr_at_offset(IndexList) produces correct pointers for 4D layouts.
     """
     comptime layout = Layout.row_major(2, 4, 8, 16)
@@ -81,7 +80,7 @@ fn test_ptr_at_offset_static_4d() raises:
 
     var data = InlineArray[Int32, total_elems](uninitialized=True)
     for i in range(total_elems):
-        data[i] = i
+        data[i] = Int32(i)
 
     var tensor = LayoutTensor[DType.int32, layout, MutAnyOrigin](
         data.unsafe_ptr()
@@ -92,7 +91,7 @@ fn test_ptr_at_offset_static_4d() raises:
     assert_equal(ptr[], 820)
 
 
-fn test_ptr_at_offset_col_major() raises:
+def test_ptr_at_offset_col_major() raises:
     """Test that ptr_at_offset(IndexList) produces correct pointers for col-major layouts.
     """
     comptime layout = Layout.col_major(10, 20)
@@ -100,7 +99,7 @@ fn test_ptr_at_offset_col_major() raises:
 
     var data = InlineArray[Int32, total_elems](uninitialized=True)
     for i in range(total_elems):
-        data[i] = i
+        data[i] = Int32(i)
 
     var tensor = LayoutTensor[DType.int32, layout, MutAnyOrigin](
         data.unsafe_ptr()
@@ -111,7 +110,7 @@ fn test_ptr_at_offset_col_major() raises:
     assert_equal(ptr[], 32)
 
 
-fn test_ptr_at_offset_with_unknown_stride() raises:
+def test_ptr_at_offset_with_unknown_stride() raises:
     """Test that ptr_at_offset uses runtime stride for UNKNOWN dimensions.
 
     This tests the per-dimension approach: when a stride is UNKNOWN_VALUE,
@@ -130,7 +129,7 @@ fn test_ptr_at_offset_with_unknown_stride() raises:
     comptime total_elems = 4 * d1 * d2  # 4 * 8 * 16 = 512
     var data = InlineArray[Int32, total_elems](uninitialized=True)
     for i in range(total_elems):
-        data[i] = i
+        data[i] = Int32(i)
 
     # Create tensor with runtime stride[0] = 128
     var runtime_stride_0 = d1 * d2  # = 128
@@ -146,10 +145,10 @@ fn test_ptr_at_offset_with_unknown_stride() raises:
     # stride[0]=128 from runtime, stride[1]=16 and stride[2]=1 from compile-time
     var ptr = tensor.ptr_at_offset(Index(2, 3, 5))
     var expected_offset = 2 * runtime_stride_0 + 3 * d2 + 5  # = 309
-    assert_equal(ptr[], expected_offset)
+    assert_equal(ptr[], Int32(expected_offset))
 
 
-fn test_ptr_at_offset_view_tensor() raises:
+def test_ptr_at_offset_view_tensor() raises:
     """Test that view tensors use correct runtime strides via ptr_at_offset.
 
     This simulates PagedKVCache-like scenarios where a 4D view's stride[0]
@@ -163,7 +162,7 @@ fn test_ptr_at_offset_view_tensor() raises:
     comptime total_elems = 24
     var data = InlineArray[Int32, total_elems](uninitialized=True)
     for i in range(total_elems):
-        data[i] = i
+        data[i] = Int32(i)
 
     # Create view with runtime stride[0] = 8 (different from shape[1] = 4)
     var runtime_stride_0 = 8
@@ -180,8 +179,8 @@ fn test_ptr_at_offset_view_tensor() raises:
     # we'd read from offset 6 instead of 10
     var ptr = child.ptr_at_offset(Index(1, 2))
     var expected_offset = 1 * runtime_stride_0 + 2  # = 10
-    assert_equal(ptr[], expected_offset)
+    assert_equal(ptr[], Int32(expected_offset))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

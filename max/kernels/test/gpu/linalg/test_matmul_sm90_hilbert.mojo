@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,13 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 import linalg.matmul.vendor.blas as vendor_blas
-from gpu.host import DeviceContext
-from gpu.host.info import H100
-from internal_utils._utils import dynamic, static
+from std.gpu.host import DeviceContext
 from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
-from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 
-from utils.index import Index
+from std.utils.index import Index
+
+from layout import Idx
 
 # NOTE: This test originally tested hilbert_swizzle=True functionality,
 # but the testbed doesn't currently support the hilbert_swizzle parameter.
@@ -32,7 +31,7 @@ comptime block_tile_shape[wgmma_n: Int] = Index(128, wgmma_n, 64)
 comptime wgmma_shape[wgmma_n: Int] = Index(64, wgmma_n, 16)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime M = 8192
         comptime N = 6144
@@ -51,6 +50,6 @@ def main():
             Index(1, 1, 1),
             block_tile_shape[64],
             wgmma_shape[64],
-        ](ctx, dynamic(M), static[N](), static[K]())
+        ](ctx, Idx(Int(M)), Idx[N](), Idx[K]())
 
         print("Test completed successfully")

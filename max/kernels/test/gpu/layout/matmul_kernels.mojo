@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,39 +10,50 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import ceildiv
-from sys.info import simd_width_of
+from std.math import ceildiv
+from std.math.uutils import udivmod
+from std.sys.info import simd_width_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
-from gpu import warp_id as get_warp_id
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.memory import async_copy_wait_all
-from layout.layout_tensor import Layout, LayoutTensor, copy_dram_to_sram_async
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.gpu import (
+    WARP_SIZE,
+    barrier,
+    block_dim,
+    block_idx,
+    thread_idx,
+    warp_id as get_warp_id,
+)
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.memory import async_copy_wait_all
+from layout import Layout, LayoutTensor
+from layout.layout_tensor import copy_dram_to_sram_async
 from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
 
-from memory import LegacyUnsafePointer
+from layout import TileTensor, Idx, row_major
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from utils.index import Index
+from std.utils.index import Index
 
 comptime NWARMUP = 1
 comptime NRUN = 1
 
 
-fn time_kernel[
-    func: fn (DeviceContext) raises capturing -> None
+def time_kernel[
+    func: def(DeviceContext) raises capturing -> None
 ](mut m: Bench, ctx: DeviceContext, size: Int, kernel_name: String) raises:
     @parameter
     @always_inline
-    fn bench_func(mut m: Bencher):
+    def bench_func(mut m: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
             func(ctx)
 
         m.iter_custom[kernel_launch](ctx)
@@ -53,7 +64,7 @@ fn time_kernel[
     )
 
 
-fn run_cublas[
+def run_cublas[
     dtype: DType, enable_tc: Bool = False
 ](
     mut m: Bench,
@@ -61,27 +72,23 @@ fn run_cublas[
     M: Int,
     N: Int,
     K: Int,
-    a: UnsafePointer[Scalar[dtype]],
-    b: UnsafePointer[Scalar[dtype]],
-    c: UnsafePointer[Scalar[dtype]],
+    a: UnsafePointer[mut=False, Scalar[dtype], _],
+    b: UnsafePointer[mut=False, Scalar[dtype], _],
+    c: UnsafePointer[mut=True, Scalar[dtype], _],
 ) raises:
-    var a_device = NDBuffer[dtype, 2](a, DimList(M, K))
-    var b_device = NDBuffer[dtype, 2](b, DimList(K, N))
-    var c_device_ref = NDBuffer[dtype, 2](
-        c,
-        DimList(M, N),
-    )
+    var a_device = TileTensor(a, row_major(Idx(M), Idx(K)))
+    var b_device = TileTensor(b, row_major(Idx(K), Idx(N)))
+    var c_device_ref = TileTensor(c, row_major(Idx(M), Idx(N)))
 
-    with vendor_blas.Handle() as handle:
+    with vendor_blas.Handle() as _handle:
 
         @parameter
-        fn bench_func(mut m: Bencher):
+        def bench_func(mut m: Bencher):
             @parameter
             @always_inline
-            fn kernel_launch(ctx: DeviceContext) raises:
+            def kernel_launch(ctx: DeviceContext) raises:
                 vendor_blas.matmul[use_tf32=enable_tc](
                     ctx,
-                    handle,
                     c_device_ref,
                     a_device,
                     b_device,
@@ -92,9 +99,8 @@ fn run_cublas[
             m.iter_custom[kernel_launch](ctx)
 
         @parameter
-        fn get_bench_id() -> String:
-            @parameter
-            if enable_tc:
+        def get_bench_id() -> String:
+            comptime if enable_tc:
                 return "cublas_tensorcore"
             else:
                 return "cublas"
@@ -107,7 +113,6 @@ fn run_cublas[
         ctx.enqueue_memset(DeviceBuffer[dtype](ctx, c, M * N, owning=False), 0)
         vendor_blas.matmul(
             ctx,
-            handle,
             c_device_ref,
             a_device,
             b_device,
@@ -116,7 +121,7 @@ fn run_cublas[
         )
 
 
-fn gemm_kernel_1[
+def gemm_kernel_1[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -124,8 +129,8 @@ fn gemm_kernel_1[
     BM: Int,
     BN: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -161,7 +166,7 @@ fn gemm_kernel_1[
 
     # Get the tile of the output matrix C that this thread is
     # responsible for computing.
-    var dst = c.tile[BM, BN](Int(bidy), Int(bidx))
+    var dst = c.tile[BM, BN](bidy, bidx)
 
     # Initialize a register to accumulate the result for this thread.
     var dst_reg: c.element_type = 0
@@ -169,8 +174,8 @@ fn gemm_kernel_1[
     # Iterate over the K dimension to compute the dot product.
     for k in range(b.dim[0]()):
         # Get the corresponding tiles from matrices A and B.
-        var a_tile = a.tile[BM, 1](Int(bidy), k)
-        var b_tile = b.tile[1, BN](k, Int(bidx))
+        var a_tile = a.tile[BM, 1](bidy, k)
+        var b_tile = b.tile[1, BN](k, bidx)
 
         # Multiply the elements and accumulate the result.
         dst_reg += a_tile[row, 0] * b_tile[0, col]
@@ -179,7 +184,7 @@ fn gemm_kernel_1[
     dst[row, col] += dst_reg
 
 
-fn run_gemm_kernel_1[
+def run_gemm_kernel_1[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -201,7 +206,7 @@ fn run_gemm_kernel_1[
 
     @always_inline
     @parameter
-    fn run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function_experimental[func](
             a,
             b,
@@ -216,7 +221,7 @@ fn run_gemm_kernel_1[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -231,7 +236,7 @@ fn run_gemm_kernel_1[
     )
 
 
-fn gemm_kernel_2[
+def gemm_kernel_2[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -239,8 +244,8 @@ fn gemm_kernel_2[
     BM: Int,
     BN: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -276,7 +281,7 @@ fn gemm_kernel_2[
     var bidy = block_idx.y
 
     # Get the tile of the output matrix C
-    var dst = c.tile[BM, BN](Int(bidy), Int(bidx))
+    var dst = c.tile[BM, BN](bidy, bidx)
 
     # Initialize the register to accumulate the result
     var dst_reg: c.element_type = 0
@@ -284,8 +289,8 @@ fn gemm_kernel_2[
     # Iterate over the K dimension
     for k in range(b.dim[0]()):
         # Get the tiles of input matrices A and B
-        var a_tile = a.tile[BM, 1](Int(bidy), k)
-        var b_tile = b.tile[1, BN](k, Int(bidx))
+        var a_tile = a.tile[BM, 1](bidy, k)
+        var b_tile = b.tile[1, BN](k, bidx)
 
         # Compute the partial result and accumulate it in the register
         dst_reg += a_tile[row, 0] * b_tile[0, col]
@@ -294,7 +299,7 @@ fn gemm_kernel_2[
     dst[row, col] += dst_reg
 
 
-fn run_gemm_kernel_2[
+def run_gemm_kernel_2[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -316,7 +321,7 @@ fn run_gemm_kernel_2[
 
     @always_inline
     @parameter
-    fn run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function_experimental[kernel](
             a,
             b,
@@ -331,7 +336,7 @@ fn run_gemm_kernel_2[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -346,7 +351,7 @@ fn run_gemm_kernel_2[
     )
 
 
-fn gemm_kernel_3[
+def gemm_kernel_3[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -356,8 +361,8 @@ fn gemm_kernel_3[
     BK: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -389,24 +394,23 @@ fn gemm_kernel_3[
     number of rows in B.
     """
     # Calculate the column and row indices for each thread
-    var col = thread_idx.x % UInt(BN)
-    var row = thread_idx.x // UInt(BN)
+    var row, col = udivmod(thread_idx.x, BN)
 
     # Get the tile of the output matrix C that this thread block is responsible for
-    var dst = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    var dst = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     # Allocate shared memory for tiles of input matrices A and B
     var a_smem = LayoutTensor[
         dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Initialize the register to accumulate the result
@@ -419,8 +423,8 @@ fn gemm_kernel_3[
         comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
 
         # Get the tiles of A and B for the current iteration
-        var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
-        var b_tile = b.tile[BK, BN](block, Int(block_idx.x))
+        var a_tile = a.tile[BM, BK](block_idx.y, block)
+        var b_tile = b.tile[BK, BN](block, block_idx.x)
 
         # Asynchronously copy tiles of A and B from global memory to shared memory
         copy_dram_to_sram_async[thread_layout=load_a_layout](a_smem, a_tile)
@@ -433,8 +437,7 @@ fn gemm_kernel_3[
         barrier()
 
         # Perform matrix multiplication on the tiles in shared memory
-        @parameter
-        for k in range(BK):
+        comptime for k in range(BK):
             dst_reg += a_smem[row, k] * b_smem[k, col]
 
         # Synchronize threads before loading the next tiles
@@ -444,7 +447,7 @@ fn gemm_kernel_3[
     dst[row, col] += dst_reg
 
 
-fn run_gemm_kernel_3[
+def run_gemm_kernel_3[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -469,7 +472,7 @@ fn run_gemm_kernel_3[
 
     @always_inline
     @parameter
-    fn run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function_experimental[kernel](
             a,
             b,
@@ -484,7 +487,7 @@ fn run_gemm_kernel_3[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -499,7 +502,7 @@ fn run_gemm_kernel_3[
     )
 
 
-fn gemm_kernel_4[
+def gemm_kernel_4[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -510,8 +513,8 @@ fn gemm_kernel_4[
     TM: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -545,34 +548,31 @@ fn gemm_kernel_4[
     of rows in B.
     """
     # Calculate the column and row indices for each thread.
-    var col = thread_idx.x % UInt(BN)
-    var row = thread_idx.x // UInt(BN)
+    var row, col = udivmod(thread_idx.x, BN)
     var bidx = block_idx.x
     var bidy = block_idx.y
 
     # Get the tile of the output matrix C that this thread is
     # responsible for computing.
-    var dst = c.tile[BM, BN](Int(bidy), Int(bidx)).tile[TM, 1](
-        Int(row), Int(col)
-    )
+    var dst = c.tile[BM, BN](bidy, bidx).tile[TM, 1](row, col)
 
     # Allocate shared memory for tiles of A and B.
     var a_smem = LayoutTensor[
         dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Allocate a register tile to store the partial results.
     var dst_reg = LayoutTensor[
-        dtype, Layout(TM), MutAnyOrigin, address_space = AddressSpace.LOCAL
+        dtype, Layout(TM), MutAnyOrigin, address_space=AddressSpace.LOCAL
     ].stack_allocation()
     dst_reg.copy_from(dst)
 
@@ -584,8 +584,8 @@ fn gemm_kernel_4[
         comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
 
         # Get the tiles of A and B for the current block.
-        var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
-        var b_tile = b.tile[BK, BN](block, Int(block_idx.x))
+        var a_tile = a.tile[BM, BK](block_idx.y, block)
+        var b_tile = b.tile[BK, BN](block, block_idx.x)
 
         # Load the tiles of A and B into shared memory asynchronously.
         copy_dram_to_sram_async[thread_layout=load_a_layout](a_smem, a_tile)
@@ -596,16 +596,14 @@ fn gemm_kernel_4[
         barrier()
 
         # Iterate over the elements in the K dimension within the tiles.
-        @parameter
-        for k in range(BK):
+        comptime for k in range(BK):
             # Get the corresponding tiles from shared memory.
-            var a_tile = a_smem.tile[TM, 1](Int(row), k)
+            var a_tile = a_smem.tile[TM, 1](row, k)
             var b_tile = b_smem.tile[1, BN](k, 0)
             var b_val = b_tile[0, col]
 
             # Multiply the elements and accumulate the partial results.
-            @parameter
-            for t in range(TM):
+            comptime for t in range(TM):
                 dst_reg[t] += a_tile[t, 0] * b_val
 
         # Synchronize all threads before loading the next tiles.
@@ -615,7 +613,7 @@ fn gemm_kernel_4[
     dst.copy_from(dst_reg)
 
 
-fn run_gemm_kernel_4[
+def run_gemm_kernel_4[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -642,7 +640,7 @@ fn run_gemm_kernel_4[
 
     @always_inline
     @parameter
-    fn run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function_experimental[kernel](
             a,
             b,
@@ -657,7 +655,7 @@ fn run_gemm_kernel_4[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -672,7 +670,7 @@ fn run_gemm_kernel_4[
     )
 
 
-fn gemm_kernel_5[
+def gemm_kernel_5[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -684,8 +682,8 @@ fn gemm_kernel_5[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -721,12 +719,11 @@ fn gemm_kernel_5[
     matrix multiplication, i.e., the number of columns in A equals the number
     of rows in B.
     """
-    var partition_col = Int(thread_idx.x % UInt(BN // TN))
-    var partition_row = Int(thread_idx.x // UInt(BN // TN))
+    var partition_row, partition_col = udivmod(thread_idx.x, BN // TN)
     var bidx = block_idx.x
     var bidy = block_idx.y
 
-    var dst = c.tile[BM, BN](Int(bidy), Int(bidx)).tile[TM, TN](
+    var dst = c.tile[BM, BN](bidy, bidx).tile[TM, TN](
         partition_row, partition_col
     )
 
@@ -734,27 +731,27 @@ fn gemm_kernel_5[
         dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var dst_reg = LayoutTensor[
         dtype,
         Layout.row_major(TM, TN),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
     dst_reg.copy_from(dst)
     var a_reg = LayoutTensor[
-        dtype, Layout(TM), MutAnyOrigin, address_space = AddressSpace.LOCAL
+        dtype, Layout(TM), MutAnyOrigin, address_space=AddressSpace.LOCAL
     ].stack_allocation()
     var b_reg = LayoutTensor[
-        dtype, Layout(TN), MutAnyOrigin, address_space = AddressSpace.LOCAL
+        dtype, Layout(TN), MutAnyOrigin, address_space=AddressSpace.LOCAL
     ].stack_allocation()
 
     var ntiles = b.dim[0]() // BK
@@ -762,16 +759,15 @@ fn gemm_kernel_5[
     for block in range(ntiles):
         comptime load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
         comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
-        var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
-        var b_tile = b.tile[BK, BN](block, Int(block_idx.x))
+        var a_tile = a.tile[BM, BK](block_idx.y, block)
+        var b_tile = b.tile[BK, BN](block, block_idx.x)
         copy_dram_to_sram_async[thread_layout=load_a_layout](a_smem, a_tile)
         copy_dram_to_sram_async[thread_layout=load_b_layout](b_smem, b_tile)
 
         async_copy_wait_all()
         barrier()
 
-        @parameter
-        for k in range(BK):
+        comptime for k in range(BK):
             var a_tile = a_smem.tile[TM, 1](partition_row, k)
             var b_tile = b_smem.tile[1, TN](k, partition_col)
             a_reg.copy_from(a_tile)
@@ -782,7 +778,7 @@ fn gemm_kernel_5[
     dst.copy_from(dst_reg)
 
 
-fn run_gemm_kernel_5[
+def run_gemm_kernel_5[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -811,7 +807,7 @@ fn run_gemm_kernel_5[
 
     @always_inline
     @parameter
-    fn run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function_experimental[kernel](
             a,
             b,
@@ -825,7 +821,7 @@ fn run_gemm_kernel_5[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -840,7 +836,7 @@ fn run_gemm_kernel_5[
     )
 
 
-fn gemm_kernel_6[
+def gemm_kernel_6[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -852,8 +848,8 @@ fn gemm_kernel_6[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, MutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, MutAnyOrigin],
+    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
     c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
@@ -893,14 +889,13 @@ fn gemm_kernel_6[
     """
 
     comptime simd_width = simd_width_of[dtype]()
-    var partition_col = Int(thread_idx.x % UInt(BN // TN))
-    var partition_row = Int(thread_idx.x // UInt(BN // TN))
+    var partition_row, partition_col = udivmod(thread_idx.x, BN // TN)
     var bidx = block_idx.x
     var bidy = block_idx.y
 
     # Get the tile of the output matrix C that this thread is responsible
     # for computing.
-    var dst = c.tile[BM, BN](Int(bidy), Int(bidx)).tile[TM, TN](
+    var dst = c.tile[BM, BN](bidy, bidx).tile[TM, TN](
         partition_row, partition_col
     )
     var dst_vec = dst.vectorize[1, simd_width]()
@@ -911,13 +906,13 @@ fn gemm_kernel_6[
         dtype,
         Layout.col_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     var b_smem = LayoutTensor[
         dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Allocate register tiles to store the partial results and operands.
@@ -925,16 +920,16 @@ fn gemm_kernel_6[
         dtype,
         Layout.row_major(TM, TN),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
     var dst_reg_vec = dst_reg.vectorize[1, simd_width]()
     dst_reg_vec.copy_from(dst_vec)
 
     var a_reg = LayoutTensor[
-        dtype, Layout(TM), MutAnyOrigin, address_space = AddressSpace.LOCAL
+        dtype, Layout(TM), MutAnyOrigin, address_space=AddressSpace.LOCAL
     ].stack_allocation()
     var b_reg = LayoutTensor[
-        dtype, Layout(TN), MutAnyOrigin, address_space = AddressSpace.LOCAL
+        dtype, Layout(TN), MutAnyOrigin, address_space=AddressSpace.LOCAL
     ].stack_allocation()
 
     var ntiles = b.dim[0]() // BK
@@ -943,8 +938,8 @@ fn gemm_kernel_6[
     for block in range(ntiles):
         comptime load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
         comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
-        var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
-        var b_tile = b.tile[BK, BN](block, Int(block_idx.x))
+        var a_tile = a.tile[BM, BK](block_idx.y, block)
+        var b_tile = b.tile[BK, BN](block, block_idx.x)
 
         # Load the tiles of A and B into shared memory using vectorized
         # memory access.
@@ -959,8 +954,7 @@ fn gemm_kernel_6[
         barrier()
 
         # Iterate over the elements in the K dimension within the tiles.
-        @parameter
-        for k in range(BK):
+        comptime for k in range(BK):
             # Load the corresponding tiles from shared memory into registers.
             var a_tile = a_smem.tile[TM, 1](partition_row, k)
             var b_tile = b_smem.tile[1, TN](k, partition_col)
@@ -976,7 +970,7 @@ fn gemm_kernel_6[
     dst_vec.copy_from(dst_reg_vec)
 
 
-fn run_gemm_kernel_6[
+def run_gemm_kernel_6[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -1004,7 +998,7 @@ fn run_gemm_kernel_6[
 
     @always_inline
     @parameter
-    fn run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function_experimental[kernel](
             a,
             b,
@@ -1018,7 +1012,7 @@ fn run_gemm_kernel_6[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),
@@ -1033,7 +1027,7 @@ fn run_gemm_kernel_6[
     )
 
 
-fn matmul_kernel_tc[
+def matmul_kernel_tc[
     dtype: DType,
     layout_a: Layout,
     layout_b: Layout,
@@ -1047,8 +1041,8 @@ fn matmul_kernel_tc[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[dtype, layout_a, MutAnyOrigin],
-    B: LayoutTensor[dtype, layout_b, MutAnyOrigin],
+    A: LayoutTensor[dtype, layout_a, ImmutAnyOrigin],
+    B: LayoutTensor[dtype, layout_b, ImmutAnyOrigin],
     C: LayoutTensor[dtype, layout_c, MutAnyOrigin],
 ):
     """
@@ -1091,16 +1085,15 @@ fn matmul_kernel_tc[
     var warp_id = get_warp_id()  # Warp ID within the block
 
     # Calculate warp tile coordinates within the block
-    warp_y = warp_id // UInt(BN // WN)
-    warp_x = warp_id % UInt(BN // WN)
+    warp_y, warp_x = udivmod(warp_id, BN // WN)
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
-        WM, WN
-    ](Int(warp_y), Int(warp_x))
+    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
+        warp_y, warp_x
+    )
 
     # Ensure warp tile dimensions are multiples of instruction shape
-    __comptime_assert (
+    comptime assert (
         WM % MMA_M == 0 and WN % MMA_N == 0 and K % MMA_K == 0
     ), "Warp tile should be an integer multiple of instruction shape"
 
@@ -1112,13 +1105,13 @@ fn matmul_kernel_tc[
         A.dtype,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     B_sram_tile = LayoutTensor[
         B.dtype,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Allocate register tile for accumulating partial results
@@ -1127,7 +1120,7 @@ fn matmul_kernel_tc[
             C.dtype,
             Layout.row_major(WM // MMA_M, (WN * 4) // MMA_N),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -1138,14 +1131,14 @@ fn matmul_kernel_tc[
         barrier()  # Synchronize before loading new tiles
 
         # Get the tiles of A and B for the current iteration
-        A_dram_tile = A.tile[BM, BK](Int(block_idx.y), k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
+        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
+        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
 
         # Load tiles of A and B into shared memory asynchronously
-        copy_dram_to_sram_async[thread_layout = Layout.row_major(4, 8)](
+        copy_dram_to_sram_async[thread_layout=Layout.row_major(4, 8)](
             A_sram_tile.vectorize[1, 4](), A_dram_tile.vectorize[1, 4]()
         )
-        copy_dram_to_sram_async[thread_layout = Layout.row_major(4, 8)](
+        copy_dram_to_sram_async[thread_layout=Layout.row_major(4, 8)](
             B_sram_tile.vectorize[1, 4](), B_dram_tile.vectorize[1, 4]()
         )
 
@@ -1153,18 +1146,13 @@ fn matmul_kernel_tc[
         barrier()  # Synchronize after loading tiles
 
         # Get the warp tiles of A and B from shared memory
-        A_warp_tile = A_sram_tile.tile[WM, BK](Int(warp_y), 0)
-        B_warp_tile = B_sram_tile.tile[BK, WN](0, Int(warp_x))
+        A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
+        B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
 
         # Iterate over the elements in the K dimension within the tiles
-        @parameter
-        for mma_k in range(BK // MMA_K):
-
-            @parameter
-            for mma_m in range(WM // MMA_M):
-
-                @parameter
-                for mma_n in range(WN // MMA_N):
+        comptime for mma_k in range(BK // MMA_K):
+            comptime for mma_m in range(WM // MMA_M):
+                comptime for mma_n in range(WN // MMA_N):
                     # Get the register tile for the current MMA operation
                     c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
 
@@ -1187,17 +1175,14 @@ fn matmul_kernel_tc[
                     c_reg_m_n.copy_from(d_reg_m_n)
 
     # Write the final accumulated results to the output matrix
-    @parameter
-    for mma_m in range(WM // MMA_M):
-
-        @parameter
-        for mma_n in range(WN // MMA_N):
+    comptime for mma_m in range(WM // MMA_M):
+        comptime for mma_n in range(WN // MMA_N):
             var C_mma_tile = C_warp_tile.tile[MMA_M, MMA_N](mma_m, mma_n)
             var c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
             mma_op.store_d(C_mma_tile, c_reg_m_n)
 
 
-fn run_gemm_kernel_tc[
+def run_gemm_kernel_tc[
     dtype: DType,
     a_layout: Layout,
     b_layout: Layout,
@@ -1239,7 +1224,7 @@ fn run_gemm_kernel_tc[
 
     @always_inline
     @parameter
-    fn run_func(ctx: DeviceContext) raises:
+    def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function_experimental[kernel](
             a,
             b,
@@ -1253,7 +1238,7 @@ fn run_gemm_kernel_tc[
     ctx.enqueue_memset(
         DeviceBuffer[dtype](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype]]](c.ptr),
+            rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](c.ptr),
             M * N,
             owning=False,
         ),

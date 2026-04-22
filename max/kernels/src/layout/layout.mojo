@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,7 +21,6 @@ Understanding the relationship between tensor shapes, strides, and
 memory layout is essential for effective use.
 
 Key components:
-- `LayoutTrait`: Core trait defining the interface for all layout types
 - `Layout`: Primary struct implementing memory layout with shape and stride information
 - Layout algebra: Functions for composing, dividing, and transforming layouts
 - Tiling operations: Functions for hierarchical decomposition of layouts
@@ -51,17 +50,16 @@ var layout = Layout.row_major(3, 4)
 var memory_idx = layout([1, 2])
 
 # Create a tiled layout for blocked matrix multiplication
-var tiled = blocked_product(layout, Layout([2, 2]))
+var tiled = blocked_product(layout^, Layout([2, 2]))
 ```
 """
 
-import sys
-from collections.string.string import _calc_initial_buffer_size_int32
-from os import abort
+import std.sys
+from std.collections.string.string import _calc_initial_buffer_size_int32
+from std.os import abort
 
-from buffer.dimlist import DimList
 
-from utils import IndexList
+from std.utils import IndexList
 
 from .int_tuple import (
     UNKNOWN_VALUE,
@@ -87,76 +85,11 @@ from .int_tuple import (
 )
 
 # ===-----------------------------------------------------------------------===#
-# Layout Trait                                                                 #
-# ===-----------------------------------------------------------------------===#
-
-
-trait LayoutTrait(ImplicitlyCopyable):
-    """Defines the interface for mapping between logical coordinates and memory indices.
-
-    The `LayoutTrait` provides a common interface for all layout types, including
-    basic layouts, swizzles, and composed layouts. It enables mapping from
-    multi-dimensional logical coordinates to linear memory indices, which is
-    essential for tensor operations.
-
-    Implementations of this trait must provide methods for:
-    1. Mapping coordinates to indices via the `__call__` method
-    2. Calculating the total size of the layout's domain
-    3. Calculating the size of the layout's codomain (memory footprint)
-    4. Indicating whether the layout has a valid shape
-
-    This trait serves as the foundation for the layout system, allowing
-    different layout implementations to be used interchangeably in algorithms.
-    """
-
-    comptime has_shape: Bool
-    """Indicates whether the layout has a valid shape.
-
-    Layouts and ComposedLayouts with at least one Layout have valid shapes
-    and can be used in layout algebra. Swizzles don't have shapes and
-    should be excluded from layout algebra.
-    """
-
-    fn __call__(self, index: IntTuple) -> Int:
-        """Maps a logical coordinate to a linear memory index.
-
-        Args:
-            index: An IntTuple representing the logical coordinates to map.
-
-        Returns:
-            The linear memory index corresponding to the given coordinates.
-        """
-        ...
-
-    fn size(self) -> Int:
-        """Returns the total number of elements in the layout's domain.
-
-        For a layout with shape (m, n), this returns m * n, representing
-        the total number of valid coordinates in the layout.
-
-        Returns:
-            The total number of elements in the layout.
-        """
-        ...
-
-    fn cosize(self) -> Int:
-        """Returns the size of the memory region spanned by the layout.
-
-        For a layout with shape `(m, n)` and stride `(r, s)`, this returns
-        `(m-1)*r + (n-1)*s + 1`, representing the memory footprint.
-
-        Returns:
-            The size of the memory region required by the layout.
-        """
-        ...
-
-
-# ===-----------------------------------------------------------------------===#
 # Layout                                                                       #
 # ===-----------------------------------------------------------------------===#
 
 
-fn make_layout(*layouts: Layout) -> Layout:
+def make_layout(*layouts: Layout) -> Layout:
     """Creates a composite layout by concatenating multiple layouts.
 
     This function combines multiple layouts into a single layout by concatenating
@@ -189,7 +122,7 @@ fn make_layout(*layouts: Layout) -> Layout:
     return Layout(shape, stride)
 
 
-fn make_layout(layout_a: Layout, layout_b: Layout) -> Layout:
+def make_layout(layout_a: Layout, layout_b: Layout) -> Layout:
     """Creates a composite layout from two layouts.
 
     This is a specialized version of make_layout that takes exactly two layouts
@@ -209,7 +142,7 @@ fn make_layout(layout_a: Layout, layout_b: Layout) -> Layout:
     )
 
 
-fn make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
+def make_ordered_layout(shape: IntTuple, order: IntTuple) -> Layout:
     """Creates a layout with strides ordered according to a specified traversal order.
 
     This function generates a compact (bijective) layout where the stride values
@@ -267,7 +200,7 @@ struct _LayoutIter[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
     var index: Int
     var layout: Pointer[Layout, Self.origin]
 
-    fn __next__(mut self) raises StopIteration -> Self.Element:
+    def __next__(mut self) raises StopIteration -> Self.Element:
         """Returns the next sub-layout in the iteration.
 
         Advances the iterator and returns a Layout containing the shape and stride
@@ -275,6 +208,9 @@ struct _LayoutIter[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
 
         Returns:
             A Layout representing the next dimension.
+
+        Raises:
+            `StopIteration` when iteration is complete.
         """
 
         if self.__len__() <= 0:
@@ -288,7 +224,7 @@ struct _LayoutIter[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
         )
 
     @always_inline("nodebug")
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Returns the number of remaining dimensions.
 
         Returns:
@@ -297,29 +233,26 @@ struct _LayoutIter[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
         return len(self.layout[].shape) - self.index
 
     @always_inline
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         var size = len(self.layout[].shape) - self.index
         return (size, {size})
 
 
 struct Layout(
+    Copyable,
     Defaultable,
     Equatable,
-    ImplicitlyCopyable,
     Iterable,
-    LayoutTrait,
     Sized,
-    Stringable,
     Writable,
 ):
     """Represents a memory layout for multi-dimensional data.
 
-    The Layout struct is the primary implementation of the LayoutTrait,
-    providing a concrete representation of memory layouts using shape and
+    Layout provides a concrete representation of memory layouts using shape and
     stride information. It maps between logical coordinates and linear
     memory indices, enabling efficient access to multi-dimensional data.
 
@@ -372,7 +305,7 @@ struct Layout(
     # ===------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         """Initializes an empty layout with no dimensions.
 
         Creates a layout with empty shape and stride tuples, which can be
@@ -381,7 +314,7 @@ struct Layout(
         self.shape = IntTuple()
         self.stride = IntTuple()
 
-    fn __init__(out self, shape: IntTuple):
+    def __init__(out self, shape: IntTuple):
         """Initializes a layout with the given shape and column-major strides.
 
         Creates a layout with the specified shape and automatically calculates
@@ -390,11 +323,11 @@ struct Layout(
         Args:
             shape: The dimensions of the layout.
         """
-        # FIXME: all these owned_copy() calls are annoying, fix __copyinit__
+        # FIXME: all these owned_copy() calls are annoying, fix copy ctor
         self.shape = shape.owned_copy()
         self.stride = prefix_product(self.shape)
 
-    fn __init__(out self, shape: IntTuple, stride: IntTuple):
+    def __init__(out self, shape: IntTuple, stride: IntTuple):
         """Initializes a layout with the given shape and stride.
 
         Creates a layout with explicitly specified shape and stride values.
@@ -411,7 +344,7 @@ struct Layout(
             self.stride = stride.owned_copy()
 
     @always_inline("nodebug")
-    fn idx2crd(self, idx: IntTuple) -> IntTuple:
+    def idx2crd(self, idx: IntTuple) -> IntTuple:
         """Converts a linear index to logical coordinates.
 
         This is the inverse operation of the __call__ method, mapping from
@@ -426,7 +359,7 @@ struct Layout(
         return idx2crd(idx, self.shape, self.stride)
 
     @staticmethod
-    fn col_major(*dims: Int) -> Layout:
+    def col_major(*dims: Int) -> Layout:
         """Creates a column-major layout with the specified dimensions.
 
         In a column-major layout, the first dimension varies fastest in memory,
@@ -448,11 +381,11 @@ struct Layout(
         # Result: Layout with shape (3,4) and stride (1,3)
         ```
         """
-        var shape = IntTuple(dims)
+        var shape = IntTuple(*dims)
         return Self.col_major(shape)
 
     @staticmethod
-    fn col_major(shape: IntTuple) -> Layout:
+    def col_major(shape: IntTuple) -> Layout:
         """Creates a column-major layout with the specified shape.
 
         In a column-major layout, the first dimension varies fastest in memory,
@@ -478,58 +411,7 @@ struct Layout(
         return Layout(shape, prefix_product(shape))
 
     @staticmethod
-    fn col_major[rank: Int](dims: DimList) -> Layout:
-        """Creates a col-major layout from a DimList with compile-time rank.
-
-        This method creates a col-major layout where the first dimension varies fastest in memory.
-        It handles both known and unknown dimensions at compile time, properly calculating
-        strides for each dimension. If any dimension is unknown, subsequent strides will
-        also be marked as unknown.
-
-        Parameters:
-            rank: The compile-time rank (number of dimensions) of the layout.
-
-        Args:
-            dims: A DimList containing the dimensions of the layout.
-
-        Returns:
-            A col-major Layout with the specified dimensions and computed strides.
-
-        Example:
-
-            ```mojo
-            from layout import Layout
-            from layout.layout import DimList
-
-            # Create a col-major layout with compile-time rank
-            var dims = DimList(3, 4)
-            var layout = Layout.col_major[2](dims)
-            # Result: Layout with shape (3,4) and stride (1,3)
-            ```
-        """
-        var c_stride = 1
-        var shape = IntTuple()
-        var stride = IntTuple(c_stride)
-
-        @parameter
-        for i in range(rank):
-            var dim = dims.get[i]()
-            shape.append(dim if dims.has_value[i]() else UNKNOWN_VALUE)
-
-        var unknown_flag = False
-
-        @parameter
-        for i in range(rank - 1):
-            var dim = dims.get[i]()
-            if not dims.has_value[i]():
-                unknown_flag = True
-            stride.append(UNKNOWN_VALUE if unknown_flag else dim * c_stride)
-            c_stride *= dim
-
-        return Layout(shape, stride)
-
-    @staticmethod
-    fn col_major[rank: Int](tuple: IndexList[rank]) -> Layout:
+    def col_major[rank: Int](tuple: IndexList[rank]) -> Layout:
         """Creates a col-major layout from a IndexList with compile-time rank.
 
         This method creates a col-major layout where the first dimension varies fastest in memory.
@@ -550,7 +432,7 @@ struct Layout(
 
             ```mojo
             from layout import Layout
-            from utils import IndexList
+            from std.utils import IndexList
 
             # Create a row-major layout with compile-time rank
             var idx_list = IndexList[2](3, 4)
@@ -562,14 +444,12 @@ struct Layout(
         var shape = IntTuple()
         var stride = IntTuple(c_stride)
 
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             shape.append(tuple[i])
 
         var unknown_flag = False
 
-        @parameter
-        for i in range(rank - 1):
+        comptime for i in range(rank - 1):
             var dim = tuple[i]
 
             if dim == UNKNOWN_VALUE:
@@ -581,7 +461,7 @@ struct Layout(
         return Layout(shape, stride)
 
     @staticmethod
-    fn row_major(*dims: Int) -> Layout:
+    def row_major(*dims: Int) -> Layout:
         """Creates a row-major layout with the specified dimensions.
 
         In a row-major layout, the last dimension varies fastest in memory,
@@ -603,62 +483,11 @@ struct Layout(
         # Result: Layout with shape (3,4) and stride (4,1)
         ```
         """
-        var shape = IntTuple(dims)
+        var shape = IntTuple(*dims)
         return Self.row_major(shape)
 
     @staticmethod
-    fn row_major[rank: Int](dims: DimList) -> Layout:
-        """Creates a row-major layout from a DimList with compile-time rank.
-
-        This method creates a row-major layout where the last dimension varies fastest in memory.
-        It handles both known and unknown dimensions at compile time, properly calculating
-        strides for each dimension. If any dimension is unknown, subsequent strides will
-        also be marked as unknown.
-
-        Parameters:
-            rank: The compile-time rank (number of dimensions) of the layout.
-
-        Args:
-            dims: A DimList containing the dimensions of the layout.
-
-        Returns:
-            A row-major Layout with the specified dimensions and computed strides.
-
-        Example:
-
-            ```mojo
-            from layout import Layout
-            from layout.layout import DimList
-
-            # Create a row-major layout with compile-time rank
-            var dims = DimList(3, 4)
-            var layout = Layout.row_major[2](dims)
-            # Result: Layout with shape (3,4) and stride (4,1)
-            ```
-        """
-        var c_stride = 1
-        var shape = IntTuple()
-        var stride = IntTuple(c_stride)
-
-        @parameter
-        for i in range(rank):
-            var dim = dims.get[i]()
-            shape.append(dim if dims.has_value[i]() else UNKNOWN_VALUE)
-
-        var unknown_flag = False
-
-        @parameter
-        for i in range(rank - 1):
-            var dim = dims.get[rank - 1 - i]()
-            if not dims.has_value[rank - 1 - i]():
-                unknown_flag = True
-            stride.append(UNKNOWN_VALUE if unknown_flag else dim * c_stride)
-            c_stride *= dim
-
-        return Layout(shape, reverse(stride))
-
-    @staticmethod
-    fn row_major[rank: Int](tuple: IndexList[rank]) -> Layout:
+    def row_major[rank: Int](tuple: IndexList[rank]) -> Layout:
         """Creates a row-major layout from a IndexList with compile-time rank.
 
         This method creates a row-major layout where the last dimension varies fastest in memory.
@@ -679,7 +508,7 @@ struct Layout(
 
             ```mojo
             from layout import Layout
-            from utils import IndexList
+            from std.utils import IndexList
 
             # Create a row-major layout with compile-time rank
             var idx_list = IndexList[2](3, 4)
@@ -693,12 +522,10 @@ struct Layout(
 
         var unknown_flag = False
 
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             shape.append(tuple[i])
 
-        @parameter
-        for i in range(rank - 1):
+        comptime for i in range(rank - 1):
             var dim = tuple[rank - 1 - i]
 
             if dim == UNKNOWN_VALUE:
@@ -710,7 +537,7 @@ struct Layout(
         return Layout(shape, reverse(stride))
 
     @staticmethod
-    fn row_major[rank: Int]() -> Layout:
+    def row_major[rank: Int]() -> Layout:
         """Creates a row-major layout with unknown values for each axis from a compile-time rank.
 
         Parameters:
@@ -730,14 +557,13 @@ struct Layout(
         """
         var shape = IntTuple()
 
-        @parameter
-        for i in range(rank):
+        comptime for i in range(rank):
             shape.append(UNKNOWN_VALUE)
 
         return Layout.row_major(shape)
 
     @staticmethod
-    fn row_major(shape: IntTuple) -> Layout:
+    def row_major(shape: IntTuple) -> Layout:
         """Creates a row-major layout from an IntTuple of dimensions.
 
         In a row-major layout, the last dimension varies fastest in memory.
@@ -765,7 +591,7 @@ struct Layout(
         return Layout(shape, reverse(prefix_product(reverse(shape))))
 
     @always_inline
-    fn make_shape_unknown[axis: Int = UNKNOWN_VALUE](self) -> Layout:
+    def make_shape_unknown[axis: Int = UNKNOWN_VALUE](self) -> Layout:
         """Creates a new Layout with unknown shape dimensions.
 
         This method creates a copy of the current Layout but marks either all dimensions
@@ -798,8 +624,7 @@ struct Layout(
         ```
         """
 
-        @parameter
-        if axis == UNKNOWN_VALUE:
+        comptime if axis == UNKNOWN_VALUE:
             return Layout(to_unknown(self.shape), self.stride)
         else:
             # var shape_with_unknown = self.shape
@@ -817,16 +642,7 @@ struct Layout(
     # ===------------------------------------------------------------------===#
 
     @no_inline
-    fn __str__(self) -> String:
-        """Converts the layout to a string representation.
-
-        Returns:
-            A string representation of the layout in the format "(shape:stride)".
-        """
-        return String.write(self)
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the layout to the specified writer.
 
         Formats the layout as "(shape:stride)" and writes it to the provided writer.
@@ -837,7 +653,7 @@ struct Layout(
         writer.write("(", self.shape, ":", self.stride, ")")
 
     @always_inline("nodebug")
-    fn __eq__(self, other: Layout) -> Bool:
+    def __eq__(self, other: Layout) -> Bool:
         """Checks if this layout is equal to another layout.
 
         Two layouts are considered equal if they have identical shape and stride tuples.
@@ -851,7 +667,7 @@ struct Layout(
         return self.shape == other.shape and self.stride == other.stride
 
     @always_inline("nodebug")
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Returns the number of dimensions in the layout.
 
         Returns:
@@ -860,7 +676,7 @@ struct Layout(
         return len(self.shape)
 
     @always_inline("nodebug")
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Returns an iterator over the layout's dimensions.
 
         Each iteration yields a Layout containing the shape and stride for one dimension.
@@ -870,7 +686,7 @@ struct Layout(
         """
         return _LayoutIter(0, Pointer(to=self))
 
-    fn size(self) -> Int:
+    def size(self) -> Int:
         """Returns the total number of elements in the layout's domain.
 
         Calculates the product of all dimensions in the shape.
@@ -880,7 +696,7 @@ struct Layout(
         """
         return product(self.shape)
 
-    fn cosize(self) -> Int:
+    def cosize(self) -> Int:
         """Returns the size of the memory region spanned by the layout.
 
         Calculates the maximum memory index plus one, representing the total
@@ -893,7 +709,7 @@ struct Layout(
         # return math.max(1, inner_product(self.shape, self.stride))
 
     @always_inline("nodebug")
-    fn __getitem__(self, index: Int) -> Self:
+    def __getitem__(self, index: Int) -> Self:
         """Returns a sub-layout for the specified dimension.
 
         Args:
@@ -905,7 +721,7 @@ struct Layout(
         return Layout(self.shape[index], self.stride[index])
 
     @always_inline("nodebug")
-    fn rank(self) -> Int:
+    def rank(self) -> Int:
         """Returns the number of dimensions in the layout.
 
         This is equivalent to __len__ and returns the number of elements in the
@@ -917,7 +733,7 @@ struct Layout(
         return len(self.shape)
 
     @always_inline("nodebug")
-    fn __call__(self, idx: IntTuple) -> Int:
+    def __call__(self, idx: IntTuple) -> Int:
         """Maps logical coordinates to a linear memory index.
 
         This is the core functionality of a layout, converting multi-dimensional
@@ -932,7 +748,7 @@ struct Layout(
         return crd2idx(idx, self.shape, self.stride)
 
     @always_inline("nodebug")
-    fn append(mut self, item: Layout):
+    def append(mut self, item: Layout):
         """Appends another layout to this layout.
 
         This method adds the shape and stride from the provided layout to this layout,
@@ -945,7 +761,7 @@ struct Layout(
         self.stride.append(item.stride)
 
     @always_inline("nodebug")
-    fn all_dims_known(self) -> Bool:
+    def all_dims_known(self) -> Bool:
         """Checks if all dimensions in the layout have known values.
 
         A dimension is considered unknown if its shape or stride is set to the
@@ -957,7 +773,7 @@ struct Layout(
         return self.shape.all_known() and self.stride.all_known()
 
     @always_inline("nodebug")
-    fn known_shape(self) -> Bool:
+    def known_shape(self) -> Bool:
         """Checks if all shape dimensions in the layout have known values.
 
         A dimension is considered unknown if its shape is set to the special
@@ -969,7 +785,7 @@ struct Layout(
         return self.shape.all_known()
 
     @always_inline("nodebug")
-    fn transpose(self) -> Layout:
+    def transpose(self) -> Layout:
         """Transposes the layout by reversing the order of dimensions.
 
         For an n-dimensional layout, this reverses the order of both shapes and strides.
@@ -1014,7 +830,7 @@ struct Layout(
 
 
 @always_inline("nodebug")
-fn size(l: Layout) -> Int:
+def size(l: Layout) -> Int:
     """Returns the total number of elements in the layout's domain.
 
     This is a standalone function equivalent to the Layout.size() method.
@@ -1029,7 +845,7 @@ fn size(l: Layout) -> Int:
 
 
 @always_inline("nodebug")
-fn cosize(l: Layout) -> Int:
+def cosize(l: Layout) -> Int:
     """Returns the size of the memory region spanned by the layout.
 
     This is a standalone function equivalent to the Layout.cosize() method.
@@ -1048,7 +864,7 @@ comptime LayoutList = List[Layout]
 
 
 @always_inline("nodebug")
-fn MakeLayoutList(v0: Layout, v1: Layout) -> LayoutList:
+def MakeLayoutList(var v0: Layout, var v1: Layout) -> LayoutList:
     """Creates a list containing two layouts.
 
     This is a convenience function for creating a LayoutList with two elements.
@@ -1060,10 +876,10 @@ fn MakeLayoutList(v0: Layout, v1: Layout) -> LayoutList:
     Returns:
         A LayoutList containing the two provided layouts.
     """
-    return [v0, v1]
+    return [v0^, v1^]
 
 
-fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
+def MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
     """Creates a list of layouts for tiling operations.
 
     This function creates a list of simple layouts, each with a shape from the
@@ -1076,13 +892,9 @@ fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
     Returns:
         A LayoutList containing layouts for each tile size.
     """
+    var layout_list = LayoutList(capacity=tile_sizes.size)
 
-    comptime num_tiles = std.builtin.Variadic.size(tile_sizes)
-
-    var layout_list = LayoutList(capacity=num_tiles)
-
-    @parameter
-    for i in range(num_tiles):
+    comptime for i in range(tile_sizes.size):
         comptime arg = tile_sizes[i]
         layout_list.append(Layout(arg, 1))
 
@@ -1091,7 +903,7 @@ fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
 
 # The CUTE version has a second input to specify which modes to coalesce. We simplify
 # it to flag to indicate keeping the original rank.
-fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
+def coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
     """Simplifies a layout by combining dimensions with contiguous strides.
 
     This function reduces the rank of a layout by merging dimensions that have
@@ -1140,32 +952,29 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
     for z in zip(flatten(layout.shape), flatten(layout.stride)):
         var shape = Int(z[0])
         var stride = Int(z[1])
+        var last_shape = len(result_shape) - 1
+        var last_stride = len(result_stride) - 1
 
         # skip their shape-1s
         if shape == 1:
             continue
         # replace our shape-1 with anything
-        elif result_shape[-1] == 1:
-            # result_shape[-1] = shape
-            result_shape.replace_entry(len(result_shape) - 1, int_value=shape)
-            # result_stride[-1] = stride
-            result_stride.replace_entry(
-                len(result_stride) - 1, int_value=stride
-            )
+        elif result_shape[last_shape] == 1:
+            result_shape.replace_entry(last_shape, int_value=shape)
+            result_stride.replace_entry(last_stride, int_value=stride)
 
         # merge modes if the shape*stride match and computable.
-        elif Int(result_shape[-1]) * Int(
-            result_stride[-1]
+        elif Int(result_shape[last_shape]) * Int(
+            result_stride[last_stride]
         ) == stride and UNKNOWN_VALUE not in (
             shape,
             stride,
-            Int(result_shape[-1]),
-            Int(result_stride[-1]),
+            Int(result_shape[last_shape]),
+            Int(result_stride[last_stride]),
         ):
-            # result_shape[-1] = to_int(result_shape[-1]) * shape
             result_shape.replace_entry(
-                len(result_shape) - 1,
-                int_value=Int(result_shape[-1]) * shape,
+                last_shape,
+                int_value=Int(result_shape[last_shape]) * shape,
             )
 
         # append a new mode
@@ -1178,7 +987,7 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
     return Layout(result_shape, result_stride)
 
 
-fn composition(layout_a: Layout, layout_b: Layout) -> Layout:
+def composition(var layout_a: Layout, var layout_b: Layout) -> Layout:
     """Composes two layouts to create a new layout.
 
     This function creates a new layout by composing two layouts, where the first
@@ -1206,19 +1015,19 @@ fn composition(layout_a: Layout, layout_b: Layout) -> Layout:
     # Compose a row-major layout with a tiling layout
     var base = Layout.row_major(6, 8)
     var tiling = Layout(IntTuple(3, 2), IntTuple(1, 3))
-    var composed = composition(base, tiling)
+    var composed = composition(base^, tiling^)
     # Result: A layout that represents a 3x2 tile from
     # layout_a
     ```
     """
     if len(layout_b) == 0:
-        return layout_a
+        return layout_a^
 
     if is_tuple(layout_b.shape):
         var r = Layout()
-        for layoutB_i in layout_b:
-            r.append(composition(layout_a, layoutB_i))
-        return r
+        for var layoutB_i in layout_b:
+            r.append(composition(layout_a.copy(), layoutB_i^))
+        return r^
 
     if layout_b.stride == 0:
         return Layout(layout_b.shape, 0)
@@ -1227,10 +1036,9 @@ fn composition(layout_a: Layout, layout_b: Layout) -> Layout:
         var result_stride = IntTuple()
         var rest_shape = layout_b.shape
         var rest_stride = layout_b.stride
+        var flat_stride_a = flatten(layout_a.stride)
 
-        for z in zip(
-            flatten(layout_a.shape)[:-1], flatten(layout_a.stride)[:-1]
-        ):
+        for z in zip(flatten(layout_a.shape)[:-1], flat_stride_a[:-1]):
             var s = Int(z[0])
             var d = Int(z[1])
 
@@ -1242,14 +1050,17 @@ fn composition(layout_a: Layout, layout_b: Layout) -> Layout:
 
         result_shape.append(rest_shape)
         result_stride.append(
-            mul(rest_stride, Int(flatten(layout_a.stride)[-1]))
+            mul(
+                rest_stride,
+                Int(flat_stride_a[len(flat_stride_a) - 1]),
+            )
         )
 
         return coalesce(Layout(result_shape, result_stride))
 
 
 # Tuple of layouts
-fn composition(layout_a: Layout, tiler: LayoutList) -> Layout:
+def composition(var layout_a: Layout, tiler: LayoutList) -> Layout:
     """Composes a layout with a list of layouts to create a hierarchical layout.
 
     This function creates a new layout by composing each element of the first layout
@@ -1274,22 +1085,22 @@ fn composition(layout_a: Layout, tiler: LayoutList) -> Layout:
     var tilers = LayoutList()
     tilers.append(Layout(IntTuple(2, 2), IntTuple(1, 2)))
     tilers.append(Layout(IntTuple(3, 3), IntTuple(1, 3)))
-    var composed = composition(base, tilers)
+    var composed = composition(base^, tilers^)
     # Result: A layout with hierarchical tiling based on the tiler list
     ```
     """
     var result = Layout()
     for layout_item, tiler_item in zip(layout_a, tiler):
-        result.append(composition(layout_item, tiler_item))
+        result.append(composition(layout_item.copy(), tiler_item.copy()))
 
     # Remainder if tiler is shorter.
     for i in range(len(tiler), len(layout_a)):
         result.append(layout_a[i])
 
-    return result
+    return result^
 
 
-fn complement(layout: Layout, size: Int = 1) -> Layout:
+def complement(layout: Layout, size: Int = 1) -> Layout:
     """Computes the complement layout for a given layout.
 
     This function creates a layout that represents the "gaps" or complementary
@@ -1342,9 +1153,12 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
         i += 1
         current_idx = shape * stride
 
-    result_shape.replace_entry(
-        i, int_value=(size + current_idx - 1) // current_idx
-    )  # ceil_div
+    if size == UNKNOWN_VALUE:
+        result_shape.replace_entry(i, int_value=UNKNOWN_VALUE)
+    else:
+        result_shape.replace_entry(
+            i, int_value=(size + current_idx - 1) // current_idx
+        )  # ceil_div
     result_stride.replace_entry(i, int_value=current_idx)
     i += 1
 
@@ -1355,9 +1169,9 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
 
 
 @always_inline
-fn apply_tiler[
-    func: fn (Layout, Layout) -> Layout
-](layout_a: Layout, tiler: LayoutList) -> Layout:
+def apply_tiler[
+    func: def(var Layout, var Layout) thin -> Layout
+](var layout_a: Layout, tiler: LayoutList) -> Layout:
     """Applies a layout transformation function to each element of a layout with a tiler.
 
     This utility function applies the specified transformation function to each
@@ -1384,18 +1198,18 @@ fn apply_tiler[
     var base = Layout.row_major(6, 8)
     var tilers = LayoutList()
     tilers.append(Layout(IntTuple(2, 2), IntTuple(1, 2)))
-    var result = apply_tiler[logical_divide](base, tilers)
+    var result = apply_tiler[logical_divide](base^, tilers)
     ```
     """
     if len(tiler) == 0:
-        return layout_a
+        return layout_a^
     var result = Layout()
     for i in range(len(tiler)):
-        result.append(func(layout_a[i], tiler[i]))
-    return result
+        result.append(func(layout_a[i], tiler[i].copy()))
+    return result^
 
 
-fn logical_divide(layout_a: Layout, _layout_b: Layout) -> Layout:
+def logical_divide(layout_a: Layout, _layout_b: Layout) -> Layout:
     """Divides a layout into blocks according to another layout.
 
     This function creates a hierarchical layout by dividing the first layout
@@ -1410,11 +1224,12 @@ fn logical_divide(layout_a: Layout, _layout_b: Layout) -> Layout:
         A new layout representing the hierarchical division.
     """
     return composition(
-        layout_a, make_layout(_layout_b, complement(_layout_b, layout_a.size()))
+        layout_a.copy(),
+        make_layout(_layout_b, complement(_layout_b, layout_a.size())),
     )
 
 
-fn logical_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
+def logical_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
     """Divides a layout into blocks according to a list of layouts.
 
     This is a variant of logical_divide that works with a list of layouts
@@ -1427,10 +1242,10 @@ fn logical_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
     Returns:
         A new layout representing the hierarchical division.
     """
-    return apply_tiler[logical_divide](layout_a, tiler)
+    return apply_tiler[logical_divide](layout_a.copy(), tiler)
 
 
-fn logical_product(_layout_a: Layout, layout_b: Layout) -> Layout:
+def logical_product(var _layout_a: Layout, var layout_b: Layout) -> Layout:
     """Creates a product of two layouts.
 
     This function creates a hierarchical layout by taking the logical product
@@ -1448,12 +1263,12 @@ fn logical_product(_layout_a: Layout, layout_b: Layout) -> Layout:
         _layout_a,
         composition(
             complement(_layout_a, _layout_a.size() * layout_b.cosize()),
-            layout_b,
+            layout_b.copy(),
         ),
     )
 
 
-fn zip_modes(layout_a: Layout, layout_b: Layout) -> Layout:
+def zip_modes(layout_a: Layout, layout_b: Layout) -> Layout:
     """Combines corresponding modes from two layouts.
 
     This function creates a new layout by combining corresponding dimensions
@@ -1474,28 +1289,29 @@ fn zip_modes(layout_a: Layout, layout_b: Layout) -> Layout:
             zipped.append(layout_a[i])
         else:
             zipped.append(make_layout(layout_a[i], bi))
-    return zipped
+    return zipped^
 
 
 # If there is a 0-shape mode in layout_b, then the corresponding mode in
 # layout_a is taken as is without adding any additional tiling modes.
-fn blocked_product(
-    layout_a: Layout,
-    layout_b: Layout,
+def blocked_product(
+    var layout_a: Layout,
+    var layout_b: Layout,
     coalesce_output: Bool = False,
 ) -> Layout:
     """Creates a blocked layout by combining two layouts.
 
-    This function creates a hierarchical blocked layout by combining a base layout
-    with a block layout. The result is a layout where each element of the base
-    layout is replaced by a block defined by the second layout.
+    This function creates a hierarchical blocked layout by combining an inner
+    (block) and an outer (base) layout. The result is a layout where each
+    element of the outer layout is replaced by a block defined by the
+    inner layout.
 
     This is particularly useful for creating tiled layouts for efficient
     cache utilization in tensor operations like matrix multiplication.
 
     Args:
-        layout_a: The base layout to be blocked.
-        layout_b: The block layout defining the structure within each block.
+        layout_a: Inner layout. The layout for an individual block, or tile.
+        layout_b: Outer layout. The layout of the tiles in the output layout.
         coalesce_output: Whether to coalesce the output layout. Default is False.
 
     Returns:
@@ -1512,7 +1328,7 @@ fn blocked_product(
     # Define 2x2 blocks
     var block = Layout.row_major(2, 2)
     # Create a blocked layout with 2x2 blocks
-    var blocked = blocked_product(block, matrix)
+    var blocked = blocked_product(block^, matrix^)
     ```
 
     Output:
@@ -1532,17 +1348,17 @@ fn blocked_product(
     ```
     """
     # ((a_0, a_1, ...), (tile_0, tile_1, ...))
-    var lp = logical_product(layout_a, layout_b)
+    var lp = logical_product(layout_a^, layout_b^)
     # ((a_0, tile_0), (a_1, tile_1), ...)
     var zipped = zip_modes(lp[0], lp[1])
     if coalesce_output:
         return coalesce(zipped, keep_rank=True)
     else:
-        return zipped
+        return zipped^
 
 
-fn tile_to_shape(
-    tile: Layout, target_shape: IntTuple, order: Optional[IntTuple] = None
+def tile_to_shape(
+    var tile: Layout, target_shape: IntTuple, order: Optional[IntTuple] = None
 ) -> Layout:
     """Creates a layout by tiling a base layout to match a target shape.
 
@@ -1569,7 +1385,7 @@ fn tile_to_shape(
     # Create a 2x2 tile layout
     var tile = Layout.row_major(2, 2)
     # Tile it to create a 6x4 layout
-    var tiled = tile_to_shape(tile, IntTuple(6, 4))
+    var tiled = tile_to_shape(tile^, IntTuple(6, 4))
     # Result: A layout with 3x2 tiles of size 2x2 each
     ```
     """
@@ -1595,10 +1411,10 @@ fn tile_to_shape(
     else:
         new_order = prefix_product(tiler_shape)  # default to column major
     var tiler = make_ordered_layout(tiler_shape, new_order)
-    return blocked_product(tile, tiler)
+    return blocked_product(tile^, tiler^)
 
 
-fn logical_product(layout_a: Layout, tiler: LayoutList) -> Layout:
+def logical_product(var layout_a: Layout, tiler: LayoutList) -> Layout:
     """Creates a product of a layout with a list of layouts.
 
     This is a variant of logical_product that works with a list of layouts
@@ -1622,15 +1438,15 @@ fn logical_product(layout_a: Layout, tiler: LayoutList) -> Layout:
     var base = Layout.row_major(6, 8)
     var tilers = LayoutList()
     tilers.append(Layout(IntTuple(2, 2)))
-    var result = logical_product(base, tilers)
+    var result = logical_product(base^, tilers)
     ```
     """
     if len(tiler) == 1:
-        return logical_product(layout_a, tiler[0])
-    return apply_tiler[logical_product](layout_a, tiler)
+        return logical_product(layout_a^, tiler[0].copy())
+    return apply_tiler[logical_product](layout_a^, tiler)
 
 
-fn hierarchical_unzip(layout_a: Layout, tiler: LayoutList) -> Layout:
+def hierarchical_unzip(layout_a: Layout, tiler: LayoutList) -> Layout:
     """Hierarchically unzips a layout according to a list of layouts.
 
     This function creates a hierarchical layout by unzipping the first layout
@@ -1674,7 +1490,7 @@ fn hierarchical_unzip(layout_a: Layout, tiler: LayoutList) -> Layout:
     return make_layout(res_1, res_2)
 
 
-fn hierarchical_unzip(
+def hierarchical_unzip(
     layout_a: Layout,
     layout_b: Layout,
 ) -> Layout:
@@ -1724,7 +1540,7 @@ fn hierarchical_unzip(
 
 
 @always_inline("nodebug")
-fn zipped_divide(layout_a: Layout, layout_b: Layout) -> Layout:
+def zipped_divide(layout_a: Layout, layout_b: Layout) -> Layout:
     """Divides a layout into blocks according to another layout.
 
     This function creates a hierarchical layout by dividing the first layout
@@ -1756,7 +1572,7 @@ fn zipped_divide(layout_a: Layout, layout_b: Layout) -> Layout:
 
 
 @always_inline("nodebug")
-fn zipped_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
+def zipped_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
     """Divides a layout into blocks according to a list of layouts.
 
     This function creates a hierarchical layout by dividing the first layout
@@ -1789,7 +1605,7 @@ fn zipped_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
 
 
 @no_inline
-fn print_layout(layout: Layout):
+def print_layout(layout: Layout):
     """Prints a 2D layout to the standard output.
 
     This function visualizes a 2D layout by printing a formatted table showing
@@ -1803,12 +1619,12 @@ fn print_layout(layout: Layout):
 
     print(layout)
     # make stdout mutable
-    var stdout = sys.stdout
+    var stdout = std.sys.stdout
     format_layout(layout, stdout)
 
 
 @no_inline
-fn format_layout[W: Writer](layout: Layout, mut writer: W):
+def format_layout[W: Writer](layout: Layout, mut writer: W):
     """Formats a 2D layout as a table and writes it to the specified writer.
 
     This function creates a visual representation of a 2D layout as a table
@@ -1823,7 +1639,7 @@ fn format_layout[W: Writer](layout: Layout, mut writer: W):
     """
 
     @parameter
-    fn _write_divider(column_count: Int, cell_width: Int):
+    def _write_divider(column_count: Int, cell_width: Int):
         for _ in range(column_count):
             writer.write("+")
             for _ in range(cell_width):
@@ -1855,7 +1671,7 @@ fn format_layout[W: Writer](layout: Layout, mut writer: W):
 
         for n in range(layout[1].size()):
             writer.write("| ")
-            Int(layout([m, n])).write_padded(
+            layout([m, n]).write_padded(
                 writer,
                 width=idx_width - 2,
             )
@@ -1868,7 +1684,7 @@ fn format_layout[W: Writer](layout: Layout, mut writer: W):
     _write_divider(layout[1].size(), idx_width)
 
 
-fn sublayout(layout: Layout, *modes: Int) -> Layout:
+def sublayout(layout: Layout, *modes: Int) -> Layout:
     """Creates a sublayout by selecting specific dimensions from a layout.
 
     This function extracts a subset of dimensions from a layout to create a new
@@ -1895,7 +1711,7 @@ fn sublayout(layout: Layout, *modes: Int) -> Layout:
     return Layout(shape, stride)
 
 
-fn expand_strides(shape: IntTuple, stride: Int) -> IntTuple:
+def expand_strides(shape: IntTuple, stride: Int) -> IntTuple:
     """Expands a scalar stride into a stride tuple matching a shape tuple.
 
     This function creates a stride tuple that matches the structure of a shape tuple,
@@ -1921,7 +1737,7 @@ fn expand_strides(shape: IntTuple, stride: Int) -> IntTuple:
     return new_stride
 
 
-fn expand_modes_alike(
+def expand_modes_alike(
     shape_a: IntTuple, stride_a: IntTuple, shape_b: IntTuple, stride_b: IntTuple
 ) -> InlineArray[IntTuple, 3]:
     """Aligns two shape-stride pairs to have the same hierarchical structure.
@@ -1975,26 +1791,28 @@ fn expand_modes_alike(
                 new_stride_a.append(uc[1])
                 new_stride_b.append(uc[2])
 
-        return InlineArray[IntTuple, 3](new_shape, new_stride_a, new_stride_b)
+        return [new_shape, new_stride_a, new_stride_b]
     elif shape_a.is_tuple():
-        return InlineArray[IntTuple, 3](
+        return [
             shape_a.owned_copy(),
             stride_a.owned_copy(),
             expand_strides(shape_a, stride_b.value()),
-        )
+        ]
     elif shape_b.is_tuple():
-        return InlineArray[IntTuple, 3](
+        return [
             shape_b.owned_copy(),
             expand_strides(shape_b.owned_copy(), stride_a.value()),
             stride_b.owned_copy(),
-        )
+        ]
     else:
-        return InlineArray[IntTuple, 3](
-            shape_b.owned_copy(), stride_a.owned_copy(), stride_b.owned_copy()
-        )
+        return [
+            shape_b.owned_copy(),
+            stride_a.owned_copy(),
+            stride_b.owned_copy(),
+        ]
 
 
-fn expand_modes_alike(
+def expand_modes_alike(
     layout_a: Layout, layout_b: Layout
 ) -> InlineArray[Layout, 2]:
     """Aligns two layouts to have the same hierarchical structure.
@@ -2042,10 +1860,10 @@ fn expand_modes_alike(
     var uc = expand_modes_alike(
         layout_a.shape, layout_a.stride, layout_b.shape, layout_b.stride
     )
-    return InlineArray[Layout, 2](Layout(uc[0], uc[1]), Layout(uc[0], uc[2]))
+    return [Layout(uc[0], uc[1]), Layout(uc[0], uc[2])]
 
 
-fn right_inverse(layout: Layout) -> Layout:
+def right_inverse(layout: Layout) -> Layout:
     """Creates a right inverse of a layout.
 
     The right inverse of a layout maps memory indices back to logical coordinates.
@@ -2073,7 +1891,7 @@ fn right_inverse(layout: Layout) -> Layout:
     return Layout(shape, stride)
 
 
-fn upcast[check: Bool = True](layout: Layout, factor: Int) -> Layout:
+def upcast[check: Bool = True](var layout: Layout, factor: Int) -> Layout:
     """Fuses consecutive elements in a layout to create a coarser layout.
 
     This function is useful for converting between different data type granularities,
@@ -2091,7 +1909,7 @@ fn upcast[check: Bool = True](layout: Layout, factor: Int) -> Layout:
     """
     if is_int(layout.shape):
         if layout.stride == 0:
-            return layout
+            return layout^
         else:
             var fac = IntTuple(factor)
             var up_shape = shape_div[check](
@@ -2103,10 +1921,10 @@ fn upcast[check: Bool = True](layout: Layout, factor: Int) -> Layout:
         var res = Layout()
         for i in range(layout.rank()):
             res.append(upcast(layout[i], factor))
-        return res
+        return res^
 
 
-fn downcast(layout: Layout, factor: Int) -> Layout:
+def downcast(layout: Layout, factor: Int) -> Layout:
     """Splits elements in a layout to create a finer layout without changing the
     total number of elements so that the alignment is preserved.
 
@@ -2123,7 +1941,7 @@ fn downcast(layout: Layout, factor: Int) -> Layout:
     return Layout(layout.shape, mul(layout.stride, factor))
 
 
-fn is_row_major[rank: Int](layout: Layout) -> Bool:
+def is_row_major[rank: Int](layout: Layout) -> Bool:
     """Checks if a layout has row-major ordering for the specified rank.
 
     A row-major layout has strides that decrease from left to right, with the
@@ -2160,7 +1978,7 @@ fn is_row_major[rank: Int](layout: Layout) -> Bool:
     return True
 
 
-fn is_contiguous_dim(layout: Layout, dim: Int) -> Bool:
+def is_contiguous_dim(layout: Layout, dim: Int) -> Bool:
     """Checks if a flat layout is contiguous in a specific dimension.
 
     This function checks if a flat layout is contiguous in a specified

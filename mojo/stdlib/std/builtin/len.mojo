@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -32,10 +32,11 @@ trait Sized:
     method. For example:
 
     ```mojo
+    @fieldwise_init
     struct Foo(Sized):
         var length: Int
 
-        fn __len__(self) -> Int:
+        def __len__(self) -> Int:
             return self.length
     ```
 
@@ -43,6 +44,13 @@ trait Sized:
     length:
 
     ```mojo
+    @fieldwise_init
+    struct Foo(Sized):
+        var length: Int
+
+        def __len__(self) -> Int:
+            return self.length
+
     var foo = Foo(42)
     print(len(foo) == 42)
     ```
@@ -56,52 +64,7 @@ trait Sized:
 
     """
 
-    fn __len__(self) -> Int:
-        """Get the length of the type.
-
-        Returns:
-            The length of the type.
-        """
-        ...
-
-
-trait UIntSized:
-    """The `Sized` trait describes a type that has an integer length (such as a
-    string or array).
-
-    Any type that conforms to `Sized` or
-    [`SizedRaising`](/mojo/std/builtin/len/SizedRaising) works with the
-    built-in [`len()`](/mojo/std/builtin/len/len) function.
-
-    The `Sized` trait requires a type to implement the `__len__()`
-    method. For example:
-
-    ```mojo
-    struct Foo(Sized):
-        var length: Int
-
-        fn __len__(self) -> Int:
-            return self.length
-    ```
-
-    You can pass an instance of `Foo` to the `len()` function to get its
-    length:
-
-    ```mojo
-    var foo = Foo(42)
-    print(len(foo) == 42)
-    ```
-
-    ```plaintext
-    True
-    ```
-
-    **Note:** If the `__len__()` method can raise an error, use the
-    [`SizedRaising`](/mojo/std/builtin/len/SizedRaising) trait instead.
-
-    """
-
-    fn __len__(self) -> UInt:
+    def __len__(self) -> Int:
         """Get the length of the type.
 
         Returns:
@@ -122,10 +85,11 @@ trait SizedRaising:
     method, which can raise an error. For example:
 
     ```mojo
+    @fieldwise_init
     struct Foo(SizedRaising):
         var length: Int
 
-        fn __len__(self) raises -> Int:
+        def __len__(self) raises -> Int:
             if self.length < 0:
                 raise Error("Length is negative")
             return self.length
@@ -135,7 +99,16 @@ trait SizedRaising:
     length:
 
     ```mojo
-    def main():
+    @fieldwise_init
+    struct Foo(SizedRaising):
+        var length: Int
+
+        def __len__(self) raises -> Int:
+            if self.length < 0:
+                raise Error("Length is negative")
+            return self.length
+
+    def main() raises:
         var foo = Foo(42)
         print(len(foo) == 42)
     ```
@@ -145,7 +118,7 @@ trait SizedRaising:
     ```
     """
 
-    fn __len__(self) raises -> Int:
+    def __len__(self) raises -> Int:
         """Get the length of the type.
 
         Returns:
@@ -162,8 +135,25 @@ trait SizedRaising:
 # ===----------------------------------------------------------------------=== #
 
 
+@deprecated(
+    "Using String.__len__() is discouraged, prefer .byte_length() or"
+    " .count_codepoints()"
+)
+@always_inline("nodebug")
+def len(value: StringSlice[mut=False, _]) -> Int:
+    """Get the string length.
+
+    Args:
+        value: The object to get the length of.
+
+    Returns:
+        The length of this value.
+    """
+    return value.byte_length()
+
+
 @always_inline
-fn len[T: Sized](value: T) -> Int:
+def len[T: Sized](value: T) -> Int:
     """Get the length of a value.
 
     Parameters:
@@ -179,7 +169,7 @@ fn len[T: Sized](value: T) -> Int:
 
 
 @always_inline
-fn len[T: SizedRaising](value: T) raises -> Int:
+def len[T: SizedRaising](value: T) raises -> Int:
     """Get the length of a value.
 
     Parameters:

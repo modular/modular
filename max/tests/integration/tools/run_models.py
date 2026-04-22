@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,6 +24,7 @@ import huggingface_hub
 import requests
 import torch
 from create_pipelines import (
+    ImageGenerationOracle,
     MaxPipelineAndTokenizer,
     PipelineOracle,
     TorchModelAndDataProcessor,
@@ -31,13 +32,10 @@ from create_pipelines import (
 )
 from max import driver, pipelines
 from max.interfaces import PipelineTask
-from max.pipelines.lib.hf_utils import HuggingFaceRepo
-from test_common import (
-    evaluate,
-    evaluate_embeddings,
-    torch_utils,
-    vllm_utils,
+from max.pipelines.lib.pipeline_variants.pixel_generation import (
+    PixelGenerationPipeline,
 )
+from test_common import evaluate, evaluate_embeddings, torch_utils, vllm_utils
 from test_common.evaluate import ModelOutput
 from typing_extensions import ParamSpec
 
@@ -158,7 +156,7 @@ def get_max_default_encoding(
     pipeline_oracle: PipelineOracle,
     pipeline_name: str,
     device_specs: list[driver.DeviceSpec],
-) -> str:
+) -> pipelines.SupportedEncoding:
     """Determine a suitable default encoding for MAX given the pipeline and devices.
 
     Preference order:
@@ -169,10 +167,13 @@ def get_max_default_encoding(
     trust_remote_code = getattr(pipeline_oracle, "config_params", {}).get(
         "trust_remote_code", False
     )
-    hf_repo = HuggingFaceRepo(
-        pipeline_name, trust_remote_code=trust_remote_code
+    model_config = pipelines.MAXModelConfig(
+        model_path=pipeline_name, trust_remote_code=trust_remote_code
     )
-    arch = pipelines.PIPELINE_REGISTRY.retrieve_architecture(hf_repo)
+    arch_name = model_config.architecture_name
+    if arch_name is None:
+        raise ValueError("Model architecture not yet supported by MAX.")
+    arch = pipelines.PIPELINE_REGISTRY.retrieve_architecture(arch_name)
     if arch is None:
         raise ValueError("Model architecture not yet supported by MAX.")
 
@@ -190,9 +191,9 @@ def get_max_default_encoding(
         if encodings and len(encodings) > 0:
             return encodings[0]
         # Fall back to architecture default
-        return arch.default_encoding.name
+        return arch.default_encoding
     # Fall back to architecture default if no device_encoding_map
-    return arch.default_encoding.name
+    return arch.default_encoding
 
 
 def run_max_model(
@@ -203,11 +204,12 @@ def run_max_model(
     num_steps: int,
     evaluation_batch_size: int | list[int],
     reference: list[ModelOutput] | None,
+    generate_logprobs: bool = False,
 ) -> Any:
     if task == PipelineTask.TEXT_GENERATION:
         assert isinstance(
             max_pipeline_and_tokenizer.pipeline,
-            pipelines.TextGenerationPipeline,
+            pipelines.TextGenerationPipelineInterface,
         )
         results = evaluate.run_model(
             max_pipeline_and_tokenizer.pipeline,
@@ -217,6 +219,7 @@ def run_max_model(
             print_outputs=True,
             batch_size=evaluation_batch_size,
             reference=reference,
+            generate_logprobs=generate_logprobs,
         )
     elif task == PipelineTask.EMBEDDINGS_GENERATION:
         assert isinstance(
@@ -232,6 +235,18 @@ def run_max_model(
             max_pipeline_and_tokenizer.tokenizer,
             prompts=(inp.prompt for inp in inputs),
             batch_size=evaluation_batch_size,
+        )
+    elif task == PipelineTask.PIXEL_GENERATION:
+        assert isinstance(
+            max_pipeline_and_tokenizer.pipeline,
+            PixelGenerationPipeline,
+        )
+        results = evaluate.run_pixel_generation(
+            max_pipeline_and_tokenizer.pipeline,
+            max_pipeline_and_tokenizer.tokenizer,
+            requests=inputs,
+            num_steps=num_steps,
+            print_outputs=True,
         )
     else:
         raise ValueError(f"Evaluating task {task} is not supported.")
@@ -260,6 +275,7 @@ def run_torch_model(
     device: torch.device,
     inputs: list[Any],
     num_steps: int,
+    generate_logprobs: bool = False,
 ) -> Any:
     if pipeline_oracle.task == PipelineTask.TEXT_GENERATION:
         results = pipeline_oracle.run_torch_text_generation(
@@ -267,13 +283,27 @@ def run_torch_model(
             device=device,
             num_steps=num_steps,
             inputs=inputs,
+            generate_logprobs=generate_logprobs,
         )
     elif pipeline_oracle.task == PipelineTask.EMBEDDINGS_GENERATION:
+        # Get pool_embeddings from oracle config if it has config_params (GenericOracle)
+        pool_embeddings = getattr(pipeline_oracle, "config_params", {}).get(
+            "pool_embeddings", False
+        )
         results = torch_utils.run_embeddings_generation(
             model=torch_pipeline_and_tokenizer.model,
             data_processor=torch_pipeline_and_tokenizer.data_processor,
             device=device,
             prompts=(inp.prompt for inp in inputs),
+            pool_embeddings=pool_embeddings,
+        )
+    elif pipeline_oracle.task == PipelineTask.PIXEL_GENERATION:
+        assert isinstance(pipeline_oracle, ImageGenerationOracle)
+        results = pipeline_oracle.run_torch_image_generation(
+            torch_pipeline_and_tokenizer=torch_pipeline_and_tokenizer,
+            device=device,
+            num_steps=num_steps,
+            inputs=inputs,
         )
     else:
         raise ValueError(
@@ -309,6 +339,9 @@ def run_vllm_model(
             encoding_name=vllm_pipeline.encoding,
             trust_remote_code=vllm_pipeline.trust_remote_code,
             max_batch_size=max_batch_size,
+            tensor_parallel_size=vllm_pipeline.tensor_parallel_size,
+            extra_kwargs=vllm_pipeline.extra_kwargs,
+            mm_data_key=vllm_pipeline.mm_data_key,
         )
     else:
         raise NotImplementedError(

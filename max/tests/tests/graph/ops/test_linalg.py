@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -290,7 +290,7 @@ def test_layer_norm() -> None:
         ),
     )
 
-    assert "mo.layer_norm" in str(graph._mlir_op)
+    assert "mo.reduce.layer_norm" in str(graph._mlir_op)
 
 
 def test_matmul_dtype_promotion() -> None:

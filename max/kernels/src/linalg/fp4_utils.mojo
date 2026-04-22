@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,20 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys._assembly import inlined_assembly
-from sys import is_nvidia_gpu, bit_width_of
-from sys.info import _is_sm_100x_or_newer
-from utils.numerics import FPUtils
-from memory import bitcast
-from layout import Layout, LayoutTensor
-from internal_utils._utils import ValOrDim, dynamic, static
-from builtin.simd import _convert_f32_to_float8_ue8m0
-
+from std.sys._assembly import inlined_assembly
+from std.sys import is_nvidia_gpu, bit_width_of, llvm_intrinsic
+from std.sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer, align_of
+from std.utils.index import IndexList
+from std.memory import bitcast
+from layout import CoordLike, Idx, Layout, LayoutTensor, TileTensor
+from std.builtin.simd import _convert_f32_to_float8_ue8m0
+from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 comptime SF_ATOM_M = (32, 4)
 comptime SF_ATOM_K = 4
-comptime SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
-comptime SF_K_GROUP_SIZE[SF_VECTOR_SIZE: Int] = SF_ATOM_K * SF_VECTOR_SIZE
+comptime SF_MN_GROUP_SIZE: Int = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+comptime SF_K_GROUP_SIZE[SF_VECTOR_SIZE: Int]: Int = SF_ATOM_K * SF_VECTOR_SIZE
 
 comptime NVFP4_SF_VECTOR_SIZE = 16
 comptime MXFP4_SF_VECTOR_SIZE = 32
@@ -53,15 +52,15 @@ comptime E2M1_TO_FLOAT32 = SIMD[DType.float32, 16](
 )
 
 
-fn cast_uint_to_fp4e2m1[
+def cast_uint_to_fp4e2m1[
     in_dtype: DType,
-    in_width: Int,
+    in_width: SIMDSize,
     //,
     *,
     out_dtype: DType,
     out_width: Int,
 ](x: SIMD[in_dtype, in_width]) -> SIMD[out_dtype, out_width]:
-    __comptime_assert in_dtype in (
+    comptime assert in_dtype in (
         DType.uint32,
         DType.uint16,
         DType.uint8,
@@ -71,31 +70,31 @@ fn cast_uint_to_fp4e2m1[
     comptime FP4_E2M1_MASK = pow(2, FP4_E2M1_WIDTH) - 1
     comptime num_fp4_values = bit_width_of[in_dtype]() // FP4_E2M1_WIDTH
 
-    __comptime_assert in_width * num_fp4_values == out_width, (
+    comptime assert in_width * num_fp4_values == out_width, (
         "size mismatch: input_width * num_fp4_values must be equal to"
         " output_width"
     )
 
     var result = SIMD[out_dtype, out_width]()
 
-    @parameter
-    for i in range(in_width):
-
-        @parameter
-        for shift in range(0, num_fp4_values):
-            var x = (x[i].to_bits() >> (shift * FP4_E2M1_WIDTH)) & FP4_E2M1_MASK
+    comptime for i in range(in_width):
+        comptime for shift in range(0, num_fp4_values):
+            comptime BitsType = type_of(x[i].to_bits())
+            var x = (
+                x[i].to_bits() >> BitsType(shift * FP4_E2M1_WIDTH)
+            ) & BitsType(FP4_E2M1_MASK)
             result[i * num_fp4_values + shift] = E2M1_TO_FLOAT32[Int(x)].cast[
                 out_dtype
             ]()
     return result
 
 
-fn cast_fp_to_fp4e2m1[
+def cast_fp_to_fp4e2m1[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
-    __comptime_assert dtype in (
+    comptime assert dtype in (
         DType.float32,
         DType.bfloat16,
         DType.float16,
@@ -114,8 +113,7 @@ fn cast_fp_to_fp4e2m1[
     var abs_x = abs(x)
     var result = SIMD[dtype, width]()
 
-    @parameter
-    for i in range(width):
+    comptime for i in range(width):
         if abs_x[i] <= 0.25:
             result[i] = 0.0
         elif abs_x[i] < 0.75:
@@ -135,14 +133,14 @@ fn cast_fp_to_fp4e2m1[
     return result * sign
 
 
-fn cast_fp32_to_fp4e2m1[
-    width: Int,
+def cast_fp32_to_fp4e2m1[
+    width: SIMDSize,
     //,
 ](x: SIMD[DType.float32, width]) -> UInt32:
-    __comptime_assert (
+    comptime assert (
         is_nvidia_gpu() and _is_sm_100x_or_newer()
     ), "only supported on NVIDIA GPUs with SM 100 or newer"
-    __comptime_assert width == 8, "width must be 8"
+    comptime assert width == 8, "width must be 8"
 
     comptime asm_code = """{
 .reg .b8 byte0;
@@ -161,8 +159,8 @@ mov.b32 $0, {byte0, byte1, byte2, byte3};
     ](x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7])
 
 
-fn cast_f4e2m1x2_to_fp16x2(x: Scalar[DType.uint8]) -> SIMD[DType.float16, 2]:
-    __comptime_assert (
+def cast_f4e2m1x2_to_fp16x2(x: Scalar[DType.uint8]) -> SIMD[DType.float16, 2]:
+    comptime assert (
         is_nvidia_gpu() and _is_sm_100x_or_newer()
     ), "only supported on NVIDIA GPUs with SM 100 or newer"
 
@@ -180,32 +178,97 @@ cvt.rn.f16x2.e2m1x2 $0, byte0;
     return bitcast[DType.float16, 2](result)
 
 
-fn set_scale_factor[
+@always_inline
+def cast_float_to_fp4e2m1_amd[
+    dtype: DType, width: SIMDSize, //
+](input: SIMD[dtype, width], scale: Float32) -> UInt32:
+    comptime assert (
+        _cdna_4_or_newer()
+    ), "only supported on AMD CDNA4 or newer (MI355X)"
+    comptime assert (
+        width % 2 == 0 and width <= 8
+    ), "width must be even and at most 8"
+
+    var packed = UInt32(0)
+
+    comptime for i in range(width // 2):
+        comptime if dtype == DType.bfloat16:
+            packed = llvm_intrinsic[
+                "llvm.amdgcn.cvt.scalef32.pk.fp4.bf16",
+                UInt32,
+            ](packed, input.slice[2, offset=i * 2](), scale, Int32(i))
+        elif dtype == DType.float32:
+            packed = llvm_intrinsic[
+                "llvm.amdgcn.cvt.scalef32.pk.fp4.f32",
+                UInt32,
+            ](packed, input[i * 2], input[i * 2 + 1], scale, Int32(i))
+        else:
+            comptime assert False, "Unsupported dtype"
+
+    return packed
+
+
+def set_scale_factor[
     scales_dtype: DType,
     scales_layout: Layout,
     //,
     SF_VECTOR_SIZE: Int,
+    width: SIMDSize,
 ](
-    scales_tensor: LayoutTensor[scales_dtype, scales_layout, MutAnyOrigin],
+    scales_tensor: LayoutTensor[mut=True, scales_dtype, scales_layout, ...],
     row_idx: Int,
     col_idx: Int,
-    scale_value: Scalar[scales_dtype],
+    scale_value: SIMD[scales_dtype, width],
 ):
-    constrained[
-        scales_tensor.rank == 5,
-        "scales_tensor must be 5D for non-batched scales tensor",
-    ]()
+    comptime assert (
+        scales_tensor.rank == 5
+    ), "scales_tensor must be 5D for non-batched scales tensor"
+    comptime assert (
+        width <= SF_ATOM_K
+    ), "width must be less than or equal to SF_ATOM_K"
 
-    scales_tensor[
-        row_idx // SF_MN_GROUP_SIZE,
-        col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
-        row_idx % SF_ATOM_M[0],
-        (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
-        (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
-    ] = rebind[Scalar[scales_dtype]](scale_value)
+    comptime align = align_of[SIMD[scales_dtype, width]]()
+    scales_tensor.store[store_alignment=align](
+        IndexList[5](
+            row_idx // SF_MN_GROUP_SIZE,
+            col_idx // (SF_VECTOR_SIZE * SF_ATOM_K),
+            row_idx % SF_ATOM_M[0],
+            (row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0],
+            (col_idx // SF_VECTOR_SIZE) % SF_ATOM_K,
+        ),
+        scale_value,
+    )
 
 
-fn get_scale_factor[
+def set_scale_factor[
+    scales_dtype: DType,
+    width: SIMDSize,
+    //,
+    SF_VECTOR_SIZE: Int,
+](
+    scales_tensor: TileTensor[mut=True, scales_dtype, ...],
+    row_idx: Int,
+    col_idx: Int,
+    scale_value: SIMD[scales_dtype, width],
+):
+    comptime assert (
+        width <= SF_ATOM_K
+    ), "width must be less than or equal to SF_ATOM_K"
+    comptime assert scales_tensor.flat_rank >= 5, "scales_tensor must be 5D"
+
+    scales_tensor.store[width=width](
+        (
+            Idx(row_idx // SF_MN_GROUP_SIZE),
+            Idx(col_idx // (SF_VECTOR_SIZE * SF_ATOM_K)),
+            Idx(row_idx % SF_ATOM_M[0]),
+            Idx((row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0]),
+            Idx((col_idx // SF_VECTOR_SIZE) % SF_ATOM_K),
+        ),
+        scale_value,
+    )
+
+
+def get_scale_factor[
     scales_dtype: DType,
     scales_layout: Layout,
     //,
@@ -215,10 +278,9 @@ fn get_scale_factor[
     row_idx: Int,
     col_idx: Int,
 ) -> Scalar[scales_dtype]:
-    constrained[
-        scales_tensor.rank == 5,
-        "scales_tensor must be 5D for non-batched scales tensor",
-    ]()
+    comptime assert (
+        scales_tensor.rank == 5
+    ), "scales_tensor must be 5D for non-batched scales tensor"
 
     return rebind[Scalar[scales_dtype]](
         scales_tensor[
@@ -231,7 +293,33 @@ fn get_scale_factor[
     )
 
 
-fn set_batched_scale_factor[
+def get_scale_factor[
+    scales_dtype: DType,
+    //,
+    SF_VECTOR_SIZE: Int,
+](
+    scales_tensor: TileTensor[mut=True, scales_dtype, ...],
+    row_idx: Int,
+    col_idx: Int,
+) -> Scalar[scales_dtype]:
+    comptime assert (
+        scales_tensor.flat_rank >= 5
+    ), "scales_tensor must be 5D for non-batched scales tensor"
+
+    return rebind[Scalar[scales_dtype]](
+        scales_tensor[
+            (
+                Idx(row_idx // SF_MN_GROUP_SIZE),
+                Idx(col_idx // (SF_VECTOR_SIZE * SF_ATOM_K)),
+                Idx(row_idx % SF_ATOM_M[0]),
+                Idx((row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0]),
+                Idx((col_idx // SF_VECTOR_SIZE) % SF_ATOM_K),
+            )
+        ]
+    )
+
+
+def set_batched_scale_factor[
     scales_dtype: DType,
     scales_layout: Layout,
     //,
@@ -243,10 +331,9 @@ fn set_batched_scale_factor[
     col_idx: Int,
     scale_value: Scalar[scales_dtype],
 ):
-    constrained[
-        scales_tensor.rank == 6,
-        "scales_tensor must be 6D for batched scales tensor",
-    ]()
+    comptime assert (
+        scales_tensor.rank == 6
+    ), "scales_tensor must be 6D for batched scales tensor"
 
     scales_tensor[
         batch_idx,
@@ -258,7 +345,35 @@ fn set_batched_scale_factor[
     ] = rebind[Scalar[scales_dtype]](scale_value)
 
 
-fn get_batched_scale_factor[
+def set_batched_scale_factor[
+    scales_dtype: DType,
+    //,
+    SF_VECTOR_SIZE: Int,
+](
+    scales_tensor: TileTensor[mut=True, scales_dtype, ...],
+    batch_idx: Int,
+    row_idx: Int,
+    col_idx: Int,
+    scale_value: Scalar[scales_dtype],
+):
+    comptime assert (
+        scales_tensor.flat_rank == 6
+    ), "scales_tensor must be 6D for batched scales tensor"
+
+    scales_tensor.store(
+        (
+            Idx(batch_idx),
+            Idx(row_idx // SF_MN_GROUP_SIZE),
+            Idx(col_idx // (SF_VECTOR_SIZE * SF_ATOM_K)),
+            Idx(row_idx % SF_ATOM_M[0]),
+            Idx((row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0]),
+            Idx((col_idx // SF_VECTOR_SIZE) % SF_ATOM_K),
+        ),
+        scale_value,
+    )
+
+
+def get_batched_scale_factor[
     scales_dtype: DType,
     scales_layout: Layout,
     //,
@@ -269,10 +384,9 @@ fn get_batched_scale_factor[
     row_idx: Int,
     col_idx: Int,
 ) -> Scalar[scales_dtype]:
-    constrained[
-        scales_tensor.rank == 6,
-        "scales_tensor must be 6D for batched scales tensor",
-    ]()
+    comptime assert (
+        scales_tensor.rank == 6
+    ), "scales_tensor must be 6D for batched scales tensor"
 
     return rebind[Scalar[scales_dtype]](
         scales_tensor[
@@ -286,7 +400,39 @@ fn get_batched_scale_factor[
     )
 
 
-fn convert_ref_scales_to_mxfp8_format[
+def get_batched_scale_factor[
+    scales_dtype: DType,
+    //,
+    SF_VECTOR_SIZE: Int,
+](
+    scales_tensor: TileTensor[mut=True, scales_dtype, ...],
+    batch_idx: Int,
+    row_idx: Int,
+    col_idx: Int,
+) -> Scalar[scales_dtype]:
+    comptime assert (
+        scales_tensor.flat_rank == 6
+    ), "scales_tensor must be 6D for batched scales tensor"
+
+    return rebind[Scalar[scales_dtype]](
+        scales_tensor[
+            (
+                Idx(batch_idx),
+                Idx(row_idx // SF_MN_GROUP_SIZE),
+                Idx(col_idx // (SF_VECTOR_SIZE * SF_ATOM_K)),
+                Idx(row_idx % SF_ATOM_M[0]),
+                Idx((row_idx % SF_MN_GROUP_SIZE) // SF_ATOM_M[0]),
+                Idx((col_idx // SF_VECTOR_SIZE) % SF_ATOM_K),
+            )
+        ]
+    )
+
+
+def convert_ref_scales_to_mxfp8_format[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
     ref_scales_type: DType,
     scales_type: DType,
     ref_a_scales_layout: Layout,
@@ -299,28 +445,28 @@ fn convert_ref_scales_to_mxfp8_format[
     REF_BLOCK_SIZE: Int,
     SF_VECTOR_SIZE: Int,
 ](
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
+    m: MType,
+    n: NType,
+    k: KType,
     ref_a_scales: LayoutTensor[ref_scales_type, ref_a_scales_layout, _],
     ref_b_scales: LayoutTensor[ref_scales_type, ref_b_scales_layout, _],
     a_scales: LayoutTensor[scales_type, a_scales_layout, a_scales_origin],
     b_scales: LayoutTensor[scales_type, b_scales_layout, b_scales_origin],
 ):
-    __comptime_assert (
+    comptime assert (
         ref_scales_type == DType.float32
     ), "Only support float32 reference scales"
-    __comptime_assert (
+    comptime assert (
         scales_type == DType.float8_e8m0fnu
     ), "Only support float8_e8m0fnu scales"
-    __comptime_assert ref_a_scales_layout.rank() == 2, "ref_a_scales must be 2D"
-    __comptime_assert ref_b_scales_layout.rank() == 2, "ref_b_scales must be 2D"
-    __comptime_assert a_scales_layout.rank() == 5, "a_scales must be 5D"
-    __comptime_assert b_scales_layout.rank() == 5, "b_scales must be 5D"
+    comptime assert ref_a_scales_layout.rank() == 2, "ref_a_scales must be 2D"
+    comptime assert ref_b_scales_layout.rank() == 2, "ref_b_scales must be 2D"
+    comptime assert a_scales_layout.rank() == 5, "a_scales must be 5D"
+    comptime assert b_scales_layout.rank() == 5, "b_scales must be 5D"
 
-    var M = m.value
-    var N = n.value
-    var K = k.value
+    var M = m.value()
+    var N = n.value()
+    var K = k.value()
 
     # initialize a_scales_tensor and b_scales_tensor based on reference scales
     for m in range(M):
@@ -350,3 +496,21 @@ fn convert_ref_scales_to_mxfp8_format[
                     ref_b_scales[n // REF_BLOCK_SIZE, k // REF_BLOCK_SIZE]
                 )
             )
+
+
+def get_scaling_kind[
+    a_type: DType,
+    scales_dtype: DType,
+    SF_VECTOR_SIZE: Int,
+]() -> UMMAKind:
+    comptime if a_type == DType.uint8 and scales_dtype == NVFP4_SF_DTYPE and SF_VECTOR_SIZE == NVFP4_SF_VECTOR_SIZE:
+        return UMMAKind.KIND_MXF4NVF4
+    elif a_type == DType.uint8 and scales_dtype == MXFP4_SF_DTYPE and SF_VECTOR_SIZE == MXFP4_SF_VECTOR_SIZE:
+        return UMMAKind.KIND_MXF4
+    else:
+        comptime assert (
+            a_type == DType.float8_e4m3fn
+            and scales_dtype == MXFP8_SF_DTYPE
+            and SF_VECTOR_SIZE == MXFP8_SF_VECTOR_SIZE
+        ), "unsupported a_type/scales_dtype for block-scaled matmul"
+        return UMMAKind.KIND_MXF8F6F4

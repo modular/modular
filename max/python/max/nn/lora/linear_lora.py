@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -45,13 +45,10 @@ class LinearLoRA(Module, SupportsLoRA):
         name: str | None = None,
         quantization_encoding: QuantizationEncoding | None = None,
     ):
-        """
-        Applies a linear transformation and LoRA to input:
+        """Applies a linear transformation and LoRA to input:
 
         :math:`y_l = (xA^T) @ B^T`.
         :math:`y = (xW^T + b) + y_l`
-
-        Example:
 
         .. code-block:: python
 
@@ -76,7 +73,6 @@ class LinearLoRA(Module, SupportsLoRA):
             input_tensor: TensorValue
             output = linear_layer(input_tensor)
         """
-
         super().__init__()
 
         self.max_num_loras = max_num_loras
@@ -258,8 +254,7 @@ class QKVLinearLoRA(Module, SupportsLoRA):
         layer_idx: TensorValue,
         max_seq_len: int,
     ) -> TensorValue:
-        """
-        Computes fused query, key, and value LoRAs with ragged input.
+        """Computes fused query, key, and value LoRAs with ragged input.
 
         Args:
             x (TensorValue): The input tensor of shape [total_tokens, hidden_dim].

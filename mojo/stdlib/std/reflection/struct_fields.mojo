@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,22 +29,37 @@ For field lookup by name (concrete types only):
 Example iterating over all fields (works with generics):
 
 ```mojo
-fn print_fields[T: AnyType]():
+from std.reflection import struct_field_names, struct_field_count
+
+struct Point:
+    var x: Int
+    var y: Float64
+
+def print_fields[T: AnyType]():
     comptime names = struct_field_names[T]()
-    @parameter
-    for i in range(struct_field_count[T]()):
+    comptime for i in range(struct_field_count[T]()):
         print(names[i])
 
-fn main():
+def main():
     print_fields[Point]()  # Works with any struct!
 ```
 
 Example looking up a field by name:
 
 ```mojo
-comptime idx = struct_field_index_by_name[Point, "x"]()  # 0
-comptime field_type = struct_field_type_by_name[Point, "y"]()
-var value: field_type.T = 3.14  # field_type.T is Float64
+from std.reflection import (
+    struct_field_index_by_name,
+    struct_field_type_by_name,
+)
+
+struct Point:
+    var x: Int
+    var y: Float64
+
+def main():
+    comptime idx = struct_field_index_by_name[Point, "x"]()  # 0
+    comptime field_type = struct_field_type_by_name[Point, "y"]()
+    var value: field_type.T = 3.14  # field_type.T is Float64
 ```
 
 For accessing struct field values by index (returns a reference, not a copy):
@@ -54,34 +69,53 @@ For accessing struct field values by index (returns a reference, not a copy):
 The `__struct_field_ref` magic function enables reflection-based utilities to work
 with non-copyable types by returning references instead of copies. It works with
 both literal indices and parametric indices (such as loop variables in
-`@parameter for` loops):
+`comptime for` loops):
 
 ```mojo
+from std.reflection import struct_field_names, struct_field_count
+
+@fieldwise_init
 struct Container:
     var id: Int
-    var resource: NonCopyableResource
+    var name: String
 
-fn inspect(ref c: Container):
+def inspect(mut c: Container):
     # Get references to fields without copying
     ref id_ref = __struct_field_ref(0, c)
-    ref resource_ref = __struct_field_ref(1, c)
-    print("id:", id_ref)
-    print("resource:", resource_ref.data)
+    ref name_ref = __struct_field_ref(1, c)
 
-    # Mutation through reference also works
+    # Mutation through reference
     __struct_field_ref(0, c) = 42
 
-# Works in generic contexts with parameter indices
-fn print_all_fields[T: AnyType](ref s: T):
-    comptime names = struct_field_names[T]()
-    @parameter
-    for i in range(struct_field_count[T]()):
-        print(names[i], "=", __struct_field_ref(i, s))
+def main():
+    var c = Container(id=1, name="test")
+    inspect(c)
+```
+
+For struct field byte offsets (useful for low-level memory operations):
+
+- `offset_of[T, name="field_name"]()` - get offset by field name
+- `offset_of[T, index=0]()` - get offset by field index
+
+Example:
+
+```mojo
+from std.reflection import offset_of
+
+struct Point:
+    var x: Int      # offset 0
+    var y: Float64  # offset 8 (aligned to 8 bytes)
+
+def main():
+    comptime x_off = offset_of[Point, name="x"]()  # 0
+    comptime y_off = offset_of[Point, index=1]()   # 8
 ```
 """
 
+from std.sys.info import _current_target, _TargetType
 
-fn struct_field_index_by_name[
+
+def struct_field_index_by_name[
     T: AnyType,
     name: StringLiteral,
 ]() -> Int:
@@ -113,11 +147,10 @@ fn struct_field_index_by_name[
     )
 
 
-@register_passable("trivial")
-struct ReflectedType[T: __mlir_type.`!kgen.type`]:
+struct ReflectedType[T: AnyType](TrivialRegisterPassable):
     """Wrapper struct for compile-time type values from reflection.
 
-    This struct wraps a `!kgen.type` value as a type parameter, allowing
+    This struct wraps a `!kgen.non_struct_type` value as a type parameter, allowing
     type values to be returned from functions and passed around at compile time.
 
     Parameters:
@@ -125,20 +158,27 @@ struct ReflectedType[T: __mlir_type.`!kgen.type`]:
 
     Example:
         ```mojo
-        # Get the type of field "x" in MyStruct
-        comptime field_type = struct_field_type_by_name[MyStruct, "x"]()
-        # Access the underlying type via the T parameter
-        var value: field_type.T = 42
+        from std.reflection import struct_field_type_by_name
+
+        struct MyStruct:
+            var x: Int
+            var y: Float64
+
+        def main():
+            # Get the type of field "x" in MyStruct
+            comptime field_type = struct_field_type_by_name[MyStruct, "x"]()
+            # Access the underlying type via the T parameter
+            var value: field_type.T = 42
         ```
     """
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         """Create a ReflectedType instance."""
         pass
 
 
-fn struct_field_type_by_name[
+def struct_field_type_by_name[
     StructT: AnyType,
     name: StringLiteral,
 ]() -> ReflectedType[
@@ -147,7 +187,8 @@ fn struct_field_type_by_name[
         StructT,
         `, `,
         name.value,
-        `> : !kgen.type`,
+        `> : `,
+        AnyType,
     ]
 ]:
     """Returns the type of the field with the given name in struct `StructT`.
@@ -170,11 +211,13 @@ fn struct_field_type_by_name[
 
     Example:
         ```mojo
+        from std.reflection import struct_field_type_by_name
+
         struct Point:
             var x: Int
             var y: Float64
 
-        fn example():
+        def example():
             # Get the type of field "x"
             comptime x_type = struct_field_type_by_name[Point, "x"]()
             # x_type.T is Int
@@ -196,12 +239,12 @@ fn struct_field_type_by_name[
 # specialized to concrete types. This enables reflection to work with generic
 # code:
 #
-#   fn foo[T: AnyType]():
+#   def foo[T: AnyType]():
 #       # Works - T is concrete when the attribute is evaluated
 #       comptime count = struct_field_count[T]()
 #
 # The implementation approach varies by API:
-# - struct_field_count: Uses #kgen.variadic.size<#kgen.struct_field_types<T>>
+# - struct_field_count: Uses #kgen.param_list.size<#kgen.struct_field_types<T>>
 # - struct_field_types/names: Use magic functions for type validation
 # - struct_field_index/type_by_name: Use KGEN attributes directly (require
 #   compile-time string literal for field name, only available with concrete
@@ -209,7 +252,8 @@ fn struct_field_type_by_name[
 # ===----------------------------------------------------------------------=== #
 
 
-fn struct_field_count[T: AnyType]() -> Int:
+@always_inline("builtin")
+def struct_field_count[T: AnyType]() -> Int:
     """Returns the number of fields in struct `T`.
 
     This function works with both concrete types and generic type parameters.
@@ -230,78 +274,70 @@ fn struct_field_count[T: AnyType]() -> Int:
 
     Example:
         ```mojo
-        fn count_fields[T: AnyType]() -> Int:
+        from std.reflection import struct_field_count
+
+        struct MyStruct:
+            var x: Int
+            var y: Float64
+
+        def count_fields[T: AnyType]() -> Int:
             return struct_field_count[T]()
 
-        fn main():
+        def main():
             print(count_fields[MyStruct]())  # Prints field count
         ```
     """
-    # Use variadic.size on struct_field_types to get the count.
-    # This avoids needing a dedicated struct_field_count attribute.
-    return Int(
-        mlir_value=__mlir_attr[
-            `#kgen.variadic.size<#kgen.struct_field_types<`,
-            T,
-            `> : !kgen.variadic<!kgen.type>> : index`,
-        ]
-    )
+    return struct_field_types[T]().size
 
 
-fn struct_field_types[
+comptime struct_field_types[
     T: AnyType,
-]() -> __mlir_type[`!kgen.variadic<!kgen.type>`]:
-    """Returns the types of all fields in struct `T` as a variadic.
+] = TypeList[
+    __mlir_attr[
+        `#kgen.struct_field_types<`, T, `> : !kgen.param_list<`, AnyType, `>`
+    ]
+]
+"""Returns the types of all fields in struct `T` as a TypeList.
 
-    This function works with both concrete types and generic type parameters.
+This function works with both concrete types and generic type parameters.
 
-    For nested structs, this returns the struct type itself, not its flattened
-    fields. Use recursive calls to introspect nested types.
+For nested structs, this returns the struct type itself, not its flattened
+fields. Use recursive calls to introspect nested types.
 
-    Note: For best performance, assign the result to a `comptime` variable to
-    ensure compile-time evaluation:
-        `comptime types = struct_field_types[T]()`
+Parameters:
+    T: A struct type.
 
-    Parameters:
-        T: A struct type.
+Returns:
+    A list of types, one for each field in the struct.
 
-    Constraints:
-        T must be a struct type. Passing a non-struct type results in a
-        compile-time error.
+Example:
+    ```mojo
+    from std.reflection import get_type_name, struct_field_types, struct_field_count
 
-    Returns:
-        A variadic of types, one for each field in the struct. Access individual
-        types by indexing: `types[i]`.
+    struct MyStruct:
+        var x: Int
+        var y: Float64
 
-    Example:
-        ```mojo
-        from reflection import get_type_name
+    def print_field_types[T: AnyType]():
+        comptime types = struct_field_types[T]()
+        comptime for i in range(struct_field_count[T]()):
+            print(get_type_name[types[i]]())
 
-        fn print_field_types[T: AnyType]():
-            comptime types = struct_field_types[T]()
-            @parameter
-            for i in range(struct_field_count[T]()):
-                print(get_type_name[types[i]]())
+    def main():
+        print_field_types[MyStruct]()  # Works with any struct!
+    ```
+"""
 
-        fn main():
-            print_field_types[MyStruct]()  # Works with any struct!
-        ```
-    """
-    return __struct_field_types(T)
-
-
-fn _struct_field_names_raw[
+comptime _struct_field_names_raw[
     T: AnyType,
-]() -> __mlir_type[`!kgen.variadic<!kgen.string>`]:
-    """Returns the names of all fields in struct `T` as a raw variadic.
-
-    This is an internal helper. Use `struct_field_names` for a more
-    ergonomic API that returns `InlineArray[StaticString, N]`.
-    """
-    return __struct_field_names(T)
+] = ParameterList[
+    __mlir_attr[
+        `#kgen.struct_field_names<`, T, `> : !kgen.param_list<!kgen.string>`
+    ]
+]
 
 
-fn struct_field_names[
+def struct_field_names[
     T: AnyType,
 ]() -> InlineArray[StaticString, struct_field_count[T]()]:
     """Returns the names of all fields in struct `T` as an InlineArray.
@@ -324,31 +360,35 @@ fn struct_field_names[
 
     Example:
         ```mojo
-        fn print_field_names[T: AnyType]():
+        from std.reflection import struct_field_names, struct_field_count
+
+        struct MyStruct:
+            var x: Int
+            var y: Float64
+
+        def print_field_names[T: AnyType]():
             comptime names = struct_field_names[T]()
-            @parameter
-            for i in range(struct_field_count[T]()):
+            comptime for i in range(struct_field_count[T]()):
                 print(names[i])
 
-        fn main():
+        def main():
             print_field_names[MyStruct]()  # Works with any struct!
         ```
     """
     comptime count = struct_field_count[T]()
     comptime raw = _struct_field_names_raw[T]()
 
-    # Safety: uninitialized=True is safe here because the @parameter for loop
+    # Safety: uninitialized=True is safe here because the comptime for loop
     # guarantees complete initialization of all elements at compile time.
     var result = InlineArray[StaticString, count](uninitialized=True)
 
-    @parameter
-    for i in range(count):
-        result[i] = StaticString(raw[i])
+    comptime for i in range(raw.size):
+        result[i] = comptime (StaticString(raw[i]))
 
     return result^
 
 
-fn is_struct_type[T: AnyType]() -> Bool:
+def is_struct_type[T: AnyType]() -> Bool:
     """Returns `True` if `T` is a Mojo struct type, `False` otherwise.
 
     This function distinguishes between Mojo struct types and MLIR primitive
@@ -362,7 +402,7 @@ fn is_struct_type[T: AnyType]() -> Bool:
     can only pass types to them. Attempting to pass a trait, function, or
     comptime value would result in a compiler error regardless of this check.
 
-    Note: When using this function as a guard, you must use `@parameter if`
+    Note: When using this function as a guard, you must use `comptime if`
     (not a runtime `if` statement) because the guarded reflection APIs are
     evaluated at compile time. A runtime `if` would still cause a compile
     error since the compiler evaluates both branches.
@@ -384,11 +424,10 @@ fn is_struct_type[T: AnyType]() -> Bool:
 
     Example:
         ```mojo
-        from reflection import get_type_name
+        from std.reflection import get_type_name, is_struct_type, struct_field_count
 
-        fn process_type[T: AnyType]():
-            @parameter
-            if is_struct_type[T]():
+        def process_type[T: AnyType]():
+            comptime if is_struct_type[T]():
                 # Safe to use struct reflection APIs
                 comptime count = struct_field_count[T]()
                 print("Struct with", count, "fields")
@@ -401,3 +440,128 @@ fn is_struct_type[T: AnyType]() -> Bool:
         T,
         `> : i1`,
     ]
+
+
+# ===----------------------------------------------------------------------=== #
+# Struct Field Offset APIs
+# ===----------------------------------------------------------------------=== #
+
+
+def _struct_field_offset_by_index[
+    T: AnyType, idx: Int, target: _TargetType = _current_target()
+]() -> Int:
+    """Internal: returns byte offset of field at given index. Use `offset_of`.
+    """
+    return Int(
+        mlir_value=__mlir_attr[
+            `#kgen.struct_field_offset_by_index<`,
+            T,
+            `, `,
+            idx._int_mlir_index(),
+            `, `,
+            target,
+            `> : index`,
+        ]
+    )
+
+
+def _struct_field_offset_by_name[
+    T: AnyType, name: StringLiteral, target: _TargetType = _current_target()
+]() -> Int:
+    """Internal: returns byte offset of field with given name. Use `offset_of`.
+    """
+    # Access the StringLiteral's `value` type parameter to get the raw string
+    comptime str_value = name.value
+    return Int(
+        mlir_value=__mlir_attr[
+            `#kgen.struct_field_offset_by_name<`,
+            T,
+            `, `,
+            str_value,
+            `, `,
+            target,
+            `> : index`,
+        ]
+    )
+
+
+def offset_of[
+    T: AnyType, *, name: StringLiteral, target: _TargetType = _current_target()
+]() -> Int:
+    """Returns the byte offset of a field within a struct by name.
+
+    This function computes the byte offset from the start of the struct to the
+    named field, accounting for alignment padding between fields. The offset
+    is computed using the target's data layout.
+
+    This is useful for low-level memory operations like no-copy serialization,
+    memory-mapped I/O, or interfacing with C structs.
+
+    Note: This function works with both concrete types and generic type parameters.
+
+    Parameters:
+        T: A struct type.
+        name: The name of the field.
+        target: The target architecture (defaults to current target).
+
+    Constraints:
+        T must be a struct type. The field name must exist in the struct.
+
+    Returns:
+        The byte offset of the field from the start of the struct.
+
+    Example:
+        ```mojo
+        from std.reflection import offset_of
+
+        struct Point:
+            var x: Int      # offset 0
+            var y: Float64  # offset 8 (aligned to 8 bytes)
+
+        def main():
+            comptime x_off = offset_of[Point, name="x"]()  # 0
+            comptime y_off = offset_of[Point, name="y"]()  # 8
+        ```
+    """
+    return _struct_field_offset_by_name[T, name, target]()
+
+
+def offset_of[
+    T: AnyType, *, index: Int, target: _TargetType = _current_target()
+]() -> Int:
+    """Returns the byte offset of a field within a struct by index.
+
+    This function computes the byte offset from the start of the struct to the
+    specified field, accounting for alignment padding between fields. The offset
+    is computed using the target's data layout.
+
+    This is useful for low-level memory operations like no-copy serialization,
+    memory-mapped I/O, or interfacing with C structs.
+
+    Note: This function works with both concrete types and generic type parameters.
+
+    Parameters:
+        T: A struct type.
+        index: The zero-based index of the field.
+        target: The target architecture (defaults to current target).
+
+    Constraints:
+        T must be a struct type. The index must be valid (0 <= index < field_count).
+
+    Returns:
+        The byte offset of the field from the start of the struct.
+
+    Example:
+        ```mojo
+        from std.reflection import offset_of
+
+        struct Point:
+            var x: Int      # offset 0
+            var y: Float64  # offset 8 (aligned to 8 bytes)
+
+        def main():
+            comptime x_off = offset_of[Point, index=0]()  # 0
+            comptime y_off = offset_of[Point, index=1]()  # 8
+        ```
+    """
+    return _struct_field_offset_by_index[T, index, target]()

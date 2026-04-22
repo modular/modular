@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -36,7 +36,7 @@ def test_tensor_value__T(input_type: TensorType) -> None:
 @given(input_type=...)
 def test_buffer__not_tensorvalue(input_type: BufferType) -> None:
     assert not _is_strong_tensor_value_like(input_type)
-    with Graph("buffer", input_types=[input_type]) as graph:
+    with Graph("buffer", input_types=[input_type]):
         with pytest.raises(TypeError):
             TensorValue(input_type)  # type: ignore
 

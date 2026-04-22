@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,17 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: echo -n | %mojo %s
 
-import sys
-from io.io import _fdopen
+import std.sys
+from std.io.io import _fdopen
 
-from testing import testing, TestSuite
+from std.testing import testing, TestSuite
 
 
-fn test_read_until_delimiter_raises_eof() raises:
-    var stdin = _fdopen["r"](sys.stdin)
+def test_read_until_delimiter_raises_eof() raises:
+    var stdin = _fdopen["r"](std.sys.stdin)
     with testing.assert_raises(contains="EOF"):
         _ = stdin.read_until_delimiter("\n")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

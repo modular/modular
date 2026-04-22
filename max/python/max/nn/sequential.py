@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,5 +16,9 @@ from .layer import LayerList
 
 
 class Sequential(LayerList):
-    """A sequential stack of layers where each layer is called by the outputs
-    of the previous layer."""
+    """A sequential stack of layers.
+
+    When called, ``Sequential`` accepts the input expected by the first layer,
+    passes the data through each layer in order, and returns the output of the
+    last layer.
+    """

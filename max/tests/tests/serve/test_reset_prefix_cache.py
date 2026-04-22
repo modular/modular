@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,7 +23,7 @@ import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
-from max.interfaces import TextGenerationRequest
+from max.interfaces import PipelineTask, TextGenerationRequest
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
@@ -34,7 +34,7 @@ from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheBackend
-from tests.serve.conftest import DEFAULT_ZMQ_ENDPOINT_BASE
+from tests.serve.conftest import async_timeout
 
 
 @dataclass(frozen=True)
@@ -51,6 +51,8 @@ def patch_pipeline_registry_context_type(
 
     def _mock_retrieve_context_type(
         pipeline_config: PipelineConfig,
+        override_architecture: str | None = None,
+        task: PipelineTask | None = None,
     ) -> type[TextContext]:
         return TextContext
 
@@ -70,7 +72,7 @@ def app(mock_pipeline_config: PipelineConfig) -> Generator[FastAPI, None, None]:
         tokenizer=MockTokenizer(),
     )
     app = fastapi_app(
-        Settings(api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False),
+        Settings(api_types=[APIType.OPENAI], use_heartbeat=False),
         serving_settings,
     )
     yield app
@@ -85,9 +87,14 @@ async def test_client(app: FastAPI) -> AsyncGenerator[TestClient, None]:
 
 @pytest.mark.parametrize("enable_prefix_caching", [True], indirect=True)
 @pytest.mark.asyncio
+@async_timeout(10)
 async def test_reset_prefix_cache(test_client: TestClient) -> None:
+    # Don't use hardcoded endpoint, since it collides during parallel test runs
+    zmq_endpoint_base = (
+        test_client.application.state.pipeline_config.runtime.zmq_endpoint_base
+    )
     reset_prefix_cache_backend = ResetPrefixCacheBackend(
-        zmq_endpoint_base=DEFAULT_ZMQ_ENDPOINT_BASE
+        zmq_endpoint_base=zmq_endpoint_base
     )
     assert not reset_prefix_cache_backend.should_reset_prefix_cache()
     response = await test_client.post("/reset_prefix_cache")
@@ -101,6 +108,7 @@ async def test_reset_prefix_cache(test_client: TestClient) -> None:
 
 @pytest.mark.parametrize("enable_prefix_caching", [True], indirect=True)
 @pytest.mark.asyncio
+@async_timeout(10)
 async def test_reset_prefix_cache_get_returns_405_error(
     test_client: TestClient,
 ) -> None:
@@ -112,6 +120,7 @@ async def test_reset_prefix_cache_get_returns_405_error(
 
 @pytest.mark.parametrize("enable_prefix_caching", [False], indirect=True)
 @pytest.mark.asyncio
+@async_timeout(10)
 async def test_reset_prefix_cache_returns_400_error(
     test_client: TestClient,
 ) -> None:

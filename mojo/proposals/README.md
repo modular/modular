@@ -25,70 +25,72 @@ are more for historical reference than as a user-guide for the language.
 
 These proposals have been implemented and are part of Mojo today.
 
-| Proposal | Description |
-|----------|-------------|
-| [always_inline_builtin](always_inline_builtin.md) | `@always_inline("builtin")` decorator |
-| [byte-as-uint8](byte-as-uint8.md) | Standardize byte sequences as `UInt8` |
-| [collection-literal-design](collection-literal-design.md) | Collection literal syntax and semantics |
-| [comptime-expr](comptime-expr.md) | `comptime` expression syntax |
-| [copyable-refines-movable](copyable-refines-movable.md) | `Copyable` trait refines `Movable` |
-| [custom-type-merging](custom-type-merging.md) | Customizable type merging in conditional contexts |
-| [deinit-arg-convention](deinit-arg-convention.md) | `deinit` argument convention |
-| [fixing-simple-literals](fixing-simple-literals.md) | Redesign of `IntLiteral`, `FloatLiteral`, `StringLiteral` |
-| [improved-hash-module](improved-hash-module.md) | Improvements to `Hashable` trait |
-| [inferred-parameters](inferred-parameters.md) | Parameter inference from other parameters |
-| [mojo-test-deprecation](mojo-test-deprecation.md) | Removal of `mojo test` utility |
-| [mutable-def-arguments](mutable-def-arguments.md) | Removal of mutable `def` argument behavior |
-| [opt-in-implicit-conversion](opt-in-implicit-conversion.md) | Opt-in implicit conversion mechanism |
-| [parametric_alias](parametric_alias.md) | Parametric alias syntax |
-| [prelude-guidelines](prelude-guidelines.md) | Policy for prelude contents |
-| [ref-convention](ref-convention.md) | References redesign |
-| [remove-let-decls](remove-let-decls.md) | Removal of `let` declarations |
-| [resyntaxing-arg-conventions-and-refs](resyntaxing-arg-conventions-and-refs.md) | Argument convention syntax changes |
-| [simd-comparable](simd-comparable.md) | Making `SIMD` conform to `Comparable` |
-| [string-design](string-design.md) | Core `String` type design |
-| [trait_composition](trait_composition.md) | Trait composition with `&` operator |
-| [upgrading-value-decorator](upgrading-value-decorator.md) | Trait-based replacement for `@value` |
-| [value-ownership](value-ownership.md) | Value ownership design (historical) |
-| [variable-bindings](variable-bindings.md) | `var` and `ref` bindings design |
-| [where_clauses](where_clauses.md) | Where clauses for generic constraints |
+| Proposal                                                                        | Description                                                 |
+|---------------------------------------------------------------------------------|-------------------------------------------------------------|
+| [always_inline_builtin](always_inline_builtin.md)                               | `@always_inline("builtin")` decorator                       |
+| [byte-as-uint8](byte-as-uint8.md)                                               | Standardize byte sequences as `UInt8`                       |
+| [collection-literal-design](collection-literal-design.md)                       | Collection literal syntax and semantics                     |
+| [comptime-expr](comptime-expr.md)                                               | `comptime` expression syntax                                |
+| [copyable-refines-movable](copyable-refines-movable.md)                         | `Copyable` trait refines `Movable`                          |
+| [custom-type-merging](custom-type-merging.md)                                   | Customizable type merging in conditional contexts           |
+| [deinit-arg-convention](deinit-arg-convention.md)                               | `deinit` argument convention                                |
+| [fixing-simple-literals](fixing-simple-literals.md)                             | Redesign of `IntLiteral`, `FloatLiteral`, `StringLiteral`   |
+| [improved-hash-module](improved-hash-module.md)                                 | Improvements to `Hashable` trait                            |
+| [remove_move_and_copy_init](remove_move_and_copy_init.md)                       | Init unification (remove `__copyinit__`/`__moveinit__`)     |
+| [inferred-parameters](inferred-parameters.md)                                   | Parameter inference from other parameters                   |
+| [mojo-test-deprecation](mojo-test-deprecation.md)                               | Removal of `mojo test` utility                              |
+| [mutable-def-arguments](mutable-def-arguments.md)                               | Removal of mutable `def` argument behavior                  |
+| [opt-in-implicit-conversion](opt-in-implicit-conversion.md)                     | Opt-in implicit conversion mechanism                        |
+| [parametric_alias](parametric_alias.md)                                         | Parametric alias syntax                                     |
+| [prelude-guidelines](prelude-guidelines.md)                                     | Policy for prelude contents                                 |
+| [ref-convention](ref-convention.md)                                             | References redesign                                         |
+| [remove-let-decls](remove-let-decls.md)                                         | Removal of `let` declarations                               |
+| [resyntaxing-arg-conventions-and-refs](resyntaxing-arg-conventions-and-refs.md) | Argument convention syntax changes                          |
+| [simd-comparable](simd-comparable.md)                                           | Making `SIMD` conform to `Comparable`                       |
+| [string-design](string-design.md)                                               | Core `String` type design                                   |
+| [trait_composition](trait_composition.md)                                       | Trait composition with `&` operator                         |
+| [upgrading-value-decorator](upgrading-value-decorator.md)                       | Trait-based replacement for `@value`                        |
+| [value-ownership](value-ownership.md)                                           | Value ownership design (historical)                         |
+| [variable-bindings](variable-bindings.md)                                       | `var` and `ref` bindings design                             |
+| [explicit-std-imports](explicit-std-imports.md)                                 | Require explicit `std.` prefix for standard library imports |
+| [where_clauses](where_clauses.md)                                               | Where clauses for generic constraints                       |
 
 ## Accepted Proposals
 
 These proposals have been accepted and are planned for implementation.
 
-| Proposal | Description |
-|----------|-------------|
-| [align-decorator](align-decorator.md) | `@align(N)` decorator for struct alignment |
+| Proposal                                                        | Description                                      |
+|-----------------------------------------------------------------|--------------------------------------------------|
+| [align-decorator](align-decorator.md)                           | `@align(N)` decorator for struct alignment       |
 | [code-improvement-diagnostics](code-improvement-diagnostics.md) | Compiler-integrated code improvement diagnostics |
-| [remove_move_and_copy_init](remove_move_and_copy_init.md) | Init unification (remove `__copyinit__`/`__moveinit__`) |
-| [stdlib-insider-docs](stdlib-insider-docs.md) | Internal documentation for stdlib developers |
+| [stdlib-insider-docs](stdlib-insider-docs.md)                   | Internal documentation for stdlib developers     |
 
 ## Partially Implemented
 
 These proposals have been accepted and implementation is in progress.
 
-| Proposal | Description |
-|----------|-------------|
-| [canonicalize-int](canonicalize-int.md) | Canonicalize APIs around `Int` |
-| [lifetimes-and-provenance](lifetimes-and-provenance.md) | Provenance tracking and lifetimes |
-| [unsafe-pointer-v2](unsafe-pointer-v2.md) | `UnsafePointer` redesign and migration |
-| [upgrading-trivial](upgrading-trivial.md) | Decoupling trivial from `@register_passable` |
+| Proposal                                                | Description                                  |
+|---------------------------------------------------------|----------------------------------------------|
+| [canonicalize-int](canonicalize-int.md)                 | Canonicalize APIs around `Int`               |
+| [lifetimes-and-provenance](lifetimes-and-provenance.md) | Provenance tracking and lifetimes            |
+| [unsafe-pointer-v2](unsafe-pointer-v2.md)               | `UnsafePointer` redesign and migration       |
+| [upgrading-trivial](upgrading-trivial.md)               | Decoupling trivial from `@register_passable` |
 
 ## Proposed (Under Discussion)
 
 These proposals are still being discussed or refined.
 
-| Proposal | Description | Status |
-|----------|-------------|--------|
-| [edge-case-behaviors](edge-case-behaviors.md) | Edge case behavior definitions | Draft |
-| [mojo-and-dynamism](mojo-and-dynamism.md) | Mojo and dynamic features | Proposed |
-| [struct-extensions](struct-extensions.md) | Struct extension mechanism | Draft |
+| Proposal                                          | Description                                             | Status   |
+|---------------------------------------------------|---------------------------------------------------------|----------|
+| [edge-case-behaviors](edge-case-behaviors.md)     | Edge case behavior definitions                          | Draft    |
+| [mojo-and-dynamism](mojo-and-dynamism.md)         | Mojo and dynamic features                               | Proposed |
+| [parameter-to-comptime](parameter-to-comptime.md) | Replace `@parameter` with `comptime` statement modifier | Proposed |
+| [struct-extensions](struct-extensions.md)         | Struct extension mechanism                              | Draft    |
 
 ## Abandoned Proposals
 
 These proposals are no longer being pursued.
 
-| Proposal | Description |
-|----------|-------------|
+| Proposal                                                              | Description                     |
+|-----------------------------------------------------------------------|---------------------------------|
 | [project-manifest-and-build-tool](project-manifest-and-build-tool.md) | Project manifest and build tool |

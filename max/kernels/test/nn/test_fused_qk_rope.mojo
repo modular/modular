@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,15 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from buffer import DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from memory import memcpy
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
+from std.memory import memcpy
 from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
@@ -30,12 +37,12 @@ from testdata.fused_qk_rope_goldens import (
     q_out_golden,
 )
 
-from utils import IndexList
+from std.utils import IndexList
 
 
-def test_fused_qk_rope[dtype: DType]() -> None:
+def test_fused_qk_rope[dtype: DType]() raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
-    __comptime_assert (
+    comptime assert (
         dtype == DType.float32
     ), "goldens only for float32, currently"
 
@@ -47,8 +54,8 @@ def test_fused_qk_rope[dtype: DType]() -> None:
     comptime num_layers = 1
     var lookup_table: List[UInt32] = [0, 1]
 
-    fn _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
-        __comptime_assert len(items) > 0, "empty list in _max"
+    def _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
+        comptime assert len(items) > 0, "empty list in _max"
         items_dyn = materialize[items]()
         max_item = items_dyn[0]
         for i in range(1, len(items_dyn)):
@@ -56,7 +63,7 @@ def test_fused_qk_rope[dtype: DType]() -> None:
                 max_item = items_dyn[i]
         return max_item
 
-    __comptime_assert max_seq_len > (
+    comptime assert max_seq_len > (
         seq_len + Int(_max[DType.uint32, items=start_positions]())
     ), "KV cache size smaller than sum of sequence length and start pos"
     comptime num_heads = 2
@@ -119,69 +126,53 @@ def test_fused_qk_rope[dtype: DType]() -> None:
             ),
         ),
         max_seq_length=seq_len,
-        max_cache_length=max_cache_len_in_batch,
+        max_cache_length=UInt32(max_cache_len_in_batch),
     )
 
     # Create and initialize query buffer.
     q_buffer = q_input[dtype]()
-    debug_assert(
-        len(q_buffer) == batch_size * seq_len * dim, "invalid q_buffer init"
-    )
+    assert len(q_buffer) == batch_size * seq_len * dim, "invalid q_buffer init"
 
     # Create query tensor as a view of the query buffer.
-    q = LayoutTensor[
-        dtype, Layout.row_major(batch_size, seq_len, num_heads, head_dim)
-    ](q_buffer.unsafe_ptr())
+    q = TileTensor(
+        q_buffer, row_major[batch_size, seq_len, num_heads, head_dim]()
+    )
 
     # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
     freqs_cis_table_buffer = freqs_cis_table_input[dtype]()
-    debug_assert(
-        len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim,
-        "invalid freqs_cis_table init",
+    assert (
+        len(freqs_cis_table_buffer) == 2 * max_seq_len * head_dim
+    ), "invalid freqs_cis_table init"
+    freqs_cis_table = TileTensor(
+        freqs_cis_table_buffer, row_major[max_seq_len, head_dim]()
     )
-    freqs_cis_table = LayoutTensor[
-        dtype, Layout.row_major(max_seq_len, head_dim)
-    ](freqs_cis_table_buffer.unsafe_ptr())
 
     # Create and initialize golden outputs.
     expected_q_out_buffer = q_out_golden[dtype]()
-    debug_assert(
-        len(expected_q_out_buffer) == len(q_buffer),
-        "invalid expected q out init",
-    )
-    expected_q_out = LayoutTensor[dtype, Layout.row_major(q.layout.shape)](
-        expected_q_out_buffer.unsafe_ptr()
-    )
+    assert len(expected_q_out_buffer) == len(
+        q_buffer
+    ), "invalid expected q out init"
+    expected_q_out = TileTensor(expected_q_out_buffer, q.layout)
     expected_k_out_buffer = k_out_golden[dtype]()
-    debug_assert(
-        len(expected_k_out_buffer) == batch_size * seq_len * dim,
-        "invalid expected k out init",
-    )
+    assert (
+        len(expected_k_out_buffer) == batch_size * seq_len * dim
+    ), "invalid expected k out init"
 
     # Create output buffer.
     q_out_buffer = List[Scalar[dtype]](length=len(q_buffer), fill=0)
-    q_out = LayoutTensor[dtype, Layout.row_major[4]()](
-        q_out_buffer.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            q.runtime_layout.shape.value.canonicalize()
-        ),
-    )
+    q_out = TileTensor(q_out_buffer, q.layout).make_dynamic[DType.int64]()
 
     # Create valid_lengths buffer - all sequences have full seq_len valid
     var valid_lengths_buffer = List[UInt32](
         length=batch_size, fill=UInt32(seq_len)
     )
-    var valid_lengths = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-    ](
-        valid_lengths_buffer.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](batch_size)
-        ),
+    var valid_lengths = TileTensor(
+        valid_lengths_buffer,
+        row_major(Idx(batch_size)),
     )
 
     fused_qk_rope[
-        kv_collection.CacheType, interleaved=True, target = StaticString("cpu")
+        kv_collection.CacheType, interleaved=True, target=StaticString("cpu")
     ](
         q_proj=q,
         kv_collection=kv_collection,
@@ -193,7 +184,9 @@ def test_fused_qk_rope[dtype: DType]() -> None:
     )
 
     # Compare output and expected query tensors.
-    assert_almost_equal(q_out.ptr, expected_q_out.ptr, expected_q_out.size())
+    assert_almost_equal(
+        q_out.ptr, expected_q_out.ptr, expected_q_out.num_elements()
+    )
 
     # Compare output and expected key cache buffers.
     for batch_idx in range(batch_size):
@@ -218,5 +211,5 @@ def test_fused_qk_rope[dtype: DType]() -> None:
     _ = valid_lengths_buffer^
 
 
-def main() -> None:
+def main() raises -> None:
     test_fused_qk_rope[DType.float32]()

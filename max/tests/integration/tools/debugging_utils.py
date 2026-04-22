@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import copy
 import inspect
 import os
 from collections.abc import Iterator
@@ -22,14 +23,18 @@ from typing import Any, cast
 
 import torch
 from create_pipelines import PIPELINE_ORACLES, GenericOracle
-from max import driver
+from max import driver, pipelines
 from max.driver.buffer import load_max_buffer
 from max.engine import InferenceSession
 from max.engine.api import PrintStyle
-from max.entrypoints.cli import DevicesOptionType
 from max.entrypoints.cli.entrypoint import configure_cli_logging
+from max.experimental.nn import Module as ModuleV3
 from max.nn.hooks import PrintHook
 from max.nn.layer import Module
+from max.pipelines.lib.device_specs import (
+    device_specs_from_normalized_device_handle,
+    normalize_device_specs_input,
+)
 from max.tests.integration.tools.hf_config_overrides import (
     apply_hf_config_override,
     apply_non_strict_load,
@@ -42,6 +47,7 @@ from run_models import (
     maybe_log_hf_downloads,
     run_max_model,
     run_torch_model,
+    run_vllm_model,
 )
 from test_common import torch_print_hook
 from test_common.github_utils import github_log_group
@@ -96,6 +102,42 @@ def apply_name_layers_after_state_load(hook: PrintHook) -> Iterator[None]:
 
 
 @contextmanager
+def apply_v3_hooks(hook: PrintHook) -> Iterator[None]:
+    """Patch max.experimental.nn.Module to fire the given hook during tracing.
+
+    Two patches are applied:
+    - ``__call__`` is wrapped so the hook sees every v3 module's inputs and
+      outputs during graph tracing inside ``Module.compile()``, mirroring how
+      ``_call_with_hooks`` works for legacy ``Layer`` subclasses.
+    - ``compile`` is wrapped so layers are named (via ``hook.name_layers_v3``)
+      before tracing begins, giving tensors the correct dot-separated
+      attribute-path names rather than auto-generated class-name labels.
+    """
+    orig_call = ModuleV3.__call__
+    orig_compile = ModuleV3.compile
+
+    # TODO: MODELS-1208: Remove this once we have a proper v3 print hook.
+    def _patched_call(module_self: Any, *args: Any, **kwargs: Any) -> Any:
+        outputs = orig_call(module_self, *args, **kwargs)
+        hook(module_self, args, kwargs, outputs)
+        return outputs
+
+    def _compile_with_naming(
+        module_self: Any, *args: Any, **kwargs: Any
+    ) -> Any:
+        hook.name_layers_v3(cast(ModuleV3[..., Any], module_self))
+        return orig_compile(module_self, *args, **kwargs)
+
+    cast(Any, ModuleV3).__call__ = _patched_call
+    cast(Any, ModuleV3).compile = _compile_with_naming
+    try:
+        yield
+    finally:
+        cast(Any, ModuleV3).__call__ = orig_call
+        cast(Any, ModuleV3).compile = orig_compile
+
+
+@contextmanager
 def debug_context(
     *,
     output_directory: Path | None,
@@ -106,14 +148,19 @@ def debug_context(
     This context manages:
     1. HuggingFace config overrides to modify the model configuration
     2. Places print hooks for both MAX and Torch models to inspect intermediate tensors
-    3. Names layers after state dict loading
+    3. Legacy API (max.nn.layer.Layer): names layers after state dict loading
+    4. v3 API (max.experimental.nn.Module): patches Module.__call__ to fire hooks
+       during graph tracing, and names layers at the start of Module.compile()
     """
     with ExitStack() as stack:
         if hf_config_overrides is not None:
             stack.enter_context(apply_hf_config_override(hf_config_overrides))
             stack.enter_context(apply_non_strict_load())
         hook = stack.enter_context(apply_max_hooks(output_directory))
+        # Legacy API (max.nn.layer.Layer) hooks.
         stack.enter_context(apply_name_layers_after_state_load(hook))
+        # v3 API (max.experimental.nn.Module) hooks.
+        stack.enter_context(apply_v3_hooks(hook))
         yield
 
 
@@ -123,18 +170,21 @@ def run_debug_model(
     framework_name: str,
     pipeline_name: str,
     output_path: Path,
-    encoding_name: str | None = None,
+    encoding_name: pipelines.SupportedEncoding | None = None,
     max_batch_size: int | None = None,
     log_hf_downloads: bool = False,
     num_steps: int = 1,
     prompt: str | None = None,
     images: tuple[str, ...] | None = None,
     hf_config_overrides: dict[str, Any] | None = None,
+    prefer_module_v3: bool = False,
 ) -> None:
     """Run a model with print hooks enabled and write intermediate tensors.
 
     Intermediate tensors are written to the output directory if specified.
     Config overrides can be applied to both MAX and Torch models via hf_config_overrides.
+    Set prefer_module_v3=True to select the ModuleV3 architecture variant when
+    one is registered under the ``<arch>_ModuleV3`` key in the pipeline registry.
     """
     if workspace_dir := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(workspace_dir)
@@ -142,9 +192,21 @@ def run_debug_model(
 
     if pipeline_name in PIPELINE_ORACLES:
         pipeline_oracle = PIPELINE_ORACLES[pipeline_name]
+        if prefer_module_v3 and isinstance(pipeline_oracle, GenericOracle):
+            # Shallow-copy to avoid mutating the shared PIPELINE_ORACLES entry,
+            # then merge the flag so PipelineConfig picks up prefer_module_v3=True
+            # and the registry appends _ModuleV3 to the arch name.
+            pipeline_oracle = copy.copy(pipeline_oracle)
+            pipeline_oracle.config_params = {
+                **pipeline_oracle.config_params,
+                "prefer_module_v3": True,
+            }
     else:
         pipeline_oracle = GenericOracle(
             model_path=pipeline_name,
+            config_params={"prefer_module_v3": True}
+            if prefer_module_v3
+            else {},
         )
 
     # Build input based on user-provided prompt and/or images
@@ -178,13 +240,15 @@ def run_debug_model(
         evaluation_batch_size = max_batch_size
 
     title = f"{pipeline_name} - {framework_name.upper()} - {encoding_name or 'Default Encoding'}"
-    with (
-        debug_context(
-            output_directory=output_path,
-            hf_config_overrides=hf_config_overrides,
-        ),
-        github_log_group(title),
-    ):
+    with ExitStack() as stack:
+        stack.enter_context(github_log_group(title))
+        if framework_name in {"max", "torch"}:
+            stack.enter_context(
+                debug_context(
+                    output_directory=output_path,
+                    hf_config_overrides=hf_config_overrides,
+                )
+            )
         if framework_name == "max":
             if encoding_name is None:
                 max_encoding_name = get_max_default_encoding(
@@ -272,6 +336,25 @@ def run_debug_model(
                 inputs=inputs,
                 num_steps=num_steps,
             )
+        elif framework_name == "vllm":
+            # vLLM does not support print hooks or intermediate tensors.
+            if output_path is not None:
+                print(
+                    "Warning: vLLM does not export intermediate tensors; "
+                    "ignoring --output."
+                )
+            print(f"Running {pipeline_name} model on vLLM")
+            vllm_pipeline = pipeline_oracle.create_vllm_pipeline(
+                encoding=encoding_name,
+                device_specs=device_specs,
+            )
+            run_vllm_model(
+                pipeline_oracle=pipeline_oracle,
+                vllm_pipeline=vllm_pipeline,
+                inputs=inputs,
+                num_steps=num_steps,
+                max_batch_size=max_batch_size,
+            )
         else:
             raise NotImplementedError(
                 f"Framework {framework_name!r} not implemented"
@@ -283,7 +366,7 @@ def load_intermediate_tensors(
     framework: str,
     output_dir: Path = Path("/tmp/intermediate_tensors/torch"),
     device_type: str = "default",
-    encoding_name: str | None = None,
+    encoding_name: pipelines.SupportedEncoding | None = None,
 ) -> dict[str, torch.Tensor]:
     """Run a Transformers model using Torch with print hooks enabled and return intermediate tensors as a dictionary mapping tensor name to torch.Tensor.
 
@@ -302,7 +385,9 @@ def load_intermediate_tensors(
         pipeline_name=model,
         framework_name=framework,
         output_path=output_dir,
-        device_specs=DevicesOptionType.device_specs(device_type),
+        device_specs=device_specs_from_normalized_device_handle(
+            normalize_device_specs_input(device_type)
+        ),
         encoding_name=encoding_name if encoding_name else None,
     )
     tensors_map: dict[str, torch.Tensor] = {}
@@ -331,7 +416,7 @@ def get_torch_testdata(
     module_name: str,
     output_dir: Path = Path("/tmp/intermediate_tensors/torch"),
     device_type: str = "default",
-    encoding_name: str | None = None,
+    encoding_name: pipelines.SupportedEncoding | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Get input and output tensors for a specific module from a torch model run.
 
@@ -419,6 +504,7 @@ def get_torch_testdata(
 __all__ = [
     "apply_max_hooks",
     "apply_name_layers_after_state_load",
+    "apply_v3_hooks",
     "debug_context",
     "get_torch_testdata",
     "load_intermediate_tensors",

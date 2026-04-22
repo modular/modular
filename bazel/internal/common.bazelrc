@@ -103,13 +103,16 @@ common --@rules_cc//cc/toolchains/args/archiver_flags:use_libtool_on_macos=false
 # Enable parse_headers when the feature is added (only applies to first party code)
 common --process_headers_in_dependencies
 
+# Don't wait for aspects before running tests
+common --experimental_use_validation_aspect
+
 build --remote_retries=2
 build --remote_timeout=10m
 # Buildbuddy cache optimization recommendations
 build --experimental_profile_include_primary_output
 build --experimental_profile_include_target_label
 build --remote_cache_async
-build --experimental_remote_cache_ttl=14d
+build --experimental_remote_cache_lease_extension=true
 build --remote_cache_compression
 build --experimental_remote_cache_compression_threshold=100
 build --legacy_important_outputs=false
@@ -119,20 +122,16 @@ build --slim_profile=false
 build --test_output=errors
 build --test_summary=terse
 
-# Disable crash reporting for all tests and runs, test rules can override this
+# Disable crash reporting for builds and tests, test rules can override this
 build --action_env=MODULAR_CRASH_REPORTING_ENABLED=false --host_action_env=MODULAR_CRASH_REPORTING_ENABLED=false
 build --test_env=MODULAR_CRASH_REPORTING_ENABLED=false
-run --run_env=MODULAR_CRASH_REPORTING_ENABLED=false
 
-# Disable telemetry for all tests and runs, test rules can override this
+# Disable telemetry for builds and tests, test rules can override this
 build --action_env=MODULAR_TELEMETRY_ENABLED=false --host_action_env=MODULAR_TELEMETRY_ENABLED=false
 build --test_env=MODULAR_TELEMETRY_ENABLED=false
-run --run_env=MODULAR_TELEMETRY_ENABLED=false
 
-# Emit Mojo is enabled by default for build, run, and test.
-build --//:emit_mojo=true
-test --test_env=EMIT_MOJO=1
-run --run_env=EMIT_MOJO=1
+# Fix parallel tests competing for a single CPU on graviton
+build --test_env=KMP_AFFINITY=none
 
 # Differentiate between accidental 'bazel run' vs 'bazel test'
 test --test_env=MODULAR_RUNNING_TESTS=true
@@ -147,6 +146,9 @@ common --incompatible_modify_execution_info_additive
 
 # Reduce the impact of transitions on rebuilding C++ files
 build --modify_execution_info=CppArchive=+supports-path-mapping
+build --modify_execution_info=CcLtoBackendCompile=+supports-path-mapping
+# TODO: This isn't supported by bazel yet
+# build --modify_execution_info=CppLTOIndexing=+supports-path-mapping
 build --modify_execution_info=CppCompile=+supports-path-mapping
 build --modify_execution_info=CppModuleMap=+supports-path-mapping
 build --modify_execution_info=Objc.*=+supports-path-mapping
@@ -157,7 +159,7 @@ build --experimental_output_paths=strip
 # Set base macOS deployment target otherwise the target depends on the host OS
 build --macos_minimum_os=11.0 --host_macos_minimum_os=11.0
 
-build --@llvm-project//third-party:llvm_enable_zstd=false
+build --@llvm-project//third-party:llvm_enable_zstd=true
 build --experimental_propagate_custom_flag=@llvm-project//third-party:llvm_enable_zstd
 build --@llvm-project//lldb:enable_libedit=true
 build --experimental_propagate_custom_flag=@llvm-project//lldb:enable_libedit
@@ -262,6 +264,14 @@ build:ci-remote-b200 --config=ci-gpu-common
 build:ci-remote-b200 --config=remote-b200
 build:ci-remote-b200 --test_keep_going=false
 
+build:remote-b200-benchmark --config=remote-b200
+build:remote-b200-benchmark --platforms=//:b200-benchmark-platform
+build:remote-b200-benchmark --extra_execution_platforms=//:m7i-platform,//:b200-benchmark-platform,@mojo_host_platform
+
+build:ci-remote-b200-benchmark --config=ci-gpu-common
+build:ci-remote-b200-benchmark --config=remote-b200-benchmark
+build:ci-remote-b200-benchmark --test_keep_going=false
+
 build:remote-mi355 --config=remote
 build:remote-mi355 --repo_env=MODULAR_SKIP_AUTO_PLATFORMS=1
 build:remote-mi355 --platforms=//:mi355-platform
@@ -273,8 +283,7 @@ build:remote-mi355 --build_metadata=TAG_TARGET_OS=linux
 
 build:ci-remote-mi355 --config=ci-gpu-common
 build:ci-remote-mi355 --config=remote-mi355
-# TODO: Enable once tests are fixed
-# build:ci-remote-mi355 --test_keep_going=false
+build:ci-remote-mi355 --test_keep_going=false
 
 # TODO: Remove once transitives are fixed
 common --incompatible_autoload_externally=@rules_shell,@com_google_protobuf,java_binary,+JavaInfo,+@rules_cc

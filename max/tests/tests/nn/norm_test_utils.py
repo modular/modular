@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,7 +26,7 @@ def find_ops_in_graph(
 
     Args:
         graph: The Graph object to search
-        op_name: The name of the operation (e.g., "mo.custom", "mo.layer_norm")
+        op_name: The name of the operation (e.g., "mo.custom", "mo.reduce.layer_norm")
         custom_symbol: For "mo.custom" ops, the symbol to search for in attributes
 
     Returns:

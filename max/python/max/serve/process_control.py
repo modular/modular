@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -152,6 +152,8 @@ async def run_subprocess(
                     )
                 except (TimeoutError, queue.Empty):
                     pass
+                if not proc.is_alive():
+                    return None, None  # will check exitcode below
 
         try:
             value, exception = await get_result()
@@ -232,16 +234,22 @@ class ProcessManager:
         return self.task
 
     async def ready(self, event: Event, timeout: float | None) -> None:
+        assert self.task is not None
         loop = asyncio.get_event_loop()
         t0 = time.monotonic()
         while True:
-            # loop so thread is interruptable for cancellation
+            # loop so thread is interruptible for cancellation
             try:
                 await loop.run_in_executor(None, event_wait_clear, event, 1)
                 # getting here means the event was true
                 break
             except TimeoutError:
                 pass
+            if self.task.done():
+                # task is done but event never got set, so something went wrong
+                raise RuntimeError(
+                    f"{self.name} failed to become ready"
+                ) from self.task.exception()  # may be None, that's ok
             t1 = time.monotonic()
             if timeout is not None and t1 - t0 > timeout:
                 raise TimeoutError(

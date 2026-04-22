@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from iter import peekable
-from testing import *
+from std.iter import peekable
+from std.testing import *
 
 
-def test_empty_peek():
+def test_empty_peek() raises:
     var list = List[Int]()
     var iter = peekable(list)
     with assert_raises():
@@ -23,7 +23,7 @@ def test_empty_peek():
     assert_false(iter.peek())
 
 
-def test_peekable_with_peeking():
+def test_peekable_with_peeking() raises:
     var list = [1, 2, 3]
     var iter = peekable(list)
     assert_equal(iter.peek()[][], 1)
@@ -40,7 +40,7 @@ def test_peekable_with_peeking():
     assert_false(iter.peek())
 
 
-def test_peekable_without_peeking():
+def test_peekable_without_peeking() raises:
     var list = [1, 2, 3]
     var iter = peekable(list)
     assert_equal(next(iter), 1)
@@ -51,7 +51,7 @@ def test_peekable_without_peeking():
     assert_false(iter.peek())
 
 
-def test_peekable_peek_does_not_advance_iterator():
+def test_peekable_peek_does_not_advance_iterator() raises:
     var list = [1]
     var iter = peekable(list)
     assert_equal(iter.peek()[][], 1)
@@ -59,7 +59,7 @@ def test_peekable_peek_does_not_advance_iterator():
     assert_equal(next(iter), 1)
 
 
-def test_peekable_bounds():
+def test_peekable_bounds() raises:
     var list = [1, 2, 3]
     var iter = peekable(list)
 
@@ -78,5 +78,16 @@ def test_peekable_bounds():
     assert_equal(upper.value(), 2)
 
 
-def main():
+def test_peekable_owned() raises:
+    var l: List[Int] = [1, 2, 3]
+    var iter = peekable(l^)
+    assert_equal(iter.peek()[][], 1)
+    assert_equal(next(iter), 1)
+    assert_equal(next(iter), 2)
+    assert_equal(next(iter), 3)
+    with assert_raises():
+        _ = next(iter)
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

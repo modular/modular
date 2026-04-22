@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 # start-mojo-to-python-conversions
-from python import Python
+from std.python import Python
 
 
-def main():
+def main() raises:
     py_module = """
 def type_printer(value):
     print(type(value))

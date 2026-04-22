@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,12 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Bert sentence transformer architecture for MAX.
-
-This module implements BERT-based sentence transformer models
-that map sentences to dense vectors for embeddings tasks.
-"""
+"""BERT sentence transformer architecture for embeddings generation."""
 
 from .arch import bert_arch
+from .model import BertPipelineModel
+from .model_config import BertModelConfig
 
-__all__ = ["bert_arch"]
+__all__ = ["BertModelConfig", "BertPipelineModel", "bert_arch"]

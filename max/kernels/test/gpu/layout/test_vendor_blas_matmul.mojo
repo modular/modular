@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,83 +11,83 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from os import abort
-from sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from std.math import ceildiv
+from std.os import abort
+from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
-from buffer import DimList, NDBuffer
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
+from std.memory import UnsafePointer, memset_zero
 from internal_utils import assert_almost_equal
-from random import rand
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from std.random import rand
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
 from linalg.matmul.vendor.blas import matmul
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
-fn test_matmul[
+def test_matmul[
     input_type: DType, M: Int, N: Int, K: Int
 ](ctx: DeviceContext) raises:
     print("== test_vendor_blas", input_type, "x", M, "x", N, "x", K)
 
-    comptime static_a_shape = DimList(M, K)
-    comptime static_b_shape = DimList(N, K)
-    comptime static_c_shape = DimList(M, N)
+    var a_host_ptr = alloc[Scalar[input_type]](M * K)
+    var b_host_ptr = alloc[Scalar[input_type]](N * K)
+    var c_host_ptr = alloc[Scalar[DType.float32]](M * N)
+    var c_host_ref_ptr = alloc[Scalar[DType.float32]](M * N)
 
-    var a_host_ptr = UnsafePointer[Scalar[input_type]].alloc(M * K)
-    var a_host = NDBuffer[input_type, 2, _, static_a_shape](a_host_ptr)
-    var b_size = N * K
-    var b_host_ptr = UnsafePointer[Scalar[input_type]].alloc(b_size)
-    var b_host = NDBuffer[input_type, 2, _, static_b_shape](b_host_ptr)
-    var c_host_ptr = UnsafePointer[Scalar[DType.float32]].alloc(M * N)
-    var c_host = NDBuffer[DType.float32, 2, _, static_c_shape](c_host_ptr)
-    var c_host_ref_ptr = UnsafePointer[Scalar[DType.float32]].alloc(M * N)
-    var c_host_ref = NDBuffer[DType.float32, 2, _, static_c_shape](
-        c_host_ref_ptr
-    )
-
-    rand(a_host.data, a_host.num_elements())
-    rand(b_host.data, b_host.num_elements())
-
-    c_host.zero()
-    c_host_ref.zero()
+    rand(a_host_ptr, M * K)
+    rand(b_host_ptr, N * K)
+    memset_zero(c_host_ptr, M * N)
+    memset_zero(c_host_ref_ptr, M * N)
 
     var a_device = ctx.enqueue_create_buffer[input_type](M * K)
-    var a_device_nd = NDBuffer[input_type, 2, _, static_a_shape](
-        a_device.unsafe_ptr()
-    )
-    var b_device = ctx.enqueue_create_buffer[input_type](b_size)
-    var b_device_nd = NDBuffer[input_type, 2, _, static_b_shape](
-        b_device.unsafe_ptr()
-    )
+    var b_device = ctx.enqueue_create_buffer[input_type](N * K)
     var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var c_device_nd = NDBuffer[DType.float32, 2, _, static_c_shape](
-        c_device.unsafe_ptr()
-    )
     var c_device_ref = ctx.enqueue_create_buffer[DType.float32](M * N)
-    var c_device_ref_nd = NDBuffer[DType.float32, 2, _, static_c_shape](
-        c_device_ref.unsafe_ptr()
-    )
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
+    var a_tt = TileTensor(
+        a_device,
+        row_major(Coord(Idx(M), Idx(K))),
+    )
+    var b_tt = TileTensor(
+        b_device,
+        row_major(Coord(Idx(N), Idx(K))),
+    )
+    var c_tt = TileTensor(
+        c_device,
+        row_major(Coord(Idx(M), Idx(N))),
+    )
+
     matmul(
         ctx,
-        c_device_nd,
-        a_device_nd,
-        b_device_nd,
+        c_tt,
+        a_tt,
+        b_tt,
         transpose_b=True,
         c_row_major=True,
     )
 
     ctx.enqueue_copy(c_host_ptr, c_device)
 
-    var c_tensor_ref = from_ndbuffer_row_major(c_device_ref_nd)
-    var a_tensor = from_ndbuffer_row_major(a_device_nd)
-    var b_tensor = from_ndbuffer_row_major(b_device_nd)
+    # Create immutable TileTensors for the naive kernel reference.
+    var c_ref_tt = TileTensor(
+        c_device_ref,
+        row_major(Coord(Idx(M), Idx(N))),
+    )
+    var a_immut_tt = TileTensor(
+        UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
+    )
+    var b_immut_tt = TileTensor(
+        UnsafePointer[Scalar[input_type], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(N), Idx(K))),
+    )
 
     # Run naive matmul.
     comptime BLOCK_DIM = 16
@@ -95,16 +95,16 @@ fn test_matmul[
         DType.float32,
         input_type,
         input_type,
-        c_tensor_ref.layout,
-        a_tensor.layout,
-        b_tensor.layout,
+        type_of(c_ref_tt).LayoutType,
+        type_of(a_immut_tt).LayoutType,
+        type_of(b_immut_tt).LayoutType,
         BLOCK_DIM,
         transpose_b=True,
     ]
     ctx.enqueue_function_experimental[kernel](
-        c_tensor_ref,
-        a_tensor,
-        b_tensor,
+        c_ref_tt,
+        a_immut_tt,
+        b_immut_tt,
         M,
         N,
         K,
@@ -117,9 +117,9 @@ fn test_matmul[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host.data,
-        c_host_ref.data,
-        c_host.num_elements(),
+        c_host_ptr,
+        c_host_ref_ptr,
+        M * N,
         atol=0.01,
         rtol=0.01,
     )
@@ -135,18 +135,15 @@ fn test_matmul[
     _ = c_device_ref^
 
 
-fn test_matmul[input_types: List[DType]]() raises:
+def test_matmul[input_types: List[DType]]() raises:
     with DeviceContext() as ctx:
-
-        @parameter
-        for input_type in input_types:
+        comptime for input_type in input_types:
             test_matmul[input_type, 64, 16, 32](ctx)
             test_matmul[input_type, 512, 2560, 512](ctx)
 
 
-def main():
-    @parameter
-    if has_amd_gpu_accelerator():
+def main() raises:
+    comptime if has_amd_gpu_accelerator():
         test_matmul[[DType.float8_e4m3fnuz, DType.bfloat16]]()
     elif has_nvidia_gpu_accelerator():
         test_matmul[[DType.float8_e4m3fn, DType.bfloat16]]()

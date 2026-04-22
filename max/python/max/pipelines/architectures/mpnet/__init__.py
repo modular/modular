@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,7 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""MPNet sentence transformer architecture for embeddings generation."""
 
 from .arch import mpnet_arch
+from .model import MPNetPipelineModel
+from .model_config import MPNetConfig
 
-__all__ = ["mpnet_arch"]
+__all__ = ["MPNetConfig", "MPNetPipelineModel", "mpnet_arch"]

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,8 +16,7 @@ from __future__ import annotations
 import base64
 import os
 from collections.abc import Sequence
-from dataclasses import dataclass
-from enum import Enum
+from dataclasses import dataclass, field
 from io import BytesIO
 from typing import Any, Literal
 
@@ -25,17 +24,20 @@ from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from typing_extensions import TypedDict
 
+DatasetMode = Literal["local", "huggingface"]
 
-class DatasetMode(str, Enum):
-    """Enumeration of supported dataset loading modes.
 
-    This enum defines the different ways datasets can be loaded:
-    - LOCAL: Load from a local file path (from environment variable or --dataset-path)
-    - HUGGINGFACE: Load from HuggingFace Hub (default behavior)
+@dataclass
+class SharedContext:
+    """A single entry in the prefix-cache warmup list.
+
+    Represents the longest observed variant of a unique shared context.
+    Sending the longest variant is sufficient because all shorter variants
+    built from the same base are token-level prefixes of it.
     """
 
-    LOCAL = "local"
-    HUGGINGFACE = "huggingface"
+    text: str
+    num_tokens: int
 
 
 class OpenAIImageURL(TypedDict):
@@ -54,6 +56,33 @@ class SampledRequest:
     output_len: int | None
     encoded_images: list[OpenAIImage]
     ignore_eos: bool
+    response_format: dict[str, Any] | None = None
+
+
+@dataclass
+class PixelGenerationImageOptions:
+    width: int | None = None
+    height: int | None = None
+    steps: int | None = None
+    guidance_scale: float | None = None
+    negative_prompt: str | None = None
+    seed: int | None = None
+
+
+@dataclass
+class PixelGenerationSampledRequest(SampledRequest):
+    """A sampled request for pixel generation.
+
+    prompt_len, output_len, ignore_eos are not used for pixel generation.
+    """
+
+    prompt_formatted: str
+    prompt_len: int = 0
+    output_len: int | None = None
+    encoded_images: list[OpenAIImage] = field(default_factory=list)
+    ignore_eos: bool = True
+    input_image_paths: list[str] = field(default_factory=list)
+    image_options: PixelGenerationImageOptions | None = None
 
 
 MessageSource = Literal["user", "assistant"]
@@ -64,12 +93,29 @@ class ChatMessage:
     source: MessageSource
     content: str
     num_tokens: int
+    delay_until_next_message: float | None = None
 
 
 @dataclass
 class ChatSession:
     id: int | None
     messages: Sequence[ChatMessage]
+    prefix_turns: int = 0
+
+
+@dataclass
+class RequestSamples:
+    requests: Sequence[SampledRequest]
+    shared_contexts: list[SharedContext] = field(default_factory=list)
+
+
+@dataclass
+class ChatSamples:
+    chat_sessions: Sequence[ChatSession]
+    shared_contexts: list[SharedContext] = field(default_factory=list)
+
+
+Samples = RequestSamples | ChatSamples
 
 
 def estimate_num_tokens(tokenizer: PreTrainedTokenizerBase, text: str) -> int:
@@ -81,11 +127,13 @@ def build_chat_message(
     prompt: str,
     tokenizer: PreTrainedTokenizerBase,
     num_tokens: int | None = None,
+    delay_until_next_message: float | None = None,
 ) -> ChatMessage:
     return ChatMessage(
         source,
         prompt,
         num_tokens or estimate_num_tokens(tokenizer, prompt),
+        delay_until_next_message,
     )
 
 

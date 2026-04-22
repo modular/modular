@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,23 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import (
+from std.algorithm import (
     cumsum,
     mean,
     product,
     sum,
     variance,
 )
-from algorithm.reduction import _reduce_generator, max, min
-from builtin.math import max as _max
-from builtin.math import min as _min
-from testing import TestSuite
+from std.algorithm.reduction import _reduce_generator, max, min
+from std.math.math import max as _max, min as _min
+from std.testing import TestSuite
 
-from utils.index import Index, IndexList, StaticTuple
+from std.utils.index import Index, IndexList, StaticTuple
 
 
 # CHECK-LABEL: test_reductions
-def test_reductions():
+def test_reductions() raises:
     print("== test_reductions")
 
     comptime simd_width = 4
@@ -37,7 +36,7 @@ def test_reductions():
     var vector = InlineArray[Float32, size](fill=0)
 
     for i in range(size):
-        vector[i] = i + 1
+        vector[i] = Float32(i + 1)
 
     # CHECK: 1.0
     print(min(vector))
@@ -49,7 +48,7 @@ def test_reductions():
     print(sum(vector))
 
 
-def test_reductions_zero_size():
+def test_reductions_zero_size() raises:
     print("== test_reductions_zero_size")
 
     comptime size = 0
@@ -61,7 +60,7 @@ def test_reductions_zero_size():
 
 
 # CHECK-LABEL: test_fused_reductions_inner
-def test_fused_reductions_inner():
+def test_fused_reductions_inner() raises:
     print("== test_fused_redtest_fused_reductions_inneructions")
 
     comptime size = 100
@@ -71,12 +70,12 @@ def test_fused_reductions_inner():
     var vector = Span(vector_stack)
 
     for i in range(size):
-        vector[i] = i + 1
+        vector[i] = Float32(i + 1)
 
     @always_inline
     @__copy_capture(vector)
     @parameter
-    fn input_fn[
+    def input_fn[
         dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank]) -> SIMD[dtype, width]:
         var loaded_val = vector.unsafe_ptr().load[width=width](indices[0])
@@ -86,13 +85,13 @@ def test_fused_reductions_inner():
 
     @always_inline
     @parameter
-    fn output_fn[
-        dtype: DType, width: Int, rank: Int
+    def output_fn[
+        dtype: DType, width: SIMDSize, rank: Int
     ](
         indices: IndexList[rank],
         val: StaticTuple[SIMD[dtype, width], num_reductions],
     ):
-        __comptime_assert (
+        comptime assert (
             width == 1
         ), "Cannot write output if width is not equal to 1"
 
@@ -100,15 +99,14 @@ def test_fused_reductions_inner():
 
     @always_inline
     @parameter
-    fn reduce_fn[
+    def reduce_fn[
         ty: DType,
-        width: Int,
+        width: SIMDSize,
         reduction_idx: Int,
     ](left: SIMD[ty, width], right: SIMD[ty, width],) -> SIMD[ty, width]:
-        __comptime_assert reduction_idx < num_reductions, "reduction_idx OOB"
+        comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
 
-        @parameter
-        if reduction_idx == 0:
+        comptime if reduction_idx == 0:
             return _min(left, right)
         elif reduction_idx == 1:
             return _max(left, right)
@@ -141,7 +139,7 @@ def test_fused_reductions_inner():
 
 
 # CHECK-LABEL: test_fused_reductions_outer
-def test_fused_reductions_outer():
+def test_fused_reductions_outer() raises:
     print("== test_fused_reductions_outer")
 
     comptime size = 100
@@ -155,12 +153,12 @@ def test_fused_reductions_outer():
     # COM: A slice of the first column gives all odd numbers: 1, 3, 5 ... 99
     # COM: while a slice of the second gives all even numbers: 2, 4, 6, ... 100
     for i in range(size):
-        vector[i] = i + 1
+        vector[i] = Float32(i + 1)
 
     @always_inline
     @__copy_capture(vector)
     @parameter
-    fn input_fn[
+    def input_fn[
         dtype: DType, width: Int, rank: Int
     ](indices: IndexList[rank]) -> SIMD[dtype, width]:
         var loaded_val = vector.unsafe_ptr().load[width=width](
@@ -170,15 +168,14 @@ def test_fused_reductions_outer():
 
     @always_inline
     @parameter
-    fn reduce_fn[
+    def reduce_fn[
         ty: DType,
-        width: Int,
+        width: SIMDSize,
         reduction_idx: Int,
     ](left: SIMD[ty, width], right: SIMD[ty, width],) -> SIMD[ty, width]:
-        __comptime_assert reduction_idx < num_reductions, "reduction_idx OOB"
+        comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
 
-        @parameter
-        if reduction_idx == 0:
+        comptime if reduction_idx == 0:
             return _min(left, right)
         elif reduction_idx == 1:
             return _max(left, right)
@@ -194,8 +191,8 @@ def test_fused_reductions_outer():
 
     @always_inline
     @parameter
-    fn output_fn[
-        dtype: DType, width: Int, rank: Int
+    def output_fn[
+        dtype: DType, width: SIMDSize, rank: Int
     ](
         indices: IndexList[rank],
         val: StaticTuple[SIMD[dtype, width], num_reductions],
@@ -224,7 +221,7 @@ def test_fused_reductions_outer():
 
 # We use a smaller vector so that we do not overflow
 # CHECK-LABEL: test_product
-def test_product():
+def test_product() raises:
     print("== test_product")
 
     comptime simd_width = 4
@@ -234,14 +231,14 @@ def test_product():
     var vector = InlineArray[Float32, size](uninitialized=True)
 
     for i in range(size):
-        vector[i] = i + 1
+        vector[i] = Float32(i + 1)
 
     # CHECK: 3628800.0
     print(product(vector))
 
 
 # CHECK-LABEL: test_mean_variance
-def test_mean_variance():
+def test_mean_variance() raises:
     print("== test_mean_variance")
 
     comptime simd_width = 4
@@ -251,7 +248,7 @@ def test_mean_variance():
     var vector = InlineArray[Float32, size](fill=0)
 
     for i in range(size):
-        vector[i] = i + 1
+        vector[i] = Float32(i + 1)
 
     # CHECK: 50.5
     print(mean(vector))
@@ -261,12 +258,12 @@ def test_mean_variance():
 
 
 # CHECK-LABEL: test_cumsum
-def test_cumsum():
+def test_cumsum() raises:
     print("== test_cumsum")
 
     var vector = InlineArray[Float32, 150](fill=0)
     for i in range(len(vector)):
-        vector[i] = i + 1
+        vector[i] = Float32(i + 1)
     var cumsum_out1 = InlineArray[Float32, vector.size](fill=0)
     # cumsum[150, DType.float32](cumsum_out1, vector)
     # cumsum(cumsum_out1, vector)
@@ -296,7 +293,7 @@ def test_cumsum():
 
     var vector2 = InlineArray[Int64, 128](fill=0)
     for i in range(vector2.__len__()):
-        vector2[i] = i + 1
+        vector2[i] = Int64(i + 1)
     var cumsum_out2 = InlineArray[Int64, 128](fill=0)
     # cumsum[128, DType.int64](cumsum_out2, vector2)
     # cumsum(cumsum_out2, vector2)
@@ -316,5 +313,5 @@ def test_cumsum():
         print(cumsum_out2[i], ",", end="")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

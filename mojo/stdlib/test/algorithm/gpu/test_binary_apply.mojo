@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import *
-from gpu.host import DeviceContext
-from testing import assert_equal, TestSuite
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal, TestSuite
 
 
-fn vec_func[
-    op: fn (Float32, Float32) capturing [_] -> Float32
+def vec_func[
+    op: def(Float32, Float32) capturing[_] -> Float32
 ](
     in0: UnsafePointer[Float32, MutAnyOrigin],
     in1: UnsafePointer[Float32, MutAnyOrigin],
@@ -25,14 +25,14 @@ fn vec_func[
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = op(in0[tid], in1[tid])
 
 
 # Force the capture to be captured instead of inlined away.
 @no_inline
-fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
+def run_binary_add(ctx: DeviceContext, capture: Float32) raises:
     print("== run_binary_add")
 
     comptime length = 1024
@@ -43,11 +43,11 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
 
     with in0.map_to_host() as in0_host, in1.map_to_host() as in1_host:
         for i in range(length):
-            in0_host[i] = i
+            in0_host[i] = Float32(i)
             in1_host[i] = 2
 
     @parameter
-    fn add(lhs: Float32, rhs: Float32) -> Float32:
+    def add(lhs: Float32, rhs: Float32) -> Float32:
         return capture + lhs + rhs
 
     var block_dim = 32
@@ -92,12 +92,12 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
             assert_equal(out_host[i], expected[i])
 
 
-def test_binary_apply():
+def test_binary_apply() raises:
     with DeviceContext() as ctx:
         run_binary_add(ctx, 2.5)
 
 
-def main():
+def main() raises:
     # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
     # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()

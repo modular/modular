@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,15 +29,15 @@ from .run import subprocess_run_mojo
 
 
 def _calculate_mojo_source_hash(mojo_dir: Path) -> str:
-    """Calculates a truncated SHA256 hash of all .mojo/.🔥 files in a directory."""
-    # Find all .mojo and .🔥 files recursively
-    source_files = sorted((*mojo_dir.rglob("*.mojo"), *mojo_dir.rglob("*.🔥")))
+    """Calculates a truncated SHA256 hash of all .mojo files in a directory."""
+    # Find all .mojo files recursively
+    source_files = sorted(mojo_dir.rglob("*.mojo"))
 
     if not source_files:
         # This should be unreachable if the caller validates that mojo_dir
         # contains Mojo source files before calling this function.
         raise ImportError(
-            f"Internal Error: No .mojo or .🔥 files found in directory '{mojo_dir}' for hashing."
+            f"Internal Error: No .mojo files found in directory '{mojo_dir}' for hashing."
         )
 
     hasher = hashlib.sha256()

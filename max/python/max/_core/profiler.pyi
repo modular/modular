@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
+
+"""MAX profiler Python bindings."""
 
 class Trace:
     """
@@ -29,8 +31,8 @@ class Trace:
         Constructs and initializes the underlying Mojo Trace object.
 
         Args:
-            message: name of the span.
-            color: color of the span.
+            message: Name of the span.
+            color: Color of the span.
         """
 
     def __enter__(self) -> Trace:

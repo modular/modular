@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python.python import Python, PythonObject
-from testing import assert_equal, assert_raises, assert_true, TestSuite
+from std.python.python import Python, PythonObject
+from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
 
-fn _test_execute_python_string(mut python: Python) -> String:
+def _test_execute_python_string(mut python: Python) -> String:
     try:
         _ = Python.evaluate("print('evaluated by PyRunString')")
         return String(Python.evaluate("'a' + 'b'"))
@@ -23,19 +23,19 @@ fn _test_execute_python_string(mut python: Python) -> String:
         return String(e)
 
 
-fn _test_local_import(mut python: Python) -> String:
+def _test_local_import(mut python: Python) -> String:
     try:
         var my_module: PythonObject = Python.import_module("my_module")
         if my_module:
             var foo = my_module.Foo("apple")
-            foo.bar = PythonObject("orange")
+            foo.bar = "orange"
             return String(foo.bar)
         return "no module, no fruit"
     except e:
         return String(e)
 
 
-fn _test_dynamic_import(mut python: Python, times: Int = 1) -> String:
+def _test_dynamic_import(mut python: Python, times: Int = 1) -> String:
     comptime INLINE_MODULE = """
 called_already = False
 def hello(name):
@@ -54,7 +54,7 @@ def hello(name):
         return String(e)
 
 
-fn _test_call(mut python: Python) -> String:
+def _test_call(mut python: Python) -> String:
     try:
         var my_module: PythonObject = Python.import_module("my_module")
         return String(
@@ -62,17 +62,16 @@ fn _test_call(mut python: Python) -> String:
                 "carrot",
                 "bread",
                 "rice",
-                # TODO(MOCO-2945): Support variadic heterogenous kwargs
-                fruit=PythonObject("pear"),
-                protein=PythonObject("fish"),
-                cake=PythonObject("yes"),
+                fruit="pear",
+                protein="fish",
+                cake="yes",
             )
         )
     except e:
         return String(e)
 
 
-def test_int_conversion():
+def test_int_conversion() raises:
     var py_int = Python.int(PythonObject("123"))
     # TODO: use assert_equal once we have parametric raises in __eq__.
     assert_true(py_int == PythonObject(123))
@@ -81,7 +80,7 @@ def test_int_conversion():
         _ = Python.int(PythonObject("foo"))
 
 
-def test_float_conversion():
+def test_float_conversion() raises:
     var math = Python.import_module("math")
 
     var f = Python.float(PythonObject("123.45"))
@@ -94,12 +93,12 @@ def test_float_conversion():
         _ = Python.float(PythonObject("foo"))
 
 
-def test_str_conversion():
+def test_str_conversion() raises:
     var py_str = Python.str(PythonObject(123))
     assert_true(py_str == PythonObject("123"))
 
 
-def test_imports():
+def test_imports() raises:
     var python = Python()
     assert_equal(_test_local_import(python), "orange")
 
@@ -111,7 +110,7 @@ def test_imports():
     assert_equal(_test_dynamic_import(python, times=2), "Again?")
 
 
-def test_call():
+def test_call() raises:
     var python = Python()
     assert_equal(
         _test_call(python),
@@ -122,7 +121,7 @@ def test_call():
     )
 
 
-def test_object_properties():
+def test_object_properties() raises:
     var python = Python()
     var obj: PythonObject = [1, 2.4, True, "False"]
     assert_equal(String(obj), "[1, 2.4, True, 'False']")
@@ -136,5 +135,5 @@ def test_object_properties():
     assert_equal(_test_execute_python_string(python), "ab")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

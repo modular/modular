@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,15 +23,16 @@ from collections.abc import Iterable, Mapping, Sequence
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import numpy as np
+from max._core.engine import DebugConfig as DebugConfig
 from max._core.engine import InferenceSession as _InferenceSession
 from max._core.engine import Model as Model
 from max._core.engine import PrintStyle
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.profiler import set_gpu_profiling_state
-from max.driver import Buffer, Device, DLPackArray
+from max.driver import CPU, Buffer, Device, DLPackArray
 from max.graph import Graph
 from max.profiler import traced
 from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
@@ -43,6 +44,14 @@ from mojo.paths import _build_mojo_source_package, is_mojo_source_package_path
 InputShape = list[int | str | None] | None
 CustomExtensionType = str | Path
 CustomExtensionsType = Sequence[CustomExtensionType] | CustomExtensionType
+"""Specifies one or more custom extension libraries to load with an
+:class:`InferenceSession`.
+
+It may be a single path or a sequence of paths, where each path is a ``str``
+or :class:`~pathlib.Path` pointing to a compiled ``.mojopkg`` custom ops
+library or a ``.mojo`` source file. When a ``.mojo`` source path is provided,
+it's automatically compiled into a package before loading.
+"""
 
 # Need to use tuple instead of Union to ensure that Python 3.9 support works
 
@@ -50,12 +59,25 @@ ScalarType = (int, float, bool, np.generic)
 InputType = DLPackArray | Buffer | int | float | bool | np.generic
 
 
-class GPUProfilingMode(str, Enum):
-    """The supported modes for GPU profiling."""
+GPUProfilingMode = Literal["off", "on", "detailed"]
+"""The supported modes for GPU profiling.
 
-    OFF = "off"
-    ON = "on"
-    DETAILED = "detailed"
+GPU profiling modes control the level of instrumentation when profiling
+MAX applications with NVIDIA Nsight Systems or Nsight Compute. Higher
+levels provide more detail but may introduce additional overhead.
+
+- ``off``: Disable GPU profiling instrumentation. This is the default
+  mode and incurs no profiling overhead.
+- ``on``: Enable basic GPU profiling. Adds CUDA driver calls and NVTX
+  markers for correlating kernel executions with host-side code.
+- ``detailed``: Enable detailed GPU profiling with additional NVTX
+  markers from Python code. This mode provides the most visibility into
+  which Python operations correspond to which GPU kernels, but has the
+  highest overhead.
+
+See Also:
+    :meth:`InferenceSession.gpu_profiling`: Method to set the profiling mode.
+"""
 
 
 def _raise_if_not_contiguous(x: InputType) -> None:
@@ -129,10 +151,95 @@ def _Model_signature(self: Model) -> Signature:
     return Signature(parameters=parameters)
 
 
+def _normalize_graph_key(graph_key: int) -> int:
+    if isinstance(graph_key, bool) or not isinstance(graph_key, int):
+        raise TypeError("graph_key must be an int.")
+    if graph_key < 0 or graph_key > 2**64 - 1:
+        raise ValueError("graph_key must be in range [0, 2^64 - 1].")
+    return graph_key
+
+
+def _normalize_graph_keys(graph_keys: int | Sequence[int]) -> list[int]:
+    if isinstance(graph_keys, bool):
+        raise TypeError("graph_keys must be an int or sequence of ints.")
+    if isinstance(graph_keys, int):
+        return [_normalize_graph_key(graph_keys)]
+    if isinstance(graph_keys, (str, bytes)):
+        raise TypeError("graph_keys must be a sequence of ints.")
+    normalized: list[int] = []
+    for graph_key in graph_keys:
+        normalized.append(_normalize_graph_key(graph_key))
+    if not normalized:
+        raise ValueError("graph_keys must not be empty.")
+    return normalized
+
+
+def _Model_capture(
+    self: Model, graph_keys: int | Sequence[int], *inputs: Buffer
+) -> list[Buffer]:
+    """Capture execution into a device graph for caller-provided key.
+
+    Capture is best-effort and model-dependent. If the model issues
+    capture-unsafe operations (for example, host-device synchronization),
+    graph capture may fail. Callers should choose capture-safe execution paths.
+    """
+    if not inputs:
+        raise ValueError("Model.capture requires input buffers.")
+    normalized_keys = _normalize_graph_keys(graph_keys)
+    return self._capture(normalized_keys, list(inputs))
+
+
+def _Model_replay(
+    self: Model, graph_keys: int | Sequence[int], *inputs: Buffer
+) -> None:
+    """Replay the captured device graph for a caller-provided key."""
+    if not inputs:
+        raise ValueError("Model.replay requires input buffers.")
+    normalized_keys = _normalize_graph_keys(graph_keys)
+    self._replay(normalized_keys, list(inputs))
+
+
+def _Model_debug_verify_replay(
+    self: Model, graph_keys: int | Sequence[int], *inputs: Buffer
+) -> None:
+    """Execute eagerly and verify the launch trace matches the captured graph.
+
+    This method validates that graph capture correctly represents eager
+    execution by running the model and comparing kernel launch sequences
+    against a previously captured device graph.
+
+    Args:
+        self: The model to debug/verify
+        graph_keys: Caller-provided graph key or per-device keys identifying
+            captured graphs.
+        inputs: Input buffers matching the captured input signature (same
+            shapes and dtypes used during capture).
+
+    Raises:
+        TypeError: If ``graph_keys`` is neither an int nor a sequence of ints.
+        ValueError: If any key in ``graph_keys`` is out of uint64 range.
+        ValueError: If no input buffers are provided.
+        RuntimeError: If no graph has been captured for ``graph_keys``.
+        RuntimeError: If the eager execution trace doesn't match the captured graph.
+
+    Example:
+        >>> model.capture([1, 1], input_tensor)
+        >>> model.debug_verify_replay([1, 1], input_tensor)  # Validates capture
+        >>> model.replay([1, 1], input_tensor)  # Safe to use optimized replay
+    """
+    if not inputs:
+        raise ValueError("Model.debug_verify_replay requires input buffers.")
+    normalized_keys = _normalize_graph_keys(graph_keys)
+    self._debug_verify_replay(normalized_keys, list(inputs))
+
+
 Model.execute = _Model_execute  # type: ignore[method-assign]
 Model.__call__ = _Model_call  # type: ignore[method-assign]
 Model.__repr__ = _Model_repr  # type: ignore[method-assign]
 Model.signature = property(_Model_signature)  # type: ignore[assignment]
+Model.capture = _Model_capture  # type: ignore[method-assign]
+Model.replay = _Model_replay  # type: ignore[method-assign]
+Model.debug_verify_replay = _Model_debug_verify_replay  # type: ignore[method-assign]
 
 
 def _TensorSpec_str(self: TensorSpec) -> str:
@@ -198,21 +305,6 @@ class SplitKReductionPrecision(IntEnum):
     OUTPUT = auto()
 
 
-class PdlLevel(IntEnum):
-    """Internal use."""
-
-    # No PDL
-    OFF = auto()
-
-    # Start subsequent kernel at the end
-    # Apply to elementwise and reduction kernels
-    OVERLAP_AT_END = auto()
-
-    # Start subsequent kernel at the beginning
-    # Apply to elementwise and reduction kernels
-    OVERLAP_AT_BEGINNING = auto()
-
-
 class AssertLevel(str, Enum):
     """The AssertLevel specifies the assert level used by the Mojo Ops."""
 
@@ -237,7 +329,7 @@ class LogLevel(str, Enum):
 class InferenceSession:
     """Manages an inference session in which you can load and run models.
 
-    You need an instance of this to load a model as a :obj:`Model` object.
+    You need an instance of this to load a model as a :class:`~max.engine.Model` object.
     For example:
 
     .. code-block:: python
@@ -250,10 +342,15 @@ class InferenceSession:
     _impl: _InferenceSession
     # This is shared across sessions. Compilation is currently not thread safe.
     _compilation_lock = threading.Lock()
+    # DebugConfig is a process-wide singleton. Assigning it as a class
+    # attribute at import time means both ``InferenceSession.debug`` and
+    # ``session.debug`` return the same underlying object, and any
+    # ``MODULAR_DEBUG`` env-var parsing happens exactly once (at import).
+    debug: DebugConfig = _InferenceSession.debug
 
     def __init__(
         self,
-        devices: Iterable[Device],
+        devices: Iterable[Device] = (),
         num_threads: int | None = None,
         *,
         custom_extensions: CustomExtensionsType | None = None,
@@ -263,8 +360,8 @@ class InferenceSession:
         Args:
             num_threads: Number of threads to use for the inference session.
               This defaults to the number of physical cores on your machine.
-            devices: A list of devices on which to run inference. Default is
-              the host CPU only.
+            devices: A list of devices on which to run inference. The host CPU
+              is always included automatically.
             custom_extensions: The extensions to load for the model.
               Supports paths to a `.mojopkg` custom ops library or a `.mojo`
               source file.
@@ -278,7 +375,10 @@ class InferenceSession:
             if device not in seen_devices:
                 final_devices.append(device)
                 seen_devices.add(device)
-        # If the user provided an empty iterable, final_devices remains empty.
+        host_cpu = CPU()
+        if host_cpu not in seen_devices:
+            final_devices.append(host_cpu)
+            seen_devices.add(host_cpu)
 
         custom_extensions_final = []
 
@@ -306,9 +406,42 @@ class InferenceSession:
         if env_val := os.getenv("MOJO_LOGGING_LEVEL"):
             self.set_mojo_log_level(env_val)
 
+        if env_val := os.getenv("MOJO_ASSERT_LEVEL"):
+            try:
+                assert_level = AssertLevel[env_val.upper()]
+            except KeyError as e:
+                raise TypeError(
+                    f"Invalid assert level ({env_val}). Please use one of: {[x.name for x in AssertLevel]}"
+                ) from e
+            self.set_mojo_assert_level(assert_level)
+
         # TODO: Remove this once the new topk kernel is stable.
         if use_old_top_k_kernel := os.getenv("USE_OLD_TOP_K_KERNEL"):
             self.use_old_top_k_kernel(use_old_top_k_kernel)
+
+        if use_fi_topk := os.getenv("USE_FI_TOPK_KERNEL"):
+            self.use_fi_topk_kernel(use_fi_topk)
+
+        if val := os.getenv("ENABLE_PER_TENSOR_FP8_QUANTIZE"):
+            self.enable_per_tensor_fp8_quantize(val)
+
+        if (
+            os.environ.get("MODULAR_MAX_UNINITIALIZED_READ_CHECK", "").lower()
+            == "true"
+        ):
+            # Enable debug allocator poison
+            existing = os.environ.get("MODULAR_DEBUG_DEVICE_ALLOCATOR", "")
+            if existing:
+                if "uninitialized-poison" not in existing:
+                    os.environ["MODULAR_DEBUG_DEVICE_ALLOCATOR"] = (
+                        existing + ",uninitialized-poison"
+                    )
+            else:
+                os.environ["MODULAR_DEBUG_DEVICE_ALLOCATOR"] = (
+                    "uninitialized-poison"
+                )
+            # Enable compile-time checks
+            self._set_mojo_define("MOJO_STDLIB_SIMD_UNINIT_CHECK", "true")
 
     def __repr__(self) -> str:
         if self.num_threads:
@@ -331,13 +464,62 @@ class InferenceSession:
             custom_extensions: The extensions to load for the model.
               Supports paths to `.mojopkg` custom ops.
 
-            weights_registry: A mapping from names of model weights' names to
-              their values. The values are currently expected to be dlpack
-              arrays. If an array is a read-only numpy array, the user must
+            weights_registry: Model weight names mapped to
+              their values. The values should be dlpack
+              arrays. If an array is a read-only numpy array, you must
               ensure that its lifetime extends beyond the lifetime of the model.
+              Although ``weights_registry`` is technically optional, you'll always
+              need to load weights in practice.
 
         Returns:
             The loaded model, compiled and ready to execute.
+
+        Raises:
+            RuntimeError: If the path provided is invalid.
+        """
+        models = self.load_all(
+            model,
+            custom_extensions=custom_extensions,
+            weights_registry=weights_registry,
+        )
+        if len(models) != 1:
+            raise ValueError(
+                f"Expected exactly one model in the compiled artifact, but "
+                f"got {len(models)}. Use load_all() to load multi-model artifacts."
+            )
+        return models[0]
+
+    def load_all(
+        self,
+        model: str | Path | Graph,
+        *,
+        custom_extensions: CustomExtensionsType | None = None,
+        weights_registry: Mapping[str, DLPackArray] | None = None,
+    ) -> list[Model]:
+        """Loads all trained models and compiles it for inference.
+
+        A compiled MEF artifact may contain more than one model (for example a
+        vision encoder and a language model compiled together).  This method
+        returns one :class:`Model` per model encoded in the artifact, in MEF
+        order.  For single-model artifacts the returned list has exactly one
+        element.
+
+        Args:
+            model: Path to a model.
+
+            custom_extensions: The extensions to load for the model.
+              Supports paths to `.mojopkg` custom ops.
+
+            weights_registry: Model weight names mapped to
+              their values. The values should be dlpack
+              arrays. If an array is a read-only numpy array, you must
+              ensure that its lifetime extends beyond the lifetime of the model.
+              Although ``weights_registry`` is technically optional, you'll always
+              need to load weights in practice.
+
+        Returns:
+            The loaded models, compiled and ready to execute, one per model
+            primitive encoded in the compiled artifact.
 
         Raises:
             RuntimeError: If the path provided is invalid.
@@ -415,12 +597,25 @@ class InferenceSession:
         from max.driver import is_virtual_device_mode
 
         if is_virtual_device_mode():
-            # In compile-only mode with virtual devices, skip initialization
-            # Initialization requires device memory allocation which virtual devices don't support
-            return _model
+            # In compile-only mode with virtual devices, skip initialization.
+            # Initialization requires device memory allocation which virtual
+            # devices don't support. Return one handle per top-level graph in
+            # the module (skipping subgraphs, which are inlined callees) so
+            # callers that unpack per-model
+            # (e.g. ``vision, language = session.load_all(...)``) still work.
+            # The MLIR attribute for subgraph GraphOps is stored as
+            # ``isSubgraph`` (camelCase matches the tablegen ODS).
+            if isinstance(model, Graph):
+                num_models = sum(
+                    1
+                    for op in model._module.body.operations
+                    if "isSubgraph" not in op.attributes
+                )
+            else:
+                num_models = 1
+            return [_model] * num_models
 
-        _model._load(weights_registry_real)
-        return _model
+        return self._impl._load_all(_model, weights_registry_real)
 
     def set_debug_print_options(
         self,
@@ -511,20 +706,77 @@ class InferenceSession:
         self._set_mojo_define("LOGGING_LEVEL", level)
 
     def set_mojo_assert_level(self, level: AssertLevel) -> None:
-        """Sets which mojo asserts are kept in the compiled model."""
+        """Sets which mojo asserts are kept in the compiled model.
+
+        Note:
+            Not all kernels are runnable with asserts enabled. If model
+            compilation or execution fails at higher assert levels, retry with
+            ``AssertLevel.NONE``.
+        """
         self._set_mojo_define("ASSERT", level)
 
     def gpu_profiling(self, mode: GPUProfilingMode) -> None:
-        """Enables end to end gpu profiling configuration."""
-        if mode == GPUProfilingMode.OFF:
+        """Enables GPU profiling instrumentation for the session.
+
+        This enables GPU profiling instrumentation that works with NVIDIA
+        Nsight Systems and Nsight Compute. When enabled, the runtime adds CUDA
+        driver calls and NVTX markers that allow profiling tools to correlate
+        GPU kernel executions with host-side code.
+
+        For example, to enable detailed profiling for Nsight Systems analysis,
+        call ``gpu_profiling()`` before ``load()``:
+
+        .. code-block:: python
+
+            from max.engine import InferenceSession
+            from max.driver import Accelerator
+
+            session = InferenceSession(devices=[Accelerator()])
+            session.gpu_profiling("detailed")
+            model = session.load(my_graph)
+
+        Then run it with ``nsys``:
+
+        .. code-block:: bash
+
+            nsys profile --trace=cuda,nvtx python example.py
+
+        Or, instead of calling ``session.gpu_profiling()`` in the code, you can
+        set the ``MODULAR_ENABLE_PROFILING`` environment variable when you call
+        ``nsys profile``:
+
+        .. code-block:: bash
+
+            MODULAR_ENABLE_PROFILING=detailed nsys profile --trace=cuda,nvtx python script.py
+
+        Beware that ``gpu_profiling()`` overrides the
+        ``MODULAR_ENABLE_PROFILING`` environment variable if also used.
+
+        Note:
+            Profiling instrumentation adds runtime overhead and should be
+            disabled for production deployments.
+
+        Args:
+            mode: The profiling mode to set. One of:
+
+                - ``off``: Disable profiling (default).
+                - ``on``: Enable basic profiling with
+                  NVTX markers for kernel correlation.
+                - ``detailed``: Enable detailed profiling
+                  with additional Python-level NVTX markers.
+
+        See Also:
+            - `GPU profiling with Nsight Systems </max/gpu-system-profiling>`_
+        """
+        if mode == "off":
             return
 
         self._set_mojo_define("MODULAR_ENABLE_PROFILING", 1)
         self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING", 1)
-        if mode == GPUProfilingMode.DETAILED:
+        if mode == "detailed":
             self._set_mojo_define("MODULAR_ENABLE_GPU_PROFILING_DETAILED", 1)
 
-        set_gpu_profiling_state(mode.value)
+        set_gpu_profiling_state(mode)
 
     def use_old_top_k_kernel(self, mode: str) -> None:
         """Enables the old top-k kernel.
@@ -541,6 +793,30 @@ class InferenceSession:
 
         self._set_mojo_define("USE_OLD_TOP_K_KERNEL", 1)
 
+    def use_fi_topk_kernel(self, mode: str) -> None:
+        """Enables the fused-inference top-k kernel.
+
+        Args:
+            mode: String to enable/disable. Accepts "false", "off", "no", "0"
+                to disable, any other value to enable.
+        """
+        if mode.lower() in ("false", "off", "no", "0"):
+            return
+
+        self._set_mojo_define("USE_FI_TOPK_KERNEL", 1)
+
+    def enable_per_tensor_fp8_quantize(self, mode: str) -> None:
+        """Enables per-tensor FP8 quantization.
+
+        Args:
+            mode: String to enable/disable. Accepts "false", "off", "no", "0"
+                to disable, any other value to enable.
+        """
+        if mode.lower() in ("false", "off", "no", "0"):
+            return
+
+        self._set_mojo_define("ENABLE_PER_TENSOR_FP8_QUANTIZE", 1)
+
     def _use_experimental_kernels(self, mode: str) -> None:
         """Enables experimental kernels."""
         if mode.lower() in ("false", "off", "no", "0"):
@@ -555,15 +831,12 @@ class InferenceSession:
 
         self._set_mojo_define("MODULE_USE_VENDOR_BLAS", 1)
 
-    def _pdl_level(self, level: str | PdlLevel) -> None:
-        """Level of overlap of kernel launch."""
-        if not isinstance(level, PdlLevel):
-            if level not in {"0", "1", "2"}:
-                raise TypeError(
-                    f"Invalid pdl level ({level}). Please use one of: {[0, 1, 2]} corresponding to {[x.name for x in PdlLevel]}"
-                )
+    def _use_vendor_ccl(self, mode: str) -> None:
+        """Enables vendor CCL libraries (NCCL/RCCL) for collective operations."""
+        if mode.lower() in ("false", "off", "no", "0"):
+            return
 
-        self._set_mojo_define("PDL_LEVEL", int(level))
+        self._set_mojo_define("MODULAR_USE_VENDOR_CCL", 1)
 
     def _dump_gpu_asm(self, option: bool | str | Path = True) -> None:
         """Enables dumping of gpu asm.

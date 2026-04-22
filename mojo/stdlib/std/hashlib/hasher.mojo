@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,7 +18,7 @@ for runtime hashing, while `default_comp_time_hasher` uses FNV-1a for
 compile-time hashing.
 """
 
-from memory import Span
+from std.memory import Span
 
 from ._ahash import AHasher
 from ._fnv1a import Fnv1a
@@ -40,28 +40,25 @@ trait Hasher:
     data, and finalize the hash computation.
     """
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize a new hasher instance."""
         ...
 
-    fn _update_with_bytes(mut self, data: Span[Byte, _]):
+    def _update_with_bytes(mut self, data: Span[Byte, _]):
         ...
 
-    fn _update_with_simd(mut self, value: SIMD[_, _]):
+    def _update_with_simd(mut self, value: SIMD[_, _]):
         ...
 
-    fn update[T: Hashable](mut self, value: T):
+    def update(mut self, value: Some[Hashable]):
         """Update the hash with a value.
-
-        Parameters:
-            T: The type of value to hash, which must implement `Hashable`.
 
         Args:
             value: The value to incorporate into the hash.
         """
         ...
 
-    fn finish(var self) -> UInt64:
+    def finish(var self) -> UInt64:
         """Finalize the hash computation and return the hash value.
 
         Returns:

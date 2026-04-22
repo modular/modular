@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,36 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import block_idx, grid_dim, thread_idx
+from std.gpu import block_idx, grid_dim
 
-from utils.fast_div import FastDiv
-from utils.index import Index, IndexList
-from buffer.buffer import NDBuffer
+from std.utils.fast_div import FastDiv
+from std.utils.index import Index, IndexList
 from layout import Layout, LayoutTensor
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct RasterOrder(ImplicitlyCopyable):
+struct RasterOrder(TrivialRegisterPassable):
     var _value: Int32
 
     comptime AlongN = Self(0)
     comptime AlongM = Self(1)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
+struct WorkInfo(TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -49,7 +46,7 @@ struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
     var terminate: Bool
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
     ):
         self.m = 0
@@ -58,19 +55,15 @@ struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
         self.terminate = False
 
     @always_inline
-    fn is_valid(self) -> Bool:
+    def is_valid(self) -> Bool:
         return self.is_valid_tile
 
     @always_inline
-    fn is_done(self) -> Bool:
+    def is_done(self) -> Bool:
         return self.terminate
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
             self.m,
@@ -92,7 +85,6 @@ struct WorkInfo(ImplicitlyCopyable, Stringable, Writable):
 # For simplicity, we always assume M is the static dimension here, because 2SM
 # UMMA instructions need alignment on only the M dimension. When we use it, we
 # ought to enable swapAB for grouped matmul.
-@register_passable("trivial")
 struct TileScheduler[
     offsets_layout: Layout,
     //,
@@ -105,10 +97,10 @@ struct TileScheduler[
     cta_group: Int = 1,
     swizzle: Bool = False,
     swapAB: Bool = True,
-]:
+](TrivialRegisterPassable):
     var num_active_experts: Int
     var group_offsets: LayoutTensor[
-        DType.uint32, Self.offsets_layout, MutAnyOrigin
+        DType.uint32, Self.offsets_layout, ImmutAnyOrigin
     ]
     var current_iter: Int32  # Tracks the scheduler's progress across kernel launches
     var current_group_idx: UInt32
@@ -122,24 +114,24 @@ struct TileScheduler[
     )
     var current_dynamic_dim_cumsum: UInt32
     var block_idx_start: UInt32
-    comptime num_static_dim_blocks: UInt32 = ceildiv(
-        Self.static_MN, Self.tile_shape[Self.static_dim]
+    comptime num_static_dim_blocks: UInt32 = UInt32(
+        ceildiv(Self.static_MN, Self.tile_shape[Self.static_dim])
     )
 
     comptime kNum1DBlocksPerGroup: UInt32 = 16
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         num_active_experts: Int,
         group_offsets: LayoutTensor[
-            DType.uint32, Self.offsets_layout, MutAnyOrigin
+            DType.uint32, Self.offsets_layout, ImmutAnyOrigin
         ],
     ):
-        __comptime_assert (
+        comptime assert (
             Self.cluster[1] == Self.cluster[2] == 1
         ), "Currently multicasting along non-M dimension is not supported"
-        __comptime_assert Self.cta_group == Self.cluster[0], (
+        comptime assert Self.cta_group == Self.cluster[0], (
             "cta_group must be equal to cluster M size. Got cta_group = "
             + String(Self.cta_group)
             + " and cluster M size = "
@@ -147,7 +139,7 @@ struct TileScheduler[
         )
         comptime cluster_m_size = Self.cluster[0] * Self.tile_shape[0]
         comptime cluster_n_size = Self.cluster[1] * Self.tile_shape[1]
-        __comptime_assert (
+        comptime assert (
             Self.cluster[0] == 1 or Self.static_MN % cluster_m_size == 0
         ) if Self.swapAB else (
             Self.cluster[1] == 1 or Self.static_MN % cluster_n_size == 0
@@ -170,7 +162,7 @@ struct TileScheduler[
         self.block_idx_start = 0
 
     @always_inline
-    fn fetch_next_work(mut self) -> WorkInfo:
+    def fetch_next_work(mut self) -> WorkInfo:
         self.current_iter += 1
         var next_block_idx = UInt32(self.current_iter) * UInt32(
             grid_dim.x
@@ -184,7 +176,7 @@ struct TileScheduler[
 
         # Trim to the next group
         while True:
-            if self.current_group_idx >= self.num_active_experts:
+            if self.current_group_idx >= UInt32(self.num_active_experts):
                 # at this point, we finished all groups
                 return WorkInfo(0, 0, False, True)
 
@@ -226,12 +218,12 @@ struct TileScheduler[
         var m_block_idx, n_block_idx = self._get_swizzled_block_idx(
             num_n_blocks, group_local_block_idx, num_dynamic_dim_blocks
         )
-        var m = UInt32(m_block_idx) * UInt32(Self.tile_shape[0])
-        var n = UInt32(n_block_idx) * UInt32(Self.cta_group_tile_shape[1])
+        var m = m_block_idx * UInt32(Self.tile_shape[0])
+        var n = n_block_idx * UInt32(Self.cta_group_tile_shape[1])
         if Self.swapAB:
-            n += UInt32(start_idx)
+            n += start_idx
         else:
-            m += UInt32(start_idx)
+            m += start_idx
         # In GMM scheduler, a tile may be invalid, but that is an independent
         # condition from `is_done/terminate`, that is, the CTA might have more
         # work to do in the next group. This is the consequence of not aligning
@@ -244,7 +236,7 @@ struct TileScheduler[
         )
 
     @always_inline
-    fn _get_swizzled_block_idx(
+    def _get_swizzled_block_idx(
         self,
         num_n_blocks: UInt32,
         _block_idx: UInt32,
@@ -277,7 +269,7 @@ struct TileScheduler[
         var secondary_num_blocks: UInt32 = (
             num_dynamic_dim_blocks if Self.swapAB else Self.num_static_dim_blocks
         )
-        var num_blocks_per_group = UInt32(
+        var num_blocks_per_group = (
             secondary_num_blocks * Self.kNum1DBlocksPerGroup
         )
         var div_num_blocks_per_group = FastDiv[DType.uint32](

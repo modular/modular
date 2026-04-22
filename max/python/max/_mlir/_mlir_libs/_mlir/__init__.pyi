@@ -2,6 +2,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""MLIR Python Native Extension"""
+
 from collections.abc import Callable
 from typing import TypeVar
 
@@ -25,6 +27,13 @@ def register_operation(
 ) -> Callable[[type[T]], type[T]]:
     """
     Produce a class decorator for registering an Operation class as part of a dialect
+    """
+
+def register_op_adaptor(
+    op_class: type, *, replace: bool = False
+) -> Callable[[type[T]], type[T]]:
+    """
+    Produce a class decorator for registering an OpAdaptor class for an operation.
     """
 
 def register_type_caster(

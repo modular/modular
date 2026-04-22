@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,10 +19,11 @@ to implement efficient thread synchronization.
 
 Example:
 
-    ```mojo
-    from gpu import Semaphore
+    ```text
+    from std.gpu import Semaphore
 
     var lock = UnsafePointer[Int32](...)
+    var thread_id = 0
     var sem = Semaphore(lock, thread_id)
 
     # Wait for a specific state
@@ -33,22 +34,23 @@ Example:
     ```
 """
 
-from sys import is_nvidia_gpu, llvm_intrinsic
+from std.atomic import Atomic, Ordering
+from std.sys import is_nvidia_gpu, llvm_intrinsic
 
-from ..intrinsics import Scope, load_acquire, store_release
 from .sync import MaxHardwareBarriers, barrier, named_barrier
+
+comptime _device_atomic = Atomic[DType.int32, scope="device"]
 
 
 @always_inline
-fn _barrier_and(state: Bool) -> Bool:
-    __comptime_assert is_nvidia_gpu(), "target must be an nvidia GPU"
+def _barrier_and(state: Bool) -> Bool:
+    comptime assert is_nvidia_gpu(), "target must be an nvidia GPU"
     return llvm_intrinsic["llvm.nvvm.barrier.cta.red.and.aligned.all", Bool](
         Int32(0), state
     )
 
 
-@register_passable("trivial")
-struct Semaphore:
+struct Semaphore(TrivialRegisterPassable):
     """A device-wide semaphore implementation for GPUs.
 
     This struct provides atomic operations and memory barriers for inter-CTA synchronization.
@@ -65,7 +67,7 @@ struct Semaphore:
     """Current state of the semaphore, used to track synchronization status"""
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self, lock: UnsafePointer[Int32, MutAnyOrigin], thread_id: Int
     ):
         """Initialize a new Semaphore instance.
@@ -75,23 +77,25 @@ struct Semaphore:
             thread_id: Thread ID within the CTA, used to determine if this thread
                       should perform atomic operations.
         """
-        __comptime_assert is_nvidia_gpu(), "target must be cuda"
+        comptime assert is_nvidia_gpu(), "target must be cuda"
         self._lock = lock
         self._wait_thread = thread_id <= 0
         self._state = -1
 
     @always_inline
-    fn fetch(mut self):
+    def fetch(mut self):
         """Fetch the current state of the semaphore from global memory.
 
         Only the designated wait thread (thread 0) performs the actual load,
         using an acquire memory ordering to ensure proper synchronization.
         """
         if self._wait_thread:
-            self._state = load_acquire[scope = Scope.GPU](self._lock)
+            self._state = _device_atomic.load[ordering=Ordering.ACQUIRE](
+                self._lock
+            )
 
     @always_inline
-    fn state(self) -> Int32:
+    def state(self) -> Int32:
         """Get the current state of the semaphore.
 
         Returns:
@@ -100,7 +104,7 @@ struct Semaphore:
         return self._state
 
     @always_inline
-    fn wait(mut self, status: Int = 0):
+    def wait(mut self, status: Int = 0):
         """Wait until the semaphore reaches the specified state.
 
         Uses a barrier-based spin loop where all threads participate in checking
@@ -109,12 +113,12 @@ struct Semaphore:
         Args:
             status: The state value to wait for (defaults to 0).
         """
-        while _barrier_and(self._state.eq(status).select(False, True)):
+        while _barrier_and(self._state.eq(Int32(status)).select(False, True)):
             self.fetch()
         barrier()
 
     @always_inline
-    fn release(mut self, status: Int32 = 0):
+    def release(mut self, status: Int32 = 0):
         """Release the semaphore by setting it to the specified state.
 
         Ensures all threads have reached this point via a barrier before
@@ -125,13 +129,12 @@ struct Semaphore:
         """
         barrier()
         if self._wait_thread:
-            store_release[scope = Scope.GPU](self._lock, status)
+            _device_atomic.store[ordering=Ordering.RELEASE](self._lock, status)
 
 
-@register_passable("trivial")
 struct NamedBarrierSemaphore[
     thread_count: Int32, id_offset: Int32, max_num_barriers: Int32
-]:
+](TrivialRegisterPassable):
     """A device-wide semaphore implementation for NVIDIA GPUs with named barriers.
 
     It's using an acquire-release logic instead of atomic instructions for inter-CTA synchronization with a shared lock variable.
@@ -155,7 +158,7 @@ struct NamedBarrierSemaphore[
     """Current state of the semaphore, used to track synchronization status"""
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self, lock: UnsafePointer[Int32, MutAnyOrigin], thread_id: Int
     ):
         """Initialize a new Semaphore instance.
@@ -165,8 +168,8 @@ struct NamedBarrierSemaphore[
             thread_id: Thread ID within the CTA, used to determine if this thread
                       should perform atomic operations.
         """
-        __comptime_assert is_nvidia_gpu(), "target must be cuda"
-        __comptime_assert (
+        comptime assert is_nvidia_gpu(), "target must be cuda"
+        comptime assert (
             Self.id_offset + Self.max_num_barriers < MaxHardwareBarriers
         ), "max number of barriers is " + String(MaxHardwareBarriers)
         self._lock = lock
@@ -174,7 +177,7 @@ struct NamedBarrierSemaphore[
         self._state = -1
 
     @always_inline
-    fn state(self) -> Int32:
+    def state(self) -> Int32:
         """Get the current state of the semaphore.
 
         Returns:
@@ -183,7 +186,7 @@ struct NamedBarrierSemaphore[
         return self._state
 
     @always_inline
-    fn wait_eq(mut self, id: Int32, status: Int32 = 0):
+    def wait_eq(mut self, id: Int32, status: Int32 = 0):
         """Waits until the semaphore state equals the specified status.
 
         Args:
@@ -192,12 +195,14 @@ struct NamedBarrierSemaphore[
         """
         if self._wait_thread:
             while self._state != status:
-                self._state = load_acquire[scope = Scope.GPU](self._lock)
+                self._state = _device_atomic.load[ordering=Ordering.ACQUIRE](
+                    self._lock
+                )
 
         named_barrier[Self.thread_count,](Self.id_offset + id)
 
     @always_inline
-    fn wait_lt(mut self, id: Int32, count: Int32 = 0):
+    def wait_lt(mut self, id: Int32, count: Int32 = 0):
         """Waits until the semaphore state is less than the specified count.
 
         Args:
@@ -206,12 +211,14 @@ struct NamedBarrierSemaphore[
         """
         if self._wait_thread:
             while self._state < count:
-                self._state = load_acquire[scope = Scope.GPU](self._lock)
+                self._state = _device_atomic.load[ordering=Ordering.ACQUIRE](
+                    self._lock
+                )
 
         named_barrier[Self.thread_count,](Self.id_offset + id)
 
     @always_inline
-    fn arrive_set(self, id: Int32, status: Int32 = 0):
+    def arrive_set(self, id: Int32, status: Int32 = 0):
         """Arrives at the barrier and sets the semaphore status.
 
         Args:
@@ -221,4 +228,4 @@ struct NamedBarrierSemaphore[
         named_barrier[Self.thread_count,](Self.id_offset + id)
 
         if self._wait_thread:
-            store_release[scope = Scope.GPU](self._lock, status)
+            _device_atomic.store[ordering=Ordering.RELEASE](self._lock, status)

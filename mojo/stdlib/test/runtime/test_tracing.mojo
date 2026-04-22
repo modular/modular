@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,15 +13,15 @@
 # RUN: env MODULAR_PROFILE_FILENAME="-" %mojo-no-debug %s | FileCheck %s
 
 
-from os import abort
+from std.os import abort
 
-from runtime.asyncrt import create_task
-from runtime.tracing import Trace, TraceLevel
+from std.runtime.asyncrt import create_task
+from std.runtime.tracing import Trace, TraceLevel
 
 
-def test_tracing[level: TraceLevel, enabled: Bool]():
+def test_tracing[level: TraceLevel, enabled: Bool]() raises:
     @parameter
-    async fn test_tracing_add[enabled: Bool, lhs: Int](rhs: Int) -> Int:
+    async def test_tracing_add[enabled: Bool, lhs: Int](rhs: Int) -> Int:
         comptime s1 = "ENABLED: trace event 2" if enabled else StaticString(
             "DISABLED: trace event 2"
         )
@@ -35,7 +35,9 @@ def test_tracing[level: TraceLevel, enabled: Bool]():
             abort(String(e))
 
     @parameter
-    async fn test_tracing_add_two_of_them[enabled: Bool](a: Int, b: Int) -> Int:
+    async def test_tracing_add_two_of_them[
+        enabled: Bool
+    ](a: Int, b: Int) -> Int:
         var t0 = create_task(test_tracing_add[enabled, 1](a))
         var t1 = create_task(test_tracing_add[enabled, 2](b))
         return await t0 + await t1
@@ -51,7 +53,7 @@ def test_tracing[level: TraceLevel, enabled: Bool]():
         _ = task.wait()
 
 
-def main():
+def main() raises:
     # CHECK-LABEL: test_tracing_enabled
     print("== test_tracing_enabled")
     test_tracing[TraceLevel.ALWAYS, True]()

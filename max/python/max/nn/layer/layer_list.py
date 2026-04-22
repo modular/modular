@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,7 +21,8 @@ from .layer import Layer, Module
 class LayerList(Module):
     """Stores a list of layers.
 
-    Can be used as a regular python list."""
+    Can be used as a regular python list.
+    """
 
     def __init__(self, layers: Sequence[Layer]) -> None:
         super().__init__()

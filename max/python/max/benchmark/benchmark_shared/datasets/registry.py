@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -88,12 +88,16 @@ DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
         class_name="ObfuscatedConversationsBenchmarkDataset",
         has_multiturn_chat_support=False,
     ),
+    "local-image": DatasetRegistryEntry(
+        class_name="LocalImageBenchmarkDataset",
+        has_multiturn_chat_support=False,
+    ),
     "random": DatasetRegistryEntry(
         class_name="RandomBenchmarkDataset",
         has_multiturn_chat_support=True,
     ),
     "synthetic": DatasetRegistryEntry(
-        class_name="RandomBenchmarkDataset",
+        class_name="SyntheticBenchmarkDataset",
         has_multiturn_chat_support=True,
     ),
     "sharegpt": DatasetRegistryEntry(
@@ -107,5 +111,17 @@ DATASET_REGISTRY: Mapping[str, DatasetRegistryEntry] = {
     "vision-arena": DatasetRegistryEntry(
         class_name="VisionArenaBenchmarkDataset",
         has_multiturn_chat_support=False,
+    ),
+    "synthetic-pixel": DatasetRegistryEntry(
+        class_name="SyntheticPixelBenchmarkDataset",
+        has_multiturn_chat_support=False,
+    ),
+    "agentic-code": DatasetRegistryEntry(
+        class_name="AgenticCodeBenchmarkDataset",
+        has_multiturn_chat_support=True,
+    ),
+    "instruct-coder": DatasetRegistryEntry(
+        class_name="InstructCoderBenchmarkDataset",
+        has_multiturn_chat_support=True,
     ),
 }

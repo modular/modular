@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -79,7 +79,6 @@ def _to_numpy(self: DType) -> np.dtype[Any]:
     Raises:
         ValueError: If the dtype is not supported.
     """
-
     if numpy_dtype := _DTYPE_TO_NUMPY.get(self):
         return np.dtype(numpy_dtype)
     raise ValueError(f"unsupported DType to convert to NumPy: {self}")
@@ -97,7 +96,6 @@ def _from_numpy(dtype: np.dtype[Any]) -> DType:
     Raises:
         ValueError: If the input dtype is not supported.
     """
-
     # Handle both np.dtype objects and numpy type objects.
     np_type = dtype.type if isinstance(dtype, np.dtype) else dtype
 
@@ -130,60 +128,9 @@ _DTYPE_TO_MLIR = {
 
 _MLIR_TO_DTYPE = {v: k for k, v in _DTYPE_TO_MLIR.items()}
 
-# Load these methods only if torch is available.
-try:
-    import torch  # type: ignore
-
-    _DTYPE_TO_TORCH = {
-        DType.bool: torch.bool,
-        DType.int8: torch.int8,
-        DType.int16: torch.int16,
-        DType.int32: torch.int32,
-        DType.int64: torch.int64,
-        DType.uint8: torch.uint8,
-        DType.uint16: torch.uint16,
-        DType.uint32: torch.uint32,
-        DType.uint64: torch.uint64,
-        DType.float16: torch.float16,
-        DType.float32: torch.float32,
-        DType.float64: torch.float64,
-        DType.bfloat16: torch.bfloat16,
-        DType.float8_e8m0fnu: torch.float8_e8m0fnu,
-        DType.float8_e4m3fn: torch.float8_e4m3fn,
-        DType.float8_e4m3fnuz: torch.float8_e4m3fnuz,
-        DType.float8_e5m2: torch.float8_e5m2,
-        DType.float8_e5m2fnuz: torch.float8_e5m2fnuz,
-    }
-
-    _TORCH_TO_DTYPE = {v: k for k, v in _DTYPE_TO_TORCH.items()}
-
-    def _to_torch(dtype: DType, _error: Exception | None = None) -> torch.dtype:
-        return _DTYPE_TO_TORCH[dtype]
-
-    def _from_torch(
-        dtype: torch.dtype, _error: Exception | None = None
-    ) -> DType:
-        return _TORCH_TO_DTYPE[dtype]
-
-except Exception as e:
-    # Continue with torch disabled if there's any issue with the torch
-    # installation.
-
-    def _to_torch(dtype: DType, _error: Exception | None = e) -> torch.dtype:
-        raise RuntimeError(
-            f"torch integration unavailable: {_error}"
-        ) from _error
-
-    def _from_torch(dtype: torch.dtype, _error: Exception | None = e) -> DType:
-        raise RuntimeError(
-            f"torch integration unavailable: {_error}"
-        ) from _error
-
 
 DType._missing_ = _missing  # type: ignore[method-assign]
 DType.__repr__ = _repr  # type: ignore[method-assign, assignment]
 DType._mlir = property(_mlir)  # type: ignore[assignment]
 DType.to_numpy = _to_numpy  # type: ignore[method-assign]
 DType.from_numpy = _from_numpy  # type: ignore[method-assign]
-DType.to_torch = _to_torch  # type: ignore[method-assign]
-DType.from_torch = _from_torch  # type: ignore[assignment]

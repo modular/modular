@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,36 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import *
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal
 
 
-fn vec_func(
-    in0: UnsafePointer[Float32],
-    in1: UnsafePointer[Float32],
-    output: UnsafePointer[Float32],
+def vec_func(
+    in0: UnsafePointer[Float32, ImmutAnyOrigin],
+    in1: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
     supplement: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
-    output[tid] = in0[tid] + in1[tid] + supplement
+    output[tid] = in0[tid] + in1[tid] + Float32(supplement)
 
 
-fn test(ctx: DeviceContext) raises:
+def test(ctx: DeviceContext) raises:
     comptime length = 1024
 
     # Allocate the input buffers as sub buffers of a bigger one
-    var in_host = UnsafePointer[Float32].alloc(2 * length)
-    var out_host = UnsafePointer[Float32].alloc(length)
+    var in_host = alloc[Float32](2 * length)
+    var out_host = alloc[Float32](length)
 
     for i in range(length):
-        in_host[i] = i
+        in_host[i] = Float32(i)
         in_host[i + length] = 2
 
     var in_device = ctx.enqueue_create_buffer[DType.float32](2 * length)
@@ -91,6 +88,6 @@ fn test(ctx: DeviceContext) raises:
     out_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test(ctx)

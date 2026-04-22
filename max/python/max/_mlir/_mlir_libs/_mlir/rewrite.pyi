@@ -2,12 +2,14 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""MLIR Rewrite Bindings"""
+
 import enum
 from collections.abc import Callable, Sequence
-from typing import Any, overload
+from typing import overload
 
+import _mlir
 import max._mlir._mlir_libs._mlir.ir
-import max._mlir.ir
 
 class GreedyRewriteStrictness(enum.Enum):
     ANY_OP = 0
@@ -22,6 +24,13 @@ class GreedySimplifyRegionLevel(enum.Enum):
     NORMAL = 1
 
     AGGRESSIVE = 2
+
+class DialectConversionFoldingMode(enum.Enum):
+    NEVER = 0
+
+    BEFORE_PATTERNS = 1
+
+    AFTER_PATTERNS = 2
 
 class PatternRewriter:
     @property
@@ -44,36 +53,84 @@ class PatternRewriter:
     ) -> None:
         """Replace an operation with a list of values."""
 
-    def erase_op(self, op: max._mlir._mlir_libs._mlir.ir.Operation) -> None:
+    def erase_op(
+        self, op: max._mlir._mlir_libs._mlir.ir._OperationBase
+    ) -> None:
         """Erase an operation."""
 
 class RewritePatternSet:
-    def __init__(self, context: Context | None = None) -> None: ...
-    def add(
+    def __init__(self, context: _mlir.ir.Context | None = None) -> None: ...
+    def add(self, root: object, fn: Callable, benefit: int = 1) -> None:
+        """
+        Add a new rewrite pattern on the specified root operation, using
+                      the provided callable for matching and rewriting, and assign it
+                      the given benefit.
+
+                      Args:
+                        root: The root operation to which this pattern applies. This may
+                              be either an OpView subclass or an operation name.
+                        fn: The callable to use for matching and rewriting, which takes
+                            an operation and a pattern rewriter. The match is considered
+                            successful iff the callable returns a falsy value.
+                        benefit: The benefit of the pattern, defaulting to 1.
+        """
+
+    def add_conversion(
         self,
-        root: type | str,
-        fn: Callable[[max._mlir.ir.Operation, PatternRewriter], Any],
+        root: object,
+        fn: Callable,
+        type_converter: TypeConverter,
         benefit: int = 1,
     ) -> None:
         """
-        Add a new rewrite pattern on the specified root operation, using the provided callable
-        for matching and rewriting, and assign it the given benefit.
+        Add a new conversion pattern on the specified root operation,
+        using the provided callable for matching and rewriting,
+        and assign it the given benefit.
 
         Args:
           root: The root operation to which this pattern applies.
-                This may be either an OpView subclass (e.g., ``arith.AddIOp``) or
-                an operation name string (e.g., ``"arith.addi"``).
-          fn: The callable to use for matching and rewriting,
-              which takes an operation and a pattern rewriter as arguments.
-              The match is considered successful iff the callable returns
-              a value where ``bool(value)`` is ``False`` (e.g. ``None``).
-              If possible, the operation is cast to its corresponding OpView subclass
-              before being passed to the callable.
+                This may be either an OpView subclass or an operation name.
+          fn: The callable to use for matching and rewriting, which takes an
+              operation, its adaptor, the type converter and a pattern
+              rewriter. The match is considered successful iff the callable
+              returns a falsy value.
+          type_converter: The type converter to convert types in the IR.
           benefit: The benefit of the pattern, defaulting to 1.
         """
 
     def freeze(self) -> FrozenRewritePatternSet:
         """Freeze the pattern set into a frozen one."""
+
+class ConversionPatternRewriter(PatternRewriter):
+    def convert_region_types(
+        self, arg0: max._mlir._mlir_libs._mlir.ir.Region, arg1: TypeConverter, /
+    ) -> None: ...
+
+class ConversionTarget:
+    def __init__(self, context: _mlir.ir.Context | None = None) -> None: ...
+    def add_legal_op(self, *ops) -> None:
+        """Mark the given operations as legal."""
+
+    def add_illegal_op(self, *ops) -> None:
+        """Mark the given operations as illegal."""
+
+    def add_legal_dialect(self, *dialects) -> None:
+        """Mark the given dialects as legal."""
+
+    def add_illegal_dialect(self, *dialects) -> None:
+        """Mark the given dialect as illegal."""
+
+class TypeConverter:
+    def __init__(self) -> None:
+        """Create a new TypeConverter."""
+
+    def add_conversion(self, convert: Callable) -> None:
+        """Register a type conversion function."""
+
+    def convert_type(
+        self, type: max._mlir._mlir_libs._mlir.ir.Type
+    ) -> max._mlir._mlir_libs._mlir.ir.Type | None:
+        """Convert the given type. Returns None if conversion fails."""
 
 class PDLResultList:
     @overload
@@ -155,6 +212,25 @@ class GreedyRewriteConfig:
     @enable_constant_cse.setter
     def enable_constant_cse(self, arg: bool, /) -> None: ...
 
+class ConversionConfig:
+    def __init__(self) -> None:
+        """Create a conversion config with defaults"""
+
+    @property
+    def folding_mode(self) -> DialectConversionFoldingMode:
+        """folding behavior during dialect conversion"""
+
+    @folding_mode.setter
+    def folding_mode(self, arg: DialectConversionFoldingMode, /) -> None: ...
+    @property
+    def build_materializations(self) -> bool:
+        """
+        Whether the dialect conversion attempts to build source/target materializations
+        """
+
+    @build_materializations.setter
+    def build_materializations(self, arg: bool, /) -> None: ...
+
 class FrozenRewritePatternSet:
     pass
 
@@ -185,3 +261,19 @@ def walk_and_apply_patterns(
     """
     Applies the given patterns to the given op by a fast walk-based driver.
     """
+
+def apply_partial_conversion(
+    op: max._mlir._mlir_libs._mlir.ir._OperationBase,
+    target: ConversionTarget,
+    set: FrozenRewritePatternSet,
+    config: ConversionConfig | None = None,
+) -> None:
+    """Applies a partial conversion on the given operation."""
+
+def apply_full_conversion(
+    op: max._mlir._mlir_libs._mlir.ir._OperationBase,
+    target: ConversionTarget,
+    set: FrozenRewritePatternSet,
+    config: ConversionConfig | None = None,
+) -> None:
+    """Applies a full conversion on the given operation."""

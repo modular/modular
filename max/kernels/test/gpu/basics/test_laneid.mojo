@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,30 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import gpu.primitives.warp as warp
-from gpu import barrier, global_idx, lane_id
-from gpu.globals import WARP_SIZE
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+import std.gpu.primitives.warp as warp
+from std.gpu import global_idx, lane_id
+from std.gpu.globals import WARP_SIZE
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal
 
 
-fn kernel(
-    output: UnsafePointer[Float32],
+def kernel(
+    output: UnsafePointer[Float32, MutAnyOrigin],
     size: Int,
 ):
     var global_tid = global_idx.x
-    if global_tid >= UInt(size):
+    if global_tid >= size:
         return
     output[global_tid] = Float32(lane_id())
 
 
-fn test_grid_dim(ctx: DeviceContext) raises:
+def test_grid_dim(ctx: DeviceContext) raises:
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size
-    var output_host = UnsafePointer[Float32].alloc(buffer_size)
+    var output_host = alloc[Float32](buffer_size)
 
     for i in range(buffer_size):
         output_host[i] = -1.0
@@ -54,11 +51,13 @@ fn test_grid_dim(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     for i in range(buffer_size):
-        assert_equal(output_host[i] % WARP_SIZE, i % WARP_SIZE)
+        assert_equal(
+            output_host[i] % Float32(WARP_SIZE), Float32(i % WARP_SIZE)
+        )
 
     output_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_grid_dim(ctx)

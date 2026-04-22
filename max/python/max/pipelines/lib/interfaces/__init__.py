@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,21 +12,57 @@
 # ===----------------------------------------------------------------------=== #
 """Interfaces for MAX pipelines."""
 
+from .arch_config import (
+    ArchConfig,
+    ArchConfigWithAttentionKVCache,
+    ArchConfigWithKVAndVisionCache,
+    ArchConfigWithKVCache,
+)
+from .cache_mixin import (
+    DenoisingCacheConfig,
+    DenoisingCacheState,
+    fbcache_conditional_execution,
+    teacache_conditional_execution,
+)
+from .component_model import ComponentModel
+from .diffusion_pipeline import DiffusionPipeline, DiffusionPipelineOutput
+from .first_block_cache import FirstBlockCache, FirstBlockCacheState
 from .generate import GenerateMixin
-from .kv_cache import KVCacheMixin, get_paged_manager
 from .pipeline_model import (
     AlwaysSignalBuffersMixin,
     ModelInputs,
     ModelOutputs,
     PipelineModel,
+    PipelineModelWithKVCache,
+    UnifiedEagleOutputs,
 )
+from .taylorseer import TaylorSeer, TaylorSeerState, run_denoising_step
+from .tensor_struct import TensorStruct
 
 __all__ = [
     "AlwaysSignalBuffersMixin",
+    "ArchConfig",
+    "ArchConfigWithAttentionKVCache",
+    "ArchConfigWithKVAndVisionCache",
+    "ArchConfigWithKVCache",
+    "ComponentModel",
+    "DenoisingCacheConfig",
+    "DenoisingCacheState",
+    "DiffusionPipeline",
+    "DiffusionPipelineOutput",
+    "FirstBlockCache",
+    "FirstBlockCacheState",
     "GenerateMixin",
-    "KVCacheMixin",
     "ModelInputs",
     "ModelOutputs",
     "PipelineModel",
+    "PipelineModelWithKVCache",
+    "TaylorSeer",
+    "TaylorSeerState",
+    "TensorStruct",
+    "UnifiedEagleOutputs",
+    "fbcache_conditional_execution",
     "get_paged_manager",
+    "run_denoising_step",
+    "teacache_conditional_execution",
 ]

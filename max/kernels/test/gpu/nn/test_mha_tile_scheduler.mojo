@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,31 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.math import ceildiv
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import ceildiv
-
-from buffer import NDBuffer
-from gpu.host import DeviceContext
-from gpu import block_idx
-from nn.mha_fa3_utils import NullPointer
-from nn.mha_tile_scheduler import (
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx
+from nn.attention.gpu.nvidia.sm90.attention import NullPointer
+from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     MHASchedule,
-    MHASchedulerSynchronization,
     MHATileSummary,
     TileScheduler,
-    WorkInfo,
 )
 
 
-fn test_kernel[schedule: MHASchedule]():
+def test_kernel[schedule: MHASchedule]():
     comptime scheduler_t = TileScheduler[32, 3, num_ctas=8, schedule=schedule]
     scheduler = scheduler_t()
     valid_length = NullPointer[DType.uint32]()
     tile_summary = MHATileSummary(1, ceildiv(100, 32), valid_length, 0)
     state = scheduler.initial_state(
-        UnsafePointer[UInt32, address_space = AddressSpace.SHARED](),
+        UnsafePointer[
+            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
+        ].unsafe_dangling(),
         tile_summary,
     )
     work_info = scheduler.get_current_work_info(tile_summary, state)
@@ -45,7 +41,7 @@ fn test_kernel[schedule: MHASchedule]():
         work_info = scheduler.fetch_next_work(tile_summary, state)
 
 
-def test[schedule: MHASchedule](ctx: DeviceContext):
+def test[schedule: MHASchedule](ctx: DeviceContext) raises:
     comptime kernel = test_kernel[schedule]
 
     ctx.enqueue_function_experimental[kernel](
@@ -56,7 +52,7 @@ def test[schedule: MHASchedule](ctx: DeviceContext):
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # CHECK-LABEL: ==== test default schedule
         # CHECK-DAG: 0 (0, 0, 0, True)

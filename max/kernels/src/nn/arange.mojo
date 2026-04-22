@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceil, iota
+from std.math import ceil, iota
 
 from register import *
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 # ===-----------------------------------------------------------------------===#
 # Arange op
@@ -23,7 +23,7 @@ from utils.index import IndexList
 
 
 @always_inline
-fn arange[
+def arange[
     dtype: DType, simd_width: Int
 ](
     start: Scalar[dtype],
@@ -31,13 +31,12 @@ fn arange[
     step: Scalar[dtype],
     index: IndexList[1],
 ) -> SIMD[dtype, simd_width]:
-    return start + (iota[dtype, simd_width](index[0]) * step)
+    return start + (iota[dtype, simd_width](Scalar[dtype](index[0])) * step)
 
 
 @always_inline
-fn arange_shape[
-    dtype: DType,
-    single_thread_blocking_override: Bool,
+def arange_shape[
+    dtype: DType
 ](
     start: Scalar[dtype],
     stop: Scalar[dtype],
@@ -46,8 +45,7 @@ fn arange_shape[
     if step == 0:
         raise Error("[range] step must be non-zero")
 
-    @parameter
-    if start.dtype.is_integral():
+    comptime if start.dtype.is_integral():
         if step > 0 and stop < start:
             raise Error("[range] requires (start <= stop) for positive step")
 

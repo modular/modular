@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Provides utility functions for context variable management and driver tensor type conversion."""
+
 from __future__ import annotations
 
 import contextlib
@@ -18,8 +20,8 @@ from collections.abc import Generator
 from contextvars import ContextVar
 from typing import TypeVar
 
-from .. import driver
-from ..graph import DeviceRef, TensorType
+from max import driver
+from max.graph import DeviceRef, TensorType
 
 T = TypeVar("T")
 
@@ -70,6 +72,7 @@ def driver_tensor_type(t: driver.Buffer) -> TensorType:
 
 
 def driver_tensor_of_type(t: TensorType) -> driver.Buffer:
+    """Creates a driver buffer matching the given tensor type."""
     return driver.Buffer(
         t.dtype, [int(d) for d in t.shape], t.device.to_device()
     )

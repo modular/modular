@@ -2,12 +2,10 @@ load("//bazel:api.bzl", "mojo_test")
 
 package(default_visibility = ["//visibility:private"])
 
-_EXTRA_CONSTRAINTS = {
-    "test_reduce_atomic.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2423
-}
+# FIXME: MOCO-3587 — Metal compiler crash on test_reduce
+_APPLE_GPU_INCOMPATIBLE_TESTS = [
+    "test_reduce.mojo",
+]
 
 [
     mojo_test(
@@ -15,7 +13,10 @@ _EXTRA_CONSTRAINTS = {
         size = "large",
         srcs = [src],
         tags = ["gpu"],
-        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        target_compatible_with = ["//:has_gpu"] + (select({
+            "//:apple_gpu": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }) if src in _APPLE_GPU_INCOMPATIBLE_TESTS else []),
         deps = [
             "@mojo//:std",
             "@mojo//:test_utils",

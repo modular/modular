@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,17 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
-from random import randn, seed
-from sys.info import CompilationTarget
+from std.math import iota
 
 from nn.activations import elu, leaky_relu, relu, relu_n1
-from test_utils import compare, libm_call
-from testing import assert_almost_equal
+from test_utils import libm_call
 
 
 # CHECK-LABEL: test_elu
-fn test_elu():
+def test_elu():
     print("== test_elu")
 
     var simd_val = iota[DType.float32, 4]()
@@ -37,7 +34,7 @@ fn test_elu():
 
 
 # CHECK-LABEL: test_relu
-fn test_relu():
+def test_relu():
     print("== test_relu")
 
     var simd_val = iota[DType.float32, 4]()
@@ -53,7 +50,7 @@ fn test_relu():
 
 
 # CHECK-LABEL: test_relu_n1
-fn test_relu_n1():
+def test_relu_n1():
     print("== test_relu_n1")
 
     var simd_val = iota[DType.float32, 4]()
@@ -69,7 +66,7 @@ fn test_relu_n1():
 
 
 # CHECK-LABEL: test_leaky_relu
-fn test_leaky_relu():
+def test_leaky_relu():
     print("== test_leaky_relu")
 
     var simd_val = iota[DType.float32, 4]()
@@ -95,13 +92,13 @@ fn test_leaky_relu():
 
 
 @always_inline
-fn erf_libm[
+def erf_libm[
     dtype: DType, simd_width: Int
 ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     return libm_call["erff", "err"](arg)
 
 
-def main():
+def main() raises:
     test_elu()
     test_relu()
     test_relu_n1()

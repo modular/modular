@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class MAXBaseModel(BaseModel):
@@ -25,11 +25,15 @@ class MAXBaseModel(BaseModel):
     roundtrips/pickling and are not sensitive to pydantic internal bookkeeping.
     """
 
+    model_config = ConfigDict(extra="forbid", strict=True)
+
     def __eq__(self, other: object) -> bool:
         """Structural equality based on public model fields."""
         if not isinstance(other, type(self)):
             return NotImplemented
-        return self.model_dump(mode="python") == other.model_dump(mode="python")
+        return self.model_dump(
+            mode="python", exclude_computed_fields=True
+        ) == other.model_dump(mode="python", exclude_computed_fields=True)
 
     def __ne__(self, other: object) -> bool:
         """Negation of `__eq__` with consistent NotImplemented behavior."""

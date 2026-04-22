@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -39,10 +39,11 @@ from bencher_utils import Bench, ThroughputMeasure
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental.torch import torch_dtype_to_max
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.nn.attention import MHAMaskVariant
 from max.nn.kernels import flash_attention_ragged
-from max.nn.kv_cache import KVCacheParams, KVCacheStrategy, PagedCacheValues
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 
 # Try importing external libraries (installed via Bazel pycross_wheel_library)
 _flashinfer: types.ModuleType | None
@@ -223,7 +224,7 @@ def bench_max(
         dtype: torch dtype for inputs
     """
     # Convert torch dtype to MAX DType
-    max_dtype = DType.from_torch(dtype)
+    max_dtype = torch_dtype_to_max(dtype)
 
     # Create inference session
     session = InferenceSession(devices=[Accelerator()])
@@ -234,7 +235,6 @@ def bench_max(
         n_kv_heads=num_kv_heads,
         head_dim=head_dim,
         num_layers=1,
-        cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
         devices=[DeviceRef.GPU()],
     )
@@ -245,8 +245,8 @@ def bench_max(
     bytes_per_element = (
         2 if max_dtype == DType.bfloat16 or max_dtype == DType.float16 else 4
     )
-    # 2x for K and V caches
-    required_memory = (
+    # required_memory
+    _ = (
         2
         * batch_size
         * num_blocks_per_seq
@@ -294,9 +294,12 @@ def bench_max(
     max_lengths_max = Buffer.from_dlpack(
         max_lengths_torch
     )  # Tensor for max_lengths
+    attention_dispatch_metadata_max = Buffer.from_dlpack(
+        torch.tensor([batch_size, 1, 0, cache_len], dtype=torch.int64)
+    )
 
     # Define input types.
-    # Avoid using KVCacheManager for its complecity.
+    # Avoid using KVCacheManager for its complexity.
     # For decode: query is [total_tokens, num_heads, head_dim] where total_tokens = batch_size
     q_type = TensorType(
         max_dtype,
@@ -332,6 +335,9 @@ def bench_max(
         shape=[1, 2],
         device=DeviceRef.CPU(),
     )
+    attention_dispatch_metadata_type = TensorType(
+        DType.int64, shape=[4], device=DeviceRef.CPU()
+    )
 
     # Build graph with paged KV cache inputs
     with Graph(
@@ -343,6 +349,7 @@ def bench_max(
             cache_lengths_type,
             lookup_table_type,
             max_lengths_type,
+            attention_dispatch_metadata_type,
         ],
     ) as graph:
         (
@@ -352,6 +359,7 @@ def bench_max(
             cache_lengths,
             lookup_table,
             max_lengths,
+            attention_dispatch_metadata,
         ) = graph.inputs
 
         layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
@@ -361,14 +369,15 @@ def bench_max(
             cache_lengths.tensor,
             lookup_table.tensor,
             max_lengths.tensor,
+            attention_dispatch_metadata=attention_dispatch_metadata.tensor,
         )
 
         result = flash_attention_ragged(
             kv_params,
-            q.tensor,
-            input_row_offsets.tensor,
-            kv_collection,
-            layer_idx,
+            input=q.tensor,
+            input_row_offsets=input_row_offsets.tensor,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
             mask_variant=MHAMaskVariant.NULL_MASK,
             scale=1.0 / math.sqrt(head_dim),
         )
@@ -397,6 +406,7 @@ def bench_max(
             cache_lengths_max,
             lut_max,
             max_lengths_max,
+            attention_dispatch_metadata_max,
         )[0]
         return output
 
@@ -404,10 +414,14 @@ def bench_max(
     for _ in range(10):
         run_kernel()
 
-    # Use bench_kineto to profile the kernel
+    # Use bench_kineto to profile the kernel.
+    # Split-K decode launches up to two kernels:
+    #   sm100_mha_1q_depth128_..._<hash>         (main decode)
+    #   mha_splitk_reduce_..._<hash>              (reduction, when partitions > 1)
+    # The substring "mha_" matches both (and nothing else in this graph).
     time_s = bench_kineto(
         run_kernel,
-        kernel_names="mha",
+        kernel_names="mha_",
         num_tests=100,
         suppress_kineto_output=True,
         flush_l2=True,
@@ -572,7 +586,7 @@ def main() -> None:
         engine=args.engine,
     )
 
-    met_sec, bytes = result if result else [0, 0]
+    met_sec, bytes = result or [0, 0]
     bytes_per_sec = ThroughputMeasure(Bench.bytes, bytes)
 
     name = (

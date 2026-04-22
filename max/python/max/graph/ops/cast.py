@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -31,5 +31,7 @@ def cast(x: StrongTensorValueLike, dtype: DType) -> TensorValue:
         specified dtype.
     """
     x = TensorValue(x)
+    if x.dtype == dtype:
+        return x
     cast_type = x.type.cast(dtype)
     return Graph.current._add_op_generated(mo.CastOp, cast_type, x)[0].tensor

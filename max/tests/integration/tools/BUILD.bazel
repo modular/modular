@@ -1,4 +1,6 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+load("@rules_pycross//pycross:defs.bzl", "pycross_wheel_library")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "modular_run_binary_test", "requirement")
+load(":precompile_pipeline.bzl", "modular_pipeline_target_name", "modular_precompile_pipeline")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -8,15 +10,26 @@ package(default_visibility = [
 ])
 
 modular_py_library(
+    name = "tag_filters",
+    testonly = True,
+    srcs = ["tag_filters.py"],
+    imports = ["."],
+    deps = [
+        requirement("click"),
+    ],
+)
+
+modular_py_library(
     name = "hf_config_overrides",
     testonly = True,
     srcs = [
         "hf_config_overrides.py",
     ],
     deps = [
+        "//max/python/max/experimental/nn",
         "//max/python/max/nn",
         "//max/python/max/pipelines/lib",
-        "//max/tests/integration/pipelines/python:hf_repo_lock",
+        "//max/tests/integration:hf_repo_lock",
         requirement("transformers"),
     ],
 )
@@ -36,13 +49,17 @@ modular_py_library(
         "//max/python/max/driver",
         "//max/python/max/entrypoints",
         "//max/python/max/pipelines/architectures",
-        "//max/tests/integration/pipelines/python:hf_repo_lock",
-        "//max/tests/integration/pipelines/python/idefics3:torch_utils",
-        "//max/tests/integration/pipelines/python/internvl:torch_utils",
-        "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
-        "//max/tests/integration/pipelines/python/qwen3vl:generate_utils",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        "//max/tests/integration/architectures/idefics3:torch_utils",
+        "//max/tests/integration/architectures/internvl:torch_utils",
+        "//max/tests/integration/architectures/qwen2_5vl:generate_utils",
+        "//max/tests/integration/architectures/qwen3vl:generate_utils",
+        "//max/tests/integration/test_common:github_utils",
+        "//max/tests/integration/test_common:test_data",
+        "//max/tests/integration/test_common:torch_hooks",
         requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
+        requirement("diffusers"),  # Required for image generation pipelines
         requirement("einops"),  # Req'd by replit
         requirement("peft"),  # Required for LoRA support
         requirement("pillow"),
@@ -68,21 +85,35 @@ modular_py_library(
     name = "create_pipelines",
     testonly = True,
     srcs = ["create_pipelines.py"],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
-    deps = [
-        "//max/python/max/pipelines/architectures",
-        "//max/tests/integration/pipelines/python:hf_repo_lock",
-        "//max/tests/integration/pipelines/python/idefics3:torch_utils",
-        "//max/tests/integration/pipelines/python/internvl:torch_utils",
-        "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
-        "//max/tests/integration/pipelines/python/qwen3vl:generate_utils",
-        "//max/tests/integration/pipelines/python/test_common",
+    ignore_extra_deps = [
         requirement("einops"),  # Req'd by replit
+        requirement("timm"),  # Required by InternVL.
+        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
+    ],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        "//max/tests/integration/architectures/idefics3:torch_utils",
+        "//max/tests/integration/architectures/internvl:torch_utils",
+        "//max/tests/integration/architectures/qwen2_5vl:generate_utils",
+        "//max/tests/integration/architectures/qwen3vl:generate_utils",
+        "//max/tests/integration/test_common:test_data",
+        "//max/tests/integration/test_common:torch_utils",
+        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
+        requirement("diffusers"),  # Required for image generation pipelines
+        requirement("einops"),  # Req'd by replit
+        requirement("huggingface-hub"),
+        requirement("peft"),  # Required for LoRA support
         requirement("timm"),  # Required by InternVL.
         requirement("torch"),
         requirement("transformers"),
-        requirement("peft"),  # Required for LoRA support
-        requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
+        requirement("typing-extensions"),
     ],
 )
 
@@ -94,14 +125,43 @@ modular_py_library(
         "@nvshmem_prebuilt//:host",
     ],
     imports = ["."],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":create_pipelines",
-        "//max/python/max/pipelines/architectures",
-        "//max/tests/integration/pipelines/python/test_common",
-        "//max/tests/integration/pipelines/python/test_common:vllm_utils",
+        "//max/python/max/driver",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/test_common:evaluate",
+        "//max/tests/integration/test_common:evaluate_embeddings",
+        "//max/tests/integration/test_common:torch_utils",
+        "//max/tests/integration/test_common:vllm_utils",
+        requirement("huggingface-hub"),
         requirement("requests"),
         requirement("torch"),
+        requirement("typing-extensions"),
+    ],
+)
+
+pycross_wheel_library(
+    name = "transformers_v4",
+    wheel = "@transformers_v4_wheel//file",
+)
+
+pycross_wheel_library(
+    name = "huggingface_hub_v0",
+    wheel = "@huggingface_hub_v0_wheel//file",
+)
+
+modular_py_binary(
+    name = "download_models_for_testing",
+    testonly = True,
+    srcs = ["download_models_for_testing.py"],
+    imports = ["."],
+    main = "download_models_for_testing.py",
+    deps = [
+        "//max/tests/integration:hf_repo_lock",
+        requirement("click"),
+        requirement("huggingface-hub"),
     ],
 )
 
@@ -112,11 +172,11 @@ modular_py_binary(
         "generate_llm_logits.py",
     ],
     data = [
-        "//max/tests/integration/pipelines/python/llama3/testdata",
+        "//max/tests/integration/architectures/llama3/testdata",
     ],
     env = {
         "PIPELINES_TESTDATA": (
-            "max/tests/integration/pipelines/python/llama3/testdata"
+            "max/tests/integration/architectures/llama3/testdata"
         ),
         # required by models that use Expert Parallelism.
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
@@ -125,18 +185,30 @@ modular_py_binary(
     main = "generate_llm_logits.py",
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
+        # HACK:
+        ":transformers_v4",
+        ":huggingface_hub_v0",
+        # Don't sort the above dep ^^^, we're forcing a specific version of transformers.
+        # We rely on Python import order to make sure this one gets picked up instead of
+        # the normal one pulled from rules_pycross transitively.
+        # Also override huggingface_hub, required by transformers.
         ":create_pipelines",
         ":run_models",
         "//max/python/max/entrypoints",
         "//max/python/max/pipelines/architectures",
-        "//max/tests/integration/pipelines/python:hf_repo_lock",
-        "//max/tests/integration/pipelines/python/idefics3:torch_utils",
-        "//max/tests/integration/pipelines/python/internvl:torch_utils",
-        "//max/tests/integration/pipelines/python/qwen2_5vl:generate_utils",
-        "//max/tests/integration/pipelines/python/qwen3vl:generate_utils",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        "//max/tests/integration/architectures/idefics3:torch_utils",
+        "//max/tests/integration/architectures/internvl:torch_utils",
+        "//max/tests/integration/architectures/qwen2_5vl:generate_utils",
+        "//max/tests/integration/architectures/qwen3vl:generate_utils",
+        "//max/tests/integration/test_common:evaluate",
+        "//max/tests/integration/test_common:github_utils",
+        "//max/tests/integration/test_common:numpy_encoder",
+        "//max/tests/integration/test_common:torch_utils",
         requirement("click"),
         requirement("compressed-tensors"),  # Required for compressed-tensors quantization models
+        requirement("diffusers"),  # Required for image generation pipelines
         requirement("einops"),  # Req'd by replit
         requirement("peft"),  # Required for LoRA support
         requirement("pillow"),
@@ -155,6 +227,11 @@ modular_py_binary(
             requirement("tokenicer"),  # Required by gptqmodel
         ],
         "//conditions:default": [],
+    }) + select({
+        "//:use_sglang_setting": [
+            requirement("sglang"),  # Required for compressed-tensors quantization models
+        ],
+        "//conditions:default": [],
     }),
 )
 
@@ -165,38 +242,242 @@ modular_py_binary(
         "debug_model.py",
     ],
     data = [
-        "//max/tests/integration/pipelines/python/llama3/testdata",
+        "//max/tests/integration/architectures/llama3/testdata",
     ],
     env = {
         "PIPELINES_TESTDATA": (
-            "max/tests/integration/pipelines/python/llama3/testdata"
+            "max/tests/integration/architectures/llama3/testdata"
         ),
         # required by models that use Expert Parallelism.
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
     imports = ["."],
     main = "debug_model.py",
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":debugging_utils",
         ":hf_config_overrides",
         ":run_models",
         "//max/python/max/entrypoints",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
         requirement("click"),
         requirement("torch"),
     ],
 )
 
 modular_py_binary(
-    name = "compare_buffers",
+    name = "precompile_all_pipelines",
     testonly = True,
-    srcs = ["compare_buffers.py"],
+    srcs = ["precompile_all_pipelines.py"],
+    ignore_extra_deps = [
+        # Unsure if this is actually needed, but likely
+        requirement("gguf"),
+    ],
     imports = ["."],
-    main = "compare_buffers.py",
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    main = "precompile_all_pipelines.py",
+    deps = [
+        ":create_pipelines",
+        ":tag_filters",
+        "//max/python/max/driver",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/serve:config",
+        "//max/tests/integration/accuracy/logit_verification:logit_verification_config",
+        requirement("click"),
+        requirement("gguf"),
+    ],
+)
+
+modular_py_test(
+    name = "test_precompile_all_pipelines_cpu",
+    size = "large",
+    timeout = "long",
+    srcs = ["test_precompile_all_pipelines_cpu.py"],
+    imports = ["."],
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/tests/integration/tools:precompile_all_pipelines",
+        "//max/tests/integration/tools:tag_filters",
+    ],
+)
+
+modular_run_binary_test(
+    name = "test_precompile_all_pipelines_smoke",
+    size = "medium",
+    args = [
+        "--devices",
+        "cpu",
+        "--dry-run",
+    ],
+    binary = "//max/tests/integration/tools:precompile_all_pipelines",
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)
+
+modular_py_binary(
+    name = "precompile_pipeline",
+    testonly = True,
+    srcs = ["precompile_pipeline.py"],
+    imports = ["."],
+    deps = [
+        ":create_pipelines",
+        "//max/python/max/driver",
+        "//max/python/max/entrypoints",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/serve:config",
+        requirement("click"),
+    ],
+)
+
+PIPELINE_SPECS = [
+    # NOTE: GGUF models are excluded because local torch golden generation
+    # requires GGUF tensor de-quantization, which exceeds the CI timeout.
+    # They are still verified via the Pipeline Logit Verification workflow
+    # which has access to pregenerated S3 goldens.
+    #
+    # Mistral Small 24B
+    {
+        "pipeline": "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16",
+        "model_path": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+        "encoding": "bfloat16",
+        "target": "cuda:sm_90a",
+        "tags": ["gpu"],
+        "gpu_constraints": ["//:h100_gpu"],
+        "devices": "gpu",
+        "exec_properties": {"test.resources:gpu-memory": "80"},
+    },
+    {
+        "pipeline": "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16",
+        "model_path": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+        "encoding": "bfloat16",
+        "target": "cuda:sm_100a",
+        "tags": ["gpu"],
+        "gpu_constraints": ["//:b200_gpu"],
+        "devices": "gpu",
+        "exec_properties": {"test.resources:gpu-memory": "80"},
+    },
+    # TODO: HIP targets are excluded because the precompile_pipeline build
+    # action cross-compiles for ROCm but runs on a CPU-only executor that
+    # lacks ROCm runtime libraries (e.g. libroctx64.so).  Re-add once
+    # cross-compilation from CPU-only executors is supported.
+    #
+    # {
+    #     "pipeline": "mistralai/Mistral-Small-3.1-24B-Instruct-2503-bfloat16",
+    #     "model_path": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+    #     "encoding": "bfloat16",
+    #     "target": "hip:gfx950",
+    #     "tags": ["gpu"],
+    #     "gpu_constraints": ["//:mi355_gpu"],
+    #     "devices": "gpu",
+    #     "exec_properties": {"test.resources:gpu-memory": "80"},
+    # },
+    #
+    # Llama 3.3 70B
+    {
+        "pipeline": "meta-llama/Llama-3.3-70B-Instruct-bfloat16",
+        "model_path": "meta-llama/Llama-3.3-70B-Instruct",
+        "encoding": "bfloat16",
+        "target": "cuda:sm_100a",
+        "tags": ["gpu"],
+        "gpu_constraints": ["//:b200_gpu"],
+        "devices": "gpu",
+        "exec_properties": {"test.resources:gpu-memory": "180"},
+    },
+    {
+        "pipeline": "meta-llama/Llama-3.3-70B-Instruct-bfloat16",
+        "model_path": "meta-llama/Llama-3.3-70B-Instruct",
+        "encoding": "bfloat16",
+        "target": "cuda:sm_90a",
+        "tags": ["gpu"],
+        "gpu_constraints": [
+            "//:h100_gpu",
+            "//:has_4_gpus",
+        ],
+        "devices": "gpu:0,1,2,3",
+        "exec_properties": {"test.resources:gpu-memory": "80"},
+    },
+]
+
+[
+    modular_precompile_pipeline(
+        name = "precompile_pipeline_{}".format(modular_pipeline_target_name(spec)),
+        testonly = True,
+        devices = spec["devices"],
+        encoding = spec["encoding"],
+        pipeline = spec["model_path"],
+        # External CI does not have our pre-warmed model cache
+        tags = ["skip-external-ci"],
+        target = spec["target"],
+    )
+    for spec in PIPELINE_SPECS
+]
+
+[
+    modular_run_binary_test(
+        name = "test_verify_pipeline_{}".format(modular_pipeline_target_name(spec)),
+        size = "enormous",
+        args = [
+            "--pipeline",
+            spec["pipeline"],
+            "--devices",
+            spec["devices"],
+            "--no-aws",
+        ],
+        binary = "//max/tests/integration/accuracy:verify_pipelines",
+        data = [":precompile_pipeline_{}".format(modular_pipeline_target_name(spec))],
+        env = {
+            "HF_HUB_OFFLINE": "1",
+            "MODULAR_MAX_CACHE_DIR": "$(rootpath :precompile_pipeline_{})".format(
+                modular_pipeline_target_name(spec),
+            ),
+        },
+        exec_properties = spec["exec_properties"],
+        gpu_constraints = spec["gpu_constraints"],
+        tags = spec["tags"] + ["manual"],
+    )
+    for spec in PIPELINE_SPECS
+]
+
+modular_py_binary(
+    name = "compare_tensors",
+    testonly = True,
+    srcs = ["compare_tensors.py"],
+    imports = ["."],
+    main = "compare_tensors.py",
     deps = [
         "//max/python/max/driver",
         requirement("click"),
         requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_hf_config_overrides",
+    size = "small",
+    srcs = ["test_hf_config_overrides.py"],
+    imports = ["."],
+    tags = [
+        "no-pydeps",  # TODO: Fix pydeps import mapping for tools.hf_config_overrides
+    ],
+    # TODO(MODELS-994): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/tools:hf_config_overrides",
+        requirement("transformers"),
     ],
 )

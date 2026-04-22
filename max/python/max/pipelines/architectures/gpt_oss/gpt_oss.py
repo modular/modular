@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -25,17 +25,17 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn import (
-    ColumnParallelLinear,
-    Embedding,
-    LayerList,
-    Module,
-)
+from max.nn.embedding import Embedding
 from max.nn.kv_cache import PagedCacheValues
+from max.nn.layer import LayerList, Module
+from max.nn.linear import ColumnParallelLinear
 from max.nn.norm.rms_norm import RMSNorm
 from max.nn.rotary_embedding import (
     YarnRotaryEmbedding,
     YarnScalingParams,
+)
+from max.nn.transformer.distributed_transformer import (
+    DistributedLogitsPostprocessMixin,
 )
 
 from .layers.attention import GptOssAttention
@@ -44,7 +44,7 @@ from .layers.transformer_block import GptOssTransformerBlock
 from .model_config import GptOssConfig
 
 
-class GptOssTextModel(Module):
+class GptOssTextModel(DistributedLogitsPostprocessMixin, Module):
     """The GPT OSS language model.
 
     Decoder-only Transformer with MoE feed-forward, rotary embeddings (YARN),
@@ -54,6 +54,13 @@ class GptOssTextModel(Module):
     def __init__(self, config: GptOssConfig) -> None:
         super().__init__()
         self.devices = config.devices
+
+        # Set embedding output dtype for quantized models
+        self.embedding_output_dtype: DType | None = None
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            self.embedding_output_dtype = (
+                config.quant_config.embedding_output_dtype
+            )
 
         # Create YARN scaling params if configured
         assert config.rope_scaling is not None, (
@@ -151,6 +158,8 @@ class GptOssTextModel(Module):
         **kwargs,
     ) -> tuple[TensorValue, ...]:
         h_embed = self.embed_tokens(tokens)
+        if self.embedding_output_dtype is not None:
+            h_embed = ops.cast(h_embed, self.embedding_output_dtype)
         # Replicate embedding output to all devices
         h = [h_embed.to(device) for device in self.devices]
 
@@ -168,29 +177,9 @@ class GptOssTextModel(Module):
                 **kwargs,
             )
 
-        # Get last token logits only (no variable logits support).
-        last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
-        last_token_h = []
-        if h:
-            last_token_h = [
-                ops.gather(h_device, indices, axis=0)
-                for h_device, indices in zip(h, last_token_indices, strict=True)
-            ]
-        last_logits = ops.cast(
-            # Take only the device 0 logits to device-to-host transfer.
-            self.lm_head(
-                [
-                    self.norm_shards[i](last_token_h[i])
-                    for i in range(len(last_token_h))
-                ],
-                signal_buffers,
-            )[0],
-            DType.float32,
+        return self._postprocess_logits(
+            h, input_row_offsets, return_n_logits, signal_buffers
         )
-
-        # For now, simplified to return last token only
-        # TODO: Handle VARIABLE and ALL logits cases for distributed processing
-        return (last_logits,)
 
 
 class GptOss(Module):

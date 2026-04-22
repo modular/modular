@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from logger import Level, Logger
-from testing import TestSuite
+from std.logger import Level, Logger
+from std.testing import TestSuite
 
 
-def test_log_critical():
+def test_log_critical() raises:
     var log = Logger[Level.CRITICAL]()
 
     # CHECK-NOT: DEBUG
@@ -31,5 +31,5 @@ def test_log_critical():
     log.critical("hello")
 
 
-fn main() raises:
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,33 +15,32 @@ from ..tile_scheduler import MatmulSchedule, RasterOrder
 from internal_utils import TuningConfig
 
 
-@register_passable("trivial")
-struct TuningConfigSM90(TuningConfig):
+struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
     var M: Int
     var N: Int
     var K: Int
 
     var mma_shape: IndexList[3]
     var block_tile_shape: IndexList[3]
-    var num_pipeline_stages: UInt
+    var num_pipeline_stages: Int
     var cluster_shape: IndexList[3]
-    var num_consumer: UInt
+    var num_consumer: Int
     var partitioned_multicast: Bool
     var grid_shape: OptionalReg[IndexList[2]]  # = None
     var schedule: MatmulSchedule  # =  MatmulSchedule.NONE
     var splits: OptionalReg[Int]
     var raster_order: OptionalReg[RasterOrder]
 
-    fn __init__(
+    def __init__(
         out self,
         M: Int,
         N: Int,
         K: Int,
         mma_shape: IndexList[3],
         block_tile_shape: IndexList[3],
-        num_pipeline_stages: UInt,
+        num_pipeline_stages: Int,
         cluster_shape: IndexList[3],
-        num_consumer: UInt,
+        num_consumer: Int,
         partitioned_multicast: Bool,
         grid_shape: OptionalReg[IndexList[2]] = None,
         schedule: MatmulSchedule = MatmulSchedule.NONE,
@@ -62,11 +61,16 @@ struct TuningConfigSM90(TuningConfig):
         self.splits = splits
         self.raster_order = raster_order
 
-    fn __str__(self) -> String:
-        return String("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes the tuning config as a string.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write("config: ", "m:", self.M, "/n:", self.N, "/k:", self.K)
 
 
-fn _get_tuning_list_bf16[mma_k: Int, BK: Int]() -> List[TuningConfigSM90]:
+def _get_tuning_list_bf16[mma_k: Int, BK: Int]() -> List[TuningConfigSM90]:
     # kprofile -s oss/modular/max/kernels/src/linalg/matmul/gpu/sm90/tuning.mojo.snippet oss/modular/max/kernels/src/linalg/matmul/gpu/sm90/tuning_table_bf16.yaml
     # ----------------BEGIN-TUNING-LIST-BF16----------------
     comptime config_list = [

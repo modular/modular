@@ -32,45 +32,60 @@ print(d)  # prints 2
 ```
 """
 
-from os import abort
+from std.os import abort
 
-from utils import Variant
+from std.utils import Variant
 
-from builtin.constrained import _constrained_conforms_to
-from builtin.device_passable import DevicePassable
-from compile import get_type_name
+from std.builtin.device_passable import DevicePassable
+from std.builtin.rebind import downcast
+from std.compile import get_type_name
+from std.format._utils import FormatStruct, TypeNames, write_to, write_repr_to
+from std.hashlib import Hasher
+from std.memory import UnsafeMaybeUninit
+from std.memory.unsafe_pointer import unsafe_cast
+from std.reflection import call_location
+from std.sys.intrinsics import _type_is_eq
+from std.utils.variant import _all_trivial_copyinit
+from std.utils._nicheable import (
+    UnsafeNicheable,
+    UnsafeCustomNicheStorage,
+    NicheIndex,
+)
+from std.utils.type_functions import ConditionalType
 
 
-# TODO(27780): NoneType can't currently conform to traits
 @fieldwise_init
-struct _NoneType(ImplicitlyCopyable):
+struct _NoneType(TrivialRegisterPassable):
     pass
 
 
-@register_passable
 @fieldwise_init
-struct EmptyOptionalError[T: AnyType](ImplicitlyCopyable, Writable):
+struct EmptyOptionalError[T: AnyType](
+    ImplicitlyCopyable, RegisterPassable, Writable
+):
     """An error type for when an empty `Optional` is accessed.
 
     Parameters:
         T: The type of the value that was accessed in the `Optional`.
     """
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write the error to a `Writer`.
 
         Args:
             writer: The `Writer` to write to.
-
-
-        Examples:
-
-        ```mojo
-        instance = Optional[String]()
-        print(instance) # Output: None
-        ```
         """
-        writer.write("EmptyOptionalError[", get_type_name[Self.T](), "]")
+        FormatStruct(writer, "EmptyOptionalError").params(
+            TypeNames[Self.T]()
+        ).fields()
+
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Write the error to a `Writer`.
+
+        Args:
+            writer: The `Writer` to write to.
+        """
+        self.write_to(writer)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -80,13 +95,20 @@ struct EmptyOptionalError[T: AnyType](ImplicitlyCopyable, Writable):
 
 struct Optional[T: Movable](
     Boolable,
+    Copyable where conforms_to(T, Copyable),
     Defaultable,
-    ImplicitlyCopyable,
+    DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
+        T, Copyable
+    ),
+    Equatable where conforms_to(T, Equatable),
+    Hashable where conforms_to(T, Hashable),
+    ImplicitlyCopyable where conforms_to(T, ImplicitlyCopyable),
     Iterable,
+    IterableOwned,
     Iterator,
-    Representable,
-    Stringable,
-    Writable,
+    Movable,
+    RegisterPassable where conforms_to(T, RegisterPassable),
+    Writable where conforms_to(T, Writable),
 ):
     """A type modeling a value which may or may not be present.
 
@@ -97,8 +119,17 @@ struct Optional[T: Movable](
     Your value can take on a value or `None`, and you need to check
     and explicitly extract the value to get it out.
 
-    Currently T is required to be a `Copyable` so we can implement
-    copy/move for Optional and allow it to be used in collections itself.
+    ## Layout
+
+    The layout of `Optional` is not guaranteed and may change at any time.
+    The implementation may apply niche optimizations (for example, storing the
+    `None` sentinel inside spare bits of `T`) that alter the resulting layout.
+    Do not rely on `size_of[Optional[T]]()` or `align_of[Optional[T]]()` being
+    stable across compiler versions. The only guarantee is that the size and
+    alignment will be at least as large as those of `T` itself.
+
+    If you need to inspect the current size or alignment, use `size_of` and
+    `align_of`, but treat the results as non-stable implementation details.
 
     Examples:
 
@@ -127,12 +158,15 @@ struct Optional[T: Movable](
         iterable_origin: The origin of the iterable.
     """
 
+    comptime IteratorOwnedType: Iterator = Self
+    """The owned iterator type for this optional."""
+
     comptime Element = Self.T
     """The element type of this optional."""
 
-    # Fields
-    # _NoneType comes first so its index is 0.
-    # This means that Optionals that are 0-initialized will be None.
+    comptime device_type: AnyType = Self
+    """The device-side type for this optional."""
+
     comptime _type = Variant[_NoneType, Self.T]
     var _value: Self._type
 
@@ -140,7 +174,7 @@ struct Optional[T: Movable](
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__(out self):
+    def __init__(out self):
         """Construct an empty `Optional`.
 
         Examples:
@@ -153,7 +187,7 @@ struct Optional[T: Movable](
         self._value = Self._type(_NoneType())
 
     @implicit
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         """Construct an `Optional` containing a value.
 
         Args:
@@ -171,9 +205,9 @@ struct Optional[T: Movable](
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
     #   only the initializer from a `NoneType`.
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(out self, value: NoneType._mlir_type):
+    def __init__(out self, value: NoneType._mlir_type):
         """Construct an empty `Optional`.
 
         Args:
@@ -189,7 +223,7 @@ struct Optional[T: Movable](
         self = Self(value=NoneType(value))
 
     @implicit
-    fn __init__(out self, value: NoneType):
+    def __init__(out self, value: NoneType):
         """Construct an empty `Optional`.
 
         Args:
@@ -204,11 +238,86 @@ struct Optional[T: Movable](
         """
         self = Self()
 
+    @always_inline("nodebug")
+    @implicit
+    @doc_hidden
+    def __init__[
+        U: TrivialRegisterPassable
+    ](out self: Optional[U], optional_reg: OptionalReg[U]):
+        """Implicitly cast an `OptionalReg[T]` to an `Optional[T]`."""
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+        UnsafePointer(to=self).bitcast[OptionalReg[U]]()[] = optional_reg
+
+    @always_inline
+    @implicit
+    @doc_hidden
+    def __init__(
+        nullable: UnsafePointer[...],
+        out self: Optional[
+            UnsafePointer[
+                nullable.type,
+                nullable.origin,
+                address_space=nullable.address_space,
+            ]
+        ],
+    ):
+        self = {value = nullable}
+
+    @always_inline
+    @implicit
+    @doc_hidden
+    def __init__(
+        nullable: UnsafePointer[mut=True, ...],
+        out self: Optional[
+            UnsafePointer[
+                nullable.type,
+                AnyOrigin[mut=True],
+                address_space=nullable.address_space,
+            ]
+        ],
+    ):
+        self = {value = nullable.unsafe_origin_cast[AnyOrigin[mut=True]]()}
+
+    @always_inline
+    @implicit
+    @doc_hidden
+    def __init__[
+        __disambiguate: NoneType = None
+    ](
+        nullable: UnsafePointer[...],
+        out self: Optional[
+            UnsafePointer[
+                nullable.type,
+                AnyOrigin[mut=False],
+                address_space=nullable.address_space,
+            ]
+        ],
+    ):
+        self = {
+            value = nullable.as_immutable().unsafe_origin_cast[
+                AnyOrigin[mut=False]
+            ]()
+        }
+
+    # TODO(MOCO-3640): Remove once the compiler can synthesize copy
+    # constructors through variadic conditional conformances
+    # (AllCopyable[_NoneType, T] when T: Copyable).
+    comptime __copy_ctor_is_trivial: Bool = _all_trivial_copyinit[Self.T]()
+
+    @always_inline
+    def __init__(out self, *, copy: Self):
+        """Copy-initialize an `Optional`.
+
+        Args:
+            copy: The `Optional` to copy from.
+        """
+        self._value = Self._type(copy=copy._value)
+
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __is__(self, other: NoneType) -> Bool:
+    def __is__(self, other: NoneType) -> Bool:
         """Return `True` if the Optional has no value.
 
         Args:
@@ -223,7 +332,7 @@ struct Optional[T: Movable](
         """
         return not self.__bool__()
 
-    fn __isnot__(self, other: NoneType) -> Bool:
+    def __isnot__(self, other: NoneType) -> Bool:
         """Return `True` if the Optional has a value.
 
         Args:
@@ -238,7 +347,7 @@ struct Optional[T: Movable](
         """
         return self.__bool__()
 
-    fn __eq__(self, rhs: NoneType) -> Bool:
+    def __eq__(self, rhs: type_of(None)) -> Bool:
         """Return `True` if a value is not present.
 
         Args:
@@ -249,16 +358,10 @@ struct Optional[T: Movable](
         """
         return self is None
 
-    fn __eq__[
-        _T: Equatable & Copyable
-    ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
+    def __eq__(self, rhs: Self) -> Bool where conforms_to(Self.T, Equatable):
         """Return `True` if this is the same as another `Optional` value,
         meaning both are absent, or both are present and have the same
         underlying value.
-
-        Parameters:
-            _T: The type of the elements in the list. Must implement the
-                traits `Copyable` and `Equatable`.
 
         Args:
             rhs: The value to compare to.
@@ -268,11 +371,13 @@ struct Optional[T: Movable](
         """
         if self:
             if rhs:
-                return self.value() == rhs.value()
+                return trait_downcast[Equatable](
+                    self.unsafe_value()
+                ) == trait_downcast[Equatable](rhs.unsafe_value())
             return False
         return not rhs
 
-    fn __ne__(self, rhs: NoneType) -> Bool:
+    def __ne__(self, rhs: type_of(None)) -> Bool:
         """Return `True` if a value is present.
 
         Args:
@@ -283,30 +388,11 @@ struct Optional[T: Movable](
         """
         return self is not None
 
-    fn __ne__[
-        _T: Equatable & Copyable, //
-    ](self: Optional[_T], rhs: Optional[_T]) -> Bool:
-        """Return `False` if this is the same as another `Optional` value,
-        meaning both are absent, or both are present and have the same
-        underlying value.
-
-        Parameters:
-            _T: The type of the elements in the list. Must implement the
-                traits `Copyable` and `Equatable`.
-
-        Args:
-            rhs: The value to compare to.
-
-        Returns:
-            False if the values are the same.
-        """
-        return not (self == rhs)
-
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the Optional's possibly contained value.
 
         Optionals act as a collection of size 0 or 1.
@@ -325,10 +411,23 @@ struct Optional[T: Movable](
             print(value) # Does not reach line
         ```
         """
+        comptime assert conforms_to(
+            Self.T, Copyable
+        ), "Cannot iterate over non-copyable Optional."
         return self.copy()
 
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        """Consume the Optional and return an iterator over its value.
+
+        Optionals act as a collection of size 0 or 1.
+
+        Returns:
+            An iterator that owns the Optional's value (if present).
+        """
+        return self^
+
     @always_inline
-    fn __next__(mut self) raises StopIteration -> Self.Element:
+    def __next__(mut self) raises StopIteration -> Self.Element:
         """Return the contained value of the Optional.
 
         Returns:
@@ -342,7 +441,7 @@ struct Optional[T: Movable](
         return self.take()
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         """Return the bounds of the `Optional`, which is 0 or 1.
 
         Returns:
@@ -351,7 +450,7 @@ struct Optional[T: Movable](
         Examples:
 
         ```mojo
-        fn bounds():
+        def bounds():
             empty_instance = Optional[Int]()
             populated_instance = Optional[Int](50)
 
@@ -367,7 +466,7 @@ struct Optional[T: Movable](
         return (len, {len})
 
     @always_inline
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Return true if the Optional has a value.
 
         Returns:
@@ -376,7 +475,7 @@ struct Optional[T: Movable](
         return not self._value.isa[_NoneType]()
 
     @always_inline
-    fn __invert__(self) -> Bool:
+    def __invert__(self) -> Bool:
         """Return False if the `Optional` has a value.
 
         Returns:
@@ -385,9 +484,9 @@ struct Optional[T: Movable](
         return not self
 
     @always_inline
-    fn __getitem__(
+    def __getitem__(
         ref self,
-    ) raises EmptyOptionalError[Self.T] -> ref [self._value] Self.T:
+    ) raises EmptyOptionalError[Self.T] -> ref[self._value] Self.T:
         """Retrieve a reference to the value inside the `Optional`.
 
         Returns:
@@ -400,43 +499,8 @@ struct Optional[T: Movable](
             raise EmptyOptionalError[Self.T]()
         return self.unsafe_value()
 
-    fn __str__(self: Self) -> String:
-        """Return the string representation of the value of the `Optional`.
-
-        Returns:
-            A string representation of the `Optional`.
-        """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Stringable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Stringable",
-        ]()
-
-        if self:
-            return trait_downcast[Stringable](self.value()).__str__()
-        else:
-            return "None"
-
-    fn __repr__(self: Self) -> String:
-        """Returns the verbose string representation of the `Optional`.
-
-        Returns:
-            A verbose string representation of the `Optional`.
-        """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Representable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Representable",
-        ]()
-
-        var output = String()
-        output.write("Optional(", self, ")")
-        return output^
-
     @always_inline("nodebug")
-    fn __merge_with__[
+    def __merge_with__[
         other_type: type_of(Bool),
     ](self) -> Bool:
         """Merge with other bools in an expression.
@@ -449,30 +513,95 @@ struct Optional[T: Movable](
         """
         return self.__bool__()
 
-    fn write_to(self: Self, mut writer: Some[Writer]):
-        """Write `Optional` string representation to a `Writer`.
+    def _write_to[
+        *, is_repr: Bool
+    ](self: Self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
+        if self:
+            comptime if is_repr:
+                trait_downcast[Writable](self.value()).write_repr_to(writer)
+            else:
+                trait_downcast[Writable](self.value()).write_to(writer)
+        else:
+            writer.write_string("None")
+
+    def write_to(
+        self: Self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
+        """Write this `Optional` to a `Writer`.
 
         Args:
             writer: The object to write to.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Representable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Representable",
+        self._write_to[is_repr=False](writer)
+
+    def write_repr_to(
+        self: Self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
+        """Write this `Optional`'s representation to a `Writer`.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        def fields(mut w: Some[Writer]):
+            self._write_to[is_repr=True](w)
+
+        FormatStruct(writer, "Optional").params(TypeNames[Self.T]()).fields[
+            FieldsFn=fields
         ]()
 
+    def __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.T, Hashable):
+        """Updates hasher with the hash of the contained value, if present.
+
+        A `None` optional hashes differently from any present value.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
         if self:
-            writer.write(trait_downcast[Representable](self.value()).__repr__())
+            # Tag the hash so that hash(T) != hash(Optional[T](..)).
+            hasher.update(UInt8(1))
+            trait_downcast[Hashable](self.value()).__hash__(hasher)
         else:
-            writer.write("None")
+            hasher.update(UInt8(0))
+
+    def _to_device_type(
+        self, target: MutOpaquePointer[_]
+    ) where conforms_to(Self.T, DevicePassable) and conforms_to(
+        Self.T, Copyable
+    ):
+        """Convert to device type and store at the target address.
+
+        Args:
+            target: The target pointer to store the device type.
+        """
+        target.bitcast[Self]().init_pointee_copy(self)
+
+    @staticmethod
+    def get_type_name() -> (
+        String
+    ) where conforms_to(Self.T, DevicePassable) and conforms_to(
+        Self.T, Copyable
+    ):
+        """Get the human-readable type name for this `Optional` type.
+
+        Returns:
+            A string representation of the type, e.g. `Optional[Int]`.
+        """
+        return String(t"Optional[{get_type_name[Self.T]()}]")
 
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn value(ref self) -> ref [self._value] Self.T:
+    def value(ref self) -> ref[self._value] Self.T:
         """Retrieve a reference to the value of the `Optional`.
 
         Returns:
@@ -493,16 +622,19 @@ struct Optional[T: Movable](
         """
         if not self.__bool__():
             abort(
-                "`Optional.value()` called on empty `Optional`. Consider using"
-                " `if optional:` to check whether the `Optional` is empty"
-                " before calling `.value()`, or use `.or_else()` to provide a"
-                " default value."
+                (
+                    "`Optional.value()` called on empty `Optional`. Consider"
+                    " using `if optional:` to check whether the `Optional` is"
+                    " empty before calling `.value()`, or use `.or_else()` to"
+                    " provide a default value."
+                ),
+                location=call_location(),
             )
 
-        return self.unsafe_value()
+        return self._value.unsafe_get[Self.T]()
 
     @always_inline
-    fn unsafe_value(ref self) -> ref [self._value] Self.T:
+    def unsafe_value(ref self) -> ref[self._value] Self.T:
         """Unsafely retrieve a reference to the value of the `Optional`.
 
         Returns:
@@ -529,10 +661,10 @@ struct Optional[T: Movable](
         print(y)
         ```
         """
-        debug_assert(self.__bool__(), "`.value()` on empty `Optional`")
+        assert self.__bool__(), "`.value()` on empty `Optional`"
         return self._value.unsafe_get[Self.T]()
 
-    fn take(mut self) -> Self.T:
+    def take(mut self) -> Self.T:
         """Move the value out of the `Optional`.
 
         Returns:
@@ -572,7 +704,7 @@ struct Optional[T: Movable](
             )
         return self.unsafe_take()
 
-    fn unsafe_take(mut self) -> Self.T:
+    def unsafe_take(mut self) -> Self.T:
         """Unsafely move the value out of the `Optional`.
 
         Returns:
@@ -603,10 +735,10 @@ struct Optional[T: Movable](
         print(y)                    # Does not reach this line
         ```
         """
-        debug_assert(self.__bool__(), "`.unsafe_take()` on empty `Optional`")
+        assert self.__bool__(), "`.unsafe_take()` on empty `Optional`"
         return self._value.unsafe_replace[_NoneType, Self.T](_NoneType())
 
-    fn or_else[
+    def or_else[
         _T: Movable & ImplicitlyDestructible, //
     ](deinit self: Optional[_T], var default: _T) -> _T:
         """Return the underlying value contained in the `Optional` or a default
@@ -634,10 +766,10 @@ struct Optional[T: Movable](
         ```
         """
         if self:
-            return self.unsafe_take()
+            return self._value^.unsafe_take[_T]()
         return default^
 
-    fn copied[
+    def copied[
         mut: Bool,
         origin: Origin[mut=mut],
         //,
@@ -675,14 +807,225 @@ struct Optional[T: Movable](
         else:
             return None
 
+    @always_inline("nodebug")
+    def _unsafe_nullable[
+        U: AnyType, origin: Origin, address_space: AddressSpace
+    ](
+        self: Optional[UnsafePointer[U, origin, address_space=address_space]],
+        out result: type_of(self).T,
+    ):
+        result = UnsafePointer(to=self).bitcast[type_of(result)]()[]
+
+    # TODO(MOCO-3744): `To` cannot be inferred by the compiler
+    # and must be manually specified.
+    def map[
+        To: Movable,
+        //,
+        Mapper: def(var Self.T) unified -> To,
+    ](deinit self, mapper: Mapper) -> Optional[To]:
+        """Applies a function to the contained value (if any), returning an
+        `Optional` containing the result.
+
+        Transforms `Optional[T]` into `Optional[To]` by applying `mapper` to
+        the contained value. If `self` is empty, returns an empty `Optional[To]`
+        without calling `mapper`.
+
+        Parameters:
+            To: The result type of the mapping closure.
+            Mapper: The type of the mapping closure.
+
+        Args:
+            mapper: The closure to apply to the contained value.
+
+        Returns:
+            An `Optional[To]` containing the mapped value, or `None` if `self`
+            was empty.
+
+        Examples:
+
+        Map the value inside an `Optional` to a different type:
+
+        ```mojo
+        var opt = Optional("hello")
+        var length = opt.map[To=Int](String.byte_length)
+        print(length.value())  # Output: 5
+        ```
+
+        If the `Optional` is empty, the mapper is not called:
+
+        ```mojo
+        var opt = Optional[String](None)
+        var length = opt.map[To=Int](String.byte_length)
+        print(length.or_else(-1))  # Output: -1
+        ```
+        """
+        if self:
+            return {mapper(self.unsafe_take())}
+        else:
+            return None
+
+    # TODO(MOCO-3744): `To` cannot be inferred by the compiler
+    # and must be manually specified.
+    def and_then[
+        To: Movable,
+        //,
+        Mapper: def(var Self.T) unified -> Optional[To],
+    ](deinit self, mapper: Mapper) -> Optional[To]:
+        """Calls `mapper` on the contained value (if any), returning the result.
+
+        Unlike `map()`, the mapper function itself returns an `Optional`. This
+        allows chaining operations that may each independently fail. Sometimes
+        called "flat map" in other languages.
+
+        Parameters:
+            To: The value type of the `Optional` returned by the mapper.
+            Mapper: The type of the mapping function.
+
+        Args:
+            mapper: The function to apply to the contained value. Must return
+                an `Optional[To]`.
+
+        Returns:
+            The `Optional[To]` returned by `mapper`, or `None` if `self` was
+            empty.
+
+        Examples:
+
+        Chain operations that may each return `None`:
+
+        ```mojo
+        def try_parse_int(s: String) -> Optional[Int]:
+            try:
+                return Int(s)
+            except:
+                return None
+
+        def main():
+            var opt = Optional("42")
+            var parsed = opt.and_then[To=Int](try_parse_int)
+            print(parsed.value())  # Output: 42
+        ```
+
+        If the `Optional` is empty, the mapper is not called:
+
+        ```mojo
+        def main():
+            var opt = Optional[String](None)
+            var parsed = opt.and_then[To=Int](try_parse_int)
+            print(parsed.or_else(-1))  # Output: -1
+        ```
+        """
+        if self:
+            return mapper(self.unsafe_take())
+        else:
+            return None
+
 
 # ===-----------------------------------------------------------------------===#
 # OptionalReg
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct OptionalReg[T: __TypeOfAllTypes](Boolable, Defaultable, DevicePassable):
+trait _OptionalRegStorageTraits(TrivialRegisterPassable):
+    def __init__(out self):
+        ...
+
+    def __init__[U: TrivialRegisterPassable](out self, value: U):
+        ...
+
+    def value[U: TrivialRegisterPassable](self) -> U:
+        ...
+
+    def __bool__(self) -> Bool:
+        ...
+
+
+struct _DefaultOptionalRegStorage[T: TrivialRegisterPassable](
+    TrivialRegisterPassable, _OptionalRegStorageTraits
+):
+    comptime _mlir_type = __mlir_type[`!kgen.variant<`, Self.T, `, i1>`]
+    var _value: Self._mlir_type
+
+    @always_inline
+    def __init__(out self):
+        self._value = __mlir_op.`kgen.variant.create`[
+            _type=Self._mlir_type, index=Int(1)._mlir_value
+        ](__mlir_attr.false)
+
+    @always_inline
+    def __init__[U: TrivialRegisterPassable](out self, value: U):
+        comptime assert _type_is_eq[U, Self.T]()
+        self._value = __mlir_op.`kgen.variant.create`[
+            _type=Self._mlir_type, index=Int(0)._mlir_value
+        ](rebind[Self.T](value))
+
+    @always_inline
+    def value[U: TrivialRegisterPassable](self) -> U:
+        comptime assert _type_is_eq[U, Self.T]()
+        var value = __mlir_op.`kgen.variant.get`[index=Int(0)._mlir_value](
+            self._value
+        )
+        return rebind[U](value)
+
+    @always_inline
+    def __bool__(self) -> Bool:
+        return __mlir_op.`kgen.variant.is`[index=Int(0)._mlir_value](
+            self._value
+        )
+
+
+struct _NicheableOptionalRegStorage[
+    T: TrivialRegisterPassable & UnsafeNicheable
+](TrivialRegisterPassable, _OptionalRegStorageTraits):
+    comptime StorageType = ConditionalType[
+        Trait=TrivialRegisterPassable,
+        If=conforms_to(Self.T, UnsafeCustomNicheStorage),
+        Then=downcast[Self.T, UnsafeCustomNicheStorage].NicheStorage,
+        Else=__mlir_type[`!pop.array<1, `, Self.T, `>`],
+    ]
+    var storage: Self.StorageType
+
+    @always_inline
+    def __init__(out self):
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+        var ptr = UnsafePointer(to=self.storage).bitcast[
+            UnsafeMaybeUninit[Self.T]
+        ]()
+        Self.T.write_niche[index=0](ptr)
+
+    @always_inline
+    def __init__[U: TrivialRegisterPassable](out self, value: U):
+        comptime assert _type_is_eq[U, Self.T]()
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+        var ptr = UnsafePointer(to=self.storage).bitcast[Self.T]()
+        ptr.init_pointee_move(rebind[Self.T](value))
+
+    @always_inline
+    def value[U: TrivialRegisterPassable](self) -> U:
+        comptime assert _type_is_eq[U, Self.T]()
+        return UnsafePointer(to=self.storage).bitcast[U]()[]
+
+    @always_inline
+    def __bool__(self) -> Bool:
+        var ptr = UnsafePointer(to=self.storage).bitcast[
+            UnsafeMaybeUninit[Self.T]
+        ]()
+        return Self.T.classify_niche(ptr) == NicheIndex.NotANiche
+
+
+comptime _OptionalRegStorageFor[T: TrivialRegisterPassable] = ConditionalType[
+    Trait=_OptionalRegStorageTraits,
+    If=conforms_to(T, UnsafeNicheable),
+    Then=_NicheableOptionalRegStorage[
+        downcast[T, TrivialRegisterPassable & UnsafeNicheable]
+    ],
+    Else=_DefaultOptionalRegStorage[T],
+]
+
+
+struct OptionalReg[T: TrivialRegisterPassable](
+    Boolable, Defaultable, DevicePassable, TrivialRegisterPassable
+):
     """A register-passable optional type.
 
     This struct optionally contains a value. It only works with trivial register
@@ -692,62 +1035,50 @@ struct OptionalReg[T: __TypeOfAllTypes](Boolable, Defaultable, DevicePassable):
         T: The type of value stored in the Optional.
     """
 
-    # Fields
-    comptime _mlir_type = __mlir_type[`!kgen.variant<`, Self.T, `, i1>`]
-    var _value: Self._mlir_type
+    comptime _Storage = _OptionalRegStorageFor[Self.T]
+    var _value: Self._Storage
 
     comptime device_type: AnyType = Self
     """The device-side type for this optional register."""
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """Get the human-readable type name for this `OptionalReg` type.
 
         Returns:
             A string representation of the type, e.g. `OptionalReg[Int]`.
         """
-        return String("OptionalReg[", get_type_name[Self.T](), "]")
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """Get the human-readable device type name for this `OptionalReg` type.
-
-        Returns:
-            A string representation of the device type (same as type name for `OptionalReg`).
-        """
-        return Self.get_type_name()
+        return String(t"OptionalReg[{get_type_name[Self.T]()}]")
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline("builtin")
-    fn __init__(out self):
+    @always_inline
+    def __init__(out self):
         """Create an optional with a value of None."""
         self = Self(None)
 
-    @always_inline("builtin")
+    @always_inline
     @implicit
-    fn __init__(out self, value: Self.T):
+    def __init__(out self, value: Self.T):
         """Create an optional with a value.
 
         Args:
             value: The value.
         """
-        self._value = __mlir_op.`kgen.variant.create`[
-            _type = Self._mlir_type, index = Int(0)._mlir_value
-        ](value)
+        self._value = Self._Storage.__init__(value)
 
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
     #   only the initializer from a `NoneType`.
-    @doc_private
-    @always_inline("builtin")
+    @doc_hidden
+    @always_inline
     @implicit
-    fn __init__(out self, value: NoneType._mlir_type):
+    def __init__(out self, value: NoneType._mlir_type):
         """Construct an empty Optional.
 
         Args:
@@ -755,23 +1086,37 @@ struct OptionalReg[T: __TypeOfAllTypes](Boolable, Defaultable, DevicePassable):
         """
         self = Self(value=NoneType(value))
 
-    @always_inline("builtin")
+    @always_inline
     @implicit
-    fn __init__(out self, value: NoneType):
+    def __init__(out self, value: NoneType):
         """Create an optional without a value from a None literal.
 
         Args:
             value: The None value.
         """
-        self._value = __mlir_op.`kgen.variant.create`[
-            _type = Self._mlir_type, index = Int(1)._mlir_value
-        ](__mlir_attr.false)
+        self._value = {}
+
+    @always_inline
+    @implicit
+    def __init__(
+        out self: OptionalReg[Self.T],
+        optional: Optional[Self.T],
+    ):
+        """Implicitly convert an `Optional[T]` to an `OptionalReg[T]`.
+
+        Args:
+            optional: The `Optional` to convert from.
+        """
+        if optional:
+            self = optional.unsafe_value()
+        else:
+            self = {}
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __is__(self, other: NoneType) -> Bool:
+    def __is__(self, other: NoneType) -> Bool:
         """Return `True` if the Optional has no value.
 
         It allows you to use the following syntax: `if my_optional is None:`
@@ -784,7 +1129,7 @@ struct OptionalReg[T: __TypeOfAllTypes](Boolable, Defaultable, DevicePassable):
         """
         return not self.__bool__()
 
-    fn __isnot__(self, other: NoneType) -> Bool:
+    def __isnot__(self, other: NoneType) -> Bool:
         """Return `True` if the Optional has a value.
 
         It allows you to use the following syntax: `if my_optional is not None:`
@@ -798,7 +1143,7 @@ struct OptionalReg[T: __TypeOfAllTypes](Boolable, Defaultable, DevicePassable):
         return self.__bool__()
 
     @always_inline("nodebug")
-    fn __merge_with__[
+    def __merge_with__[
         other_type: type_of(Bool),
     ](self) -> Bool:
         """Merge with other bools in an expression.
@@ -815,32 +1160,38 @@ struct OptionalReg[T: __TypeOfAllTypes](Boolable, Defaultable, DevicePassable):
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    fn __bool__(self) -> Bool:
+    @always_inline
+    def __bool__(self) -> Bool:
         """Return true if the optional has a value.
 
         Returns:
             True if the optional has a value and False otherwise.
         """
-        return __mlir_op.`kgen.variant.is`[index = Int(0)._mlir_value](
-            self._value
-        )
+        return self._value.__bool__()
 
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn value(self) -> Self.T:
+    def value(self) -> Self.T:
         """Get the optional value.
 
         Returns:
             The contained value.
         """
-        return __mlir_op.`kgen.variant.get`[index = Int(0)._mlir_value](
-            self._value
-        )
+        return self.unsafe_value()
 
-    fn or_else(var self, var default: Self.T) -> Self.T:
+    @always_inline
+    def unsafe_value(self) -> Self.T:
+        """Get the optional value.
+
+        Returns:
+            The contained value.
+        """
+        return self._value.value[Self.T]()
+
+    def or_else(var self, var default: Self.T) -> Self.T:
         """Return the underlying value contained in the Optional or a default
         value if the Optional's underlying value is not present.
 
@@ -853,3 +1204,14 @@ struct OptionalReg[T: __TypeOfAllTypes](Boolable, Defaultable, DevicePassable):
         if self:
             return self.value()
         return default
+
+    @always_inline("nodebug")
+    def _unsafe_nullable[
+        U: AnyType, origin: Origin, address_space: AddressSpace
+    ](
+        self: OptionalReg[
+            UnsafePointer[U, origin, address_space=address_space]
+        ],
+        out result: type_of(self).T,
+    ):
+        result = UnsafePointer(to=self).bitcast[type_of(result)]()[]

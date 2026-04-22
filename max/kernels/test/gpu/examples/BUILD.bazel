@@ -7,16 +7,15 @@ _FILECHECK_TESTS = [
     "test_stencil2d.mojo",
 ]
 
+_APPLE_GPU_INCOMPATIBLE = select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
 _EXTRA_CONSTRAINTS = {
     "test_tiled_matmul_backtoback.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
-    "test_matmul_int.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2397
-    "test_double_buffer_gemm.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2415
+    "test_matmul_int.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2397
+    "test_double_buffer_gemm.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2415
 }
 
 _TEST_SIZE = {

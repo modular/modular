@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,11 +18,11 @@ comptime _kCompactMaxElemsToPrint = 7
 comptime _kCompactElemPerSide = _kCompactMaxElemsToPrint // 2
 
 
-fn _serialize_elements_compact[
+def _serialize_elements_compact[
     dtype: DType,
     //,
-    serialize_fn: fn[T: Writable] (elem: T) capturing [_] -> None,
-](ptr: UnsafePointer[Scalar[dtype], ...], len: Int):
+    serialize_fn: def[T: Writable](elem: T) capturing[_] -> None,
+](ptr: OptionalUnsafePointer[Scalar[dtype], ...], len: Int):
     serialize_fn(_kStartTensorMarker)
     if len < _kCompactMaxElemsToPrint:
         _serialize_elements_complete[serialize_fn=serialize_fn](ptr, len)
@@ -35,45 +35,44 @@ fn _serialize_elements_compact[
     serialize_fn(", ")
     serialize_fn(_kTensorFiller)
     _serialize_elements_complete[serialize_fn=serialize_fn](
-        ptr + len - _kCompactElemPerSide, _kCompactElemPerSide
+        ptr.unsafe_value() + len - _kCompactElemPerSide, _kCompactElemPerSide
     )
     serialize_fn(_kEndTensorMarker)
 
 
-fn _serialize_elements_complete[
+def _serialize_elements_complete[
     dtype: DType,
     //,
-    serialize_fn: fn[T: Writable] (elem: T) capturing [_] -> None,
-](ptr: UnsafePointer[Scalar[dtype], ...], len: Int):
+    serialize_fn: def[T: Writable](elem: T) capturing[_] -> None,
+](ptr: OptionalUnsafePointer[Scalar[dtype], ...], len: Int):
     if len == 0:
         return
-    serialize_fn(ptr.load())
+    serialize_fn(ptr.unsafe_value().load())
     for i in range(1, len):
         serialize_fn(", ")
-        serialize_fn(ptr.load(i))
+        serialize_fn(ptr.unsafe_value().load(i))
 
 
-fn _serialize_elements[
+def _serialize_elements[
     dtype: DType,
     //,
-    serialize_fn: fn[T: Writable] (elem: T) capturing [_] -> None,
+    serialize_fn: def[T: Writable](elem: T) capturing[_] -> None,
     compact: Bool = False,
-](ptr: UnsafePointer[Scalar[dtype], ...], len: Int):
-    @parameter
-    if compact:
+](ptr: OptionalUnsafePointer[Scalar[dtype], ...], len: Int):
+    comptime if compact:
         _serialize_elements_compact[serialize_fn=serialize_fn](ptr, len)
     else:
         _serialize_elements_complete[serialize_fn=serialize_fn](ptr, len)
 
 
-fn _serialize[
+def _serialize[
     dtype: DType,
     //,
-    serialize_fn: fn[T: Writable] (elem: T) capturing [_] -> None,
+    serialize_fn: def[T: Writable](elem: T) capturing[_] -> None,
     serialize_dtype: Bool = True,
     serialize_shape: Bool = True,
     serialize_end_line: Bool = True,
-](ptr: UnsafePointer[Scalar[dtype], ...], shape: List[Int, ...]):
+](ptr: OptionalUnsafePointer[Scalar[dtype], ...], shape: List[Int, ...]):
     var rank = len(shape)
     if rank == 0:
         if serialize_end_line:
@@ -88,9 +87,9 @@ fn _serialize[
     # first and last 3 columns. The intermediaries are filled with '...'
     # to indicate something is here but we are not displaying it.
 
-    var column_elem_count = 1 if rank < 1 else shape[-1]
+    var column_elem_count = 1 if rank < 1 else shape[len(shape) - 1]
     # If the tensor is a rank-1 vector, then the number of rows is 1.
-    var row_elem_count = 1 if rank < 2 else shape[-2]
+    var row_elem_count = 1 if rank < 2 else shape[len(shape) - 2]
 
     var matrix_elem_count = column_elem_count * row_elem_count
 
@@ -122,7 +121,7 @@ fn _serialize[
                 serialize_fn("\n")
 
             _serialize_elements[serialize_fn=serialize_fn, compact=True](
-                ptr
+                ptr.unsafe_value()
                 + matrix_idx * matrix_elem_count
                 + row_idx * column_elem_count,
                 column_elem_count,

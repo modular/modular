@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,31 +29,24 @@ from max.graph import (
     Value,
     ops,
 )
-from max.graph.ops.allreduce import matmul_allreduce
 from max.nn.comm.allreduce import Allreduce
 
 from ..embedding import VocabParallelEmbedding
-from ..kv_cache import (
-    KVCacheParams,
-    PagedCacheValues,
-)
+from ..kv_cache import KVCacheParams, PagedCacheValues
 from ..layer import LayerList, Module, Shardable
-from ..linear import ColumnParallelLinear, DistributedGemmConfig
+from ..linear import ColumnParallelLinear
 from ..rotary_embedding import RotaryEmbedding
-from .transformer import ReturnLogits
+from .transformer import (
+    ReturnHiddenStates,
+    ReturnLogits,
+    extract_hs,
+    forward_sharded_layers,
+)
 
 
 def take(it: Iterable[Value[Any]], n: int) -> list[Value[Any]]:
     """Return the next *n* items from *it* as a list."""
     return list(islice(it, n))
-
-
-# TODO (pavan): clean up duplicate instances of distribute_value, shard_col_value,
-# shard_row_value across the codebase into a multi gpu utils file
-def distribute_value(
-    v: TensorValue, devices: list[DeviceRef]
-) -> list[TensorValue]:
-    return [v.to(device) for device in devices]
 
 
 # NOTE: This should eventually be deleted once Weight & Linear are refactored to assume
@@ -62,26 +55,152 @@ class ShardableCallable(Shardable, Protocol):
     def __call__(self, x: TensorValue) -> TensorValue: ...
 
 
-def forward_sharded_layers(
-    layers: Sequence[Callable[[TensorValue], TensorValue]],
-    xs: Sequence[TensorValue],
-) -> list[TensorValue]:
-    """Forward pass through sharded layers.
+def distributed_logits_postprocess(
+    h: Sequence[TensorValue],
+    input_row_offsets: Sequence[TensorValue],
+    return_n_logits: TensorValue,
+    norm_shards: Sequence[Callable[[TensorValue], TensorValue]],
+    lm_head: Callable[
+        [list[TensorValue], Sequence[BufferValue]], Sequence[TensorValue]
+    ],
+    signal_buffers: Sequence[BufferValue],
+    return_logits: ReturnLogits,
+    device: DeviceRef,
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+    logits_scaling: float = 1.0,
+) -> tuple[TensorValue, ...]:
+    """Common logits postprocessing for multi-device sharded models.
+
+    Handles last-token gathering, logits computation (VARIABLE/ALL/LAST_TOKEN),
+    logits scaling, and hidden states return for models that use per-device
+    sharded hidden states.
 
     Args:
-        layers: Sequence of callable layers that return TensorValue
-        xs: Input tensors, one per layer
+        h: Per-device hidden states from the final transformer layer.
+        input_row_offsets: Per-device row offsets for ragged batching.
+        return_n_logits: Number of logits to return per sequence.
+        norm_shards: Per-device normalization functions.
+        lm_head: Language model head (takes per-device inputs + signal buffers).
+        signal_buffers: Signal buffers for collective operations.
+        return_logits: Which logits to return.
+        device: Primary device for scalar ops (e.g. ops.range).
+        return_hidden_states: Which hidden states to return.
+        logits_scaling: Scaling factor for logits.
 
     Returns:
-        List of output tensors from each layer
-
-    Raises:
-        AssertionError: If the number of layers and input tensors don't match
+        Tuple of (last_logits, [logits, offsets], [hidden_states]).
     """
-    assert len(xs) == len(layers), (
-        f"Number of layers ({len(layers)}) must match number of inputs ({len(xs)})"
+    # Gather last tokens per device and compute last-token logits.
+    last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
+    last_token_h = [
+        ops.gather(h_device, indices, axis=0)
+        for h_device, indices in zip(h, last_token_indices, strict=True)
+    ]
+    norm_last_token = forward_sharded_layers(norm_shards, last_token_h)
+    last_logits = ops.cast(
+        lm_head(norm_last_token, signal_buffers)[0],
+        DType.float32,
     )
-    return [layer(x) for layer, x in zip(layers, xs, strict=True)]
+
+    logits = None
+    offsets = None
+
+    if return_logits == ReturnLogits.VARIABLE and h:
+        return_range = ops.range(
+            start=return_n_logits[0],
+            stop=0,
+            step=-1,
+            out_dim="return_n_logits_range",
+            dtype=DType.int64,
+            device=device,
+        )
+        last_indices = [
+            ops.reshape(
+                ops.unsqueeze(row_offset[1:], -1) - return_range,
+                shape=(-1,),
+            )
+            for row_offset in input_row_offsets
+        ]
+
+        variable_tokens = [
+            norm(ops.gather(h_device, indices, axis=0))
+            for norm, h_device, indices in zip(
+                norm_shards, h, last_indices, strict=True
+            )
+        ]
+        logits = ops.cast(
+            lm_head(variable_tokens, signal_buffers)[0], DType.float32
+        )
+        offsets = ops.range(
+            0,
+            last_indices[0].shape[0] + return_n_logits[0],
+            return_n_logits[0],
+            out_dim="logit_offsets",
+            dtype=DType.int64,
+            device=device,
+        )
+    elif return_logits == ReturnLogits.ALL and h:
+        all_normalized = forward_sharded_layers(norm_shards, h)
+        logits = ops.cast(
+            lm_head(all_normalized, signal_buffers)[0], DType.float32
+        )
+        offsets = input_row_offsets[0]
+
+    if logits_scaling != 1.0:
+        last_logits = last_logits / logits_scaling
+        if logits is not None:
+            logits = logits / logits_scaling
+
+    ret_val: tuple[TensorValue, ...] = (last_logits,)
+    if offsets is not None:
+        assert logits is not None
+        ret_val += (logits, offsets)
+
+    ret_val += extract_hs(
+        return_hidden_states=return_hidden_states,
+        last_token_hs_distributed=last_token_h,
+        all_hs_distributed=h,
+        normalizer=norm_shards,
+        signal_buffers=signal_buffers,
+    )
+    return ret_val
+
+
+class DistributedLogitsPostprocessMixin:
+    """Mixin providing logits postprocessing for multi-device sharded models.
+
+    Requires: self.norm_shards, self.lm_head, self.return_logits, self.devices.
+    Optional: self.return_hidden_states, self.logits_scaling.
+    """
+
+    norm_shards: Sequence[Callable[[TensorValue], TensorValue]]
+    lm_head: Callable[
+        [list[TensorValue], Sequence[BufferValue]], Sequence[TensorValue]
+    ]
+    return_logits: ReturnLogits
+    devices: list[DeviceRef]
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    logits_scaling: float = 1.0
+
+    def _postprocess_logits(
+        self,
+        h: Sequence[TensorValue],
+        input_row_offsets: Sequence[TensorValue],
+        return_n_logits: TensorValue,
+        signal_buffers: Sequence[BufferValue],
+    ) -> tuple[TensorValue, ...]:
+        return distributed_logits_postprocess(
+            h,
+            input_row_offsets,
+            return_n_logits,
+            norm_shards=self.norm_shards,
+            lm_head=self.lm_head,
+            signal_buffers=signal_buffers,
+            return_logits=self.return_logits,
+            device=self.devices[0],
+            return_hidden_states=self.return_hidden_states,
+            logits_scaling=self.logits_scaling,
+        )
 
 
 class DistributedTransformerBlock(Module):
@@ -94,7 +213,6 @@ class DistributedTransformerBlock(Module):
         attention_norm: ShardableCallable,
         mlp_norm: ShardableCallable,
         devices: list[DeviceRef],
-        distributed_gemm_config: DistributedGemmConfig | None = None,
     ) -> None:
         super().__init__()
 
@@ -120,7 +238,6 @@ class DistributedTransformerBlock(Module):
 
         self.devices = devices
 
-        self.distributed_gemm_config = distributed_gemm_config
         self.allreduce = Allreduce(num_accelerators=len(devices))
 
     def __call__(
@@ -132,6 +249,7 @@ class DistributedTransformerBlock(Module):
         kv_cache_lengths: list[TensorValue],
         kv_lookup_table: list[TensorValue],
         kv_max_lengths: list[TensorValue],
+        kv_dispatch_metadata: list[TensorValue],
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
@@ -143,12 +261,20 @@ class DistributedTransformerBlock(Module):
         # Re-pack those arguments into a nice structured type.
         kv_collections = [
             PagedCacheValues(
-                kv_blocks[i],
-                kv_cache_lengths[i],
-                kv_lookup_table[i],
-                kv_max_lengths[i],
+                kv_blocks=kv_block,
+                cache_lengths=cache_lengths,
+                lookup_table=lookup_table,
+                max_lengths=max_lengths,
+                attention_dispatch_metadata=dispatch_metadata,
             )
-            for i in range(len(kv_blocks))
+            for kv_block, cache_lengths, lookup_table, max_lengths, dispatch_metadata in zip(
+                kv_blocks,
+                kv_cache_lengths,
+                kv_lookup_table,
+                kv_max_lengths,
+                kv_dispatch_metadata,
+                strict=True,
+            )
         ]
 
         attn_outs = self.self_attn(
@@ -168,27 +294,14 @@ class DistributedTransformerBlock(Module):
         )
         mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
 
-        if (
-            self.distributed_gemm_config is None
-            or not self.distributed_gemm_config.enable_matmul_allreduce
-        ):
-            mlp_outs = self.allreduce(mlp_outs, signal_buffers)
-        else:
-            # Special matmul + allreduce split version
-            # extract the sharded weights from the last linear layers
-            weights = [layer.down_proj.weight for layer in self.mlp_shards]  # type: ignore[attr-defined]
-            mlp_outs = matmul_allreduce(
-                mlp_outs,
-                weights,
-                signal_buffers,
-            )
+        mlp_outs = self.allreduce(mlp_outs, signal_buffers)
 
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
         return hs
 
 
-class DistributedTransformer(Module):
+class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
     """Transformer model consisting for TransformerBlock layers."""
 
     def __init__(
@@ -239,15 +352,38 @@ class DistributedTransformer(Module):
     ) -> tuple[TensorValue, ...]:
         h = self.embed_tokens(tokens, signal_buffers)
 
-        freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
+        freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]
 
-        input_row_offsets_ = distribute_value(input_row_offsets, self.devices)
+        input_row_offsets_per_device = ops.distributed_broadcast(
+            input_row_offsets.to(self.devices[0]), signal_buffers
+        )
+
+        dispatch_metadata_tensors: list[TensorValue] = []
+        for kv_collection in kv_collections:
+            assert kv_collection.attention_dispatch_metadata is not None
+            dispatch_metadata_tensors.append(
+                kv_collection.attention_dispatch_metadata
+            )
+
+        kv_blocks = [
+            kv_collection.kv_blocks for kv_collection in kv_collections
+        ]
+        kv_cache_lengths = [
+            kv_collection.cache_lengths for kv_collection in kv_collections
+        ]
+        kv_lookup_table = [
+            kv_collection.lookup_table for kv_collection in kv_collections
+        ]
+        kv_max_lengths = [
+            kv_collection.max_lengths for kv_collection in kv_collections
+        ]
 
         kv_cache_arguments = [
-            [kv_collection.kv_blocks for kv_collection in kv_collections],
-            [kv_collection.cache_lengths for kv_collection in kv_collections],
-            [kv_collection.lookup_table for kv_collection in kv_collections],
-            [kv_collection.max_lengths for kv_collection in kv_collections],
+            kv_blocks,
+            kv_cache_lengths,
+            kv_lookup_table,
+            kv_max_lengths,
+            dispatch_metadata_tensors,
         ]
 
         if self.use_subgraphs:
@@ -255,12 +391,25 @@ class DistributedTransformer(Module):
                 TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
                 [hidden.type for hidden in h],
                 [signal_buffer.type for signal_buffer in signal_buffers],
-                [kv_collection[0].type for kv_collection in kv_collections],
-                [kv_collection[1].type for kv_collection in kv_collections],
-                [kv_collection[2].type for kv_collection in kv_collections],
-                [kv_collection[3].type for kv_collection in kv_collections],
+                [
+                    kv_collection.kv_blocks.type
+                    for kv_collection in kv_collections
+                ],
+                [
+                    kv_collection.cache_lengths.type
+                    for kv_collection in kv_collections
+                ],
+                [
+                    kv_collection.lookup_table.type
+                    for kv_collection in kv_collections
+                ],
+                [
+                    kv_collection.max_lengths.type
+                    for kv_collection in kv_collections
+                ],
+                [metadata.type for metadata in dispatch_metadata_tensors],
                 [freq.type for freq in freqs_cis],
-                [offset.type for offset in input_row_offsets_],
+                [offset.type for offset in input_row_offsets_per_device],
             ]
 
             # First, we need to build the subgraphs for each layer group.
@@ -298,24 +447,13 @@ class DistributedTransformer(Module):
                                 ),
                                 *h,
                                 *signal_buffers,
-                                *[
-                                    kv_collection[0]
-                                    for kv_collection in kv_collections
-                                ],
-                                *[
-                                    kv_collection[1]
-                                    for kv_collection in kv_collections
-                                ],
-                                *[
-                                    kv_collection[2]
-                                    for kv_collection in kv_collections
-                                ],
-                                *[
-                                    kv_collection[3]
-                                    for kv_collection in kv_collections
-                                ],
+                                *kv_blocks,
+                                *kv_cache_lengths,
+                                *kv_lookup_table,
+                                *kv_max_lengths,
+                                *dispatch_metadata_tensors,
                                 *freqs_cis,
-                                *input_row_offsets_,
+                                *input_row_offsets_per_device,
                                 prefix=f"layers.{idx}.",
                             )
                         ]
@@ -328,7 +466,7 @@ class DistributedTransformer(Module):
                         signal_buffers,
                         *kv_cache_arguments,
                         freqs_cis=freqs_cis,
-                        input_row_offsets=input_row_offsets_,
+                        input_row_offsets=input_row_offsets_per_device,
                     )
         else:
             for idx, layer in enumerate(self.layers):
@@ -338,72 +476,8 @@ class DistributedTransformer(Module):
                     signal_buffers,
                     *kv_cache_arguments,
                     freqs_cis=freqs_cis,
-                    input_row_offsets=input_row_offsets_,
+                    input_row_offsets=input_row_offsets_per_device,
                 )
-        h0 = h[0]
-        last_token_indices = input_row_offsets[1:] - 1
-        last_token_h = ops.gather(h0, last_token_indices, axis=0)
-        last_token_distributed = distribute_value(last_token_h, self.devices)
-        # Apply norm to each shard
-        norm_last_token = forward_sharded_layers(
-            self.norm_shards, last_token_distributed
+        return self._postprocess_logits(
+            h, input_row_offsets_per_device, return_n_logits, signal_buffers
         )
-        last_logits = ops.cast(
-            self.lm_head(norm_last_token, signal_buffers)[0],
-            DType.float32,
-        )
-
-        logits = None
-        offsets = None
-
-        if self.return_logits == ReturnLogits.VARIABLE:
-            return_n_logits_range = ops.range(
-                start=return_n_logits[0],
-                stop=0,
-                step=-1,
-                out_dim="return_n_logits_range",
-                dtype=DType.int64,
-                device=self.devices[0],
-            )
-            offsets = (
-                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
-            )
-            last_indices = ops.reshape(offsets, shape=(-1,))
-            logits = ops.gather(
-                ops.cast(
-                    self.lm_head(
-                        forward_sharded_layers(self.norm_shards, h),
-                        signal_buffers,
-                    )[0],
-                    DType.float32,
-                ),
-                last_indices,
-                axis=0,
-            )
-            offsets = ops.range(
-                0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                dtype=DType.int64,
-                device=self.devices[0],
-            )
-        elif self.return_logits == ReturnLogits.ALL:
-            logits = ops.cast(
-                self.lm_head(
-                    forward_sharded_layers(self.norm_shards, h),
-                    signal_buffers,
-                )[0],
-                DType.float32,
-            )
-            offsets = input_row_offsets
-
-        if self.logits_scaling != 1.0:
-            last_logits = last_logits / self.logits_scaling
-            if logits is not None:
-                logits = logits / self.logits_scaling
-
-        if logits is not None and offsets is not None:
-            return (last_logits, logits, offsets)
-        else:
-            return (last_logits,)

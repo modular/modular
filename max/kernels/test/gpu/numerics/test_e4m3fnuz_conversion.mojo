@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import nan
+from std.math import nan
 
-from gpu.host import DeviceContext
-from memory import bitcast
+from std.gpu.host import DeviceContext
+from std.memory import bitcast
 
 
 # CHECK-LABEL: test_e4m3fnuz_initialization
@@ -50,7 +50,7 @@ from memory import bitcast
 # CHECK: -32.0, -36.0, -40.0, -44.0, -48.0, -52.0, -56.0, -60.0,
 # CHECK: -64.0, -72.0, -80.0, -88.0, -96.0, -104.0, -112.0, -120.0,
 # CHECK: -128.0, -144.0, -160.0, -176.0, -192.0, -208.0, -224.0, -240.0,
-fn test_e4m3fnuz_initialization():
+def test_e4m3fnuz_initialization():
     print("== test_e4m3fnuz_initialization")
 
     var simd_e4m3fnuz = SIMD[DType.float8_e4m3fnuz, 256](
@@ -318,7 +318,7 @@ fn test_e4m3fnuz_initialization():
             print("")
 
 
-fn test_simd_e4m3fnuz_to_float[target: DType]():
+def test_simd_e4m3fnuz_to_float[target: DType]():
     var float8_simd = SIMD[DType.float8_e4m3fnuz, 256](0.0)
     for i in range(256):
         float8_simd[i] = bitcast[DType.float8_e4m3fnuz](UInt8(i))
@@ -366,7 +366,7 @@ fn test_simd_e4m3fnuz_to_float[target: DType]():
 # CHECK: -32.0, -36.0, -40.0, -44.0, -48.0, -52.0, -56.0, -60.0,
 # CHECK: -64.0, -72.0, -80.0, -88.0, -96.0, -104.0, -112.0, -120.0,
 # CHECK: -128.0, -144.0, -160.0, -176.0, -192.0, -208.0, -224.0, -240.0,
-fn test_simd_e4m3fnuz_to_f32():
+def test_simd_e4m3fnuz_to_f32():
     print("== test_simd_e4m3fnuz_to_f32")
     test_simd_e4m3fnuz_to_float[DType.float32]()
 
@@ -404,7 +404,7 @@ fn test_simd_e4m3fnuz_to_f32():
 # CHECK: -32.0, -36.0, -40.0, -44.0, -48.0, -52.0, -56.0, -60.0,
 # CHECK: -64.0, -72.0, -80.0, -88.0, -96.0, -104.0, -112.0, -120.0,
 # CHECK: -128.0, -144.0, -160.0, -176.0, -192.0, -208.0, -224.0, -240.0,
-fn test_simd_e4m3fnuz_to_f16():
+def test_simd_e4m3fnuz_to_f16():
     print("== test_simd_e4m3fnuz_to_f16")
     test_simd_e4m3fnuz_to_float[DType.float16]()
 
@@ -442,7 +442,7 @@ fn test_simd_e4m3fnuz_to_f16():
 # CHECK: -32.0, -36.0, -40.0, -44.0, -48.0, -52.0, -56.0, -60.0,
 # CHECK: -64.0, -72.0, -80.0, -88.0, -96.0, -104.0, -112.0, -120.0,
 # CHECK: -128.0, -144.0, -160.0, -176.0, -192.0, -208.0, -224.0, -240.0,
-fn test_simd_e4m3fnuz_to_bf16():
+def test_simd_e4m3fnuz_to_bf16():
     print("== test_simd_e4m3fnuz_to_bf16")
     test_simd_e4m3fnuz_to_float[DType.bfloat16]()
 
@@ -512,14 +512,14 @@ fn test_simd_e4m3fnuz_to_bf16():
 # CHECK: 224.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0,
 # CHECK: 240.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0,
 # CHECK: 240.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0,
-fn test_simd_f32_to_e4m3fnuz():
+def test_simd_f32_to_e4m3fnuz():
     print("== test_simd_f32_to_e4m3fnuz")
 
     comptime M = 512
     var f32_simd = SIMD[DType.float32, M](0.0)
 
     for i in range(M):
-        f32_simd[i] = i - 256
+        f32_simd[i] = Float32(i - 256)
 
     f32_casted_e5m2 = f32_simd.cast[DType.float8_e4m3fnuz]()
 
@@ -562,7 +562,7 @@ fn test_simd_f32_to_e4m3fnuz():
 # CHECK: -32.0, -36.0, -40.0, -44.0, -48.0, -52.0, -56.0, -60.0,
 # CHECK: -64.0, -72.0, -80.0, -88.0, -96.0, -104.0, -112.0, -120.0,
 # CHECK: -128.0, -144.0, -160.0, -176.0, -192.0, -208.0, -224.0, -240.0,
-fn test_simd_e4m3fnuz_to_f32_ptx_path(ctx: DeviceContext) raises:
+def test_simd_e4m3fnuz_to_f32_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_e4m3fnuz_to_f32_ptx_path")
 
     comptime M = 256
@@ -577,7 +577,7 @@ fn test_simd_e4m3fnuz_to_f32_ptx_path(ctx: DeviceContext) raises:
     ctx.synchronize()
 
 
-fn test_simd_float32[
+def test_simd_float32[
     size: Int,
     target: DType,
 ](x: SIMD[DType.float32, size]):
@@ -656,20 +656,20 @@ fn test_simd_float32[
 # CHECK: 224.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0,
 # CHECK: 240.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0,
 # CHECK: 240.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0, 240.0,
-fn test_simd_f32_to_e4m3fnuz_ptx_path(ctx: DeviceContext) raises:
+def test_simd_f32_to_e4m3fnuz_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_f32_to_e4m3fnuz_ptx_path")
 
     comptime M = 512
     var f32_simd = SIMD[DType.float32, M](0.0)
     for i in range(M):
-        f32_simd[i] = i - 256
+        f32_simd[i] = Float32(i - 256)
 
     comptime kernel = test_simd_float32[M, DType.float8_e4m3fnuz]
     ctx.enqueue_function_experimental[kernel](f32_simd, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
 
-fn test_simd_float8[
+def test_simd_float8[
     dtype: DType,
     size: Int,
     target: DType,
@@ -684,7 +684,7 @@ fn test_simd_float8[
         print("")
 
 
-def main():
+def main() raises:
     test_e4m3fnuz_initialization()
 
     test_simd_e4m3fnuz_to_f32()

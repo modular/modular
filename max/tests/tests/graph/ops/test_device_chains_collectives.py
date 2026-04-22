@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -41,9 +41,9 @@ def test_allreduce_per_device_counts_without_merge() -> None:
 
     ir = str(graph)
 
-    # Exactly one allreduce per device.
+    # Exactly one allreduce op (single multi-device op).
     allreduces = re.findall(r"mo\.distributed\.allreduce\.sum\(", ir)
-    assert len(allreduces) == 2, ir
+    assert len(allreduces) == 1, ir
 
     # No multi-operand chain merges (device chains must remain independent).
     assert not re.search(r"mo\.chain\.create\([^)]*,[^)]*\)", ir), ir
@@ -79,13 +79,13 @@ def test_transfer_h2d_uses_root_chain_not_device_chain() -> None:
 
     ir = str(graph)
 
-    # Collect all allreduce out-chain SSA ids (second result of the op).
-    # Pattern: %res, %ch = mo.distributed_allreduce_sum(...)
+    # Collect the allreduce out-chain SSA id (last result of the single op).
+    # Pattern: %outputs:N, %outChain = mo.distributed.allreduce.sum(...)
     allreduce_chain_ids = re.findall(
-        r"%[A-Za-z0-9_]+,\s*(%[A-Za-z0-9_]+)\s*=\s*mo\.distributed\.allreduce\.sum\(",
+        r"%[A-Za-z0-9_:]+,\s*(%[A-Za-z0-9_]+)\s*=\s*mo\.distributed\.allreduce\.sum\(",
         ir,
     )
-    assert len(allreduce_chain_ids) == 2, ir
+    assert len(allreduce_chain_ids) == 1, ir
 
     # Capture transfer chains and destination device ids.
     # Pattern examples:

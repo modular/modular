@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,20 +23,14 @@ Key features:
 - Phase-based synchronization to prevent data races
 """
 
-from gpu import thread_idx, WARP_SIZE
 from layout import Layout
-from linalg.structuring import SMemArrayType
-from os.atomic import Atomic
-from sys._assembly import inlined_assembly
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 from .structured import SMemBuffer
 from .ring_buffer_traits import (
     SyncStrategy,
     SingleCounterSync,
     SplitCounterSync,
-    wait_for_counter,
-    increment_counter_if_first_thread,
 )
 
 
@@ -45,12 +39,11 @@ from .ring_buffer_traits import (
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
 struct ProducerTile[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_processed_per_producer: Int,
-]:
+](TrivialRegisterPassable):
     """Context manager for producer access to a single ring buffer tile."""
 
     comptime ProducerViewType = ProducerView[
@@ -66,7 +59,7 @@ struct ProducerTile[
     var warp_tile_idx: Int
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         producer_view_ptr: Self.ProducerViewPtrType,
         stage: Int,
@@ -79,24 +72,23 @@ struct ProducerTile[
         self.warp_tile_idx = warp_tile_idx
 
     @always_inline
-    fn __enter__(mut self) -> Self.ring_buffer_type.WarpTileTupleType:
+    def __enter__(mut self) -> Self.ring_buffer_type.WarpTileTupleType:
         """Acquire the tile for use."""
         return self.producer_view_ptr[].acquire_tiles(
             self.stage, self.producer_iteration, self.warp_tile_idx
         )
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         """Release the tile back to consumers."""
         self.producer_view_ptr[].release_tiles(self.stage, self.warp_tile_idx)
 
 
-@register_passable("trivial")
 struct ConsumerTile[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_computed_per_consumer: Int,
-]:
+](TrivialRegisterPassable):
     """Context manager for consumer access to a single ring buffer tile."""
 
     comptime ConsumerViewType = ConsumerView[
@@ -112,7 +104,7 @@ struct ConsumerTile[
     var warp_tile_idx: Int
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         consumer_view_ptr: Self.ConsumerViewPtrType,
         stage: Int,
@@ -125,14 +117,14 @@ struct ConsumerTile[
         self.warp_tile_idx = warp_tile_idx
 
     @always_inline
-    fn __enter__(mut self) -> Self.ring_buffer_type.WarpTileTupleType:
+    def __enter__(mut self) -> Self.ring_buffer_type.WarpTileTupleType:
         """Acquire the tile for use."""
         return self.consumer_view_ptr[].acquire_tiles(
             self.stage, self.consumer_iteration, self.warp_tile_idx
         )
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         """Release the tile back to producers."""
         self.consumer_view_ptr[].release_tiles(self.stage, self.warp_tile_idx)
 
@@ -142,12 +134,11 @@ struct ConsumerTile[
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
 struct ProducerView[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_processed_per_producer: Int,
-]:
+](TrivialRegisterPassable):
     """Producer view of the unified ring buffer."""
 
     comptime RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
@@ -160,7 +151,7 @@ struct ProducerView[
     ]
 
     @always_inline
-    fn __init__(out self, ring_buffer_ptr: Self.RingBufferPtrType):
+    def __init__(out self, ring_buffer_ptr: Self.RingBufferPtrType):
         self.ring_buffer_ptr = ring_buffer_ptr
         self.phases = StaticTuple[
             Int32,
@@ -171,17 +162,17 @@ struct ProducerView[
         )  # Producers start at phase 0
 
     @always_inline
-    fn __enter__(mut self) -> Self:
+    def __enter__(mut self) -> Self:
         """Context manager entry."""
         return self
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         """Context manager exit."""
         pass
 
     @always_inline
-    fn acquire_tiles(
+    def acquire_tiles(
         mut self,
         stage: Int,
         producer_iteration: Int,
@@ -215,7 +206,7 @@ struct ProducerView[
         return self.ring_buffer_ptr[].get_tiles(stage, warp_tile_idx)
 
     @always_inline
-    fn release_tiles(mut self, stage: Int, warp_tile_idx: Int):
+    def release_tiles(mut self, stage: Int, warp_tile_idx: Int):
         """Signal to consumers that tile is ready."""
         self.ring_buffer_ptr[].signal_producer_release(warp_tile_idx, stage)
 
@@ -224,7 +215,7 @@ struct ProducerView[
     ]
 
     @always_inline
-    fn get_tile(
+    def get_tile(
         mut self,
         stage: Int,
         warp_tile_idx: Int,
@@ -245,12 +236,11 @@ struct ProducerView[
         )
 
 
-@register_passable("trivial")
 struct ConsumerView[
     origin: MutOrigin,
     ring_buffer_type: type_of(RingBuffer),
     warps_computed_per_consumer: Int,
-]:
+](TrivialRegisterPassable):
     """Consumer view of the unified ring buffer."""
 
     comptime RingBufferPtrType = Pointer[Self.ring_buffer_type, Self.origin]
@@ -263,7 +253,7 @@ struct ConsumerView[
     ]
 
     @always_inline
-    fn __init__(out self, ring_buffer_ptr: Self.RingBufferPtrType):
+    def __init__(out self, ring_buffer_ptr: Self.RingBufferPtrType):
         self.ring_buffer_ptr = ring_buffer_ptr
         self.phases = StaticTuple[
             Int32,
@@ -274,17 +264,17 @@ struct ConsumerView[
         )  # Consumers start at phase 1
 
     @always_inline
-    fn __enter__(mut self) -> Self:
+    def __enter__(mut self) -> Self:
         """Context manager entry."""
         return self
 
     @always_inline
-    fn __exit__(mut self):
+    def __exit__(mut self):
         """Context manager exit."""
         pass
 
     @always_inline
-    fn acquire_tiles(
+    def acquire_tiles(
         mut self,
         stage: Int,
         consumer_iteration: Int,
@@ -317,7 +307,7 @@ struct ConsumerView[
         return self.ring_buffer_ptr[].get_tiles(stage, warp_tile_idx)
 
     @always_inline
-    fn release_tiles(mut self, stage: Int, warp_tile_idx: Int):
+    def release_tiles(mut self, stage: Int, warp_tile_idx: Int):
         """Signal to producers that tile is free."""
         self.ring_buffer_ptr[].signal_consumer_release(warp_tile_idx, stage)
 
@@ -328,7 +318,7 @@ struct ConsumerView[
     ]
 
     @always_inline
-    fn get_tile(
+    def get_tile(
         mut self,
         stage: Int,
         consumer_iteration: Int,
@@ -405,14 +395,11 @@ struct RingBuffer[
     var sync_strategy: Self.sync_strategy_type
 
     @always_inline
-    fn __init__(out self):
-        constrained[
-            Self.total_tiles <= 32,
-            (
-                "total_tiles must be less than or equal to 32 for AMD atomic"
-                " limitations"
-            ),
-        ]()
+    def __init__(out self):
+        comptime assert Self.total_tiles <= 32, (
+            "total_tiles must be less than or equal to 32 for AMD atomic"
+            " limitations"
+        )
 
         var smem_buffer = Self.SmemBufferType()
         self.smem_buffers = StaticTuple[
@@ -424,14 +411,13 @@ struct RingBuffer[
         self.sync_strategy = Self.sync_strategy_type()
 
     @always_inline
-    fn get_tiles(
+    def get_tiles(
         self, stage: Int, warp_tile_idx: Int
     ) -> Self.WarpTileTupleType:
         """Get tiles from shared memory."""
         var result = Self.WarpTileTupleType()
 
-        @parameter
-        for i in range(Self.tile_buffers):
+        comptime for i in range(Self.tile_buffers):
             var staged_smem_tile = self.smem_buffers[i].get_tile(stage)
             result[i] = staged_smem_tile.tile[Self.warp_rows, Self.warp_cols](
                 warp_tile_idx, 0
@@ -439,7 +425,7 @@ struct RingBuffer[
         return result
 
     @always_inline
-    fn producer[
+    def producer[
         warps_processed_per_producer: Int
     ](
         mut self,
@@ -456,7 +442,7 @@ struct RingBuffer[
         ](Pointer(to=self))
 
     @always_inline
-    fn consumer[
+    def consumer[
         warps_computed_per_consumer: Int
     ](mut self) -> ConsumerView[
         origin_of(self),
@@ -471,36 +457,36 @@ struct RingBuffer[
         ](Pointer(to=self))
 
     @always_inline
-    fn get_staged_idx(self, tile_idx: Int, stage: Int) -> Int:
+    def get_staged_idx(self, tile_idx: Int, stage: Int) -> Int:
         """Get the staged index for a tile and stage."""
         return self.sync_strategy.get_staged_idx(tile_idx, stage)
 
     @always_inline
-    fn wait_producer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
+    def wait_producer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
         """Producer waits to acquire a tile."""
         self.sync_strategy.wait_producer_acquire(tile_idx, stage, phase)
 
     @always_inline
-    fn signal_producer_release(mut self, tile_idx: Int, stage: Int):
+    def signal_producer_release(mut self, tile_idx: Int, stage: Int):
         """Producer signals it has released a tile."""
         self.sync_strategy.signal_producer_release(tile_idx, stage)
 
     @always_inline
-    fn wait_consumer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
+    def wait_consumer_acquire(self, tile_idx: Int, stage: Int, phase: Int32):
         """Consumer waits to acquire a tile."""
         self.sync_strategy.wait_consumer_acquire(tile_idx, stage, phase)
 
     @always_inline
-    fn signal_consumer_release(mut self, tile_idx: Int, stage: Int):
+    def signal_consumer_release(mut self, tile_idx: Int, stage: Int):
         """Consumer signals it has released a tile."""
         self.sync_strategy.signal_consumer_release(tile_idx, stage)
 
     @always_inline
-    fn get_producer_phase_increment(self) -> Int32:
+    def get_producer_phase_increment(self) -> Int32:
         """Get the phase increment for producers."""
         return self.sync_strategy.get_producer_phase_increment()
 
     @always_inline
-    fn get_consumer_phase_increment(self) -> Int32:
+    def get_consumer_phase_increment(self) -> Int32:
         """Get the phase increment for consumers."""
         return self.sync_strategy.get_consumer_phase_increment()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,7 +21,7 @@ from my_math import inc
 """
 
 
-def inc(n: Int) -> Int:
+def inc(n: Int) raises -> Int:
     """Returns an incremented integer value.
 
     ```mojo
@@ -54,7 +54,7 @@ def inc(n: Int) -> Int:
     return n + 1
 
 
-def dec(n: Int) -> Int:
+def dec(n: Int) raises -> Int:
     """Returns a decremented integer value.
 
     ```mojo

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,17 +18,15 @@ from __future__ import annotations
 import functools
 import logging
 
-from max.nn import (
-    MLP,
-    ColumnParallelLinear,
+from max.nn.attention import TensorParallelAttentionWithRope
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.linear import MLP, ColumnParallelLinear
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.transformer import (
     DistributedTransformer,
     DistributedTransformerBlock,
-    RMSNorm,
-    RotaryEmbedding,
-    TensorParallelAttentionWithRope,
-    VocabParallelEmbedding,
 )
-from max.nn.kv_cache import KVCacheStrategy
 
 logger = logging.getLogger("max.pipelines")
 
@@ -82,7 +80,6 @@ class DistributedMistral(DistributedTransformer):
                 ),
                 attention_norm=distributed_norm(),
                 mlp_norm=distributed_norm(),
-                distributed_gemm_config=None,
             )
             for i in range(config.num_hidden_layers)
         ]
@@ -103,12 +100,6 @@ class DistributedMistral(DistributedTransformer):
             devices=config.devices,
             quantization_encoding=None,
         )
-
-        if config.kv_params.cache_strategy != KVCacheStrategy.PAGED:
-            raise ValueError(
-                "Unsupported caching strategy "
-                + str(config.kv_params.cache_strategy)
-            )
 
         super().__init__(
             dim=config.hidden_size,

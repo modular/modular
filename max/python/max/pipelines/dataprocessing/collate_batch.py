@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -38,16 +38,16 @@ def collate_batch(
 ) -> tuple[npt.NDArray[np.integer[Any]], npt.NDArray[np.integer[Any]]]:
     """Generates a single batch tensor from a batch of inputs.
 
-    These input tensors may have different lengths. The `pad_value` will be used
+    These input tensors may have different lengths. The ``pad_value`` will be used
     to pad out the inputs to the same length.
 
-    If `batch_size` is present, add additional values to the batch up to that
+    If ``batch_size`` is present, add additional values to the batch up to that
     size.
 
     Returns:
         A tuple of:
             A matrix with all rows padded to the max sequence length.
-            A list with last token indices prior to any padding.
+            An array of last token indices (one per batch item).
 
     Raises:
         ValueError: if the batch is empty.
@@ -100,7 +100,7 @@ def batch_padded_tokens_and_mask(
         tokens: unpadded input tokens for this batch.
 
     Returns:
-        A (batched tokens, unpadded last token indices, batch attention mask) pair.
+        A tuple of (batched tokens, last token indices per batch item, attention mask).
     """
     # Grab attention mask.
     attn_mask = causal_attention_mask(

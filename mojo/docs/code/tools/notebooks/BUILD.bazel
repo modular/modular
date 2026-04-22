@@ -1,6 +1,6 @@
 load("//bazel:api.bzl", "modular_run_binary_test", "mojo_binary")
 
-package(default_visibility = ["//docs:__subpackages__"])
+package(default_visibility = ["//oss/modular/docs:__subpackages__"])
 
 # Non-GPU examples
 
@@ -13,15 +13,9 @@ NON_GPU_SRCS = [
 
 GPU_SRCS = [
     "gpu_hello.mojo",
+    "hello_writing.mojo",
     "vector_addition.mojo",
 ]
-
-_PLATFORM_CONSTRAINTS = {
-    "gpu_hello.mojo": ["//:has_gpu"] + select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-}
 
 # Non-GPU binaries
 
@@ -42,10 +36,7 @@ _PLATFORM_CONSTRAINTS = {
     mojo_binary(
         name = src.split(".")[0],
         srcs = [src],
-        target_compatible_with = _PLATFORM_CONSTRAINTS.get(
-            src,
-            ["//:has_gpu"],
-        ),
+        target_compatible_with = ["//:has_gpu"],
         deps = [
             "//max:layout",
             "@mojo//:std",

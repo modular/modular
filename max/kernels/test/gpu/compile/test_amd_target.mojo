@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from gpu import block_dim, block_idx, grid_dim, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, grid_dim, thread_idx
 
 
 # CHECK-LABEL: test_amd_dims
 # CHECK: 14 15 16
 # CHECK: 2 3 4
-fn test_amd_dims(ctx: DeviceContext) raises:
+def test_amd_dims(ctx: DeviceContext) raises:
     print("== test_amd_dims")
 
-    fn test_dims_kernel():
+    def test_dims_kernel():
         if (
             block_idx.x == 0
             and block_idx.y == 0
@@ -40,6 +40,6 @@ fn test_amd_dims(ctx: DeviceContext) raises:
     )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_amd_dims(ctx)

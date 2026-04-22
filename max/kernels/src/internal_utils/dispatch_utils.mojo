@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,47 +11,46 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
-from builtin.sort import _quicksort
+from std.builtin.sort import _quicksort
 
 
 # DO NOT CHANGE
-@register_passable("trivial")
-trait TuningConfig(ImplicitlyCopyable, Stringable):
+trait TuningConfig(TrivialRegisterPassable, Writable):
     ...
 
 
 # DO NOT CHANGE
-struct Table[type: TuningConfig](Stringable):
+struct Table[type: TuningConfig](Writable):
     var configs: List[Self.type]
     var name: String
-    var num_configs: UInt
+    var num_configs: Int
 
-    fn __init__(out self, configs: List[Self.type], name: String):
+    def __init__(out self, configs: List[Self.type], name: String):
         self.configs = configs.copy()
         self.name = name
-        self.num_configs = UInt(len(configs))
+        self.num_configs = len(configs)
 
         if not self.check():
-            abort(String("Failed to Compile Table: [", self.name, "]"))
+            abort(t"Failed to Compile Table: [{self.name}]")
 
     # Method to check there are no redundancies in table (based on __str__).
-    fn check(self) -> Bool:
+    def check(self) -> Bool:
         var keys = List[String]()
         var is_valid = True
 
         for i in range(len(self.configs)):
             var cfg = self.configs[i]
-            var res = String(cfg)
+            var res = String.write(cfg)
             if res in keys:
                 print(
                     "ERROR: Redundant Entry [",
                     self.name,
                     "][",
-                    String(i),
+                    i,
                     "] ",
-                    String(cfg),
+                    cfg,
                     sep="",
                 )
                 is_valid = False
@@ -59,12 +58,16 @@ struct Table[type: TuningConfig](Stringable):
             keys.append(res)
         return is_valid
 
-    fn __str__(self) -> String:
-        var s: List[String] = [self.name]
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes the table as a string.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write_string(self.name)
         for i in range(len(self.configs)):
             var cfg = self.configs[i]
-            s += [String("[", i, "] ", String(cfg))]
-        return "\n".join(s)
+            t"\n[{i}] {cfg}".write_to(writer)
 
     # Method `query_index` queries a unique list of values for each parameter.
     # Find the indices of all matching values in the list.
@@ -72,18 +75,17 @@ struct Table[type: TuningConfig](Stringable):
     #   - `domain` is a list of indices to narrow down the search.
     #     These indices are marked valid in the flag and may not represent the entire domain.
     #   - Returns a list of matching indices, not the entire domain.
-    fn query_index[
-        rule: fn (Self.type) capturing -> Bool, domain: List[Int] = List[Int]()
+    def query_index[
+        rule: def(Self.type) capturing -> Bool, domain: List[Int] = List[Int]()
     ](self) -> List[Int]:
         var flag: List[Bool]
 
-        @parameter
-        if len(domain):
-            flag = List[Bool](length=Int(self.num_configs), fill=False)
+        comptime if len(domain):
+            flag = List[Bool](length=self.num_configs, fill=False)
             for idx in materialize[domain]():
                 flag[idx] = True
         else:
-            flag = List[Bool](length=Int(self.num_configs), fill=True)
+            flag = List[Bool](length=self.num_configs, fill=True)
 
         for i in range(self.num_configs):
             flag[i] &= rule(self.configs[i])
@@ -91,24 +93,24 @@ struct Table[type: TuningConfig](Stringable):
 
         for i in range(self.num_configs):
             if flag[i]:
-                result_idx_list.append(Int(i))
+                result_idx_list.append(i)
         return result_idx_list^
 
     # Apply rule on all configs in the table and return list of all the unique results.
-    fn query_values[
+    def query_values[
         ret_type: Comparable & ImplicitlyCopyable,
-        rule: fn (Self.type) capturing -> ret_type,
+        rule: def(Self.type) capturing -> ret_type,
         domain: List[Int] = List[Int](),
     ](self) -> List[ret_type]:
         var result = List[ret_type]()
 
         @always_inline
         @parameter
-        fn _get_search_domain() -> List[Int]:
+        def _get_search_domain() -> List[Int]:
             if len(materialize[domain]()):
                 return materialize[domain]()
             else:
-                return [Int(idx) for idx in range(self.num_configs)]
+                return [idx for idx in range(self.num_configs)]
 
         var search_domain = _get_search_domain()
 
@@ -118,14 +120,14 @@ struct Table[type: TuningConfig](Stringable):
                 result.append(value)
 
         @parameter
-        fn _cmp(lsh: ret_type, rhs: ret_type) -> Bool:
+        def _cmp(lsh: ret_type, rhs: ret_type) -> Bool:
             return lsh < rhs
 
         _quicksort[_cmp](result)
         return result^
 
-    fn find[
-        rule: fn (Self.type) capturing -> Bool,
+    def find[
+        rule: def(Self.type) capturing -> Bool,
     ](self) -> List[Self.type]:
         var result = List[Self.type]()
 

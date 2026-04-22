@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -51,7 +51,7 @@ def build_cmd(args: Namespace, args_map: defaultdict(list)) -> str:
 
 def run_cmd(cmd: str) -> None:
     try:
-        p = subprocess.run(cmd, shell=True, check=True)
+        subprocess.run(cmd, shell=True, check=True)
     except subprocess.CalledProcessError as e:
         print(e.stdout.decode("utf-8"))
         raise

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,12 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
-from sys import align_of
-from sys.info import CompilationTarget
+from std.math import align_up
+from std.sys import align_of
 
-from buffer.dimlist import DimList
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import Idx, TileTensor
+from layout.tile_layout import row_major
 from linalg.matmul.cpu.default import Inner_matmul_default
 from linalg.matmul.cpu.i8mm import Inner_matmul_i8mm
 from linalg.matmul.cpu.neon import Inner_matmul_neon
@@ -31,28 +30,25 @@ from linalg.utils import (
     use_i8mm_fn,
     use_vnni_fn,
 )
-from memory import LegacyUnsafePointer
+from std.testing import assert_equal
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
-
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 comptime M: Int = 64
 comptime N: Int = 64
 comptime K: Int = 256
 
 
-fn _matmul_inner_loop[
+def _matmul_inner_loop[
     kernel_rows: Int,
     kernel_cols: Int,
     simd_size: Int,
     saturated_vnni: Bool,
 ](
-    c: LayoutTensor[mut=True, ...],
-    a: LayoutTensor,
-    b_packed: LayoutTensor,
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b_packed: TileTensor,
     global_offset: GemmShape,
     global_bound: GemmShape,
     tile_n_k: IndexList[2],
@@ -60,8 +56,7 @@ fn _matmul_inner_loop[
 ):
     comptime kernel_id = select_inner_kernel[a.dtype, b_packed.dtype, c.dtype]()
 
-    @parameter
-    if kernel_id == InnerKernelID.DEFAULT:
+    comptime if kernel_id == InnerKernelID.DEFAULT:
         Inner_matmul_default().__inner_matmul__[
             kernel_rows, kernel_cols, simd_size
         ](
@@ -110,15 +105,15 @@ fn _matmul_inner_loop[
             skip_boundary_check,
         )
     else:
-        constrained[False, "no _run_inner_loop implementation"]()
+        comptime assert False, "no _run_inner_loop implementation"
 
 
-fn matmul_inner_loop[
+def matmul_inner_loop[
     config: KernelConfig,
 ](
-    c: LayoutTensor[mut=True, ...],
-    a: LayoutTensor,
-    b_packed: LayoutTensor,
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b_packed: TileTensor,
     m: Int,
     n: Int,
     k: Int,
@@ -141,15 +136,10 @@ fn matmul_inner_loop[
     )
 
 
-fn test_micro_kernel[
+def test_micro_kernel[
     a_type: DType, b_type: DType, c_type: DType, saturated_vnni: Bool = False
 ](m: Int, n: Int, k: Int) raises:
     print("== test_micro_kernel")
-    comptime a_layout = Layout.row_major[2]()
-    # TODO(jtodd): Make `get_kernel_config` return an IndexList instead
-    # config.packed_shape is always rank 3 unknown
-    comptime b_packed_layout = Layout.row_major[3]()
-    comptime c_layout = Layout.row_major[2]()
 
     comptime config = get_kernel_config[a_type, b_type, c_type]()
     comptime use_vnni = use_vnni_fn[a_type, b_type, c_type]()
@@ -160,32 +150,24 @@ fn test_micro_kernel[
 
     comptime alignment = align_of[SIMD[c_type, config.simd_size]]()
 
-    var a_ptr = UnsafePointer[Scalar[a_type],].alloc(m * k, alignment=alignment)
-    var b_packed_ptr = UnsafePointer[Scalar[b_type]].alloc(
+    var a_ptr = alloc[Scalar[a_type],](m * k, alignment=alignment)
+    var b_packed_ptr = alloc[Scalar[b_type]](
         (np // config.kernel_cols)
         * (kh // factor)
         * (factor * config.kernel_cols),
         alignment=alignment,
     )
-    var c_ptr = UnsafePointer[Scalar[c_type],].alloc(m * n, alignment=alignment)
-    var a = LayoutTensor[a_type, a_layout](
-        a_ptr, RuntimeLayout[a_layout].row_major(Index(m, k))
-    )
-
-    var b_packed_runtime_layout = RuntimeLayout[b_packed_layout].row_major(
-        Index(
-            np // config.kernel_cols,
-            kh // factor,
-            factor * config.kernel_cols,
+    var c_ptr = alloc[Scalar[c_type],](m * n, alignment=alignment)
+    var a = TileTensor(a_ptr, row_major(Idx(m), Idx(k)))
+    var b_packed = TileTensor(
+        b_packed_ptr,
+        row_major(
+            Idx(np // config.kernel_cols),
+            Idx(kh // factor),
+            Idx(factor * config.kernel_cols),
         ),
     )
-
-    var b_packed = LayoutTensor[b_type, b_packed_layout](
-        b_packed_ptr, b_packed_runtime_layout
-    )
-    var c = LayoutTensor[c_type, c_layout](
-        c_ptr, RuntimeLayout[c_layout].row_major(Index(m, n))
-    )
+    var c = TileTensor(c_ptr, row_major(Idx(m), Idx(n)))
 
     _ = a.fill(1)
     _ = b_packed.fill(1)
@@ -193,18 +175,18 @@ fn test_micro_kernel[
 
     matmul_inner_loop[config](c, a, b_packed, m, n, k)
 
-    assert_equal(Int(c_ptr[0]), 256)
+    assert_equal(Int(c_ptr[0]), k)
     a_ptr.free()
     b_packed_ptr.free()
     c_ptr.free()
 
 
 @export(ABI="C")
-fn kernel_export_dynamic(m: Int, n: Int, k: Int) raises:
+def kernel_export_dynamic(m: Int, n: Int, k: Int) raises:
     test_micro_kernel[DType.float32, DType.float32, DType.float32](m, n, k)
 
 
-def main():
+def main() raises:
     test_micro_kernel[DType.float32, DType.float32, DType.float32](M, N, K)
     test_micro_kernel[DType.uint8, DType.int8, DType.int32](M, N, K)
     test_micro_kernel[
@@ -213,3 +195,7 @@ def main():
 
     test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16](M, N, K)
     test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.float32](M, N, K)
+
+    # Test int8 x int8 -> int8 to ensure it doesn't dispatch to i8mm (which
+    # requires 32-bit output). Use smaller k to fit in int8 range.
+    test_micro_kernel[DType.int8, DType.int8, DType.int8](M, N, 100)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,22 +18,24 @@ It includes support for throughput metrics, warmup iterations, batch execution,
 and both CPU and GPU kernel benchmarking.
 """
 
-import time
-from collections import Dict, Optional
-from os import abort, getenv
-from pathlib import Path
-from sys.arg import argv
+import std.time
+from std.collections import Dict, Optional
+import std.format._utils as fmt
+from std.os import abort, getenv
+from std.pathlib import Path
+from std.sys import get_defined_bool
+from std.sys.arg import argv
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
-from utils.numerics import FlushDenormals
-from algorithm import sync_parallelize
+from std.utils.numerics import FlushDenormals
+from std.algorithm import sync_parallelize
 
 from .benchmark import _run_impl, _run_impl_fixed, _RunOptions
 
 
 @fieldwise_init
-struct BenchMetric(ImplicitlyCopyable, Stringable, Writable):
+struct BenchMetric(ImplicitlyCopyable, Writable):
     """Defines a benchmark throughput metric."""
 
     var code: Int
@@ -64,14 +66,7 @@ struct BenchMetric(ImplicitlyCopyable, Stringable, Writable):
     ]
     """Default set of benchmark metrics."""
 
-    fn __str__(self) -> String:
-        """Gets a string representation of this metric.
-
-        Returns:
-            The string representation."""
-        return String.write(self)
-
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Formats this BenchMetric to the provided Writer.
 
         Args:
@@ -79,7 +74,20 @@ struct BenchMetric(ImplicitlyCopyable, Stringable, Writable):
         """
         writer.write(self.name, " (", self.unit, ")")
 
-    fn __eq__(self, other: Self) -> Bool:
+    @no_inline
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `BenchMetric` to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "BenchMetric").fields(
+            fmt.Named("code", self.code),
+            fmt.Named("name", fmt.Repr(self.name)),
+            fmt.Named("unit", fmt.Repr(self.unit)),
+        )
+
+    def __eq__(self, other: Self) -> Bool:
         """Compares two metrics for equality.
 
         Args:
@@ -90,7 +98,7 @@ struct BenchMetric(ImplicitlyCopyable, Stringable, Writable):
         """
         return self.code == other.code
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Compares two metrics for inequality.
 
         Args:
@@ -101,7 +109,7 @@ struct BenchMetric(ImplicitlyCopyable, Stringable, Writable):
         """
         return self.code != other.code
 
-    fn check_name(self, alt_name: String) -> Bool:
+    def check_name(self, alt_name: String) -> Bool:
         """Checks whether a string contains the metric's name.
 
         Args:
@@ -113,7 +121,7 @@ struct BenchMetric(ImplicitlyCopyable, Stringable, Writable):
         return self.name.lower() == alt_name.lower()
 
     @staticmethod
-    fn get_metric_from_list(
+    def get_metric_from_list(
         name: String, metric_list: List[BenchMetric]
     ) raises -> BenchMetric:
         """Gets a metric from a given list using only the metric's name.
@@ -151,7 +159,7 @@ struct BenchMetric(ImplicitlyCopyable, Stringable, Writable):
 
 
 @fieldwise_init
-struct ThroughputMeasure(ImplicitlyCopyable):
+struct ThroughputMeasure(ImplicitlyCopyable, Writable):
     """Records a throughput metric of metric BenchMetric and value."""
 
     var metric: BenchMetric
@@ -159,7 +167,7 @@ struct ThroughputMeasure(ImplicitlyCopyable):
     var value: Int
     """Measured count of throughput metric."""
 
-    fn __init__(
+    def __init__(
         out self,
         name: String,
         value: Int,
@@ -186,15 +194,7 @@ struct ThroughputMeasure(ImplicitlyCopyable):
         self.metric = metric
         self.value = value
 
-    fn __str__(self) -> String:
-        """Gets a string representation of this `ThroughputMeasure`.
-
-        Returns:
-            The string representation.
-        """
-        return String(self.metric)
-
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Formats this ThroughputMeasure to the provided Writer.
 
         Args:
@@ -202,7 +202,19 @@ struct ThroughputMeasure(ImplicitlyCopyable):
         """
         return writer.write(self.metric)
 
-    fn compute(self, elapsed_sec: Float64) -> Float64:
+    @no_inline
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `ThroughputMeasure` to a writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "ThroughputMeasure").fields(
+            fmt.Named("metric", fmt.Repr(self.metric)),
+            fmt.Named("value", self.value),
+        )
+
+    def compute(self, elapsed_sec: Float64) -> Float64:
         """Computes throughput rate for this metric per unit of time (second).
 
         Args:
@@ -212,11 +224,11 @@ struct ThroughputMeasure(ImplicitlyCopyable):
             The throughput values as a floating point 64.
         """
         # TODO: do we need support other units of time (ms, ns)?
-        return (self.value) * 1e-9 / elapsed_sec
+        return Float64(self.value) * 1e-9 / elapsed_sec
 
 
 @fieldwise_init
-struct Format(ImplicitlyCopyable, Stringable, Writable):
+struct Format(ImplicitlyCopyable, Writable):
     """Defines a format for the benchmark output when printing or writing to a
     file.
     """
@@ -231,7 +243,7 @@ struct Format(ImplicitlyCopyable, Stringable, Writable):
     var value: StaticString
     """The format to print results."""
 
-    fn __init__(out self, value: StringSlice):
+    def __init__(out self, value: StringSlice):
         """Constructs a Format object from a string.
 
         Args:
@@ -253,17 +265,9 @@ struct Format(ImplicitlyCopyable, Stringable, Writable):
                 ", ",
                 Format.table,
             )
-            abort(String("Invalid format option: ", value, valid_formats))
+            abort(t"Invalid format option: {value}{valid_formats}")
 
-    fn __str__(self) -> String:
-        """Returns the string representation of the format.
-
-        Returns:
-            The string representation of the format.
-        """
-        return String(self.value)
-
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the format to a writer.
 
         Args:
@@ -271,7 +275,18 @@ struct Format(ImplicitlyCopyable, Stringable, Writable):
         """
         writer.write(self.value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    @no_inline
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `Format` to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        fmt.FormatStruct(writer, "Format").fields(
+            fmt.Repr(self.value),
+        )
+
+    def __eq__(self, other: Self) -> Bool:
         """Checks if two Format objects are equal.
 
         Args:
@@ -338,7 +353,7 @@ struct BenchConfig(Copyable):
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__(
+    def __init__(
         out self,
         out_file: Optional[Path] = None,
         min_runtime_secs: Float64 = 0.0,
@@ -381,7 +396,7 @@ struct BenchConfig(Copyable):
 
         # TODO: This function should move out of BenchConfig and be part of update_bench_config_args.
         @parameter
-        fn argparse() raises:
+        def argparse() raises:
             """Parse cmd line args to define benchmark configuration."""
 
             var args = argv()
@@ -412,6 +427,12 @@ struct BenchConfig(Copyable):
                 else:
                     i += 1
 
+            # KBENCH_OUTFILE overrides -o (used by kbench driver mode).
+            comptime if get_defined_bool["KBENCH_USE_ENV_ARGS", False]():
+                var env_outfile = getenv("KBENCH_OUTFILE", "")
+                if env_outfile:
+                    self.out_file = Path(env_outfile)
+
         argparse()
 
 
@@ -425,7 +446,7 @@ struct BenchId:
     var input_id: Optional[String]
     """The target function input id phrase."""
 
-    fn __init__(out self, func_name: String, input_id: String):
+    def __init__(out self, func_name: String, input_id: String):
         """Constructs a Benchmark Id object from input function name and Id phrase.
 
         Args:
@@ -436,7 +457,7 @@ struct BenchId:
         self.func_name = func_name
         self.input_id = input_id
 
-    fn __init__(out self, func_name: String):
+    def __init__(out self, func_name: String):
         """Constructs a Benchmark Id object from input function name.
 
         Args:
@@ -446,7 +467,7 @@ struct BenchId:
         self.func_name = func_name
         self.input_id = None
 
-    fn __init__(out self, func_name: StringLiteral):
+    def __init__(out self, func_name: StringLiteral):
         """Constructs a Benchmark Id object from input function name.
 
         Args:
@@ -470,7 +491,7 @@ struct BenchmarkInfo(Copyable):
     var verbose_timing: Bool
     """Whether to print verbose timing results."""
 
-    fn __init__(
+    def __init__(
         out self,
         name: String,
         var result: Report,
@@ -507,7 +528,7 @@ struct Mode(ImplicitlyCopyable):
     comptime Test = Mode(1)
     """Mode for running tests."""
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Check if its Benchmark mode or test mode.
 
         Args:
@@ -520,14 +541,14 @@ struct Mode(ImplicitlyCopyable):
         return self.value == other.value
 
 
-struct Bench(Stringable, Writable):
+struct Bench(Writable):
     """Constructs a Benchmark object, used for running multiple benchmarks
     and comparing the results.
 
     Example:
 
     ```mojo
-    from benchmark import (
+    from std.benchmark import (
         Bench,
         BenchConfig,
         Bencher,
@@ -536,11 +557,11 @@ struct Bench(Stringable, Writable):
         BenchMetric,
         Format,
     )
-    from utils import IndexList
-    from gpu.host import DeviceContext
-    from pathlib import Path
+    from std.utils import IndexList
+    from std.gpu.host import DeviceContext
+    from std.pathlib import Path
 
-    fn example_kernel():
+    def example_kernel():
         print("example_kernel")
 
     var shape = IndexList[2](1024, 1024)
@@ -548,10 +569,10 @@ struct Bench(Stringable, Writable):
 
     @parameter
     @always_inline
-    fn example(mut b: Bencher, shape: IndexList[2]) capturing raises:
+    def example(mut b: Bencher, shape: IndexList[2]) capturing raises:
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             ctx.enqueue_function_experimental[example_kernel](
                 grid_dim=shape[0], block_dim=shape[1]
             )
@@ -602,7 +623,7 @@ struct Bench(Stringable, Writable):
     var info_vec: List[BenchmarkInfo]
     """A list containing the benchmark info."""
 
-    fn __init__(
+    def __init__(
         out self,
         config: Optional[BenchConfig] = None,
         mode: Mode = Mode.Benchmark,
@@ -622,7 +643,7 @@ struct Bench(Stringable, Writable):
         self.info_vec = List[BenchmarkInfo]()
 
         @parameter
-        fn argparse():
+        def argparse():
             """Parse cmd line args to define benchmark configuration."""
 
             var args = argv()
@@ -632,7 +653,7 @@ struct Bench(Stringable, Writable):
 
         argparse()
 
-    fn check_mpirun(mut self) raises -> Int:
+    def check_mpirun(mut self) raises -> Int:
         """
         Check environment to examine whether the benchmark is called via mpirun.
         If so, use pe_rank=OMPI_COMM_WORLD_RANK as a suffix for output file.
@@ -649,10 +670,10 @@ struct Bench(Stringable, Writable):
             # In case of running this binary with mpirun, all the outputs
             # will be written to -o output_file unless a distinct suffix is
             # added to each output.
-            self.append_output_suffix(suffix=String("_", pe_rank))
+            self.append_output_suffix(suffix=String(t"_{pe_rank}"))
         return pe_rank
 
-    fn append_output_suffix(mut self, suffix: String):
+    def append_output_suffix(mut self, suffix: String):
         """
         Append a suffix string to output file name.
 
@@ -662,18 +683,18 @@ struct Bench(Stringable, Writable):
         if self.config.out_file:
             stem = String(self.config.out_file.value())
             current_suffix = String("")
-            split = String(stem).split(".")
+            split = stem.split(".")
             if len(split) > 1:
-                stem = String(".".join(split[:-1]))
-                current_suffix = String(split[-1])
+                stem = ".".join(split[:-1])
+                current_suffix = String(split[len(split) - 1])
 
             self.config.out_file = Path(
-                ".".join(Span[String]([stem + suffix, current_suffix]))
+                ".".join(Span[String]([stem + suffix, current_suffix^]))
             )
 
-    fn bench_with_input[
+    def bench_with_input[
         T: AnyType,
-        bench_fn: fn (mut Bencher, T) raises capturing [_] -> None,
+        bench_fn: def(mut Bencher, T) raises capturing[_] -> None,
     ](
         mut self,
         bench_id: BenchId,
@@ -696,27 +717,53 @@ struct Bench(Stringable, Writable):
         """
 
         @parameter
-        fn input_closure(mut b: Bencher) raises:
-            """Executes benchmark for a target function.
-
-            Args:
-                b: The bencher object to facilitate benchmark execution.
-            """
-
+        def input_closure(mut b: Bencher) raises:
             bench_fn(b, input)
 
         self.bench_function[input_closure](bench_id, measures)
 
-    fn bench_with_input[
-        T: __TypeOfAllTypes,
-        bench_fn: fn (mut Bencher, T) raises capturing [_] -> None,
+    def bench_with_input[
+        T: AnyType,
+        FuncType: def(mut Bencher, T) unified -> None,
+    ](
+        mut self,
+        func: FuncType,
+        bench_id: BenchId,
+        input: T,
+        measures: List[ThroughputMeasure] = {},
+    ) raises:
+        """Benchmarks an input function with input args of type AnyType.
+
+        Parameters:
+            T: Benchmark function input type.
+            FuncType: The body function type.
+
+        Args:
+            func: The closure carrying the captured state of the body function.
+            bench_id: The benchmark Id object used for identification.
+            input: Represents the target function's input arguments.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
+        """
+
+        @parameter
+        def input_closure(mut b: Bencher):
+            func(b, input)
+
+        self.bench_function[input_closure](bench_id, measures)
+
+    def bench_with_input[
+        T: TrivialRegisterPassable,
+        bench_fn: def(mut Bencher, T) raises capturing[_] -> None,
     ](
         mut self,
         bench_id: BenchId,
         input: T,
         measures: List[ThroughputMeasure] = {},
     ) raises:
-        """Benchmarks an input function with input args of type __TypeOfAllTypes.
+        """Benchmarks an input function with input args of type TrivialRegisterPassable.
 
         Parameters:
             T: Benchmark function input type.
@@ -732,20 +779,46 @@ struct Bench(Stringable, Writable):
         """
 
         @parameter
-        fn input_closure(mut b: Bencher) raises:
-            """Executes benchmark for a target function.
-
-            Args:
-                b: The bencher object to facilitate benchmark execution.
-            """
-
+        def input_closure(mut b: Bencher) raises:
             bench_fn(b, input)
 
         self.bench_function[input_closure](bench_id, measures)
 
+    def bench_with_input[
+        T: TrivialRegisterPassable,
+        FuncType: def(mut Bencher, T) unified -> None,
+    ](
+        mut self,
+        func: FuncType,
+        bench_id: BenchId,
+        input: T,
+        measures: List[ThroughputMeasure] = {},
+    ) raises:
+        """Benchmarks an input function with input args of type TrivialRegisterPassable.
+
+        Parameters:
+            T: Benchmark function input type.
+            FuncType: The body function type.
+
+        Args:
+            func: The closure carrying the captured state of the body function.
+            bench_id: The benchmark Id object used for identification.
+            input: Represents the target function's input arguments.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
+        """
+
+        @parameter
+        def input_closure(mut b: Bencher):
+            func(b, input)
+
+        self.bench_function[input_closure](bench_id, measures)
+
     @always_inline
-    fn bench_multicontext[
-        bench_fn: fn (mut Bencher, DeviceContext, Int) raises capturing [
+    def bench_multicontext[
+        bench_fn: def(mut Bencher, DeviceContext, Int) raises capturing[
             _
         ] -> None,
     ](
@@ -770,14 +843,48 @@ struct Bench(Stringable, Writable):
             If the operation fails.
         """
 
+        @always_inline
+        def func_unified(mut b: Bencher, ctx: DeviceContext, i: Int) unified {}:
+            try:
+                bench_fn(b, ctx, i)
+            except e:
+                abort(String(e))
+
+        self.bench_multicontext(func_unified, list_of_ctx, bench_id, measures)
+
+    @always_inline
+    def bench_multicontext[
+        FuncType: def(mut Bencher, DeviceContext, Int) unified -> None,
+    ](
+        mut self,
+        func: FuncType,
+        list_of_ctx: List[DeviceContext],
+        bench_id: BenchId,
+        measures: List[ThroughputMeasure] = {},
+    ) raises:
+        """Benchmarks or Tests an input function across multiple device contexts.
+
+        The metric returned represents the *slowest* performing device.
+
+        Parameters:
+            FuncType: The body function type.
+
+        Args:
+            func: The closure carrying the captured state of the body function.
+            list_of_ctx: A list of device contexts on which the bench_fn is run in parallel.
+            bench_id: The benchmark Id object used for identification.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
+
+        Raises:
+            If the operation fails.
+        """
+
         var num_ctxs = len(list_of_ctx)
-        debug_assert(
-            num_ctxs > 1, "list_of_ctx must contain at least 2 DeviceContexts"
-        )
-        # Some initial setup work:
-        # Necessary to fill this List w/ default BenchmarkInfo
-        # otherwise each thread attempts to free uninitialized BenchmarkInfo
-        # when copying below
+        assert (
+            num_ctxs > 1
+        ), "list_of_ctx must contain at least 2 DeviceContexts"
+        # Necessary to fill this List w/ default BenchmarkInfo otherwise each
+        # thread attempts to free uninitialized BenchmarkInfo when copying below.
         var default_info = BenchmarkInfo(
             name="",
             result=Report(),
@@ -785,12 +892,12 @@ struct Bench(Stringable, Writable):
         )
         var results_b = List[BenchmarkInfo](length=num_ctxs, fill=default_info)
 
-        # This closure runs in parallel on the host, 1 host thread per context
+        # This closure runs in parallel on the host, 1 host thread per context.
         @parameter
-        fn per_gpu(i: Int) raises:
+        def per_gpu(i: Int) raises:
             @parameter
-            fn context_closure(mut b: Bencher) raises:
-                bench_fn(b, list_of_ctx[i], i)
+            def context_closure(mut b: Bencher) raises:
+                func(b, list_of_ctx[i], i)
 
             var b = Bench()
             b.bench_function[context_closure](
@@ -801,7 +908,7 @@ struct Bench(Stringable, Writable):
 
         sync_parallelize[per_gpu](num_ctxs)
 
-        # Collect and print the worst-case GPU time
+        # Collect and print the worst-case GPU time.
         var max_time = 0.0
         var max_loc = 0
 
@@ -814,8 +921,8 @@ struct Bench(Stringable, Writable):
         self.info_vec.append(results_b[max_loc].copy())
 
     @always_inline
-    fn bench_function[
-        bench_fn: fn () raises capturing [_] -> None,
+    def bench_function[
+        bench_fn: def() raises capturing[_] -> None,
     ](
         mut self,
         bench_id: BenchId,
@@ -838,10 +945,10 @@ struct Bench(Stringable, Writable):
 
         @parameter
         @always_inline
-        fn bench_iter(mut b: Bencher):
+        def bench_iter(mut b: Bencher):
             @parameter
             @always_inline
-            fn call_func():
+            def call_func():
                 try:
                     bench_fn()
                 except e:
@@ -851,10 +958,43 @@ struct Bench(Stringable, Writable):
 
         self.bench_function[bench_iter](bench_id, measures=measures)
 
+    @always_inline
+    def bench_function[
+        FuncType: def() unified -> None,
+    ](
+        mut self,
+        func: FuncType,
+        bench_id: BenchId,
+        measures: List[ThroughputMeasure] = {},
+        fixed_iterations: Optional[Int] = None,
+    ) raises:
+        """Benchmarks or Tests an input function.
+
+        Parameters:
+            FuncType: The body function type.
+
+        Args:
+            func: The closure carrying the captured state of the body function.
+            bench_id: The benchmark Id object used for identification.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
+            fixed_iterations: Just run a fixed number of iterations.
+
+        Raises:
+            If the operation fails.
+        """
+
+        @always_inline
+        def bench_iter(
+            mut b: Bencher,
+        ) unified {read func,}:
+            b.iter(func)
+
+        self.bench_function(bench_iter, bench_id, measures=measures)
+
     # TODO: add a variant of the following function for with DeviceContext
     @always_inline
-    fn bench_function[
-        bench_fn: fn () capturing [_] -> None,
+    def bench_function[
+        bench_fn: def() capturing[_] -> None,
     ](
         mut self,
         bench_id: BenchId,
@@ -877,18 +1017,18 @@ struct Bench(Stringable, Writable):
 
         @parameter
         @always_inline
-        fn bench_iter(mut b: Bencher):
+        def bench_iter(mut b: Bencher):
             @parameter
             @always_inline
-            fn call_func():
+            def call_func():
                 bench_fn()
 
             b.iter[call_func]()
 
         self.bench_function[bench_iter](bench_id, measures=measures)
 
-    fn bench_function[
-        bench_fn: fn (mut Bencher) raises capturing [_] -> None
+    def bench_function[
+        bench_fn: def(mut Bencher) raises capturing[_] -> None
     ](
         mut self,
         bench_id: BenchId,
@@ -910,15 +1050,9 @@ struct Bench(Stringable, Writable):
         """
 
         @parameter
-        fn bench_with_abort_on_err(mut b: Bencher):
-            """Aborts benchmark in case of an error.
-
-            Args:
-                b: The bencher object to facilitate benchmark execution.
-            """
-
+        def bench_with_abort_on_err(mut b: Bencher):
             # TODO: if we don't catch the exception here we have to overload
-            # almost every function in stdlib benchmark and stdlib time
+            # almost every function in stdlib benchmark and stdlib time.
             try:
                 bench_fn(b)
             except e:
@@ -932,18 +1066,66 @@ struct Bench(Stringable, Writable):
         elif self.mode == Mode.Test:
             self._test[bench_with_abort_on_err]()
 
-    fn _test[bench_fn: fn (mut Bencher) capturing [_] -> None](mut self) raises:
+    def bench_function[
+        FuncType: def(mut Bencher) unified -> None,
+    ](
+        mut self,
+        func: FuncType,
+        bench_id: BenchId,
+        measures: List[ThroughputMeasure] = {},
+        fixed_iterations: Optional[Int] = None,
+    ) raises:
+        """Benchmarks or Tests an input function.
+
+        Parameters:
+            FuncType: The body function type.
+
+        Args:
+            func: The closure carrying the captured state of the body function.
+            bench_id: The benchmark Id object used for identification.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
+            fixed_iterations: Just run a fixed number of iterations.
+
+        Raises:
+            If the operation fails.
+        """
+
+        if self.mode == Mode.Benchmark:
+            for _ in range(self.config.num_repetitions):
+                self._bench(func, bench_id, measures.copy(), fixed_iterations)
+        elif self.mode == Mode.Test:
+            self._test(func)
+
+    def _test[bench_fn: def(mut Bencher) capturing[_] -> None](mut self) raises:
         """Tests an input function by executing it only once.
 
         Parameters:
             bench_fn: The function to be benchmarked.
         """
 
-        var b = Bencher(1)
-        bench_fn(b)
+        @always_inline
+        def func_unified(mut b: Bencher) unified {}:
+            bench_fn(b)
 
-    fn _bench[
-        user_bench_fn: fn (mut Bencher) capturing [_] -> None
+        self._test(func_unified)
+
+    def _test[
+        FuncType: def(mut Bencher) unified -> None,
+    ](mut self, func: FuncType) raises:
+        """Tests an input function by executing it only once.
+
+        Parameters:
+            FuncType: The body function type.
+
+        Args:
+            func: The closure carrying the captured state of the body function.
+        """
+
+        var b = Bencher(1)
+        func(b)
+
+    def _bench[
+        user_bench_fn: def(mut Bencher) capturing[_] -> None
     ](
         mut self,
         bench_id: BenchId,
@@ -961,8 +1143,35 @@ struct Bench(Stringable, Writable):
             fixed_iterations: Just run a fixed number of iterations.
         """
 
+        @always_inline
+        def func_unified(mut b: Bencher) unified {}:
+            user_bench_fn(b)
+
+        self._bench(func_unified, bench_id, measures^, fixed_iterations)
+
+    def _bench[
+        FuncType: def(mut Bencher) unified -> None,
+    ](
+        mut self,
+        func: FuncType,
+        bench_id: BenchId,
+        var measures: List[ThroughputMeasure] = {},
+        fixed_iterations: Optional[Int] = None,
+    ) raises:
+        """Benchmarks an input function.
+
+        Parameters:
+            FuncType: The body function type.
+
+        Args:
+            func: The closure carrying the captured state of the body function.
+            bench_id: The benchmark Id object used for identification.
+            measures: Optional arg used to represent a list of ThroughputMeasure's.
+            fixed_iterations: Just run a fixed number of iterations.
+        """
+
         @parameter
-        fn bench_fn(mut b: Bencher):
+        def bench_fn(mut b: Bencher):
             """Executes benchmark for a target function.
 
             Args:
@@ -971,13 +1180,13 @@ struct Bench(Stringable, Writable):
 
             if self.config.flush_denormals:
                 with FlushDenormals():
-                    user_bench_fn(b)
+                    func(b)
             else:
-                user_bench_fn(b)
+                func(b)
 
         @parameter
         @always_inline
-        fn benchmark_fn(num_iters: Int) raises -> Int:
+        def benchmark_fn(num_iters: Int) raises -> Int:
             """Executes benchmark for a target function.
 
             Args:
@@ -1021,7 +1230,7 @@ struct Bench(Stringable, Writable):
             )
         )
 
-    fn dump_report(mut self) raises:
+    def dump_report(mut self) raises:
         """Prints out the report from a Benchmark execution. If
         `Bench.config.out_file` is set, it will also write the output in the format
         set in `out_file_format` to the file defined in `out_file`.
@@ -1038,7 +1247,7 @@ struct Bench(Stringable, Writable):
                 f.write(self)
             self.config.format = orig_format
 
-    fn pad[
+    def pad[
         pad_str: StaticString = " "
     ](self, width: Int, string: String) -> String:
         """Pads a string to a given width.
@@ -1053,21 +1262,13 @@ struct Bench(Stringable, Writable):
         Returns:
             A string padded to the given width.
         """
-        __comptime_assert len(pad_str) == 1, "pad_str must be length 1."
+        comptime assert pad_str.byte_length() == 1, "pad_str must be length 1."
 
         if self.config.format == Format.csv:
             return ""
-        return pad_str * (width - len(string))
+        return pad_str * (width - string.byte_length())
 
-    fn __str__(self) -> String:
-        """Returns a string representation of the benchmark results.
-
-        Returns:
-            A string representing the benchmark results.
-        """
-        return String.write(self)
-
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the benchmark results to a writer.
 
         Args:
@@ -1168,7 +1369,7 @@ struct Bench(Stringable, Writable):
 
             # TODO: remove when kbench adds the spec column
             if self.config.format == Format.csv:
-                name = String('"', run.name, '"')
+                name = String(t'"{run.name}"')
             else:
                 name = run.name
 
@@ -1211,21 +1412,32 @@ struct Bench(Stringable, Writable):
 
             writer.write("\n")
 
-    fn _get_max_name_width(self, label: StaticString) -> Int:
-        var max_val = len(label)
+    @no_inline
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the repr of this `Bench` to a writer.
+
+        Args:
+            writer: The writer to write to.
+        """
+        fmt.FormatStruct(writer, "Bench").fields(
+            fmt.Named("num_benchmarks", len(self.info_vec)),
+        )
+
+    def _get_max_name_width(self, label: StaticString) -> Int:
+        var max_val = label.byte_length()
         for i in range(len(self.info_vec)):
-            var namelen = len(String(self.info_vec[i].name))
+            var namelen = self.info_vec[i].name.byte_length()
             max_val = max(max_val, namelen)
         return max_val
 
-    fn _get_max_iters_width(self, label: StaticString) -> Int:
-        var max_val = len(label)
+    def _get_max_iters_width(self, label: StaticString) -> Int:
+        var max_val = label.byte_length()
         for i in range(len(self.info_vec)):
             var iters = self.info_vec[i].result.iters()
-            max_val = max(max_val, len(String(iters)))
+            max_val = max(max_val, String(iters).byte_length())
         return max_val
 
-    fn _get_metrics(self) -> Dict[String, _Metric]:
+    def _get_metrics(self) -> Dict[String, _Metric]:
         var metrics = Dict[String, _Metric]()
         var runs = len(self.info_vec)
         for i in range(runs):
@@ -1233,13 +1445,13 @@ struct Bench(Stringable, Writable):
             for j in range(len(run.measures)):
                 var measure = run.measures[j]
                 var rate = measure.compute(run.result.mean(unit=Unit.s))
-                var width = len(String(rate))
+                var width = String(rate).byte_length()
                 var name = measure.metric.unit
                 if self.config.verbose_metric_names:
                     name = String(measure.metric)
                 if name not in metrics:
                     metrics[name] = _Metric(
-                        max(width, len(name)), Dict[Int, Float64]()
+                        max(width, name.byte_length()), Dict[Int, Float64]()
                     )
                     try:
                         metrics[name].rates[i] = rate
@@ -1255,30 +1467,38 @@ struct Bench(Stringable, Writable):
                         abort(String(e))
         return metrics^
 
-    fn _get_max_timing_widths(self, met_label: StaticString) -> List[Int]:
+    def _get_max_timing_widths(self, met_label: StaticString) -> List[Int]:
         # If label is larger than any value, will pad to the label length
 
-        var max_met = len(met_label)
-        comptime ConfigType = type_of(self.config)
+        var max_met = met_label.byte_length()
+        comptime byte_length[idx: Int] = BenchConfig.VERBOSE_TIMING_LABELS[
+            idx
+        ].byte_length()
         # NOTE: We insert an explicit materialization for Int here to avoid
-        # materialize a more expensive `VERBOSE_TIMING_LABELS[]` object.
-        var max_min = materialize[len(ConfigType.VERBOSE_TIMING_LABELS[0])]()
-        var max_mean = materialize[len(ConfigType.VERBOSE_TIMING_LABELS[1])]()
-        var max_max = materialize[len(ConfigType.VERBOSE_TIMING_LABELS[2])]()
-        var max_dur = materialize[len(ConfigType.VERBOSE_TIMING_LABELS[3])]()
+        # materializing a more expensive `VERBOSE_TIMING_LABELS[]` object.
+        var max_min = materialize[byte_length[0]]()
+        var max_mean = materialize[byte_length[1]]()
+        var max_max = materialize[byte_length[2]]()
+        var max_dur = materialize[byte_length[3]]()
         for i in range(len(self.info_vec)):
             # TODO: Move met (ms) to the end of the table to align with verbose
             # timing, don't repeat `Mean (ms)`, and make sure it works with
             # kernel benchmarking.
             ref result = self.info_vec[i].result
-            var mean_len = len(String(result.mean(unit=Unit.ms)))
+            var mean_len = String(result.mean(unit=Unit.ms)).byte_length()
             # met == mean execution time == mean
             max_met = max(max_met, mean_len)
 
-            max_min = max(max_min, len(String(result.min(unit=Unit.ms))))
+            max_min = max(
+                max_min, String(result.min(unit=Unit.ms)).byte_length()
+            )
             max_mean = max(max_mean, mean_len)
-            max_max = max(max_max, len(String(result.max(unit=Unit.ms))))
-            max_dur = max(max_dur, len(String(result.duration(unit=Unit.ms))))
+            max_max = max(
+                max_max, String(result.max(unit=Unit.ms)).byte_length()
+            )
+            max_dur = max(
+                max_dur, String(result.duration(unit=Unit.ms)).byte_length()
+            )
         return [max_met, max_min, max_mean, max_max, max_dur]
 
 
@@ -1289,8 +1509,7 @@ struct _Metric(Copyable):
 
 
 @fieldwise_init
-@register_passable
-struct Bencher:
+struct Bencher(RegisterPassable):
     """Defines a Bencher struct which facilitates the timing of a target function.
     """
 
@@ -1300,7 +1519,7 @@ struct Bencher:
     var elapsed: Int
     """ The total time elapsed when running the target function."""
 
-    fn __init__(out self, num_iters: Int):
+    def __init__(out self, num_iters: Int):
         """Constructs a Bencher object to run and time a function.
 
         Args:
@@ -1310,7 +1529,7 @@ struct Bencher:
         self.num_iters = num_iters
         self.elapsed = 0
 
-    fn iter[iter_fn: fn () capturing [_] -> None](mut self):
+    def iter[iter_fn: def() capturing[_] -> None](mut self):
         """Returns the total elapsed time by running a target function a particular
         number of times.
 
@@ -1318,15 +1537,32 @@ struct Bencher:
             iter_fn: The target function to benchmark.
         """
 
-        var start = time.perf_counter_ns()
-        for _ in range(self.num_iters):
+        @always_inline
+        def unified_closure() unified {}:
             iter_fn()
-        var stop = time.perf_counter_ns()
+
+        self.iter(unified_closure)
+
+    def iter[IterFn: def() unified](mut self, f: IterFn):
+        """Returns the total elapsed time by running a target closure a
+        particular number of times.
+
+        Parameters:
+            IterFn: Type of the closure to benchmark.
+
+        Args:
+            f: The closure to benchmark.
+        """
+
+        var start = std.time.perf_counter_ns()
+        for _ in range(self.num_iters):
+            f()
+        var stop = std.time.perf_counter_ns()
         self.elapsed = Int(stop - start)
 
-    fn iter_preproc[
-        iter_fn: fn () capturing [_] -> None,
-        preproc_fn: fn () capturing [_] -> None,
+    def iter_preproc[
+        iter_fn: def() capturing[_] -> None,
+        preproc_fn: def() capturing[_] -> None,
     ](mut self):
         """Returns the total elapsed time by running a target function a particular
         number of times.
@@ -1336,14 +1572,40 @@ struct Bencher:
             preproc_fn: The function to preprocess the target function.
         """
 
+        @always_inline
+        def iter_unified() unified {}:
+            iter_fn()
+
+        @always_inline
+        def preproc_unified() unified {}:
+            preproc_fn()
+
+        self.iter_preproc(iter_unified, preproc_unified)
+
+    def iter_preproc[
+        IterFn: def() unified -> None,
+        PreprocFn: def() unified -> None,
+    ](mut self, iter_fn: IterFn, preproc_fn: PreprocFn):
+        """Returns the total elapsed time by running a target function a particular
+        number of times.
+
+        Parameters:
+            IterFn: The target function type.
+            PreprocFn: The preprocess function type.
+
+        Args:
+            iter_fn: The closure carrying the captured state of the target function.
+            preproc_fn: The closure carrying the captured state of the preprocess function.
+        """
+
         for _ in range(self.num_iters):
             preproc_fn()
-            var start = time.perf_counter_ns()
+            var start = std.time.perf_counter_ns()
             iter_fn()
-            var stop = time.perf_counter_ns()
+            var stop = std.time.perf_counter_ns()
             self.elapsed += Int(stop - start)
 
-    fn iter_custom[iter_fn: fn (Int) raises capturing [_] -> Int](mut self):
+    def iter_custom[iter_fn: def(Int) raises capturing[_] -> Int](mut self):
         """Times a target function with custom number of iterations.
 
         Parameters:
@@ -1355,8 +1617,22 @@ struct Bencher:
         except e:
             abort(String(e))
 
-    fn iter_custom[
-        kernel_launch_fn: fn (DeviceContext) raises capturing [_] -> None
+    def iter_custom[
+        FuncType: def(Int) unified -> Int,
+    ](mut self, func: FuncType):
+        """Times a target function with custom number of iterations.
+
+        Parameters:
+            FuncType: The target function type.
+
+        Args:
+            func: The closure carrying the captured state of the target function.
+        """
+
+        self.elapsed = func(self.num_iters)
+
+    def iter_custom[
+        kernel_launch_fn: def(DeviceContext) raises capturing[_] -> None
     ](mut self, ctx: DeviceContext):
         """Times a target GPU function with custom number of iterations via DeviceContext ctx.
 
@@ -1371,8 +1647,8 @@ struct Bencher:
         except e:
             abort(String(e))
 
-    fn iter_custom[
-        kernel_launch_fn: fn (DeviceContext, Int) raises capturing [_] -> None
+    def iter_custom[
+        kernel_launch_fn: def(DeviceContext, Int) raises capturing[_] -> None
     ](mut self, ctx: DeviceContext):
         """Times a target GPU function with custom number of iterations via DeviceContext ctx.
 
@@ -1389,8 +1665,8 @@ struct Bencher:
         except e:
             abort(String(e))
 
-    fn iter_custom_multicontext[
-        kernel_launch_fn: fn () raises capturing [_] -> None
+    def iter_custom_multicontext[
+        kernel_launch_fn: def() raises capturing[_] -> None
     ](mut self, ctxs: List[DeviceContext]):
         """Times a target GPU function with custom number of iterations via DeviceContext ctx.
 
@@ -1411,7 +1687,7 @@ struct Bencher:
         except e:
             abort(String(e))
 
-    fn iter[iter_fn: fn () capturing raises -> None](mut self) raises:
+    def iter[iter_fn: def() capturing raises -> None](mut self) raises:
         """Returns the total elapsed time by running a target function a particular
         number of times.
 
@@ -1422,8 +1698,8 @@ struct Bencher:
             If the operation fails.
         """
 
-        var start = time.perf_counter_ns()
+        var start = std.time.perf_counter_ns()
         for _ in range(self.num_iters):
             iter_fn()
-        var stop = time.perf_counter_ns()
+        var stop = std.time.perf_counter_ns()
         self.elapsed = Int(stop - start)

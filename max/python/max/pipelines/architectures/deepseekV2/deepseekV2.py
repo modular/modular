@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,21 +16,19 @@ from __future__ import annotations
 
 import functools
 
-from max.nn import (
-    MLP,
-    Embedding,
-    Linear,
-    Module,
-    RMSNorm,
-    Transformer,
-    TransformerBlock,
+from max.nn.attention.multi_latent_attention import (
+    LatentAttentionWithRope,
 )
-from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
+from max.nn.embedding import Embedding
+from max.nn.layer import Module
+from max.nn.linear import MLP, Linear
 from max.nn.moe import MoE
+from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
+from max.nn.transformer import Transformer, TransformerBlock
 from max.pipelines.architectures.deepseekV2.layers.moe_gate import (
     DeepSeekV2MoEGate,
 )
@@ -78,6 +76,7 @@ class DeepseekV2(Transformer):
                     v_head_dim=config.v_head_dim,
                     devices=config.devices,
                     graph_mode=config.graph_mode,
+                    buffer_size=config.max_batch_context_length,
                 ),
                 mlp=self._get_mlp(config, i),
                 attention_norm=RMSNorm(

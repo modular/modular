@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,7 +22,7 @@ Examples:
 
 ```mojo
 # Create an array of 3 integers
-var arr = InlineArray[Int, 3](1, 2, 3)
+var arr: InlineArray[Int, 3] = [1, 2, 3]
 
 # Access elements
 print(arr[0])  # Prints 1
@@ -32,22 +32,22 @@ var filled = InlineArray[Int, 5](fill=42)
 ```
 """
 
-import math
-from collections._index_normalization import normalize_index
-
-from builtin.device_passable import DevicePassable
-from builtin.rebind import downcast
-from builtin.constrained import _constrained_conforms_to
-from builtin.repr import repr
-from compile import get_type_name
-from memory.maybe_uninitialized import UnsafeMaybeUninitialized
+import std.math
+from std.builtin.device_passable import DevicePassable
+from std.builtin.rebind import downcast
+from std.builtin.constrained import _constrained_conforms_to
+from std.collections import check_bounds
+from std.compile import get_type_name
+import std.format._utils as fmt
+from std.hashlib.hasher import Hasher
+from std.memory import UnsafeMaybeUninit, uninit_move_n
 
 # ===-----------------------------------------------------------------------===#
 # Array
 # ===-----------------------------------------------------------------------===#
 
 
-fn _inline_array_construction_checks[size: Int]():
+def _inline_array_construction_checks[size: Int]():
     """Checks if the properties in `InlineArray` are valid.
 
     Validity right now is just ensuring the number of elements is > 0.
@@ -55,19 +55,169 @@ fn _inline_array_construction_checks[size: Int]():
     Parameters:
         size: The number of elements.
     """
-    __comptime_assert (
+    comptime assert (
         size >= 0
     ), "number of elements in `InlineArray` must be >= 0"
 
 
-struct InlineArray[ElementType: Copyable, size: Int,](
-    Copyable,
+@fieldwise_init
+struct _InlineArrayIter[
+    mut: Bool,
+    //,
+    T: Copyable,
+    size: Int,
+    origin: Origin[mut=mut],
+    forward: Bool = True,
+](ImplicitlyCopyable, Iterable, Iterator):
+    """Iterator for `InlineArray`.
+
+    Parameters:
+        mut: A boolean to indicate if the iterator is mutable.
+        T: The type of the elements in the iterator.
+        size: The size of the array.
+        origin: The origin of the iterator.
+        forward: A boolean to indicate if the iterator is forward.
+    """
+
+    comptime Element = Self.T
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+
+    var index: Int
+    var src: Pointer[InlineArray[Self.T, Self.size], Self.origin]
+
+    @always_inline
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    def __next__(
+        mut self,
+    ) raises StopIteration -> ref[Self.origin] Self.Element:
+        comptime if Self.forward:
+            if self.index >= Self.size:
+                raise StopIteration()
+            self.index += 1
+            return self.src[][self.index - 1]
+        else:
+            if self.index <= 0:
+                raise StopIteration()
+            self.index -= 1
+            return self.src[][self.index]
+
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var iter_len: Int
+
+        comptime if Self.forward:
+            iter_len = Self.size - self.index
+        else:
+            iter_len = self.index
+
+        return (iter_len, {iter_len})
+
+
+struct _InlineArrayIterOwned[T: Copyable, size: Int](
+    IterableOwned, Iterator, Movable
+):
+    """An owning iterator for InlineArray.
+
+    Parameters:
+        T: The type of the elements in the array.
+        size: The size of the array.
+    """
+
+    comptime Element = Self.T
+    comptime IteratorOwnedType = Self
+
+    var _array: InlineArray[Self.T, Self.size]
+    var _index: Int
+
+    def __init__(out self, var array: InlineArray[Self.T, Self.size]):
+        """Consume an array and create an iterator over its elements.
+
+        Args:
+            array: The array to consume.
+        """
+        self._array = array^
+        self._index = 0
+
+    def __init__(out self, *, deinit take: Self):
+        """Move constructor that handles partially consumed array storage.
+
+        After partial iteration some array slots are uninitialized, so
+        the default fieldwise move would be unsound.  This constructor
+        moves only the unconsumed elements and marks the source
+        destroyed.
+
+        Args:
+            take: The iterator to move from.
+        """
+        self._index = take._index
+        self._array = InlineArray[Self.T, Self.size](uninitialized=True)
+        uninit_move_n[overlapping=False](
+            dest=self._array.unsafe_ptr() + take._index,
+            src=take._array.unsafe_ptr() + take._index,
+            count=Self.size - take._index,
+        )
+        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(take))
+
+    @always_inline
+    def __del__(deinit self):
+        _constrained_conforms_to[
+            conforms_to(Self.T, ImplicitlyDestructible),
+            Parent=Self,
+            Element=Self.T,
+            ParentConformsTo="ImplicitlyDestructible",
+        ]()
+        comptime TDestructible = downcast[Self.T, ImplicitlyDestructible]
+
+        # Move fields out of self so we can manage their lifetimes.
+        var idx = self._index
+        var array = self._array^
+
+        # Destroy the remaining elements that have not yet been
+        # iterated over.
+        comptime if not TDestructible.__del__is_trivial:
+            for i in range(idx, Self.size):
+                (array.unsafe_ptr() + i).bitcast[
+                    TDestructible
+                ]().destroy_pointee()
+
+        # Mark the array as destroyed so InlineArray.__del__ doesn't
+        # double-destroy the elements we already handled.
+        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(array))
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        if self._index >= Self.size:
+            raise StopIteration()
+        self._index += 1
+        return (self._array.unsafe_ptr() + self._index - 1).take_pointee()
+
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var remaining = Self.size - self._index
+        return (remaining, {remaining})
+
+
+struct InlineArray[ElementType: Copyable, size: Int](
+    Copyable where conforms_to(ElementType, Copyable),
     Defaultable,
     DevicePassable,
-    Representable,
+    Equatable where conforms_to(ElementType, Equatable),
+    Hashable where conforms_to(ElementType, Hashable),
+    ImplicitlyCopyable where conforms_to(ElementType, ImplicitlyCopyable),
+    ImplicitlyDestructible,
+    Iterable,
+    IterableOwned,
+    Movable,
     Sized,
-    Stringable,
-    Writable,
+    Writable where conforms_to(ElementType, Writable),
 ):
     """A fixed-size sequence of homogeneous elements where size is a constant
     expression.
@@ -85,7 +235,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
 
     ```mojo
     # Create array of 3 integers
-    var arr = InlineArray[Int, 3](1, 2, 3)
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
 
     # Create array filled with value
     var filled = InlineArray[Int, 5](fill=42)
@@ -98,12 +248,12 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     comptime __del__is_trivial: Bool = downcast[
         Self.ElementType, ImplicitlyDestructible
     ].__del__is_trivial
-    comptime __copyinit__is_trivial: Bool = Self.ElementType.__copyinit__is_trivial
-    comptime __moveinit__is_trivial: Bool = Self.ElementType.__moveinit__is_trivial
+    comptime __copy_ctor_is_trivial: Bool = Self.ElementType.__copy_ctor_is_trivial
+    comptime __move_ctor_is_trivial: Bool = Self.ElementType.__move_ctor_is_trivial
 
     # Fields
     comptime type = __mlir_type[
-        `!pop.array<`, Self.size._mlir_value, `, `, Self.ElementType, `>`
+        `!pop.array<`, Self.size._int_mlir_index(), `, `, Self.ElementType, `>`
     ]
     """The underlying MLIR array type."""
 
@@ -113,7 +263,24 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     comptime device_type: AnyType = Self
     """The device-side type for this array."""
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = _InlineArrayIter[
+        Self.ElementType, Self.size, iterable_origin, True
+    ]
+    """The iterator type for this array.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
+
+    comptime IteratorOwnedType: Iterator = _InlineArrayIterOwned[
+        Self.ElementType, Self.size
+    ]
+    """The owned iterator type for this array."""
+
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         """Convert the host type object to a device_type and store it at the
         target address.
 
@@ -123,7 +290,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         target.bitcast[Self.device_type]()[] = self.copy()
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         """Gets the name of the host type (the one implementing this trait).
 
         Returns:
@@ -137,36 +304,23 @@ struct InlineArray[ElementType: Copyable, size: Int,](
             "]",
         )
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        """Gets device_type's name.
-
-        Returns:
-            The device type's name.
-        """
-        return Self.get_type_name()
-
     # ===------------------------------------------------------------------===#
     # Life cycle methods
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """This constructor will always cause a compile time error if used.
         It is used to steer users away from uninitialized memory.
         """
-        constrained[
-            False,
-            (
-                "Initialize with either a variadic list of arguments, a default"
-                " fill element or pass the keyword argument"
-                " 'uninitialized=True'."
-            ),
-        ]()
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+        comptime assert False, (
+            "Initialize with either a variadic list of arguments, a default"
+            " fill element or pass the keyword argument"
+            " 'uninitialized=True'."
+        )
 
     @always_inline
-    fn __init__(out self, *, uninitialized: Bool):
+    def __init__(out self, *, uninitialized: Bool):
         """Create an InlineArray with uninitialized memory.
 
         Args:
@@ -188,18 +342,18 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         _inline_array_construction_checks[Self.size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         var unsafe_assume_initialized: InlineArray[
-            UnsafeMaybeUninitialized[Self.ElementType], Self.size
+            UnsafeMaybeUninit[Self.ElementType], Self.size
         ],
     ):
         """Constructs an `InlineArray` from an `InlineArray` of
-        `UnsafeMaybeUninitialized`.
+        `UnsafeMaybeUninit`.
 
         Args:
-            unsafe_assume_initialized: The array of `UnsafeMaybeUninitialized`
+            unsafe_assume_initialized: The array of `UnsafeMaybeUninit`
                 elements. All elements must be initialized.
 
         Warning:
@@ -220,7 +374,9 @@ struct InlineArray[ElementType: Copyable, size: Int,](
             )
 
     @always_inline
-    fn __init__[batch_size: Int = 64](out self, *, fill: Self.ElementType):
+    def __init__[
+        batch_size: SIMDSize = 64
+    ](out self, *, fill: Self.ElementType):
         """Constructs an array where each element is initialized to the supplied
         value.
 
@@ -257,20 +413,17 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         _inline_array_construction_checks[Self.size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-        comptime unroll_end = math.align_down(Self.size, batch_size)
+        comptime unroll_end = std.math.align_down(Self.size, batch_size)
 
         var ptr = self.unsafe_ptr()
 
         for _ in range(0, unroll_end, batch_size):
-
-            @parameter
-            for _ in range(batch_size):
+            comptime for _ in range(batch_size):
                 ptr.init_pointee_copy(fill)
                 ptr += 1
 
         # Fill the remainder
-        @parameter
-        for _ in range(unroll_end, Self.size):
+        comptime for _ in range(unroll_end, Self.size):
             ptr.init_pointee_copy(fill)
             ptr += 1
         debug_assert(
@@ -280,9 +433,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         )
 
     @always_inline
-    fn __init__(
-        out self, var *elems: Self.ElementType, __list_literal__: () = ()
-    ):
+    def __init__(out self, var *elems: Self.ElementType, __list_literal__: ()):
         """Constructs an array from a variadic list of elements.
 
         Args:
@@ -294,41 +445,15 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)  # [1, 2, 3]
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         ```
         """
-        debug_assert(
-            len(elems) == Self.size, "No. of elems must match array size"
-        )
-        self = Self(storage=elems^)
-
-    @always_inline
-    fn __init__[
-        origin: MutOrigin,
-        //,
-    ](
-        out self,
-        *,
-        var storage: VariadicListMem[
-            elt_is_mutable=True, origin=origin, Self.ElementType, is_owned=True
-        ],
-    ):
-        """Construct an array from a low-level internal representation.
-
-        Parameters:
-            origin: The origin of the storage being passed in.
-
-        Args:
-            storage: The variadic list storage to construct from. Must match
-                array size.
-        """
-
-        debug_assert(
-            len(storage) == Self.size,
-            "Expected variadic list of length ",
+        debug_assert[assert_mode="safe"](
+            len(elems) == Self.size,
+            "InlineArray: expected ",
             Self.size,
-            ", received ",
-            len(storage),
+            " elements, received ",
+            len(elems),
         )
         _inline_array_construction_checks[Self.size]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
@@ -336,72 +461,72 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         var ptr = self.unsafe_ptr()
 
         # Move each element into the array storage.
-        @parameter
-        for i in range(Self.size):
+        comptime for i in range(Self.size):
             # Safety: We own the elements in the variadic list.
             ptr.init_pointee_move_from(
-                UnsafePointer(to=storage[i]).unsafe_mut_cast[True]()
+                UnsafePointer(to=elems[i]).unsafe_mut_cast[True]()
             )
             ptr += 1
 
         # Do not destroy the elements when their backing storage goes away.
         # FIXME: Why doesn't consume_elements work here?
-        storage^._anihilate()
+        elems^._annihilate()
 
-    fn __copyinit__(out self, other: Self):
+    def __init__(out self, *, copy: Self):
         """Copy constructs the array from another array.
 
         Args:
-            other: The array to copy from.
+            copy: The array to copy from.
 
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         var copy = arr.copy()  # Creates new array [1, 2, 3]
         ```
         """
 
-        self = Self(uninitialized=True)
+        comptime if Self.ElementType.__copy_ctor_is_trivial:
+            self._array = copy._array
+        else:
+            self = Self(uninitialized=True)
+            for idx in range(Self.size):
+                var ptr = self.unsafe_ptr() + idx
+                ptr.init_pointee_copy(copy.unsafe_get(idx))
 
-        for idx in range(Self.size):
-            var ptr = self.unsafe_ptr() + idx
-            ptr.init_pointee_copy(other.unsafe_get(idx))
-
-    fn __moveinit__(out self, deinit other: Self):
+    def __init__(out self, *, deinit take: Self):
         """Move constructs the array from another array.
 
         Args:
-            other: The array to move from.
+            take: The array to move from.
 
         Notes:
             Moves the elements from the source array into this array.
         """
 
-        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+        comptime if Self.ElementType.__move_ctor_is_trivial:
+            self._array = take._array
+        else:
+            self = Self(uninitialized=True)
+            for idx in range(Self.size):
+                var other_ptr = take.unsafe_ptr() + idx
+                (self.unsafe_ptr() + idx).init_pointee_move_from(other_ptr)
 
-        for idx in range(Self.size):
-            var other_ptr = other.unsafe_ptr() + idx
-            (self.unsafe_ptr() + idx).init_pointee_move_from(other_ptr)
-
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Deallocates the array and destroys its elements."""
 
         _constrained_conforms_to[
             conforms_to(Self.ElementType, ImplicitlyDestructible),
             Parent=Self,
-            Element = Self.ElementType,
+            Element=Self.ElementType,
             ParentConformsTo="ImplicitlyDestructible",
         ]()
         comptime TDestructible = downcast[
             Self.ElementType, ImplicitlyDestructible
         ]
 
-        @parameter
-        if not TDestructible.__del__is_trivial:
-
-            @parameter
-            for idx in range(Self.size):
+        comptime if not TDestructible.__del__is_trivial:
+            comptime for idx in range(Self.size):
                 var ptr = self.unsafe_ptr() + idx
                 ptr.bitcast[TDestructible]().destroy_pointee()
 
@@ -410,16 +535,11 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn __getitem__[I: Indexer](ref self, idx: I) -> ref [self] Self.ElementType:
+    def __getitem__(ref self, idx: Some[Indexer]) -> ref[self] Self.ElementType:
         """Gets a reference to the element at the given index.
 
-        Parameters:
-            I: The type parameter representing the index type, must implement
-                Indexer trait.
-
         Args:
-            idx: The index to access. Can be positive (0 to len-1) or negative
-                (-len to -1).
+            idx: The index to access (0 to len-1).
 
         Returns:
             A reference to the element at the specified index.
@@ -427,34 +547,28 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
-        print(arr[0])   # Prints 1 - first element
-        print(arr[1])   # Prints 2 - second element
-        print(arr[-1])  # Prints 3 - last element
-        print(arr[-2])  # Prints 2 - second to last element
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
+        print(arr[0])            # Prints 1 - first element
+        print(arr[1])            # Prints 2 - second element
+        print(arr[len(arr) - 1]) # Prints 3 - last element
         ```
 
         Notes:
             This method provides array-style indexing access to elements in the
-            InlineArray. It supports both positive indices starting from 0 and
-            negative indices counting backwards from the end of the array. The
-            index is bounds-checked at runtime.
+            InlineArray. The index is bounds-checked at runtime.
         """
-        var normalized_index = normalize_index["InlineArray"](idx, len(self))
-        return self.unsafe_get(normalized_index)
+        check_bounds(idx, len(self))
+        return self._unchecked_get(idx)
 
     @always_inline
-    fn __getitem__[
-        I: Indexer, //, idx: I
-    ](ref self) -> ref [self] Self.ElementType:
+    def __getitem_param__[
+        idx: Some[Indexer]
+    ](ref self) -> ref[self] Self.ElementType:
         """Gets a reference to the element at the given index with compile-time
         bounds checking.
 
         Parameters:
-            I: The type parameter representing the index type, must implement
-                Indexer trait.
-            idx: The compile-time constant index to access. Can be positive
-                (0 to len-1) or negative (-len to -1).
+            idx: The compile-time constant index to access (0 to len-1).
 
         Returns:
             A reference to the element at the specified index.
@@ -462,31 +576,40 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
-        print(arr[0])   # Prints 1 - first element
-        print(arr[-1])  # Prints 3 - last element
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
+        print(arr[0])            # Prints 1 - first element
+        print(arr[1])            # Prints 2 - second element
+        print(arr[len(arr) - 1]) # Prints 3 - last element
         ```
 
         Notes:
             This overload provides array-style indexing with compile-time bounds
-            checking. The index must be a compile-time constant value. It
-            supports both positive indices starting from 0 and negative indices
-            counting backwards from the end of the array.
+            checking. The index must be a compile-time constant value.
         """
-        __comptime_assert (
-            -Self.size <= index(idx) < Self.size
-        ), "Index must be within bounds."
-        comptime normalized_index = normalize_index["InlineArray"](
-            idx, Self.size
+        # Can't construct a String here with the index for the error message, as
+        # it causes infinite cycles in gpu compilation tests
+        comptime assert (
+            index(idx) >= 0
+        ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
+        comptime assert index(idx) < Self.size, "index is out of bounds"
+        return self._unchecked_get(materialize[idx]())
+
+    @always_inline
+    def _unchecked_get(
+        ref self, idx: Some[Indexer]
+    ) -> ref[self] Self.ElementType:
+        var ptr = __mlir_op.`pop.array.gep`(
+            UnsafePointer(to=self._array).address,
+            index(idx)._mlir_value,
         )
-        return self.unsafe_get(normalized_index)
+        return UnsafePointer[_, origin_of(self)](ptr)[]
 
     # ===------------------------------------------------------------------=== #
     # Trait implementations
     # ===------------------------------------------------------------------=== #
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Returns the length of the array.
 
         Returns:
@@ -495,7 +618,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         print(len(arr))  # Prints 3
         ```
 
@@ -505,17 +628,65 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         """
         return Self.size
 
+    @always_inline
+    def __eq__(
+        self, other: Self
+    ) -> Bool where conforms_to(Self.ElementType, Equatable):
+        """Compares two arrays for equality.
+
+        Args:
+            other: The other array to compare against.
+
+        Returns:
+            True if all elements are equal, False otherwise.
+        """
+        comptime for i in range(Self.size):
+            if trait_downcast[Equatable](self.unsafe_get(i)) != trait_downcast[
+                Equatable
+            ](other.unsafe_get(i)):
+                return False
+        return True
+
+    @always_inline
+    def __ne__(
+        self, other: Self
+    ) -> Bool where conforms_to(Self.ElementType, Equatable):
+        """Compares two arrays for inequality.
+
+        Args:
+            other: The other array to compare against.
+
+        Returns:
+            True if any elements are not equal, False otherwise.
+        """
+        comptime for i in range(Self.size):
+            if trait_downcast[Equatable](self.unsafe_get(i)) != trait_downcast[
+                Equatable
+            ](other.unsafe_get(i)):
+                return True
+        return False
+
+    def __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.ElementType, Hashable):
+        """Hashes the elements of the array using the given hasher.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        comptime for i in range(Self.size):
+            trait_downcast[Hashable](self.unsafe_get(i)).__hash__(hasher)
+
     # ===------------------------------------------------------------------===#
     # Methods
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn unsafe_get[I: Indexer](ref self, idx: I) -> ref [self] Self.ElementType:
+    def unsafe_get(ref self, idx: Some[Indexer]) -> ref[self] Self.ElementType:
         """Gets a reference to an element without bounds checking.
-
-        Parameters:
-            I: A type parameter representing the index type, must implement
-                Indexer trait.
 
         Args:
             idx: The index of the element to get. Must be non-negative and in
@@ -527,7 +698,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         print(arr.unsafe_get(0))  # Prints 1
         ```
 
@@ -540,27 +711,14 @@ struct InlineArray[ElementType: Copyable, size: Int,](
             This is an unsafe method that skips bounds checking for performance.
             Users should prefer `__getitem__` instead for safety.
         """
-        var i = index(idx)
-        debug_assert(
-            0 <= i < Self.size,
-            " InlineArray.unsafe_get() index out of bounds: ",
-            i,
-            " should be greater than or equal to 0 and less than ",
-            Self.size,
-        )
-        var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self._array).address,
-            i._mlir_value,
-        )
-        return UnsafePointer[_, origin_of(self)](ptr)[]
+        check_bounds[cpu_default=False](idx, len(self))
+        return self._unchecked_get(idx)
 
     @always_inline
-    fn unsafe_ptr[
+    def unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
-    ](ref [origin, address_space]self) -> UnsafePointer[
-        Self.ElementType,
-        origin,
-        address_space=address_space,
+    ](ref[origin, address_space] self) -> UnsafePointer[
+        Self.ElementType, origin, address_space=address_space
     ]:
         """Gets an unsafe pointer to the underlying array storage.
 
@@ -575,7 +733,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr:InlineArray[Int, 3] = [1, 2, 3]
         var ptr = arr.unsafe_ptr()
         print(ptr[0])  # Prints 1
         ```
@@ -599,14 +757,10 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         )
 
     @always_inline
-    fn __contains__[
-        T: Equatable & Copyable, //
-    ](self: InlineArray[T, Self.size], value: T) -> Bool:
+    def __contains__(
+        self, value: Self.ElementType
+    ) -> Bool where conforms_to(Self.ElementType, Equatable):
         """Tests if a value is present in the array using the `in` operator.
-
-        Parameters:
-            T: The element type, must implement both `Equatable` and
-                `Copyable`.
 
         Args:
             value: The value to search for.
@@ -618,7 +772,7 @@ struct InlineArray[ElementType: Copyable, size: Int,](
         Examples:
 
         ```mojo
-        var arr = InlineArray[Int, 3](1, 2, 3)
+        var arr: InlineArray[Int, 3] = [1, 2, 3]
         print(3 in arr)  # Prints True - value exists
         print(4 in arr)  # Prints False - value not found
         ```
@@ -627,13 +781,11 @@ struct InlineArray[ElementType: Copyable, size: Int,](
             This method enables using the `in` operator to check if a value
             exists in the array. It performs a linear search comparing each
             element for equality with the given value. The element type must
-            implement the `Equatable` and `Copyable` traits
-            to support equality comparison.
+            implement the `Equatable` trait to support equality comparison.
         """
-
-        @parameter
-        for i in range(Self.size):
-            if self[i] == value:
+        ref rhs = trait_downcast[Equatable](value)
+        comptime for i in range(Self.size):
+            if trait_downcast[Equatable](self[i]) == rhs:
                 return True
         return False
 
@@ -641,55 +793,75 @@ struct InlineArray[ElementType: Copyable, size: Int,](
     # String representation
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
-    fn write_to(self, mut writer: Some[Writer]):
-        """Writes the InlineArray representation to a Writer.
+    def _write_self_to[
+        f: def(Self.ElementType, mut Some[Writer]) thin
+    ](self, mut writer: Some[Writer]) where conforms_to(
+        Self.ElementType, Writable
+    ):
+        var index = 0
 
-        Constraints:
-            ElementType must conform to `Representable`.
+        @parameter
+        def iterate(mut w: Some[Writer]) raises StopIteration:
+            if index >= Self.size:
+                raise StopIteration()
+            f(self.unsafe_get(index), w)
+            index += 1
+
+        fmt.write_sequence_to[ElementFn=iterate](writer)
+        _ = index
+
+    def write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.ElementType, Writable):
+        """Writes the InlineArray representation to a Writer.
 
         Args:
             writer: The object to write to.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.ElementType, Representable),
-            Parent=Self,
-            Element = Self.ElementType,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
+        self._write_self_to[f=fmt.write_to[Self.ElementType]](writer)
 
-        writer.write("InlineArray[")
-        writer.write(get_type_name[Self.ElementType]())
-        writer.write(", ")
-        writer.write(String(Self.size))
-        writer.write("](")
+    def write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.ElementType, Writable):
+        """Writes the repr representation of this InlineArray to a Writer.
 
-        for i in range(Self.size):
-            ref element = self.unsafe_get(i)
-            ref representable_element = trait_downcast[Representable](element)
-            writer.write(repr(representable_element))
-            if i < Self.size - 1:
-                writer.write(", ")
+        Args:
+            writer: The object to write to.
+        """
 
-        writer.write(")")
+        @parameter
+        def write_fields(mut w: Some[Writer]):
+            self._write_self_to[f=fmt.write_repr_to[Self.ElementType]](w)
 
-    @always_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the InlineArray.
+        fmt.FormatStruct(writer, "InlineArray").params(
+            fmt.TypeNames[Self.ElementType](),
+            Self.size,
+        ).fields[FieldsFn=write_fields]()
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        """Consume the array and return an iterator over its elements.
 
         Returns:
-            A string representation of the array.
+            An iterator that owns the array's elements.
         """
-        output = String()
-        self.write_to(output)
-        return output^
+        return Self.IteratorOwnedType(self^)
 
-    @always_inline
-    fn __repr__(self) -> String:
-        """Returns a string representation of the InlineArray.
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        """Iterate over elements of the array, returning immutable references.
 
         Returns:
-            A string representation of the array.
+            An iterator of immutable references to the array elements.
         """
-        return self.__str__()
+        return {0, Pointer(to=self)}
+
+    def __reversed__(
+        ref self,
+    ) -> _InlineArrayIter[Self.ElementType, Self.size, origin_of(self), False]:
+        """Iterate over elements of the array in reverse order, returning
+        immutable references.
+
+        Returns:
+            An iterator of immutable references to the array elements in reverse
+            order.
+        """
+        return _InlineArrayIter[forward=False](Self.size, Pointer(to=self))

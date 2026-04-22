@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,7 +22,7 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Buffer, Device
+from max.driver import CPU, Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 
 
@@ -36,9 +36,10 @@ class ParallelArrayOps:
     Thread pool cleanup is handled automatically via __del__ and weakref.finalize,
     providing defense-in-depth for resource cleanup.
 
-    Example:
-        >>> ops = ParallelArrayOps(max_workers=20)
-        >>> result = ops.concatenate([arr1, arr2, arr3], axis=0)
+    .. code-block:: python
+
+        ops = ParallelArrayOps(max_workers=20)
+        result = ops.concatenate([arr1, arr2, arr3], axis=0)
     """
 
     def __init__(
@@ -169,11 +170,10 @@ class ParallelArrayOps:
             if self._accelerator is None:
                 return Buffer.from_numpy(first.copy())
             else:
-                out_max = Buffer(
+                out_max: Buffer = DevicePinnedBuffer(
                     shape=first.shape,
                     dtype=DType.from_numpy(first.dtype),
                     device=self._accelerator,
-                    pinned=True,
                 )
                 np.copyto(out_max.to_numpy(), first)
                 return out_max
@@ -232,12 +232,18 @@ class ParallelArrayOps:
         else:
             device = CPU()
             pinned = False
-        out_max = Buffer(
-            shape=out_shape,
-            dtype=max_dtype,
-            device=device,
-            pinned=pinned,
-        )
+        if pinned:
+            out_max = DevicePinnedBuffer(
+                shape=out_shape,
+                dtype=max_dtype,
+                device=device,
+            )
+        else:
+            out_max = Buffer(
+                shape=out_shape,
+                dtype=max_dtype,
+                device=device,
+            )
 
         # This will alias the underlying memory.
         # It should NOT copy the memory to another buffer.

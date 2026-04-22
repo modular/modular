@@ -4,7 +4,9 @@ package(default_visibility = ["//max:consumers"])
 
 mogg_primitives_lib_deps = [
     "//max:nn",
+    "//max:pipeline",
     "//max:register",
+    "//max:structured_kernels",
     "@mojo//:std",
     "//max:weights_registry",
 ]

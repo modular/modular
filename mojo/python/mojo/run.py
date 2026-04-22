@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -35,7 +35,7 @@ def _sdk_default_env() -> dict[str, str]:
     # ->
     # bin/mblack
     extra_env = {}
-    maybe_mblack_path = root.parent.parent.parent.parent / "bin" / "mblack"
+    maybe_mblack_path = root.parent.parent.parent.parent / "bin/mblack"
     if maybe_mblack_path.exists():
         extra_env["MODULAR_MOJO_MAX_MBLACK_PATH"] = str(maybe_mblack_path)
 

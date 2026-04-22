@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,22 +14,22 @@
 
 # Mark function `a` as deprecated with a custom message
 @deprecated("Ignore. Deprecation test. Sunsetting a")
-fn a():
+def a():
     pass
 
 
 # Mark function `b` as deprecated with alternative
 @deprecated(use=c)
-fn b():
+def b():
     pass
 
 
 # `c` is `b`'s recommended replacement after deprecation
-fn c():
+def c():
     pass
 
 
-fn main():
+def main():
     a()  # custom warning
     b()  # warning with recommended replacement
     c()  # no warning

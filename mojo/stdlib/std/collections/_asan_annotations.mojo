@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,22 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys.compile import SanitizeAddress, is_compile_time
-from sys import external_call
+from std.sys.compile import SanitizeAddress
+from std.ffi import _CPointer, external_call
 
 
 @always_inline
-fn __sanitizer_annotate_contiguous_container(
-    beg: UnsafePointer[NoneType],
-    end: UnsafePointer[NoneType],
-    old_mid: UnsafePointer[NoneType],
-    new_mid: UnsafePointer[NoneType],
+def __sanitizer_annotate_contiguous_container(
+    beg: _CPointer[NoneType, _],
+    end: _CPointer[NoneType, _],
+    old_mid: _CPointer[NoneType, _],
+    new_mid: _CPointer[NoneType, _],
 ):
     # follows __annotate_contiguous_container from __debug_utils
     # https://github.com/llvm/llvm-project/blob/main/libcxx/include/__debug_utils/sanitizers.h
-    @parameter
-    if SanitizeAddress:
-        if not is_compile_time() and beg:
+    comptime if SanitizeAddress:
+        if not __is_run_in_comptime_interpreter and beg:
             external_call[
                 "__sanitizer_annotate_contiguous_container", NoneType
             ](beg, end, old_mid, new_mid)

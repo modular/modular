@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,7 +15,7 @@
 from gridv1_step7 import Grid
 
 
-fn grid_str(grid: Grid) -> String:
+def grid_str(grid: Grid) -> String:
     # Create an empty String
     str = String()
 

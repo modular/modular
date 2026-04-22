@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,7 +23,7 @@ from max.graph import Graph, ops
 
 def test_shape_to_tensor_invalid_type() -> None:
     """Test that shape_to_tensor fails with non-shape inputs."""
-    with Graph("shape_to_tensor_invalid") as graph:
+    with Graph("shape_to_tensor_invalid"):
         with pytest.raises(TypeError):
             ops.shape_to_tensor(None)  # type: ignore
 

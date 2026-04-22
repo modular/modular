@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,12 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the dim type."""
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct Dim(Stringable, Writable):
+struct Dim(TrivialRegisterPassable, Writable):
     """Represents a dimension with up to three components (x, y, z).
 
     This struct is commonly used to represent grid and block dimensions
@@ -32,7 +31,7 @@ struct Dim(Stringable, Writable):
     """
 
     @implicit
-    fn __init__[I: Indexer, //](out self, x: I):
+    def __init__[I: Indexer, //](out self, x: I):
         """Initializes Dim with a single indexable value for x.
 
         y and z dimensions are set to 1.
@@ -45,7 +44,7 @@ struct Dim(Stringable, Writable):
         """
         self._value = IndexList[3](index(x), 1, 1)
 
-    fn __init__[I0: Indexer, I1: Indexer, //](out self, x: I0, y: I1):
+    def __init__[I0: Indexer, I1: Indexer, //](out self, x: I0, y: I1):
         """Initializes Dim with indexable values for x and y.
 
         z dimension is set to 1.
@@ -60,7 +59,7 @@ struct Dim(Stringable, Writable):
         """
         self._value = IndexList[3](index(x), index(y), 1)
 
-    fn __init__[
+    def __init__[
         I0: Indexer, I1: Indexer, I2: Indexer, //
     ](out self, x: I0, y: I1, z: I2):
         """Initializes Dim with indexable values for x, y, and z.
@@ -78,7 +77,7 @@ struct Dim(Stringable, Writable):
         self._value = IndexList[3](index(x), index(y), index(z))
 
     @implicit
-    fn __init__[I: Indexer & Copyable, //](out self, dims: Tuple[I]):
+    def __init__[I: Indexer & Copyable, //](out self, dims: Tuple[I]):
         """Initializes Dim with a tuple containing a single indexable value.
 
         y and z dimensions are set to 1.
@@ -92,7 +91,7 @@ struct Dim(Stringable, Writable):
         self._value = IndexList[3](index(dims[0]), 1, 1)
 
     @implicit
-    fn __init__[
+    def __init__[
         I0: Indexer & Copyable,
         I1: Indexer & Copyable,
         //,
@@ -111,7 +110,7 @@ struct Dim(Stringable, Writable):
         self._value = IndexList[3](index(dims[0]), index(dims[1]), 1)
 
     @implicit
-    fn __init__[
+    def __init__[
         I0: Indexer & Copyable,
         I1: Indexer & Copyable,
         I2: Indexer & Copyable,
@@ -131,7 +130,7 @@ struct Dim(Stringable, Writable):
             index(dims[0]), index(dims[1]), index(dims[2])
         )
 
-    fn __getitem__(self, idx: Int) -> Int:
+    def __getitem__(self, idx: Int) -> Int:
         """Gets the dimension value at the specified index.
 
         Args:
@@ -142,24 +141,7 @@ struct Dim(Stringable, Writable):
         """
         return self._value[idx]
 
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the Dim.
-
-        Returns:
-            String representation of this Dim object.
-        """
-        return String.write(self)
-
-    fn __repr__(self) -> String:
-        """Returns a string representation of the Dim.
-
-        Returns:
-            String representation of this Dim object.
-        """
-        return String.write(self)
-
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes a formatted string representation of the Dim.
 
         Args:
@@ -172,7 +154,7 @@ struct Dim(Stringable, Writable):
                 writer.write(", z=", self.z())
         writer.write(")")
 
-    fn z(self) -> Int:
+    def z(self) -> Int:
         """Returns the z dimension.
 
         Returns:
@@ -180,7 +162,7 @@ struct Dim(Stringable, Writable):
         """
         return self[2]
 
-    fn y(self) -> Int:
+    def y(self) -> Int:
         """Returns the y dimension.
 
         Returns:
@@ -188,7 +170,7 @@ struct Dim(Stringable, Writable):
         """
         return self[1]
 
-    fn x(self) -> Int:
+    def x(self) -> Int:
         """Returns the x dimension.
 
         Returns:

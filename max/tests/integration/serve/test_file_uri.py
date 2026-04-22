@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,18 +22,26 @@ import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
-from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines import PipelineConfig, SupportedEncoding
+from max.pipelines import PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig
+from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from PIL import Image
 
 pipeline_config = PipelineConfig(
-    model_path="OpenGVLab/InternVL3-1B-Instruct",
-    max_length=512,
-    device_specs=[DeviceSpec.accelerator()],
-    quantization_encoding=SupportedEncoding.bfloat16,
-    cache_strategy=KVCacheStrategy.PAGED,
-    max_batch_size=1,
-    trust_remote_code=True,
+    models=ModelManifest(
+        {
+            "main": MAXModelConfig(
+                model_path="OpenGVLab/InternVL3-1B-Instruct",
+                device_specs=[DeviceSpec.accelerator()],
+                quantization_encoding="bfloat16",
+                trust_remote_code=True,
+                max_length=512,
+                kv_cache=KVCacheConfig(),
+            )
+        }
+    ),
+    runtime=PipelineRuntimeConfig(max_batch_size=1),
 )
 
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from reflection import SourceLocation
-from logger import Level, Logger
-from testing import TestSuite
+from std.reflection import SourceLocation
+from std.logger import Level, Logger
+from std.testing import TestSuite
 
 
 # CHECK-LABEL: Test logging at trace level
-def test_log_trace():
+def test_log_trace() raises:
     print("=== Test logging at trace level")
     var log = Logger[Level.TRACE]()
 
@@ -30,7 +30,7 @@ def test_log_trace():
 
 
 # CHECK-LABEL: Test logging at info level
-def test_log_info():
+def test_log_info() raises:
     print("=== Test logging at info level")
     var log = Logger[Level.INFO]()
 
@@ -42,7 +42,7 @@ def test_log_info():
 
 
 # CHECK-LABEL: Test no logging by default
-def test_log_noset():
+def test_log_noset() raises:
     print("=== Test no logging by default")
     var log = Logger()
 
@@ -54,7 +54,7 @@ def test_log_noset():
 
 
 # CHECK-LABEL: Test logging with prefix
-def test_log_with_prefix():
+def test_log_with_prefix() raises:
     print("=== Test logging with prefix")
 
     var log = Logger[Level.TRACE](prefix="[XYZ] ")
@@ -65,7 +65,7 @@ def test_log_with_prefix():
 
 
 # CHECK-LABEL: Test logging with location
-def test_log_with_location():
+def test_log_with_location() raises:
     print("=== Test logging with location")
 
     comptime log = Logger[Level.TRACE](prefix="", source_location=True)
@@ -75,7 +75,7 @@ def test_log_with_location():
 
 
 # CHECK-LABEL: Test logging with custom location
-def test_log_with_custom_location():
+def test_log_with_custom_location() raises:
     print("=== Test logging with custom location")
 
     comptime log = Logger[Level.TRACE](prefix="", source_location=True)
@@ -85,7 +85,7 @@ def test_log_with_custom_location():
 
 
 # CHECK-LABEL: Test logging with sep/end
-def test_log_with_sep_end():
+def test_log_with_sep_end() raises:
     print("=== Test logging with sep/end")
 
     var log = Logger[Level.TRACE]()
@@ -94,5 +94,5 @@ def test_log_with_sep_end():
     log.trace("hello", "world", sep=" mojo ", end="!!!\n")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

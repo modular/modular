@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,18 +16,24 @@ Bicubic interpolation is a 2D extension of cubic interpolation for resampling
 digital images. It uses the weighted average of the 4x4 neighborhood of pixels
 around the target location to compute the interpolated value.
 """
-from math import clamp, floor
+from std.math import clamp, floor
 
-from gpu.host.info import is_gpu
-from gpu import block_dim, block_idx, thread_idx
-from layout import Layout, LayoutTensor
-from runtime.asyncrt import DeviceContextPtr
-from utils import Index
-from itertools import product
+from std.gpu.host.info import is_gpu
+from std.gpu import block_dim, block_idx, thread_idx
+from layout import (
+    Coord,
+    Idx,
+    TensorLayout,
+    TileTensor,
+    coord,
+    coord_to_index_list,
+)
+from std.runtime.asyncrt import DeviceContextPtr
+from std.itertools import product
 
 
 @always_inline
-fn map_output_to_input_coord(output_coord: Int, scale: Float32) -> Float32:
+def map_output_to_input_coord(output_coord: Int, scale: Float32) -> Float32:
     """Map output pixel coordinate to input coordinate using center alignment.
     This implements the standard coordinate mapping for image resizing:
     input_coord = (output_coord + 0.5) * scale - 0.5
@@ -41,7 +47,7 @@ fn map_output_to_input_coord(output_coord: Int, scale: Float32) -> Float32:
     return (Float32(output_coord) + 0.5) * scale - 0.5
 
 
-fn cubic_kernel(x: Float32) -> Float32:
+def cubic_kernel(x: Float32) -> Float32:
     """Cubic interpolation kernel matching PyTorch/torchvision's BICUBIC
     filter.
 
@@ -71,7 +77,7 @@ fn cubic_kernel(x: Float32) -> Float32:
 
 
 @always_inline
-fn cubic_kernel(x: SIMD) -> type_of(x):
+def cubic_kernel(x: SIMD) -> type_of(x):
     """Cubic interpolation kernel matching PyTorch/torchvision's BICUBIC
     filter.
 
@@ -104,24 +110,27 @@ fn cubic_kernel(x: SIMD) -> type_of(x):
     return abs_x.le(1).select(case_1, abs_x.lt(2).select(case_2, case_3))
 
 
-fn cpu_bicubic_kernel(
-    output_host: LayoutTensor[mut=True, ...],
-    input_host: LayoutTensor[...],
+def cpu_bicubic_kernel(
+    output_host: TileTensor[mut=True, ...],
+    input_host: TileTensor,
 ) -> None:
-    """Perform bicubic interpolation on a LayoutTensor of form NCHW.
+    """Perform bicubic interpolation on a TileTensor of form NCHW.
 
     Args:
         output_host: Output tensor with desired dimensions.
         input_host: Input tensor of shape [B, C, H, W].
     """
-    __comptime_assert (
-        output_host.rank == 4 and input_host.rank == 4
+    comptime assert (
+        output_host.flat_rank == 4 and input_host.flat_rank == 4
     ), "bicubic resize only supports rank 4 tensors"
-    __comptime_assert output_host.dtype == input_host.dtype
+    comptime assert output_host.dtype == input_host.dtype
+    # Provide evidence that flat_rank >= 4 for the coord[DType.int64](...) loads/stores below.
+    comptime assert input_host.flat_rank >= 4
+    comptime assert output_host.flat_rank >= 4
 
     # get dimensions
-    var input_shape = input_host.runtime_layout.shape.value.canonicalize()
-    var output_shape = output_host.runtime_layout.shape.value.canonicalize()
+    var input_shape = coord_to_index_list(input_host.layout.shape_coord())
+    var output_shape = coord_to_index_list(output_host.layout.shape_coord())
     var batch_size = input_shape[0]
     var channels = input_shape[1]
     var in_height = input_shape[2]
@@ -153,8 +162,7 @@ fn cpu_bicubic_kernel(
         var sum_weights: Float32 = 0.0
 
         # get the 4x4 surrounding pixels, and assign weights to them
-        @parameter
-        for i, j in product(range(4), range(4)):
+        comptime for i, j in product(range(4), range(4)):
             # don't be <0 or >frame bounds
             var y_pos = clamp(in_y_floor + i - 1, 0, in_height - 1)
             var x_pos = clamp(in_x_floor + j - 1, 0, in_width - 1)
@@ -168,34 +176,30 @@ fn cpu_bicubic_kernel(
 
             # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
             var pixel_value = Float32(
-                input_host.load[width=1](Index(b, c, y_pos, x_pos))
+                input_host.load[width=1](
+                    coord[DType.int64]((b, c, y_pos, x_pos))
+                )
             )
             sum_value += pixel_value * weight
             sum_weights += weight
 
         # store the result in the output tensor
         output_host.store[width=1](
-            Index(b, c, y_out, x_out),
+            coord[DType.int64]((b, c, y_out, x_out)),
             sum_value.cast[output_host.dtype](),
         )
 
 
-fn gpu_bicubic_kernel[
+@__name(t"gpu_bicubic_{dtype}", mangle=True)
+def gpu_bicubic_kernel[
     dtype: DType,
-    input_layout: Layout,
-    output_layout: Layout,
-    address_space: AddressSpace = AddressSpace.GENERIC,
+    OutputLayoutType: TensorLayout,
+    output_origin: MutOrigin,
+    InputLayoutType: TensorLayout,
+    input_origin: ImmutOrigin,
 ](
-    output: LayoutTensor[
-        mut=True,
-        dtype,
-        output_layout,
-        MutAnyOrigin,
-        address_space=address_space,
-    ],
-    input: LayoutTensor[
-        dtype, input_layout, MutAnyOrigin, address_space=address_space
-    ],
+    output: TileTensor[dtype, OutputLayoutType, output_origin],
+    input: TileTensor[dtype, InputLayoutType, input_origin],
 ) -> None:
     """Perform bicubic interpolation using GPU.
 
@@ -203,12 +207,19 @@ fn gpu_bicubic_kernel[
         output: Output tensor with desired dimensions on the device.
         input: Input tensor of shape [B, C, H, W] on the device.
     """
+
+    comptime assert input.flat_rank == 4
+    comptime assert output.flat_rank == 4
+    # Provide evidence that flat_rank >= 4 for the Coord(Idx(...), ...) loads/stores below.
+    comptime assert input.flat_rank >= 4
+    comptime assert output.flat_rank >= 4
+
     var b = block_idx.x
     var c = block_idx.y
     var tid = thread_idx.x
 
-    var input_shape = input.runtime_layout.shape.value.canonicalize()
-    var output_shape = output.runtime_layout.shape.value.canonicalize()
+    var input_shape = coord_to_index_list(input.layout.shape_coord())
+    var output_shape = coord_to_index_list(output.layout.shape_coord())
     var in_height = input_shape[2]
     var in_width = input_shape[3]
     var out_height = output_shape[2]
@@ -232,8 +243,8 @@ fn gpu_bicubic_kernel[
         var in_x_floor = Int(floor(in_x))
 
         # (how far away from the pixel above and to the left is the output pixel?)
-        var dy = in_y - in_y_floor
-        var dx = in_x - in_x_floor
+        var dy = in_y - Float32(in_y_floor)
+        var dx = in_x - Float32(in_x_floor)
 
         # Look at surrounding 4x4 pixels, assign weights to them (closer pixels
         # have more weight) and get the final value for each channel.
@@ -245,8 +256,7 @@ fn gpu_bicubic_kernel[
         var weights_x = cubic_kernel(SIMD[DType.float32, 4](-1, 0, 1, 2) - dx)
 
         # get the 4x4 surrounding pixels, and assign weights to them
-        @parameter
-        for i, j in product(range(4), range(4)):
+        comptime for i, j in product(range(4), range(4)):
             # don't be <0 or >frame bounds
             var y_pos = clamp(in_y_floor + i - 1, 0, in_height - 1)
             var x_pos = clamp(in_x_floor + j - 1, 0, in_width - 1)
@@ -256,23 +266,26 @@ fn gpu_bicubic_kernel[
 
             # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
             var pixel_value = input.load[width=1](
-                Index(b, c, y_pos, x_pos)
+                Coord(Idx(b), Idx(c), Idx(y_pos), Idx(x_pos))
             ).cast[DType.float32]()
             sum_value += pixel_value * weight
             sum_weights += weight
 
         output.store[width=1](
-            Index(b, c, y_out, x_out), sum_value.cast[dtype]()
+            Coord(Idx(b), Idx(c), Idx(y_out), Idx(x_out)),
+            sum_value.cast[dtype](),
         )
 
 
-fn resize_bicubic[
+def resize_bicubic[
     dtype: DType,
     //,
     target: StaticString,
 ](
-    output: LayoutTensor[mut=True, dtype, ...],
-    input: LayoutTensor[dtype, ...],
+    output: TileTensor[
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContextPtr,
 ) raises:
     """Perform bicubic interpolation.
@@ -282,24 +295,27 @@ fn resize_bicubic[
         input: Input tensor of shape [B, C, H, W] on host or device.
         ctx: Device context to enqueue GPU kernels on.
     """
-    __comptime_assert (
-        output.rank == 4 and input.rank == 4
+    comptime assert (
+        output.flat_rank == 4 and input.flat_rank == 4
     ), "bicubic resize only supports rank 4 tensors"
 
-    @parameter
-    if is_gpu[target]():
-        var input_shape = input.runtime_layout.shape.value.canonicalize()
+    comptime if is_gpu[target]():
+        var input_shape = coord_to_index_list(input.layout.shape_coord())
         var N = input_shape[0]
         var C = input_shape[1]
 
         # Use a fixed block size to avoid exceeding CUDA thread limits.
         var block_size = 256
         comptime kernel = gpu_bicubic_kernel[
-            output.dtype, input.layout, output.layout, output.address_space
+            output.dtype,
+            output_origin=output.origin,
+            OutputLayoutType=output.LayoutType,
+            input_origin=ImmutOrigin(input.origin),
+            InputLayoutType=input.LayoutType,
         ]
-        ctx.get_device_context().enqueue_function_experimental[kernel](
+        ctx.get_device_context().enqueue_function[kernel, kernel](
             output,
-            input,
+            input.as_immut(),
             grid_dim=(N, C),
             block_dim=(block_size,),
         )

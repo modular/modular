@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,14 +12,25 @@
 # ===----------------------------------------------------------------------=== #
 
 import re
+import sys
+import warnings
 
 import numpy as np
 import pytest
 from conftest import constant_float_dtypes, integral_dtypes
 from hypothesis import given
-from max.driver import Buffer
+from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.experimental.tensor import Tensor
+from max.graph import DevicePlacementPolicy, DeviceRef, Graph, TensorType, ops
+
+# TODO(GEX-3550): creating a device-resident `Tensor` on the Apple GPU
+# (Metal) hangs indefinitely on BuildBuddy macOS workers, so the two tests
+# below that exercise that code path time out the whole target.
+_SKIP_APPLE_GPU = pytest.mark.skipif(
+    accelerator_count() == 0 or sys.platform == "darwin",
+    reason="requires at least 1 non-Apple GPU",
+)
 
 
 def test_constant_from_numpy() -> None:
@@ -155,6 +166,41 @@ def test_scalar_constant_integral(dtype: DType) -> None:
 
 @given(name=..., type=...)
 def test_constant_external(name: str, type: TensorType) -> None:
-    with Graph("constants", input_types=()) as graph:
+    with Graph("constants", input_types=()):
         weight = ops.constant_external(name, type)
         assert weight.type == type
+
+
+@_SKIP_APPLE_GPU
+def test_constant_from_gpu_buffer_warns() -> None:
+    """ops.constant warns and copies to CPU for device-resident data."""
+    gpu_tensor = Tensor(
+        [1.0, 2.0, 3.0, 4.0], dtype=DType.float32, device=Accelerator(0)
+    )
+
+    with Graph("gpu_constant", input_types=()) as graph:
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = ops.constant(gpu_tensor)
+        assert len(w) == 1
+        assert "ops.constant" in str(w[0].message)
+        assert result.type == TensorType(DType.float32, [4], DeviceRef.GPU(0))
+        graph.output(result)
+
+
+@_SKIP_APPLE_GPU
+def test_constant_from_gpu_buffer_error_policy() -> None:
+    """ops.constant raises ValueError under strict device placement."""
+    gpu_tensor = Tensor(
+        [1.0, 2.0, 3.0, 4.0], dtype=DType.float32, device=Accelerator(0)
+    )
+
+    with (
+        Graph(
+            "gpu_constant",
+            input_types=(),
+            strict_device_placement=DevicePlacementPolicy.Error,
+        ),
+        pytest.raises(ValueError, match=r"ops\.constant"),
+    ):
+        ops.constant(gpu_tensor)

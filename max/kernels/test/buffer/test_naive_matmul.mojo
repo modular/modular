@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -63,123 +63,92 @@
 #     print_matrix(c)
 
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from testing import TestSuite
-
-from utils.index import IndexList
+from std.testing import TestSuite
 
 
-fn _test_my_naive_matmul[
-    shape: DimList, dtype: DType
+def _test_my_naive_matmul[
+    size: Int, dtype: DType
 ](
-    c: NDBuffer[mut=True, dtype, 2, _, shape],
-    a: NDBuffer[dtype, 2, _, shape],
-    b: NDBuffer[dtype, 2, _, shape],
+    c: UnsafePointer[mut=True, Scalar[dtype], _],
+    a: UnsafePointer[Scalar[dtype], _],
+    b: UnsafePointer[Scalar[dtype], _],
 ):
     """Computes matrix multiplication with a naive algorithm.
 
     Args:
-        c: NDBuffer with allocated output space.
-        a: NDBuffer containing matrix operand A.
-        b: NDBuffer containing matrix operand B.
+        c: Pointer to output space (size x size row-major).
+        a: Pointer to matrix operand A (size x size row-major).
+        b: Pointer to matrix operand B (size x size row-major).
     """
-    for m in range(c.dim[0]()):
-        for n in range(c.dim[1]()):
+    for m in range(size):
+        for n in range(size):
             var c_val: Scalar[dtype] = 0
-            for k in range(a.dim[1]()):
-                c_val += a[m, k] * b[k, n]
-            c[IndexList[2](m, n)] = c_val
+            for k in range(size):
+                c_val += a[m * size + k] * b[k * size + n]
+            c[m * size + n] = c_val
 
 
-fn fill_a[
-    size: Int
-](buf: NDBuffer[mut=True, DType.float32, 2, _, DimList(size, size)]):
+def fill_a[size: Int](buf: UnsafePointer[mut=True, Float32, _]):
     """Fills the matrix with the values `row + 2*col`."""
 
     for i in range(size):
         for j in range(size):
-            var val = Float32(i + 2 * j)
-            buf[IndexList[2](i, j)] = val
+            buf[i * size + j] = Float32(i + 2 * j)
 
 
-fn fill_b[
-    size: Int
-](buf: NDBuffer[mut=True, DType.float32, 2, _, DimList(size, size)]):
+def fill_b[size: Int](buf: UnsafePointer[mut=True, Float32, _]):
     """Fills the matrix with the values `row/(col + 1) + col`."""
 
     for i in range(size):
         for j in range(size):
-            var val = Float32(i // (j + 1) + j)
-            buf[IndexList[2](i, j)] = val
+            buf[i * size + j] = Float32(i // (j + 1) + j)
 
 
-fn print_matrix[
-    size: Int
-](buf: NDBuffer[DType.float32, 2, _, DimList(size, size)]):
+def print_matrix[size: Int](buf: UnsafePointer[Float32, _]):
     """Prints each element of the input matrix, element-wise."""
     for i in range(size):
         for j in range(size):
-            print(buf[i, j])
+            print(buf[i * size + j])
 
 
 # CHECK-LABEL: _test_naive_matmul
-fn _test_naive_matmul[size: Int]():
+def _test_naive_matmul[size: Int]():
     print("== _test_naive_matmul")
-    var c_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var c = NDBuffer[
-        DType.float32,
-        2,
-        _,
-        DimList(size, size),
-    ](c_stack.unsafe_ptr())
-    c.fill(0)
+    var c_stack = InlineArray[Float32, size * size](fill=0)
+    var c = c_stack.unsafe_ptr().mut_cast[True]()
 
     var b_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var b = NDBuffer[
-        DType.float32,
-        2,
-        _,
-        DimList(size, size),
-    ](b_stack.unsafe_ptr())
+    var b = b_stack.unsafe_ptr().mut_cast[True]()
     fill_b[size](b)
 
     var a_stack = InlineArray[Float32, size * size](uninitialized=True)
-    var a = NDBuffer[
-        DType.float32,
-        2,
-        _,
-        DimList(size, size),
-    ](a_stack.unsafe_ptr())
+    var a = a_stack.unsafe_ptr().mut_cast[True]()
     fill_a[size](a)
 
-    _test_my_naive_matmul[
-        DimList(size, size),
-        DType.float32,
-    ](c, a, b)
+    _test_my_naive_matmul[size, DType.float32](c, a, b)
 
     print_matrix[size](c)
 
 
-def test_naive_matmul_2():
+def test_naive_matmul_2() raises:
     # CHECK: 4.0
     _test_naive_matmul[2]()
 
 
-def test_naive_matmul_4():
+def test_naive_matmul_4() raises:
     # CHECK: 72.0
     _test_naive_matmul[4]()
 
 
-def test_naive_matmul_8():
+def test_naive_matmul_8() raises:
     # CHECK: 784.0
     _test_naive_matmul[8]()
 
 
-def test_naive_matmul_16():
+def test_naive_matmul_16() raises:
     # CHECK: 7200.0
     _test_naive_matmul[16]()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

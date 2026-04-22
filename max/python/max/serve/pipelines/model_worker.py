@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,39 +15,55 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
+import time
 import uuid
 from collections.abc import AsyncGenerator, Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import (
+    AbstractAsyncContextManager,
+    AsyncExitStack,
+    asynccontextmanager,
+)
 from multiprocessing.synchronize import Event
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 import uvloop
-from max.driver import Buffer, Device
+from max.driver import Device, DevicePinnedBuffer
 from max.driver.driver import load_device
 from max.dtype import DType
 from max.interfaces import (
+    BaseContextType,
     Pipeline,
     PipelineInputsType,
     PipelineOutputType,
     PipelinesFactory,
 )
-from max.pipelines.lib import PipelineConfig, PipelineModel, get_paged_manager
+from max.kv_cache import DummyKVCache, PagedKVCacheManager
+from max.pipelines.lib import PipelineConfig, PipelineModel
 from max.profiler import Tracer, traced
 from max.serve.config import MetricRecordingMethod, Settings
 from max.serve.exceptions import detect_and_wrap_oom
 from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheBackend
 from max.serve.pipelines.telemetry_worker import MetricClient
-from max.serve.process_control import ProcessManager, subprocess_manager
+from max.serve.process_control import subprocess_manager
 from max.serve.scheduler import load_scheduler
-from max.serve.scheduler.base import SchedulerProgress, sleep_with_backoff
-from max.serve.scheduler.queues import SchedulerZmqConfigs
+from max.serve.scheduler.base import SchedulerProgress
 from max.serve.telemetry.common import configure_logging, configure_metrics
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import record_ms
+from max.serve.worker_interface import (
+    ModelWorkerInterface,
+    ModelWorkerProxy,
+    sleep_with_backoff,
+)
 
 logger = logging.getLogger("max.serve")
 
 GiB = 1024 * 1024 * 1024
+
+
+@runtime_checkable
+class SupportsGraphCaptureWarmup(Protocol):
+    def warmup_graph_capture(self) -> None: ...
 
 
 def _prime_pinned_memory_cache(device: Device, bytes: int = GiB) -> None:
@@ -69,10 +85,30 @@ def _prime_pinned_memory_cache(device: Device, bytes: int = GiB) -> None:
     """
     if device.is_host:
         return
-    pinned = Buffer(
-        shape=(bytes,), dtype=DType.int8, device=device, pinned=True
-    )
+    pinned = DevicePinnedBuffer(shape=(bytes,), dtype=DType.int8, device=device)
     del pinned
+
+
+def get_reset_prefix_cache_backend(
+    pipeline: Pipeline[Any, Any],
+    zmq_endpoint_base: str,
+) -> tuple[ResetPrefixCacheBackend | None, PagedKVCacheManager | None]:
+    """Get the paged KV cache manager from a pipeline, if available.
+
+    Args:
+        pipeline: The pipeline to extract the KV cache manager from.
+
+    Returns:
+        The paged KV cache manager if available, None otherwise.
+    """
+
+    if hasattr(pipeline, "kv_manager"):
+        kv_manager = pipeline.kv_manager
+        if isinstance(kv_manager, PagedKVCacheManager) and not isinstance(
+            kv_manager, DummyKVCache
+        ):
+            return ResetPrefixCacheBackend(zmq_endpoint_base), kv_manager
+    return None, None
 
 
 def get_pipeline_model(
@@ -128,7 +164,9 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
-        scheduler_zmq_configs: SchedulerZmqConfigs,
+        model_worker_interface: ModelWorkerInterface[
+            BaseContextType, PipelineOutputType
+        ],
     ) -> None:
         """Runs a model worker process.
 
@@ -146,38 +184,74 @@ class ModelWorker:
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)
 
-        # Configure Metrics
-        async with metric_client_factory() as metric_client:
+        async with AsyncExitStack() as exit_stack:
+            # Configure Metrics
+            metric_client = await exit_stack.enter_async_context(
+                metric_client_factory()
+            )
+
             ModelWorker._configure_metrics(settings, metric_client)
 
             # Prime the pinned memory cache in the model worker process.
-            # Since we only alloc pinned memory on gpu0, we only try to prime it
-            # for the first device.
-            device = load_device(pipeline_config.model.device_specs[0])
-            _prime_pinned_memory_cache(device)
+            # The first DevicePinnedBuffer allocation per GPU triggers
+            # heavyweight driver context initialization that can take
+            # seconds. Doing it here at startup avoids that latency
+            # hitting the first real request.
+            # Use any model's device_specs — all components share the same device.
+            any_model = next(iter(pipeline_config.models.values()))
+            first_device = load_device(any_model.device_specs[0])
+            _prime_pinned_memory_cache(first_device)
+            # This crashes on 8xMI355. TODO(GEX-3321)
+            if first_device.api == "cuda":
+                for spec in any_model.device_specs[1:]:
+                    _prime_pinned_memory_cache(load_device(spec))
 
             # Initialize token generator.
             with record_ms(METRICS.model_load_time), Tracer("model_factory"):
                 pipeline = model_factory()
+
+            with Tracer("graph_capture_warmup"):
+                if pipeline_config.runtime.device_graph_capture:
+                    if not isinstance(pipeline, SupportsGraphCaptureWarmup):
+                        raise ValueError(
+                            "device_graph_capture is enabled but the pipeline "
+                            "does not support graph-capture warmup."
+                        )
+                    max_batch_size = pipeline_config.runtime.max_batch_size
+                    if max_batch_size is None:
+                        raise ValueError(
+                            "device_graph_capture requires max_batch_size to be set."
+                        )
+                    warmup_start_s = time.monotonic()
+                    pipeline.warmup_graph_capture()
+                    warmup_duration_s = time.monotonic() - warmup_start_s
+                    logger.info(
+                        "Device graph capture warmup completed in %.2fs "
+                        "(model=%s, max_batch_size=%d).",
+                        warmup_duration_s,
+                        pipeline_config.models.main_architecture_name,
+                        max_batch_size,
+                    )
+
+            # Boot up the api worker comms
+            worker_queues = await exit_stack.enter_async_context(
+                model_worker_interface.model_worker_queues()
+            )
 
             # Retrieve Scheduler.
             scheduler = load_scheduler(
                 pipeline,
                 pipeline_config,
                 settings,
-                scheduler_zmq_configs,
+                worker_queues,
             )
 
-            # Retrieve Paged Manager.
-            paged_cache = get_paged_manager(pipeline)
-            reset_prefix_cache_backend: ResetPrefixCacheBackend | None = None
-            if (
-                paged_cache is not None
-                and pipeline_config.zmq_endpoint_base is not None
-            ):
-                reset_prefix_cache_backend = ResetPrefixCacheBackend(
-                    pipeline_config.zmq_endpoint_base
+            # Get the reset prefix cache backend.
+            reset_prefix_cache_backend, kv_cache = (
+                get_reset_prefix_cache_backend(
+                    pipeline, pipeline_config.runtime.zmq_endpoint_base
                 )
+            )
 
             # Maybe retrieve LoRA manager.
             lora_manager = None
@@ -201,8 +275,8 @@ class ModelWorker:
                     reset_prefix_cache_backend is not None
                     and reset_prefix_cache_backend.should_reset_prefix_cache()
                 ):
-                    assert paged_cache is not None
-                    paged_cache.reset_prefix_cache()
+                    assert kv_cache is not None
+                    kv_cache.reset_prefix_cache()
                 # This method must terminate in a reasonable amount of time
                 # so that the ProcessMonitor heartbeat is periodically run.
                 progress = scheduler.run_iteration()
@@ -224,7 +298,9 @@ class ModelWorker:
         metric_client_factory: Callable[
             [], AbstractAsyncContextManager[MetricClient]
         ],
-        scheduler_zmq_configs: SchedulerZmqConfigs,
+        model_worker_interface: ModelWorkerInterface[
+            BaseContextType, PipelineOutputType
+        ],
     ) -> None:
         """Primary entry point for running a ModelWorker process.
 
@@ -247,12 +323,13 @@ class ModelWorker:
                     pipeline_config,
                     settings,
                     metric_client_factory,
-                    scheduler_zmq_configs,
+                    model_worker_interface,
                 )
             )
         except KeyboardInterrupt:
             pass  # suppress noisy stack traces for user abort
         except Exception as e:
+            logger.exception("Model worker crashed")
             detect_and_wrap_oom(e)
             raise
 
@@ -263,8 +340,10 @@ async def start_model_worker(
     pipeline_config: PipelineConfig,
     settings: Settings,
     metric_client: MetricClient,
-    scheduler_zmq_configs: SchedulerZmqConfigs,
-) -> AsyncGenerator[ProcessManager]:
+    model_worker_interface: ModelWorkerInterface[
+        BaseContextType, PipelineOutputType
+    ],
+) -> AsyncGenerator[ModelWorkerProxy[BaseContextType, PipelineOutputType]]:
     """Starts a model worker and associated process.
 
     Args:
@@ -280,7 +359,7 @@ async def start_model_worker(
         Iterator[AsyncIterator[Worker]]: _description_
     """
     worker_name = "MODEL_" + str(uuid.uuid4())
-    logger.debug("Starting worker: %s", worker_name)
+    logger.info("Starting worker: %s", worker_name)
 
     mp = multiprocessing.get_context("spawn")
     async with subprocess_manager("Model Worker") as proc:
@@ -292,14 +371,17 @@ async def start_model_worker(
             pipeline_config,
             settings,
             metric_client.cross_process_factory(settings),
-            scheduler_zmq_configs,
+            model_worker_interface,
         )
 
+        logger.info("Waiting for model worker readiness")
         await proc.ready(alive, timeout=settings.mw_timeout_s)
+        logger.info("Model worker ready")
 
         if settings.use_heartbeat:
             proc.watch_heartbeat(alive, timeout=settings.mw_health_fail_s)
 
         logger.debug("Model worker task is ready")
 
-        yield proc
+        async with model_worker_interface.model_worker_proxy() as model_worker:
+            yield model_worker

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,7 +26,13 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Buffer, Device, DLPackArray
+from max.driver import (
+    CPU,
+    Buffer,
+    Device,
+    DLPackArray,
+    is_virtual_device_mode,
+)
 from max.dtype import DType
 from max.graph.buffer_utils import cast_dlpack_to, cast_tensor_to
 from max.graph.quantization import QuantizationEncoding
@@ -36,7 +42,6 @@ from max.graph.weights import WeightData, WeightsFormat, load_weights
 from max.interfaces import (
     LoRAStatus,
     LoRAType,
-    RequestID,
     TextGenerationContextType,
 )
 from max.interfaces.pipeline import (
@@ -46,7 +51,7 @@ from max.interfaces.pipeline import (
 )
 from max.nn.layer.layer import Module, recursive_named_layers
 from max.nn.lora import SupportsLoRA
-from max.pipelines.lib.config import LoRAConfig
+from max.pipelines.lib.config.lora_config import LoRAConfig
 
 from .hf_utils import HuggingFaceRepo
 from .lora_request_processor import LoRARequestProcessor
@@ -57,8 +62,7 @@ ADAPTER_CONFIG_FILE = "adapter_config.json"
 
 
 class LoRALRUCache:
-    """
-    LRU cache for managing active LoRA models and their slot assignments.
+    """LRU cache for managing active LoRA models and their slot assignments.
 
     This cache maintains a maximum number of active LoRA models and evicts
     the least recently used model when the cache is full. It also manages
@@ -66,8 +70,7 @@ class LoRALRUCache:
     """
 
     def __init__(self, max_size: int):
-        """
-        Initialize the LRU cache.
+        """Initialize the LRU cache.
 
         Args:
             max_size: Maximum number of LoRA models to keep in the cache.
@@ -86,8 +89,7 @@ class LoRALRUCache:
         return len(self._cache)
 
     def get(self, key: str) -> tuple[LoRAModel | None, int | None]:
-        """
-        Get a LoRA model and its slot from the cache and mark it as recently used.
+        """Get a LoRA model and its slot from the cache and mark it as recently used.
 
         Args:
             key: The name of the LoRA model.
@@ -102,8 +104,7 @@ class LoRALRUCache:
         return self._cache[key]
 
     def get_slot(self, key: str) -> int | None:
-        """
-        Get the slot assignment for a LoRA model.
+        """Get the slot assignment for a LoRA model.
 
         Args:
             key: The name of the LoRA model.
@@ -114,8 +115,7 @@ class LoRALRUCache:
         return self._name_to_slot.get(key)
 
     def next_slot(self) -> int | None:
-        """
-        Get the next available slot for a new LoRA.
+        """Get the next available slot for a new LoRA.
 
         Returns:
             The next available slot number, or None if no slots are available.
@@ -127,8 +127,7 @@ class LoRALRUCache:
     def put(
         self, key: str, value: LoRAModel, slot: int | None = None
     ) -> tuple[str | None, int | None]:
-        """
-        Add or update a LoRA model in the cache with slot assignment.
+        """Add or update a LoRA model in the cache with slot assignment.
 
         Args:
             key: The name of the LoRA model.
@@ -167,8 +166,7 @@ class LoRALRUCache:
         return (evicted_key, freed_slot)
 
     def remove(self, key: str) -> tuple[bool, int | None]:
-        """
-        Remove a LoRA model from the cache.
+        """Remove a LoRA model from the cache.
 
         Args:
             key: The name of the LoRA model to remove.
@@ -204,9 +202,7 @@ class LoRALRUCache:
 
 
 def is_lora_kind(key: str) -> bool:
-    """
-    Whether the key is a lora kind
-    """
+    """Returns whether the key denotes a LoRA kind."""
     return bool(
         LoRAType.A.value in key
         or LoRAType.B.value in key
@@ -215,9 +211,7 @@ def is_lora_kind(key: str) -> bool:
 
 
 class LoRAModel:
-    """
-    Manages LoRA weights and configuration for a single adapter.
-    """
+    """Manages LoRA weights and configuration for a single adapter."""
 
     def __init__(
         self,
@@ -230,8 +224,7 @@ class LoRAModel:
         head_dim: int,
         strict: bool = True,
     ) -> None:
-        """
-        Initializes a LoRAModel by loading its configuration and weights.
+        """Initializes a LoRAModel by loading its configuration and weights.
 
         .. code-block:: python
 
@@ -283,8 +276,7 @@ class LoRAModel:
         self._validate_target_modules()
 
     def get(self, key: str) -> WeightData | None:
-        """
-        Gets the WeightData from the key. If key doesn't exist in model, then None is returned.
+        """Gets the WeightData from the key. If key doesn't exist in model, then None is returned.
 
         Args:
             key: Key of LoRA
@@ -322,8 +314,7 @@ class LoRAModel:
         return self._adapter_config
 
     def _validate_target_modules(self) -> None:
-        """
-        Validates that all target modules in the LoRA adapter are supported.
+        """Validates that all target modules in the LoRA adapter are supported.
 
         Currently supported target modules:
         - Attention modules: q_proj, k_proj, v_proj, o_proj
@@ -356,8 +347,7 @@ class LoRAModel:
             )
 
     def _normalize_lora_key(self, key: str) -> str:
-        """
-        Normalizes LoRA weight keys by extracting the portion starting from `layers.<number>`.
+        """Normalizes LoRA weight keys by extracting the portion starting from `layers.<number>`.
 
         This ensures that weight keys conform to the expected format used in target models.
 
@@ -405,12 +395,18 @@ class LoRAModel:
         return weight_np
 
     def _cast_all_weights(self, base_dtype: DType) -> None:
-        """
-        Cast all LoRA weights to base_dtype.
+        """Cast all LoRA weights to base_dtype.
 
         Called after _combine_qkv_weights() so that all weights (including
         the concatenated QKV weights) are cast in one place.
+
+        In virtual device mode (warm-cache/cross-compilation), casting is skipped
+        since weights won't be used for inference - only compilation matters.
         """
+        # Skip casting in virtual device mode since weights aren't needed
+        if is_virtual_device_mode():
+            return
+
         for data in self._lora_A.values():
             if isinstance(data.data, np.ndarray):
                 weight_tensor = Buffer.from_numpy(data.data)
@@ -422,8 +418,7 @@ class LoRAModel:
                 data.data = cast_tensor_to(weight_tensor, base_dtype)
 
     def _combine_qkv_weights(self) -> None:
-        """
-        Combines separate q_proj, k_proj, v_proj LoRA weights into qkv_lora weights.
+        """Combines separate q_proj, k_proj, v_proj LoRA weights into qkv_lora weights.
 
         This method identifies sets of Q, K, V weights for the same layer and combines them:
         - For lora_A: concatenates across rank dimension (dim 0)
@@ -489,8 +484,7 @@ class LoRAModel:
     def _combine_qkv_for_layer(
         self, layer_prefix: str, default_dtype: DType
     ) -> None:
-        """
-        Combines Q, K, V weights for a specific layer.
+        """Combines Q, K, V weights for a specific layer.
 
         Args:
             layer_prefix: The layer prefix (e.g., "layers.0.self_attn")
@@ -612,8 +606,7 @@ class LoRAModel:
             del self._lora_B[key]
 
     def _load_weights(self, base_dtype: DType) -> dict[str, Any]:
-        """
-        Loads LoRA adapter weights and configuration from disk.
+        """Loads LoRA adapter weights and configuration from disk.
 
         This method parses the safetensors weight files and categorizes them
         into A, B, and bias matrices based on their keys. It also reads the
@@ -688,9 +681,11 @@ class LoRAModel:
                 self._lora_B[key] = data
 
             elif LoRAType.BIAS.value in key:
-                data.data = cast_dlpack_to(
-                    data.data, data.dtype, base_dtype, CPU()
-                )
+                # Skip casting in virtual device mode (warm-cache)
+                if not is_virtual_device_mode():
+                    data.data = cast_dlpack_to(
+                        data.data, data.dtype, base_dtype, CPU()
+                    )
                 self._lora_bias[key] = data
 
             else:
@@ -704,8 +699,9 @@ class LoRAModel:
 
 
 class LoRAManager:
-    """
-    Manages multiple LoRA models applied to a set of base weights and the
+    """Manages multiple LoRA models and buffers for the forward pass.
+
+    Applies multiple LoRA models to a set of base weights and manages the
     underlying buffers required for the forward pass.
     """
 
@@ -723,17 +719,16 @@ class LoRAManager:
         head_dim: int,
         zmq_endpoint_base: str,
     ):
-        """
-        Initializes the LoRAManager with a given base weight structure and maximum number of LoRA models.
+        """Initializes the LoRAManager with a given base weight structure and maximum number of LoRA models.
 
         Args:
-            config (LoRAConfig): The LoRA config.
-            base_model_path (str): The name/path of the base model.
-            base_dtype (DType): The base model dtype.
-            n_heads (int): Number of attention heads in the base model.
-            n_kv_heads (int): Number of key-value heads in the base model.
-            head_dim (int): Dimension of each attention head.
-            zmq_endpoint_base (str): The ZMQ endpoint base used to construct ZMQ lora request and response endpoints.
+            config: The LoRA config.
+            base_model_path: The name/path of the base model.
+            base_dtype: The base model dtype.
+            n_heads: The number of attention heads in the base model.
+            n_kv_heads: The number of key-value heads in the base model.
+            head_dim: The dimension of each attention head.
+            zmq_endpoint_base: The ZMQ endpoint base used to construct ZMQ lora request and response endpoints.
         """
         self.base_model_path = base_model_path
         self.base_dtype = base_dtype
@@ -756,16 +751,16 @@ class LoRAManager:
         self._alias_buffers: dict[str, DLPackArray] = {}
 
     def process_lora_requests(self) -> None:
-        """Check for new LoRA requests and processes them."""
+        """Checks for new LoRA requests and processes them."""
         self._request_processor.process_lora_requests()
 
     @property
     def loras(self) -> list[str]:
+        """Returns the list of loaded LoRA adapter names."""
         return list(self._loras.keys())
 
     def _model_name_to_id(self, name: str | None) -> int:
-        """
-        Maps the model name to its assigned slot id.
+        """Maps the model name to its assigned slot id.
 
         Base model requests are ID == _NO_ACTIVE_LORA (-1)
         Empty string or base model path maps to base model.
@@ -781,9 +776,7 @@ class LoRAManager:
         return self._NO_ACTIVE_LORA
 
     def _model_name_to_rank(self, name: str | None) -> int:
-        """
-        Maps the model name to it's rank.
-        """
+        """Maps the model name to its rank."""
         return self._loras[name].rank if name in self._loras else 0
 
     def get_lora_graph_inputs(
@@ -792,13 +785,12 @@ class LoRAManager:
         input_row_offsets: npt.NDArray[np.integer[Any]],
         device: Device,
     ) -> tuple[Buffer, ...]:
-        """
-        Gets the LoRA graph inputs
+        """Returns the LoRA graph inputs for the batch.
 
         Args:
-            model_names: List of model names
-            input_row_offsets: The offsets for each sequence in the batch
-            device: The device
+            context_batch: The generation contexts for the batch.
+            input_row_offsets: The offsets for each sequence in the batch.
+            device: The device.
         """
         ids = []
         ranks = []
@@ -908,10 +900,9 @@ class LoRAManager:
         )
 
     def _validate_lora_path(self, path: str) -> LoRAStatus:
-        """
-        Validates that a LoRA adapter path exists locally.
+        """Validates that a LoRA adapter path exists locally.
 
-        Remote HuggingFace repositories are not supported and must be downloaded
+        Remote Hugging Face repositories are not supported and must be downloaded
         to a local directory first.
 
         Args:
@@ -924,8 +915,7 @@ class LoRAManager:
         return LoRAStatus.SUCCESS
 
     def _load_adapters(self, lora_paths: list[str]) -> None:
-        """
-        Internal method to load LoRA adapters during initialization.
+        """Internal method to load LoRA adapters during initialization.
 
         This method raises exceptions on any errors to fail during startup.
 
@@ -947,8 +937,7 @@ class LoRAManager:
                 raise RuntimeError(error_messages.get(status))
 
     def load_adapter(self, path: str) -> LoRAStatus:
-        """
-        Loads a single LoRA adapter from the given path and registers it under a unique name.
+        """Loads a single LoRA adapter from the given path and registers it under a unique name.
 
         The path can include an explicit name using the format `name=path`. If no name is provided,
         the path itself is used as the name.
@@ -1006,8 +995,7 @@ class LoRAManager:
             return LoRAStatus.LOAD_ERROR
 
     def unload_adapter(self, name: str) -> LoRAStatus:
-        """
-        Unloads the specified LoRA adapter from the internal registry and frees its slot.
+        """Unloads the specified LoRA adapter from the internal registry and frees its slot.
 
         This function is used to release GPU or CPU memory by removing a LoRA model.
 
@@ -1016,8 +1004,7 @@ class LoRAManager:
             manager.unload_adapter("my_adapter")
 
         Args:
-            lora:
-                The name of the LoRA adapter to unload.
+            name: The name of the LoRA adapter to unload.
 
         Returns:
             LoRAStatus indicating the result of the unload operation.
@@ -1037,8 +1024,7 @@ class LoRAManager:
             return LoRAStatus.UNLOAD_ERROR
 
     def activate_adapter(self, name: str) -> None:
-        """
-        Moves the specified LoRA adapter to GPU and marks it as active.
+        """Moves the specified LoRA adapter to GPU and marks it as active.
 
         Useful for enabling a specific adapter for use in model inference.
 
@@ -1081,8 +1067,7 @@ class LoRAManager:
     def _update_alias_buffers_for_lora(
         self, lora: LoRAModel, slot: int
     ) -> None:
-        """
-        Updates the alias buffers with weights from a newly activated LoRA.
+        """Updates the alias buffers with weights from a newly activated LoRA.
 
         This function copies the LoRA weights (A, B, and bias) into the appropriate
         slot in the alias buffers, which are used for dynamic LoRA swapping during
@@ -1123,9 +1108,9 @@ class LoRAManager:
                 buffer[slot, :, :].inplace_copy_from(weight)
 
     def _get_lora_leaf_layers(self, model: Module) -> dict[str, Module]:
-        """
-        Uses recursive_named_layers(model) to return only the leaf module names
-        that are instances of SupportsLoRA — skipping containers.
+        """Returns leaf module names that are instances of SupportsLoRA.
+
+        Uses recursive_named_layers(model), skipping containers.
 
         Args:
             model: The model to scan.
@@ -1158,9 +1143,10 @@ class LoRAManager:
     def init_weights(
         self, model: Module, state_dict: dict[str, WeightData]
     ) -> None:
-        """
-        Recursively collect all leaf modules in the model that are instances of SupportsLoRA.
-        Init's their weights with the loaded LoRAs and adds them to the `state_dict`.
+        """Recursively collects leaf SupportsLoRA modules and inits their weights.
+
+        Inits their weights with the loaded LoRAs and adds them to the
+        ``state_dict``.
 
         Acquires the alias-able buffers for dynamic LoRA swapping.
 
@@ -1181,7 +1167,9 @@ class LoRAManager:
                 state_key = f"{key}.{weight_key}"
                 weight = Buffer.zeros(
                     base_weight.shape.static_dims, base_weight.dtype
-                ).copy(base_weight.device.to_device())
+                )
+                if not is_virtual_device_mode():
+                    weight = weight.copy(base_weight.device.to_device())
                 state_dict[state_key] = WeightData(
                     weight,
                     key,
@@ -1193,8 +1181,7 @@ class LoRAManager:
                 self._alias_buffers[state_key] = state_dict[state_key].data
 
     def get_symbolic_inputs(self, device_ref: DeviceRef) -> list[TensorType]:
-        """
-        Returns the input symbols needed for the graph inputs
+        """Returns the input symbols needed for the graph inputs.
 
         Args:
             device_ref: Symbolic device to be used for the symbols.
@@ -1249,8 +1236,7 @@ class LoRAManager:
         lora_ids_kv: TensorValue,
         lora_grouped_offsets_kv: TensorValue,
     ) -> None:
-        """
-        Sets the lora batch info required for the forward-pass.
+        """Sets the lora batch info required for the forward-pass.
 
         Args:
             lora_ids: IDs of the LoRAs used in the batch.
@@ -1276,39 +1262,34 @@ class LoRAManager:
                 )
 
     def sort_lora_batch(
-        self, context_batch: dict[RequestID, TextGenerationContextType]
-    ) -> dict[RequestID, TextGenerationContextType]:
-        """
-        Sorts the LoRA batch by LRU cache id.
+        self, context_batch: list[TextGenerationContextType]
+    ) -> list[TextGenerationContextType]:
+        """Sorts the LoRA batch by LRU cache id.
 
         Args:
-            batch: The context batch to sort
+            context_batch: The context batch to sort
         """
-        batch_by_model_ids = {
-            req_id: ctx
-            for req_id, ctx in sorted(
-                context_batch.items(),
-                key=lambda item: self._model_name_to_id(
-                    getattr(item[1], "model_name", None)
-                ),
-                reverse=True,
-            )
-        }
-
-        return batch_by_model_ids
+        return sorted(
+            context_batch,
+            key=lambda item: self._model_name_to_id(
+                getattr(item, "model_name", None)
+            ),
+            reverse=True,
+        )
 
     def is_lora(self, name: str) -> bool:
-        """Checks to see if name is a lora"""
+        """Returns whether the given name is a loaded LoRA adapter."""
         return name in self._loras
 
     def is_active_lora(self, name: str) -> bool:
-        """Checks to see if name is an active lora"""
+        """Returns whether the given name is an active LoRA adapter."""
         return name in self._active_loras
 
     @staticmethod
     def get_lora_manager(
         pipeline: Pipeline[PipelineInputsType, PipelineOutputType],
     ) -> LoRAManager | None:
+        """Returns the LoRAManager from the pipeline if LoRA is enabled."""
         manager: LoRAManager | None = None
 
         if hasattr(pipeline, "_pipeline_model"):

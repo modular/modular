@@ -19,7 +19,7 @@ For example:
 
 ```mojo
 @always_inline
-fn add(a: Int, b: Int) -> Int:
+def add(a: Int, b: Int) -> Int:
     return a + b
 
 print(add(1, 2))
@@ -41,7 +41,7 @@ same effect to inline the function, but without debug information. This means
 that you can't step into the function when debugging.
 
 This decorator is intended to be used on the low-level functions in a
-library,   which may wrap primitive functions, MLIR operations, or inline
+library, which may wrap primitive functions, MLIR operations, or inline
 assembly. Marking these functions as "nodebug" prevents users from accidentally
 stepping into low-level non-Mojo code when debugging.
 
@@ -55,17 +55,18 @@ context.
 
 :::caution
 
-Using this version of the decorator requires some knowledge of the Mojo compiler's
-internals. Using it outside of the standard library is not recommended. Use the
-standard `@always_inline` decorator or the `"nodebug"` version, instead.
+Using this version of the decorator requires some knowledge of the Mojo
+compiler's internals. Using it outside of the standard library is not
+recommended. Use the standard `@always_inline` decorator or the `"nodebug"`
+version, instead.
 
 :::
 
 This version of the decorator does everything that `"nodebug"` does, plus two
 other behaviors:
 
-- It checks the body of the function to validate that it doesn’t use
-  anything that `@always_inline("builtin")` can’t handle-this checks that there
+- It checks the body of the function to validate that it doesn't use
+  anything that `@always_inline("builtin")` can't handle. This checks that there
   is no control flow, no function calls to functions that are not themselves
   `@always_inline("builtin")`, no use of unsupported MLIR operations, etc.
 
@@ -73,4 +74,4 @@ other behaviors:
   inlined.
 
 For more details and background, see
-[the `@always_inline("builtin") proposal](https://github.com/modularml/modular/blob/main/oss/modular/mojo/proposals/always_inline_builtin.md).
+[the `@always_inline("builtin") proposal](https://github.com/modular/modular/blob/main/mojo/proposals/always_inline_builtin.md).

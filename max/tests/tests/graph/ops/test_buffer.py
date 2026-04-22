@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -310,10 +310,10 @@ def test_no_implicit_load(
         buffer = graph.inputs[1]
 
         with pytest.raises(TypeError):  # binary ops
-            y = tensor + buffer  # type: ignore
+            tensor + buffer  # type: ignore
 
         with pytest.raises(TypeError):  # unary ops
-            y = abs(buffer)  # type: ignore
+            abs(buffer)  # type: ignore
 
         assert "rmo.mo.mutable.load" not in str(graph)
         assert "rmo.mo.slice" not in str(graph)

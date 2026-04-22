@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -32,6 +32,32 @@ logger = logging.getLogger("max.entrypoints")
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
+
+
+def replace_deprecated_model_flag(args: list[str]) -> list[str]:
+    """Replace deprecated --model flag with --model-path.
+
+    Raises:
+        ValueError: If both --model and --model-path are specified.
+    """
+    updated_args: list[str] = []
+    saw_model = False
+    saw_model_path = False
+    for arg in args:
+        if arg == "--model":
+            saw_model = True
+            updated_args.append("--model-path")
+        elif arg.startswith("--model="):
+            saw_model = True
+            updated_args.append("--model-path" + arg[len("--model") :])
+        else:
+            if arg == "--model-path" or arg.startswith("--model-path="):
+                saw_model_path = True
+            updated_args.append(arg)
+
+        if saw_model and saw_model_path:
+            raise ValueError("model_path and model cannot both be specified")
+    return updated_args
 
 
 class WithLazyPipelineOptions(click.Command):
@@ -85,8 +111,14 @@ class WithLazyPipelineOptions(click.Command):
         return super().invoke(ctx)
 
     def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        # Accept deprecated --model flag by rewriting it to --model-path.
         self._ensure_options_loaded()
-        return super().parse_args(ctx, args)
+        updated_args = replace_deprecated_model_flag(args)
+        if updated_args != args:
+            logger.warning(
+                "Deprecated flag --model detected; use --model-path instead."
+            )
+        return super().parse_args(ctx, updated_args)
 
     def get_params(self, ctx: click.Context) -> list[click.Parameter]:
         self._ensure_options_loaded()
@@ -160,21 +192,6 @@ def configure_telemetry(color: str | None = None) -> None:
 
 
 def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
-    @click.option(
-        "--profile-serve",
-        is_flag=True,
-        show_default=True,
-        default=False,
-        help=(
-            "Whether to enable pyinstrument profiling on the serving endpoint."
-        ),
-    )
-    @click.option(
-        "--sim-failure",
-        type=int,
-        default=0,
-        help="Simulate fake-perf with failure percentage",
-    )
     @click.option("--port", type=int, help="Port to run the server on.")
     @click.option(
         "--headless",
@@ -197,9 +214,7 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
 
 @main.command(name="serve", cls=WithLazyPipelineOptions)
 @common_server_options
-@click.option(
-    "--task", type=str, default="text_generation", help="The task to run."
-)
+@click.option("--task", type=str, default="undefined", help="The task to run.")
 @click.option(
     "--task-arg",
     multiple=True,
@@ -213,8 +228,6 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     help="Pretty Print Entire Config",
 )
 def cli_serve(
-    profile_serve: bool,
-    sim_failure: int,
     port: int,
     headless: bool,
     log_prefix: str | None,
@@ -265,21 +278,18 @@ def cli_serve(
         # Log Pipeline Related Info
         pipeline_config.log_pipeline_info()
 
-        # Log Default Sampling Configuration
-        sampling_params = SamplingParams.from_input_and_generation_config(
-            SamplingParamsInput(),
-            sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
-        )
-        sampling_params.log_sampling_info()
+        # Log Default Sampling Configuration (only for single-model pipelines)
+        if "main" in pipeline_config.models:
+            sampling_params = SamplingParams.from_input_and_generation_config(
+                SamplingParamsInput(),
+                sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
+            )
+            sampling_params.log_sampling_info()
 
         # Log API Server Related Info
         settings.log_server_info()
     else:
         pipeline_config.log_basic_config()
-
-    failure_percentage = None
-    if sim_failure > 0:
-        failure_percentage = sim_failure
 
     # Configure Logging Globally
     configure_logging(settings)
@@ -465,10 +475,8 @@ def cli_list(json: bool) -> None:
         list_pipelines_to_console()
 
 
-# Because we already have an argparser for benchmark_serving.py, we shouldn't have
-# to maintain a whole list of benchmark_serving CLI arg options here. This makes
-# it harder to keep them in sync and is error prone. We unroll all the args
-# instead and let BenchmarkCommand (which wraps benchmark_serving.py) handle them.
+# Argument parsing is handled by benchmark_serving.parse_args.
+# All CLI args are forwarded as-is so the two entry points stay in sync.
 @main.command(
     name="benchmark",
     context_settings={
@@ -490,22 +498,16 @@ def cli_benchmark(args: Sequence[str]) -> None:
     # and bypass Click's argument processing
     # args = ctx.params.get("args", [])
 
-    # Import lazily to avoid importing benchmark modules at module load time
-    from max.benchmark.benchmark_serving import main as benchmark_main
-    from max.benchmark.benchmark_serving import (
-        parse_args as benchmark_parse_args,
-    )
+    # Import lazily to avoid importing benchmark modules at module load time.
+    from max.benchmark.sweep_benchmark_serving import main as sweep_main
 
     logger.debug("Running benchmark subcommand with args: %s", args)
     try:
-        argparse_namespace = benchmark_parse_args(args=args)
-
-        # Run the benchmark
         click.echo("Starting benchmark...")
-        benchmark_main(argparse_namespace)
+        sweep_main(args, app_name="max-benchmark")
         click.echo("Benchmark completed successfully!")
     except SystemExit as e:
-        # argparse calls sys.exit() for help and errors, we need to handle this
+        # cyclopts calls sys.exit() for help and errors, we need to handle this
         if e.code == 0:
             # Help was requested and printed, just return
             return

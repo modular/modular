@@ -7,7 +7,6 @@ _PACKAGES = {
 }
 
 _MAX_PACKAGES = {
-    "buffer": "kernels/src/buffer",
     "kv_cache": "kernels/src/kv_cache",
     "layout": "kernels/src/layout",
     "linalg": "kernels/src/linalg",
@@ -23,6 +22,9 @@ _MAX_PACKAGES = {
     "weights_registry": "kernels/src/weights_registry",
     "internal_utils": "kernels/src/internal_utils",
     "comm": "kernels/src/comm",
+    "state_space": "kernels/src/state_space",
+    "pipeline": "kernels/src/pipeline",
+    "structured_kernels": "kernels/src/structured_kernels",
     "testdata": "kernels/test/testdata",
     "compiler": "compiler/src:compiler",
     "_cublas": "kernels/src/_cublas",
@@ -30,6 +32,7 @@ _MAX_PACKAGES = {
     "_curand": "kernels/src/_curand",
     "_cudnn": "kernels/src/_cudnn",
     "_rocblas": "kernels/src/_rocblas",
+    "_miopen": "kernels/src/_miopen",
 }
 
 # Packages that are marked testonly and cannot be used by production targets

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,6 +18,7 @@ import json
 import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
+from max.interfaces import PipelineTask
 from max.pipelines.core import TextContext
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
@@ -39,6 +40,8 @@ def patch_pipeline_registry_context_type(
 
     def _mock_retrieve_context_type(
         pipeline_config: PipelineConfig,
+        override_architecture: str | None = None,
+        task: PipelineTask | None = None,
     ) -> type[TextContext]:
         return TextContext
 
@@ -77,9 +80,7 @@ def decode_and_strip(text: bytes, prefix: str | None):  # noqa: ANN201
 
 @pytest.fixture(scope="function")
 def stream_app(mock_pipeline_config: PipelineConfig) -> FastAPI:
-    settings = Settings(
-        api_types=[APIType.OPENAI], MAX_SERVE_USE_HEARTBEAT=False
-    )
+    settings = Settings(api_types=[APIType.OPENAI], use_heartbeat=False)
     serving_settings = ServingTokenGeneratorSettings(
         model_factory=EchoTokenGenerator,
         pipeline_config=mock_pipeline_config,

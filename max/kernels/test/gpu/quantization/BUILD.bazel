@@ -16,6 +16,7 @@ _FP8_FP4_TESTS = [
     "test_nvfp4_block_scales_interleave.mojo",
     "test_scaled_mxfp8_quantization.mojo",
     "test_scaled_nvfp4_quantization_async.mojo",
+    "test_grouped_nvfp4_quantization.mojo",
 ]
 
 _EXTRA_CONSTRAINTS = {
@@ -25,9 +26,8 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_scaled_fp8_quantization.mojo": select({
-        "//:h100_gpu": ["//:h100_gpu"],
-        "//:b200_gpu": ["//:b200_gpu"],
-        "//conditions:default": ["@platforms//:incompatible"],
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
     }),
     "test_scaled_nvfp4_quantization.mojo": select({
         "//:b200_gpu": ["//:b200_gpu"],
@@ -42,6 +42,10 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_scaled_nvfp4_quantization_async.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_grouped_nvfp4_quantization.mojo": select({
         "//:b200_gpu": ["//:b200_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),

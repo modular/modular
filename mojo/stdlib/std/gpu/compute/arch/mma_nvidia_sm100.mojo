@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes utilities for working with the SM100 MMA instructions."""
 
-from os import abort
-from sys import size_of
-from sys._assembly import inlined_assembly
-from sys.info import _has_blackwell_tcgen05
+from std.os import abort
+from std.sys import size_of
+from std.sys._assembly import inlined_assembly
+from std.sys.info import _has_blackwell_tcgen05
 
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
 
-from utils.index import IndexList
-from hashlib.hasher import Hasher
+from std.utils.index import IndexList
+from std.hashlib.hasher import Hasher
 
 # ===----------------------------------------------------------------------=== #
 # MMA Instruction Descriptor
@@ -29,8 +29,7 @@ from hashlib.hasher import Hasher
 
 
 @fieldwise_init("implicit")
-@register_passable("trivial")
-struct UMMAKind(Hashable, Stringable, Writable):
+struct UMMAKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
     """Struct for UMMA instruction types.
 
     This struct defines the different types of UMMA instructions that is supported by BlackWell.
@@ -60,7 +59,7 @@ struct UMMAKind(Hashable, Stringable, Writable):
     """MXF4NVF4 type."""
 
     @always_inline("nodebug")
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """Convert UMMA kind to an integer value.
 
         Returns:
@@ -69,7 +68,7 @@ struct UMMAKind(Hashable, Stringable, Writable):
         return Int(self._value)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Check if two UMMA kinds are equal.
 
         Args:
@@ -81,7 +80,7 @@ struct UMMAKind(Hashable, Stringable, Writable):
         return self._value == other._value
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Check if two UMMA kinds are not equal.
 
         Args:
@@ -92,17 +91,8 @@ struct UMMAKind(Hashable, Stringable, Writable):
         """
         return self._value != other._value
 
-    @no_inline
-    fn __str__(self) -> String:
-        """Convert UMMA kind to a string, this can be used as the instruction qualifier.
-
-        Returns:
-            The PTX qualifier representation of the UMMA kind.
-        """
-        return String.write(self)
-
     @always_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Write the UMMA kind to a writer.
 
         Args:
@@ -125,21 +115,9 @@ struct UMMAKind(Hashable, Stringable, Writable):
         else:
             writer.write("kind::unknown")
 
-    @always_inline
-    fn __hash__[H: Hasher](self, mut hasher: H):
-        """Updates hasher with the underlying UMMAKind value.
-
-        Parameters:
-            H: The hasher type.
-
-        Args:
-            hasher: The hasher instance.
-        """
-        hasher.update(self._value)
-
 
 @always_inline
-fn _constrained_mma_m[
+def _constrained_mma_m[
     mma_m: Int,
     mma_m_valid: Tuple[Int, Int],
     mma_kind: UMMAKind,
@@ -156,7 +134,7 @@ fn _constrained_mma_m[
         " when using pair cta." if use_cta_pair else " when not using pair cta."
     )
 
-    __comptime_assert mma_m in mma_m_valid, String(
+    comptime assert mma_m in mma_m_valid, String(
         "Invalid MMA M: ",
         mma_m,
         " , MMA M has to be ",
@@ -170,7 +148,7 @@ fn _constrained_mma_m[
 
 
 @always_inline
-fn _constrained_mma_n[
+def _constrained_mma_n[
     mma_n: Int,
     mma_n_range: Tuple[Int, Int],
     multiple_of: Int,
@@ -191,7 +169,7 @@ fn _constrained_mma_n[
     comptime lower_bound = mma_n_range[0]
     comptime upper_bound = mma_n_range[1]
 
-    __comptime_assert (
+    comptime assert (
         mma_n >= lower_bound
         and mma_n <= upper_bound
         and mma_n % multiple_of == 0
@@ -211,12 +189,12 @@ fn _constrained_mma_n[
 
 
 @always_inline
-fn _get_f16_mma_shape[
-    output_shape: IndexList[2, element_type = DType.uint32],
+def _get_f16_mma_shape[
+    output_shape: IndexList[2, element_type=DType.uint32],
     /,
     *,
     use_cta_pair: Bool = False,
-]() -> IndexList[3, element_type = DType.uint32]:
+]() -> IndexList[3, element_type=DType.uint32]:
     """Get the shape of the MMA instruction for F16 MMA kind.
 
     This function returns the shape of the MMA instruction for F16 MMA kind.
@@ -224,8 +202,7 @@ fn _get_f16_mma_shape[
     comptime mma_m = output_shape[0]
     comptime mma_n = output_shape[1]
 
-    @parameter
-    if not use_cta_pair:
+    comptime if not use_cta_pair:
         _constrained_mma_m[
             mma_m,
             (64, 128),
@@ -233,8 +210,7 @@ fn _get_f16_mma_shape[
             use_cta_pair=use_cta_pair,
         ]()
 
-        @parameter
-        if mma_m == 64:
+        comptime if mma_m == 64:
             _constrained_mma_n[
                 mma_n,
                 (8, 256),
@@ -242,7 +218,7 @@ fn _get_f16_mma_shape[
                 UMMAKind.KIND_F16,
                 use_cta_pair=use_cta_pair,
             ]()
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 16)
+            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 16)
         elif mma_m == 128:
             _constrained_mma_n[
                 mma_n,
@@ -252,11 +228,9 @@ fn _get_f16_mma_shape[
                 use_cta_pair=use_cta_pair,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 16)
+            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 16)
         else:
-            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
-
-            abort("MMA shape not supported.")
+            comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
 
     else:
         _constrained_mma_m[
@@ -266,8 +240,7 @@ fn _get_f16_mma_shape[
             use_cta_pair=use_cta_pair,
         ]()
 
-        @parameter
-        if mma_m == 128:
+        comptime if mma_m == 128:
             _constrained_mma_n[
                 mma_n,
                 (32, 256),
@@ -276,7 +249,7 @@ fn _get_f16_mma_shape[
                 use_cta_pair=use_cta_pair,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 16)
+            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 16)
         elif mma_m == 256:
             _constrained_mma_n[
                 mma_n,
@@ -286,20 +259,18 @@ fn _get_f16_mma_shape[
                 use_cta_pair=use_cta_pair,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 16)
+            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 16)
         else:
-            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
-
-            abort("MMA shape not supported.")
+            comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
 
 
 @always_inline
-fn _get_tf32_mma_shape[
-    output_shape: IndexList[2, element_type = DType.uint32],
+def _get_tf32_mma_shape[
+    output_shape: IndexList[2, element_type=DType.uint32],
     /,
     *,
     use_pair_cta: Bool = False,
-]() -> IndexList[3, element_type = DType.uint32]:
+]() -> IndexList[3, element_type=DType.uint32]:
     """Get the shape of the MMA instruction for TF32 MMA kind.
 
     This function returns the shape of the MMA instruction for TF32 MMA kind.
@@ -308,8 +279,7 @@ fn _get_tf32_mma_shape[
     comptime mma_m = output_shape[0]
     comptime mma_n = output_shape[1]
 
-    @parameter
-    if not use_pair_cta:
+    comptime if not use_pair_cta:
         _constrained_mma_m[
             mma_m,
             (64, 128),
@@ -317,8 +287,7 @@ fn _get_tf32_mma_shape[
             use_cta_pair=use_pair_cta,
         ]()
 
-        @parameter
-        if mma_m == 64:
+        comptime if mma_m == 64:
             _constrained_mma_n[
                 mma_n,
                 (8, 256),
@@ -327,7 +296,7 @@ fn _get_tf32_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 8)
+            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 8)
         elif mma_m == 128:
             _constrained_mma_n[
                 mma_n,
@@ -337,11 +306,9 @@ fn _get_tf32_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 8)
+            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 8)
         else:
-            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
-
-            abort("MMA shape not supported.")
+            comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
     else:
         _constrained_mma_m[
             mma_m,
@@ -350,8 +317,7 @@ fn _get_tf32_mma_shape[
             use_cta_pair=use_pair_cta,
         ]()
 
-        @parameter
-        if mma_m == 128:
+        comptime if mma_m == 128:
             _constrained_mma_n[
                 mma_n,
                 (32, 256),
@@ -360,7 +326,7 @@ fn _get_tf32_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 8)
+            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 8)
         elif mma_m == 256:
             _constrained_mma_n[
                 mma_n,
@@ -370,20 +336,18 @@ fn _get_tf32_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 8)
+            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 8)
         else:
-            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
-
-            abort("MMA shape not supported.")
+            comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
 
 
 @always_inline
-fn _get_f8f6f4_mma_shape[
-    output_shape: IndexList[2, element_type = DType.uint32],
+def _get_f8f6f4_mma_shape[
+    output_shape: IndexList[2, element_type=DType.uint32],
     /,
     *,
     use_pair_cta: Bool = False,
-]() -> IndexList[3, element_type = DType.uint32]:
+]() -> IndexList[3, element_type=DType.uint32]:
     """Get the shape of the MMA instruction for F8F6F4 MMA kind.
 
     This function returns the shape of the MMA instruction for F8F6F4 MMA kind.
@@ -392,8 +356,7 @@ fn _get_f8f6f4_mma_shape[
     comptime mma_m = output_shape[0]
     comptime mma_n = output_shape[1]
 
-    @parameter
-    if not use_pair_cta:
+    comptime if not use_pair_cta:
         _constrained_mma_m[
             mma_m,
             (64, 128),
@@ -401,8 +364,7 @@ fn _get_f8f6f4_mma_shape[
             use_cta_pair=use_pair_cta,
         ]()
 
-        @parameter
-        if mma_m == 64:
+        comptime if mma_m == 64:
             _constrained_mma_n[
                 mma_n,
                 (8, 256),
@@ -411,7 +373,7 @@ fn _get_f8f6f4_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
+            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 32)
         elif mma_m == 128:
             _constrained_mma_n[
                 mma_n,
@@ -421,12 +383,10 @@ fn _get_f8f6f4_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
+            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 32)
 
         else:
-            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
-
-            abort("MMA shape not supported.")
+            comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
 
     else:
         _constrained_mma_m[
@@ -436,8 +396,7 @@ fn _get_f8f6f4_mma_shape[
             use_cta_pair=use_pair_cta,
         ]()
 
-        @parameter
-        if mma_m == 128:
+        comptime if mma_m == 128:
             _constrained_mma_n[
                 mma_n,
                 (32, 256),
@@ -446,7 +405,7 @@ fn _get_f8f6f4_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
+            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 32)
         elif mma_m == 256:
             _constrained_mma_n[
                 mma_n,
@@ -456,20 +415,18 @@ fn _get_f8f6f4_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
+            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 32)
         else:
-            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
-
-            return IndexList[3, element_type = DType.uint32](0, 0, 0)
+            comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
 
 
 @always_inline
-fn _get_mxf8f6f4_mma_shape[
-    output_shape: IndexList[2, element_type = DType.uint32],
+def _get_mxf8f6f4_mma_shape[
+    output_shape: IndexList[2, element_type=DType.uint32],
     /,
     *,
     use_pair_cta: Bool = False,
-]() -> IndexList[3, element_type = DType.uint32]:
+]() -> IndexList[3, element_type=DType.uint32]:
     """Get the shape of the MMA instruction for MXF8F6F4 MMA kind.
 
     This function returns the shape of the MMA instruction for MXF8F6F4 MMA kind.
@@ -478,8 +435,7 @@ fn _get_mxf8f6f4_mma_shape[
     comptime mma_m = output_shape[0]
     comptime mma_n = output_shape[1]
 
-    @parameter
-    if not use_pair_cta:
+    comptime if not use_pair_cta:
         _constrained_mma_m[
             mma_m,
             (128, -1),
@@ -487,8 +443,7 @@ fn _get_mxf8f6f4_mma_shape[
             use_cta_pair=use_pair_cta,
         ]()
 
-        @parameter
-        if mma_m == 128:
+        comptime if mma_m == 128:
             _constrained_mma_n[
                 mma_n,
                 (8, 256),
@@ -497,12 +452,10 @@ fn _get_mxf8f6f4_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
+            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 32)
 
         else:
-            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
-
-            abort("MMA shape not supported.")
+            comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
 
     else:
         _constrained_mma_m[
@@ -512,8 +465,7 @@ fn _get_mxf8f6f4_mma_shape[
             use_cta_pair=use_pair_cta,
         ]()
 
-        @parameter
-        if mma_m == 128:
+        comptime if mma_m == 128:
             _constrained_mma_n[
                 mma_n,
                 (16, 256),
@@ -522,7 +474,7 @@ fn _get_mxf8f6f4_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
+            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 32)
         elif mma_m == 256:
             _constrained_mma_n[
                 mma_n,
@@ -532,17 +484,14 @@ fn _get_mxf8f6f4_mma_shape[
                 use_cta_pair=use_pair_cta,
             ]()
 
-            return IndexList[3, element_type = DType.uint32](mma_m, mma_n, 32)
+            return IndexList[3, element_type=DType.uint32](mma_m, mma_n, 32)
         else:
-            constrained[False, String("Invalid MMA shape: ", mma_m, mma_n)]()
-
-            return IndexList[3, element_type = DType.uint32](0, 0, 0)
+            comptime assert False, String("Invalid MMA shape: ", mma_m, mma_n)
 
 
-@register_passable("trivial")
 struct UMMAInsDescriptor[
     mma_kind: UMMAKind,
-]:
+](TrivialRegisterPassable):
     """Descriptor for UMMA instructions.
 
     This struct represents a descriptor that encodes information about UMMA instructions.
@@ -588,7 +537,7 @@ struct UMMAInsDescriptor[
     - Bits 30-31: Maximum shift while attempting B matrix (2 bits)
     """
 
-    fn __init__(out self, value: UInt32):
+    def __init__(out self, value: UInt32):
         """Initialize descriptor with raw 32-bit value.
 
         This constructor allows creating a descriptor directly from a 32-bit integer
@@ -600,7 +549,7 @@ struct UMMAInsDescriptor[
         self.desc = value
 
     @staticmethod
-    fn _insert_bit[start_bit: Int](desc: UInt32, val: UInt32) -> UInt32:
+    def _insert_bit[start_bit: Int](desc: UInt32, val: UInt32) -> UInt32:
         """Insert bits at specified position in descriptor.
 
         Parameters:
@@ -614,10 +563,10 @@ struct UMMAInsDescriptor[
             Updated descriptor value with inserted bits.
         """
 
-        return desc | (val << start_bit)
+        return desc | (val << UInt32(start_bit))
 
     @staticmethod
-    fn _create_tf32_desc[
+    def _create_tf32_desc[
         d_type: DType, a_type: DType, b_type: DType
     ]() -> UInt32:
         """Create a descriptor for TF32 UMMA instructions.
@@ -633,7 +582,7 @@ struct UMMAInsDescriptor[
             A 32-bit integer containing the descriptor bit layout.
         """
 
-        __comptime_assert (
+        comptime assert (
             d_type == DType.float32
             and a_type == DType.float32
             and b_type == DType.float32
@@ -653,7 +602,7 @@ struct UMMAInsDescriptor[
         return desc
 
     @staticmethod
-    fn _create_f16_desc[
+    def _create_f16_desc[
         d_type: DType, a_type: DType, b_type: DType
     ]() -> UInt32:
         """Create a descriptor for F16 UMMA instructions.
@@ -672,11 +621,11 @@ struct UMMAInsDescriptor[
         comptime available_d_types = (DType.float32, DType.float16)
         comptime available_operand_types = (DType.bfloat16, DType.float16)
 
-        __comptime_assert d_type in available_d_types, String(
+        comptime assert d_type in available_d_types, String(
             "Invalid d data type for UMMA instruction: ", d_type
         )
 
-        __comptime_assert (
+        comptime assert (
             a_type in available_operand_types
             and b_type in available_operand_types
         ), String(
@@ -687,19 +636,19 @@ struct UMMAInsDescriptor[
         )
 
         comptime d_type_bit = Self._insert_bit[4](
-            0x0, 1 if d_type == DType.float32 else 0
+            0x0, UInt32(1) if d_type == DType.float32 else UInt32(0)
         )
         comptime a_type_bit = Self._insert_bit[7](
-            d_type_bit, 1 if a_type == DType.bfloat16 else 0
+            d_type_bit, UInt32(1) if a_type == DType.bfloat16 else UInt32(0)
         )
         comptime desc = Self._insert_bit[10](
-            a_type_bit, 1 if b_type == DType.bfloat16 else 0
+            a_type_bit, UInt32(1) if b_type == DType.bfloat16 else UInt32(0)
         )
 
         return desc
 
     @staticmethod
-    fn _create_f8f6f4_desc[
+    def _create_f8f6f4_desc[
         d_type: DType, a_type: DType, b_type: DType
     ]() -> UInt32:
         """Create a descriptor for F8F6F4 UMMA instructions.
@@ -721,11 +670,11 @@ struct UMMAInsDescriptor[
             DType.float8_e5m2,
         )
 
-        __comptime_assert d_type in available_d_types, String(
+        comptime assert d_type in available_d_types, String(
             "Invalid d data type for UMMA instruction: ", d_type
         )
 
-        __comptime_assert (
+        comptime assert (
             a_type in available_operand_types
             and b_type in available_operand_types
         ), String(
@@ -734,20 +683,20 @@ struct UMMAInsDescriptor[
         )
 
         comptime d_type_bit = Self._insert_bit[4](
-            0x0, 1 if d_type == DType.float32 else 0
+            0x0, UInt32(1) if d_type == DType.float32 else UInt32(0)
         )
 
         comptime a_type_bit = Self._insert_bit[7](
-            d_type_bit, 1 if a_type == DType.float8_e5m2 else 0
+            d_type_bit, UInt32(1) if a_type == DType.float8_e5m2 else UInt32(0)
         )
         comptime desc = Self._insert_bit[10](
-            a_type_bit, 1 if b_type == DType.float8_e5m2 else 0
+            a_type_bit, UInt32(1) if b_type == DType.float8_e5m2 else UInt32(0)
         )
 
         return desc
 
     @staticmethod
-    fn _create_mxf8f6f4_desc[
+    def _create_mxf8f6f4_desc[
         d_type: DType, a_type: DType, b_type: DType, scale_type: DType
     ]() -> UInt32:
         """Create a descriptor for MXF8F6F4 UMMA instructions.
@@ -771,33 +720,28 @@ struct UMMAInsDescriptor[
         )
         comptime available_scale_types = (DType.float8_e8m0fnu,)
 
-        constrained[
-            d_type in available_d_types,
-            String("Invalid d data type for UMMA instruction: ", d_type),
-        ]()
+        comptime assert d_type in available_d_types, String(
+            "Invalid d data type for UMMA instruction: ", d_type
+        )
 
-        constrained[
+        comptime assert (
             a_type in available_operand_types
-            and b_type in available_operand_types,
-            String(
-                "Currently only support E4M3 and E5M2 for UMMA kind: ",
-                Self.mma_kind,
-            ),
-        ]()
+            and b_type in available_operand_types
+        ), String(
+            "Currently only support E4M3 and E5M2 for UMMA kind: ",
+            Self.mma_kind,
+        )
 
-        constrained[
-            scale_type in available_scale_types,
-            String(
-                "Invalid scale data type for UMMA instruction: ", scale_type
-            ),
-        ]()
+        comptime assert scale_type in available_scale_types, String(
+            "Invalid scale data type for UMMA instruction: ", scale_type
+        )
 
         comptime a_type_bit = Self._insert_bit[7](
-            0x0, 1 if a_type == DType.float8_e5m2 else 0
+            0x0, UInt32(1) if a_type == DType.float8_e5m2 else UInt32(0)
         )
 
         comptime b_type_bit = Self._insert_bit[10](
-            a_type_bit, 1 if b_type == DType.float8_e5m2 else 0
+            a_type_bit, UInt32(1) if b_type == DType.float8_e5m2 else UInt32(0)
         )
 
         comptime desc = Self._insert_bit[23](b_type_bit, 1)
@@ -805,7 +749,7 @@ struct UMMAInsDescriptor[
         return desc
 
     @staticmethod
-    fn _create_mxf4_mxf4nvf4_desc[
+    def _create_mxf4_mxf4nvf4_desc[
         d_type: DType, a_type: DType, b_type: DType, scale_type: DType
     ]() -> UInt32:
         """Create a descriptor for MXF4/MXF4NVF4 UMMA instructions.
@@ -831,43 +775,36 @@ struct UMMAInsDescriptor[
             DType.float8_e8m0fnu,
         )
 
-        constrained[
-            d_type in available_d_types,
-            String("Invalid d data type for UMMA instruction: ", d_type),
-        ]()
+        comptime assert d_type in available_d_types, String(
+            "Invalid d data type for UMMA instruction: ", d_type
+        )
 
-        constrained[
+        comptime assert (
             a_type in available_operand_types
-            and b_type in available_operand_types,
-            String(
-                "Currently only support E2M1 for UMMA kind: ",
-                Self.mma_kind,
-            ),
-        ]()
+            and b_type in available_operand_types
+        ), String("Currently only support E2M1 for UMMA kind: ", Self.mma_kind)
 
-        constrained[
-            scale_type in available_scale_types,
-            String(
-                "Invalid scale data type for UMMA instruction: ", scale_type
-            ),
-        ]()
+        comptime assert scale_type in available_scale_types, String(
+            "Invalid scale data type for UMMA instruction: ", scale_type
+        )
 
         comptime a_type_bit = Self._insert_bit[7](0x0, 1)
 
         comptime b_type_bit = Self._insert_bit[10](a_type_bit, 1)
 
         comptime desc = Self._insert_bit[23](
-            b_type_bit, 0 if scale_type == DType.float8_e4m3fn else 1
+            b_type_bit,
+            UInt32(0) if scale_type == DType.float8_e4m3fn else UInt32(1),
         )
 
         return desc
 
     @staticmethod
-    fn create[
+    def create[
         d_type: DType,
         a_type: DType,
         b_type: DType,
-        output_shape: IndexList[2, element_type = DType.uint32],
+        output_shape: IndexList[2, element_type=DType.uint32],
         /,
         *,
         transpose_a: Bool = False,
@@ -889,18 +826,19 @@ struct UMMAInsDescriptor[
             A 32-bit integer containing the complete descriptor bit layout.
         """
 
-        comptime M_bit = Self._insert_bit[17](0x0, output_shape[1] >> 3)
-        comptime desc = Self._insert_bit[24](M_bit, output_shape[0] >> 4)
+        comptime M_bit = Self._insert_bit[17](0x0, UInt32(output_shape[1] >> 3))
+        comptime desc = Self._insert_bit[24](
+            M_bit, UInt32(output_shape[0] >> 4)
+        )
 
         comptime transpose_a_bit = Self._insert_bit[15](
-            0x0, 1 if transpose_a else 0
+            0x0, UInt32(1) if transpose_a else UInt32(0)
         )
         comptime transpose_bit = Self._insert_bit[16](
-            transpose_a_bit, 0 if transpose_b else 1
+            transpose_a_bit, UInt32(0) if transpose_b else UInt32(1)
         )
 
-        @parameter
-        if Self.mma_kind == UMMAKind.KIND_TF32:
+        comptime if Self.mma_kind == UMMAKind.KIND_TF32:
             return Self(
                 desc
                 | Self._create_tf32_desc[d_type, a_type, b_type]()
@@ -921,18 +859,17 @@ struct UMMAInsDescriptor[
                 | transpose_bit
             )
         else:
-            constrained[
-                False, String("Unsupported UMMA kind: ", Self.mma_kind)
-            ]()
-            return Self(0x0)
+            comptime assert False, String(
+                "Unsupported UMMA kind: ", Self.mma_kind
+            )
 
     @staticmethod
-    fn create[
+    def create[
         d_type: DType,
         a_type: DType,
         b_type: DType,
         scale_type: DType,
-        output_shape: IndexList[2, element_type = DType.uint32],
+        output_shape: IndexList[2, element_type=DType.uint32],
         /,
         *,
         transpose_a: Bool = False,
@@ -955,18 +892,19 @@ struct UMMAInsDescriptor[
             A 32-bit integer containing the complete descriptor bit layout.
         """
 
-        comptime M_bit = Self._insert_bit[17](0x0, output_shape[1] >> 3)
-        comptime desc = Self._insert_bit[27](M_bit, output_shape[0] >> 7)
+        comptime M_bit = Self._insert_bit[17](0x0, UInt32(output_shape[1] >> 3))
+        comptime desc = Self._insert_bit[27](
+            M_bit, UInt32(output_shape[0] >> 7)
+        )
 
         comptime transpose_a_bit = Self._insert_bit[15](
-            0x0, 1 if transpose_a else 0
+            0x0, UInt32(1) if transpose_a else UInt32(0)
         )
         comptime transpose_bit = Self._insert_bit[16](
-            transpose_a_bit, 0 if transpose_b else 1
+            transpose_a_bit, UInt32(0) if transpose_b else UInt32(1)
         )
 
-        @parameter
-        if Self.mma_kind == UMMAKind.KIND_MXF8F6F4:
+        comptime if Self.mma_kind == UMMAKind.KIND_MXF8F6F4:
             return Self(
                 desc
                 | Self._create_mxf8f6f4_desc[
@@ -986,13 +924,12 @@ struct UMMAInsDescriptor[
                 | transpose_bit
             )
         else:
-            constrained[
-                False, String("Unsupported UMMA kind: ", Self.mma_kind)
-            ]()
-            return Self(0x0)
+            comptime assert False, String(
+                "Unsupported UMMA kind: ", Self.mma_kind
+            )
 
     @staticmethod
-    fn update_desc_with_sf_id[
+    def update_desc_with_sf_id[
         sf_id: UInt32
     ](inst_desc: UMMAInsDescriptor[Self.mma_kind],) -> Self:
         """Update the descriptor with the scale factor ID.
@@ -1018,8 +955,7 @@ struct UMMAInsDescriptor[
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
-struct MMASmemDescriptor(MMAOperandDescriptor):
+struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
     """Descriptor for shared memory operands tcgen05 mma instructions.
 
     This struct represents a descriptor that encodes information about shared memory layout
@@ -1053,7 +989,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
     """Mask with the lower 14 bits set."""
 
     @always_inline
-    fn __init__(out self, val: UInt64):
+    def __init__(out self, val: UInt64):
         """Initialize descriptor with raw 64-bit value.
 
         This constructor allows creating a descriptor directly from a 64-bit integer
@@ -1067,7 +1003,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
         self.desc = val
 
     @always_inline
-    fn _insert_bit[start_bit: Int](self, val: UInt64) -> Self:
+    def _insert_bit[start_bit: Int](self, val: UInt64) -> Self:
         """Insert bits at specified position in descriptor.
 
         Parameters:
@@ -1079,15 +1015,15 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
         Returns:
             Updated descriptor value with inserted bits.
         """
-        return Self(self.desc | (val << start_bit))
+        return Self(self.desc | (val << UInt64(start_bit)))
 
     @staticmethod
     @always_inline
-    fn create[
+    def create[
         stride_byte_offset: Int,
         leading_byte_offset: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    ](smem_ptr: UnsafePointer[_, address_space = AddressSpace.SHARED]) -> Self:
+    ](smem_ptr: UnsafePointer[_, _, address_space=AddressSpace.SHARED]) -> Self:
         """Create a descriptor for shared memory operand.
 
         Parameters:
@@ -1105,9 +1041,8 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
         # TMA enumerates no swizzle, 32, 64, 128B as 0, 1, 2, 3.
         # WGMMA enumerates these as 0, 3, 2, 1.
         @parameter
-        fn _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
-            @parameter
-            if mode == TensorMapSwizzle.SWIZZLE_NONE:
+        def _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
+            comptime if mode == TensorMapSwizzle.SWIZZLE_NONE:
                 return 0
             elif mode == TensorMapSwizzle.SWIZZLE_32B:
                 return 6
@@ -1116,14 +1051,15 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
             elif mode == TensorMapSwizzle.SWIZZLE_128B:
                 return 2
             else:
-                constrained[False, String("Unsupported swizzle mode: ", mode)]()
-                return 0
+                comptime assert False, String(
+                    "Unsupported swizzle mode: ", mode
+                )
 
         comptime swizzle = _convert_swizzle_enum[swizzle_mode._value]()
 
         # Extract 18 bits and ignore 4 LSB.
         var base_ptr = UInt32(Int(smem_ptr))
-        var start_address = UInt64((base_ptr >> 4) & Self.mask_14_bits)
+        var start_address = UInt64((base_ptr >> 4) & UInt32(Self.mask_14_bits))
 
         # Ignore 4 LSB.
         var sbo = UInt64((stride_byte_offset >> 4) & Self.mask_14_bits)
@@ -1150,7 +1086,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
         return desc
 
     @always_inline
-    fn __iadd__(mut self, offset: Int):
+    def __iadd__(mut self, offset: Int):
         """Add offset to descriptor's base address in-place.
 
         Args:
@@ -1159,7 +1095,7 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
         self = self + offset
 
     @always_inline
-    fn __add__(self, offset: Int) -> Self:
+    def __add__(self, offset: Int) -> Self:
         """Add offset to descriptor's base address.
 
         Args:
@@ -1168,11 +1104,10 @@ struct MMASmemDescriptor(MMAOperandDescriptor):
         Returns:
             New descriptor with updated base address.
         """
-        return Self(self.desc + ((offset >> 4) & Self.mask_14_bits))
+        return Self(self.desc + UInt64((offset >> 4) & Self.mask_14_bits))
 
 
-@register_passable("trivial")
-struct MMASmemDescriptorPair(ImplicitlyCopyable):
+struct MMASmemDescriptorPair(TrivialRegisterPassable):
     """Descriptor for shared memory operands tcgen05 mma instructions.
 
     This struct represents a descriptor that encodes information about shared memory layout
@@ -1208,7 +1143,7 @@ struct MMASmemDescriptorPair(ImplicitlyCopyable):
     """Mask with the lower 14 bits set."""
 
     @always_inline
-    fn __init__(out self, hi: UInt32, lo: UInt32):
+    def __init__(out self, hi: UInt32, lo: UInt32):
         """Initialize descriptor with raw 64-bit value.
 
         This constructor allows creating a descriptor directly from a 64-bit integer
@@ -1224,7 +1159,7 @@ struct MMASmemDescriptorPair(ImplicitlyCopyable):
         self.lo = lo
 
     @always_inline
-    fn _insert_bit[start_bit: Int](self, val: UInt32) -> Self:
+    def _insert_bit[start_bit: Int](self, val: UInt32) -> Self:
         """Insert bits at specified position in descriptor.
 
         Parameters:
@@ -1237,19 +1172,20 @@ struct MMASmemDescriptorPair(ImplicitlyCopyable):
             Updated descriptor value with inserted bits.
         """
 
-        @parameter
-        if start_bit < 32:
-            return Self(self.hi, self.lo | (val << start_bit))
+        comptime if start_bit < 32:
+            return Self(self.hi, self.lo | (val << UInt32(start_bit)))
         else:
-            return Self(self.hi | (val << (start_bit - 32)), self.lo)
+            return Self(self.hi | (val << UInt32(start_bit - 32)), self.lo)
 
     @staticmethod
     @always_inline
-    fn create[
+    def create[
         stride_byte_offset: Int,
         leading_byte_offset: Int,
         swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    ](smem_ptr: UnsafePointer[_, address_space = AddressSpace.SHARED],) -> Self:
+    ](
+        smem_ptr: UnsafePointer[_, _, address_space=AddressSpace.SHARED],
+    ) -> Self:
         """Create a descriptor for shared memory operand.
 
         Parameters:
@@ -1267,9 +1203,8 @@ struct MMASmemDescriptorPair(ImplicitlyCopyable):
         # TMA enumerates no swizzle, 32, 64, 128B as 0, 1, 2, 3.
         # WGMMA enumerates these as 0, 3, 2, 1.
         @parameter
-        fn _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
-            @parameter
-            if mode == TensorMapSwizzle.SWIZZLE_NONE:
+        def _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
+            comptime if mode == TensorMapSwizzle.SWIZZLE_NONE:
                 return 0
             elif mode == TensorMapSwizzle.SWIZZLE_32B:
                 return 6
@@ -1278,18 +1213,19 @@ struct MMASmemDescriptorPair(ImplicitlyCopyable):
             elif mode == TensorMapSwizzle.SWIZZLE_128B:
                 return 2
             else:
-                constrained[False, String("Unsupported swizzle mode: ", mode)]()
-                return 0
+                comptime assert False, String(
+                    "Unsupported swizzle mode: ", mode
+                )
 
         comptime swizzle = _convert_swizzle_enum[swizzle_mode._value]()
 
         # Extract 18 bits and ignore 4 LSB.
         var base_ptr = UInt32(Int(smem_ptr))
-        var start_address = UInt32(base_ptr >> 4) & Self.mask_14_bits
+        var start_address = (base_ptr >> 4) & Self.mask_14_bits
 
         # Ignore 4 LSB.
-        var sbo = UInt32((stride_byte_offset >> 4) & Self.mask_14_bits)
-        var lbo = UInt32((leading_byte_offset >> 4) & Self.mask_14_bits)
+        var sbo: UInt32 = UInt32(stride_byte_offset >> 4) & Self.mask_14_bits
+        var lbo: UInt32 = UInt32(leading_byte_offset >> 4) & Self.mask_14_bits
 
         # Start from LSB. Mask out higher bits to avoid overwriting.
         var desc = Self(0, 0)
@@ -1312,7 +1248,7 @@ struct MMASmemDescriptorPair(ImplicitlyCopyable):
         return desc
 
     @always_inline
-    fn __iadd__(mut self, offset: UInt32):
+    def __iadd__(mut self, offset: UInt32):
         """Add offset to descriptor's base address in-place.
 
         Args:
@@ -1321,7 +1257,7 @@ struct MMASmemDescriptorPair(ImplicitlyCopyable):
         self = self + offset
 
     @always_inline
-    fn __add__(self, offset: UInt32) -> Self:
+    def __add__(self, offset: UInt32) -> Self:
         """Add offset to descriptor's base address.
 
         Args:
@@ -1339,7 +1275,7 @@ struct MMASmemDescriptorPair(ImplicitlyCopyable):
 
 
 @always_inline
-fn mma[
+def mma[
     kind: UMMAKind,
     //,
     cta_group: Int = 1,
@@ -1365,17 +1301,16 @@ fn mma[
         c_tmem: The address of the C matrix in the tensor memory.
         inst_desc: The descriptor for the MMA instruction.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    __comptime_assert c_scale == 0 or c_scale == 1, String(
+    comptime assert c_scale == 0 or c_scale == 1, String(
         "Invalid c_scale: ", c_scale
     )
 
-    @parameter
-    if cta_group == 1:
-        var masks = IndexList[4, element_type = DType.uint32](0)
+    comptime if cta_group == 1:
+        var masks = IndexList[4, element_type=DType.uint32](0)
 
         inlined_assembly[
             """{
@@ -1399,7 +1334,7 @@ fn mma[
             masks[3],
         )
     elif cta_group == 2:
-        var masks = IndexList[8, element_type = DType.uint32](0)
+        var masks = IndexList[8, element_type=DType.uint32](0)
 
         inlined_assembly[
             """{
@@ -1427,11 +1362,11 @@ fn mma[
             masks[7],
         )
     else:
-        constrained[False, String("Unsupported cta group: ", cta_group)]()
+        comptime assert False, String("Unsupported cta group: ", cta_group)
 
 
 @always_inline
-fn mma[
+def mma[
     kind: UMMAKind,
     //,
     cta_group: Int = 1,
@@ -1460,28 +1395,27 @@ fn mma[
         sfb_tmem: The address of the block scale factor B in the tensor memory.
         c_scale: Scale factor for the C matrix, 0 or 1.
     """
-    constrained[
-        _has_blackwell_tcgen05(), "tcgen05.mma not supported on this GPU"
-    ]()
+    comptime assert (
+        _has_blackwell_tcgen05()
+    ), "tcgen05.mma not supported on this GPU"
 
-    constrained[
-        kind == UMMAKind.KIND_MXF8F6F4 or kind == UMMAKind.KIND_MXF4NVF4,
-        "Only MXF8F6F4 or MXF4NVF4 MMA kind supports block scale factors",
-    ]()
+    comptime assert kind in (
+        UMMAKind.KIND_MXF8F6F4,
+        UMMAKind.KIND_MXF4,
+        UMMAKind.KIND_MXF4NVF4,
+    ), "Only MXF8F6F4, MXF4, or MXF4NVF4 MMA kind supports block scale factors"
 
     @always_inline
-    fn _get_scale_vector_size[kind: UMMAKind]() -> String:
+    def _get_scale_vector_size[kind: UMMAKind]() -> String:
         var scale_vector_size = String(".block_scale")
 
-        @parameter
-        if kind == UMMAKind.KIND_MXF4NVF4:
+        comptime if kind == UMMAKind.KIND_MXF4NVF4:
             scale_vector_size = scale_vector_size + String(".block16")
         return scale_vector_size
 
     comptime scale_vector_size = _get_scale_vector_size[kind]()
 
-    @parameter
-    if cta_group == 1:
+    comptime if cta_group == 1:
         inlined_assembly[
             """{
                 .reg .pred p;
@@ -1524,11 +1458,11 @@ fn mma[
             sfb_tmem,
         )
     else:
-        constrained[False, String("Unsupported cta group: ", cta_group)]()
+        comptime assert False, String("Unsupported cta group: ", cta_group)
 
 
 @always_inline
-fn mma[
+def mma[
     kind: UMMAKind,
     //,
     cta_group: Int = 1,
@@ -1554,13 +1488,12 @@ fn mma[
         inst_desc: The descriptor for the MMA instruction.
         c_scale: Scale factor for the C matrix. Any non-zero value is translated to `1`.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    @parameter
-    if cta_group == 1:
-        var masks = IndexList[4, element_type = DType.uint32](0)
+    comptime if cta_group == 1:
+        var masks = IndexList[4, element_type=DType.uint32](0)
 
         inlined_assembly[
             """{
@@ -1584,7 +1517,7 @@ fn mma[
             masks[3],
         )
     elif cta_group == 2:
-        var masks = IndexList[8, element_type = DType.uint32](0)
+        var masks = IndexList[8, element_type=DType.uint32](0)
 
         inlined_assembly[
             """{
@@ -1612,11 +1545,11 @@ fn mma[
             masks[7],
         )
     else:
-        constrained[False, String("Unsupported cta group: ", cta_group)]()
+        comptime assert False, String("Unsupported cta group: ", cta_group)
 
 
 @always_inline
-fn mma[
+def mma[
     kind: UMMAKind,
     //,
     cta_group: Int = 1,
@@ -1641,13 +1574,12 @@ fn mma[
         inst_desc: The descriptor for the MMA instruction.
         c_scale: Scale factor for the C matrix. Any non-zero value is interpreted as `1`.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    @parameter
-    if cta_group == 1:
-        var masks = IndexList[4, element_type = DType.uint32](0)
+    comptime if cta_group == 1:
+        var masks = IndexList[4, element_type=DType.uint32](0)
 
         inlined_assembly[
             """{
@@ -1671,7 +1603,7 @@ fn mma[
             masks[3],
         )
     elif cta_group == 2:
-        var masks = IndexList[8, element_type = DType.uint32](0)
+        var masks = IndexList[8, element_type=DType.uint32](0)
 
         inlined_assembly[
             """{
@@ -1699,11 +1631,11 @@ fn mma[
             masks[7],
         )
     else:
-        constrained[False, String("Unsupported cta group: ", cta_group)]()
+        comptime assert False, String("Unsupported cta group: ", cta_group)
 
 
 @always_inline
-fn mma[
+def mma[
     kind: UMMAKind,
     //,
     cta_group: Int = 1,
@@ -1729,17 +1661,16 @@ fn mma[
         c_tmem: The address of the C matrix in the tensor memory.
         inst_desc: The descriptor for the MMA instruction.
     """
-    __comptime_assert (
+    comptime assert (
         _has_blackwell_tcgen05()
     ), "tcgen05.mma not supported on this GPU"
 
-    __comptime_assert c_scale == 0 or c_scale == 1, String(
+    comptime assert c_scale == 0 or c_scale == 1, String(
         "Invalid c_scale: ", c_scale
     )
 
-    @parameter
-    if cta_group == 1:
-        var masks = IndexList[4, element_type = DType.uint32](0)
+    comptime if cta_group == 1:
+        var masks = IndexList[4, element_type=DType.uint32](0)
 
         inlined_assembly[
             """{
@@ -1763,7 +1694,7 @@ fn mma[
             masks[3],
         )
     elif cta_group == 2:
-        var masks = IndexList[8, element_type = DType.uint32](0)
+        var masks = IndexList[8, element_type=DType.uint32](0)
 
         inlined_assembly[
             """{
@@ -1791,7 +1722,7 @@ fn mma[
             masks[7],
         )
     else:
-        constrained[False, String("Unsupported cta group: ", cta_group)]()
+        comptime assert False, String("Unsupported cta group: ", cta_group)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1800,9 +1731,9 @@ fn mma[
 
 
 @always_inline
-fn mma_arrive[
+def mma_arrive[
     cta_group: Int = 1,
-](mbar_ptr: UnsafePointer[address_space = AddressSpace.SHARED]):
+](mbar_ptr: UnsafePointer[_, _, address_space=AddressSpace.SHARED]):
     """Arrive at the mbar pointer for the MMA instruction.
 
     Parameters:
@@ -1812,12 +1743,12 @@ fn mma_arrive[
         mbar_ptr: Pointer to the mbar.
     """
 
-    __comptime_assert cta_group in (1, 2), String(
+    comptime assert cta_group in (1, 2), String(
         "Unsupported cta group: ", cta_group
     )
 
     comptime type = mbar_ptr.type
-    __comptime_assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
+    comptime assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
 
     inlined_assembly[
         "tcgen05.commit.cta_group::"
@@ -1829,10 +1760,10 @@ fn mma_arrive[
 
 
 @always_inline
-fn mma_arrive_multicast[
+def mma_arrive_multicast[
     cta_group: Int = 1,
 ](
-    mbar_ptr: UnsafePointer[address_space = AddressSpace.SHARED],
+    mbar_ptr: UnsafePointer[_, _, address_space=AddressSpace.SHARED],
     cta_mask: UInt16,
 ):
     """Arrive at the mbar pointer for the MMA instruction for multiple ctas.
@@ -1845,12 +1776,12 @@ fn mma_arrive_multicast[
         cta_mask: Mask of ctas to signal.
     """
 
-    __comptime_assert cta_group in (1, 2), String(
+    comptime assert cta_group in (1, 2), String(
         "Unsupported cta group: ", cta_group
     )
 
     comptime type = mbar_ptr.type
-    __comptime_assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
+    comptime assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
 
     inlined_assembly[
         "tcgen05.commit.cta_group::"

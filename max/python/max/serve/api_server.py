@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,13 +22,26 @@ import socket
 from collections.abc import AsyncGenerator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
-from max.interfaces import PipelinesFactory, PipelineTask, PipelineTokenizer
-from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
+from max.interfaces import (
+    AudioGenerationOutput,
+    BaseContext,
+    PipelineOutput,
+    PipelinesFactory,
+    PipelineTask,
+    PipelineTokenizer,
+)
+from max.pipelines.core import TTSContext
+from max.pipelines.lib import (
+    PIPELINE_REGISTRY,
+    AudioGenerationConfig,
+    PipelineConfig,
+)
 from max.serve.config import APIType, MetricRecordingMethod, Settings
+from max.serve.pipelines.general_handler import GeneralPipelineHandler
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorPipeline,
@@ -36,20 +49,27 @@ from max.serve.pipelines.llm import (
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheFrontend
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
-from max.serve.queue.lora_queue import LoRAQueue
 from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
-from max.serve.router import kserve_routes, openai_routes, sagemaker_routes
-from max.serve.scheduler.queues import SchedulerZmqConfigs
+from max.serve.router import (
+    kserve_routes,
+    openai_routes,
+    openresponses_routes,
+    sagemaker_routes,
+)
 from max.serve.telemetry.common import send_telemetry_log
 from max.serve.telemetry.metrics import METRICS
+from max.serve.worker_interface import ModelWorkerProxy
+from max.serve.worker_interface.lora_queue import LoRAQueue
+from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 from uvicorn import Config
 
 ROUTES = {
     APIType.KSERVE: kserve_routes,
     APIType.OPENAI: openai_routes,
     APIType.SAGEMAKER: sagemaker_routes,
+    APIType.OPENRESPONSES: openresponses_routes,
 }
 
 logger = logging.getLogger("max.serve")
@@ -75,6 +95,7 @@ class ServingTokenGeneratorSettings:
     pipeline_config: PipelineConfig
     tokenizer: PipelineTokenizer[Any, Any, Any]
     pipeline_task: PipelineTask = PipelineTask.TEXT_GENERATION
+    reasoning_parser_name: str | None = None
 
 
 @asynccontextmanager
@@ -86,7 +107,7 @@ async def lifespan(
     try:
         if not settings.disable_telemetry:
             send_telemetry_log(
-                serving_settings.pipeline_config.model.model_name
+                serving_settings.pipeline_config.models.model_name
             )
     except Exception as e:
         logger.warning("Failed to send telemetry log: %s", e)
@@ -107,60 +128,100 @@ async def lifespan(
         METRICS.configure(client=metric_client)
 
         # start model worker
-        scheduler_zmq_configs = SchedulerZmqConfigs(
+
+        override_architecture: str | None = None
+        if serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION:
+            if isinstance(
+                serving_settings.pipeline_config, AudioGenerationConfig
+            ):
+                override_architecture = (
+                    serving_settings.pipeline_config.audio_decoder
+                )
+
+        model_worker_interface = ZmqModelWorkerInterface[
+            BaseContext, PipelineOutput
+        ](
             serving_settings.pipeline_task,
-            context_type=PIPELINE_REGISTRY.retrieve_context_type(
-                serving_settings.pipeline_config
+            PIPELINE_REGISTRY.retrieve_context_type(
+                serving_settings.pipeline_config,
+                override_architecture=override_architecture,
+                task=serving_settings.pipeline_task,
             ),
         )
-        worker_monitor = await exit_stack.enter_async_context(
+        model_worker = await exit_stack.enter_async_context(
             start_model_worker(
                 serving_settings.model_factory,
                 serving_settings.pipeline_config,
                 settings,
                 metric_client,
-                scheduler_zmq_configs=scheduler_zmq_configs,
+                model_worker_interface=model_worker_interface,
             )
         )
 
         lora_queue: LoRAQueue | None = (
             LoRAQueue(
-                serving_settings.pipeline_config.zmq_endpoint_base,
+                serving_settings.pipeline_config.runtime.zmq_endpoint_base,
                 serving_settings.pipeline_config.lora.lora_paths,
             )
             if serving_settings.pipeline_config.lora
             else None
         )
 
-        METRICS.pipeline_load(serving_settings.pipeline_config.model.model_name)
+        METRICS.pipeline_load(
+            serving_settings.pipeline_config.models.model_name
+        )
 
-        pipeline: TokenGeneratorPipeline | AudioGeneratorPipeline
-        if serving_settings.pipeline_task in (
-            PipelineTask.TEXT_GENERATION,
-            PipelineTask.EMBEDDINGS_GENERATION,
-        ):
-            pipeline = TokenGeneratorPipeline(
-                model_name=serving_settings.pipeline_config.model.model_name,
+        pipeline = {
+            PipelineTask.TEXT_GENERATION: lambda: TokenGeneratorPipeline(
+                model_name=serving_settings.pipeline_config.models.model_name,
                 tokenizer=serving_settings.tokenizer,
                 lora_queue=lora_queue,
-                scheduler_zmq_configs=scheduler_zmq_configs,
-            )
-        elif serving_settings.pipeline_task == PipelineTask.AUDIO_GENERATION:
-            pipeline = AudioGeneratorPipeline(
-                model_name=serving_settings.pipeline_config.model.model_name,
+                model_worker=model_worker,
+                reasoning_parser_name=serving_settings.reasoning_parser_name,
+            ),
+            PipelineTask.EMBEDDINGS_GENERATION: lambda: TokenGeneratorPipeline(
+                model_name=serving_settings.pipeline_config.models.model_name,
                 tokenizer=serving_settings.tokenizer,
                 lora_queue=lora_queue,
-                scheduler_zmq_configs=scheduler_zmq_configs,
-            )
-        else:
-            raise ValueError(
-                f"Unsupported pipeline task: {serving_settings.pipeline_task}"
-            )
+                model_worker=model_worker,
+            ),
+            PipelineTask.AUDIO_GENERATION: lambda: AudioGeneratorPipeline(
+                model_name=serving_settings.pipeline_config.models.model_name,
+                tokenizer=serving_settings.tokenizer,
+                lora_queue=lora_queue,
+                model_worker=cast(
+                    ModelWorkerProxy[TTSContext, AudioGenerationOutput],
+                    model_worker,
+                ),
+            ),
+            # Pixel generation uses only the OpenResponses API via GeneralPipelineHandler
+            PipelineTask.PIXEL_GENERATION: lambda: GeneralPipelineHandler(
+                model_name=serving_settings.pipeline_config.models.model_name,
+                tokenizer=serving_settings.tokenizer,
+                model_worker=model_worker,
+                lora_queue=lora_queue,
+            ),
+        }[serving_settings.pipeline_task]()
 
+        # Store pipeline (may be GeneralPipelineHandler or modality-specific wrapper)
+        # Legacy API routes (OpenAI, KServe, SageMaker) use modality-specific wrappers
+        # OpenResponses API uses GeneralPipelineHandler
         app.state.pipeline = pipeline
         app.state.pipeline_config = serving_settings.pipeline_config
 
-        await exit_stack.enter_async_context(pipeline)
+        # Also store as handler for OpenResponses API route compatibility
+        # For pixel generation, this is the same as pipeline
+        # For other tasks, we also create a separate handler instance
+        if serving_settings.pipeline_task == PipelineTask.PIXEL_GENERATION:
+            app.state.handler = pipeline
+        else:
+            app.state.handler = GeneralPipelineHandler(
+                model_name=serving_settings.pipeline_config.models.model_name,
+                tokenizer=serving_settings.tokenizer,
+                model_worker=model_worker,
+                lora_queue=lora_queue,
+            )
+
         logger.info(
             f"\n\n{'*' * 80}\n\n"
             f"{f'🚀 Server ready on http://{settings.host}:{settings.port} (Press CTRL+C to quit)'.center(80)}\n\n"
@@ -205,8 +266,10 @@ def fastapi_app(
         try:
             async with lifespan(app, settings, serving_settings):
                 yield
-        except:
-            logger.exception("Worker exception, Shutting down...")
+        except BaseException as e:
+            # Worker already logs the detailed traceback, so we use
+            # error (not exception) here to avoid duplicating it.
+            logger.error("Worker exception, shutting down: %s", e)
             # Caught by uvicorn to shutdown the server
             os.kill(os.getpid(), signal.SIGINT)
             # After first SIGINT uvicorn waits for pending requests to complete
@@ -243,7 +306,7 @@ def fastapi_app(
     app.add_api_route("/health", health)
 
     reset_prefix_cache_frontend = ResetPrefixCacheFrontend(
-        serving_settings.pipeline_config.zmq_endpoint_base
+        serving_settings.pipeline_config.runtime.zmq_endpoint_base
     )
 
     async def reset_prefix_cache() -> Response:

@@ -14,11 +14,10 @@ custom_op_example_py_binary(
     extra_data = [
         ":operations",
     ],
-    extra_deps = [
-        "//max/python/max/torch",
+    deps = [
+        "//max/python/max/experimental/torch",
         requirement("torch"),
     ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
 )
 
 custom_op_example_py_binary(
@@ -27,12 +26,17 @@ custom_op_example_py_binary(
     extra_data = [
         ":operations",
     ],
-    extra_deps = [
-        "//max/python/max/torch",
+    # TODO(GEX-3151): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/experimental/torch",
+        requirement("numpy"),
         requirement("torch"),
         requirement("pillow"),
     ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
 )
 
 custom_op_example_py_binary(
@@ -42,24 +46,27 @@ custom_op_example_py_binary(
     extra_data = [
         ":operations",
     ],
-    extra_deps = [
-        "//max/python/max/torch",
+    deps = [
+        "//max/python/max/experimental/torch",
         requirement("torch"),
         requirement("transformers"),
         requirement("datasets"),
-        requirement("librosa"),
     ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
 )
 
 custom_op_example_py_binary(
     name = "graph",
     srcs = ["graph.py"],
-    extra_deps = [
-        "//max/python/max/torch",
+    # TODO(GEX-3151): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/experimental/torch",
+        "//max/python/max/graph",
         requirement("torch"),
     ],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
 )
 
 mojo_library(

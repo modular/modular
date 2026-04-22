@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,8 +22,8 @@ from layout import (
     RuntimeLayout,
     RuntimeTuple,
 )
-from math import ceildiv
-from collections import Set, InlineArray
+from std.math import ceildiv
+from std.collections import Set, InlineArray
 
 from layout.layout_tensor import LayoutTensorIter, _compute_distribute_layout
 from layout.layout import (
@@ -34,18 +34,18 @@ from layout.layout import (
     coalesce,
 )
 from layout.int_tuple import flatten
-from memory import UnsafePointer, memset
-from testing import assert_equal
-from utils import Index, IndexList
+from std.memory import UnsafePointer, memset
+from std.testing import assert_equal
+from std.utils import Index, IndexList
 
 
-def accessing_tensor_elements_example():
+def accessing_tensor_elements_example() raises:
     comptime rows = 4
     comptime columns = 8
     comptime layout = Layout.row_major(rows, columns)
     var storage = InlineArray[Float32, rows * columns](uninitialized=True)
     for i in range(rows * columns):
-        storage[i] = i
+        storage[i] = Float32(i)
     var tensor = LayoutTensor[DType.float32, layout](storage)
 
     var row, col = 0, 1
@@ -68,14 +68,14 @@ def accessing_tensor_elements_example():
     assert_equal(element, 4)
 
 
-def accessing_nested_tensor_elements_example():
+def accessing_nested_tensor_elements_example() raises:
     comptime rows = 4
     comptime columns = 6
     comptime tiler = Layout.row_major(2, 3)
     comptime layout = blocked_product(Layout.col_major(2, 2), tiler)
     var storage = InlineArray[Float32, rows * columns](uninitialized=True)
     for i in range(rows * columns):
-        storage[i] = i
+        storage[i] = Float32(i)
     var tensor = LayoutTensor[DType.float32, layout](storage)
 
     # start-access-nested-tensor-example
@@ -85,7 +85,7 @@ def accessing_nested_tensor_elements_example():
     assert_equal(element, 5)
 
 
-def layout_tensor_on_cpu_example():
+def layout_tensor_on_cpu_example() raises:
     # start-layout-tensor-on-cpu-example
     comptime rows = 8
     comptime columns = 16
@@ -97,7 +97,7 @@ def layout_tensor_on_cpu_example():
     _ = tensor
 
 
-def layout_tensor_from_pointer_example():
+def layout_tensor_from_pointer_example() raises:
     # start-layout-tensor-from-pointer-example
     comptime rows = 1024
     comptime columns = 1024
@@ -111,7 +111,7 @@ def layout_tensor_from_pointer_example():
     _ = tensor
 
 
-def layout_tensor_tile_example():
+def layout_tensor_tile_example() raises:
     # start-layout-tensor-tile-example
     comptime rows = 2
     comptime columns = 4
@@ -120,8 +120,8 @@ def layout_tensor_tile_example():
     comptime tiler_layout = Layout.row_major(rows, columns)
     comptime tiled_layout = blocked_product(tile_layout, tiler_layout)
     var storage = InlineArray[Float32, tiled_layout.size()](uninitialized=True)
-    for i in range(tiled_layout.size()):
-        storage[i] = i
+    for i in range(comptime (tiled_layout.size())):
+        storage[i] = Float32(i)
     var tensor = LayoutTensor[DType.float32, tiled_layout](storage)
     var tile = tensor.tile[32, 32](0, 1)
     # end-layout-tensor-tile-example
@@ -139,26 +139,27 @@ def layout_tensor_tile_example():
 # Iterates through a block of memory one tile at a time.
 # This essentially treats the memory as a flat array of
 # tiles (or a 2D row-major matrix of tiles).
-def layout_tensor_iterator_example():
+def layout_tensor_iterator_example() raises:
     # start-layout-tensor-iterator-example-1
     comptime buf_size = 128
     var storage = InlineArray[Int16, buf_size](uninitialized=True)
     for i in range(buf_size):
-        storage[i] = i
+        storage[i] = Int16(i)
     comptime tile_layout = Layout.row_major(4, 4)
     var iter = LayoutTensorIter[DType.int16, tile_layout, MutAnyOrigin](
         storage.unsafe_ptr(), buf_size
     )
 
-    for i in range(ceildiv(buf_size, tile_layout.size())):
+    for i in range(ceildiv(buf_size, comptime (tile_layout.size()))):
         var tile = iter[]
         # ... do something with tile
         iter += 1
         # end-layout-tensor-iterator-example-1
-        assert_equal(tile[0, 0][0], i * tile_layout.size())
+        comptime tile_size = tile_layout.size()
+        assert_equal(tile[0, 0][0], Int16(i * tile_size))
 
 
-def layout_tensor_iterator_example2():
+def layout_tensor_iterator_example2() raises:
     # TODO: set up a tiled layout tensor as input and
     # validate output.
     comptime rows = 4
@@ -187,7 +188,7 @@ def layout_tensor_iterator_example2():
             _ = tile
 
 
-def main():
+def main() raises:
     accessing_tensor_elements_example()
     accessing_nested_tensor_elements_example()
     layout_tensor_on_cpu_example()

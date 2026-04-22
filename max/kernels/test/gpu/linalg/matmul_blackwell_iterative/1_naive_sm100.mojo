@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,29 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import argv
+from std.math import ceildiv
+from std.sys import argv
 
 import linalg.matmul.vendor.blas as vendor_blas
-from gpu import block_dim
-from gpu.host import DeviceContext
-from gpu import block_idx, thread_idx
+from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from layout._fillers import random
 from layout._utils import ManagedLayoutTensor
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark":
             return True
     return False
 
 
-fn kernel_1[
+def kernel_1[
     M: Int,
     N: Int,
     K: Int,
@@ -44,10 +43,10 @@ fn kernel_1[
     a: LayoutTensor[DType.bfloat16, Layout.row_major(M, K), MutAnyOrigin],
     b: LayoutTensor[DType.bfloat16, Layout.row_major(K, N), MutAnyOrigin],
 ):
-    var row = block_dim.y * block_idx.y + (thread_idx.y)
-    var col = block_dim.x * block_idx.x + (thread_idx.x)
+    var row = block_dim.y * block_idx.y + thread_idx.y
+    var col = block_dim.x * block_idx.x + thread_idx.x
 
-    if row < UInt(M) and col < UInt(N):
+    if row < M and col < N:
         # Still accumulate in float32 for precision
         var acc: Float32 = 0
 
@@ -66,7 +65,7 @@ def test_kernel_1[
     transpose_b: Bool = True,
     benchmark: Bool = False,
     prob_shape: IndexList[3] = IndexList[3](1, 1, 1),
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     comptime M = prob_shape[0]
     comptime N = prob_shape[1]
     comptime K = prob_shape[2]
@@ -86,8 +85,7 @@ def test_kernel_1[
     ) if transpose_b else Layout.row_major(K, N)
     var b_vendor = ManagedLayoutTensor[b_type, b_vendor_layout](ctx)
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         var b_tensor = b.tensor[update=False]()
         var b_vendor_tensor = b_vendor.tensor[update=True]()
         for k in range(K):
@@ -122,7 +120,7 @@ def test_kernel_1[
 
         @always_inline
         @parameter
-        fn run_kernel(ctx: DeviceContext) raises:
+        def run_kernel(ctx: DeviceContext) raises:
             ctx.enqueue_function[kernel, kernel](
                 c.device_tensor[update=False](),
                 a.device_tensor[update=False](),
@@ -136,9 +134,11 @@ def test_kernel_1[
         ctx.synchronize()
         print("finished warmup")
 
-        var nstime = ctx.execution_time[run_kernel](num_runs) / num_runs
+        var nstime = (
+            Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
+        )
         var sectime = nstime * 1e-9
-        var TFlop = 2.0 * M * N * K * 1e-12
+        var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
 
         print("  Average time: ", sectime * 1000, " ms")
         print("  Performance: ", TFlop / sectime, " TFLOPS")
@@ -169,14 +169,8 @@ def test_kernel_1[
                 )
         print("TEST PASSED")
 
-    _ = a^
-    _ = b^
-    _ = c^
-    _ = c_ref^
-    _ = b_vendor^
 
-
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         if is_benchmark():
             test_kernel_1[
@@ -184,7 +178,7 @@ def main():
                 DType.bfloat16,
                 DType.bfloat16,
                 transpose_b=True,
-                prob_shape = IndexList[3](4096, 4096, 4096),
+                prob_shape=IndexList[3](4096, 4096, 4096),
                 benchmark=True,
             ](ctx)
             return
@@ -196,5 +190,5 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             transpose_b=True,
-            prob_shape = IndexList[3](4096, 4096, 4096),
+            prob_shape=IndexList[3](4096, 4096, 4096),
         ](ctx)

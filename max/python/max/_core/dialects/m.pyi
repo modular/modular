@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -327,7 +327,7 @@ class TargetInfoAttr(max._core.Attribute):
         data_layout: DataLayout,
         relocation_model: max._core._RelocationModel,
         simd_bit_width: int,
-        index_bit_width: int,
+        index_bit_width: int | None,
         tune_cpu: str,
         accelerator_arch: str,
     ) -> None: ...

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from test_utils import MoveOnly
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 
 
-def test_swap_Int():
+def test_swap_Int() raises:
     var a: Int = 42
     var b: Int = 24
 
@@ -25,7 +25,7 @@ def test_swap_Int():
     assert_equal(b, 42)
 
 
-def test_swap_MoveOnlyInt():
+def test_swap_MoveOnlyInt() raises:
     var a: MoveOnly[Int] = 42
     var b: MoveOnly[Int] = 24
 
@@ -35,7 +35,7 @@ def test_swap_MoveOnlyInt():
     assert_equal(b.data, 42)
 
 
-def test_swap_String():
+def test_swap_String() raises:
     var a: String = "Hello"
     var b: String = "World"
 
@@ -45,7 +45,7 @@ def test_swap_String():
     assert_equal(b, "Hello")
 
 
-def test_swap_Tuple_Int():
+def test_swap_Tuple_Int() raises:
     var a = (1, 2, 3, 4)
     var b = (5, 6, 7, 8)
 
@@ -62,7 +62,7 @@ def test_swap_Tuple_Int():
     assert_equal(b[3], 4)
 
 
-def test_swap_Tuple_Mixed():
+def test_swap_Tuple_Mixed() raises:
     var a = (1, "Hello", 3)
     var b = (4, "World", 6)
 
@@ -77,5 +77,5 @@ def test_swap_Tuple_Mixed():
     assert_equal(b[2], 3)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

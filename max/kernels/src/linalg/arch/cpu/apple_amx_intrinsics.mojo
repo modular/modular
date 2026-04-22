@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,18 +17,15 @@
 #
 # ===-----------------------------------------------------------------------===#
 
-from sys._assembly import inlined_assembly
+from std.sys._assembly import inlined_assembly
 
-from buffer import DimList
-from layout import Layout, LayoutTensor
-from memory import (
-    LegacyUnsafePointer,
+from layout import TileTensor
+from layout.tile_layout import row_major
+from std.memory import (
     memcpy,
     memset_zero,
     stack_allocation,
 )
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 # All AMX instructions are of the form
@@ -37,7 +34,7 @@ comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
 @always_inline
-fn _no_op_imms[op: Int32, imm: Int32]():
+def _no_op_imms[op: Int32, imm: Int32]():
     # In Apple's Accelerate, instruction 17 is apparently always prefixed by
     # three nops.
     inlined_assembly[
@@ -49,7 +46,7 @@ fn _no_op_imms[op: Int32, imm: Int32]():
 
 
 @always_inline
-fn _op_gpr[op: Int32](gpr: Int64):
+def _op_gpr[op: Int32](gpr: Int64):
     inlined_assembly[
         ".word (0x201000 + ($0 << 5) + 0$1 - ((0$1 >> 4) * 6))",
         NoneType,
@@ -61,162 +58,162 @@ fn _op_gpr[op: Int32](gpr: Int64):
 # The `set` and `clr` take no non-constant operands, and so we pass them as
 # immediate values via meta parameters.
 @always_inline
-fn _set():
+def _set():
     _no_op_imms[17, 0]()
 
 
 @always_inline
-fn _clr():
+def _clr():
     _no_op_imms[17, 1]()
 
 
 @always_inline
-fn ldx(gpr: Int):
-    _op_gpr[0](gpr)
+def ldx(gpr: Int):
+    _op_gpr[0](Int64(gpr))
 
 
 @always_inline
-fn ldy(gpr: Int):
-    _op_gpr[1](gpr)
+def ldy(gpr: Int):
+    _op_gpr[1](Int64(gpr))
 
 
 @always_inline
-fn stx(gpr: Int):
-    _op_gpr[2](gpr)
+def stx(gpr: Int):
+    _op_gpr[2](Int64(gpr))
 
 
 @always_inline
-fn sty(gpr: Int):
-    _op_gpr[3](gpr)
+def sty(gpr: Int):
+    _op_gpr[3](Int64(gpr))
 
 
 @always_inline
-fn ldz(gpr: Int):
-    _op_gpr[4](gpr)
+def ldz(gpr: Int):
+    _op_gpr[4](Int64(gpr))
 
 
 @always_inline
-fn stz(gpr: Int):
-    _op_gpr[5](gpr)
+def stz(gpr: Int):
+    _op_gpr[5](Int64(gpr))
 
 
 @always_inline
-fn ldzi(gpr: Int):
-    _op_gpr[6](gpr)
+def ldzi(gpr: Int):
+    _op_gpr[6](Int64(gpr))
 
 
 @always_inline
-fn stzi(gpr: Int):
-    _op_gpr[7](gpr)
+def stzi(gpr: Int):
+    _op_gpr[7](Int64(gpr))
 
 
 @always_inline
-fn extrx(gpr: Int):
+def extrx(gpr: Int):
     """
     Extracts a row or moves it to x, result in amx0.
     """
-    _op_gpr[8](gpr)
+    _op_gpr[8](Int64(gpr))
 
 
 @always_inline
-fn extry(gpr: Int):
+def extry(gpr: Int):
     """
     Extracts a row or moves it to y, result in amx0.
     """
-    _op_gpr[9](gpr)
+    _op_gpr[9](Int64(gpr))
 
 
 @always_inline
-fn fma64(gpr: Int):
+def fma64(gpr: Int):
     """
     Float64 matrix multiply and add.
     """
-    _op_gpr[10](gpr)
+    _op_gpr[10](Int64(gpr))
 
 
 @always_inline
-fn fsm64(gpr: Int):
+def fsm64(gpr: Int):
     """
     Float64 matrix multiply and subtract.
     """
-    _op_gpr[11](gpr)
+    _op_gpr[11](Int64(gpr))
 
 
 @always_inline
-fn fma32(gpr: Int):
+def fma32(gpr: Int):
     """
     Float32 matrix multiply and add.
     """
-    _op_gpr[12](gpr)
+    _op_gpr[12](Int64(gpr))
 
 
 @always_inline
-fn fsm32(gpr: Int):
+def fsm32(gpr: Int):
     """
     Float32 matrix multiply and subtract.
     """
-    _op_gpr[13](gpr)
+    _op_gpr[13](Int64(gpr))
 
 
 @always_inline
-fn mac16(gpr: Int):
+def mac16(gpr: Int):
     """
     SI16 matrix multiply and add.
     """
-    _op_gpr[14](gpr)
+    _op_gpr[14](Int64(gpr))
 
 
 @always_inline
-fn fma16(gpr: Int):
+def fma16(gpr: Int):
     """
     Float16 matrix multiply and subtract.
     """
-    _op_gpr[15](gpr)
+    _op_gpr[15](Int64(gpr))
 
 
 @always_inline
-fn fms16(gpr: Int):
+def fms16(gpr: Int):
     """
     Float16 matrix multiply and add.
     """
-    _op_gpr[16](gpr)
+    _op_gpr[16](Int64(gpr))
 
 
 @always_inline
-fn vec_int__(gpr: Int):
+def vec_int__(gpr: Int):
     """
     Horizontal ui16 multiply `z0[i] += x0[i] + y0[i]`.
     """
-    _op_gpr[18](gpr)
+    _op_gpr[18](Int64(gpr))
 
 
 @always_inline
-fn vecfp(gpr: Int):
+def vecfp(gpr: Int):
     """
     Horizontal float16 multiply `z0[i] += x0[i] + y0[i]`.
     """
-    _op_gpr[19](gpr)
+    _op_gpr[19](Int64(gpr))
 
 
 @always_inline
-fn max_int__(gpr: Int):
+def max_int__(gpr: Int):
     """
     UI16 matrix multiply.
     """
-    _op_gpr[20](gpr)
+    _op_gpr[20](Int64(gpr))
 
 
 @always_inline
-fn matfp(gpr: Int):
+def matfp(gpr: Int):
     """
     Float16 matrix multiply.
     """
-    _op_gpr[21](gpr)
+    _op_gpr[21](Int64(gpr))
 
 
 @always_inline
-fn genlut(gpr: Int):
-    _op_gpr[22](gpr)
+def genlut(gpr: Int):
+    _op_gpr[22](Int64(gpr))
 
 
 # Apple.amx.LoadStore is a set of utilities that are thin wrappers around
@@ -244,64 +241,63 @@ fn genlut(gpr: Int):
 
 
 @always_inline
-fn _encode_load_store[
+def _encode_load_store[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int) -> Int:
+](src: UnsafePointer[Scalar[dtype], _], start_index: Int) -> Int:
     """
     Utility to do the bit encoding for load and store ops.
     """
     var src_idx = Int(src) | (start_index << 56)
 
-    @parameter
-    if row_count == 2:
+    comptime if row_count == 2:
         src_idx |= 1 << 62
     return src_idx
 
 
 @always_inline
-fn store_x[
+def store_x[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
     ldx(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
-fn store_y[
+def store_y[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
     ldy(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
-fn store_z[
+def store_z[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[Scalar[dtype], _], start_index: Int):
     ldz(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
-fn read_x[
+def read_x[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[mut=True, Scalar[dtype], _], start_index: Int):
     stx(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
-fn read_y[
+def read_y[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[mut=True, Scalar[dtype], _], start_index: Int):
     sty(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
-fn load_z[
+def load_z[
     row_count: Int, dtype: DType
-](src: UnsafePointer[Scalar[dtype]], start_index: Int):
+](src: UnsafePointer[mut=True, Scalar[dtype], _], start_index: Int):
     stz(_encode_load_store[row_count, dtype](src, start_index))
 
 
 @always_inline
-fn transpose_z_to_x_or_y[
+def transpose_z_to_x_or_y[
     destination: StaticString, dtype: DType
 ](z_col_index: Int, xy_row_index: Int, z_row_suboffset: Int):
     # transpose_z_to_x_or_y is a thin wrapper around the fp32 transpose mode of
@@ -332,9 +328,9 @@ fn transpose_z_to_x_or_y[
     #    z_row_suboffset needs to be 0-4.
 
     # The destination must be either "X" or "Y".
-    __comptime_assert destination == "X" or destination == "Y"
+    comptime assert destination == "X" or destination == "Y"
     # The type must be Float32.
-    __comptime_assert dtype == DType.float32
+    comptime assert dtype == DType.float32
 
     # make the y offset field
     #  shift left by 6 to make this an offset in rows,
@@ -354,7 +350,7 @@ fn transpose_z_to_x_or_y[
 
 
 @always_inline
-fn fma[
+def fma[
     mode: StaticString, dtype: DType
 ](z_row_index: Int, x_row_index: Int, y_row_index: Int, clear_z: Bool):
     # Apple.amx.fma abstracts the fma operation on the amx hardware. Two modes of
@@ -374,9 +370,9 @@ fn fma[
     #  x_row_index, y_row_index : always in [0, 8).
 
     # The mode must be either "TILE" or "ROW".
-    __comptime_assert mode == "TILE" or mode == "ROW"
+    comptime assert mode == "TILE" or mode == "ROW"
     # The type must be Float32.
-    __comptime_assert dtype == DType.float32
+    comptime assert dtype == DType.float32
 
     comptime is_row_mode = mode == "ROW"
 
@@ -392,129 +388,79 @@ fn fma[
 
 
 @always_inline
-fn dot_at_b_impl(
-    c: LayoutTensor[DType.float32, Layout.row_major(16, 16), MutAnyOrigin],
-    a: LayoutTensor[DType.float32, Layout.row_major(16, 16), ImmutAnyOrigin],
-    b: LayoutTensor[DType.float32, Layout.row_major(16, 16), ImmutAnyOrigin],
+def dot_at_b(
+    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    a: type_of(c),
+    b: type_of(c),
 ):
-    # Performs a 16x16x16 matrix multiply on the given matrices storing the
-    # result into the C matrix. The matrix multiplication is performed as:
-    #
-    #     C = A^T * B
-    #
-    # Where the dimensions of the matrices are all 16x16. The A matrix is
-    # assumed to be transposed and all matrices are stored in row-major
-    # order.
+    """Performs a matrix multiply C = A^T * B using Apple AMX instructions.
 
-    var a_pointer = a.ptr
-    var b_pointer = b.ptr
-    var c_pointer = c.ptr
-
-    comptime num_elements = c.layout.size()
-
-    # TODO: We can elide the copy if the data is already is already aligned.
-    var a_buffer = stack_allocation[num_elements, Float32, alignment=128]()
-    var b_buffer = stack_allocation[num_elements, Float32, alignment=128]()
-    var c_buffer = stack_allocation[num_elements, Float32, alignment=128]()
-
-    memcpy(dest=a_buffer, src=a_pointer, count=num_elements)
-    memcpy(dest=b_buffer, src=b_pointer, count=num_elements)
-    memset_zero(c_buffer, num_elements)
-
-    # _set() has the side effect of clearing the z tile
-    _set()
-
-    @parameter
-    for j in range(2):
-
-        @parameter
-        for i in range(8):
-            ldx((i << 56) | Int(b_buffer + (j * 8 + i) * b.dim[0]()))
-            ldy((i << 56) | Int(a_buffer + (j * 8 + i) * a.dim[0]()))
-
-        @parameter
-        for i in range(8):
-            fma32((i << 6 << 10) | (i << 6))
-
-    @parameter
-    for i in range(0, 64, 4):
-        stz((i << 56) | Int(c_buffer + (i >> 2) * c.dim[0]()))
-
-    _clr()
-
-    memcpy(dest=c_pointer, src=c_buffer, count=num_elements)
-
-
-@always_inline
-fn dot_at_b_impl(
-    c: LayoutTensor[DType.float16, Layout.row_major(32, 32), MutAnyOrigin],
-    a: LayoutTensor[DType.float16, Layout.row_major(32, 32), ImmutAnyOrigin],
-    b: LayoutTensor[DType.float16, Layout.row_major(32, 32), ImmutAnyOrigin],
-):
-    var a_pointer = a.ptr
-    var b_pointer = b.ptr
-    var c_pointer = c.ptr
-
-    comptime num_elements = c.layout.size()
-
-    var a_buffer = stack_allocation[num_elements, Float16, alignment=128]()
-    var b_buffer = stack_allocation[num_elements, Float16, alignment=128]()
-    var c_buffer = stack_allocation[num_elements, Float16, alignment=128]()
-
-    memcpy(dest=a_buffer, src=a_pointer, count=num_elements)
-    memcpy(dest=b_buffer, src=b_pointer, count=num_elements)
-    memset_zero(c_buffer, num_elements)
-
-    # _set() has the side effect of clearing the z tile
-    _set()
-
-    @parameter
-    for j in range(4):
-
-        @parameter
-        for i in range(8):
-            ldx((i << 56) | Int(b_buffer + (j * 8 + i) * b.dim[0]()))
-            ldy((i << 56) | Int(a_buffer + (j * 8 + i) * a.dim[0]()))
-
-        @parameter
-        for i in range(8):
-            fma16((i << 6 << 10) | (i << 6))
-
-    @parameter
-    for i in range(0, 64, 2):
-        stz((i << 56) | Int(c_buffer + (i >> 1) * c.dim[0]()))
-
-    _clr()
-
-    memcpy(dest=c_pointer, src=c_buffer, count=num_elements)
-
-
-@always_inline
-fn dot_at_b(c: LayoutTensor[mut=True, ...], a: type_of(c), b: type_of(c)):
-    __comptime_assert (
+    Supports f32 (16x16) and f16 (32x32) tiles. All matrices are stored in
+    row-major order.
+    """
+    comptime assert (
         c.dtype == DType.float32 or c.dtype == DType.float16
     ), "the buffer dtype must be float32 or float16"
 
-    @parameter
-    if c.dtype == DType.float32:
-        comptime f32_tensor = LayoutTensor[
-            DType.float32,
-            Layout.row_major(16, 16),
-            _,
-        ]
-        dot_at_b_impl(
-            rebind[f32_tensor[MutAnyOrigin]](c),
-            rebind[f32_tensor[ImmutAnyOrigin]](a),
-            rebind[f32_tensor[ImmutAnyOrigin]](b),
-        )
+    var a_pointer = a.ptr
+    var b_pointer = b.ptr
+    var c_pointer = c.ptr
+
+    comptime assert c.flat_rank == 2, "expected rank 2 tile"
+    comptime assert (
+        c.static_shape[0] != -1 and c.static_shape[1] != -1
+    ), "dot_at_b requires fully static tile dimensions"
+    comptime num_elements = c.static_shape[0] * c.static_shape[1]
+
+    # TODO: We can elide the copy if the data is already aligned.
+    var a_buffer = stack_allocation[
+        num_elements, Scalar[c.dtype], alignment=128
+    ]()
+    var b_buffer = stack_allocation[
+        num_elements, Scalar[c.dtype], alignment=128
+    ]()
+    var c_buffer = stack_allocation[
+        num_elements, Scalar[c.dtype], alignment=128
+    ]()
+
+    memcpy(dest=a_buffer, src=a_pointer, count=num_elements)
+    memcpy(dest=b_buffer, src=b_pointer, count=num_elements)
+    memset_zero(c_buffer, num_elements)
+
+    # _set() has the side effect of clearing the z tile
+    _set()
+
+    comptime dim0 = c.static_shape[0]
+
+    comptime if c.dtype == DType.float32:
+        comptime assert (
+            c.static_shape[0] == 16 and c.static_shape[1] == 16
+        ), "f32 AMX matmul requires 16x16 tiles"
+        comptime for j in range(2):
+            comptime for i in range(8):
+                ldx((i << 56) | Int(b_buffer + (j * 8 + i) * dim0))
+                ldy((i << 56) | Int(a_buffer + (j * 8 + i) * dim0))
+
+            comptime for i in range(8):
+                fma32((i << 6 << 10) | (i << 6))
+
+        comptime for i in range(0, 64, 4):
+            stz((i << 56) | Int(c_buffer + (i >> 2) * dim0))
     elif c.dtype == DType.float16:
-        comptime f16_tensor = LayoutTensor[
-            DType.float16,
-            Layout.row_major(32, 32),
-            _,
-        ]
-        dot_at_b_impl(
-            rebind[f16_tensor[MutAnyOrigin]](c),
-            rebind[f16_tensor[ImmutAnyOrigin]](a),
-            rebind[f16_tensor[ImmutAnyOrigin]](b),
-        )
+        comptime assert (
+            c.static_shape[0] == 32 and c.static_shape[1] == 32
+        ), "f16 AMX matmul requires 32x32 tiles"
+        comptime for j in range(4):
+            comptime for i in range(8):
+                ldx((i << 56) | Int(b_buffer + (j * 8 + i) * dim0))
+                ldy((i << 56) | Int(a_buffer + (j * 8 + i) * dim0))
+
+            comptime for i in range(8):
+                fma16((i << 6 << 10) | (i << 6))
+
+        comptime for i in range(0, 64, 2):
+            stz((i << 56) | Int(c_buffer + (i >> 1) * dim0))
+
+    _clr()
+
+    memcpy(dest=c_pointer, src=c_buffer, count=num_elements)

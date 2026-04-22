@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -34,11 +34,14 @@ from .layer import Module
 class Embedding(Module):
     """A lookup table for embedding integer indices into dense vectors.
 
-    This layer maps each integer index to a dense vector of fixed size.
-    Embedding weights are stored on the CPU but are moved to the specified
-    device during the model init phase.
+    When called, ``Embedding`` maps each integer index to a dense vector of
+    fixed size. It accepts a :class:`~max.graph.TensorValueLike` of integer
+    indices with shape ``(batch, ..., num_indices)`` and returns a
+    :class:`~max.graph.TensorValue` of shape ``(batch, ..., num_indices,
+    hidden_dim)`` containing the corresponding embedding vectors.
 
-    Example:
+    Embedding weights are stored on the CPU but are moved to the specified
+    device during model initialization.
 
     .. code-block:: python
 
@@ -118,10 +121,12 @@ class Embedding(Module):
 class VocabParallelEmbedding(Module):
     """A lookup table for embedding integer indices into dense vectors.
 
-    This layer works like `nn.Embedding` except the embedding table is sharded
-    on the vocabulary dimension across all devices.
-
-    Example:
+    This layer works like :class:`Embedding` except the embedding table is
+    sharded on the vocabulary dimension across all devices. When called,
+    ``VocabParallelEmbedding`` accepts a :class:`~max.graph.TensorValueLike` of
+    integer indices along with signal buffers for cross-device communication
+    and returns a list of :class:`~max.graph.TensorValue` tensors (one per
+    device) containing the corresponding embedding vectors.
 
     .. code-block:: python
 
@@ -193,10 +198,12 @@ class VocabParallelEmbedding(Module):
             indices.
             The result resides on the device specified in :obj:`device`.
         """
-        # Shard the weight onto each device.
+        # Broadcast indices to all devices.
         input = TensorValue(indices)
+        indices_per_device = ops.distributed_broadcast(input, signal_buffers)
         outputs = [
-            self._per_device_call(input, n) for n in range(self.num_devices)
+            self._per_device_call(indices_per_device[i], i)
+            for i in range(self.num_devices)
         ]
 
         return self.allreduce(outputs, signal_buffers)
@@ -215,7 +222,6 @@ class VocabParallelEmbedding(Module):
             device
         )
 
-        indices = indices.to(device)
         # Process indices so that all tokens are between 0 and the shard size.
 
         # Set up mask so that the 1=tokens within range, 0=tokens out of range.

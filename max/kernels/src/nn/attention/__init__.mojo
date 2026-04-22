@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,4 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Attention operations."""
+"""Multi-head attention (MHA) and multi-head latent attention (MLA) kernels.
+
+Shared utilities live here (masks, operands, config), with platform-specific
+implementations under cpu/ and gpu/.
+"""

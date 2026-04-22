@@ -1,6 +1,6 @@
 ---
 title: GPU debugging
-sidebar_position: 2
+sidebar_position: 3
 description: Debugging Mojo programs on GPU.
 ---
 
@@ -16,17 +16,16 @@ GPU:
 
 - GPU debugging is supported only on NVIDIA GPUs.
 - You cannot debug Mojo code running inside a MAX
-  [custom operation](/max/custom-ops/). (You can only debug Mojo GPU code
-  launched from a Mojo program when using the
+  [custom operation](/max/develop/custom-ops/). (You can only debug Mojo GPU
+  code launched from a Mojo program when using the
   [gpu.host](/mojo/std/gpu/host/) API).
 
 :::
 
 ## GPU debugging setup
 
-To debug Mojo code on GPU, you need to be able run Mojo code on GPU. Currently
-this requires a Linux system with a supported GPU. For details, see
-[GPU requirements](/max/faq/#gpu-requirements).
+To debug Mojo code on GPU, first make sure you have a [compatible
+GPU](/mojo/requirements#gpu-compatibility).
 
 If you're using VS Code, you can run it on the same system where your GPU code
 is running (the "target system"), or on a separate system using remote
@@ -51,11 +50,11 @@ To set up for GPU debugging:
 
 ### Using the classic debugger backend
 
-CUDA-GDB includes two debugger backends, called the "classic debugger" and
-the "universal debugger." By default, Mojo uses the CUDA-GDB universal debugger.
-However, some systems require the classic debugger, instead. If you find that the
-debugger is losing its connection with the process being debugged, you may need
-to use the classic debugger. To use the classic debugger backend:
+CUDA-GDB includes two debugger backends, called the "classic debugger" and the
+"universal debugger." By default, Mojo uses the CUDA-GDB universal debugger.
+However, some systems require the classic debugger, instead. If you find that
+the debugger is losing its connection with the process being debugged, you may
+need to use the classic debugger. To use the classic debugger backend:
 
 - On the target system, set the environment variable
   `CUDBG_USE_LEGACY_DEBUGGER` to `1` in your shell configuration file (for
@@ -155,7 +154,8 @@ Symbol breakpoints aren't supported when debugging with CUDA-GDB.
 On the CUDA-GDB command line, you can set a breakpoint using the `break`
 command (which can be abbreviated to `b`):
 
-<code><strong>break</strong> <var>filename.mojo</var>:<var>line_number</var></code><br/>
+<code><strong>break</strong>
+<var>filename.mojo</var>:<var>line_number</var></code><br/>
 <code><strong>b</strong> <var>filename.mojo</var>:<var>line_number</var></code>
 
 ### Stepping not supported on GPU

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -269,20 +269,27 @@ def MergeDuplicateShapeMaterializations() -> max._core.Pass:
     Canonicalization and CSE can take this one step further and eliminate a number of additional operations.
     """
 
+def NanCheckPass(kernel_library_paths: Sequence[str] = []) -> max._core.Pass:
+    """
+    This pass inserts nan_check ops after each floating-point tensor output
+    in the graph and lowers them to MOGG kernels in-place. Each nan_check
+    returns a pass-through copy of its input tensor; downstream uses are
+    rewired to the nan_check output to prevent DCE.
+    For debugging only — activated via MODULAR_MAX_NAN_CHECK=1 env var or
+    --nan-check compiler flag.
+    """
+
 def PropagateShapes() -> max._core.Pass:
     """
     This pass evaluates shape parameter logic in the graph, simplifying and
     reducing shape logic as much as it can.
     """
 
-def ResolveUnknownParameters() -> max._core.Pass:
+def RemoveUnusedOps() -> max._core.Pass:
     """
-    This pass parameterizes `mo` ops that can be parameterized. This involves 2
-    things:
-    1. replacing unknown shape and dimension parameters (i.e. `?`) in `!mo.tensor`
-    instances with parameter references.
-    2. letting newly parameterized ops declare their new parameters that appear
-    in their results.
+    Some MO ops have no uses but can't be erased by CSE because of their memory effects.
+    In practice the chains def / use of those ops already encode the dependencies.
+    If the output chain of such an op is unused, that means it can be removed.
     """
 
 def SplatLargeConstants(num_elements: int = 100000000) -> max._core.Pass:
@@ -297,7 +304,7 @@ def SupportConversionsTest() -> max._core.Pass:
     """
     This is a testing only pass. It looks for hard-coded, unregistered ops and
     expands them using helper libraries located in
-    GenericML/GraphCompiler/Conversion/MO/Support/*.
+    GraphCompiler/GraphCompiler/Conversion/MO/Support/*.
     ```
     mo.graph @const_program() -> (!mo.tensor<[2], f32>) {
       ...

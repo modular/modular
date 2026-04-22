@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -69,7 +69,7 @@ def BubbleDownMemorySpaceCasts() -> max._core.Pass:
     ```
     """
 
-def CSE() -> max._core.Pass:
+def CSEPass() -> max._core.Pass:
     """
     This pass implements a generalized algorithm for common sub-expression
     elimination. This pass relies on information provided by the
@@ -78,7 +78,7 @@ def CSE() -> max._core.Pass:
     for more general details on this optimization.
     """
 
-def Canonicalizer(
+def CanonicalizerPass(
     top_down_processing_enabled: bool = True,
     region_simplify_level: GreedySimplifyRegionLevel = GreedySimplifyRegionLevel.normal,
     max_iterations: int = 10,
@@ -107,7 +107,7 @@ def CompositeFixedPointPass(
     number of iterations reached.
     """
 
-def ControlFlowSink() -> max._core.Pass:
+def ControlFlowSinkPass() -> max._core.Pass:
     """
     This pass implements control-flow sink on operations that implement
     `RegionBranchOpInterface` by moving dominating operations whose only uses
@@ -125,14 +125,14 @@ def ControlFlowSink() -> max._core.Pass:
     sunk as they may contain uses of their results
     """
 
-def GenerateRuntimeVerification(verbose_level: int = 1) -> max._core.Pass:
+def GenerateRuntimeVerificationPass(verbose_level: int = 1) -> max._core.Pass:
     """
     This pass generates op-specific runtime checks using the
     `RuntimeVerifiableOpInterface`. It can be run for debugging purposes after
     passes that are suspected to introduce faulty IR.
     """
 
-def Inliner(
+def InlinerPass(
     default_pipeline_str: str = "canonicalize",
     op_pipeline_list: Sequence[max._core.OpPassManager] = [],
     max_inlining_iterations: int = 4,
@@ -180,23 +180,20 @@ def LocationSnapshot(
     ```
     """
 
-def LoopInvariantCodeMotion() -> max._core.Pass: ...
-def LoopInvariantSubsetHoisting() -> max._core.Pass: ...
+def LoopInvariantCodeMotionPass() -> max._core.Pass: ...
+def LoopInvariantSubsetHoistingPass() -> max._core.Pass: ...
 def Mem2Reg(enable_region_simplification: bool = True) -> max._core.Pass:
     """
     This pass removes loads out of and stores into a memory slot, and turns
     them into direct uses of SSA values. This is done generically using the
-    `PromotableAllocationOpInterface`, `PromotableOpInterface` and
-    `PromotableMemOpInterface` interfaces.
+    `PromotableAllocationOpInterface`, `PromotableOpInterface`,
+    `PromotableMemOpInterface` and `PromotableRegionOpInterface` interfaces.
 
     This pass will attempt to compute which definitions of the content of
     the memory slot reach operations that use the memory slot pointer. It
     will rewire or remove operations that use the slot pointer so they no
     longer use it. If any of this is not possible, the IR will be left
     without mutation.
-
-    This pass only supports unstructured control-flow. Promotion of operations
-    within subregions will not happen.
     """
 
 def PrintIRPass(label: str = "") -> max._core.Pass:
@@ -205,8 +202,8 @@ def PrintIRPass(label: str = "") -> max._core.Pass:
     purposes to inspect the IR at a specific point in the pipeline.
     """
 
-def PrintOpStats(print_as_json: bool = False) -> max._core.Pass: ...
-def RemoveDeadValues(canonicalize: bool = True) -> max._core.Pass:
+def PrintOpStatsPass(print_as_json: bool = False) -> max._core.Pass: ...
+def RemoveDeadValuesPass(canonicalize: bool = True) -> max._core.Pass:
     """
     The goal of this pass is optimization (reducing runtime) by removing
     unnecessary instructions. Unlike other passes that rely on local information
@@ -221,12 +218,7 @@ def RemoveDeadValues(canonicalize: bool = True) -> max._core.Pass:
     (C) Removes unneccesary operands, results, region arguments, and region
     terminator operands of region branch ops, and,
     (D) Removes simple and region branch ops that have all non-live results and
-    don't affect memory in any way,
-
-    iff
-
-    the IR doesn't have any non-function symbol ops, non-call symbol user ops
-    and branch ops.
+    don't affect memory in any way.
 
     Here, a "simple op" refers to an op that isn't a symbol op, symbol-user op,
     region branch op, branch op, region branch terminator op, or return-like.
@@ -365,7 +357,7 @@ def RemoveDeadValues(canonicalize: bool = True) -> max._core.Pass:
     "ub.poison".
     """
 
-def SCCP() -> max._core.Pass:
+def SCCPPass() -> max._core.Pass:
     """
     This pass implements a general algorithm for sparse conditional constant
     propagation. This algorithm detects values that are known to be constant and
@@ -390,13 +382,13 @@ def SROA() -> max._core.Pass:
     manner and within bounds by implementing `TypeSafeOpInterface`.
     """
 
-def StripDebugInfo() -> max._core.Pass:
+def StripDebugInfoPass() -> max._core.Pass:
     """
     This pass strips the IR of any location information, by replacing all
     operation locations with [`unknown`](Dialects/Builtin.md/#unknownloc).
     """
 
-def SymbolDCE() -> max._core.Pass:
+def SymbolDCEPass() -> max._core.Pass:
     """
     This pass deletes all symbols that are found to be unreachable. This is done
     by computing the set of operations that are known to be live, propagating
@@ -436,13 +428,13 @@ def SymbolDCE() -> max._core.Pass:
     information on `Symbols`.
     """
 
-def SymbolPrivatize(exclude: Sequence[str] = []) -> max._core.Pass:
+def SymbolPrivatizePass(exclude: Sequence[str] = []) -> max._core.Pass:
     """
     This pass marks all top-level symbols of the operation run as `private`
     except if listed in `exclude` pass option.
     """
 
-def TopologicalSort() -> max._core.Pass:
+def TopologicalSortPass() -> max._core.Pass:
     """
     Recursively sorts all nested regions without SSA dominance in topological
     order. The main purpose is readability, as well as potentially processing of
@@ -455,7 +447,7 @@ def TopologicalSort() -> max._core.Pass:
     regions in a stable order.
     """
 
-def ViewOpGraph(
+def ViewOpGraphPass(
     max_label_len: int = 20,
     print_attrs: bool = True,
     print_control_flow_edges: bool = False,

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -96,7 +96,7 @@ def test_conditional_with_raising() -> None:
             raise Exception("else")
 
         try:
-            result = ops.cond(cond, None, then_fn, else_fn)
+            ops.cond(cond, None, then_fn, else_fn)
         except Exception as e:
             assert "else" in str(e)
 

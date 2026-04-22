@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,35 +11,44 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string._unicode_lookups import *
+from std.collections.string._unicode_lookups import (
+    has_uppercase_mapping,
+    has_lowercase_mapping,
+    uppercase_mapping,
+    lowercase_mapping,
+    has_uppercase_mapping2,
+    uppercase_mapping2,
+    has_uppercase_mapping3,
+    uppercase_mapping3,
+)
 
-from memory import Span
+from std.memory import Span
 
 
-fn _uppercase_mapping_index(rune: Codepoint) -> Int:
+def _uppercase_mapping_index(rune: Codepoint) -> Int:
     """Return index for upper case mapping or -1 if no mapping is given."""
     return _to_index[has_uppercase_mapping](rune)
 
 
-fn _uppercase_mapping2_index(rune: Codepoint) -> Int:
+def _uppercase_mapping2_index(rune: Codepoint) -> Int:
     """Return index for upper case mapping converting the rune to 2 runes, or -1 if no mapping is given.
     """
     return _to_index[has_uppercase_mapping2](rune)
 
 
-fn _uppercase_mapping3_index(rune: Codepoint) -> Int:
+def _uppercase_mapping3_index(rune: Codepoint) -> Int:
     """Return index for upper case mapping converting the rune to 3 runes, or -1 if no mapping is given.
     """
     return _to_index[has_uppercase_mapping3](rune)
 
 
-fn _lowercase_mapping_index(rune: Codepoint) -> Int:
+def _lowercase_mapping_index(rune: Codepoint) -> Int:
     """Return index for lower case mapping or -1 if no mapping is given."""
     return _to_index[has_lowercase_mapping](rune)
 
 
 @always_inline
-fn _to_index[lookup: List[UInt32, ...]](rune: Codepoint) -> Int:
+def _to_index[lookup: List[UInt32, ...]](rune: Codepoint) -> Int:
     """Find index of rune in lookup with binary search.
     Returns -1 if not found."""
 
@@ -54,7 +63,7 @@ fn _to_index[lookup: List[UInt32, ...]](rune: Codepoint) -> Int:
 # TODO:
 #   Refactor this to return a Span[Codepoint, StaticConstantOrigin], so that the
 #   return `UInt` count and fixed-size `InlineArray` are not necessary.
-fn _get_uppercase_mapping(
+def _get_uppercase_mapping(
     char: Codepoint,
 ) -> Optional[Tuple[UInt, InlineArray[Codepoint, 3]]]:
     """Returns the 1, 2, or 3 character sequence that is the uppercase form of
@@ -88,7 +97,7 @@ fn _get_uppercase_mapping(
     return None
 
 
-fn _get_lowercase_mapping(char: Codepoint) -> Optional[Codepoint]:
+def _get_lowercase_mapping(char: Codepoint) -> Optional[Codepoint]:
     var index: Optional[UInt] = Span(
         materialize[has_lowercase_mapping]()
     )._binary_search_index(char.to_u32())
@@ -105,7 +114,7 @@ fn _get_lowercase_mapping(char: Codepoint) -> Optional[Codepoint]:
         return None
 
 
-fn is_uppercase(s: StringSlice[mut=False]) -> Bool:
+def is_uppercase(s: StringSlice[mut=False, _]) -> Bool:
     """Returns True if all characters in the string are uppercase, and
         there is at least one cased character.
 
@@ -134,7 +143,7 @@ fn is_uppercase(s: StringSlice[mut=False]) -> Bool:
     return found
 
 
-fn is_lowercase(s: StringSlice[mut=False]) -> Bool:
+def is_lowercase(s: StringSlice[mut=False, _]) -> Bool:
     """Returns True if all characters in the string are lowercase, and
         there is at least one cased character.
 
@@ -165,7 +174,7 @@ fn is_lowercase(s: StringSlice[mut=False]) -> Bool:
     return found
 
 
-fn to_lowercase(s: StringSlice[mut=False]) -> String:
+def to_lowercase(s: StringSlice[mut=False, _]) -> String:
     """Returns a new string with all characters converted to uppercase.
 
     Args:
@@ -183,7 +192,7 @@ fn to_lowercase(s: StringSlice[mut=False]) -> String:
         var lowercase_char_opt = _get_lowercase_mapping(rune_and_size[0])
         if lowercase_char_opt is None:
             result.write_string(
-                s[input_offset : input_offset + rune_and_size[1]]
+                s[byte = input_offset : input_offset + rune_and_size[1]]
             )
         else:
             result += String(lowercase_char_opt.unsafe_value())
@@ -193,7 +202,7 @@ fn to_lowercase(s: StringSlice[mut=False]) -> String:
     return result^
 
 
-fn to_uppercase(s: StringSlice[mut=False]) -> String:
+def to_uppercase(s: StringSlice[mut=False, _]) -> String:
     """Returns a new string with all characters converted to uppercase.
 
     Args:
@@ -222,7 +231,7 @@ fn to_uppercase(s: StringSlice[mut=False]) -> String:
                 result += String(uppercase_replacement_chars[char_idx])
         else:
             result.write_string(
-                s[input_offset : input_offset + rune_and_size[1]]
+                s[byte = input_offset : input_offset + rune_and_size[1]]
             )
 
         input_offset += rune_and_size[1]
@@ -231,5 +240,5 @@ fn to_uppercase(s: StringSlice[mut=False]) -> String:
 
 
 @always_inline
-fn _estimate_needed_size(byte_len: Int) -> Int:
+def _estimate_needed_size(byte_len: Int) -> Int:
     return 3 * (byte_len >> 1) + 1

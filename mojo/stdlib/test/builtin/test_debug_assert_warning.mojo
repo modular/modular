@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,7 +17,7 @@
 
 
 # CHECK-LABEL: test_ok
-fn main():
+def main():
     print("== test_ok")
     # CHECK: test_debug_assert_warning.mojo:23:17: Assert Error: failed, but we don't terminate
     debug_assert(False, "failed, but we don't terminate")

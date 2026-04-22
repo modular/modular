@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,13 +17,13 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 # ===-------------------------------------------------------------------===#
-# doc_private
+# doc_hidden
 # ===-------------------------------------------------------------------===#
 
 
-fn doc_private():
-    """Indicate that the decorated declaration is private from the viewpoint
-    of documentation generation.
+def doc_hidden():
+    """Indicate that the decorated declaration is hidden from documentation
+    generation.
 
     This decorator allows for hiding the documentation for a declaration during
     generation. This is often used to hide `__init__`, and other special
@@ -33,13 +33,13 @@ fn doc_private():
 
     ```mojo
     struct Foo:
-        @doc_private
-        fn __init__(out self):
+        @doc_hidden
+        def __init__(out self):
             "This should not be called directly, use `Foo.create` instead."
             return
 
         @staticmethod
-        fn create() -> Self:
+        def create() -> Self:
             return Self()
     ```
     """

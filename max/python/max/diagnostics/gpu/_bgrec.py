@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -304,11 +304,18 @@ class BackgroundRecorder:
             print(f"Sample {i}: {len(snapshot)} GPUs detected")
             for gpu_id, gpu_stats in snapshot.items():
                 print(f"  {gpu_id}: {gpu_stats.memory.used_bytes} bytes used")
+
+    Args:
+        interval: How frequently (in seconds) to sample GPU statistics.
+            Default is 1 second.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, interval: float = 1.0) -> None:
+        if interval < 0:
+            raise ValueError("Interval must be non-negative")
         self._proc: _RecorderProcess | None = None
         self._stats: list[dict[str, GPUStats]] | None = None
+        self._interval = interval
 
     @property
     def stats(self) -> list[dict[str, GPUStats]]:
@@ -336,6 +343,7 @@ class BackgroundRecorder:
                 sys.executable,
                 "-m",
                 ".".join(__name__.split(".")[:-1]) + "._bgrec_main",
+                str(self._interval),
             ],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -405,6 +413,7 @@ class _KeepableTempFile(io.RawIOBase, BinaryIO):
 
 
 async def recorder_async_main() -> None:
+    interval = float(sys.argv[1])
     inch = _InputChannel(sys.stdin.buffer, _AllRequests)
     outch = _OutputChannel[_AllReplies | _AllNotifications](sys.stdout.buffer)
 
@@ -425,7 +434,7 @@ async def recorder_async_main() -> None:
         while True:
             stats = diag.get_stats()
             output_file.write(msgspec.json.encode(stats) + b"\n")
-            await asyncio.sleep(1)
+            await asyncio.sleep(interval)
 
     async with contextlib.AsyncExitStack() as stack:
         stack.enter_context(die_notifier())

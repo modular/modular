@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -27,7 +27,27 @@ from ..layer import Module, Shardable
 
 
 class LayerNorm(Module, Shardable):
-    """Layer normalization block."""
+    """Layer normalization over the last dimension.
+
+    When called, ``LayerNorm`` accepts a :class:`~max.graph.TensorValue` of shape
+    ``(..., dims)`` and returns a normalized :class:`~max.graph.TensorValue` of
+    the same shape. More specifically, it normalizes inputs across the feature
+    dimension by computing the mean and variance for each sample independently.
+
+    The computation is:
+    :math:`\\text{output} = \\gamma \\cdot \\frac{x - \\mu}{\\sigma} + \\beta`
+    where :math:`\\mu` is the mean,
+    :math:`\\sigma = \\sqrt{\\text{var}(x) + \\epsilon}` is the standard
+    deviation, and :math:`\\gamma, \\beta` are learned affine parameters.
+
+    Args:
+        dims: The size of the feature dimension to normalize over.
+        devices: The target :class:`~max.graph.DeviceRef` instances for
+            computation.
+        dtype: The :class:`~max.dtype.DType` for the layer.
+        eps: A small value added to the denominator for numerical stability.
+        use_bias: Whether to include a learnable bias term (``beta``).
+    """
 
     def __init__(
         self,
@@ -132,7 +152,11 @@ class LayerNorm(Module, Shardable):
 
 
 class ConstantLayerNorm(Module):
-    """Layer normalization block with constant gamma and beta values."""
+    """Layer normalization block with constant gamma and beta values.
+
+    When called, ``ConstantLayerNorm`` accepts a :class:`~max.graph.TensorValue` and returns a
+    normalized :class:`~max.graph.TensorValue` of the same shape.
+    """
 
     gamma: npt.NDArray[np.floating[Any]]
     beta: npt.NDArray[np.floating[Any]]

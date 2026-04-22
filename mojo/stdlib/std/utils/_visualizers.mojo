@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,7 +17,7 @@ These utilities automate the interaction with the LLDB data formatting system.
 """
 
 
-fn lldb_formatter_wrapping_type():
+def lldb_formatter_wrapping_type():
     """Replace the visualization of the decorated struct with the one of its
     first field. If the decorated struct has no fields, an empty variable is displayed instead.
     """

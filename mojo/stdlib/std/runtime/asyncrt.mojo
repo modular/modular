@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,36 +12,41 @@
 # ===----------------------------------------------------------------------=== #
 """This module implements the low level concurrency library."""
 
-from os import abort
-from os.atomic import Atomic
-from sys import external_call
+from std.os import abort
+from std.atomic import Atomic
+from std.ffi import _CPointer, external_call
+from std.gpu.host.device_context import _DeviceContextPtr
 
-from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
-from gpu.host import DeviceContext
+from std.builtin.coroutine import (
+    AnyCoroutine,
+    _coro_resume_fn,
+    _suspend_async,
+)
 
-from utils import StaticTuple
+# RaisingCoroutine is a builtin type, available without explicit import.
+from std.gpu.host import DeviceContext
+
+from std.utils import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # _AsyncContext
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct _Chain(Boolable, Defaultable):
+struct _Chain(Boolable, Defaultable, ImplicitlyCopyable, RegisterPassable):
     """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
     # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
-    var storage: UnsafePointer[Int, MutExternalOrigin]
+    var storage: _CPointer[Int, MutExternalOrigin]
 
-    fn __init__(out self):
+    def __init__(out self):
         self.storage = {}
 
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         return Bool(self.storage)
 
 
-@register_passable("trivial")
-struct _AsyncContext:
+struct _AsyncContext(ImplicitlyCopyable, RegisterPassable):
     """This struct models the coroutine context contained in every coroutine
     instance. The struct consists of a unary callback function that accepts a
     pointer argument. It is invoked with the second struct field, which is an
@@ -53,19 +58,19 @@ struct _AsyncContext:
     to available.
     """
 
-    comptime callback_fn_type = fn (_Chain) -> None
+    comptime callback_fn_type = def(_Chain) thin -> None
 
     var callback: Self.callback_fn_type
     var chain: _Chain
 
     @staticmethod
-    fn get_chain(
-        ctx: UnsafePointer[mut=True, _AsyncContext]
+    def get_chain(
+        ctx: UnsafePointer[mut=True, _AsyncContext, _]
     ) -> UnsafePointer[_Chain, origin_of(ctx[].chain)]:
         return UnsafePointer(to=ctx[].chain)
 
     @staticmethod
-    fn complete(ch: _Chain):
+    def complete(ch: _Chain):
         var tmp = ch
         _async_complete(UnsafePointer(to=tmp))
 
@@ -75,40 +80,42 @@ struct _AsyncContext:
 # ===-----------------------------------------------------------------------===#
 
 
-fn _init_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain]):
+def _init_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain, _]):
     external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](
         chain.address
     )
 
 
-fn _del_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain]):
+def _del_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain, _]):
     external_call["KGEN_CompilerRT_AsyncRT_DestroyChain", NoneType](
         chain.address
     )
 
 
-fn _async_and_then(hdl: AnyCoroutine, chain: UnsafePointer[mut=True, _Chain]):
+def _async_and_then(
+    hdl: AnyCoroutine, chain: UnsafePointer[mut=True, _Chain, _]
+):
     external_call["KGEN_CompilerRT_AsyncRT_AndThen", NoneType](
         _coro_resume_fn, chain.address, hdl
     )
 
 
-fn _async_execute[type: AnyType](handle: AnyCoroutine, desired_worker_id: Int):
+def _async_execute[type: AnyType](handle: AnyCoroutine, desired_worker_id: Int):
     external_call["KGEN_CompilerRT_AsyncRT_Execute", NoneType](
         _coro_resume_fn, handle, desired_worker_id
     )
 
 
-fn _async_wait(chain: UnsafePointer[mut=True, _Chain]):
+def _async_wait(chain: UnsafePointer[mut=True, _Chain, _]):
     external_call["KGEN_CompilerRT_AsyncRT_Wait", NoneType](chain.address)
 
 
-fn _async_complete(chain: UnsafePointer[mut=True, _Chain]):
+def _async_complete(chain: UnsafePointer[mut=True, _Chain, _]):
     external_call["KGEN_CompilerRT_AsyncRT_Complete", NoneType](chain.address)
 
 
-fn _async_wait_timeout(
-    chain: UnsafePointer[mut=True, _Chain], timeout: Int
+def _async_wait_timeout(
+    chain: UnsafePointer[mut=True, _Chain, _], timeout: Int
 ) -> Bool:
     return external_call["KGEN_CompilerRT_AsyncRT_Wait_Timeout", Bool](
         chain.address, timeout
@@ -121,7 +128,7 @@ fn _async_wait_timeout(
 
 
 @always_inline
-fn parallelism_level() -> Int:
+def parallelism_level() -> Int:
     """Gets the parallelism level of the Runtime.
 
     Returns:
@@ -135,7 +142,7 @@ fn parallelism_level() -> Int:
     )
 
 
-fn create_task(
+def create_task(
     var handle: Coroutine[...], out task: Task[handle.type, handle.origins]
 ):
     """Run the coroutine as a task on the AsyncRT Runtime.
@@ -158,7 +165,7 @@ fn create_task(
 
 
 @always_inline
-fn _run(var handle: Coroutine[...], out result: handle.type):
+def _run(var handle: Coroutine[...], out result: handle.type):
     """Executes a coroutine and waits for its completion.
     This function runs the given coroutine on the async runtime and blocks until
     it completes. The result of the coroutine is stored in the output parameter.
@@ -200,7 +207,7 @@ struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
     var _result: Self.type
     """Storage for the result value produced by the task."""
 
-    fn __init__(out self, var handle: Coroutine[Self.type, Self.origins]):
+    def __init__(out self, var handle: Coroutine[Self.type, Self.origins]):
         """Initialize a task with a coroutine.
 
         Takes ownership of the provided coroutine and sets up the task to receive
@@ -215,7 +222,7 @@ struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
         )
         self._handle._set_result_slot(UnsafePointer(to=self._result))
 
-    fn get(self) -> ref [self._result] Self.type:
+    def get(self) -> ref[self._result] Self.type:
         """Get the task's result value. Calling this on an incomplete task is
         undefined behavior.
 
@@ -224,7 +231,7 @@ struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
         """
         return self._result
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Destroy the memory associated with a task. This must be manually
         called when a task goes out of scope.
         """
@@ -233,7 +240,7 @@ struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
         self._handle^.force_destroy()
 
     @always_inline
-    fn __await__(self) -> ref [self.get()] Self.type:
+    def __await__(self) -> ref[self.get()] Self.type:
         """Suspend the current async function until the task completes and its
         result becomes available. This function must be force inlined into the
         calling async function.
@@ -247,7 +254,7 @@ struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
 
         @always_inline
         @parameter
-        fn await_body(cur_hdl: AnyCoroutine):
+        def await_body(cur_hdl: AnyCoroutine):
             _async_and_then(
                 cur_hdl,
                 _AsyncContext.get_chain(self._handle._get_ctx[_AsyncContext]()),
@@ -256,7 +263,7 @@ struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
         _suspend_async[await_body]()
         return self.get()
 
-    fn wait(self) -> ref [self.get()] Self.type:
+    def wait(self) -> ref[self.get()] Self.type:
         """Block the current thread until the future value becomes available.
 
         This method is used in synchronous code to wait for an asynchronous task
@@ -273,13 +280,178 @@ struct Task[type: ImplicitlyDestructible, origins: OriginSet]:
 
 
 # ===-----------------------------------------------------------------------===#
+# RaisingTask
+# ===-----------------------------------------------------------------------===#
+
+
+def create_raising_task[
+    type: Movable, origins: OriginSet
+](
+    var handle: RaisingCoroutine[type, origins],
+    out task: RaisingTask[type, origins],
+):
+    """Run a raising coroutine as a task on the AsyncRT Runtime.
+
+    Creates a task from a raising coroutine and schedules it for execution.
+    The task may raise an error when waited on, propagating any error from
+    the coroutine.
+
+    Parameters:
+        type: The result type, which must be `Movable` to extract the result.
+        origins: The origin set from the coroutine's captures.
+
+    Args:
+        handle: The raising coroutine to execute as a task. Ownership is
+            transferred.
+
+    Returns:
+        The `task` output parameter is initialized with the created task.
+    """
+    var ctx = handle._get_ctx[_AsyncContext]()
+    _init_asyncrt_chain(_AsyncContext.get_chain(ctx))
+    ctx[].callback = _AsyncContext.complete
+    task = RaisingTask(handle^)
+    _async_execute[type](task._handle._handle, desired_worker_id=-1)
+
+
+@explicit_destroy
+struct RaisingTask[type: Movable, origins: OriginSet]:
+    """Represents an async task that may raise an error upon completion.
+
+    Wraps a `RaisingCoroutine` that executes asynchronously and either
+    produces a result value or raises an error. The error is propagated
+    to the caller when `wait()` is called.
+
+    This type uses `@explicit_destroy` because only one of the result or
+    error slots is valid after completion. The caller must call `wait()`
+    or `force_destroy()` to consume the task.
+
+    Parameters:
+        type: The type of value produced on success.
+        origins: The set of origins for the coroutine wrapped by this task.
+    """
+
+    var _handle: RaisingCoroutine[Self.type, Self.origins]
+    """The underlying raising coroutine."""
+
+    var _result_ptr: UnsafePointer[Self.type, MutExternalOrigin]
+    """Heap-allocated storage for the result value."""
+
+    var _error_ptr: UnsafePointer[Error, MutExternalOrigin]
+    """Heap-allocated storage for the error value."""
+
+    def __init__(
+        out self, var handle: RaisingCoroutine[Self.type, Self.origins]
+    ):
+        """Initialize a raising task with a raising coroutine.
+
+        Args:
+            handle: The raising coroutine to execute. Ownership is transferred.
+        """
+        self._handle = handle^
+        self._result_ptr = alloc[Self.type](1)
+        self._error_ptr = alloc[Error](1)
+        self._handle._set_result_slot(self._result_ptr, self._error_ptr)
+
+    def _has_error(self) -> Bool:
+        """Check whether the coroutine raised an error.
+
+        Reads the error flag from the coroutine's continuation struct via
+        the `co.get_results` MLIR op. Only valid after the task completes.
+
+        Returns:
+            True if the coroutine raised an error, False if it succeeded.
+        """
+        return __mlir_op.`co.get_results`[_type=__mlir_type.i1](
+            self._handle._handle
+        )
+
+    def _release_coro(deinit self):
+        """Release chain and coroutine resources without touching result/error
+        slots (caller handles those).
+        """
+        var ctx = self._handle._get_ctx[_AsyncContext]()
+        _del_asyncrt_chain(_AsyncContext.get_chain(ctx))
+        self._handle^.force_destroy()
+
+    @always_inline
+    def __await__(deinit self, out result: Self.type) raises:
+        """Suspend the current async function until the task completes.
+
+        Consumes the task. On success, moves the result out. On failure,
+        raises the error from the coroutine.
+
+        This enables `await task^` syntax in async functions.
+
+        Returns:
+            The `result` output parameter receives the task's result value.
+
+        Raises:
+            If the underlying coroutine raised an error.
+        """
+
+        @always_inline
+        @parameter
+        def await_body(cur_hdl: AnyCoroutine):
+            _async_and_then(
+                cur_hdl,
+                _AsyncContext.get_chain(self._handle._get_ctx[_AsyncContext]()),
+            )
+
+        _suspend_async[await_body]()
+        var has_error = self._has_error()
+        var rp = self._result_ptr
+        var ep = self._error_ptr
+        self^._release_coro()
+        if has_error:
+            var err = ep.take_pointee()
+            rp.free()
+            ep.free()
+            raise err^
+        result = rp.take_pointee()
+        ep.free()
+        rp.free()
+
+    def wait(deinit self, out result: Self.type) raises:
+        """Block until the task completes and return the result or raise.
+
+        Consumes the task. On success, moves the result out. On failure,
+        raises the error from the coroutine.
+
+        Returns:
+            The `result` output parameter receives the task's result value.
+
+        Raises:
+            If the underlying coroutine raised an error.
+        """
+        _async_wait(
+            _AsyncContext.get_chain(self._handle._get_ctx[_AsyncContext]())
+        )
+        var has_error = self._has_error()
+        var rp = self._result_ptr
+        var ep = self._error_ptr
+        self^._release_coro()
+        if has_error:
+            var err = ep.take_pointee()
+            rp.free()
+            ep.free()
+            raise err^
+        result = rp.take_pointee()
+        ep.free()
+        rp.free()
+
+    # TODO: Add force_destroy() when we have a trait that combines
+    # Movable and ImplicitlyDestructible. Currently, the caller must
+    # call wait() to consume the task.
+
+
+# ===-----------------------------------------------------------------------===#
 # TaskGroup
 # ===-----------------------------------------------------------------------===#
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct TaskGroupContext(ImplicitlyCopyable):
+struct TaskGroupContext(TrivialRegisterPassable):
     """Context structure for task group operations.
 
     This structure holds a callback function and a pointer to a TaskGroup,
@@ -287,7 +459,7 @@ struct TaskGroupContext(ImplicitlyCopyable):
     when they complete.
     """
 
-    comptime tg_callback_fn_type = fn (mut TaskGroup) -> None
+    comptime tg_callback_fn_type = def(mut TaskGroup) thin -> None
     """Type definition for callback functions that operate on TaskGroups."""
 
     var callback: Self.tg_callback_fn_type
@@ -297,24 +469,23 @@ struct TaskGroupContext(ImplicitlyCopyable):
     """Pointer to the TaskGroup that owns or is associated with this context."""
 
 
-@register_passable
-struct _TaskGroupBox(Copyable):
+struct _TaskGroupBox(Copyable, RegisterPassable):
     """This struct is a type-erased owning box for an opaque coroutine."""
 
     var handle: AnyCoroutine
 
-    fn __init__[
+    def __init__[
         type: ImplicitlyDestructible
-    ](out self, var coro: Coroutine[type]):
+    ](out self, var coro: Coroutine[type, ...]):
         self.handle = coro^._take_handle()
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         __mlir_op.`co.destroy`(self.handle)
 
     # FIXME(MSTDL-573): `List` requires copyability. Just crash here because it
     # should never get called.
-    fn __copyinit__(out self, existing: Self):
-        abort("_TaskGroupBox.__copyinit__ should never get called")
+    def __init__(out self, *, copy: Self):
+        abort("_TaskGroupBox copy ctor should never get called")
 
 
 struct TaskGroup(Defaultable):
@@ -333,7 +504,7 @@ struct TaskGroup(Defaultable):
     var tasks: List[_TaskGroupBox]
     """Collection of tasks managed by this TaskGroup."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize a new TaskGroup with an empty task list and initialized chain.
         """
         var chain = _Chain()
@@ -342,27 +513,27 @@ struct TaskGroup(Defaultable):
         self.chain = chain
         self.tasks = List[_TaskGroupBox](capacity=16)
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Clean up resources associated with the TaskGroup."""
         _del_asyncrt_chain(UnsafePointer(to=self.chain))
 
     @always_inline
-    fn _counter_decr(mut self) -> Int:
+    def _counter_decr(mut self) -> Int:
         var prev: Int = Int(self.counter.fetch_sub(1)._mlir_value)
         return prev - 1
 
     @staticmethod
-    fn _task_complete_callback(mut tg: TaskGroup):
+    def _task_complete_callback(mut tg: TaskGroup):
         tg._task_complete()
 
-    fn _task_complete(mut self):
+    def _task_complete(mut self):
         if self._counter_decr() == 0:
             _async_complete(UnsafePointer(to=self.chain))
 
-    fn create_task(
+    def create_task(
         mut self,
         # FIXME(MSTDL-722): Avoid accessing ._mlir_type here, use `NoneType`.
-        var task: Coroutine[NoneType._mlir_type],
+        var task: Coroutine[NoneType._mlir_type, ...],
     ):
         """Add a new task to the TaskGroup for execution.
 
@@ -373,10 +544,10 @@ struct TaskGroup(Defaultable):
 
     # Deprecated, use create_task() instead
     # Only sync_parallelize() uses this to pass desired_worker_id
-    fn _create_task(
+    def _create_task(
         mut self,
         # FIXME(MSTDL-722): Avoid accessing ._mlir_type here, use `NoneType`.
-        var task: Coroutine[NoneType._mlir_type],
+        var task: Coroutine[NoneType._mlir_type, ...],
         desired_worker_id: Int = -1,
     ):
         # TODO(MOCO-771): Enforce that `task.origins` is a subset of
@@ -390,7 +561,7 @@ struct TaskGroup(Defaultable):
         self.tasks.append(_TaskGroupBox(task^))
 
     @staticmethod
-    fn await_body_impl(hdl: AnyCoroutine, mut task_group: Self):
+    def await_body_impl(hdl: AnyCoroutine, mut task_group: Self):
         """Implementation of the await functionality for TaskGroup.
 
         Args:
@@ -401,7 +572,7 @@ struct TaskGroup(Defaultable):
         task_group._task_complete()
 
     @always_inline
-    fn __await__(mut self):
+    def __await__(mut self):
         """Make TaskGroup awaitable in async contexts.
 
         This allows using 'await task_group' syntax in async functions.
@@ -409,13 +580,13 @@ struct TaskGroup(Defaultable):
 
         @always_inline
         @parameter
-        fn await_body(cur_hdl: AnyCoroutine):
+        def await_body(cur_hdl: AnyCoroutine):
             Self.await_body_impl(cur_hdl, self)
 
         _suspend_async[await_body]()
 
     # FIXME: OriginSet isn't a first class type.  This API isn't very usable.
-    fn wait[origins: OriginSet = origin_of()._mlir_origin](mut self):
+    def wait[origins: OriginSet = origin_of()._mlir_origin](mut self):
         """Wait for all tasks in the `TaskGroup` to complete.
 
         This is a blocking call that returns only when all tasks have finished.
@@ -432,8 +603,7 @@ struct TaskGroup(Defaultable):
 # ===-----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct DeviceContextPtr(Defaultable):
+struct DeviceContextPtr(Defaultable, ImplicitlyCopyable, RegisterPassable):
     """Exposes a pointer to a C++ DeviceContext to Mojo.
 
     Note: When initializing a `DeviceContext` from a pointer, the refcount is not
@@ -442,18 +612,18 @@ struct DeviceContextPtr(Defaultable):
     by the graph compiler.
     """
 
-    var _handle: OpaquePointer[MutExternalOrigin]
+    var _handle: Optional[UnsafePointer[NoneType, ExternalOrigin[mut=True]]]
     """The underlying pointer to the C++ `DeviceContext`."""
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize an empty `DeviceContextPtr` with a null pointer.
 
         This creates a `DeviceContextPtr` that doesn't point to any device context.
         """
         self._handle = {}
 
-    fn __init__(out self, handle: OpaquePointer[MutExternalOrigin]):
+    def __init__(out self, handle: OpaquePointer[ExternalOrigin[mut=True]]):
         """Initialize a `DeviceContextPtr` from a raw pointer.
 
         Args:
@@ -461,8 +631,19 @@ struct DeviceContextPtr(Defaultable):
         """
         self._handle = handle
 
+    @doc_hidden
+    def __init__(out self, handle: _DeviceContextPtr[mut=True]):
+        """Initialize a `DeviceContextPtr` from a raw pointer.
+
+        Args:
+            handle: A raw pointer to a C++ `DeviceContext`.
+        """
+        self._handle = UnsafePointer(to=handle).bitcast[
+            type_of(self._handle)
+        ]()[]
+
     @implicit
-    fn __init__(out self, device: DeviceContext):
+    def __init__(out self, device: DeviceContext):
         """Initialize a DeviceContextPtr from a `DeviceContext`.
 
         This constructor allows implicit conversion from `DeviceContext` to `DeviceContextPtr`.
@@ -470,17 +651,21 @@ struct DeviceContextPtr(Defaultable):
         Args:
             device: The `DeviceContext` to wrap in this pointer.
         """
-        self._handle = {device._handle.bitcast[NoneType]().address}
+        self = Self(device._handle)
 
-    fn __getitem__(self) -> DeviceContext:
+    def __getitem__(self) -> DeviceContext:
         """Dereference the pointer to get the `DeviceContext`.
 
         Returns:
             The `DeviceContext` that this pointer points to.
         """
-        return DeviceContext(self._handle)
+        return DeviceContext(
+            UnsafePointer(to=self._handle).bitcast[
+                _DeviceContextPtr[mut=True]
+            ]()[]
+        )
 
-    fn get_device_context(self) -> DeviceContext:
+    def get_device_context(self) -> DeviceContext:
         """Get the `DeviceContext` that this pointer points to.
 
         This is an alias for the dereference operator.
@@ -490,9 +675,17 @@ struct DeviceContextPtr(Defaultable):
         """
         return self[]
 
+    def get_optional_device_context(self) -> Optional[DeviceContext]:
+        """Get the `DeviceContext` that this pointer points to if it is non-null,
+        otherwise None.
 
-@register_passable("trivial")
-struct DeviceContextPtrList[size: Int](Sized):
+        Returns:
+            The `DeviceContext` that this pointer points to, or `None`.
+        """
+        return Optional(self[]) if self._handle else None
+
+
+struct DeviceContextPtrList[size: Int](Sized, TrivialRegisterPassable):
     """A fixed-size collection of `DeviceContextPtr` objects.
 
     This struct provides a lightweight, register-passable container for a fixed number
@@ -506,15 +699,15 @@ struct DeviceContextPtrList[size: Int](Sized):
     """The underlying storage for the device context pointers."""
 
     @always_inline
-    fn __init__(out self, ptrs: StaticTuple[DeviceContextPtr, Self.size]):
-        """Initialize with a StaticTuple of `DeviceContextPtr` objects.
+    def __init__(out self, ptrs: StaticTuple[DeviceContextPtr, Self.size]):
+        """Initialize with a InlineArray of `DeviceContextPtr`s.
 
         Args:
-            ptrs: A StaticTuple containing the `DeviceContextPtr` objects to store.
+            ptrs: An InlineArray containing the `DeviceContextPtr`s to store.
         """
         self.ptrs = ptrs
 
-    fn __getitem__[index: Int](self) -> DeviceContext:
+    def __getitem_param__[index: Int](self) -> DeviceContext:
         """Access a `DeviceContext` at a compile-time known index.
 
         Parameters:
@@ -525,7 +718,7 @@ struct DeviceContextPtrList[size: Int](Sized):
         """
         return self.ptrs[index][]
 
-    fn __getitem__[I: Indexer, //](self, idx: I) -> DeviceContext:
+    def __getitem__[I: Indexer, //](self, idx: I) -> DeviceContext:
         """Access a `DeviceContext` using a runtime index value.
 
         Parameters:
@@ -539,7 +732,7 @@ struct DeviceContextPtrList[size: Int](Sized):
         """
         return self.ptrs[idx][]
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Get the number of `DeviceContextPtr` objects in the collection.
 
         Returns:

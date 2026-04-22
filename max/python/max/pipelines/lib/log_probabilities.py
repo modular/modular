@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,18 +11,32 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Builds computation graphs for log probabilities over batched input sequences."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer, Device
 from max.dtype import DType
-from max.engine import Model
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.interfaces import LogProbabilities
+from max.nn.transformer import ReturnLogits
+
+if TYPE_CHECKING:
+    from .interfaces.pipeline_model import (
+        ModelInputs,
+        ModelOutputs,
+        PipelineModel,
+    )
+
+    _MixinBase = PipelineModel[Any]
+else:
+    _MixinBase = object
 
 
 def log_probabilities_ragged_graph(device: DeviceRef, *, levels: int) -> Graph:
@@ -105,6 +119,8 @@ def compute_log_probabilities_ragged(
             omitted only if all 'batch_echo' values are False.
         next_token_logits: (batch_dim, vocab_dim) tensor full of tensor logits
             for the next token in each batch item.
+        tokens: (total_tokens,) flat token array for the batch; indices
+            per batch given by input_row_offsets.
         sampled_tokens: (batch_dim,) tensor of sampled token per batch
         batch_top_n: Number of top log probabilities to return per input in
             the batch. For any element where `top_n == 0`, the
@@ -215,3 +231,78 @@ def compute_log_probabilities_ragged(
             )
         )
     return outputs
+
+
+class _RaggedModelInputs(Protocol):
+    """Model inputs with tokens and input_row_offsets buffers."""
+
+    tokens: Buffer
+    input_row_offsets: Buffer
+
+
+class LogProbabilitiesMixin(_MixinBase):
+    """Mixin providing log probability computation for pipeline models.
+
+    Requires the host class to be a ``PipelineModel`` whose ``ModelInputs``
+    subclass has ``tokens`` and ``input_row_offsets`` ``Buffer`` fields.
+    """
+
+    _logprobs_device: Device
+    _logprobs_model: Model
+
+    def __init__(
+        self,
+        pipeline_config: Any,
+        session: InferenceSession,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(pipeline_config, session, *args, **kwargs)
+        self._logprobs_device = self.devices[0]
+        graph = log_probabilities_ragged_graph(
+            DeviceRef.from_device(self._logprobs_device), levels=3
+        )
+        self._logprobs_model = session.load(graph)
+
+    def compute_log_probabilities(
+        self,
+        session: InferenceSession,
+        model_inputs: ModelInputs,
+        model_outputs: ModelOutputs,
+        next_tokens: Buffer,
+        batch_top_n: list[int],
+        batch_echo: list[bool],
+    ) -> list[LogProbabilities | None]:
+        """Computes log probabilities for the generated tokens."""
+        assert model_outputs.next_token_logits is not None
+        next_token_logits = model_outputs.next_token_logits
+
+        sampled_tokens = next_tokens.to_numpy()
+        ragged_inputs = cast(_RaggedModelInputs, model_inputs)
+        tokens = ragged_inputs.tokens.to_numpy()
+        input_row_offsets = ragged_inputs.input_row_offsets.to_numpy()
+
+        has_full_logits = self.return_logits in (
+            ReturnLogits.ALL,
+            ReturnLogits.VARIABLE,
+        )
+
+        if any(batch_echo) and not has_full_logits:
+            raise ValueError(
+                "Log probabilities with echo=true requires enable_echo=true "
+                "in the pipeline configuration to return logits for all tokens."
+            )
+
+        logits = model_outputs.logits if has_full_logits else None
+
+        return compute_log_probabilities_ragged(
+            self._logprobs_device,
+            self._logprobs_model,
+            input_row_offsets=input_row_offsets,
+            logits=logits,
+            next_token_logits=next_token_logits,
+            tokens=tokens,
+            sampled_tokens=sampled_tokens,
+            batch_top_n=batch_top_n,
+            batch_echo=batch_echo,
+        )

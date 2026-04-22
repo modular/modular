@@ -1,13 +1,12 @@
 """Custom Op example helpers to reduce boilerplate in BUILD.bazel file."""
 
-load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test")
 
 def custom_op_example_py_binary(
         name,
         srcs,
         create_test = True,
         extra_data = [],
-        extra_deps = [],
         **kwargs):
     modular_py_binary(
         name = name,
@@ -19,24 +18,16 @@ def custom_op_example_py_binary(
         mojo_deps = [
             "//max:compiler",
             "//max:layout",
-            "@mojo//:std",
             "//max:tensor",
-        ] + select({
-            "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
-            "//conditions:default": [],
-        }),
-        deps = [
-            "//max/python/max/driver",
-            "//max/python/max/engine",
-            "//max/python/max/graph",
-            requirement("numpy"),
-        ] + extra_deps,
+            "@mojo//:std",
+        ],
         visibility = ["//visibility:private"],
         testonly = True,
         **kwargs
     )
 
     # Run each example as a simple non-zero-exit-code test.
+    # The test inherits target_compatible_with from the binary dependency.
     if create_test:
         modular_run_binary_test(
             name = name + ".example-test",

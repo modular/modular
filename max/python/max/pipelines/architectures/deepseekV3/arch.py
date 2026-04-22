@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,16 +13,12 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    SupportedEncoding,
-    TextTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 
 from . import weight_adapters
 from .model import DeepseekV3Model
+from .model_config import DeepseekV3Config
 
 deepseekV3_arch = SupportedArchitecture(
     name="DeepseekV3ForCausalLM",
@@ -30,10 +26,11 @@ deepseekV3_arch = SupportedArchitecture(
     example_repo_ids=[
         "deepseek-ai/DeepSeek-V3",
     ],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
+        "bfloat16",
+        "float8_e4m3fn",
+        "float4_e2m1fnx2",
     },
     multi_gpu_supported=True,
     pipeline_model=DeepseekV3Model,
@@ -45,4 +42,5 @@ deepseekV3_arch = SupportedArchitecture(
     },
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
+    config=DeepseekV3Config,
 )

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,19 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.os import abort
+from std.sys import size_of
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os import abort
-from sys import size_of
-
-from python import Python, PythonObject
-from python.bindings import PythonModuleBuilder
-from python._cpython import PyObjectPtr
+from std.python import Python, PythonObject
+from std.python.bindings import PythonModuleBuilder
+from std.python._cpython import PyObjectPtr
 
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     """Create a Python module with function bindings for `mojo_block_hasher`."""
     try:
         var b = PythonModuleBuilder("mojo_module")
@@ -35,7 +32,7 @@ fn PyInit_mojo_module() -> PythonObject:
         )
         return b.finalize()
     except e:
-        abort(String("failed to create Python module: ", e))
+        abort(t"failed to create Python module: {e}")
 
 
 @fieldwise_init
@@ -46,10 +43,10 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     See: https://numpy.org/doc/2.1/reference/c-api/types-and-structures.html#c.PyArrayObject
     """
 
-    var data: UnsafePointer[Scalar[Self.dtype]]
+    var data: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     var nd: Int
-    var dimensions: UnsafePointer[Int]
-    var strides: UnsafePointer[Int]
+    var dimensions: UnsafePointer[Int, MutAnyOrigin]
+    var strides: UnsafePointer[Int, MutAnyOrigin]
     var base: PyObjectPtr
     var descr: PyObjectPtr
     var flags: Int
@@ -58,7 +55,7 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     # version dependent private members are omitted
     # ...
 
-    fn num_elts(self) -> Int:
+    def num_elts(self) -> Int:
         var num_elts = 1
         for i in range(self.nd):
             num_elts *= self.dimensions[i]
@@ -66,11 +63,11 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
 
 
 @always_inline
-fn _mojo_block_hasher[
+def _mojo_block_hasher[
     dtype: DType,
     //,
 ](
-    py_array_object_ptr: UnsafePointer[PyArrayObject[dtype]],
+    py_array_object_ptr: UnsafePointer[PyArrayObject[dtype], _],
     block_size: Int,
     parent_hash: Int,
 ) -> PythonObject:
@@ -92,7 +89,7 @@ fn _mojo_block_hasher[
         var hash_ptr_ints = hash_ptr_base + block_idx * block_size
         var hash_ptr_bytes = hash_ptr_ints.bitcast[Byte]()
         var token_hash = hash(hash_ptr_bytes, num_bytes)
-        var pair_to_hash = SIMD[DType.uint64, 2](prev_hash, token_hash)
+        var pair_to_hash = SIMD[DType.uint64, 2](UInt64(prev_hash), token_hash)
         var curr_hash = hash(pair_to_hash)
         # Convert the hash result to a Python object and store it in our
         # uninitialized list.
@@ -105,15 +102,15 @@ fn _mojo_block_hasher[
 
 
 @export
-fn mojo_block_hasher(
+def mojo_block_hasher(
     py_array_object: PythonObject,
     block_size_obj: PythonObject,
     parent_hash_obj: PythonObject,
 ) raises -> PythonObject:
     # Parse np array tokens input
-    var py_array_object_ptr = LegacyUnsafePointer[
-        PyArrayObject[DType.int64], ...
-    ](unchecked_downcast_value=py_array_object)
+    var py_array_object_ptr = UnsafePointer[PyArrayObject[DType.int32], _](
+        unchecked_downcast_value=py_array_object
+    )
 
     # Parse other arguments
     var block_size = Int(py=block_size_obj)

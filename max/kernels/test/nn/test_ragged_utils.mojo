@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,20 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import DimList
-from layout import LayoutTensor, Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import TileTensor, row_major
 from nn._ragged_utils import get_batch_from_row_offsets
-from testing import assert_equal
-from utils import Index
+from std.testing import assert_equal
 
 
-def test_get_batch_from_row_offsets():
+def test_get_batch_from_row_offsets() raises:
     comptime batch_size = 9
     var storage = InlineArray[UInt32, batch_size + 1](uninitialized=True)
-    prefix_sums = LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE)](
-        storage,
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size + 1)),
-    )
+    prefix_sums = TileTensor(storage, row_major[batch_size + 1]())
     prefix_sums[0] = 0
     prefix_sums[1] = 100
     prefix_sums[2] = 200
@@ -54,5 +49,5 @@ def test_get_batch_from_row_offsets():
     )
 
 
-def main():
+def main() raises:
     test_get_batch_from_row_offsets()

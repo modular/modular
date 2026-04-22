@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import _accelerator_arch
+from std.sys.info import _accelerator_arch
 
-from testing import *
+from std.testing import *
 
 
-def main():
+def main() raises:
     var accelerator_arch = _accelerator_arch()
 
     assert_true(

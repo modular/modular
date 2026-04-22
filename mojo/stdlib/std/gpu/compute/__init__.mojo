@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -30,10 +30,9 @@ This package provides GPU tensor core and matrix multiplication operations:
 Import compute operations directly:
 
 ```mojo
-from gpu.compute import mma
+from std.gpu.compute import mma
 
-# Automatically dispatches to the correct GPU architecture
-result = mma.mma(a, b, c)
+# Usage: var result = mma.mma(a, b, c)
 ```
 
 Architecture-specific implementations in `arch/` are internal and should not

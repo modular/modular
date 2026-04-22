@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,22 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 """Test for MixedLayout GPU memory codegen with runtime indices."""
 
-import sys
+import std.sys
 
-from gpu import thread_idx
-from gpu.host import DeviceContext
-from gpu.host.compile import _compile_code, get_gpu_target
-from layout._layout import Layout
-from layout._coord import Idx, Coord
-from layout.int_tuple import IntTuple
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal, assert_true
+from std.gpu import thread_idx
+from std.gpu.host.compile import _compile_code, get_gpu_target
+from layout.tile_layout import Layout
+from layout import Coord, Idx
+from std.testing import assert_true
 
 
-fn test_codegen_memory[
-    func_type: __TypeOfAllTypes, //, func: func_type
+def test_codegen_memory[
+    func_type: TrivialRegisterPassable, //, func: func_type
 ]() raises:
     """Generic function to test codegen memory patterns for any kernel function.
 
@@ -41,36 +36,32 @@ fn test_codegen_memory[
 
     # Test AMD GPU codegen
     var amd_asm = _compile_code[
-        func, target = get_gpu_target["amdgpu:gfx942"]()
+        func, target=get_gpu_target["amdgpu:gfx942"]()
     ]().asm
 
     # Should not load from buffer for compile-time known values
     assert_true("ds_read" not in amd_asm and "ds_write" not in amd_asm)
 
     # Test NVIDIA GPU codegen
-    var nvidia_asm = _compile_code[
-        func, target = get_gpu_target["sm_80"]()
-    ]().asm
+    var nvidia_asm = _compile_code[func, target=get_gpu_target["sm_80"]()]().asm
 
     # Should not use local memory for compile-time known values
     assert_true("ld.local" not in nvidia_asm and "st.local" not in nvidia_asm)
 
 
-fn kernel_mixed_dimensions(x: Int, ptr: UnsafePointer[Int32]):
+def kernel_mixed_dimensions(x: Int, ptr: UnsafePointer[Int32, MutAnyOrigin]):
     # Create layout with mixed compile-time and runtime dimensions
     var layout = Layout(shape=(Idx[8](), Idx(x)), stride=(Idx(x), Idx[1]()))
     ptr[0] = Int32(layout(Coord(Idx[0](), Idx(x - 1))))
 
 
-fn kernel_thread_idx(ptr: UnsafePointer[Int32]):
+def kernel_thread_idx(ptr: UnsafePointer[Int32, MutAnyOrigin]):
     comptime layout = Layout(
         shape=(Idx[8](), Idx[2]()), stride=(Idx[1](), Idx[1]())
     )
-    ptr[0] = Int32(
-        layout(Coord(Idx(Int(thread_idx.x)), Idx(Int(thread_idx.y))))
-    )
+    ptr[0] = Int32(layout(Coord(Idx(thread_idx.x), Idx(thread_idx.y))))
 
 
-def main():
+def main() raises:
     test_codegen_memory[kernel_mixed_dimensions]()
     test_codegen_memory[kernel_thread_idx]()

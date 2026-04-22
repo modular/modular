@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,35 +13,26 @@
 
 
 @fieldwise_init
-struct Fudge[sugar: Int, cream: Int, chocolate: Int = 7](Stringable):
-    fn __str__(self) -> String:
-        return String.write(
-            "Fudge (", Self.sugar, ",", Self.cream, ",", Self.chocolate, ")"
-        )
+struct Fudge[sugar: Int, cream: Int, chocolate: Int = 7](Writable):
+    pass
 
 
-fn eat(f: Fudge[5, ...]):
+def eat(f: Fudge[5, ...]):
     print("Ate " + String(f))
 
 
-fn devour(f: Fudge[_, 6, _]):
+def devour(f: Fudge[_, 6, _]):
     print("Devoured", String(f))
 
 
-fn devour2(f: Fudge[_, chocolate=_, cream=6]):
+def devour2(f: Fudge[_, chocolate=_, cream=6]):
     print("Devoured", String(f))
-
-
-fn nibble(f: Fudge[5]):
-    print("Ate", String(f))
 
 
 def main():
     eat(Fudge[5, 5, 7]())
     eat(Fudge[5, 8, 9]())
-    # eat(Fudge[12, 5, 7]()) # invalid call to 'eat': failed to infer implicit
+    # eat(Fudge[12, 5, 7]())  # invalid call to 'eat': failed to infer implicit
     # parameter 'cream' of argument 'f' type 'Fudge
     devour(Fudge[3, 6, 9]())
     devour(Fudge[4, 6, 8]())
-
-    nibble(Fudge[5, 4, 7]())

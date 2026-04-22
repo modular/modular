@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from max.torch import CustomOpLibrary
+from max.experimental.torch import CustomOpLibrary
 from PIL import Image
 
 # Load the Mojo custom operations from the `operations` directory.

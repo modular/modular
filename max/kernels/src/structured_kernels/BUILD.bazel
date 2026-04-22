@@ -1,0 +1,13 @@
+load("//bazel:api.bzl", "mojo_library")
+
+package(default_visibility = ["//max:consumers"])
+
+mojo_library(
+    name = "structured_kernels",
+    srcs = glob(["**/*.mojo"]),
+    validate_missing_docs = False,
+    deps = [
+        "//max:layout",
+        "@mojo//:std",
+    ],
+)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,7 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Llama 3 transformer architecture for text generation."""
 
 from .arch import llama_arch
+from .model import Llama3Inputs, Llama3Model, LlamaModelBase
+from .model_config import Llama3Config
 
-__all__ = ["llama_arch"]
+__all__ = [
+    "Llama3Config",
+    "Llama3Inputs",
+    "Llama3Model",
+    "LlamaModelBase",
+    "llama_arch",
+]

@@ -1,5 +1,5 @@
 ##===----------------------------------------------------------------------===##
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,8 +19,7 @@ benchmark_config:
   endpoint: /v1/chat/completions
   dataset_name: random
   num_prompts: 1000
-  random_input_len: 40
-  random_output_len: 150
+  random_input_len: "N(40, 4)"
+  random_output_len: "N(150, 90)"
   random_image_count: 1
   random_image_size: 512,512
-  random_coefficient_of_variation: 0.1,0.6

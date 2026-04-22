@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,7 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""EAGLE speculative decoding draft model for Llama 3."""
 
 from .arch import eagle_llama_arch
+from .model import EagleLlama3Model
 
-__all__ = ["eagle_llama_arch"]
+__all__ = ["EagleLlama3Model", "eagle_llama_arch"]

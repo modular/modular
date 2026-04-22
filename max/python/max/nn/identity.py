@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,11 +26,16 @@ class Identity(Module):
     in specific architectures such as EAGLE speculative decoding, where the
     draft model receives already-normalized hidden states from the target model.
 
-    Example:
-        >>> from max.nn import Identity
-        >>> identity = Identity()
-        >>> # In graph construction:
-        >>> output = identity(input_tensor)  # output == input_tensor
+    When called, ``Identity`` accepts a :class:`~max.graph.TensorValue` and returns the
+    same tensor unchanged.
+
+    .. code-block:: python
+
+        from max.nn import Identity
+
+        identity = Identity()
+        # In graph construction:
+        output = identity(input_tensor)  # output == input_tensor
     """
 
     def __call__(self, x: TensorValue) -> TensorValue:

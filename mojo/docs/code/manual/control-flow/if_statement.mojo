@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,7 @@
 
 def main():
     # Simple if statement
-    temp_celsius = 25
+    temp_celsius = Float64(25)
     if temp_celsius > 20:
         print("It is warm.")
         print("The temperature is", temp_celsius * 9 / 5 + 32, "Fahrenheit.")

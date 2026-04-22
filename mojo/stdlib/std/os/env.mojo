@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,15 +15,15 @@
 You can import these APIs from the `os` package. For example:
 
 ```mojo
-from os import setenv
+from std.os import setenv
 ```
 """
 
-from sys import CompilationTarget, external_call
-from sys.ffi import c_int
+from std.ffi import c_int, external_call, _CPointer
+from std.sys import CompilationTarget
 
 
-fn setenv(var name: String, var value: String, overwrite: Bool = True) -> Bool:
+def setenv(var name: String, var value: String, overwrite: Bool = True) -> Bool:
     """Changes or adds an environment variable.
 
     Constraints:
@@ -47,7 +47,7 @@ fn setenv(var name: String, var value: String, overwrite: Bool = True) -> Bool:
     return status == 0
 
 
-fn unsetenv(var name: String) -> Bool:
+def unsetenv(var name: String) -> Bool:
     """Unsets an environment variable.
 
     Args:
@@ -62,7 +62,7 @@ fn unsetenv(var name: String) -> Bool:
     )
 
 
-fn getenv(var name: String, default: String = "") -> String:
+def getenv(var name: String, default: String = "") -> String:
     """Returns the value of the given environment variable.
 
     Constraints:
@@ -78,8 +78,8 @@ fn getenv(var name: String, default: String = "") -> String:
       The value of the environment variable.
     """
     var ptr = external_call[
-        "getenv", UnsafePointer[UInt8, ImmutExternalOrigin]
+        "getenv", _CPointer[UInt8, ExternalOrigin[mut=False]]
     ](name.as_c_string_slice().unsafe_ptr())
     if not ptr:
         return default
-    return String(unsafe_from_utf8_ptr=ptr)
+    return String(unsafe_from_utf8_ptr=ptr.value())

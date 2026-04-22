@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Provides extended utilities for :obj:`max.driver.Buffer`, including dtype casting, numpy interop, and DLPack integration."""
+
 from __future__ import annotations
 
 import struct
@@ -21,6 +24,7 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 from max._core.driver import Buffer as Buffer
+from max._core.driver import DevicePinnedBuffer as DevicePinnedBuffer
 from max.dtype import DType
 
 from .driver import CPU
@@ -71,6 +75,9 @@ def inplace_copy_from(self: Buffer, src: Buffer) -> None:
     These buffers may be on different devices.
     Requires that both buffers are contiguous and have same size.
     """
+    if self is src:
+        return
+
     # check that both buffers are contiguous
     if not self.is_contiguous:
         raise ValueError("Cannot copy from non-contiguous buffer")
@@ -110,7 +117,7 @@ def _to_numpy(self: Buffer) -> npt.NDArray[Any]:
         cpu_buf = self.to(CPU())
 
     try:
-        return np.from_dlpack(cpu_buf)
+        arr = np.from_dlpack(cpu_buf)
     except RuntimeError as e:
         if str(e).startswith("Unsupported device in DLTensor"):
             raise RuntimeError(
@@ -118,6 +125,11 @@ def _to_numpy(self: Buffer) -> npt.NDArray[Any]:
                 " the host using `Buffer.to`"
             ) from e
         raise
+    # DLPack v0 capsules may produce read-only arrays in numpy >= 1.26.
+    # Callers expect a writable view, so return a writable copy when needed.
+    if not arr.flags.writeable:
+        arr = arr.copy()
+    return arr
 
 
 def _from_dlpack(array: Any, *, copy: bool | None = None) -> Buffer:
@@ -256,7 +268,7 @@ def load_max_buffer(path: PathLike[str]) -> Buffer:
         # 'I' = 4-byte unsigned integer (key_size).
         key_size = struct.unpack("I", f.read(4))[0]
 
-        unused_key = f.read(key_size).decode("utf-8")
+        f.read(key_size)  # skip key
 
         # '2B' = 2 unsigned bytes (dtype, rank).
         dtype, rank = struct.unpack("2B", f.read(2))

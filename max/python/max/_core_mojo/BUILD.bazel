@@ -1,14 +1,22 @@
-load("//bazel:api.bzl", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "mojo_shared_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
+
+mojo_shared_library(
+    name = "mojo_module",
+    srcs = ["mojo_module.mojo"],
+    shared_lib_name = "mojo_module.so",
+    deps = [
+        "@mojo//:std",
+    ],
+)
 
 modular_py_library(
     name = "_core_mojo",
     srcs = glob(["**/*.py"]),
-    data = glob(["**/*.mojo"]) + [
-        "@mojo//:std",
+    data = [
+        ":mojo_module",
     ],
-    tags = ["no-pydeps"],  # Relative import of "_core_mojo" instead of "._core_mojo", unsure how to handle this case
     deps = [
         requirement("numpy"),
         "@mojo//:python",

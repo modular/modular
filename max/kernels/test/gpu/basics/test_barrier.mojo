@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,26 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import gpu.primitives.warp as warp
-from gpu import barrier, global_idx
-from gpu.globals import WARP_SIZE
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+import std.gpu.primitives.warp as warp
+from std.gpu import barrier, global_idx
+from std.gpu.globals import WARP_SIZE
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal
 
 
-fn kernel[
+def kernel[
     dtype: DType
 ](
-    input: UnsafePointer[Scalar[dtype]],
-    output: UnsafePointer[Scalar[dtype]],
-    shared_data: UnsafePointer[Scalar[dtype]],
+    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    shared_data: UnsafePointer[Scalar[dtype], MutAnyOrigin],
     size: Int,
 ):
     var global_tid = global_idx.x
-    if global_tid >= UInt(size):
+    if global_tid >= size:
         return
     shared_data[global_tid] = input[global_tid]
 
@@ -41,16 +38,16 @@ fn kernel[
     output[global_tid] = result
 
 
-fn test_barrier[dtype: DType](ctx: DeviceContext) raises:
+def test_barrier[dtype: DType](ctx: DeviceContext) raises:
     comptime block_size = WARP_SIZE
     comptime buffer_size = block_size
     comptime constant_add: Scalar[dtype] = 42
-    var input_host = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
-    var output_host = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
-    var shared_host = UnsafePointer[Scalar[dtype]].alloc(buffer_size)
+    var input_host = alloc[Scalar[dtype]](buffer_size)
+    var output_host = alloc[Scalar[dtype]](buffer_size)
+    var shared_host = alloc[Scalar[dtype]](buffer_size)
 
     for i in range(buffer_size):
-        input_host[i] = i + constant_add
+        input_host[i] = Scalar[dtype](i) + constant_add
         output_host[i] = -1.0
         shared_host[i] = -999.0
 
@@ -76,8 +73,8 @@ fn test_barrier[dtype: DType](ctx: DeviceContext) raises:
     ctx.synchronize()
 
     for i in range(buffer_size):
-        assert_equal(output_host[i], 2 * constant_add + i)
-        assert_equal(shared_host[i], constant_add + i)
+        assert_equal(output_host[i], 2 * constant_add + Scalar[dtype](i))
+        assert_equal(shared_host[i], constant_add + Scalar[dtype](i))
 
     _ = input_buffer
     _ = shared_buffer
@@ -87,6 +84,6 @@ fn test_barrier[dtype: DType](ctx: DeviceContext) raises:
     shared_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_barrier[DType.float32](ctx)

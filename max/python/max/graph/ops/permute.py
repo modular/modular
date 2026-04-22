@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,7 +26,7 @@ def permute(x: TensorValueLike, dims: list[int]) -> TensorValue:
     """Permutes all dimensions of a symbolic tensor.
 
     Args:
-        input: The input symbolic tensor to transpose.
+        x: The input symbolic tensor to permute.
         dims: The desired ordering of the dimensions in the output tensor.
 
     Returns:

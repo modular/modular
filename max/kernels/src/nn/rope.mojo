@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,25 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import gcd
-from sys.info import _current_target, simd_width_of
+from std.collections import OptionalReg
+from std.math import gcd
+from std.sys.info import _current_target, simd_width_of
 
-from algorithm.functional import elementwise
-from complex import ComplexSIMD
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import is_cpu
-from layout import UNKNOWN_VALUE, IntTuple, Layout, LayoutTensor
+from std.algorithm.functional import elementwise
+from std.complex import ComplexSIMD
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu
+from layout import (
+    Coord,
+    CoordLike,
+    RowMajorLayout,
+    RuntimeInt,
+    TensorLayout,
+    TileTensor,
+    coord,
+)
 from nn._ragged_utils import get_batch_from_row_offsets
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline
-fn _rope[
+def _rope[
     dtype: DType,
     freq_dtype: DType,
-    width: Int,
+    width: SIMDSize,
 ](val: SIMD[dtype, width], freq: SIMD[freq_dtype, width]) -> SIMD[dtype, width]:
     x_re, x_im = val.cast[freq_dtype]().deinterleave()
     f_re, f_im = freq.deinterleave()
@@ -41,12 +49,12 @@ fn _rope[
 # while in safetensors, the data is stored as real, …, real, imag, …, imag.
 # This function return the indices for the real and imaginary part.
 @always_inline
-fn get_safetensors_idx(head_dim_idx: Int, head_size: Int) -> Tuple[Int, Int]:
+def get_safetensors_idx(head_dim_idx: Int, head_size: Int) -> Tuple[Int, Int]:
     return (head_dim_idx // 2, head_dim_idx // 2 + head_size // 2)
 
 
 @always_inline
-fn get_identity_rope_coeff[width: Int, dtype: DType]() -> SIMD[dtype, width]:
+def get_identity_rope_coeff[width: Int, dtype: DType]() -> SIMD[dtype, width]:
     # Creates a SIMD vector with real parts set to 1 and imaginary parts to
     # 0, effectively making the RoPE transformation an identity operation.
     return rebind[SIMD[dtype, width]](
@@ -55,26 +63,25 @@ fn get_identity_rope_coeff[width: Int, dtype: DType]() -> SIMD[dtype, width]:
 
 
 @always_inline
-fn apply_rope[
+def apply_rope[
     dtype: DType,
     freq_dtype: DType,
-    x_layout: Layout,
     rank: Int,
-    width: Int,
+    width: SIMDSize,
     //,
     *,
     interleaved: Bool,
     alignment: Int,
-    output_fn: fn[width: Int, alignment: Int] (
+    output_fn: def[width: SIMDSize, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
 ](
-    x: LayoutTensor[dtype, x_layout, MutAnyOrigin],
+    x: TileTensor[dtype, ...],
     idx: IndexList[rank],
     freq_val: SIMD[freq_dtype, width],
 ):
-    __comptime_assert rank - 1 != UNKNOWN_VALUE
-    var indices = get_safetensors_idx(idx[rank - 1], x.shape[rank - 1]())
+    comptime assert rank - 1 >= 0
+    var indices = get_safetensors_idx(idx[rank - 1], x.static_shape[rank - 1])
     var pos_re = idx
     var pos_im = idx
     pos_re[rank - 1] = indices[0]
@@ -83,20 +90,21 @@ fn apply_rope[
 
     var val: SIMD[dtype, width]
 
-    @parameter
-    if interleaved:
-        val = x.load[width=width](idx)
+    comptime if interleaved:
+        var coord = Coord(idx)
+        val = x.load[width=width, alignment=1](coord)
     else:
+        var re_coord = Coord(pos_re)
+        var im_coord = Coord(pos_im)
         val = rebind[SIMD[dtype, width]](
-            x.load[width=width_2](pos_re).interleave(
-                x.load[width=width_2](pos_im)
+            x.load[width=width_2, alignment=1](re_coord).interleave(
+                x.load[width=width_2, alignment=1](im_coord)
             )
         )
 
     var res = _rope(val, freq_val)
 
-    @parameter
-    if interleaved:
+    comptime if interleaved:
         output_fn[alignment=alignment](idx, res)
     else:
         output_re, output_im = res.deinterleave()
@@ -105,79 +113,60 @@ fn apply_rope[
 
 
 @always_inline
-fn rope_ragged[
+def rope_ragged[
     dtype: DType,
-    x_layout: Layout,
     freq_dtype: DType,
-    input_row_offsets_layout: Layout,
-    start_pos_layout: Layout,
-    freqs_cis_layout: Layout,
     *,
     interleaved: Bool,
     target: StaticString,
-    output_fn: fn[width: Int, alignment: Int] (
+    output_fn: def[width: SIMDSize, alignment: Int](
         idx: IndexList[3], val: SIMD[dtype, width]
     ) capturing -> None,
-    mrope_section: Optional[IntTuple] = None,
-](
-    x: LayoutTensor[dtype, x_layout, MutAnyOrigin],
-    input_row_offsets: LayoutTensor[
-        DType.uint32, input_row_offsets_layout, MutAnyOrigin
+    mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
+        Trait=CoordLike
+    ](),
+    mrope_section: Optional[Coord[*mrope_types]] = None,
+    PositionIdsLayoutType: TensorLayout = RowMajorLayout[
+        *Coord[RuntimeInt[DType.int64], RuntimeInt[DType.int64]].element_types
     ],
-    start_pos: LayoutTensor[DType.uint32, start_pos_layout, MutAnyOrigin],
-    freqs_cis: LayoutTensor[freq_dtype, freqs_cis_layout, MutAnyOrigin],
+](
+    x: TileTensor[dtype, ...],
+    input_row_offsets: TileTensor[DType.uint32, ...],
+    start_pos: TileTensor[DType.uint32, ...],
+    freqs_cis: TileTensor[freq_dtype, ...],
     context: Optional[DeviceContext],
     position_ids: OptionalReg[
-        LayoutTensor[
-            DType.uint32,
-            Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
-            MutAnyOrigin,
-        ]
+        TileTensor[DType.uint32, PositionIdsLayoutType, ImmutAnyOrigin]
     ] = None,
-) raises:
-    @parameter
-    for i in range(len(x.layout.shape)):
-        __comptime_assert x.layout.shape[i].is_value(), (
-            "x.layout.shape["
-            + String(i)
-            + "] must be a scalar, was "
-            + String(x.layout.shape[i])
-        )
-    __comptime_assert (
-        x.layout.shape[1].all_known() and x.layout.shape[2].all_known()
-    ), (
-        "x.shape[1] (num_heads) and x.shape[2] (head_dim) must be static, was "
-        + String(x.layout.shape)
-    )
-    __comptime_assert (
-        input_row_offsets.layout.all_dims_known()
-    ), "input_row_offsets shape must be statically shaped"
-    __comptime_assert (
-        freqs_cis.layout.all_dims_known()
-    ), "freqs_cis shape must be statically shaped"
-    debug_assert(
-        input_row_offsets.shape[0]() - 1 == start_pos.shape[0](),
-        (
-            "input_row_offsets shape must be batch_size + 1 and start_pos must"
-            " be batch_size"
-        ),
-    )
-    comptime head_size = x.shape[2]()
-    comptime rope_dim = freqs_cis.shape[1]()
+) raises where (
+    input_row_offsets.flat_rank == 1
+    and start_pos.flat_rank == 1
+    and freqs_cis.flat_rank == 2
+):
+    comptime assert freqs_cis.LayoutType._shape_types[
+        1
+    ].is_static_value, "Need static rope_dim for freqs_cis"
+    comptime head_size = Int(x.static_shape[2])
+    comptime rope_dim = Int(freqs_cis.static_shape[1])
     comptime unroped_dim = head_size - rope_dim
     comptime has_nope = unroped_dim > 0
 
     @always_inline
     @parameter
     @__copy_capture(x, input_row_offsets, start_pos, freqs_cis)
-    fn rope_fn[
+    def rope_fn[
         width: Int, rank: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank]):
-        __comptime_assert rank == 3, "Invalid rank passed to rope kernel"
+        comptime assert rank == 3, "Invalid rank passed to rope kernel"
+        comptime assert freqs_cis.flat_rank >= 2
 
-        @parameter
-        if width == 1:
-            # constrained[False, "ROPE SIMD_WIDTH=1, We should never be here"]()
+        comptime if width == 1:
+            assert False, (
+                "RoPE kernel called with simd width = 1, We should never be"
+                " here. This is indicative of an uneven last dimension of"
+                " the rope tensor. Ensure the model's head_size is"
+                " divisible by the simd width of your target hardware."
+            )
             return
         else:
             var idx = rebind[IndexList[3]](idx_arg)
@@ -187,23 +176,23 @@ fn rope_ragged[
             var batch_idx: Int = get_batch_from_row_offsets(
                 input_row_offsets, global_token_idx
             )
-            var token_idx = Int(global_token_idx - input_row_offsets[batch_idx])
-            var head_idx = idx[1]
+            var token_idx = Int(
+                UInt32(global_token_idx) - input_row_offsets[batch_idx]
+            )
             var head_dim_idx = idx[2]
 
             # Use position_ids if provided, otherwise fall back to cache calculation
-            var post_seq_idx = start_pos[batch_idx] + token_idx
+            var post_seq_idx = start_pos[batch_idx] + UInt32(token_idx)
 
             var position_ids_idx = Int(post_seq_idx)
             if position_ids:
-
-                @parameter
-                if mrope_section:
+                comptime PIdTensor = type_of(position_ids.value())
+                comptime assert PIdTensor.flat_rank == 2
+                comptime if mrope_section:
                     var section_idx = 0
 
-                    @parameter
-                    for i in range(len(mrope_section.value())):
-                        comptime val = mrope_section.value().value(i)
+                    comptime for i in range(len(mrope_section.value())):
+                        comptime val = mrope_section.value()[i].value()
                         if head_dim_idx < val:
                             section_idx = i
                             break
@@ -221,17 +210,20 @@ fn rope_ragged[
 
             var f_c_temp: SIMD[freq_dtype, width]
 
-            @parameter
-            if has_nope:
+            comptime if has_nope:
                 if is_unroped_region:
                     f_c_temp = get_identity_rope_coeff[width, freq_dtype]()
                 else:
-                    f_c_temp = freqs_cis.load[width=width](
-                        position_ids_idx, head_dim_idx - unroped_dim
+                    f_c_temp = freqs_cis.load[width=width, alignment=1](
+                        coord[freqs_cis.linear_idx_type](
+                            (position_ids_idx, head_dim_idx - unroped_dim)
+                        )
                     )
             else:
-                f_c_temp = freqs_cis.load[width=width](
-                    position_ids_idx, head_dim_idx
+                f_c_temp = freqs_cis.load[width=width, alignment=1](
+                    coord[freqs_cis.linear_idx_type](
+                        (position_ids_idx, head_dim_idx)
+                    )
                 )
             apply_rope[
                 interleaved=interleaved,
@@ -239,12 +231,10 @@ fn rope_ragged[
                 output_fn=output_fn,
             ](x, idx, f_c_temp)
 
-    var launch_shape_int_tuple = x.runtime_layout
-    var launch_shape_index_list = IndexList[x.layout.rank()]()
+    var launch_shape_index_list = IndexList[x.rank]()
 
-    @parameter
-    for i in range(x.layout.rank()):
-        launch_shape_index_list[i] = launch_shape_int_tuple.dim(i)
+    comptime for i in range(x.rank):
+        launch_shape_index_list[i] = Int(x.dim(i))
 
     comptime compile_target = _current_target() if is_cpu[
         target
@@ -252,23 +242,28 @@ fn rope_ragged[
     comptime target_simd_width = simd_width_of[dtype, target=compile_target]()
     comptime kernel_simd_width = gcd(target_simd_width, rope_dim)
 
-    @parameter
-    if mrope_section:
-
-        @parameter
-        for i in range(len(mrope_section.value())):
-            __comptime_assert (
-                Int(mrope_section.value()[i]) % kernel_simd_width == 0
+    comptime if mrope_section:
+        comptime for i in range(len(mrope_section.value())):
+            comptime assert (
+                mrope_section.value()[i].static_value % kernel_simd_width == 0
             ), "mrope_section must be divisible by rope kernel simd_width"
 
-    __comptime_assert kernel_simd_width >= 2, "invalid simd_width and head size"
+    comptime assert (
+        kernel_simd_width >= 2 and rope_dim % kernel_simd_width == 0
+    ), (
+        "Rope kernel simd width must be between 2 and rope_dim and divisible by"
+        " rope_dim. Ensure the model's head_size is divisible by the simd width"
+        " of your target hardware."
+    )
 
-    @parameter
-    if is_cpu[target]():
+    comptime if is_cpu[target]():
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
             launch_shape_index_list
         )
     else:
-        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
-            launch_shape_index_list, context.value()
-        )
+        elementwise[
+            func=rope_fn,
+            simd_width=kernel_simd_width,
+            target=target,
+            _trace_description="rope",
+        ](launch_shape_index_list, context.value())

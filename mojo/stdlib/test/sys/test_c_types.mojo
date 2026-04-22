@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import c_int, c_long, c_long_long, c_ulong, c_ulong_long
-from sys.info import CompilationTarget, is_64bit
+from std.ffi import c_int, c_long, c_long_long, c_ulong, c_ulong_long
+from std.sys.info import CompilationTarget, is_64bit
 
-from testing import assert_equal, assert_true
-from testing import TestSuite
+from std.testing import assert_equal, assert_true
+from std.testing import TestSuite
 
 #
 # Reference:
@@ -23,7 +23,7 @@ from testing import TestSuite
 #
 
 
-def test_c_int_type():
+def test_c_int_type() raises:
     if is_64bit() and (
         CompilationTarget.is_macos() or CompilationTarget.is_linux()
     ):
@@ -33,7 +33,7 @@ def test_c_int_type():
         assert_true(False, "platform c_int size is untested")
 
 
-def test_c_long_types():
+def test_c_long_types() raises:
     if is_64bit() and (
         CompilationTarget.is_macos() or CompilationTarget.is_linux()
     ):
@@ -44,7 +44,7 @@ def test_c_long_types():
         assert_true(False, "platform c_long and c_ulong size is untested")
 
 
-def test_c_long_long_types():
+def test_c_long_long_types() raises:
     if is_64bit() and (
         CompilationTarget.is_macos() or CompilationTarget.is_linux()
     ):
@@ -56,5 +56,5 @@ def test_c_long_long_types():
         )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

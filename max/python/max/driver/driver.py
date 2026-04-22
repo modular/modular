@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,8 +18,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-# The Device class is not used in this file, but is used by others that import
-# this file. Ruff will try to remove it, so ignore that Ruff check on this line.
 from max._core.driver import (  # noqa: F401
     CPU,
     Accelerator,
@@ -45,17 +43,19 @@ def accelerator_architecture_name() -> str:
 
 @dataclass(frozen=True)
 class DeviceSpec:
-    """Specification for a device, containing its ID and type.
+    """A device specification containing an ID and device type.
 
-    This class provides a way to specify device parameters like ID and type (CPU/GPU)
-    for creating Device instances.
+    Args:
+        id: The device identifier.
+        device_type: The device type, either ``cpu`` or ``gpu``.
+            Defaults to ``cpu``.
     """
 
     id: int
-    """Provided id for this device."""
+    """The device identifier."""
 
     device_type: Literal["cpu", "gpu"] = "cpu"
-    """Type of specified device."""
+    """The device type, either ``cpu`` or ``gpu``."""
 
     def __post_init__(self) -> None:
         if self.device_type == "gpu" and self.id < 0:
@@ -75,7 +75,7 @@ class DeviceSpec:
 
 
 def load_device(device_spec: DeviceSpec) -> Device:
-    """Load a device from a device specification."""
+    """Loads a :class:`Device` from a :class:`DeviceSpec`."""
     if device_spec.device_type == "cpu":
         return CPU(device_spec.id)
 
@@ -91,7 +91,7 @@ def load_device(device_spec: DeviceSpec) -> Device:
 
 
 def load_devices(device_specs: Sequence[DeviceSpec]) -> list[Device]:
-    """Initialize and return a list of devices, given a list of device specs."""
+    """Initializes and returns a list of :class:`Device` objects from a sequence of :class:`DeviceSpec` objects."""
     devices: list[Device] = []
     for device_spec in device_specs:
         devices.append(load_device(device_spec))
@@ -99,7 +99,7 @@ def load_devices(device_specs: Sequence[DeviceSpec]) -> list[Device]:
 
 
 def scan_available_devices() -> list[DeviceSpec]:
-    """Returns all accelerators if available, else return cpu."""
+    """Returns all available accelerators, or a CPU device if none are available."""
     accel_count = accelerator_count()
     if accel_count == 0:
         return [DeviceSpec.cpu()]
@@ -108,7 +108,7 @@ def scan_available_devices() -> list[DeviceSpec]:
 
 
 def devices_exist(devices: list[DeviceSpec]) -> bool:
-    """Identify if devices exist."""
+    """Returns ``True`` if all specified devices exist."""
     available_devices = scan_available_devices()
     for device in devices:
         if device.device_type != "cpu" and device not in available_devices:
@@ -118,14 +118,14 @@ def devices_exist(devices: list[DeviceSpec]) -> bool:
 
 
 def calculate_virtual_device_count(*device_spec_lists: list[DeviceSpec]) -> int:
-    """Calculate the minimum virtual device count needed for the given device specs.
+    """Calculates the minimum virtual device count needed for the given device specs.
 
     Args:
-        *device_spec_lists: One or more lists of DeviceSpec objects (e.g., main devices
-            and draft devices)
+        *device_spec_lists: One or more lists of :class:`DeviceSpec` objects (for example, main
+            devices and draft devices).
 
     Returns:
-        The minimum number of virtual devices needed (max GPU ID + 1), or 1 if no GPUs
+        The minimum number of virtual devices needed (max GPU ID + 1), or 1 if no GPUs.
     """
     max_gpu_id = -1
     for device_specs in device_spec_lists:
@@ -139,18 +139,18 @@ def calculate_virtual_device_count(*device_spec_lists: list[DeviceSpec]) -> int:
 def calculate_virtual_device_count_from_cli(
     *device_inputs: str | list[int],
 ) -> int:
-    """Calculate virtual device count from raw CLI inputs (before parsing).
+    """Calculates the minimum virtual device count from raw CLI inputs (before parsing).
 
     This helper works with the raw device input strings or lists before they're
-    parsed into DeviceSpec objects. Used when virtual device mode needs to be
+    parsed into :class:`DeviceSpec` objects. Used when virtual device mode needs to be
     enabled before device validation occurs.
 
     Args:
-        *device_inputs: One or more raw device inputs - either strings like "gpu:0,1,2"
-            or lists of integers like [0, 1, 2]
+        *device_inputs: One or more raw device inputs, either strings like ``gpu:0,1,2``
+            or lists of integers like ``[0, 1, 2]``.
 
     Returns:
-        The minimum number of virtual devices needed (max GPU ID + 1), or 1 if no GPUs
+        The minimum number of virtual devices needed (max GPU ID + 1), or 1 if no GPUs.
     """
     max_gpu_id = -1
     for device_input in device_inputs:

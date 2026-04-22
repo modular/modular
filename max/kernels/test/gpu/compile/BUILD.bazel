@@ -6,12 +6,12 @@ _LIT_TESTS = [
     "test_amd_asan_oob.mojo",
     "test_amd_block_sync_lds.mojo",
     "test_compile_via_param.mojo",
+    "test_elementwise_trace_description.mojo",
 ]
 
 _FILECHECK_TESTS = [
     "test_amd_target.mojo",
     "test_compile_gcn.mojo",
-    "test_compile_intrinsics.mojo",
     "test_compile_nvptx.mojo",
     "test_compile_nvptx_debuginfo.mojo",
     "test_compile_to_llvm_codegen.mojo",
@@ -29,8 +29,13 @@ _EXTRA_CONSTRAINTS = {
     "test_amd_target.mojo": ["//:amd_gpu"],
     "test_compile_nvptx.mojo": ["//:nvidia_gpu"],
     "test_cuda_target.mojo": ["//:nvidia_gpu"],
+    "test_fp8_cast_nvptx.mojo": ["//:nvidia_gpu"],
     "test_simd.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_wmma_nvptx.mojo": ["//:a100_gpu"],  # SM80 WMMA instructions specific to A100
+    "test_compile_to_llvm_codegen.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: KERN-2360 - external_memory is not supported on Apple silicon
 }
 
 [

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,26 +11,37 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .cache_params import KVCacheParams, KVCacheStrategy
-from .input_types import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-    NestedIterableDataclass,
-    PagedCacheValues,
-    RaggedKVCacheInputs,
+from .cache_params import (
+    KVCacheBuffer,
+    KVCacheParamInterface,
+    KVCacheParams,
+    KVCacheQuantizationConfig,
+    KVConnectorType,
+    MultiKVCacheParams,
+    compute_max_seq_len_fitting_in_cache,
+    compute_num_device_blocks,
+    compute_num_host_blocks,
+    estimated_memory_size,
 )
+from .input_types import KVCacheInputs, KVCacheInputsPerDevice, PagedCacheValues
 from .metrics import KVCacheMetrics
-from .utils import build_max_lengths_tensor
+from .utils import AttentionDispatchResolver, build_max_lengths_tensor
 
 __all__ = [
+    "AttentionDispatchResolver",
+    "KVCacheBuffer",
     "KVCacheInputs",
-    "KVCacheInputsSequence",
+    "KVCacheInputsPerDevice",
     "KVCacheMetrics",
+    "KVCacheParamInterface",
     "KVCacheParams",
-    "KVCacheStrategy",
-    "NestedIterableDataclass",
+    "KVCacheQuantizationConfig",
+    "KVConnectorType",
+    "MultiKVCacheParams",
     "PagedCacheValues",
-    "PagedCacheValues",
-    "RaggedKVCacheInputs",
     "build_max_lengths_tensor",
+    "compute_max_seq_len_fitting_in_cache",
+    "compute_num_device_blocks",
+    "compute_num_host_blocks",
+    "estimated_memory_size",
 ]

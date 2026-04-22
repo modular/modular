@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,33 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_float64
+from std.random import random_float64
 
-from gpu.host import DeviceContext
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
-from layout.int_tuple import fill_like
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.gpu.host import DeviceContext
+from layout import Coord, TileTensor, row_major
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
-from testing import assert_equal
+from std.testing import assert_equal
+from std.utils.index import IndexList
 
-from utils.index import IndexList
 
-
-fn test_argmaxmin_gpu[
+def test_argmaxmin_gpu[
     dtype: DType,
     output_type: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
-        LayoutTensor[mut=True, dtype, ...]
-    ) capturing [_] -> None,
+    fill_fn: def[rank: Int, dtype: DType](
+        TileTensor[mut=True, dtype, ...]
+    ) capturing[_] -> None,
     largest: Bool = True,
     rank: Int = 2,
 ](
@@ -47,8 +36,7 @@ fn test_argmaxmin_gpu[
     var in_shape: IndexList[rank]
     var out_shape: IndexList[rank]
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         out_shape = IndexList[rank](1)
         in_shape = IndexList[rank](N)
     elif rank == 2:
@@ -68,16 +56,15 @@ fn test_argmaxmin_gpu[
         out_size *= out_shape[i]
 
     # Allocate host memory
-    comptime layout = Layout.row_major[rank]()
-    var in_host_ptr = UnsafePointer[Scalar[dtype]].alloc(in_size)
-    var in_host = LayoutTensor[dtype, layout](
+    var in_host_ptr = alloc[Scalar[dtype]](in_size)
+    var in_host = TileTensor(
         in_host_ptr,
-        RuntimeLayout[layout].row_major(in_shape),
+        row_major(Coord(in_shape)),
     )
-    var out_idxs_host_ptr = UnsafePointer[Scalar[output_type]].alloc(out_size)
-    var out_idxs_host = LayoutTensor[output_type, layout](
+    var out_idxs_host_ptr = alloc[Scalar[output_type]](out_size)
+    var _out_idxs_host = TileTensor(
         out_idxs_host_ptr,
-        RuntimeLayout[layout].row_major(out_shape),
+        row_major(Coord(out_shape)),
     )
 
     # Fill the buffer with consecutive values
@@ -89,18 +76,17 @@ fn test_argmaxmin_gpu[
 
     ctx.enqueue_copy(device_in, in_host_ptr)
 
-    # Create device LayoutTensors
-    var device_in_tensor = LayoutTensor[dtype, layout, MutAnyOrigin](
-        device_in.unsafe_ptr(),
-        RuntimeLayout[layout].row_major(in_shape),
+    # Create device TileTensors
+    var device_in_tensor = TileTensor(
+        device_in,
+        row_major(Coord(in_shape)),
     )
-    var device_out_tensor = LayoutTensor[output_type, layout, MutAnyOrigin](
-        device_out_idxs.unsafe_ptr(),
-        RuntimeLayout[layout].row_major(out_shape),
+    var device_out_tensor = TileTensor(
+        device_out_idxs,
+        row_major(Coord(out_shape)),
     )
 
-    @parameter
-    if largest:
+    comptime if largest:
         argmax_gpu(
             ctx,
             device_in_tensor,
@@ -117,14 +103,13 @@ fn test_argmaxmin_gpu[
     ctx.synchronize()
 
     # Test for correctness against CPU reference
-    var out_idxs_cpu_ptr = UnsafePointer[Scalar[DType.int64]].alloc(out_size)
-    var out_idxs_cpu = LayoutTensor[DType.int64, layout](
+    var out_idxs_cpu_ptr = alloc[Scalar[DType.int64]](out_size)
+    var out_idxs_cpu = TileTensor(
         out_idxs_cpu_ptr,
-        RuntimeLayout[layout].row_major(out_shape),
+        row_major(Coord(out_shape)),
     )
 
-    @parameter
-    if largest:
+    comptime if largest:
         argmax(
             in_host,
             rank - 1,
@@ -153,11 +138,11 @@ fn test_argmaxmin_gpu[
     _ = device_out_idxs^
 
 
-fn _test_argmaxmin_gpu_helper_2[
+def _test_argmaxmin_gpu_helper_2[
     idx_type: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
-        LayoutTensor[mut=True, dtype, ...]
-    ) capturing [_] -> None,
+    fill_fn: def[rank: Int, dtype: DType](
+        TileTensor[mut=True, dtype, ...]
+    ) capturing[_] -> None,
     largest: Bool,
 ](ctx: DeviceContext) raises:
     test_argmaxmin_gpu[
@@ -171,11 +156,11 @@ fn _test_argmaxmin_gpu_helper_2[
     ](ctx, N=1024, batch_size=12, num_batches=10)
 
 
-fn test_argmaxmin_gpu_helper[
+def test_argmaxmin_gpu_helper[
     idx_type: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
-        LayoutTensor[mut=True, dtype, ...]
-    ) capturing [_] -> None,
+    fill_fn: def[rank: Int, dtype: DType](
+        TileTensor[mut=True, dtype, ...]
+    ) capturing[_] -> None,
 ](ctx: DeviceContext) raises:
     # argmax
     _test_argmaxmin_gpu_helper_2[idx_type, fill_fn, largest=True](ctx)
@@ -184,17 +169,17 @@ fn test_argmaxmin_gpu_helper[
     _test_argmaxmin_gpu_helper_2[idx_type, fill_fn, largest=False](ctx)
 
 
-def main():
+def main() raises:
     @parameter
-    fn fill_random[
+    def fill_random[
         rank: Int, dtype: DType
-    ](buffer: LayoutTensor[mut=True, dtype, ...]):
+    ](buffer: TileTensor[mut=True, dtype, ...]):
         comptime min_val = -1e9
         comptime max_val = 1e9
-        var total_elements = buffer.size()
+        var total_elements = buffer.num_elements()
         for i in range(total_elements):
             var random_value = random_float64(min_val, max_val)
-            buffer.ptr[i] = random_value.cast[dtype]()
+            buffer.raw_store(i, random_value.cast[dtype]())
 
     with DeviceContext() as ctx:  # argmax tests
         # index

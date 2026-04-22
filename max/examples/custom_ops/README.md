@@ -19,6 +19,8 @@ following examples are shown here:
 - **addition**: Adding 1 to every element of an input tensor.
 - **mandelbrot**: Calculating the Mandelbrot set.
 - **vector_addition**: Performing vector addition using a manual GPU function.
+- **eager_vector_addition**: The same custom op as `vector_addition`, only
+  using the eager Tensor API.
 - **top_k**: A top-K token sampler, a complex operation that shows a real-world
   use case for a custom operation used today within a large language model
   processing pipeline.

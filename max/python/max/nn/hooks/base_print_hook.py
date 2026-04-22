@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -160,7 +160,6 @@ class BasePrintHook(ABC):
 
     def write_keys_file(self) -> None:
         """Write the list of tensor file names, in the order of execution, to tensor_names.txt ."""
-
         if self.export_path and self._current_step in self._recorded_prints:
             keys_file = os.path.join(self.export_path, "tensor_names.txt")
 

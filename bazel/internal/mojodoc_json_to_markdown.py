@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,17 +21,59 @@ from pathlib import Path
 import jinja2
 
 
+def addStabilityMarker(mojo_json, mode: str) -> None:  # noqa: ANN001
+    """Set stabilityMarker/stabilityMarkerVersion on each API declaration.
+
+    Args:
+        mojo_json: Module-level JSON declaration to annotate.
+        mode: One of "all", "stable", or "none".
+            - "none": no markers are set.
+            - "stable": only stable APIs get a marker.
+            - "all": stable APIs get "Stable"; everything else gets "Unstable".
+    """
+    if mode == "none":
+        return
+
+    def _apply(decl) -> None:  # noqa: ANN001
+        if decl.get("isStable"):
+            decl["showStabilityMarker"] = True
+            since = decl.get("sinceVersion")
+            # normalize version to three digits
+            digits = since.split(".")
+            for _ in range(3 - len(digits)):
+                digits.append("0")
+            decl["sinceVersion"] = ".".join(digits)
+        elif mode == "all":
+            decl["showStabilityMarker"] = True
+
+    # Top-level aliases and functions
+    for alias in mojo_json.get("aliases", []):
+        _apply(alias)
+    for overload_set in mojo_json.get("functions", []):
+        for fn in overload_set.get("overloads", []):
+            _apply(fn)
+
+    # Structs and traits: the type itself, its aliases, and its methods
+    for type_decl in mojo_json.get("structs", []) + mojo_json.get("traits", []):
+        _apply(type_decl)
+        for alias in type_decl.get("aliases", []):
+            _apply(alias)
+        for overload_set in type_decl.get("functions", []):
+            for fn in overload_set.get("overloads", []):
+                _apply(fn)
+
+
 def addImplicitConversionDecorator(mojo_json) -> None:  # noqa: ANN001
-    """Show @implicit on implicit constructors. We reuse the "convention"
-    field which is also used for marking structs with the register-passable
-    decorator. The isImplicitConversion flag should only appear on constructors,
-    but check just in case."""
+    """Show @implicit on implicit constructors.  The isImplicitConversion
+    flag should only appear on constructors, but check just in case.
+    For now we assume that this is the only decorator we show
+    (the @stable decorator is not in the templates at present)."""
     for struct in mojo_json["structs"] + mojo_json["traits"]:
         for overload_set in struct["functions"]:
             for function in overload_set["overloads"]:
                 if function["isImplicitConversion"]:
                     if function["name"] == "__init__":
-                        function["convention"] = "@implicit"
+                        function["implicit"] = True
                     else:
                         print(
                             f"Error: {struct['name']}.{function['name']} "
@@ -47,25 +89,6 @@ def copyFieldTypesToValue(mojo_json) -> None:  # noqa: ANN001
     for struct in mojo_json["structs"] + mojo_json["traits"]:
         for field in struct["fields"]:
             field["value"] = field["type"]
-
-
-def processStructConvention(mojo_json) -> None:  # noqa: ANN001
-    """We want to show the decorators for register-passable types; don't display
-    anything for the default case (memory-only)."""
-    for struct in mojo_json["structs"]:
-        if "convention" in struct:
-            if struct["convention"] == "register_passable":
-                struct["convention"] = "@register_passable"
-            elif struct["convention"] == "register_passable_trivial":
-                struct["convention"] = "@register_passable(trivial)"
-            elif struct["convention"] == "memory_only":
-                del struct["convention"]
-            else:
-                print(
-                    f"Unknown struct convention: {struct['convention']}",
-                    file=sys.stderr,
-                )
-                exit(1)
 
 
 def processTraitMethods(mojo_json) -> None:  # noqa: ANN001
@@ -198,6 +221,7 @@ def generateMarkdown(
     parent_json=None,  # noqa: ANN001
     is_nested=False,  # noqa: ANN001
     namespace=None,  # noqa: ANN001
+    show_stability_markers: str = "none",
 ) -> None:
     """Generate markdown docs from `mojo doc` JSON data.
 
@@ -252,6 +276,7 @@ def generateMarkdown(
                 parent_json=mojo_json,
                 is_nested=True,
                 namespace=namespace,
+                show_stability_markers=show_stability_markers,
             )
         return
     else:
@@ -261,10 +286,10 @@ def generateMarkdown(
 
     # If its a module, we apply separate templates for struct/trait or function
     if mojo_json["kind"] == "module":
+        addStabilityMarker(mojo_json, show_stability_markers)
         for transformation in [
             addImplicitConversionDecorator,
             copyFieldTypesToValue,
-            processStructConvention,
             processTraitMethods,
             removeParametersWithoutDocumentation,
             removeArgumentsWithoutDocumentation,
@@ -298,6 +323,7 @@ def generateMarkdown(
                 parent_json=mojo_json,
                 is_nested=True,
                 namespace=namespace,
+                show_stability_markers=show_stability_markers,
             )
 
         for trait in mojo_json["traits"]:
@@ -310,6 +336,7 @@ def generateMarkdown(
                 parent_json=mojo_json,
                 is_nested=True,
                 namespace=namespace,
+                show_stability_markers=show_stability_markers,
             )
 
         for function in mojo_json["functions"]:
@@ -333,6 +360,7 @@ def generateMarkdown(
                 parent_json=mojo_json,
                 is_nested=True,
                 namespace=namespace,
+                show_stability_markers=show_stability_markers,
             )
 
         # Handle the init module.
@@ -378,12 +406,22 @@ def generateMarkdown(
 
     output.parent.mkdir(parents=True, exist_ok=True)
     with open(output, "w") as output_file:
-        # The first line must start with front matter, not mdlint comment
+        # The first line must start with front matter, not a lint comment
         markdown = template.render(decls=[mojo_json])
         lines = markdown.splitlines()
-        if lines and "markdownlint-disable" in lines[0]:
+        if lines and "rumdl-disable" in lines[0]:
             lines.pop(0)
         output_file.write("\n".join(lines))
+
+
+def pad_backticks(value: str) -> str:
+    """Jinja2 filter for Markdown backticks, adds space around strings that
+    start or end with backticks so they do not interfere with the enclosing
+    backtick delimiters."""
+    if value.startswith("`") or value.endswith("`"):
+        return " " + value + " "
+    else:
+        return value
 
 
 def main() -> None:
@@ -392,6 +430,13 @@ def main() -> None:
         "filename", help="the input Mojo documentation json file name"
     )
     parser.add_argument("-o", "--output", type=Path, help="the output path")
+    parser.add_argument(
+        "--show-stability-markers",
+        choices=["all", "stable", "none"],
+        default="none",
+        help="Show stability markers: 'all' marks every API, "
+        "'stable' marks only stable APIs, 'none' hides markers.",
+    )
     args = parser.parse_args()
 
     with open(args.filename) as jsonFile:
@@ -403,12 +448,20 @@ def main() -> None:
             trim_blocks=True,
             lstrip_blocks=True,
         )
+        environment.filters["pad_backticks"] = pad_backticks
         template = environment.get_template("mojodoc_module.md")
         docJson = json.load(jsonFile)
 
         version = docJson["version"]
         decl = docJson["decl"]
-        generateMarkdown(decl, version, args.output, environment, template)
+        generateMarkdown(
+            decl,
+            version,
+            args.output,
+            environment,
+            template,
+            show_stability_markers=args.show_stability_markers,
+        )
         # os.remove(args.filename)
 
 

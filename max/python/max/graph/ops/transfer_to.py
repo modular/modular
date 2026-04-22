@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 from max.mlir.dialects import mo, rmo
 
 from ..graph import Graph
@@ -24,22 +26,45 @@ from ..value import StrongTensorValueLike, TensorValue
 def transfer_to(
     x: StrongTensorValueLike, device: Device | DeviceRef
 ) -> TensorValue:
-    """Device-to-Device transfer operation.
+    """Inserts a device transfer node into the compiled graph.
 
-    This op transfers the input tensor from its current device over to another. A device represents a
-    computation unit, like CPU, GPU, etc. This op is useful for instance when working with
-    accelerators, like GPU, where for instance one may need to move data from GPU to GPU, or
-    from one GPU to CPU.
+    Moves ``x`` to ``device`` at execution time. This is a **graph-level
+    operation**: it operates on symbolic :class:`~max.graph.TensorValue` objects during
+    graph tracing and is baked into the compiled graph as an
+    ``mo.transfer`` MLIR op.
+
+    This is distinct from :meth:`~max.experimental.nn.Module.to`, which is a
+    **pre-compilation** operation that moves stored weight tensors on the
+    Python host before the graph is built. Use ``transfer_to`` when you need
+    to route an activation tensor between devices inside :meth:`forward`
+    (for example, host-to-device input staging, device-to-host output retrieval, or
+    cross-GPU tensor movement for multi-device models).
+
+    Host↔device transfers (CPU↔GPU) use the graph's immutable root chain
+    so they can be hoisted to model initialization by the optimizer.
+    Device-to-device transfers (GPU↔GPU) join both per-device chains to
+    prevent reordering that would deadlock multi-device collectives.
+    If source and destination device are identical, this is a no-op.
 
     Args:
         x: The input tensor to transfer.
-        device: The device to transfer to.
+        device: The target device.
 
     Returns:
-        A tensor transferred to device specified.
+        A new :class:`~max.graph.TensorValue` on the specified device.
     """
     x = TensorValue(x)
     device = DeviceRef.from_device(device)
+
+    if device.is_cpu() and not x.type.device.is_cpu() and x.rank == 0:
+        warnings.warn(
+            "transfer_to(CPU) on a scalar tensor detected during graph"
+            " construction. If this tensor is a static model weight,"
+            " consider annotating the field as `PinnedDeviceTensor`"
+            " (from max.experimental.nn) to keep it on its current"
+            " device and avoid a device sync at runtime.",
+            stacklevel=2,
+        )
 
     if device == x.type.device:
         return x

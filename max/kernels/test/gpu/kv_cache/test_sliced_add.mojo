@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,102 +11,77 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
-from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.gpu.host import DeviceContext
+from layout import Coord, Layout, RuntimeLayout, TileTensor, row_major
+from layout._utils import ManagedLayoutTensor
 from nn.slice import sliced_add
 
-from utils import IndexList
+from std.utils import IndexList
 
 
-fn test_sliced_add[
+def test_sliced_add[
     dtype: DType,
     rows: Int,
     cols: Int,
     batch_end_idx: Int,
 ](ctx: DeviceContext) raises:
     """Test the sliced_add_ragged kernel."""
-    debug_assert(
-        batch_end_idx <= rows,
-        "batch_end_idx must be less than or equal to rows",
-    )
+    assert (
+        batch_end_idx <= rows
+    ), "batch_end_idx must be less than or equal to rows"
 
-    # Create host buffers
+    # Create managed buffers and host views.
     var shape = IndexList[2](rows, cols)
-    var size = rows * cols
-    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(size)
-    var a_host = NDBuffer[dtype, 2](a_host_ptr, shape)
-    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(size)
-    var b_host = NDBuffer[dtype, 2](b_host_ptr, shape)
-    var c_host_ptr = UnsafePointer[Scalar[dtype]].alloc(size)
-    var c_host = NDBuffer[dtype, 2](c_host_ptr, shape)
+    var layout = row_major(Coord(shape))
+    var managed_shape = IndexList[2](rows, cols)
+    var a = ManagedLayoutTensor[dtype, Layout.row_major[2]()](
+        RuntimeLayout[Layout.row_major[2]()].row_major(managed_shape), ctx
+    )
+    var b = ManagedLayoutTensor[dtype, Layout.row_major[2]()](
+        RuntimeLayout[Layout.row_major[2]()].row_major(managed_shape), ctx
+    )
+    var c = ManagedLayoutTensor[dtype, Layout.row_major[2]()](
+        RuntimeLayout[Layout.row_major[2]()].row_major(managed_shape), ctx
+    )
+    var a_host = TileTensor(a.tensor[update=False]().ptr, layout)
+    var b_host = TileTensor(b.tensor[update=False]().ptr, layout)
+    var c_host = TileTensor(c.tensor[update=False]().ptr, layout)
 
     # Initialize with known patterns
-    # a: all ones
-    a_host.fill(1)
-    # b: all twos
+    # a: all ones, b: all twos, c: zeros
     for i in range(rows):
         for j in range(cols):
-            b_host[i, j] = 2.0
-    # c: zeros (will be overwritten)
-    c_host.zero()
+            var idx = a_host.layout(Coord(IndexList[2](i, j)))
+            a_host.raw_store(idx, 1.0)
+            b_host.raw_store(idx, 2.0)
+            c_host.raw_store(idx, 0.0)
 
-    # Create lora_end_idx buffer (kept on host since sliced_add reads it on host)
-    var lora_end_idx_host_ptr = UnsafePointer[Scalar[DType.int64]].alloc(1)
-    var lora_end_idx_host = NDBuffer[DType.int64, 1](lora_end_idx_host_ptr, 1)
-    lora_end_idx_host[0] = Int64(batch_end_idx)
+    # Keep lora_end_idx on host; sliced_add reads this scalar on host.
+    var lora_end_idx = ManagedLayoutTensor[DType.int64, Layout.row_major[1]()](
+        RuntimeLayout[Layout.row_major[1]()].row_major(IndexList[1](1)),
+        ctx,
+    )
+    var lora_end_idx_host = TileTensor(
+        lora_end_idx.tensor[update=False]().ptr,
+        row_major(Coord(IndexList[1](1))),
+    )
+    lora_end_idx_host.raw_store(0, Int64(batch_end_idx))
 
-    # Copy to device (lora_end_idx stays on host)
-    var a_device = ctx.enqueue_create_buffer[dtype](size)
-    ctx.enqueue_copy(a_device, a_host_ptr)
-    var a_device_nd = NDBuffer[dtype, 2](a_device.unsafe_ptr(), shape)
-    var b_device = ctx.enqueue_create_buffer[dtype](size)
-    ctx.enqueue_copy(b_device, b_host_ptr)
-    var b_device_nd = NDBuffer[dtype, 2](b_device.unsafe_ptr(), shape)
-    var c_device = ctx.enqueue_create_buffer[dtype](size)
-    ctx.enqueue_copy(c_device, c_host_ptr)
-    var c_device_nd = NDBuffer[dtype, 2](c_device.unsafe_ptr(), shape)
+    var a_device_tensor = TileTensor(a.device_tensor().ptr, layout)
+    var b_device_tensor = TileTensor(b.device_tensor().ptr, layout)
+    var c_device_tensor = TileTensor(c.device_tensor().ptr, layout)
 
     # Execute sliced_add directly
     sliced_add[target="gpu"](
-        LayoutTensor[dtype, Layout.row_major[2](), MutAnyOrigin](
-            c_device_nd.data,
-            RuntimeLayout[Layout.row_major[2]()](
-                c_device_nd.dynamic_shape.canonicalize(),
-                c_device_nd.dynamic_stride.canonicalize(),
-            ),
-        ),
-        LayoutTensor[dtype, Layout.row_major[2](), MutAnyOrigin](
-            a_device_nd.data,
-            RuntimeLayout[Layout.row_major[2]()](
-                a_device_nd.dynamic_shape.canonicalize(),
-                a_device_nd.dynamic_stride.canonicalize(),
-            ),
-        ),
-        LayoutTensor[dtype, Layout.row_major[2](), MutAnyOrigin](
-            b_device_nd.data,
-            RuntimeLayout[Layout.row_major[2]()](
-                b_device_nd.dynamic_shape.canonicalize(),
-                b_device_nd.dynamic_stride.canonicalize(),
-            ),
-        ),
-        LayoutTensor[DType.int64, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
-            lora_end_idx_host.data,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                lora_end_idx_host.dynamic_shape.canonicalize(),
-                lora_end_idx_host.dynamic_stride.canonicalize(),
-            ),
-        ),
+        c_device_tensor,
+        a_device_tensor,
+        b_device_tensor,
+        lora_end_idx_host,
         Optional(ctx),
     )
 
-    # Copy result back to host
-    ctx.synchronize()
-    ctx.enqueue_copy(c_host_ptr, c_device)
-    ctx.synchronize()
+    # Pull device results back via managed host view.
+    c_host = TileTensor(c.tensor().ptr, layout)
 
     # Verify results
     for i in range(rows):
@@ -119,7 +94,8 @@ fn test_sliced_add[
                 # Should be just a = 1
                 expected = 1.0
 
-            var actual = c_host[i, j]
+            var idx = c_host.layout(Coord(IndexList[2](i, j)))
+            var actual = c_host.raw_load(idx)
             if actual != expected:
                 raise Error(
                     "Mismatch at ["
@@ -132,17 +108,8 @@ fn test_sliced_add[
                     + String(actual)
                 )
 
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    lora_end_idx_host_ptr.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
 
-
-fn test_sliced_add_boundary_cases(ctx: DeviceContext) raises:
+def test_sliced_add_boundary_cases(ctx: DeviceContext) raises:
     # Test case 1: batch_end_idx = 0 (no addition, all copy)
     test_sliced_add[DType.float32, 4, 8, 0](ctx)
 
@@ -159,13 +126,13 @@ fn test_sliced_add_boundary_cases(ctx: DeviceContext) raises:
     test_sliced_add[DType.float32, 128, 64, 64](ctx)
 
 
-fn test_sliced_add_dtypes(ctx: DeviceContext) raises:
+def test_sliced_add_dtypes(ctx: DeviceContext) raises:
     test_sliced_add[DType.float32, 16, 32, 8](ctx)
     test_sliced_add[DType.float16, 16, 32, 8](ctx)
     test_sliced_add[DType.bfloat16, 16, 32, 8](ctx)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_sliced_add_boundary_cases(ctx)
         test_sliced_add_dtypes(ctx)

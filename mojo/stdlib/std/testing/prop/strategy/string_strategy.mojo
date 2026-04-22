@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,13 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the string strategy for generating random `String` values in property tests."""
 
-from testing.prop.random import Rng
+from std.testing.prop.random import Rng
 
 
 __extension String:
     @staticmethod
-    fn strategy(
+    def strategy(
         *,
         min_len: Int = 0,
         max_len: Int = Int.MAX,
@@ -45,7 +46,7 @@ __extension String:
         )
 
     @staticmethod
-    fn ascii_strategy(
+    def ascii_strategy(
         *,
         min_len: Int = 0,
         max_len: Int = Int.MAX,
@@ -72,7 +73,7 @@ __extension String:
         )
 
     @staticmethod
-    fn utf8_strategy(
+    def utf8_strategy(
         *, min_len: Int = 0, max_len: Int = Int.MAX
     ) raises -> _StringStrategy:
         """Returns a strategy for generating random UTF-8 encoded strings.
@@ -104,7 +105,7 @@ struct _StringStrategy(Strategy):
     var unicode: Bool
     var only_printable: Bool
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         min_len: Int = 0,
@@ -122,7 +123,7 @@ struct _StringStrategy(Strategy):
         self.unicode = unicode
         self.only_printable = only_printable
 
-    fn value(mut self, mut rng: Rng, out s: Self.Value) raises:
+    def value(mut self, mut rng: Rng, out s: Self.Value) raises:
         var size = rng.rand_int(min=self.min_len, max=self.max_len)
 
         s = String(capacity=size)
@@ -137,7 +138,7 @@ struct _StringStrategy(Strategy):
 
 __extension Codepoint:
     @staticmethod
-    fn strategy(
+    def strategy(
         *, unicode: Bool = False, only_printable: Bool = False
     ) -> _CodepointStrategy:
         """Returns a strategy for generating random Codepoints.
@@ -159,7 +160,7 @@ struct _CodepointStrategy:
     var unicode: Bool
     var only_printable: Bool
 
-    fn value(mut self, mut rng: Rng) raises -> Self.Value:
+    def value(mut self, mut rng: Rng) raises -> Self.Value:
         if self.unicode:
             while True:
                 # TODO: Better unicode coverage
@@ -174,8 +175,8 @@ struct _CodepointStrategy:
                 return Codepoint(unsafe_unchecked_codepoint=code_point)
         else:
             # ascii printable characters
-            var start: UInt32 = 32 if self.only_printable else 0
-            var end: UInt32 = 126 + UInt32(not self.only_printable)
+            var start: UInt32 = UInt32(32) if self.only_printable else UInt32(0)
+            var end: UInt32 = UInt32(126) + UInt32(not self.only_printable)
             return Codepoint(
                 unsafe_unchecked_codepoint=rng.rand_scalar[DType.uint32](
                     min=start, max=end

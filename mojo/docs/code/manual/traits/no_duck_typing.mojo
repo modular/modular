@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,21 +14,21 @@
 
 @fieldwise_init
 struct Duck(Copyable):
-    fn quack(self):
+    def quack(self):
         print("Quack")
 
 
 @fieldwise_init
 struct StealthCow(Copyable):
-    fn quack(self):
+    def quack(self):
         print("Moo!")
 
 
-fn make_it_quack(definitely_a_duck: Duck):
+def make_it_quack(definitely_a_duck: Duck):
     definitely_a_duck.quack()
 
 
-fn make_it_quack(not_a_duck: StealthCow):
+def make_it_quack(not_a_duck: StealthCow):
     not_a_duck.quack()
 
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,17 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements type rebind/trait downcast
+"""Implements type rebind/trait downcast.
 
 These are Mojo built-ins, so you don't need to import them.
 """
 
 
 @always_inline("builtin")
-fn rebind[
-    src_type: __TypeOfAllTypes,
+def rebind[
+    src_type: TrivialRegisterPassable,
     //,
-    dest_type: __TypeOfAllTypes,
+    dest_type: TrivialRegisterPassable,
 ](src: src_type) -> dest_type:
     """Statically assert that a parameter input type `src_type` resolves to the
     same type as a parameter result type `dest_type` after function
@@ -44,11 +44,11 @@ fn rebind[
 
 
 @always_inline("nodebug")
-fn rebind[
+def rebind[
     src_type: AnyType,
     //,
     dest_type: AnyType,
-](ref src: src_type) -> ref [src] dest_type:
+](ref src: src_type) -> ref[src] dest_type:
     """Statically assert that a parameter input type `src_type` resolves to the
     same type as a parameter result type `dest_type` after function
     instantiation and "rebind" the input to the result type, returning a
@@ -74,7 +74,7 @@ fn rebind[
 
 
 @always_inline("nodebug")
-fn rebind_var[
+def rebind_var[
     src_type: Movable,
     //,
     dest_type: Movable,
@@ -109,7 +109,7 @@ fn rebind_var[
 comptime downcast[
     T: AnyType,
     _Trait: type_of(AnyType),
-] = __mlir_attr[`#kgen.downcast<`, T, `> : `, _Trait]
+] = __mlir_attr[`#kgen.downcast<:`, type_of(T), ` `, +T, `> : `, _Trait]
 """Type alias for downcasting a type to conform to a trait.
 
 Parameters:
@@ -119,8 +119,8 @@ Parameters:
 
 
 @always_inline
-fn trait_downcast[
-    T: __TypeOfAllTypes, //, Trait: type_of(AnyType)
+def trait_downcast[
+    T: TrivialRegisterPassable, //, Trait: type_of(AnyType)
 ](var src: T) -> downcast[T, Trait]:
     """Downcast a parameter input type `T` and rebind the type such that the
     return value's type conforms the provided `Trait`. If `T`, after resolving
@@ -140,7 +140,7 @@ fn trait_downcast[
     return rebind[downcast[T, Trait]](src)
 
 
-fn trait_downcast_var[
+def trait_downcast_var[
     T: Movable,
     //,
     Trait: type_of(Movable),
@@ -164,9 +164,9 @@ fn trait_downcast_var[
 
 
 @always_inline
-fn trait_downcast[
+def trait_downcast[
     T: AnyType, //, Trait: type_of(AnyType)
-](ref src: T) -> ref [src] downcast[T, Trait]:
+](ref src: T) -> ref[src] downcast[T, Trait]:
     """Downcast a parameter input type `T` and rebind the type such that the
     return value's type conforms the provided `Trait`. If `T`, after resolving
     to a concrete type, does not actually conform to `Trait`, a compilation

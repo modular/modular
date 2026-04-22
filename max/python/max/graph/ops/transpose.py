@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -30,6 +30,7 @@ def _axis_bounds(rank: int) -> tuple[int, int]:
 
 def transpose(x: TensorValueLike, axis_1: int, axis_2: int) -> TensorValue:
     """Transposes two axes of a symbolic tensor.
+
     For more information, see :obj:`~max.graph.TensorValue.transpose()`.
 
     Args:

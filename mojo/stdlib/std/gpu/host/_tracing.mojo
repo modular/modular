@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from pathlib import Path
-from sys import (
+from std.os import abort
+from std.pathlib import Path
+from std.sys import (
     has_accelerator,
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     size_of,
 )
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, OwnedDLHandle, _try_find_dylib
-from sys.param_env import env_get_int
+from std.ffi import _get_dylib_function as _ffi_get_dylib_function
+from std.ffi import _Global, OwnedDLHandle, _try_find_dylib
+from std.sys.defines import get_defined_int
 
-from utils.variant import Variant
+from std.utils.variant import Variant
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -50,18 +50,20 @@ comptime _TraceType_MAX = 4
 
 
 @always_inline
-fn _setup_category(
-    name_category: fn (
+def _setup_category(
+    name_category: def(
         UInt32, UnsafePointer[UInt8, ImmutAnyOrigin]
-    ) -> NoneType,
+    ) thin -> NoneType,
     value: Int,
     name: StaticString,
 ):
-    name_category(value, name.unsafe_ptr())
+    name_category(UInt32(value), name.unsafe_ptr())
 
 
-fn _setup_categories(
-    name_category: fn (UInt32, UnsafePointer[UInt8, ImmutAnyOrigin]) -> NoneType
+def _setup_categories(
+    name_category: def(
+        UInt32, UnsafePointer[UInt8, ImmutAnyOrigin]
+    ) thin -> NoneType
 ):
     _setup_category(name_category, _TraceType_OTHER, "Other")
     _setup_category(name_category, _TraceType_ASYNCRT, "AsyncRT")
@@ -70,7 +72,7 @@ fn _setup_categories(
     _setup_category(name_category, _TraceType_MAX, "Max")
 
 
-fn _on_error_msg() -> Error:
+def _on_error_msg() -> Error:
     return Error(
         (
             "Cannot find the GPU Tracing libraries. Please make sure that "
@@ -89,9 +91,8 @@ comptime GPU_TRACING_LIBRARY = _Global[
 ]()
 
 
-fn _init_dylib() -> OwnedDLHandle:
-    @parameter
-    if _is_disabled():
+def _init_dylib() -> OwnedDLHandle:
+    comptime if _is_disabled():
         abort("cannot load dylib when disabled")
 
     try:
@@ -99,13 +100,12 @@ fn _init_dylib() -> OwnedDLHandle:
             materialize[LIBRARY_PATHS]()
         )
 
-        @parameter
-        if has_nvidia_gpu_accelerator():
+        comptime if has_nvidia_gpu_accelerator():
             _setup_categories(
                 dylib._handle.get_function[
-                    fn (
+                    def(
                         UInt32, UnsafePointer[UInt8, ImmutAnyOrigin]
-                    ) -> NoneType
+                    ) thin -> NoneType
                 ]("nvtxNameCategoryA")
             )
 
@@ -115,8 +115,8 @@ fn _init_dylib() -> OwnedDLHandle:
 
 
 @always_inline
-fn _get_dylib_function[
-    func_name: StaticString, result_type: __TypeOfAllTypes
+def _get_dylib_function[
+    func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
         GPU_TRACING_LIBRARY,
@@ -136,8 +136,7 @@ comptime NVTXVersion = 2
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Color(Intable):
+struct Color(Intable, TrivialRegisterPassable):
     var _value: Int
 
     comptime FORMAT = 1  # ARGB
@@ -150,7 +149,7 @@ struct Color(Intable):
     comptime WHITE = Self(0xFFFFFF)
     comptime YELLOW = Self(0xFFFF00)
 
-    fn __init__(out self, colorname: StaticString):
+    def __init__(out self, colorname: StaticString):
         """Initialize Color from a StaticString color name.
 
         Args:
@@ -176,13 +175,18 @@ struct Color(Intable):
             # Default to MODULAR_PURPLE for unknown color names
             self = Color.MODULAR_PURPLE
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return self._value
 
 
+def _ensure_is_null_terminated(str: String) -> String:
+    var str2 = str
+    _ = str2.as_c_string_slice()
+    return str2
+
+
 @fieldwise_init
-@register_passable("trivial")
-struct _C_EventAttributes:
+struct _C_EventAttributes(TrivialRegisterPassable):
     var version: UInt16
     """Version flag of the structure."""
 
@@ -215,7 +219,7 @@ struct _C_EventAttributes:
 
 
 @always_inline
-fn color_from_category(category: Int) -> Color:
+def color_from_category(category: Int) -> Color:
     if category == _TraceType_MAX:
         return Color.MODULAR_PURPLE
     if category == _TraceType_KERNEL:
@@ -227,12 +231,11 @@ fn color_from_category(category: Int) -> Color:
     return Color.PURPLE
 
 
-@register_passable("trivial")
-struct EventAttributes:
+struct EventAttributes(TrivialRegisterPassable):
     var _value: _C_EventAttributes
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         *,
         message: String = "",
@@ -247,10 +250,10 @@ struct EventAttributes:
             resolved_color = color_from_category(category)
         self._value = _C_EventAttributes(
             version=NVTXVersion,
-            size=size_of[_C_EventAttributes](),
-            category=category,
+            size=UInt16(size_of[_C_EventAttributes]()),
+            category=UInt32(category),
             color_type=Color.FORMAT,
-            color=Int(resolved_color),
+            color=UInt32(Int(resolved_color)),
             payload_type=0,
             _reserved=0,
             event_payload=0,
@@ -259,13 +262,12 @@ struct EventAttributes:
         )
 
 
-@register_passable("trivial")
-struct _dylib_function[fn_name: StaticString, type: __TypeOfAllTypes]:
-    comptime fn_type = Self.type
-
+struct _dylib_function[fn_name: StaticString, fn_type: TrivialRegisterPassable](
+    TrivialRegisterPassable
+):
     @staticmethod
-    fn load() raises -> Self.type:
-        return _get_dylib_function[Self.fn_name, Self.type]()
+    def load() raises -> Self.fn_type:
+        return _get_dylib_function[Self.fn_name, Self.fn_type]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -275,28 +277,28 @@ struct _dylib_function[fn_name: StaticString, type: __TypeOfAllTypes]:
 # NVTX_DECLSPEC void NVTX_API nvtxMarkEx(const nvtxEventAttributes_t* eventAttrib);
 comptime _nvtxMarkEx = _dylib_function[
     "nvtxMarkEx",
-    fn (UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]) -> NoneType,
+    def(UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]) thin -> NoneType,
 ]
 
 # NVTX_DECLSPEC nvtxRangeId_t NVTX_API nvtxRangeStartEx(const nvtxEventAttributes_t* eventAttrib);
 comptime _nvtxRangeStartEx = _dylib_function[
     "nvtxRangeStartEx",
-    fn (UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]) -> RangeID,
+    def(UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]) thin -> RangeID,
 ]
 
 # NVTX_DECLSPEC void NVTX_API nvtxRangeEnd(nvtxRangeId_t id);
 comptime _nvtxRangeEnd = _dylib_function[
-    "nvtxRangeEnd", fn (RangeID) -> NoneType
+    "nvtxRangeEnd", def(RangeID) thin -> NoneType
 ]
 
 # NVTX_DECLSPEC int NVTX_API nvtxRangePushEx(const nvtxEventAttributes_t* eventAttrib);
 comptime _nvtxRangePushEx = _dylib_function[
     "nvtxRangePushEx",
-    fn (UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]) -> Int32,
+    def(UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]) thin -> Int32,
 ]
 
 # NVTX_DECLSPEC int NVTX_API nvtxRangePop(void);
-comptime _nvtxRangePop = _dylib_function["nvtxRangePop", fn () -> Int32]
+comptime _nvtxRangePop = _dylib_function["nvtxRangePop", def() thin -> Int32]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -305,24 +307,25 @@ comptime _nvtxRangePop = _dylib_function["nvtxRangePop", fn () -> Int32]
 
 # ROCTX_API void roctxMarkA(const char* message) ROCTX_VERSION_4_1;
 comptime _roctxMarkA = _dylib_function[
-    "roctxMarkA", fn (UnsafePointer[UInt8, ImmutAnyOrigin]) -> NoneType
+    "roctxMarkA", def(UnsafePointer[UInt8, ImmutAnyOrigin]) thin -> NoneType
 ]
 
 # ROCTX_API int roctxRangePushA(const char* message) ROCTX_VERSION_4_1;
 comptime _roctxRangePushA = _dylib_function[
-    "roctxRangePushA", fn (UnsafePointer[UInt8, ImmutAnyOrigin]) -> Int32
+    "roctxRangePushA", def(UnsafePointer[UInt8, ImmutAnyOrigin]) thin -> Int32
 ]
 
 # ROCTX_API int roctxRangePop() ROCTX_VERSION_4_1;
-comptime _roctxRangePop = _dylib_function["roctxRangePop", fn () -> Int32]
+comptime _roctxRangePop = _dylib_function["roctxRangePop", def() thin -> Int32]
 # ROCTX_API roctx_range_id_t roctxRangeStartA(const char* message)
 comptime _roctxRangeStartA = _dylib_function[
-    "roctxRangeStartA", fn (UnsafePointer[UInt8, ImmutAnyOrigin]) -> RangeID
+    "roctxRangeStartA",
+    def(UnsafePointer[UInt8, ImmutAnyOrigin]) thin -> RangeID,
 ]
 
 # ROCTX_API void roctxRangeStop(roctx_range_id_t id) ROCTX_VERSION_4_1;
 comptime _roctxRangeStop = _dylib_function[
-    "roctxRangeStop", fn (RangeID) -> NoneType
+    "roctxRangeStop", def(RangeID) thin -> NoneType
 ]
 
 # ===-----------------------------------------------------------------------===#
@@ -333,89 +336,84 @@ comptime _roctxRangeStop = _dylib_function[
 struct _Mark:
     var _fn: Variant[_nvtxMarkEx.fn_type, _roctxMarkA.fn_type]
 
-    fn __init__(out self) raises:
-        @parameter
-        if has_nvidia_gpu_accelerator():
+    def __init__(out self) raises:
+        comptime if has_nvidia_gpu_accelerator():
             self._fn = _nvtxMarkEx.load()
         else:
             self._fn = _roctxMarkA.load()
 
-    fn __call__(self, val: UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]):
-        __comptime_assert has_nvidia_gpu_accelerator()
+    def __call__(self, val: UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]):
+        comptime assert has_nvidia_gpu_accelerator()
         self._fn[_nvtxMarkEx.fn_type](val)
 
-    fn __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]):
-        __comptime_assert has_amd_gpu_accelerator()
+    def __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]):
+        comptime assert has_amd_gpu_accelerator()
         self._fn[_roctxMarkA.fn_type](val)
 
 
 struct _RangeStart:
     var _fn: Variant[_nvtxRangeStartEx.fn_type, _roctxRangeStartA.fn_type]
 
-    fn __init__(out self) raises:
-        @parameter
-        if has_nvidia_gpu_accelerator():
+    def __init__(out self) raises:
+        comptime if has_nvidia_gpu_accelerator():
             self._fn = _nvtxRangeStartEx.load()
         else:
             self._fn = _roctxRangeStartA.load()
 
-    fn __call__(
+    def __call__(
         self, val: UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]
     ) -> RangeID:
-        __comptime_assert has_nvidia_gpu_accelerator()
+        comptime assert has_nvidia_gpu_accelerator()
         return self._fn[_nvtxRangeStartEx.fn_type](val)
 
-    fn __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]) -> RangeID:
-        __comptime_assert has_amd_gpu_accelerator()
+    def __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]) -> RangeID:
+        comptime assert has_amd_gpu_accelerator()
         return self._fn[_roctxRangeStartA.fn_type](val)
 
 
 struct _RangeEnd:
-    var _fn: fn (RangeID) -> NoneType
+    var _fn: def(RangeID) thin -> NoneType
 
-    fn __init__(out self) raises:
-        @parameter
-        if has_nvidia_gpu_accelerator():
+    def __init__(out self) raises:
+        comptime if has_nvidia_gpu_accelerator():
             self._fn = _nvtxRangeEnd.load()
         else:
             self._fn = _roctxRangeStop.load()
 
-    fn __call__(self, val: RangeID):
+    def __call__(self, val: RangeID):
         self._fn(val)
 
 
 struct _RangePush:
     var _fn: Variant[_nvtxRangePushEx.fn_type, _roctxRangePushA.fn_type]
 
-    fn __init__(out self) raises:
-        @parameter
-        if has_nvidia_gpu_accelerator():
+    def __init__(out self) raises:
+        comptime if has_nvidia_gpu_accelerator():
             self._fn = _nvtxRangePushEx.load()
         else:
             self._fn = _roctxRangePushA.load()
 
-    fn __call__(
+    def __call__(
         self, val: UnsafePointer[_C_EventAttributes, ImmutAnyOrigin]
     ) -> Int32:
-        __comptime_assert has_nvidia_gpu_accelerator()
+        comptime assert has_nvidia_gpu_accelerator()
         return self._fn[_nvtxRangePushEx.fn_type](val)
 
-    fn __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]) -> Int32:
-        __comptime_assert has_amd_gpu_accelerator()
+    def __call__(self, val: UnsafePointer[UInt8, ImmutAnyOrigin]) -> Int32:
+        comptime assert has_amd_gpu_accelerator()
         return self._fn[_roctxRangePushA.fn_type](val)
 
 
 struct _RangePop:
     var _fn: _nvtxRangePop.fn_type
 
-    fn __init__(out self) raises:
-        @parameter
-        if has_nvidia_gpu_accelerator():
+    def __init__(out self) raises:
+        comptime if has_nvidia_gpu_accelerator():
             self._fn = _nvtxRangePop.load()
         else:
             self._fn = _roctxRangePop.load()
 
-    fn __call__(self) -> Int32:
+    def __call__(self) -> Int32:
         return self._fn()
 
 
@@ -424,72 +422,67 @@ struct _RangePop:
 # ===-----------------------------------------------------------------------===#
 
 
-fn _is_enabled_details() -> Bool:
+def _is_enabled_details() -> Bool:
     return (
         has_accelerator()
-        and env_get_int["MODULAR_ENABLE_GPU_PROFILING_DETAILED", 0]() == 1
+        and get_defined_int["MODULAR_ENABLE_GPU_PROFILING_DETAILED", 0]() == 1
     )
 
 
-fn _is_enabled() -> Bool:
+def _is_enabled() -> Bool:
     return has_accelerator() and (
-        env_get_int["MODULAR_ENABLE_GPU_PROFILING", 0]() == 1
+        get_defined_int["MODULAR_ENABLE_GPU_PROFILING", 0]() == 1
         or _is_enabled_details()
     )
 
 
-fn _is_disabled() -> Bool:
+def _is_disabled() -> Bool:
     return not _is_enabled()
 
 
 @always_inline
-fn _start_range(
+def _start_range(
     *,
     message: String = "",
     category: Int = _TraceType_MAX,
     color: Optional[Color] = None,
 ) raises -> RangeID:
-    @parameter
-    if _is_disabled():
+    comptime if _is_disabled():
         return 0
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
-        var info = EventAttributes(
-            message=message, color=color, category=category
-        )
+    var msg = _ensure_is_null_terminated(message)
+
+    comptime if has_nvidia_gpu_accelerator():
+        var info = EventAttributes(message=msg, color=color, category=category)
         return _RangeStart()(UnsafePointer(to=info._value))
     else:
-        return _RangeStart()(message.unsafe_ptr())
+        return _RangeStart()(msg.unsafe_ptr())
 
 
 @always_inline
-fn _end_range(id: RangeID) raises:
-    @parameter
-    if _is_disabled():
+def _end_range(id: RangeID) raises:
+    comptime if _is_disabled():
         return
     _RangeEnd()(id)
 
 
 @always_inline
-fn _mark(
+def _mark(
     *,
     message: String = "",
     color: Optional[Color] = None,
     category: Int = _TraceType_MAX,
 ) raises:
-    @parameter
-    if _is_disabled():
+    comptime if _is_disabled():
         return
 
-    @parameter
-    if has_nvidia_gpu_accelerator():
-        var info = EventAttributes(
-            message=message, color=color, category=category
-        )
+    var msg = _ensure_is_null_terminated(message)
+
+    comptime if has_nvidia_gpu_accelerator():
+        var info = EventAttributes(message=msg, color=color, category=category)
         _Mark()(UnsafePointer(to=info._value))
     else:
-        _Mark()(message.unsafe_ptr())
+        _Mark()(msg.unsafe_ptr())
 
 
 struct Range:
@@ -499,40 +492,42 @@ struct Range:
     var _start_fn: _RangeStart
     var _end_fn: _RangeEnd
 
-    fn __init__(
+    var _msg: String
+
+    def __init__(
         out self,
         *,
         message: String = "",
         color: Optional[Color] = None,
         category: Int = _TraceType_MAX,
     ) raises:
-        __comptime_assert _is_enabled(), "GPU tracing must be enabled"
+        comptime assert _is_enabled(), "GPU tracing must be enabled"
+        self._msg = _ensure_is_null_terminated(message)
         self._info = EventAttributes(
-            message=message, color=color, category=category
+            message=self._msg, color=color, category=category
         )
         self._id = 0
         self._start_fn = _RangeStart()
         self._end_fn = _RangeEnd()
 
     @always_inline
-    fn __enter__(mut self):
-        @parameter
-        if has_nvidia_gpu_accelerator():
+    def __enter__(mut self):
+        comptime if has_nvidia_gpu_accelerator():
             self._id = self._start_fn(UnsafePointer(to=self._info._value))
         else:
             self._id = self._start_fn(self._info._value.message)
 
     @always_inline
-    fn __exit__(self):
+    def __exit__(self):
         self._end_fn(self._id)
 
     @always_inline
-    fn id(self) -> RangeID:
+    def id(self) -> RangeID:
         return self._id
 
     @staticmethod
     @always_inline
-    fn mark(
+    def mark(
         *,
         message: String = "",
         color: Optional[Color] = None,
@@ -547,28 +542,32 @@ struct RangeStack:
     var _push_fn: _RangePush
     var _pop_fn: _RangePop
 
-    fn __init__(
+    var _msg: String
+
+    def __init__(
         out self,
         *,
         message: String = "",
         color: Optional[Color] = None,
         category: Int = _TraceType_MAX,
     ) raises:
-        __comptime_assert _is_enabled(), "GPU tracing must be enabled"
+        comptime assert _is_enabled(), "GPU tracing must be enabled"
+
+        self._msg = _ensure_is_null_terminated(message)
+
         self._info = EventAttributes(
-            message=message, color=color, category=category
+            message=self._msg, color=color, category=category
         )
         self._push_fn = _RangePush()
         self._pop_fn = _RangePop()
 
     @always_inline
-    fn __enter__(mut self):
-        @parameter
-        if has_nvidia_gpu_accelerator():
+    def __enter__(mut self):
+        comptime if has_nvidia_gpu_accelerator():
             _ = self._push_fn(UnsafePointer(to=self._info._value))
         else:
             _ = self._push_fn(self._info._value.message)
 
     @always_inline
-    fn __exit__(self):
+    def __exit__(self):
         _ = self._pop_fn()

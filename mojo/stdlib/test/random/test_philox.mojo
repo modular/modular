@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,12 +13,12 @@
 
 """Tests for the Philox random number generator."""
 
-from random.philox import Random, NormalRandom
-from math import sqrt
-from testing import assert_equal, assert_true, assert_false, TestSuite
+from std.random.philox import Random, NormalRandom
+from std.math import sqrt
+from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 
-def test_philox_basic():
+def test_philox_basic() raises:
     """Test basic Philox RNG functionality."""
     var rng = Random(seed=42, subsequence=0, offset=0)
 
@@ -44,7 +44,7 @@ def test_philox_basic():
         )
 
 
-def test_philox_reproducibility():
+def test_philox_reproducibility() raises:
     """Test that the same seed produces the same sequence."""
     # Create two RNGs with the same seed
     var rng1 = Random(seed=42, subsequence=0, offset=0)
@@ -70,7 +70,7 @@ def test_philox_reproducibility():
         )
 
 
-def test_philox_different_seeds():
+def test_philox_different_seeds() raises:
     """Test that different seeds produce different sequences."""
     var rng1 = Random(seed=42, subsequence=0, offset=0)
     var rng2 = Random(seed=123, subsequence=0, offset=0)
@@ -90,7 +90,7 @@ def test_philox_different_seeds():
     )
 
 
-def test_philox_subsequences():
+def test_philox_subsequences() raises:
     """Test that different subsequences produce different values."""
     var rng1 = Random(seed=42, subsequence=0, offset=0)
     var rng2 = Random(seed=42, subsequence=1, offset=0)
@@ -110,7 +110,7 @@ def test_philox_subsequences():
     )
 
 
-def test_philox_offset():
+def test_philox_offset() raises:
     """Test that offset parameter skips ahead in the sequence."""
     var rng1 = Random(seed=42, subsequence=0, offset=0)
     var rng2 = Random(seed=42, subsequence=0, offset=2)
@@ -130,7 +130,7 @@ def test_philox_offset():
         )
 
 
-def test_philox_uniform_range():
+def test_philox_uniform_range() raises:
     """Test that uniform values are in the correct range."""
     var rng = Random(seed=42, subsequence=0, offset=0)
 
@@ -148,7 +148,7 @@ def test_philox_uniform_range():
             )
 
 
-def test_philox_uniform_distribution():
+def test_philox_uniform_distribution() raises:
     """Test that uniform values are reasonably distributed."""
     var rng = Random(seed=42, subsequence=0, offset=0)
 
@@ -160,7 +160,7 @@ def test_philox_uniform_distribution():
         for i in range(4):
             sum += Float64(vals[i])
 
-    var mean = sum / (num_samples * 4)
+    var mean = sum / Float64((num_samples * 4))
 
     # For uniform distribution in [0, 1), mean should be close to 0.5
     # Use a generous tolerance since we're not generating that many samples
@@ -178,7 +178,7 @@ def test_philox_uniform_distribution():
     )
 
 
-def test_philox_different_rounds():
+def test_philox_different_rounds() raises:
     """Test that different rounds parameter works."""
     var rng6 = Random[rounds=6](seed=42, subsequence=0, offset=0)
     var rng10 = Random[rounds=10](seed=42, subsequence=0, offset=0)
@@ -198,7 +198,7 @@ def test_philox_different_rounds():
     )
 
 
-def test_normal_basic():
+def test_normal_basic() raises:
     """Test basic NormalRandom functionality."""
     var rng = NormalRandom(seed=42, subsequence=0, offset=0)
 
@@ -209,7 +209,7 @@ def test_normal_basic():
     assert_equal(len(vals), 8, "step_normal() should return 8 values")
 
 
-def test_normal_mean_stddev():
+def test_normal_mean_stddev() raises:
     """Test that NormalRandom respects mean and stddev parameters."""
     var rng = NormalRandom(seed=42, subsequence=0, offset=0)
 
@@ -230,8 +230,8 @@ def test_normal_mean_stddev():
             sum_sq += val * val
 
     var total_count = num_samples * 8
-    var observed_mean = sum / total_count
-    var observed_variance = (sum_sq / total_count) - (
+    var observed_mean = sum / Float64(total_count)
+    var observed_variance = (sum_sq / Float64(total_count)) - (
         observed_mean * observed_mean
     )
     var observed_stddev = sqrt(observed_variance)
@@ -269,7 +269,7 @@ def test_normal_mean_stddev():
     )
 
 
-def test_normal_reproducibility():
+def test_normal_reproducibility() raises:
     """Test that NormalRandom is reproducible with the same seed."""
     var rng1 = NormalRandom(seed=42, subsequence=0, offset=0)
     var rng2 = NormalRandom(seed=42, subsequence=0, offset=0)
@@ -293,7 +293,7 @@ def test_normal_reproducibility():
         )
 
 
-def test_philox_sequence_independence():
+def test_philox_sequence_independence() raises:
     """Test that consecutive calls produce independent values."""
     var rng = Random(seed=42, subsequence=0, offset=0)
 
@@ -328,5 +328,5 @@ def test_philox_sequence_independence():
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

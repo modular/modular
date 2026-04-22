@@ -152,8 +152,10 @@ conform to `ConvertibleFromPython`) methods exist:
 
 And also the `to_python_object` methods (from `PythonConvertible` trait):
 
-- in the `StringSlice` struct in `oss/modular/mojo/stdlib/std/builtin/string_literal.mojo`
-- in the `StringLiteral` struct in `oss/modular/mojo/stdlib/std/builtin/string_literal.mojo`
+- in the `StringSlice` struct in
+  `oss/modular/mojo/stdlib/std/builtin/string_literal.mojo`
+- in the `StringLiteral` struct in
+  `oss/modular/mojo/stdlib/std/builtin/string_literal.mojo`
 - in the`Bool`, `Int`, `String`, `SIMD` structs from above.
 
 We want to move those out into a separate [file? package?] that can be imported
@@ -291,7 +293,7 @@ struct List[T: AnyType]:
     ...
 
 extension List(Copyable) requires T: Copyable:
-    fn __copyinit__(out self, existing: Self, /):
+    fn __init__(out self, *, copy: Self, /):
     self = List(capacity=len(other))
     # ...
 ```
@@ -314,7 +316,7 @@ struct Foo[T: AnyType](
 too:
 
 ```mojo
-    fn __copyinit__(out self, existing: Self, /) requires T: Copyable:
+    fn __init__(out self, *, copy: Self, /) requires T: Copyable:
     self = List(capacity=len(other))
     # ...
 ```
@@ -327,7 +329,7 @@ If the extension conforms to trait, like this:
 
 ```mojo
 extension List(Copyable) requires T: Copyable:
-    fn __copyinit__(out self, existing: Self, /):
+    fn __init__(out self, *, copy: Self, /):
         self = List(capacity=len(other))
         # ...
 ```
@@ -375,7 +377,7 @@ extension Spaceship:
 
 Options:
 
-- Option A:  Yes let’s allow them; user journeys 1, 2, 3, 4, 5 don’t seem to
+- Option A: Yes let’s allow them; user journeys 1, 2, 3, 4, 5 don’t seem to
   need any trait.
   - Pro: Doesn’t require an empty trait when the user wants to do this.
   - Con: Requires additional thinking for handling imports.
@@ -673,7 +675,7 @@ or should they say:
 
 `from B import extension Spaceship`
 
-I recommend the former,  there doesn’t seem to be much need for the `extension`.
+I recommend the former, there doesn’t seem to be much need for the `extension`.
 
 ## Decision 8: What if we import only an `extension` but not its target `struct`?
 
@@ -752,10 +754,7 @@ Recommended: yes let’s allow it. Don’t see much reason not to.
 
 ```mojo
 extension List(Copyable) requires T: Copyable:
-    fn copy(out self, other: Self):
-        ...
-
-    fn __copyinit__(out self, existing: Self, /):
+    fn __init__(out self, *, copy: Self):
         ...
 ```
 

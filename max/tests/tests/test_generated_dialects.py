@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -66,9 +66,10 @@ def test_mosh_shapeattr_empty(mlir_context) -> None:  # noqa: ANN001
     assert list(attr.values) == []
 
 
-def test_no_active_context() -> None:
-    with pytest.raises(RuntimeError):
-        shape_type = mosh.ShapeType()
+def test_context_always_active() -> None:
+    assert mlir.Context.current
+    shape_type = mosh.ShapeType()
+    assert shape_type
 
 
 def test_builtin_integerattr(mlir_context) -> None:  # noqa: ANN001
@@ -80,7 +81,7 @@ def test_builtin_integerattr(mlir_context) -> None:  # noqa: ANN001
 def test_builtin_moduleop(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
     assert loc
-    op = builtin.ModuleOp(loc)
+    builtin.ModuleOp(loc)
 
 
 def test_mo_graph_op(mlir_context) -> None:  # noqa: ANN001
@@ -99,7 +100,7 @@ def test_mo_graph_op(mlir_context) -> None:  # noqa: ANN001
 def test_infer_type_op_adaptor() -> None:
     input_type = TensorType(DType.float32, [1], DeviceRef.GPU())
     with Graph("empty", input_types=[input_type, input_type]) as graph:
-        with graph._context, mlir.Location.unknown() as location:
+        with mlir.Location.unknown() as location:
             assert isinstance(location, mlir.Location)
             builder = OpBuilder(Block._from_cmlir(graph._current_block).end)
             x, y = graph.inputs
@@ -146,7 +147,7 @@ def test_block_contents(mlir_context: mlir.Context) -> None:
 def test_op_operands() -> None:
     input_type = TensorType(DType.float32, [1], DeviceRef.GPU())
     with Graph("empty", input_types=[input_type, input_type]) as graph:
-        with graph._context, mlir.Location.unknown() as location:
+        with mlir.Location.unknown() as location:
             assert isinstance(location, mlir.Location)
             builder = OpBuilder(Block._from_cmlir(graph._current_block).end)
             x, y = graph.inputs
@@ -323,7 +324,7 @@ def test_lower_remove_dead_values(mlir_context) -> None:  # noqa: ANN001
     module = Operation._from_cmlir(graph._module.operation)
     assert isinstance(module, builtin.ModuleOp)
     assert "mo.chain.create()" in str(module)
-    lower(module, [builtin.passes.RemoveDeadValues()])
+    lower(module, [builtin.passes.RemoveDeadValuesPass()])
     assert isinstance(module, builtin.ModuleOp)
     assert "mo.chain.create()" not in str(module)
 
@@ -336,7 +337,7 @@ def test_lowering_failure_diagnostic(mlir_context) -> None:  # noqa: ANN001
     with pytest.raises(Exception):
         module.verify()
     with pytest.raises(Exception):
-        lower(module, [builtin.passes.RemoveDeadValues()])
+        lower(module, [builtin.passes.RemoveDeadValuesPass()])
 
 
 def test_construct_pass_with_options(mlir_context) -> None:  # noqa: ANN001

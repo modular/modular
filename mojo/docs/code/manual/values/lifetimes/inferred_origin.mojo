@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
-from memory import Span
+from std.collections import List
+from std.memory import Span
 
 
 def to_byte_span[
     is_mutable: Bool,
     //,
     origin: Origin[mut=is_mutable],
-](ref [origin]list: List[Byte]) -> Span[Byte, origin]:
+](ref[origin] list: List[Byte]) -> Span[Byte, origin]:
     return Span(list)
 
 
 def main():
     list: List[Byte] = [77, 111, 106, 111]
-    span = to_byte_span(list)
+    _ = to_byte_span(list)

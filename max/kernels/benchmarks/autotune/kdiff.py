@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -248,7 +248,7 @@ def cli(
         assert found
 
         print("Kickoff")
-        workflow_run = shell(
+        shell(
             f'gh workflow run "Scheduled Kernels Benchmarks" --ref {run_branch}'
         )
         print(

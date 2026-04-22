@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,16 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from gpu.host import DeviceContext, Dim
-from gpu.host._nvidia_cuda import (
+from std.gpu.host import DeviceContext, Dim
+from std.gpu.host._nvidia_cuda import (
     CUDA,
     CUcontext,
     CUDA_get_current_context,
 )
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
 
-fn _run_cuda_context(ctx: DeviceContext) raises:
+def _run_cuda_context(ctx: DeviceContext) raises:
     print("-")
     print("_run_cuda_context()")
     var initial_ctx: CUcontext = CUDA_get_current_context()
@@ -30,7 +30,10 @@ fn _run_cuda_context(ctx: DeviceContext) raises:
     with ctx.push_context() as cur_ctx:
         # cur_ctx is still equivalent to the ctx passed in.
         assert_equal(Bool(CUDA(ctx)), Bool(CUDA(cur_ctx)))
-        assert_equal(Bool(CUDA(ctx.stream())), Bool(CUDA(cur_ctx.stream())))
+        assert_equal(
+            Bool(CUDA(ctx.stream())),
+            Bool(CUDA(cur_ctx.stream())),
+        )
         # Make sure that the current CUcontext matches the pushed CUcontext
         assert_equal(Bool(cuda_ctx), Bool(CUDA_get_current_context()))
 
@@ -39,7 +42,7 @@ fn _run_cuda_context(ctx: DeviceContext) raises:
     print("CUcontext:", cuda_ctx)
 
 
-fn _run_cuda_multi_context(ctx0: DeviceContext, ctx1: DeviceContext) raises:
+def _run_cuda_multi_context(ctx0: DeviceContext, ctx1: DeviceContext) raises:
     print("-")
     print("_run_cuda_multi_context()")
     var initial_ctx: CUcontext = CUDA_get_current_context()
@@ -49,7 +52,10 @@ fn _run_cuda_multi_context(ctx0: DeviceContext, ctx1: DeviceContext) raises:
     with ctx0.push_context() as cur_ctx0:
         # cur_ctx is still equivalent to the ctx passed in.
         assert_equal(Bool(CUDA(ctx0)), Bool(CUDA(cur_ctx0)))
-        assert_equal(Bool(CUDA(ctx0.stream())), Bool(CUDA(cur_ctx0.stream())))
+        assert_equal(
+            Bool(CUDA(ctx0.stream())),
+            Bool(CUDA(cur_ctx0.stream())),
+        )
         # Make sure that the current CUcontext matches the pushed CUcontext
         assert_equal(Bool(cuda_ctx0), Bool(CUDA_get_current_context()))
 
@@ -58,10 +64,14 @@ fn _run_cuda_multi_context(ctx0: DeviceContext, ctx1: DeviceContext) raises:
             # cur_ctx is still equivalent to the ctx passed in.
             assert_equal(Bool(CUDA(ctx1)), Bool(CUDA(cur_ctx1)))
             assert_equal(
-                Bool(CUDA(ctx1.stream())), Bool(CUDA(cur_ctx1.stream()))
+                Bool(CUDA(ctx1.stream())),
+                Bool(CUDA(cur_ctx1.stream())),
             )
             # Make sure that the current CUcontext matches the pushed CUcontext
-            assert_equal(Bool(cuda_ctx1), Bool(CUDA_get_current_context()))
+            assert_equal(
+                Bool(cuda_ctx1),
+                Bool(CUDA_get_current_context()),
+            )
 
         # Make sure that the previously pushed CUcontext has been restored.
         assert_equal(Bool(cuda_ctx0), Bool(CUDA_get_current_context()))
@@ -72,7 +82,7 @@ fn _run_cuda_multi_context(ctx0: DeviceContext, ctx1: DeviceContext) raises:
     print("CUcontext(id: 1):", cuda_ctx1)
 
 
-fn _run_cuda_stream(ctx: DeviceContext) raises:
+def _run_cuda_stream(ctx: DeviceContext) raises:
     print("-")
     print("_run_cuda_stream()")
 
@@ -85,12 +95,12 @@ fn _run_cuda_stream(ctx: DeviceContext) raises:
     print("CUstream: ", cuda_stream)
 
 
-fn _run_cuda_external_function(ctx: DeviceContext) raises:
+def _run_cuda_external_function(ctx: DeviceContext) raises:
     print("-")
     print("_run_cuda_external_function()")
 
     # Signature of externally compiled kernel function
-    fn vec_add_sig(
+    def vec_add_sig(
         in0: UnsafePointer[Float32, MutAnyOrigin],
         in1: UnsafePointer[Float32, MutAnyOrigin],
         output: UnsafePointer[Float32, MutAnyOrigin],
@@ -186,26 +196,26 @@ $L__BB0_2:
                 raise Error("Bad value out[", i, "] is ", out[i])
 
 
-def test_cuda_context():
+def test_cuda_context() raises:
     var ctx = create_test_device_context()
     _run_cuda_context(ctx)
 
 
-def test_cuda_stream():
+def test_cuda_stream() raises:
     var ctx = create_test_device_context()
     _run_cuda_stream(ctx)
 
 
-def test_cuda_external_function():
+def test_cuda_external_function() raises:
     var ctx = create_test_device_context()
     _run_cuda_external_function(ctx)
 
 
-def test_cuda_multi_context():
+def test_cuda_multi_context() raises:
     if DeviceContext.number_of_devices() > 1:
         var ctx = create_test_device_context()
         _run_cuda_multi_context(ctx, create_test_device_context(device_id=1))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

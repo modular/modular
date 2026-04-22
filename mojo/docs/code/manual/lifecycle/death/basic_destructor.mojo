@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,7 +18,7 @@ struct Balloons:
     var color: String
     var count: Int
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         # Mojo destroys all the fields when they're last used
         pass
         # end-noop-destructor
@@ -29,10 +29,10 @@ struct Balloons:
 struct Balloon(Writable):
     var color: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(String("a ", self.color, " balloon"))
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         print("Destroyed", String(self))
 
 

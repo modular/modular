@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -122,7 +122,7 @@ class Platform:
     def tags(self) -> list[Tag]:
         if self.operating_system == "darwin":
             # NOTE: The version here must match the oldest macOS version we support for developers
-            platforms = list(mac_platforms(version=(13, 0), arch=self.arch))
+            platforms = list(mac_platforms(version=(14, 0), arch=self.arch))
         else:
             platforms = [x.format(arch=self.arch) for x in _LINUX_PLATFORM_TAGS]
             if self.arch == "x86_64":

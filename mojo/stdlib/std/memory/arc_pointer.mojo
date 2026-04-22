@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,38 +15,42 @@
 You can import these APIs from the `memory` package. For example:
 
 ```mojo
-from memory import ArcPointer
+from std.memory import ArcPointer
 ```
 """
 
-from os.atomic import Atomic, Consistency, fence
-from sys.info import size_of
-from reflection.type_info import _unqualified_type_name
-from builtin.constrained import _constrained_conforms_to
+from std.atomic import Atomic, Ordering, fence
+from std.sys.info import size_of
+from std.format._utils import (
+    Repr,
+    FormatStruct,
+    TypeNames,
+)
+from std.hashlib.hasher import Hasher
 
 
 struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
     var refcount: Atomic[DType.uint64]
     var payload: Self.T
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         """Create an initialized instance of this with a refcount of 1."""
         self.refcount = Atomic(UInt64(1))
         self.payload = value^
 
-    fn add_ref(mut self):
+    def add_ref(mut self):
         """Atomically increment the refcount."""
 
         # `MONOTONIC` is ok here since this ArcPointer is currently being copied
-        # from an existing ArcPointer inside of __copyinit__. This means any
+        # from an existing ArcPointer inside of copy ctor. This means any
         # other ArcPointer in different threads running their destructors will
         # not see a refcount of 0 and will not delete the shared data.
         #
         # This is further explained in the [boost documentation]
         # (https://www.boost.org/doc/libs/1_55_0/doc/html/atomic/usage_examples.html)
-        _ = self.refcount.fetch_add[ordering = Consistency.MONOTONIC](1)
+        _ = self.refcount.fetch_add[ordering=Ordering.RELAXED](1)
 
-    fn drop_ref(mut self) -> Bool:
+    def drop_ref(mut self) -> Bool:
         """Atomically decrement the refcount and return true if the result
         hits zero."""
 
@@ -54,20 +58,24 @@ struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
         # decreasing the refcount. `ACQUIRE_RELEASE` is not needed since we
         # don't need the guarantees of `ACQUIRE` on the load portion of
         # fetch_sub if the recount does not reach zero.
-        if self.refcount.fetch_sub[ordering = Consistency.RELEASE](1) != 1:
+        if self.refcount.fetch_sub[ordering=Ordering.RELEASE](1) != 1:
             return False
 
         # However, if the refcount results in zero, this `ACQUIRE` fence is
         # needed to synchronize with the `fetch_sub[RELEASE]` above, ensuring
         # that use of data happens before the fence and therefore before the
         # deletion of the data.
-        fence[ordering = Consistency.ACQUIRE]()
+        fence[ordering=Ordering.ACQUIRE]()
         return True
 
 
-@register_passable
 struct ArcPointer[T: Movable & ImplicitlyDestructible](
-    Identifiable, ImplicitlyCopyable, Writable
+    Equatable where conforms_to(T, Equatable),
+    Hashable where conforms_to(T, Hashable),
+    Identifiable,
+    ImplicitlyCopyable,
+    RegisterPassable,
+    Writable where conforms_to(T, Writable),
 ):
     """Atomic reference-counted pointer.
 
@@ -97,7 +105,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
     Examples:
 
     ```mojo
-    from memory import ArcPointer
+    from std.memory import ArcPointer
     var p = ArcPointer(4)
     var p2 = p
     p2[]=3
@@ -111,7 +119,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
     comptime _inner_type = _ArcPointerInner[Self.T]
     var _inner: UnsafePointer[Self._inner_type, MutExternalOrigin]
 
-    fn __init__(out self, var value: Self.T):
+    def __init__(out self, var value: Self.T):
         """Construct a new thread-safe, reference-counted smart pointer,
         and move the value into heap memory managed by the new pointer.
 
@@ -124,7 +132,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
             value^
         )
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         unsafe_from_raw_pointer: UnsafePointer[Self.T, MutExternalOrigin],
@@ -142,7 +150,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         ### Example
 
         ```mojo
-        from memory import ArcPointer
+        from std.memory import ArcPointer
 
         var initial_arc = ArcPointer[Int](42)
         var raw_ptr = initial_arc^.steal_data()
@@ -159,19 +167,19 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         )
         self._inner = pointer_to_inner.bitcast[Self._inner_type]()
 
-    fn __copyinit__(out self, existing: Self):
+    def __init__(out self, *, copy: Self):
         """Copy an existing reference. Increment the refcount to the object.
 
         Args:
-            existing: The existing reference.
+            copy: The existing reference.
         """
-        # Order here does not matter since `existing` can't be destroyed until
+        # Order here does not matter since `copy` can't be destroyed until
         # sometime after we return.
-        existing._inner[].add_ref()
-        self._inner = existing._inner
+        copy._inner[].add_ref()
+        self._inner = copy._inner
 
     @no_inline
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Delete the smart pointer.
 
         Decrement the reference count for the stored value. If there are no more
@@ -183,12 +191,12 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
 
     # FIXME: The origin returned for this is currently self origin, which
     # keeps the ArcPointer object alive as long as there are references into it.  That
-    # said, this isn't really the right modeling, we need hierarchical origins
+    # said, this isn't really the right modeling, we need indirect origins
     # to model the mutability and invalidation of the returned reference
     # correctly.
-    fn __getitem__[
+    def __getitem__[
         self_life: ImmutOrigin
-    ](ref [self_life]self) -> ref [unsafe_origin_mutcast[self_life]] Self.T:
+    ](ref[self_life] self) -> ref[self_life.unsafe_mut_cast[True]()] Self.T:
         """Returns a mutable reference to the managed value.
 
         Parameters:
@@ -199,11 +207,11 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         """
         return self._inner[].payload
 
-    fn unsafe_ptr[
+    def unsafe_ptr[
         mut: Bool,
         origin: Origin[mut=mut],
         //,
-    ](ref [origin]self) -> UnsafePointer[Self.T, origin]:
+    ](ref[origin] self) -> UnsafePointer[Self.T, origin]:
         """Retrieves a pointer to the underlying memory.
 
         Parameters:
@@ -220,7 +228,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
             .unsafe_origin_cast[origin]()
         )
 
-    fn count(self) -> UInt64:
+    def count(self) -> UInt64:
         """Count the amount of current references.
 
         Returns:
@@ -230,9 +238,9 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         # No synchronization is needed as this is not attempting to free the
         # shared data and it is not possible for the data to be freed until
         # this ArcPointer is destroyed.
-        return self._inner[].refcount.load[ordering = Consistency.MONOTONIC]()
+        return self._inner[].refcount.load[ordering=Ordering.RELAXED]()
 
-    fn steal_data(deinit self) -> UnsafePointer[Self.T, MutExternalOrigin]:
+    def steal_data(deinit self) -> UnsafePointer[Self.T, MutExternalOrigin]:
         """Consume this `ArcPointer`, returning a raw pointer to the underlying data.
 
         Returns:
@@ -247,7 +255,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         """
         return UnsafePointer(to=self._inner[].payload)
 
-    fn __is__(self, rhs: Self) -> Bool:
+    def __is__(self, rhs: Self) -> Bool:
         """Returns True if the two `ArcPointer` instances point at the same
         object.
 
@@ -260,7 +268,43 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         """
         return self._inner == rhs._inner
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def __eq__(self, rhs: Self) -> Bool where conforms_to(Self.T, Equatable):
+        """Returns True if the two `ArcPointer` instances hold equal values.
+
+        Delegates to the underlying value's `__eq__` method, so two
+        `ArcPointer` instances holding equal values compare equal even if
+        they are separate allocations. This is consistent with `__hash__`.
+
+        Args:
+            rhs: The other `ArcPointer`.
+
+        Returns:
+            True if the managed values are equal, False otherwise.
+        """
+        return trait_downcast[Equatable](self[]) == trait_downcast[Equatable](
+            rhs[]
+        )
+
+    def __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.T, Hashable):
+        """Hash the managed value.
+
+        Delegates to the underlying value's `__hash__` method, so two
+        `ArcPointer` instances holding equal values produce the same hash.
+        This is consistent with `__eq__`.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance to update.
+        """
+        trait_downcast[Hashable](self[]).__hash__(hasher)
+
+    def write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Formats this pointer's value to the provided Writer.
 
         Args:
@@ -269,15 +313,11 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         Constraints:
             T must conform to Writable.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Writable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Writable",
-        ]()
         trait_downcast[Writable](self[]).write_to(writer)
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.T, Writable):
         """Write the string representation of the `ArcPointer`.
 
         Args:
@@ -286,12 +326,6 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         Constraints:
             T must conform to Writable.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.T, Writable),
-            Parent=Self,
-            Element = Self.T,
-            ParentConformsTo="Writable",
-        ]()
-        writer.write("ArcPointer[", _unqualified_type_name[Self.T](), "](")
-        trait_downcast[Writable](self[]).write_repr_to(writer)
-        writer.write_string(")")
+        FormatStruct(writer, "ArcPointer").params(
+            TypeNames[Self.T](),
+        ).fields(Repr(trait_downcast[Writable](self[])))

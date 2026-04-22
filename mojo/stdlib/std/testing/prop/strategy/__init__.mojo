@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,26 +10,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the `Strategy` trait and exports built-in strategies for property-based testing."""
 
-from testing.prop.random import Rng
+from std.testing.prop.random import Rng
 from .simd_strategy import *
 from .list_strategy import *
 from .string_strategy import *
 
 
-trait Strategy(Movable):
+trait Strategy(ImplicitlyDestructible, Movable):
     """A type used to produce random inputs for property tests.
 
     Strategies are a core building block of property testing. They are used to
     produce the random input values for the properties being tested.
     """
 
-    # TODO: `Value` should require `Representable/Stringable` once conditional
-    # conformance is supported.
     comptime Value: Copyable
     """The type the strategy produces."""
 
-    fn value(mut self, mut rng: Rng) raises -> Self.Value:
+    def value(mut self, mut rng: Rng) raises -> Self.Value:
         """Produces a random value using this strategy.
 
         Args:

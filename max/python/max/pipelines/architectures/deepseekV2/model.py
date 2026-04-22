@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,34 +16,34 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from typing import Any, cast
+from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 from max.driver import Buffer, Device, DeviceSpec
 from max.dtype import DType
 from max.engine.api import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph import BufferType, DeviceRef, Graph, TensorType, Value
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.interfaces import LogProbabilities
-from max.nn import Module, ReturnLogits, Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.comm import Signals
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheParamInterface,
+    PagedCacheValues,
+)
+from max.nn.layer import Module
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
-    SupportedEncoding,
+    PipelineModelWithKVCache,
     upper_bounded_default,
 )
-from max.pipelines.lib.config_enums import PipelineRole
-from max.pipelines.lib.log_probabilities import (
-    compute_log_probabilities_ragged,
-    log_probabilities_ragged_graph,
-)
+from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from transformers import AutoConfig
 
 from .deepseekV2 import DeepseekV2
@@ -53,6 +53,7 @@ from .model_config import DeepseekV2Config
 logger = logging.getLogger("max.pipelines")
 
 
+@dataclass
 class DeepseekV2Inputs(ModelInputs):
     """A class representing inputs for the DeepseekV2 model.
 
@@ -66,41 +67,23 @@ class DeepseekV2Inputs(ModelInputs):
     input_row_offsets: Buffer
     signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
-    return_n_logits: Buffer
 
-    def __init__(
-        self,
-        tokens: Buffer,
-        input_row_offsets: Buffer,
-        signal_buffers: list[Buffer],
-        kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: Buffer | None = None,
-    ) -> None:
-        self.tokens = tokens
-        self.input_row_offsets = input_row_offsets
-        self.signal_buffers = signal_buffers
-        self.kv_cache_inputs = kv_cache_inputs
-        if return_n_logits is None:
-            # Provide a default value if none is provided
-            self.return_n_logits = Buffer.from_numpy(
-                np.array([1], dtype=np.int64)
-            ).to(tokens.device)
-        else:
-            self.return_n_logits = return_n_logits
+    return_n_logits: Buffer = field(kw_only=True)
 
 
-class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
+class DeepseekV2Model(
+    LogProbabilitiesMixin, PipelineModelWithKVCache[TextContext]
+):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.ALL,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     ) -> None:
         if pipeline_config.model.device_specs[0] == DeviceSpec.cpu():
             raise ValueError("DeepseekV2 currently only supported on gpu.")
@@ -108,18 +91,15 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
             adapter,
             return_logits,
+            return_hidden_states,
         )
 
         self.model = self.load_model(session)
-        self.logprobs_device = devices[0]
-        self.logprobs_model = self.load_logprobs_model(session)
 
     def execute(
         self,
@@ -127,13 +107,14 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
     ) -> ModelOutputs:
         assert isinstance(model_inputs, DeepseekV2Inputs)
 
-        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
+        curr_kv_cache_inputs = model_inputs.kv_cache_inputs
+        assert curr_kv_cache_inputs is not None
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.input_row_offsets,
             model_inputs.return_n_logits,
             *model_inputs.signal_buffers,
-            *curr_kv_cache_inputs,
+            *curr_kv_cache_inputs.flatten(),
         )
         if len(model_outputs) == 3:
             assert isinstance(model_outputs[0], Buffer)
@@ -154,7 +135,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV2Inputs:
         if len(replica_batches) > 1:
@@ -200,10 +181,6 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         )
 
     @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        return huggingface_config.num_hidden_layers
-
-    @classmethod
     def get_kv_params(
         cls,
         huggingface_config: AutoConfig,
@@ -211,8 +188,8 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-    ) -> KVCacheParams:
-        return DeepseekV2Config.get_kv_params(
+    ) -> KVCacheParamInterface:
+        return DeepseekV2Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=devices,
@@ -227,17 +204,17 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         try:
             return upper_bounded_default(
                 upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.max_length,
+                default=pipeline_config.model.max_length,
             )
         except ValueError as e:
             raise ValueError(
                 "Unable to infer max_length for DeepseekV2, the provided "
-                f"max_length ({pipeline_config.max_length}) exceeds the "
+                f"max_length ({pipeline_config.model.max_length}) exceeds the "
                 f"model's max_seq_len "
                 f"({huggingface_config.max_position_embeddings})."
             ) from e
 
-    def graph_inputs(self) -> tuple[TensorType]:
+    def graph_inputs(self) -> tuple[TensorType | BufferType, ...]:
         # Generate DeviceRef
         device_ref = DeviceRef.from_device(self.devices[0])
 
@@ -245,8 +222,6 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         return_n_logits_type = TensorType(
             DType.int64, shape=["return_n_logits"], device=device_ref
         )
-
-        kv_inputs = self.kv_params.get_symbolic_inputs()
 
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
@@ -256,10 +231,6 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         )
 
         if len(self.devices) > 1:
-            # Flatten kv types for each device
-            flattened_kv_types = [
-                kv_type for sublist in kv_inputs for kv_type in sublist
-            ]
             signals = Signals(
                 devices=(DeviceRef(d.label, d.id) for d in self.devices)
             )
@@ -268,46 +239,38 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
                 input_row_offsets_type,
                 return_n_logits_type,
                 *signals.input_types(),
-                *flattened_kv_types,
+                *self.kv_params.get_symbolic_inputs().flatten(),
             )
         else:
             return (
                 tokens_type,
                 input_row_offsets_type,
                 return_n_logits_type,
-                *kv_inputs[0],
+                *self.kv_params.get_symbolic_inputs().flatten(),
             )
 
     def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[Value[Any]]
+        self,
+        kv_inputs_flat: Sequence[Value[Any]],
+        kv_params: KVCacheParamInterface | None = None,
     ) -> list[PagedCacheValues]:
-        kv_params = self.get_kv_params(
+        kv_params = kv_params or self.get_kv_params(
             huggingface_config=self.huggingface_config,
             pipeline_config=self.pipeline_config,
             devices=[DeviceRef.from_device(d) for d in self.devices],
             kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.encoding.cache_dtype,
+            cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
         )
-        n_devices = kv_params.n_devices
-        fetch_types = kv_params.get_symbolic_inputs()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(n_devices):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
+        return list(
+            kv_params.get_symbolic_inputs()
+            .unflatten(iter(kv_inputs_flat))
+            .inputs
+        )
 
     def _build_graph(self) -> Graph:
         # Pre-allocate a buffer for input_row_offsets in multistep execution.
         # We do this to avoid materializing and copying a buffer with each multistep step
-        max_batch_size = self.pipeline_config.max_batch_size
+        max_batch_size = self.pipeline_config.runtime.max_batch_size
         assert max_batch_size, "Expected max_batch_size to be set"
 
         self._input_row_offsets_prealloc = Buffer.from_numpy(
@@ -320,15 +283,7 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
                 "only safetensors weights supported in DeepseekV2."
             )
 
-        pipeline_config = self.pipeline_config
         huggingface_config = self.huggingface_config
-
-        if pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
-            graph_mode = "prefill"
-        elif pipeline_config.pipeline_role is PipelineRole.DecodeOnly:
-            graph_mode = "decode"
-        else:
-            graph_mode = "auto"
 
         if self.adapter:
             state_dict = self.adapter(
@@ -341,55 +296,10 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
                 key: value.data() for key, value in self.weights.items()
             }
 
-        kv_params = self.kv_params
-        device_refs = [
-            DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model.device_specs
-        ]
-
-        model_config = DeepseekV2Config(
-            attention_bias=huggingface_config.attention_bias,
-            attention_dropout=huggingface_config.attention_dropout,
-            aux_loss_alpha=huggingface_config.aux_loss_alpha,
-            bos_token_id=huggingface_config.bos_token_id,
-            eos_token_id=huggingface_config.eos_token_id,
-            first_k_dense_replace=huggingface_config.first_k_dense_replace,
-            hidden_act=huggingface_config.hidden_act,
-            hidden_size=huggingface_config.hidden_size,
-            initializer_range=huggingface_config.initializer_range,
-            intermediate_size=huggingface_config.intermediate_size,
-            kv_lora_rank=huggingface_config.kv_lora_rank,
-            max_position_embeddings=huggingface_config.max_position_embeddings,
-            moe_intermediate_size=huggingface_config.moe_intermediate_size,
-            moe_layer_freq=huggingface_config.moe_layer_freq,
-            n_group=huggingface_config.n_group,
-            n_routed_experts=huggingface_config.n_routed_experts,
-            n_shared_experts=huggingface_config.n_shared_experts,
-            norm_topk_prob=huggingface_config.norm_topk_prob,
-            num_attention_heads=huggingface_config.num_attention_heads,
-            num_experts_per_tok=huggingface_config.num_experts_per_tok,
-            num_hidden_layers=huggingface_config.num_hidden_layers,
-            num_key_value_heads=huggingface_config.num_key_value_heads,
-            pretraining_tp=huggingface_config.pretraining_tp,
-            q_lora_rank=huggingface_config.q_lora_rank,
-            qk_nope_head_dim=huggingface_config.qk_nope_head_dim,
-            qk_rope_head_dim=huggingface_config.qk_rope_head_dim,
-            rms_norm_eps=huggingface_config.rms_norm_eps,
-            rope_scaling=huggingface_config.rope_scaling,
-            rope_theta=huggingface_config.rope_theta,
-            routed_scaling_factor=huggingface_config.routed_scaling_factor,
-            scoring_func=huggingface_config.scoring_func,
-            seq_aux=huggingface_config.seq_aux,
-            tie_word_embeddings=huggingface_config.tie_word_embeddings,
-            topk_group=huggingface_config.topk_group,
-            topk_method=huggingface_config.topk_method,
-            use_cache=huggingface_config.use_cache,
-            v_head_dim=huggingface_config.v_head_dim,
-            vocab_size=huggingface_config.vocab_size,
-            dtype=self.dtype,
-            kv_params=kv_params,
-            devices=device_refs,
-            graph_mode=graph_mode,
+        model_config = DeepseekV2Config.initialize(self.pipeline_config)
+        model_config.max_batch_context_length = (
+            self.pipeline_config.runtime.max_batch_total_tokens
+            or model_config.max_batch_context_length
         )
 
         # Get Graph Inputs
@@ -439,15 +349,10 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
                 tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
                     graph.inputs
                 )
-                kv_collection = PagedCacheValues(
-                    kv_blocks=kv_cache_inputs[0].buffer,
-                    cache_lengths=kv_cache_inputs[1].tensor,
-                    lookup_table=kv_cache_inputs[2].tensor,
-                    max_lengths=kv_cache_inputs[3].tensor,
-                )
+                kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
                 outputs = nn_model(
                     tokens.tensor,
-                    kv_collection,
+                    kv_collections[0],
                     return_n_logits.tensor,
                     input_row_offsets.tensor,
                 )
@@ -458,47 +363,9 @@ class DeepseekV2Model(PipelineModel[TextContext], KVCacheMixin):
         self,
         session: InferenceSession,
     ) -> Model:
-        timer = CompilationTimer("model")
-        graph = self._build_graph()
-        timer.mark_build_complete()
-        model = session.load(graph, weights_registry=self.state_dict)
-        timer.done()
+        with CompilationTimer("model") as timer:
+            graph = self._build_graph()
+            timer.mark_build_complete()
+            model = session.load(graph, weights_registry=self.state_dict)
 
         return model
-
-    def load_logprobs_model(self, session: InferenceSession) -> Model:
-        # TODO: Perhaps 'levels' ought to be configurable.
-        graph = log_probabilities_ragged_graph(
-            DeviceRef.from_device(self.logprobs_device), levels=3
-        )
-        return session.load(graph)
-
-    def compute_log_probabilities(
-        self,
-        session: InferenceSession,
-        model_inputs: ModelInputs,
-        model_outputs: ModelOutputs,
-        next_tokens: Buffer,
-        batch_top_n: list[int],
-        batch_echo: list[bool],
-    ) -> list[LogProbabilities | None]:
-        logits = model_outputs.logits
-        assert model_outputs.next_token_logits is not None
-        next_token_logits = model_outputs.next_token_logits
-        sampled_tokens = next_tokens.to_numpy()
-
-        model_inputs = cast(DeepseekV2Inputs, model_inputs)
-        tokens = model_inputs.tokens.to_numpy()
-        input_row_offsets = model_inputs.input_row_offsets.to_numpy()
-
-        return compute_log_probabilities_ragged(
-            self.logprobs_device,
-            self.logprobs_model,
-            input_row_offsets=input_row_offsets,
-            logits=logits,
-            next_token_logits=next_token_logits,
-            tokens=tokens,
-            sampled_tokens=sampled_tokens,
-            batch_top_n=batch_top_n,
-            batch_echo=batch_echo,
-        )

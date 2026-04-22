@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,7 @@
 
 
 @always_inline("nodebug")
-fn breakpointhook():
+def breakpointhook():
     """Cause an execution trap with the intention of requesting the attention
     of a debugger."""
     __mlir_op.`llvm.intr.debugtrap`()

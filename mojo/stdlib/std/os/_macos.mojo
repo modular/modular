@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
-from sys import external_call
-from time.time import _CTimeSpec
+from std.collections import InlineArray
+from std.ffi import external_call
+from std.time.time import _CTimeSpec
 
 from .fstat import stat_result
 
@@ -30,7 +30,7 @@ comptime blksize_t = Int32
 
 
 @fieldwise_init
-struct _c_stat(Copyable, Defaultable, Stringable, Writable):
+struct _c_stat(Copyable, Defaultable, Writable):
     var st_dev: dev_t
     """ID of device containing file."""
     var st_mode: mode_t
@@ -68,7 +68,7 @@ struct _c_stat(Copyable, Defaultable, Stringable, Writable):
     var st_qspare: InlineArray[Int64, 2]
     """RESERVED: DO NOT USE!."""
 
-    fn __init__(out self):
+    def __init__(out self):
         self.st_dev = 0
         self.st_mode = 0
         self.st_nlink = 0
@@ -86,9 +86,9 @@ struct _c_stat(Copyable, Defaultable, Stringable, Writable):
         self.st_flags = 0
         self.st_gen = 0
         self.st_lspare = 0
-        self.st_qspare = InlineArray[Int64, 2](0, 0)
+        self.st_qspare: InlineArray[Int64, 2] = [0, 0]
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         # fmt: off
         writer.write(
             "{\nst_dev: ", self.st_dev,
@@ -111,11 +111,7 @@ struct _c_stat(Copyable, Defaultable, Stringable, Writable):
         )
         # fmt: on
 
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    fn _to_stat_result(self) -> stat_result:
+    def _to_stat_result(self) -> stat_result:
         return stat_result(
             st_dev=Int(self.st_dev),
             st_mode=Int(self.st_mode),
@@ -136,7 +132,7 @@ struct _c_stat(Copyable, Defaultable, Stringable, Writable):
 
 
 @always_inline
-fn _stat(var path: String) raises -> _c_stat:
+def _stat(var path: String) raises -> _c_stat:
     var stat = _c_stat()
     var err = external_call["stat", Int32](
         path.as_c_string_slice().unsafe_ptr(), Pointer(to=stat)
@@ -147,7 +143,7 @@ fn _stat(var path: String) raises -> _c_stat:
 
 
 @always_inline
-fn _lstat(var path: String) raises -> _c_stat:
+def _lstat(var path: String) raises -> _c_stat:
     var stat = _c_stat()
     var err = external_call["lstat", Int32](
         path.as_c_string_slice().unsafe_ptr(), Pointer(to=stat)

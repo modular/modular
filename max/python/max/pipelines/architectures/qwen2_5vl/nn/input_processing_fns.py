@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -27,7 +27,7 @@ import numpy.typing as npt
 
 def rot_pos_emb_numpy(
     grid_thw: npt.NDArray[np.integer[Any]], spatial_merge_size: int
-) -> tuple[npt.NDArray[np.floating[Any]], int]:
+) -> tuple[npt.NDArray[np.int64], int]:
     """NumPy implementation of rot_pos_emb function.
 
     Args:
@@ -42,28 +42,30 @@ def rot_pos_emb_numpy(
 
     for t, h, w in grid_thw:
         # Generate height position IDs: arange(h).unsqueeze(1).expand(-1, w)
+        hpos_ids: npt.NDArray[np.int64]
         hpos_ids = np.arange(h).reshape(h, 1)  # unsqueeze(1)
         hpos_ids = np.tile(hpos_ids, (1, w))  # expand(-1, w)
-        hpos_ids = hpos_ids.reshape(  # type: ignore
+        hpos_ids = hpos_ids.reshape(
             h // spatial_merge_size,
             spatial_merge_size,
             w // spatial_merge_size,
             spatial_merge_size,
         )
         hpos_ids = np.transpose(hpos_ids, (0, 2, 1, 3))  # permute(0, 2, 1, 3)
-        hpos_ids = hpos_ids.flatten()  # type: ignore
+        hpos_ids = hpos_ids.flatten()
 
         # Generate width position IDs: arange(w).unsqueeze(0).expand(h, -1)
+        wpos_ids: npt.NDArray[np.int64]
         wpos_ids = np.arange(w).reshape(1, w)  # unsqueeze(0)
         wpos_ids = np.tile(wpos_ids, (h, 1))  # expand(h, -1)
-        wpos_ids = wpos_ids.reshape(  # type: ignore
+        wpos_ids = wpos_ids.reshape(
             h // spatial_merge_size,
             spatial_merge_size,
             w // spatial_merge_size,
             spatial_merge_size,
         )
         wpos_ids = np.transpose(wpos_ids, (0, 2, 1, 3))  # permute(0, 2, 1, 3)
-        wpos_ids = wpos_ids.flatten()  # type: ignore
+        wpos_ids = wpos_ids.flatten()
 
         # Stack and repeat for temporal dimension
         pos_ids_hw = np.stack([hpos_ids, wpos_ids], axis=-1)
@@ -73,10 +75,10 @@ def rot_pos_emb_numpy(
         pos_ids.append(pos_ids_t)
 
     # Concatenate all position IDs
-    pos_ids = np.concatenate(pos_ids, axis=0)
+    pos_ids_arr = np.concatenate(pos_ids, axis=0)
     max_grid_size = grid_thw[:, 1:].max()
 
-    return pos_ids, max_grid_size
+    return pos_ids_arr, max_grid_size
 
 
 def get_window_index_numpy(

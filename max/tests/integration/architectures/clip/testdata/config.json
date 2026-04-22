@@ -1,0 +1,5 @@
+{
+    "hidden_size": 768,
+    "num_attention_heads": 12,
+    "attention_dropout": 0.0
+}

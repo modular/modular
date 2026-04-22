@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,16 +11,29 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import asyncio
+import functools
 import os
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import ParamSpec, TypeVar
 
 import pytest
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib import (
+    KVCacheConfig,
+    MAXModelConfig,
+    PipelineConfig,
+    PipelineRuntimeConfig,
+)
 from transformers import (
     AutoTokenizer,
+    PretrainedConfig,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 @pytest.fixture(scope="session")
@@ -39,9 +52,6 @@ def fixture_tokenizer(
     return tokenizer
 
 
-DEFAULT_ZMQ_ENDPOINT_BASE = "ipc:///tmp/my-secret-uuid-abc123"
-
-
 @pytest.fixture
 def enable_prefix_caching(request: pytest.FixtureRequest) -> bool:
     """Fixture for a whether prefix caching is enabled
@@ -54,11 +64,11 @@ def enable_prefix_caching(request: pytest.FixtureRequest) -> bool:
 
 @pytest.fixture
 def mock_pipeline_config(enable_prefix_caching: bool) -> PipelineConfig:
-    pipeline_config = PipelineConfig.model_construct(
-        # scheduler-required surface
+    runtime = PipelineRuntimeConfig.model_construct(
         max_batch_size=1,
-        enable_prefix_caching=enable_prefix_caching,
-        zmq_endpoint_base=DEFAULT_ZMQ_ENDPOINT_BASE,
+    )
+    pipeline_config = PipelineConfig.model_construct(
+        runtime=runtime,
     )
 
     kv_cache_config = KVCacheConfig.model_construct(
@@ -68,8 +78,24 @@ def mock_pipeline_config(enable_prefix_caching: bool) -> PipelineConfig:
     model_config = MAXModelConfig.model_construct(
         served_model_name="echo",
     )
+    model_config._huggingface_config = PretrainedConfig()
 
-    model_config._kv_cache = kv_cache_config
-    pipeline_config._model = model_config
+    model_config.kv_cache = kv_cache_config
+    pipeline_config.model = model_config
 
     return pipeline_config
+
+
+# simple decorator to make hung test cases fail faster than the bazel 300s timeout
+def async_timeout(
+    timeout: float,
+) -> Callable[[Callable[_P, Awaitable[_R]]], Callable[_P, _R]]:
+    def decorator(func: Callable[_P, Awaitable[_R]]) -> Callable[_P, _R]:
+        @pytest.mark.asyncio
+        @functools.wraps(func)
+        async def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+            return await asyncio.wait_for(func(*args, **kwargs), timeout)
+
+        return wrapper
+
+    return decorator

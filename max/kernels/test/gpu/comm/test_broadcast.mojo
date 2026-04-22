@@ -11,38 +11,50 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
-from itertools import product
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from gpu.host import DeviceBuffer, DeviceContext
-from testing import assert_true
+from std.math import ceildiv
+from std.sys import size_of
+from std.itertools import product
+from std.gpu.host import DeviceBuffer, DeviceContext
+from layout import (
+    Idx,
+    TileTensor,
+    row_major,
+)
+from std.testing import assert_true
 
 from comm import Signal, MAX_GPUS
 from comm.broadcast import broadcast
-from comm.sync import can_enable_p2p
-from internal_utils import human_readable_size
+from comm.sync import enable_p2p
 
 
 @always_inline
 @parameter
-fn _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
+def _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
     """Generate position-based input value that includes root rank.
 
     Each element has a unique value based on position, and includes the root
     rank to verify the correct source GPU was used.
     """
     # 251 is the largest prime < 256; using a prime avoids power-of-two aliasing.
-    return Scalar[dtype](Scalar[dtype](root + 1) + Scalar[dtype](j % 251))
+    return Scalar[dtype](root + 1) + Scalar[dtype](j % 251)
 
 
 # Shared test configurations - kept small to avoid CI timeouts on MI355
 comptime test_lengths = (
     0,  # No elements
+    1,  # Single element
+    2,  # Smaller than typical simd_width (e.g., float32 simd_width=4 or 8)
+    5,  # simd_width + 1 for float32 (simd_width=4)
+    7,  # Not a multiple of simd_width
+    9,  # simd_width + 1 for bfloat16 (simd_width=8)
+    100,  # Not a multiple of typical simd_width
+    1023,  # Not a multiple of simd_width
     8 * 1024,  # Small latency bound
+    8 * 1024 + 3,  # Not a multiple of simd_width
     128 * 1024,  # Larger latency bound
     256 * 1024,  # Smallest bandwidth bound
     16 * 1024 * 1024,  # Bandwidth bound
+    16 * 1024 * 1024 + 3,  # Large non-aligned: tests 2-stage tail handling
     64 * 1024 * 1024,  # Bandwidth bound: 8192 chunk size at dim = 8192
 )
 
@@ -51,7 +63,7 @@ comptime test_dtypes = (DType.bfloat16, DType.float32)
 comptime test_gpu_counts = (2, 4, 8)
 
 
-fn _get_test_str[
+def _get_test_str[
     dtype: DType,
     in_place: Bool,
 ](ngpus: Int, length: Int, root: Int) -> String:
@@ -64,12 +76,12 @@ fn _get_test_str[
         root,
         "-inplace-",
         in_place,
-        "-",
-        human_readable_size(size_of[dtype]() * length),
+        "-nelems-",
+        length,
     )
 
 
-fn broadcast_test[
+def broadcast_test[
     dtype: DType,
     rank: Int,
     ngpus: Int,
@@ -78,51 +90,51 @@ fn broadcast_test[
     var root_ctx = list_of_ctxs[root]
 
     # Create input buffer on root GPU
-    var input_dev = root_ctx.enqueue_create_buffer[dtype](length)
-    var in_buf = NDBuffer[dtype, rank, ImmutAnyOrigin](
-        input_dev.unsafe_ptr(), DimList(length)
-    )
-
-    # Initialize input buffer with position-based test data on host and copy to device
-    var host_input = alloc[Scalar[dtype]](length)
+    var host_input_ptr = alloc[Scalar[dtype]](length)
     for j in range(length):
-        host_input[j] = _input_value[dtype](root, j)
-    root_ctx.enqueue_copy(input_dev, host_input)
-    root_ctx.synchronize()
+        host_input_ptr[j] = _input_value[dtype](root, j)
+    var input_dev = root_ctx.enqueue_create_buffer[dtype](length)
+    root_ctx.enqueue_copy(input_dev, host_input_ptr)
 
     # Create output buffers for all GPUs
     var out_dev_list = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var out_bufs = InlineArray[NDBuffer[dtype, rank, MutAnyOrigin], ngpus](
-        fill={}
-    )
+
+    # Create TileTensor types for input and output
+    var in_tile = TileTensor(input_dev, row_major(Idx(length))).as_immut()
+    comptime OutputTileType = TileTensor[
+        dtype, type_of(row_major(Idx(length))), MutAnyOrigin
+    ]
+    var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
+        uninitialized=True
     )
     for i in range(ngpus):
         # Create this rank's output buffer
         if root_self_copy and i == root:
             # Special case: root does an in-place copy
             out_dev_list.append(input_dev)
-            out_bufs[i] = NDBuffer[dtype, rank, MutAnyOrigin](
-                input_dev.unsafe_ptr(),
-                DimList(length),
-            )
+            out_tiles[i] = OutputTileType(input_dev, row_major(Idx(length)))
             continue
 
         var ctx = list_of_ctxs[i]
         var out_ptr = ctx.enqueue_create_buffer[dtype](length)
         out_dev_list.append(out_ptr)
-        out_bufs[i] = NDBuffer[dtype, rank, MutAnyOrigin](
-            out_ptr.unsafe_ptr(), DimList(length)
+        out_tiles[i] = OutputTileType(
+            out_ptr.unsafe_ptr(), row_major(Idx(length))
         )
 
+    # Signal buffers need payload space for 2-stage broadcast
+    var num_bytes = length * size_of[dtype]()
+    var chunk_bytes = ceildiv(num_bytes, ngpus)
+    var signal_buf_size = size_of[Signal]() + chunk_bytes
+
     for i in range(ngpus):
-        # Create and initialize signal buffers
+        # Create and initialize signal buffers (with payload space for 2-stage)
         signal_buffers.append(
-            list_of_ctxs[i].create_buffer_sync[DType.uint8](size_of[Signal]())
+            list_of_ctxs[i].create_buffer_sync[DType.uint8](signal_buf_size)
         )
         list_of_ctxs[i].enqueue_memset[DType.uint8](signal_buffers[i], 0)
         rank_sigs[i] = signal_buffers[i].unsafe_ptr().bitcast[Signal]()
@@ -138,9 +150,10 @@ fn broadcast_test[
         list_of_ctxs[i].synchronize()
 
     # Launch broadcast per device
-    @parameter
-    for i in range(ngpus):
-        broadcast[ngpus,](in_buf, out_bufs[i], rank_sigs, list_of_ctxs[i], root)
+    comptime for i in range(ngpus):
+        broadcast[ngpus](
+            in_tile, out_tiles[i], rank_sigs, list_of_ctxs[i], root
+        )
 
     # Synchronize all GPUs
     for i in range(ngpus):
@@ -168,17 +181,14 @@ fn broadcast_test[
                 )
 
     # Cleanup
-    host_input.free()
+    host_input_ptr.free()
     host_output.free()
-    _ = signal_buffers^
-    _ = out_dev_list^
 
 
 @parameter
-fn run_broadcast_sweep[]() raises:
+def run_broadcast_sweep[]() raises:
     # Run tests for each configuration.
-    @parameter
-    for gpu_idx, dtype_idx, length_idx, root_self_copy in product(
+    comptime for gpu_idx, dtype_idx, length_idx, root_self_copy in product(
         range(len(test_gpu_counts)),
         range(len(test_dtypes)),
         range(len(test_lengths)),
@@ -211,11 +221,9 @@ fn run_broadcast_sweep[]() raises:
                 raise e^
 
 
-def main():
+def main() raises:
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
-    if not can_enable_p2p():
-        print("P2P not enabled, skipping test.")
-        return
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
     run_broadcast_sweep[]()

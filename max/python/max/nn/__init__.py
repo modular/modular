@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,42 +10,58 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Neural network modules for MAX.
+
+Graph-based API:
+
+.. code-block:: python
+
+    from max.nn import Linear, AttentionWithRope
+    from max.nn.kv_cache import KVCacheParams
+
+Eager tensor API:
+
+.. code-block:: python
+
+    from max.experimental.nn import Module, Linear, Embedding
+"""
 
 from .attention import (
     AttentionWithRope,
     DistributedAttentionImpl,
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
+    LatentAttentionWithRope,
+    MultiheadAttention,
     RaggedAttention,
     TensorParallelAttentionWithRope,
+    TensorParallelLatentAttentionWithRope,
 )
 from .clamp import clamp
 from .comm import Allreduce, Signals
 from .conv import Conv1D, Conv2d, Conv3D
 from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
+from .data_parallelism import split_batch, split_batch_replicated
 from .embedding import Embedding, VocabParallelEmbedding
-from .float8_config import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
-    Float8WeightScaleSpec,
-)
 from .identity import Identity
-from .layer import Layer, LayerList, Module, Shardable
-from .linear import (
-    MLP,
-    ColumnParallelLinear,
-    DistributedGemmConfig,
-    GPTQLinear,
-    Linear,
+from .kv_cache import (
+    KVCacheInputs,
+    KVCacheMetrics,
+    KVCacheParams,
+    build_max_lengths_tensor,
 )
+from .layer import Layer, LayerList, Module, Shardable
+from .linear import MLP, ColumnParallelLinear, GPTQLinear, Linear
 from .lora import AttentionWithRopeAndLoRA, LinearLoRA, SupportsLoRA
-from .norm import (
-    ConstantLayerNorm,
-    GroupNorm,
-    LayerNorm,
-    RMSNorm,
+from .moe import MoE, MoEGate, MoEQuantized, forward_moe_sharded_layers
+from .norm import ConstantLayerNorm, GroupNorm, LayerNorm, RMSNorm
+from .quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
 )
 from .rotary_embedding import (
     DynamicRotaryEmbedding,
@@ -58,7 +74,13 @@ from .rotary_embedding import (
     YarnRotaryEmbedding,
     YarnScalingParams,
 )
+from .sampling import (
+    MinPSampler,
+    RejectionSampler,
+    RejectionSamplerWithResiduals,
+)
 from .sequential import Sequential
+from .stacked_linear import StackedLinear
 from .transformer import (
     DistributedTransformer,
     DistributedTransformerBlock,
@@ -82,17 +104,18 @@ __all__ = [
     "DistributedAttentionImpl",
     "DistributedTransformer",
     "DistributedTransformerBlock",
+    "DynamicRotaryEmbedding",
     "Embedding",
-    "Float8Config",
-    "Float8InputScaleSpec",
-    "Float8ScaleGranularity",
-    "Float8ScaleOrigin",
-    "Float8WeightScaleSpec",
     "GGUFQAttentionWithRope",
     "GPTQAttentionWithRope",
     "GPTQLinear",
     "GroupNorm",
     "Identity",
+    "InputScaleSpec",
+    "KVCacheInputs",
+    "KVCacheMetrics",
+    "KVCacheParams",
+    "LatentAttentionWithRope",
     "Layer",
     "LayerList",
     "LayerNorm",
@@ -103,22 +126,41 @@ __all__ = [
     "Llama3RotaryEmbedding",
     "LongRoPERotaryEmbedding",
     "LongRoPEScalingParams",
+    "MinPSampler",
+    "MoE",
+    "MoEGate",
+    "MoEQuantized",
     "Module",
+    "MultiheadAttention",
+    "PagedCacheValues",
+    "QuantConfig",
+    "QuantFormat",
     "RMSNorm",
     "RaggedAttention",
+    "RejectionSampler",
+    "RejectionSamplerWithResiduals",
     "ReturnHiddenStates",
     "ReturnLogits",
     "RotaryEmbedding",
+    "ScaleGranularity",
+    "ScaleOrigin",
     "Sequential",
     "Shardable",
     "Signals",
+    "StackedLinear",
     "SupportsLoRA",
     "TensorParallelAttentionWithRope",
+    "TensorParallelLatentAttentionWithRope",
     "Transformer",
     "TransformerBlock",
     "VocabParallelEmbedding",
     "WeightNormConvTranspose1d",
+    "WeightScaleSpec",
     "YarnRotaryEmbedding",
     "YarnScalingParams",
+    "build_max_lengths_tensor",
     "clamp",
+    "forward_moe_sharded_layers",
+    "split_batch",
+    "split_batch_replicated",
 ]

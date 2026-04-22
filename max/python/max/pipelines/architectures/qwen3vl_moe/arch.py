@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
+from max.interfaces import InputModality, PipelineTask
+from max.pipelines.lib import SupportedArchitecture
 
 from .context import Qwen3VLTextAndVisionContext
 from .model import Qwen3VLModel
+from .model_config import Qwen3VLConfig
 from .tokenizer import Qwen3VLTokenizer
 from .weight_adapters import convert_qwen3vl_model_state_dict
 
@@ -29,10 +29,12 @@ qwen3vl_moe_arch = SupportedArchitecture(
     ],
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
-    default_encoding=SupportedEncoding.bfloat16,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        "float32",
+        "bfloat16",
+        "float8_e4m3fn",
     },
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen3vl_model_state_dict,
@@ -43,6 +45,7 @@ qwen3vl_moe_arch = SupportedArchitecture(
     required_arguments={
         "enable_chunked_prefill": False,
     },
+    config=Qwen3VLConfig,
 )
 
 # Register the same architecture under Qwen's non-MoE name for models like Qwen3-VL-4B-Instruct
@@ -53,10 +56,12 @@ qwen3vl_arch = SupportedArchitecture(
     example_repo_ids=["Qwen/Qwen3-VL-4B-Instruct", "Qwen/Qwen3-VL-2B-Instruct"],
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
-    default_encoding=SupportedEncoding.bfloat16,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        "float32",
+        "bfloat16",
+        "float8_e4m3fn",
     },
     weight_adapters={
         WeightsFormat.safetensors: convert_qwen3vl_model_state_dict,
@@ -67,4 +72,5 @@ qwen3vl_arch = SupportedArchitecture(
     required_arguments={
         "enable_chunked_prefill": False,
     },
+    config=Qwen3VLConfig,
 )

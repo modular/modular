@@ -8,20 +8,11 @@ READMEs for usage instructions.
 
 We moved the Mojo examples to [/mojo/examples](../../mojo/examples/)
 
-## [Basic MAX graph](max-graph/)
+## [Modules](modules/)
 
-The [MAX Python API](https://docs.modular.com/max/api/python/) provides a
-PyTorch-like interface for building neural network components that compile to
-highly optimized graphs. This is a simple example of how to build a graph in
-Python, before moving on to more complex custom ops using Mojo.
-
-## [Custom MAX graph module](custom-graph-module/)
-
-This example shows how to create a reusable, modular component for a MAX graph,
-using the `nn.Module` class. It include custom layers, blocks, and
-architectural patterns that showcase the flexibility of MAX's Python API for
-deep learning development, from simple MLP blocks to more complex neural
-network architectures.
+This example shows how to build model graphs using MAX's `nn.Module` class. It
+demonstrates composing built-in modules, writing custom modules with explicit
+weights, loading checkpoint data, and constructing a graph from the result.
 
 ## [Custom GPU and CPU graph ops in Mojo](custom_ops/)
 
@@ -163,8 +154,8 @@ fixed (hopefully).
 ### Nightly functional test (optional)
 
 The simple `pixi` test above is good enough for most cases, but it doesn't
-assert that the result produced is what's expected. To go to that next level,
-we might add an actual [pytest](https://docs.pytest.org/en/stable/). For
+assert that the result produced is what's expected. To go to that next level, we
+might add an actual [pytest](https://docs.pytest.org/en/stable/). For
 [example](https://github.com/modular/modular/tree/main/examples/max-graph/pixi.toml):
 
 ```toml
@@ -178,7 +169,8 @@ from the example code is actually what we expect.
 
 ## Contributing
 
-We're happy to accept any of the following types of changes to the code examples:
+We're happy to accept any of the following types of changes to the code
+examples:
 
 - Bug fixes
 - Performance improvements

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -79,7 +79,7 @@ def test_concat__axis_out_of_bounds(
 
     with graph_builder(input_types=[base_type]) as graph:
         with pytest.raises(IndexError):
-            out = ops.concat(graph.inputs, axis)  # type: ignore
+            ops.concat(graph.inputs, axis)  # type: ignore
 
 
 @given(
@@ -102,14 +102,14 @@ def test_concat__bad_dtype(
 
     with graph_builder(input_types=[type_a, type_b]) as graph:
         with pytest.raises(ValueError):
-            out = ops.concat(graph.inputs, axis)  # type: ignore
+            ops.concat(graph.inputs, axis)  # type: ignore
 
 
 @given(axis=...)
 def test_concat__no_inputs(graph_builder: GraphBuilder, axis: int) -> None:
-    with graph_builder(input_types=[]) as graph:
+    with graph_builder(input_types=[]):
         with pytest.raises(ValueError):
-            out = ops.concat([], axis)
+            ops.concat([], axis)
 
 
 @given(
@@ -128,7 +128,7 @@ def test_concat__different_ranks(
 
     with graph_builder(input_types=[type_a, type_b]) as graph:
         with pytest.raises(ValueError):
-            out = ops.concat(graph.inputs, axis)  # type: ignore
+            ops.concat(graph.inputs, axis)  # type: ignore
 
 
 @given(
@@ -161,7 +161,7 @@ def test_concat__mismatched_dims(
 
     with graph_builder(input_types=[type_a, type_b]) as graph:
         with pytest.raises(ValueError):
-            out = ops.concat(graph.inputs, axis)  # type: ignore
+            ops.concat(graph.inputs, axis)  # type: ignore
 
 
 @given(base_type=shared_tensor_types, axis=symbolic_axes(shared_tensor_types))

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,9 +29,7 @@ from max.serve.pipelines.echo_gen import (
 
 @pytest.fixture
 def app(mock_pipeline_config: PipelineConfig):  # noqa: ANN201
-    settings = Settings(
-        api_types=[APIType.KSERVE], MAX_SERVE_USE_HEARTBEAT=False
-    )
+    settings = Settings(api_types=[APIType.KSERVE], use_heartbeat=False)
     serving_settings = ServingTokenGeneratorSettings(
         model_factory=EchoTokenGenerator,
         pipeline_config=mock_pipeline_config,

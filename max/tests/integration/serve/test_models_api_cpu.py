@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,17 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import hf_repo_lock
 import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
-from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines import PipelineConfig, SupportedEncoding
+from max.pipelines import PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig
+from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
     ListModelsResponse,
     Model,
 )
+
+SMOLLM_135M_REPO_ID = "HuggingFaceTB/SmolLM-135M"
+SMOLLM_135M_REVISION = hf_repo_lock.revision_for_hf_repo(SMOLLM_135M_REPO_ID)
+assert SMOLLM_135M_REVISION is not None
 
 
 @pytest.mark.asyncio()
@@ -29,12 +36,19 @@ from max.serve.schemas.openai import (
     "pipeline_config",
     [
         PipelineConfig(
-            model_path="HuggingFaceTB/SmolLM-135M",
-            max_length=512,
-            device_specs=[DeviceSpec.cpu()],
-            quantization_encoding=SupportedEncoding.float32,
-            cache_strategy=KVCacheStrategy.PAGED,
-            max_batch_size=16,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=SMOLLM_135M_REPO_ID,
+                        huggingface_model_revision=SMOLLM_135M_REVISION,
+                        device_specs=[DeviceSpec.cpu()],
+                        quantization_encoding="float32",
+                        kv_cache=KVCacheConfig(),
+                        max_length=512,
+                    )
+                }
+            ),
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,
@@ -46,13 +60,13 @@ async def test_serve_models(app: FastAPI) -> None:
         response = ListModelsResponse.model_validate(raw_response.json())
 
         assert len(response.data) == 1
-        assert response.data[0].id == "HuggingFaceTB/SmolLM-135M"
+        assert response.data[0].id == SMOLLM_135M_REPO_ID
 
         raw_response = await client.get("/v1/models/SmolLM-135M")
 
         response2 = Model.model_validate(raw_response.json())
 
-        assert response2.id == "HuggingFaceTB/SmolLM-135M"
+        assert response2.id == SMOLLM_135M_REPO_ID
 
 
 MODEL_ALIAS = "foobar"
@@ -64,13 +78,19 @@ MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
     "pipeline_config",
     [
         PipelineConfig(
-            model_path=MODEL_NAME,
-            served_model_name=MODEL_ALIAS,
-            max_length=512,
-            device_specs=[DeviceSpec.cpu()],
-            quantization_encoding=SupportedEncoding.float32,
-            cache_strategy=KVCacheStrategy.PAGED,
-            max_batch_size=16,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=MODEL_NAME,
+                        served_model_name=MODEL_ALIAS,
+                        device_specs=[DeviceSpec.cpu()],
+                        quantization_encoding="float32",
+                        kv_cache=KVCacheConfig(),
+                        max_length=512,
+                    )
+                }
+            ),
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,

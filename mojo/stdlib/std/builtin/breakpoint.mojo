@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes the builtin breakpoint function."""
 
-from sys import breakpointhook
+from std.sys import breakpointhook
 
 
 @always_inline("nodebug")
-fn breakpoint():
+def breakpoint():
     """Cause an execution trap with the intention of requesting the attention
     of a debugger."""
     breakpointhook()

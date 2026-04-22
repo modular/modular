@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,7 +21,6 @@ from max.dtype import DType
 from max.graph import (
     DeviceRef,
     ShardingStrategy,
-    TensorType,
     TensorValue,
     Weight,
     ops,
@@ -31,7 +30,16 @@ from ..layer import Module, Shardable
 
 
 class RMSNorm(Module, Shardable):
-    """Computes the Root Mean Square normalization on inputs.
+    """Computes the root mean square normalization on inputs.
+
+    When called, ``RMSNorm`` normalizes the input using only the root mean
+    square statistic, without centering by the mean. It accepts a
+    :class:`~max.graph.TensorValue` of shape ``(..., dim)`` and returns a
+    normalized :class:`~max.graph.TensorValue` of the same shape.
+
+    This is more efficient than LayerNorm while maintaining comparable
+    performance in transformer models. For more information, see `Root Mean
+    Square Layer Normalization <https://arxiv.org/abs/1910.07467>`_.
 
     Args:
         dim: Size of last dimension of the expected input.
@@ -77,20 +85,13 @@ class RMSNorm(Module, Shardable):
         if x.device:
             weight = weight.to(x.device)
 
-        return ops.custom(
-            "rms_norm",
-            x.device,
-            [
-                x,
-                weight,
-                ops.constant(self.eps, dtype=x.dtype, device=DeviceRef.CPU()),
-                ops.constant(
-                    self.weight_offset, dtype=x.dtype, device=DeviceRef.CPU()
-                ),
-            ],
-            [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
-            parameters={"multiply_before_cast": self.multiply_before_cast},
-        )[0].tensor
+        return ops.rms_norm(
+            x,
+            weight,
+            self.eps,
+            weight_offset=self.weight_offset,
+            multiply_before_cast=self.multiply_before_cast,
+        )
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:

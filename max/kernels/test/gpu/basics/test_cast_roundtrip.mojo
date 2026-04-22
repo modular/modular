@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,34 +11,31 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import *
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal, assert_true
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal, assert_true
-
-from utils.numerics import inf, isnan, nan, neg_inf
+from std.utils.numerics import inf, isnan, nan, neg_inf
 
 
-fn id(
-    input: UnsafePointer[Float32],
-    output: UnsafePointer[Float32],
+def id(
+    input: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = Float32(BFloat16(input[tid]))
 
 
 @no_inline
-fn run_vec_add(ctx: DeviceContext) raises:
+def run_vec_add(ctx: DeviceContext) raises:
     print("== run_vec_add")
 
     comptime length = 1024
 
-    var in_host = UnsafePointer[Float32].alloc(length)
+    var in_host = alloc[Float32](length)
 
     for i in range(length):
         in_host[i] = Float32(i)
@@ -89,6 +86,6 @@ fn run_vec_add(ctx: DeviceContext) raises:
     in_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_vec_add(ctx)

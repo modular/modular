@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,15 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, IntTuple, UNKNOWN_VALUE
+from std.gpu.host import DeviceContext
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
+    lt_to_tt,
+)
 from layout._fillers import random
 from linalg.fp4_quantization import (
-    quantize_dynamic_scaled_fp4,
+    quantize_dynamic_scaled_fp4fp8,
 )
-from testing import assert_equal, assert_almost_equal
-from math import ceildiv, recip
-from utils.numerics import max_finite, min_finite
+from std.math import ceildiv
 from linalg.fp4_utils import (
     SF_ATOM_M,
     SF_ATOM_K,
@@ -28,11 +32,11 @@ from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     get_scale_factor,
 )
-from utils import IndexList
-from math import isnan
+from std.utils import IndexList
+from std.math import isnan
 
 
-fn test_dynamic_mxfp8_quant[
+def test_dynamic_mxfp8_quant[
     in_dtype: DType,
     scales_dtype: DType,
     SF_VECTOR_SIZE: Int,
@@ -121,11 +125,11 @@ fn test_dynamic_mxfp8_quant[
             out_host[i] = 0
 
     # Run the quantization kernel
-    quantize_dynamic_scaled_fp4[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+    quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
         ctx,
-        output_tensor.as_any_origin(),
-        scales_tensor.as_any_origin(),
-        input_tensor.as_any_origin(),
+        lt_to_tt(output_tensor).as_any_origin(),
+        lt_to_tt(scales_tensor).as_any_origin(),
+        lt_to_tt(input_tensor).as_any_origin(),
         num_cols=n,
         num_cols_padded=n,
     )
@@ -210,7 +214,8 @@ fn test_dynamic_mxfp8_quant[
                         if left > right:
                             mismatch_count += 1
 
-                if (1 - (mismatch_count / (m * n))) < 0.999:
+                mismatch_rate = Float64(mismatch_count) / Float64(m * n)
+                if (1 - mismatch_rate) < 0.999:
                     raise Error("Too many mismatches!")
                 print(
                     "M = ",
@@ -224,34 +229,33 @@ fn test_dynamic_mxfp8_quant[
                     "scales_dtype = ",
                     scales_dtype,
                     "mismatch percentage = ",
-                    mismatch_count / (m * n) * 100.0,
+                    mismatch_rate * 100.0,
                     "%",
                 )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_dynamic_mxfp8_quant[
             DType.bfloat16,
             MXFP8_SF_DTYPE,
             MXFP8_SF_VECTOR_SIZE,
             M=None,
-            N = Int(128),
+            N=Int(128),
         ](ctx, 1, 128)
         test_dynamic_mxfp8_quant[
             DType.bfloat16,
             MXFP8_SF_DTYPE,
             MXFP8_SF_VECTOR_SIZE,
             M=None,
-            N = Int(128),
+            N=Int(128),
         ](ctx, 258, 128)
 
-        @parameter
-        for N in range(576, 16384, 1024):
+        comptime for N in range(576, 16384, 1024):
             test_dynamic_mxfp8_quant[
                 DType.bfloat16,
                 MXFP8_SF_DTYPE,
                 MXFP8_SF_VECTOR_SIZE,
                 M=None,
-                N = Int(N),
+                N=N,
             ](ctx, 999, N, tensor_scale=32.0)

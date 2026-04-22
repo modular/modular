@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,18 +16,15 @@ import functools
 from collections.abc import Callable
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType
+from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.quantization import QuantizationEncoding
-from max.nn import (
-    MLP,
-    Embedding,
-    Linear,
-    Llama3RotaryEmbedding,
-    Module,
-    RMSNorm,
-    Transformer,
-)
-from max.nn.kv_cache import KVCacheParams
+from max.nn.embedding import Embedding
+from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.layer import Module
+from max.nn.linear import MLP, Linear
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.transformer import Transformer
 from max.pipelines.architectures.llama3.llama3 import StackedMLP
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.olmo2.layers.attention import Olmo2Attention
@@ -75,15 +72,13 @@ class Olmo2(Transformer):
 
         # Select linear layer class.
         linear_cls: Callable[..., Linear]
-        linear_cls = functools.partial(
-            Linear, float8_config=config.float8_config
-        )
-        if config.stacked_mlp and config.float8_config:
+        linear_cls = functools.partial(Linear, quant_config=config.quant_config)
+        if config.stacked_mlp and config.quant_config:
             raise ValueError("StackedMLP and float8 are not compatible")
         mlp_cls = (
             StackedMLP
             if config.stacked_mlp
-            else functools.partial(MLP, float8_config=config.float8_config)
+            else functools.partial(MLP, quant_config=config.quant_config)
         )
         attention_cls: Callable[..., Olmo2Attention]
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
@@ -142,8 +137,8 @@ class Olmo2(Transformer):
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             embedding_output_dtype = DType.bfloat16
             embedding_output_quantization = None
-        if config.float8_config and config.float8_config.embedding_output_dtype:
-            embedding_output_dtype = config.float8_config.embedding_output_dtype
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            embedding_output_dtype = config.quant_config.embedding_output_dtype
         embedding_layer = Embedding(
             config.vocab_size,
             config.hidden_size,
@@ -175,7 +170,9 @@ class Olmo2(Transformer):
             embedding_multiplier=config.embedding_multiplier,
         )
 
-    def input_types(self, kv_params: KVCacheParams) -> tuple[TensorType, ...]:
+    def input_types(
+        self, kv_params: KVCacheParamInterface
+    ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model
         # config.
@@ -199,5 +196,5 @@ class Olmo2(Transformer):
             tokens_type,
             input_row_offsets_type,
             return_n_logits_type,
-            *kv_inputs[0],
+            *kv_inputs.flatten(),
         )

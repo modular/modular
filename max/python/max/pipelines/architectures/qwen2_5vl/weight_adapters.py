@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,6 +24,8 @@ QWEN2_5_VL_MODEL_MAPPING = {
     "merger.ln_q.": "merger.norm.",
     "merger.mlp.0.": "merger.linear1.",
     "merger.mlp.2.": "merger.linear2.",
+    # Remap stacked QKV in vision attention to StackedLinear namespace.
+    "attn.qkv.": "attn.qkv_proj.",
 }
 
 
@@ -37,6 +39,7 @@ def convert_qwen2_5vl_model_state_dict(
     naming without this prefix.
 
     This adapter:
+
     1. Filters to only include language model weights (those with
        `language_model.` prefix).
     2. Strips the `language_model.model.` prefix to match Qwen2.5VLLanguageModel

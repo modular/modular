@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -151,7 +151,7 @@ def test_tensor_type(mlir_context: mlir.Context) -> None:
 
 def test_tensor_type__negative_dim(mlir_context: mlir.Context) -> None:
     with pytest.raises(TypeError, match="dimensions must be non-negative"):
-        tensor_type = TensorType(DType.float32, [-1], device=DeviceRef.CPU())
+        TensorType(DType.float32, [-1], device=DeviceRef.CPU())
 
 
 def test_tensor_type_with_device(mlir_context: mlir.Context) -> None:
@@ -283,7 +283,7 @@ def test_GEX_1918(mlir_context: mlir.Context) -> None:
 
 def test_MAXPLAT_148(mlir_context: mlir.Context) -> None:
     with pytest.raises(TypeError):
-        graph = Graph(
+        Graph(
             "MAXPLAT-148",
             input_types=[
                 TensorType(DType.float32, [-1, 2], device=DeviceRef.CPU())

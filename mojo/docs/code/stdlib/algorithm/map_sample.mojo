@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import map
+from std.algorithm import map
 
 
 def main():
@@ -20,7 +20,7 @@ def main():
 
     # Function applied to the value at each index
     @parameter
-    fn exponent_2(idx: Int):
+    def exponent_2(idx: Int):
         list[idx] = 2.0 ** list[idx]
 
     # Apply the mapped function across the index range

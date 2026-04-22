@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -387,8 +387,8 @@ Add a new function that returns the MLIR target configuration.
 
 Example for NVIDIA GPU:
 
-```mojo
-fn _get_your_gpu_target() -> _TargetType:
+```text
+def _get_your_gpu_target() -> _TargetType:
     \"\"\"Creates an MLIR target configuration for Your GPU.
 
     Returns:
@@ -413,7 +413,7 @@ Place this function with other GPU target functions in this file (search for
 
 Define the GPU characteristics using the appropriate architecture family:
 
-```mojo
+```text
 comptime YourGPU = GPUInfo.from_family(
     family=NvidiaHopperFamily,  # Choose the appropriate family
     name="Your GPU",
@@ -433,8 +433,8 @@ Place this alias with other GPU aliases in this file.
 Add your architecture to the constraint list in the `_get_info_from_target`
 function:
 
-```mojo
-__comptime_assert StaticString(target_arch)
+```text
+comptime assert StaticString(target_arch)
     in (
         # NVIDIA
         StaticString("cuda"),
@@ -446,11 +446,10 @@ __comptime_assert StaticString(target_arch)
     "' is invalid or not currently supported")
 ```
 
-Then add the mapping in the `@parameter` block:
+Then add the mapping in the `comptime` block:
 
-```mojo
-@parameter
-if target_arch == "52":
+```text
+comptime if target_arch == "52":
     return materialize[GTX970]()
 elif target_arch == "90a":  # Add your mapping here
     return materialize[YourGPU]()
@@ -467,8 +466,8 @@ changed to support multiple GPUs per target_arch in the future.
 
 Add the target mapping in the `target()` method of the `GPUInfo` struct:
 
-```mojo
-fn target(self) -> _TargetType:
+```text
+def target(self) -> _TargetType:
     \"\"\"Gets the MLIR target configuration for this GPU.
 
     Returns:
@@ -527,7 +526,7 @@ Before submitting your GPU addition:
 - [ ] Target function created and documented.
 - [ ] GPUInfo alias defined with correct family.
 - [ ] Architecture added to constraint list in `_get_info_from_target`.
-- [ ] Mapping added to `@parameter` block in `_get_info_from_target`.
+- [ ] Mapping added to `comptime` block in `_get_info_from_target`.
 - [ ] Mapping added to `GPUInfo.target()` method.
 - [ ] Data layout string validated against LLVM documentation.
 - [ ] Compute capability matches architecture name.
@@ -550,16 +549,18 @@ Before submitting your GPU addition:
 See real-world examples by searching for these functions:
 
 - `_get_h100_target()`: NVIDIA Hopper H100 (compute 9.0).
+- `_get_mi250x_target()`: AMD CDNA2 MI250X.
 - `_get_mi300x_target()`: AMD CDNA3 MI300X.
 - `_get_metal_m4_target()`: Apple Metal M4.
+- `_get_metal_m4_metal4_target()`: Apple Metal M4 with Metal 4.0.
 - `_get_rtx5090_target()`: NVIDIA Blackwell consumer GPU.
 
 Each example demonstrates the complete target configuration for that GPU family.
 """
 
-from math import ceildiv, floor
-from os import abort
-from sys.info import CompilationTarget, _accelerator_arch, _TargetType
+from std.math import ceildiv, floor
+from std.os import abort
+from std.sys.info import CompilationTarget, _accelerator_arch, _TargetType
 
 comptime _KB = 1024
 comptime _K = 1024
@@ -661,6 +662,15 @@ comptime NvidiaBlackwellConsumerFamily = AcceleratorArchitectureFamily(
 """NVIDIA Blackwell consumer architecture family (sm_120)."""
 
 # AMD Architecture Families
+comptime AMDCDNA2Family = AcceleratorArchitectureFamily(
+    warp_size=64,
+    threads_per_multiprocessor=64 * 32,
+    shared_memory_per_multiprocessor=64 * _KB,
+    max_registers_per_block=64 * _K,
+    max_thread_block_size=_K,
+)
+"""AMD CDNA2 architecture family (gfx90a)."""
+
 comptime AMDCDNA3Family = AcceleratorArchitectureFamily(
     warp_size=64,
     threads_per_multiprocessor=64 * 32,
@@ -704,8 +714,7 @@ comptime AppleMetalFamily = AcceleratorArchitectureFamily(
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct AcceleratorArchitectureFamily:
+struct AcceleratorArchitectureFamily(TrivialRegisterPassable):
     """Defines common defaults for a GPU architecture family.
 
     This struct captures the shared characteristics across GPUs in the same
@@ -734,8 +743,7 @@ struct AcceleratorArchitectureFamily:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Vendor(Equatable, Writable):
+struct Vendor(Equatable, TrivialRegisterPassable, Writable):
     """Represents GPU vendors.
 
     This struct provides identifiers for different GPU vendors and utility
@@ -761,7 +769,7 @@ struct Vendor(Equatable, Writable):
     comptime APPLE_GPU = Self(3)
     """Represents Apple GPU vendor."""
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Checks if two `Vendor` instances are equal.
 
         Args:
@@ -772,7 +780,7 @@ struct Vendor(Equatable, Writable):
         """
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Checks if two `Vendor` instances are not equal.
 
         Args:
@@ -784,7 +792,7 @@ struct Vendor(Equatable, Writable):
         return not (self == other)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes vendor information to a writer.
 
         Args:
@@ -805,22 +813,13 @@ struct Vendor(Equatable, Writable):
 
         abort("unable to format unrecognized `Vendor` value")
 
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the vendor.
-
-        Returns:
-            String representation of the vendor.
-        """
-        return String.write(self)
-
 
 # ===-----------------------------------------------------------------------===#
 # NoGPU
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_empty_target() -> _TargetType:
+def _get_empty_target() -> _TargetType:
     """Creates an empty target configuration for when no GPU is available.
 
     Returns:
@@ -857,7 +856,7 @@ comptime NoGPU = GPUInfo(
 # ===-----------------------------------------------------------------------===#
 # Apple Silicon
 # ===-----------------------------------------------------------------------===#
-fn _get_metal_m1_target() -> _TargetType:
+def _get_metal_m1_target() -> _TargetType:
     """Creates an MLIR target configuration for M1 Metal GPU.
 
     Returns:
@@ -866,14 +865,14 @@ fn _get_metal_m1_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m1", `,
-        `features = "", `,
+        `features = "+metal3_2,+air2_7_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
 
 
-fn _get_metal_m2_target() -> _TargetType:
+def _get_metal_m2_target() -> _TargetType:
     """Creates an MLIR target configuration for M2 Metal GPU.
 
     Returns:
@@ -882,14 +881,14 @@ fn _get_metal_m2_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m2", `,
-        `features = "", `,
+        `features = "+metal3_2,+air2_7_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
 
 
-fn _get_metal_m3_target() -> _TargetType:
+def _get_metal_m3_target() -> _TargetType:
     """Creates an MLIR target configuration for M3 Metal GPU.
 
     Returns:
@@ -898,14 +897,14 @@ fn _get_metal_m3_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m3", `,
-        `features = "", `,
+        `features = "+metal3_2,+air2_7_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
 
 
-fn _get_metal_m4_target() -> _TargetType:
+def _get_metal_m4_target() -> _TargetType:
     """Creates an MLIR target configuration for M4 Metal GPU.
 
     Returns:
@@ -914,14 +913,14 @@ fn _get_metal_m4_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m4", `,
-        `features = "", `,
+        `features = "+metal3_2,+air2_7_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
 
 
-fn _get_metal_m5_target() -> _TargetType:
+def _get_metal_m5_target() -> _TargetType:
     """Creates an MLIR target configuration for M5 Metal GPU.
 
     Returns:
@@ -930,7 +929,87 @@ fn _get_metal_m5_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "air64-apple-macosx", `,
         `arch = "apple-m5", `,
-        `features = "", `,
+        `features = "+metal3_2,+air2_7_0", `,
+        `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+def _get_metal_m1_metal4_target() -> _TargetType:
+    """Creates an MLIR target configuration for M1 Metal GPU with Metal 4.0.
+
+    Returns:
+        MLIR target configuration for M1 Metal 4.0.
+    """
+    return __mlir_attr[
+        `#kgen.target<triple = "air64-apple-macosx", `,
+        `arch = "apple-m1", `,
+        `features = "+metal4_0,+air2_8_0", `,
+        `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+def _get_metal_m2_metal4_target() -> _TargetType:
+    """Creates an MLIR target configuration for M2 Metal GPU with Metal 4.0.
+
+    Returns:
+        MLIR target configuration for M2 Metal 4.0.
+    """
+    return __mlir_attr[
+        `#kgen.target<triple = "air64-apple-macosx", `,
+        `arch = "apple-m2", `,
+        `features = "+metal4_0,+air2_8_0", `,
+        `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+def _get_metal_m3_metal4_target() -> _TargetType:
+    """Creates an MLIR target configuration for M3 Metal GPU with Metal 4.0.
+
+    Returns:
+        MLIR target configuration for M3 Metal 4.0.
+    """
+    return __mlir_attr[
+        `#kgen.target<triple = "air64-apple-macosx", `,
+        `arch = "apple-m3", `,
+        `features = "+metal4_0,+air2_8_0", `,
+        `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+def _get_metal_m4_metal4_target() -> _TargetType:
+    """Creates an MLIR target configuration for M4 Metal GPU with Metal 4.0.
+
+    Returns:
+        MLIR target configuration for M4 Metal 4.0.
+    """
+    return __mlir_attr[
+        `#kgen.target<triple = "air64-apple-macosx", `,
+        `arch = "apple-m4", `,
+        `features = "+metal4_0,+air2_8_0", `,
+        `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+def _get_metal_m5_metal4_target() -> _TargetType:
+    """Creates an MLIR target configuration for M5 Metal GPU with Metal 4.0.
+
+    Returns:
+        MLIR target configuration for M5 Metal 4.0.
+    """
+    return __mlir_attr[
+        `#kgen.target<triple = "air64-apple-macosx", `,
+        `arch = "apple-m5", `,
+        `features = "+metal4_0,+air2_8_0", `,
         `data_layout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:16:32", `,
         `simd_bit_width = 128`,
         `> : !kgen.target`,
@@ -979,8 +1058,8 @@ comptime MetalM4 = GPUInfo.from_family(
     vendor=Vendor.APPLE_GPU,
     api="metal",
     arch_name="apple-m4",
-    compute=4.0,  # Metal version 4.0 for M4
-    version="metal_4",
+    compute=3.0,  # Metal version 3.0 for M4
+    version="metal_3",
     sm_count=10,  # M4 has 10 GPU cores
 )
 """Apple M4 GPU configuration."""
@@ -991,11 +1070,71 @@ comptime MetalM5 = GPUInfo.from_family(
     vendor=Vendor.APPLE_GPU,
     api="metal",
     arch_name="apple-m5",
-    compute=4.0,  # Metal version 4.0 for M5
-    version="metal_4",
+    compute=3.0,  # Metal version 3.0 for M5
+    version="metal_3",
     sm_count=10,  # M5 has 10 GPU cores
 )
 """Apple M5 GPU configuration."""
+
+comptime MetalM1Metal4 = GPUInfo.from_family(
+    family=AppleMetalFamily,
+    name="M1 Metal4",
+    vendor=Vendor.APPLE_GPU,
+    api="metal",
+    arch_name="apple-m1-metal4",
+    compute=4.0,  # Metal 4.0, requires macOS 26
+    version="metal_4",
+    sm_count=8,  # M1 has 8 GPU cores
+)
+"""Apple M1 GPU configuration for Metal 4."""
+
+comptime MetalM2Metal4 = GPUInfo.from_family(
+    family=AppleMetalFamily,
+    name="M2 Metal4",
+    vendor=Vendor.APPLE_GPU,
+    api="metal",
+    arch_name="apple-m2-metal4",
+    compute=4.0,  # Metal 4.0, requires macOS 26
+    version="metal_4",
+    sm_count=10,  # M2 has 10 GPU cores
+)
+"""Apple M2 GPU configuration for Metal 4."""
+
+comptime MetalM3Metal4 = GPUInfo.from_family(
+    family=AppleMetalFamily,
+    name="M3 Metal4",
+    vendor=Vendor.APPLE_GPU,
+    api="metal",
+    arch_name="apple-m3-metal4",
+    compute=4.0,  # Metal 4.0, requires macOS 26
+    version="metal_4",
+    sm_count=10,  # M3 has 10 GPU cores
+)
+"""Apple M3 GPU configuration for Metal 4."""
+
+comptime MetalM4Metal4 = GPUInfo.from_family(
+    family=AppleMetalFamily,
+    name="M4 Metal4",
+    vendor=Vendor.APPLE_GPU,
+    api="metal",
+    arch_name="apple-m4-metal4",
+    compute=4.0,  # Metal 4.0, requires macOS 26
+    version="metal_4",
+    sm_count=10,  # M4 has 10 GPU cores
+)
+"""Apple M4 GPU configuration for Metal 4."""
+
+comptime MetalM5Metal4 = GPUInfo.from_family(
+    family=AppleMetalFamily,
+    name="M5 Metal4",
+    vendor=Vendor.APPLE_GPU,
+    api="metal",
+    arch_name="apple-m5-metal4",
+    compute=4.0,  # Metal 4.0, requires macOS 26
+    version="metal_4",
+    sm_count=10,  # M5 has 10 GPU cores
+)
+"""Apple M5 GPU configuration for Metal 4."""
 
 # ===-----------------------------------------------------------------------===#
 # A100
@@ -1010,7 +1149,7 @@ comptime MetalM5 = GPUInfo.from_family(
 # https://developer.nvidia.com/cuda-toolkit-archive.
 
 
-fn _get_a100_target() -> _TargetType:
+def _get_a100_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA A100 GPU.
 
     Returns:
@@ -1045,7 +1184,7 @@ comptime A100 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_a10_target() -> _TargetType:
+def _get_a10_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA A10 GPU.
 
     Returns:
@@ -1080,7 +1219,7 @@ comptime A10 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_orin_nano_target() -> _TargetType:
+def _get_orin_nano_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA Jetson Orin Nano GPU.
 
     Returns:
@@ -1115,7 +1254,7 @@ comptime OrinNano = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_jetson_thor_target() -> _TargetType:
+def _get_jetson_thor_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA Jetson Thor.
 
     Returns:
@@ -1125,7 +1264,7 @@ fn _get_jetson_thor_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_110", `,
-        `features = "+ptx85,+sm_110", `,
+        `features = "+ptx90,+sm_110", `,
         `tune_cpu = "sm_110", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128,`,
@@ -1151,7 +1290,7 @@ comptime JetsonThor = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_dgx_spark_target() -> _TargetType:
+def _get_dgx_spark_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA DGX Spark.
 
     Returns:
@@ -1160,7 +1299,7 @@ fn _get_dgx_spark_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_121", `,
-        `features = "+ptx86,+sm_121", `,
+        `features = "+ptx88,+sm_121", `,
         `tune_cpu = "sm_121", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
@@ -1170,7 +1309,7 @@ fn _get_dgx_spark_target() -> _TargetType:
 
 
 comptime DGXSpark = GPUInfo.from_family(
-    family=NvidiaBlackwellFamily,
+    family=NvidiaBlackwellConsumerFamily,
     name="DGX Spark",
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
@@ -1186,7 +1325,7 @@ comptime DGXSpark = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_l4_target() -> _TargetType:
+def _get_l4_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA L4 GPU.
 
     Returns:
@@ -1221,7 +1360,7 @@ comptime L4 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_rtx4090m_target() -> _TargetType:
+def _get_rtx4090m_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA RTX 4090 Mobile GPU.
 
     Returns:
@@ -1256,7 +1395,7 @@ comptime RTX4090m = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_rtx4090_target() -> _TargetType:
+def _get_rtx4090_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA RTX 4090.
 
     Returns:
@@ -1292,7 +1431,7 @@ comptime RTX4090 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_h100_target() -> _TargetType:
+def _get_h100_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA H100 GPU.
 
     Returns:
@@ -1328,7 +1467,7 @@ comptime H100 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_b100_target() -> _TargetType:
+def _get_b100_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA B100 GPU.
 
     Returns:
@@ -1373,11 +1512,67 @@ comptime B200 = GPUInfo.from_family(
 """NVIDIA B200 GPU configuration."""
 
 # ===-----------------------------------------------------------------------===#
+# B300
+# ===-----------------------------------------------------------------------===#
+
+
+def _get_b300_target() -> _TargetType:
+    """Creates an MLIR target configuration for NVIDIA B300 GPU.
+
+    Returns:
+        MLIR target configuration for B300.
+    """
+    return __mlir_attr[
+        `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
+        `arch = "sm_103a", `,
+        `features = "+ptx88,+sm_103a", `,
+        `tune_cpu = "sm_103a", `,
+        `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+comptime B300 = GPUInfo.from_family(
+    family=NvidiaBlackwellFamily,
+    name="B300",
+    vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
+    arch_name="blackwell",
+    compute=10.3,
+    version="sm_103a",
+    sm_count=160,
+)
+"""NVIDIA B300 GPU configuration."""
+
+
+def _is_sm10x_gpu(info: GPUInfo) -> Bool:
+    """Returns True for any Blackwell datacenter GPU (B100, B200, B300).
+
+    Use this to check if the GPU supports SM100-class features. For
+    architecture-specific tuning, compare against individual GPUInfo
+    constants (e.g., `ctx.default_device_info == B300`).
+
+    Args:
+        info: GPU info to check.
+
+    Returns:
+        True if the GPU is a Blackwell datacenter GPU.
+    """
+    return (
+        info == materialize[B100]()
+        or info == materialize[B200]()
+        or info == materialize[B300]()
+    )
+
+
+# ===-----------------------------------------------------------------------===#
 # RTX5090
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_rtx5090_target() -> _TargetType:
+def _get_rtx5090_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA RTX5090 GPU.
 
     Returns:
@@ -1386,7 +1581,7 @@ fn _get_rtx5090_target() -> _TargetType:
     return __mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_120a", `,
-        `features = "+ptx86,+sm_120a", `,
+        `features = "+ptx87,+sm_120a", `,
         `tune_cpu = "sm_120a", `,
         `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-p6:32:32-p7:32:32-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64",`,
         `index_bit_width = 64,`,
@@ -1414,7 +1609,7 @@ comptime RTX5090 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_rtx3090_target() -> _TargetType:
+def _get_rtx3090_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA GeForce RTX 3090.
 
     Returns:
@@ -1451,7 +1646,7 @@ comptime RTX3090 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_gtx1080ti_target() -> _TargetType:
+def _get_gtx1080ti_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA GTX 1080 Ti GPU.
 
     Returns:
@@ -1485,7 +1680,7 @@ comptime GTX1080Ti = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_gtx1060_target() -> _TargetType:
+def _get_gtx1060_target() -> _TargetType:
     """
     Creates an MLIR target configuration for NVIDIA GTX 1060 GPU.
 
@@ -1523,7 +1718,7 @@ comptime GTX1060 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_gtx970_target() -> _TargetType:
+def _get_gtx970_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA GTX 970 GPU.
 
     Returns:
@@ -1557,7 +1752,7 @@ comptime GTX970 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_teslap100_target() -> _TargetType:
+def _get_teslap100_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA Tesla P100 GPU.
 
     Returns:
@@ -1593,7 +1788,7 @@ comptime TeslaP100 = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_rtx2060_target() -> _TargetType:
+def _get_rtx2060_target() -> _TargetType:
     """Creates an MLIR target configuration for NVIDIA RTX 2060 GPU.
 
     Returns:
@@ -1625,11 +1820,46 @@ comptime RTX2060 = GPUInfo.from_family(
 
 
 # ===-----------------------------------------------------------------------===#
+# MI250X
+# ===-----------------------------------------------------------------------===#
+
+
+def _get_mi250x_target() -> _TargetType:
+    """Creates an MLIR target configuration for AMD MI250X GPU.
+
+    Returns:
+        MLIR target configuration for MI250X.
+    """
+    return __mlir_attr[
+        `#kgen.target<triple = "amdgcn-amd-amdhsa", `,
+        `arch = "gfx90a", `,
+        `features = "", `,
+        `data_layout = "e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128:128:48-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
+        `index_bit_width = 64,`,
+        `simd_bit_width = 128`,
+        `> : !kgen.target`,
+    ]
+
+
+comptime MI250X = GPUInfo.from_family(
+    family=AMDCDNA2Family,
+    name="MI250X",
+    vendor=Vendor.AMD_GPU,
+    api="hip",
+    arch_name="gfx90a",
+    compute=9.0,
+    version="CDNA2",
+    sm_count=220,
+)
+"""AMD MI250X GPU configuration."""
+
+
+# ===-----------------------------------------------------------------------===#
 # MI300X
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_mi300x_target() -> _TargetType:
+def _get_mi300x_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD MI300X GPU.
 
     Returns:
@@ -1664,7 +1894,7 @@ comptime MI300X = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_mi355x_target() -> _TargetType:
+def _get_mi355x_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD MI355X GPU.
 
     Returns:
@@ -1699,7 +1929,7 @@ comptime MI355X = GPUInfo.from_family(
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_9070_target() -> _TargetType:
+def _get_9070_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 9070 GPU.
 
     Returns:
@@ -1716,7 +1946,7 @@ fn _get_9070_target() -> _TargetType:
     ]
 
 
-fn _get_9060_target() -> _TargetType:
+def _get_9060_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 9060 GPU.
 
     Returns:
@@ -1733,7 +1963,7 @@ fn _get_9060_target() -> _TargetType:
     ]
 
 
-fn _get_7900_target() -> _TargetType:
+def _get_7900_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 7900 GPU.
 
     Returns:
@@ -1750,7 +1980,7 @@ fn _get_7900_target() -> _TargetType:
     ]
 
 
-fn _get_7800_target() -> _TargetType:
+def _get_7800_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 7800/7700 GPU.
 
     Returns:
@@ -1767,7 +1997,7 @@ fn _get_7800_target() -> _TargetType:
     ]
 
 
-fn _get_7600_target() -> _TargetType:
+def _get_7600_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 7600 GPU.
 
     Returns:
@@ -1784,7 +2014,7 @@ fn _get_7600_target() -> _TargetType:
     ]
 
 
-fn _get_6900_target() -> _TargetType:
+def _get_6900_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 6900 GPU.
 
     Returns:
@@ -1801,7 +2031,7 @@ fn _get_6900_target() -> _TargetType:
     ]
 
 
-fn _get_780m_target() -> _TargetType:
+def _get_780m_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 780m GPU.
 
     Returns:
@@ -1818,7 +2048,7 @@ fn _get_780m_target() -> _TargetType:
     ]
 
 
-fn _get_880m_target() -> _TargetType:
+def _get_880m_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 880M GPU.
 
     Returns:
@@ -1835,7 +2065,7 @@ fn _get_880m_target() -> _TargetType:
     ]
 
 
-fn _get_8060s_target() -> _TargetType:
+def _get_8060s_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 8060S GPU.
 
     Returns:
@@ -1852,7 +2082,7 @@ fn _get_8060s_target() -> _TargetType:
     ]
 
 
-fn _get_860m_target() -> _TargetType:
+def _get_860m_target() -> _TargetType:
     """Creates an MLIR target configuration for AMD Radeon 860M GPU.
 
     Returns:
@@ -1997,8 +2227,7 @@ comptime Radeon860m = GPUInfo.from_family(
 
 
 @fieldwise_init
-@register_passable
-struct GPUInfo(Equatable, Stringable, Writable):
+struct GPUInfo(Equatable, RegisterPassable, Writable):
     """Comprehensive information about a GPU architecture.
 
     This struct contains detailed specifications about GPU capabilities,
@@ -2042,7 +2271,7 @@ struct GPUInfo(Equatable, Stringable, Writable):
     var max_thread_block_size: Int
     """Maximum number of threads allowed in a thread block."""
 
-    fn target(self) -> _TargetType:
+    def target(self) -> _TargetType:
         """Gets the MLIR target configuration for this GPU.
 
         Returns:
@@ -2072,6 +2301,8 @@ struct GPUInfo(Equatable, Stringable, Writable):
             return _get_rtx4090_target()
         if self.name == "H100":
             return _get_h100_target()
+        if self.name == "B300":
+            return _get_b300_target()
         if self.name == "B100" or self.name == "B200":
             return _get_b100_target()
         if self.name == "DGX Spark":
@@ -2080,6 +2311,8 @@ struct GPUInfo(Equatable, Stringable, Writable):
             return _get_rtx5090_target()
         if self.name == "Jetson Thor":
             return _get_jetson_thor_target()
+        if self.name == "MI250X":
+            return _get_mi250x_target()
         if self.name == "MI300X":
             return _get_mi300x_target()
         if self.name == "MI355X":
@@ -2106,21 +2339,31 @@ struct GPUInfo(Equatable, Stringable, Writable):
             return _get_9060_target()
         if self.name == "M1":
             return _get_metal_m1_target()
+        if self.name == "M1 Metal4":
+            return _get_metal_m1_metal4_target()
         if self.name == "M2":
             return _get_metal_m2_target()
+        if self.name == "M2 Metal4":
+            return _get_metal_m2_metal4_target()
         if self.name == "M3":
             return _get_metal_m3_target()
+        if self.name == "M3 Metal4":
+            return _get_metal_m3_metal4_target()
         if self.name == "M4":
             return _get_metal_m4_target()
+        if self.name == "M4 Metal4":
+            return _get_metal_m4_metal4_target()
         if self.name == "M5":
             return _get_metal_m5_target()
+        if self.name == "M5 Metal4":
+            return _get_metal_m5_metal4_target()
 
         if self.name == "":
             return _get_empty_target()
         return _get_a100_target()
 
     @staticmethod
-    fn from_target[target: _TargetType]() -> Self:
+    def from_target[target: _TargetType]() -> Self:
         """Creates a `GPUInfo` instance from an MLIR target.
 
         Parameters:
@@ -2132,7 +2375,7 @@ struct GPUInfo(Equatable, Stringable, Writable):
         return _get_info_from_target[CompilationTarget[target]._arch()]()
 
     @staticmethod
-    fn from_name[name: StaticString]() -> Self:
+    def from_name[name: StaticString]() -> Self:
         """Creates a `GPUInfo` instance from a GPU architecture name.
 
         Parameters:
@@ -2144,7 +2387,7 @@ struct GPUInfo(Equatable, Stringable, Writable):
         return _get_info_from_target[name]()
 
     @staticmethod
-    fn from_family(
+    def from_family(
         family: AcceleratorArchitectureFamily,
         name: StaticString,
         vendor: Vendor,
@@ -2188,7 +2431,7 @@ struct GPUInfo(Equatable, Stringable, Writable):
             max_thread_block_size=family.max_thread_block_size,
         )
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Checks if two `GPUInfo` instances represent the same GPU model.
 
         Args:
@@ -2200,7 +2443,7 @@ struct GPUInfo(Equatable, Stringable, Writable):
         return self.name == other.name
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes GPU information to a writer.
 
         Outputs all GPU specifications and capabilities to the provided writer
@@ -2234,25 +2477,13 @@ struct GPUInfo(Equatable, Stringable, Writable):
             "max_thread_block_size: ", self.max_thread_block_size, "\n"
         )
 
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of the GPU information.
-
-        Converts all GPU specifications and capabilities to a human-readable
-        string format.
-
-        Returns:
-            String containing all GPU information.
-        """
-        return String.write(self)
-
 
 # ===-----------------------------------------------------------------------===#
 # _build_unsupported_arch_error
 # ===-----------------------------------------------------------------------===#
 
 
-fn _build_unsupported_arch_error[target_arch: StaticString]() -> String:
+def _build_unsupported_arch_error[target_arch: StaticString]() -> String:
     """Builds a helpful error message for unsupported GPU architectures.
 
     Provides a comprehensive list of all supported GPU architectures across
@@ -2264,14 +2495,26 @@ fn _build_unsupported_arch_error[target_arch: StaticString]() -> String:
     Returns:
         A detailed error message with supported architectures and doc links.
     """
-    comptime nvidia_archs = "sm_52 (Maxwell), sm_60/sm_61 (Pascal), sm_75 (Turing), sm_80 (Ampere A100), sm_86 (Ampere A10), sm_87 (Orin), sm_89 (Ada L4/RTX4090), sm_90/sm_90a (Hopper H100), sm_100/sm_100a (Blackwell B100/B200), sm_110 (Jetson Thor), sm_120/sm_120a (Blackwell RTX5090), sm_121 (DGX Spark)"
-    comptime amd_archs = "gfx942 (MI300X), gfx950 (MI355X), gfx1030 (Radeon 6900), gfx1100 (Radeon 7900), gfx1101 (Radeon 7800), gfx1102 (Radeon 7600), gfx1103 (Radeon 780M), gfx1150/gfx1151/gfx1152 (Radeon 8xx), gfx1200 (Radeon 9060), gfx1201 (Radeon 9070)"
-    comptime apple_archs = "metal:1 (M1), metal:2 (M2), metal:3 (M3), metal:4 (M4)"
+    comptime nvidia_archs = (
+        "sm_52 (Maxwell), sm_60/sm_61 (Pascal), sm_75 (Turing), sm_80 (Ampere"
+        " A100), sm_86 (Ampere A10), sm_87 (Orin), sm_89 (Ada L4/RTX4090),"
+        " sm_90/sm_90a (Hopper H100), sm_100/sm_100a (Blackwell B100/B200),"
+        " sm_110 (Jetson Thor), sm_120/sm_120a (Blackwell RTX5090), sm_121 (DGX"
+        " Spark)"
+    )
+    comptime amd_archs = (
+        "gfx90a (MI250X), gfx942 (MI300X), gfx950 (MI355X), gfx1030 (Radeon"
+        " 6900), gfx1100 (Radeon 7900), gfx1101 (Radeon 7800), gfx1102 (Radeon"
+        " 7600), gfx1103 (Radeon 780M), gfx1150/gfx1151/gfx1152 (Radeon 8xx),"
+        " gfx1200 (Radeon 9060), gfx1201 (Radeon 9070)"
+    )
+    comptime apple_archs = (
+        "metal:1 (M1), metal:2 (M2), metal:3 (M3), metal:4 (M4)"
+    )
 
     var prefix: String
 
-    @parameter
-    if target_arch == "":
+    comptime if target_arch == "":
         prefix = "Unknown GPU architecture detected."
     else:
         prefix = String(
@@ -2304,9 +2547,64 @@ fn _build_unsupported_arch_error[target_arch: StaticString]() -> String:
 # _get_info_from_target
 # ===-----------------------------------------------------------------------===#
 
+# All supported target architectures in canonical form.
+# This is the canonical list used for validation in _get_info_from_target.
+# Normalization: "nvidia:80" -> "sm_80", "mi300x" -> "gfx942",
+#                "amdgpu:gfx942" -> "gfx942", "metal:4" -> "apple-m4".
+#
+# SYNC: This list must stay in sync with printSupportedAccelerators() in
+#       KGEN/tools/mojo/Build/mojo-build.cpp. Run the following test to verify:
+#       bazel test //KGEN/test/mojo-tool:build/verify_supported_accelerators_sync.mojo.test
+comptime _all_targets = (
+    StaticString("sm_52"),
+    StaticString("sm_60"),
+    StaticString("sm_61"),
+    StaticString("sm_75"),
+    StaticString("sm_80"),
+    StaticString("sm_86"),
+    StaticString("sm_87"),
+    StaticString("sm_89"),
+    StaticString("sm_90"),
+    StaticString("sm_90a"),
+    StaticString("sm_100"),
+    StaticString("sm_100a"),
+    StaticString("sm_103"),
+    StaticString("sm_103a"),
+    StaticString("sm_110"),
+    StaticString("sm_110a"),
+    StaticString("sm_120"),
+    StaticString("sm_120a"),
+    StaticString("sm_121"),
+    StaticString("sm_121a"),
+    StaticString("gfx90a"),
+    StaticString("gfx942"),
+    StaticString("gfx950"),
+    StaticString("gfx1030"),
+    StaticString("gfx1100"),
+    StaticString("gfx1101"),
+    StaticString("gfx1102"),
+    StaticString("gfx1103"),
+    StaticString("gfx1150"),
+    StaticString("gfx1151"),
+    StaticString("gfx1152"),
+    StaticString("gfx1200"),
+    StaticString("gfx1201"),
+    StaticString("apple-m1"),
+    StaticString("apple-m1-metal4"),
+    StaticString("apple-m2"),
+    StaticString("apple-m2-metal4"),
+    StaticString("apple-m3"),
+    StaticString("apple-m3-metal4"),
+    StaticString("apple-m4"),
+    StaticString("apple-m4-metal4"),
+    StaticString("apple-m5"),
+    StaticString("apple-m5-metal4"),
+    StaticString("cuda"),
+)
+
 
 @always_inline
-fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
+def _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
     """Gets `GPUInfo` for a specific target architecture.
 
     Maps target architecture strings to corresponding `GPUInfo` instances.
@@ -2317,86 +2615,70 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
     Returns:
         `GPUInfo` instance for the specified target architecture.
     """
-    comptime target_arch = target_arch0.replace("sm_", "").replace(
-        "nvidia:", ""
-    ).replace("amdgpu:", "").replace("metal:", "apple-m")
+    # Normalize the target architecture to canonical form.
+    # NVIDIA: "nvidia:sm_90a" -> "sm_90a", "nvidia:sm90" -> "sm_90", "nvidia:80" -> "sm_80", "sm80" -> "sm_80"
+    # AMD: "mi300x" -> "gfx942", "mi355x" -> "gfx950", "amdgpu:gfx942" -> "gfx942"
+    # Apple: "metal:4" -> "apple-m4"
+    comptime target_arch = (
+        target_arch0
+        # NVIDIA normalization
+        .replace("nvidia:sm_", "sm_")
+        .replace("nvidia:sm", "sm_")
+        .replace("nvidia:", "sm_")
+        .replace("sm", "sm_")
+        .replace("sm__", "sm_")
+        # AMD normalization
+        .replace("mi250x", "gfx90a")
+        .replace("mi300x", "gfx942")
+        .replace("mi355x", "gfx950")
+        .replace("gfx90", "gfx90a")
+        .replace("amdgpu:", "")
+        # Apple normalization, general "metal:" → "apple-m" replacement.
+        .replace("metal:", "apple-m")
+    )
 
-    __comptime_assert StaticString(target_arch) in (
-        # NVIDIA
-        StaticString("cuda"),
-        StaticString("52"),
-        StaticString("60"),
-        StaticString("61"),
-        StaticString("75"),
-        StaticString("80"),
-        StaticString("86"),
-        StaticString("87"),
-        StaticString("89"),
-        StaticString("90"),
-        StaticString("90a"),
-        StaticString("100"),
-        StaticString("100a"),
-        StaticString("110"),
-        StaticString("110a"),
-        StaticString("120"),
-        StaticString("120a"),
-        StaticString("121"),
-        StaticString("121a"),
-        # AMD
-        StaticString("mi300x"),
-        StaticString("mi355x"),
-        StaticString("gfx942"),
-        StaticString("gfx950"),
-        StaticString("gfx1030"),
-        StaticString("gfx1100"),
-        StaticString("gfx1101"),
-        StaticString("gfx1102"),
-        StaticString("gfx1103"),
-        StaticString("gfx1150"),
-        StaticString("gfx1151"),
-        StaticString("gfx1152"),
-        StaticString("gfx1200"),
-        StaticString("gfx1201"),
-        # Apple
-        StaticString("apple-m1"),
-        StaticString("apple-m2"),
-        StaticString("apple-m3"),
-        StaticString("apple-m4"),
-        StaticString("apple-m5"),
+    comptime assert (
+        StaticString(target_arch) in _all_targets
     ), _build_unsupported_arch_error[target_arch0]()
 
-    @parameter
-    if target_arch == "52":
+    comptime if target_arch == "sm_52":
         return materialize[GTX970]()
-    elif target_arch == "61":
+    elif target_arch == "sm_60":
+        return materialize[TeslaP100]()
+    elif target_arch == "sm_61":
         # FIXME GTX1060 and GTX1080Ti architecture wise are different (sm_count is different). We need to differentiate between them here at compile time.
         # return materialize[GTX1060]()
         return materialize[GTX1080Ti]()
-    elif target_arch == "75":
+    elif target_arch == "sm_75":
         return materialize[RTX2060]()
-    elif target_arch == "80":
+    elif target_arch == "sm_80":
         return materialize[A100]()
-    elif target_arch == "86":
+    elif target_arch == "sm_86":
         return materialize[A10]()
-    elif target_arch == "87":
+    elif target_arch == "sm_87":
         return materialize[OrinNano]()
-    elif target_arch == "89":
+    elif target_arch == "sm_89":
         return materialize[L4]()
-    elif target_arch == "90" or target_arch == "90a":
+    elif target_arch == "sm_90" or target_arch == "sm_90a":
         return materialize[H100]()
-    elif target_arch == "100" or target_arch == "100a":
+    elif target_arch == "sm_100" or target_arch == "sm_100a":
         # FIXME (KERN-1814): Unlike H100 and H200, blackwell devices (B100 vs B200)
         # architecture wise are different. We need to differentiate between them here.
         return materialize[B200]()
-    elif target_arch == "110" or target_arch == "110a":
+    elif target_arch == "sm_103" or target_arch == "sm_103a":
+        return materialize[B300]()
+    elif target_arch == "sm_110" or target_arch == "sm_110a":
         return materialize[JetsonThor]()
-    elif target_arch == "120" or target_arch == "120a":
+    elif target_arch == "sm_120" or target_arch == "sm_120a":
         return materialize[RTX5090]()
-    elif target_arch == "121" or target_arch == "121a":
+    elif target_arch == "sm_121" or target_arch == "sm_121a":
         return materialize[DGXSpark]()
-    elif target_arch == "gfx942" or target_arch == "mi300x":
+    # AMD (gfx IDs; "mi250x"/"mi300x"/"mi355x" aliases are normalized above)
+    elif target_arch == "gfx90a":
+        return materialize[MI250X]()
+    elif target_arch == "gfx942":
         return materialize[MI300X]()
-    elif target_arch == "gfx950" or target_arch == "mi355x":
+    elif target_arch == "gfx950":
         return materialize[MI355X]()
     elif target_arch == "gfx1030":
         return materialize[Radeon6900]()
@@ -2420,14 +2702,27 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
         return materialize[Radeon9070]()
     elif target_arch == "apple-m1":
         return materialize[MetalM1]()
+    elif target_arch == "apple-m1-metal4":
+        return materialize[MetalM1Metal4]()
     elif target_arch == "apple-m2":
         return materialize[MetalM2]()
+    elif target_arch == "apple-m2-metal4":
+        return materialize[MetalM2Metal4]()
     elif target_arch == "apple-m3":
         return materialize[MetalM3]()
+    elif target_arch == "apple-m3-metal4":
+        return materialize[MetalM3Metal4]()
     elif target_arch == "apple-m4":
         return materialize[MetalM4]()
+    elif target_arch == "apple-m4-metal4":
+        return materialize[MetalM4Metal4]()
     elif target_arch == "apple-m5":
         return materialize[MetalM5]()
+    elif target_arch == "apple-m5-metal4":
+        return materialize[MetalM5Metal4]()
+    # "cuda" means generic CUDA — use runtime GPU detection.
+    elif target_arch == "cuda":
+        return _get_info_from_target[_accelerator_arch()]()
     elif _accelerator_arch() == "":
         return materialize[NoGPU]()
     else:
@@ -2439,7 +2734,7 @@ fn _get_info_from_target[target_arch0: StaticString]() -> GPUInfo:
 # ===-----------------------------------------------------------------------===#
 
 
-fn is_gpu[target: StringSlice]() -> Bool:
+def is_gpu[target: StringSlice]() -> Bool:
     """Checks if the target is a GPU (compile-time version).
 
     Parameters:
@@ -2451,7 +2746,7 @@ fn is_gpu[target: StringSlice]() -> Bool:
     return is_gpu(target)
 
 
-fn is_gpu(target: StringSlice) -> Bool:
+def is_gpu(target: StringSlice) -> Bool:
     """Checks if the target is a GPU (runtime version).
 
     Args:
@@ -2463,7 +2758,7 @@ fn is_gpu(target: StringSlice) -> Bool:
     return target == "gpu"
 
 
-fn is_cpu[target: StringSlice]() -> Bool:
+def is_cpu[target: StringSlice]() -> Bool:
     """Checks if the target is a CPU (compile-time version).
 
     Parameters:
@@ -2475,7 +2770,7 @@ fn is_cpu[target: StringSlice]() -> Bool:
     return is_cpu(target)
 
 
-fn is_cpu(target: StringSlice) -> Bool:
+def is_cpu(target: StringSlice) -> Bool:
     """Checks if the target is a CPU (runtime version).
 
     Args:
@@ -2487,7 +2782,7 @@ fn is_cpu(target: StringSlice) -> Bool:
     return target == "cpu"
 
 
-fn is_valid_target[target: StringSlice]() -> Bool:
+def is_valid_target[target: StringSlice]() -> Bool:
     """Checks if the target is valid (compile-time version).
 
     Parameters:
@@ -2499,7 +2794,7 @@ fn is_valid_target[target: StringSlice]() -> Bool:
     return is_valid_target(target)
 
 
-fn is_valid_target(target: StringSlice) -> Bool:
+def is_valid_target(target: StringSlice) -> Bool:
     """Checks if the target is valid (runtime version).
 
     Args:

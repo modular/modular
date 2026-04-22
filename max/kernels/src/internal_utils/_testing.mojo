@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from collections import OptionalReg
-from math import exp2
+from std.collections import Optional
+from std.math import exp2
 
-import testing
-from reflection import call_location, SourceLocation
-from testing.testing import _assert_cmp_error
+import std.testing
+from std.reflection import call_location, SourceLocation
+from std.testing.testing import _assert_cmp_error
 
-from utils.numerics import FPUtils
+from std.utils.numerics import FPUtils
 
 
 # ===----------------------------------------------------------------------=== #
@@ -27,7 +27,7 @@ from utils.numerics import FPUtils
 # ===----------------------------------------------------------------------=== #
 
 
-fn _flat_to_nd_index(flat_idx: Int, shape: List[Int]) -> String:
+def _flat_to_nd_index(flat_idx: Int, shape: List[Int]) -> String:
     """Convert a flat index to an N-dimensional index string.
 
     Args:
@@ -38,7 +38,7 @@ fn _flat_to_nd_index(flat_idx: Int, shape: List[Int]) -> String:
         A string representation of the N-dimensional index, e.g., "[2, 3, 4]".
     """
     if len(shape) == 0:
-        return String("i=", flat_idx)
+        return String(t"i={flat_idx}")
 
     # Compute N-dimensional indices from flat index (row-major order)
     var indices = List[Int](capacity=len(shape))
@@ -58,7 +58,7 @@ fn _flat_to_nd_index(flat_idx: Int, shape: List[Int]) -> String:
     return result
 
 
-fn _format_index(i: Int, shape: List[Int]) -> String:
+def _format_index(i: Int, shape: List[Int]) -> String:
     """Format an index for error messages.
 
     Args:
@@ -72,7 +72,16 @@ fn _format_index(i: Int, shape: List[Int]) -> String:
     if len(shape) > 0:
         return _flat_to_nd_index(i, shape)
     else:
-        return String("i=", i)
+        return String(t"i={i}")
+
+
+def _check_span_length(
+    a: Span[...], b: Span[...], location: SourceLocation
+) raises:
+    if len(a) != len(b):
+        raise Error(
+            t"Spans to not have equal lengths: {len(a)}, {len(b)}: {location}"
+        )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -81,17 +90,69 @@ fn _format_index(i: Int, shape: List[Int]) -> String:
 
 
 @always_inline
-fn assert_almost_equal[
+def assert_almost_equal[
     dtype: DType,
     //,
 ](
-    x: UnsafePointer[Scalar[dtype]],
-    y: UnsafePointer[Scalar[dtype]],
+    x: Span[Scalar[dtype], _],
+    y: Span[Scalar[dtype], _],
+    msg: String = "",
+    *,
+    shape: List[Int] = List[Int](),
+    location: Optional[SourceLocation] = None,
+    atol: Float64 = 1e-08,
+    rtol: Float64 = 1e-05,
+    equal_nan: Bool = False,
+) raises:
+    """Assert that two buffers are element-wise almost equal.
+
+    Compares each element of `x` and `y` using the formula:
+    `|x - y| <= atol + rtol * |y|`
+
+    Args:
+        x: Span to the first buffer.
+        y: Span to the second buffer.
+        msg: Optional message to include in assertion errors.
+        shape: Optional shape for N-dimensional index display in error messages.
+               If provided, error messages will show indices like "[2, 3, 4]"
+               instead of flat indices like "i=52".
+        location: Optional source location for error reporting.
+        atol: Absolute tolerance (default: 1e-08).
+        rtol: Relative tolerance (default: 1e-05).
+        equal_nan: If True, NaN values in the same position are considered equal.
+
+    Raises:
+        Error: If any elements differ by more than the specified tolerances, or
+            if the spans are unequal length.
+    """
+    var loc = location.or_else(call_location())
+    _check_span_length(x, y, loc)
+
+    assert_almost_equal(
+        x.unsafe_ptr(),
+        y.unsafe_ptr(),
+        len(x),
+        msg,
+        shape=shape,
+        location=loc,
+        atol=atol,
+        rtol=rtol,
+        equal_nan=equal_nan,
+    )
+
+
+@always_inline
+def assert_almost_equal[
+    dtype: DType,
+    //,
+](
+    x: UnsafePointer[Scalar[dtype], _],
+    y: UnsafePointer[Scalar[dtype], _],
     num_elements: Int,
     msg: String = "",
     *,
     shape: List[Int] = List[Int](),
-    location: OptionalReg[SourceLocation] = None,
+    location: Optional[SourceLocation] = None,
     atol: Float64 = 1e-08,
     rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
@@ -130,10 +191,10 @@ fn assert_almost_equal[
         ```
     """
     for i in range(num_elements):
-        testing.assert_almost_equal(
+        std.testing.assert_almost_equal(
             x[i],
             y[i],
-            msg=String(msg, " at ", _format_index(i, shape)),
+            msg=String(t"{msg} at {_format_index(i, shape)}"),
             atol=atol,
             rtol=rtol,
             equal_nan=equal_nan,
@@ -147,17 +208,17 @@ fn assert_almost_equal[
 
 
 @always_inline
-fn assert_equal[
+def assert_equal[
     dtype: DType,
     //,
 ](
-    x: UnsafePointer[Scalar[dtype]],
-    y: UnsafePointer[Scalar[dtype]],
+    x: UnsafePointer[Scalar[dtype], _],
+    y: UnsafePointer[Scalar[dtype], _],
     num_elements: Int,
     msg: String = "",
     *,
     shape: List[Int] = List[Int](),
-    location: OptionalReg[SourceLocation] = None,
+    location: Optional[SourceLocation] = None,
 ) raises:
     """Assert that two buffers are element-wise exactly equal.
 
@@ -187,12 +248,46 @@ fn assert_equal[
         ```
     """
     for i in range(num_elements):
-        testing.assert_equal(
+        std.testing.assert_equal(
             x[i],
             y[i],
-            msg=String(msg, " at ", _format_index(i, shape)),
+            msg=String(t"{msg} at {_format_index(i, shape)}"),
             location=location.or_else(call_location()),
         )
+
+
+@always_inline
+def assert_equal[
+    dtype: DType,
+    //,
+](
+    x: Span[Scalar[dtype], _],
+    y: Span[Scalar[dtype], _],
+    msg: String = "",
+    *,
+    shape: List[Int] = List[Int](),
+    location: Optional[SourceLocation] = None,
+) raises:
+    """Assert that two spans are element-wise exactly equal.
+
+    Args:
+        x: Span of the first buffer.
+        y: Span of the second buffer.
+        msg: Optional message to include in assertion errors.
+        shape: Optional shape for N-dimensional index display in error messages.
+                If provided, error messages will show indices like "[2, 3, 4]"
+                instead of flat indices like "i=52".
+        location: Optional source location for error reporting.
+
+    Raises:
+        Error: If any elements are not exactly equal or if the spans have unequal
+            length.
+    """
+    var loc = location.or_else(call_location())
+    _check_span_length(x, y, loc)
+    assert_equal(
+        x.unsafe_ptr(), y.unsafe_ptr(), len(x), msg, shape=shape, location=loc
+    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -201,22 +296,22 @@ fn assert_equal[
 
 
 @always_inline
-fn assert_with_measure[
+def assert_with_measure[
     dtype: DType,
     //,
-    measure: fn[dtype: DType] (
+    measure: def[dtype: DType](
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
         Int,
-    ) -> Float64,
+    ) thin -> Float64,
 ](
-    x: UnsafePointer[Scalar[dtype]],
-    y: UnsafePointer[Scalar[dtype]],
+    x: UnsafePointer[Scalar[dtype], _],
+    y: UnsafePointer[Scalar[dtype], _],
     num_elements: Int,
     msg: String = "",
     *,
-    location: OptionalReg[SourceLocation] = None,
-    threshold: OptionalReg[Float64] = None,
+    location: Optional[SourceLocation] = None,
+    threshold: Optional[Float64] = None,
 ) raises:
     """Assert that a custom measure between two buffers is below a threshold.
 
@@ -235,7 +330,7 @@ fn assert_with_measure[
     Parameters:
         dtype: The data type of the buffer elements.
         measure: A function that computes a scalar measure between two buffers.
-                 Signature: `fn[dtype](ptr1, ptr2, n) -> Float64`
+                 Signature: `def[dtype](ptr1, ptr2, n) -> Float64`
 
     Raises:
         Error: If the computed measure exceeds the threshold.
@@ -250,9 +345,9 @@ fn assert_with_measure[
         )
         ```
     """
-    comptime sqrt_eps = exp2(-0.5 * FPUtils[dtype].mantissa_width()).cast[
-        DType.float64
-    ]()
+    comptime sqrt_eps = exp2(
+        -0.5 * Float64(FPUtils[dtype].mantissa_width())
+    ).cast[DType.float64]()
     var m = measure(
         x.address_space_cast[AddressSpace.GENERIC](),
         y.address_space_cast[AddressSpace.GENERIC](),
@@ -274,7 +369,7 @@ fn assert_with_measure[
 
 
 @always_inline
-fn pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
+def pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
     """Get PyTorch-like default tolerances for a given dtype.
 
     Returns tolerance values modeled after PyTorch's default tolerances
@@ -293,8 +388,7 @@ fn pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
         ```
     """
 
-    @parameter
-    if dtype == DType.float16:
+    comptime if dtype == DType.float16:
         return (1e-3, 1e-5)
     elif dtype == DType.bfloat16:
         return (1.6e-2, 1e-5)
@@ -304,3 +398,34 @@ fn pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
         return (1e-7, 1e-7)
     else:
         return (0.0, 0.0)
+
+
+# ===----------------------------------------------------------------------=== #
+# test_value_for_gpu_element
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+@parameter
+def test_value_for_gpu_element[
+    dtype: DType,
+    modulo: Int = 251 if dtype == DType.float32 else 13,
+](gpu_rank: Int, element_idx: Int) -> Scalar[dtype]:
+    """Generates unique deterministic test values per GPU and element index.
+
+    Creates predictable values for testing multi-GPU operations where each
+    GPU's contribution needs to be distinguishable. Uses prime modulus to
+    avoid power-of-two aliasing patterns. 251 is the largest prime < 256.
+
+    Args:
+        gpu_rank: The rank/ID of the GPU (0-indexed).
+        element_idx: The element index within the buffer.
+
+    Returns:
+        A unique scalar value for this GPU and element combination.
+
+    Examples:
+        `test_value_for_gpu_element[DType.float32](0, 0)` !=
+        `test_value_for_gpu_element[DType.float32](1, 0)`.
+    """
+    return Scalar[dtype](gpu_rank + 1) + Scalar[dtype](element_idx % modulo)

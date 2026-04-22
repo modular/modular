@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
-from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -25,7 +24,7 @@ from max._core.engine import Model
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine.api import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, Value
+from max.graph import DeviceRef, Graph, TensorType
 from max.graph.buffer_utils import cast_tensors_to
 from max.graph.weights import (
     SafetensorWeights,
@@ -33,21 +32,22 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn import Module, ReturnLogits, Signals
-from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
+from max.nn.comm import Signals
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.layer import Module
 from max.nn.parallel import ParallelArrayOps
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
-    SupportedEncoding,
+    PipelineModelWithKVCache,
 )
+from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 from max.profiler import Tracer, traced
 from transformers import AutoConfig
 
@@ -55,12 +55,11 @@ from .context import Qwen2_5VLTextAndVisionContext, VisionEncodingData
 from .model_config import Qwen2_5VLConfig
 from .nn.data_processing import get_rope_index
 from .qwen2_5vl import Qwen2_5VL
-from .util import compute_multimodal_merge_indices
 
 logger = logging.getLogger("max.pipelines")
 
 
-@dataclass(eq=False)
+@dataclass
 class Qwen2_5VLInputs(ModelInputs):
     """A class representing inputs for the Qwen2.5VL model.
 
@@ -68,7 +67,7 @@ class Qwen2_5VLInputs(ModelInputs):
     including both text and vision inputs. Vision inputs are optional and can be None
     for text-only processing."""
 
-    input_ids: Buffer
+    tokens: Buffer
     """Tensor containing the input token IDs."""
 
     input_row_offsets: list[Buffer]
@@ -83,7 +82,7 @@ class Qwen2_5VLInputs(ModelInputs):
     return_n_logits: Buffer
     """Number of logits to return, used by speculative decoding for example."""
 
-    kv_cache_inputs: KVCacheInputs
+    kv_cache_inputs: KVCacheInputs[Buffer, Buffer] = field(kw_only=True)
     """KV cache inputs for the model."""
 
     image_token_indices: list[Buffer] | None = None
@@ -125,7 +124,7 @@ class Qwen2_5VLInputs(ModelInputs):
 
 
 class Qwen2_5VLModel(
-    AlwaysSignalBuffersMixin, PipelineModel[TextAndVisionContext], KVCacheMixin
+    AlwaysSignalBuffersMixin, PipelineModelWithKVCache[TextAndVisionContext]
 ):
     """A Qwen2.5VL pipeline model for multimodal text generation."""
 
@@ -145,8 +144,6 @@ class Qwen2_5VLModel(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -156,8 +153,6 @@ class Qwen2_5VLModel(
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -194,39 +189,13 @@ class Qwen2_5VLModel(
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for Qwen2.5VL."""
-        return Qwen2_5VLConfig.get_kv_params(
+        return Qwen2_5VLConfig.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
             kv_cache_config,
             cache_dtype,
         )
-
-    @classmethod
-    def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
-        """Gets the number of hidden layers from the HuggingFace configuration."""
-        return Qwen2_5VLConfig.get_num_layers(huggingface_config)
-
-    def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[Value[Any]]
-    ) -> list[PagedCacheValues]:
-        """Unflatten KV cache inputs from flat list to per-device structure."""
-        fetch_types = self.kv_params.get_symbolic_inputs()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
-        n_devices = len(self.devices)
-
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(n_devices):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
         """Loads the compiled Qwen2.5VL models into the MAX Engine session.
@@ -235,11 +204,14 @@ class Qwen2_5VLModel(
             A tuple of (vision_model, language_model).
         """
         # Pre-allocation for multi-step execution
-        assert self.pipeline_config.max_batch_size, (
+        assert self.pipeline_config.runtime.max_batch_size, (
             "Expected max_batch_size to be set"
         )
         self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+            np.arange(
+                self.pipeline_config.runtime.max_batch_size + 1,
+                dtype=np.uint32,
+            )
         ).to(self.devices)
 
         # Get LLM weights dictionary. Needed before model config generation
@@ -270,15 +242,15 @@ class Qwen2_5VLModel(
                 )
 
         # Generate Qwen2.5VL config from HuggingFace config
-        qwen2_5vl_config = Qwen2_5VLConfig.generate(
+        qwen2_5vl_config = Qwen2_5VLConfig.initialize_from_config(
             pipeline_config=self.pipeline_config,
             huggingface_config=self.huggingface_config,
+        )
+        qwen2_5vl_config.finalize(
+            huggingface_config=self.huggingface_config,
+            pipeline_config=self.pipeline_config,
             llm_state_dict=llm_state_dict,
             vision_state_dict=vision_state_dict,
-            dtype=self.dtype,
-            n_devices=len(self.devices),
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
         )
         self.model_config = qwen2_5vl_config
@@ -287,21 +259,19 @@ class Qwen2_5VLModel(
         self.model: Module = Qwen2_5VL(self.model_config)
         self.model.load_state_dict(model_state_dict, strict=True)
 
-        timer = CompilationTimer("vision model")
-        vision_graph = self._build_vision_graph()
-        timer.mark_build_complete()
-        vision_model = session.load(
-            vision_graph, weights_registry=vision_state_dict
-        )
-        timer.done()
+        with CompilationTimer("vision model") as timer:
+            vision_graph = self._build_vision_graph()
+            timer.mark_build_complete()
+            vision_model = session.load(
+                vision_graph, weights_registry=vision_state_dict
+            )
 
-        timer = CompilationTimer("language model")
-        language_graph = self._build_language_graph()
-        timer.mark_build_complete()
-        language_model = session.load(
-            language_graph, weights_registry=llm_state_dict
-        )
-        timer.done()
+        with CompilationTimer("language model") as timer:
+            language_graph = self._build_language_graph()
+            timer.mark_build_complete()
+            language_model = session.load(
+                language_graph, weights_registry=llm_state_dict
+            )
 
         return vision_model, language_model
 
@@ -523,9 +493,7 @@ class Qwen2_5VLModel(
         )
 
         kv_inputs = self.kv_params.get_symbolic_inputs()
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
+        flattened_kv_types = kv_inputs.flatten()
 
         with Graph(
             "qwen2_5vl_language",
@@ -697,14 +665,14 @@ class Qwen2_5VLModel(
 
         # Execute language model with text and image embeddings
         language_outputs = self.language_model.execute(
-            model_inputs.input_ids,
+            model_inputs.tokens,
             model_inputs.return_n_logits,
             *model_inputs.input_row_offsets,
             *image_embeddings,
             *image_token_indices,
             model_inputs.position_ids,
             *model_inputs.signal_buffers,
-            *model_inputs.kv_cache_inputs,
+            *model_inputs.kv_cache_inputs.flatten(),
         )
 
         # Return model outputs based on what the language model returns
@@ -944,7 +912,7 @@ class Qwen2_5VLModel(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[Qwen2_5VLTextAndVisionContext]],  # type: ignore[override]
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Qwen2_5VLInputs:
         """Prepares the initial inputs for the first execution pass of the Qwen2.5VL model."""
@@ -996,7 +964,7 @@ class Qwen2_5VLModel(
 
         if not any_needs_vision_encoding:
             return Qwen2_5VLInputs(
-                input_ids=input_ids,
+                tokens=input_ids,
                 input_row_offsets=input_row_offsets_tensors,
                 position_ids=decoder_position_ids,
                 signal_buffers=self.signal_buffers,
@@ -1133,7 +1101,7 @@ class Qwen2_5VLModel(
             max_window_seqlen = [window_max_seqlen_tensor for _ in self.devices]
 
         return Qwen2_5VLInputs(
-            input_ids=input_ids,
+            tokens=input_ids,
             input_row_offsets=input_row_offsets_tensors,
             signal_buffers=self.signal_buffers,
             position_ids=decoder_position_ids,
@@ -1161,7 +1129,7 @@ class Qwen2_5VLModel(
         # TODO: This is still buggy. Use max_num_steps=1 until this is fixed.
         assert isinstance(prev_model_inputs, Qwen2_5VLInputs)
 
-        # input_ids, old_row_offsets, Optional: [pixel_values, attention_mask]
+        # tokens, old_row_offsets, Optional: [pixel_values, attention_mask]
         old_row_offsets = prev_model_inputs.input_row_offsets
 
         row_offsets_size = old_row_offsets[0].shape[0]
@@ -1183,7 +1151,7 @@ class Qwen2_5VLModel(
 
         return Qwen2_5VLInputs(
             signal_buffers=self.signal_buffers,
-            input_ids=next_tokens,
+            tokens=next_tokens,
             input_row_offsets=next_row_offsets,
             position_ids=position_ids,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,

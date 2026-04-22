@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -27,7 +27,7 @@ These primitives are essential for implementing complex GPU execution pipelines 
 multiple kernels need to execute in a specific order with minimal overhead. They
 eliminate the need for host-side synchronization when orchestrating dependent GPU work.
 """
-from sys import env_get_int, has_nvidia_gpu_accelerator
+from std.sys import has_nvidia_gpu_accelerator
 
 from ..host.info import H100, GPUInfo, _accelerator_arch
 from ..host.launch_attribute import (
@@ -39,9 +39,9 @@ from ..host.launch_attribute import (
 comptime _SUPPORT_PDL_LAUNCH = _support_pdl_launch()
 
 
-@doc_private
+@doc_hidden
 @always_inline("nodebug")
-fn _support_pdl_launch() -> Bool:
+def _support_pdl_launch() -> Bool:
     """Determines if programmatic dependency launch (PDL) is supported.
 
     Checks if the current GPU supports PDL (Hopper SM90+ architecture).
@@ -51,8 +51,7 @@ fn _support_pdl_launch() -> Bool:
         True if PDL is supported and enabled, False otherwise.
     """
 
-    @parameter
-    if (
+    comptime if (
         has_nvidia_gpu_accelerator()
         and GPUInfo.from_name[_accelerator_arch()]().compute >= H100.compute
     ):
@@ -61,9 +60,9 @@ fn _support_pdl_launch() -> Bool:
         return False
 
 
-@doc_private
+@doc_hidden
 @always_inline("nodebug")
-fn pdl_launch_attributes(
+def pdl_launch_attributes(
     pdl_level: PDLLevel = PDLLevel(),
 ) -> List[LaunchAttribute]:
     """Returns launch attributes for programmatic dependency launch (PDL).
@@ -93,7 +92,7 @@ fn pdl_launch_attributes(
 
 
 @always_inline("nodebug")
-fn launch_dependent_grids():
+def launch_dependent_grids():
     """Launches dependent grids that were previously configured to depend on the
     current grid.
 
@@ -108,14 +107,13 @@ fn launch_dependent_grids():
           should trigger the execution of other grids.
     """
 
-    @parameter
-    if _SUPPORT_PDL_LAUNCH:
+    comptime if _SUPPORT_PDL_LAUNCH:
         comptime kind_attr = __mlir_attr.`#nvvm.grid_dep_action launch_dependents`
         __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
 
 
 @always_inline("nodebug")
-fn wait_on_dependent_grids():
+def wait_on_dependent_grids():
     """Waits for all dependent grids launched by this grid to complete execution.
 
     This function blocks the calling grid until all dependent grids that were launched
@@ -129,14 +127,12 @@ fn wait_on_dependent_grids():
           with subsequent operations in the parent grid.
     """
 
-    @parameter
-    if _SUPPORT_PDL_LAUNCH:
+    comptime if _SUPPORT_PDL_LAUNCH:
         comptime kind_attr = __mlir_attr.`#nvvm.grid_dep_action wait`
         __mlir_op.`nvvm.griddepcontrol`[kind=kind_attr, _type=None]()
 
 
-@register_passable("trivial")
-struct PDLLevel(Defaultable):
+struct PDLLevel(Defaultable, TrivialRegisterPassable):
     """Programmatic Dependency Launch (PDL) level."""
 
     var _level: Int
@@ -154,12 +150,12 @@ struct PDLLevel(Defaultable):
     """PDL no-wait overlap at end of kernel."""
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize the PDL level to OFF."""
-        self = PDLLevel(env_get_int["PDL_LEVEL", 0]())
+        self = PDLLevel.OFF
 
     @always_inline
-    fn __init__(out self, level: Int):
+    def __init__(out self, level: Int):
         """Initialize the PDL level.
 
         Args:
@@ -168,7 +164,7 @@ struct PDLLevel(Defaultable):
         self._level = level
 
     @always_inline
-    fn __eq__(self, other: PDLLevel) -> Bool:
+    def __eq__(self, other: PDLLevel) -> Bool:
         """Check if the PDL level is equal to another PDL level.
 
         Args:
@@ -180,7 +176,7 @@ struct PDLLevel(Defaultable):
         return self._level == other._level
 
     @always_inline
-    fn __eq__(self, other: Int) -> Bool:
+    def __eq__(self, other: Int) -> Bool:
         """Check if the PDL level is equal to another PDL level.
 
         Args:
@@ -192,7 +188,7 @@ struct PDLLevel(Defaultable):
         return self._level == other
 
     @always_inline
-    fn __ne__(self, other: PDLLevel) -> Bool:
+    def __ne__(self, other: PDLLevel) -> Bool:
         """Check if the PDL level is not equal to another PDL level.
 
         Args:
@@ -204,7 +200,7 @@ struct PDLLevel(Defaultable):
         return self._level != other._level
 
     @always_inline
-    fn __gt__(self, other: PDLLevel) -> Bool:
+    def __gt__(self, other: PDLLevel) -> Bool:
         """Check if the PDL level is greater than another PDL level.
 
         Args:
@@ -216,7 +212,7 @@ struct PDLLevel(Defaultable):
         return self._level > other._level
 
     @always_inline
-    fn __ge__(self, other: PDLLevel) -> Bool:
+    def __ge__(self, other: PDLLevel) -> Bool:
         """Check if the PDL level is greater than or equal to another PDL level.
 
         Args:
@@ -241,18 +237,18 @@ struct PDL(Defaultable):
     """
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize the PDL control structure."""
         pass
 
     @always_inline
-    fn __enter__(self):
+    def __enter__(self):
         """Launch dependent grids that were previously configured to depend on the
         current grid."""
         wait_on_dependent_grids()
 
     @always_inline
-    fn __exit__(self):
+    def __exit__(self):
         """Wait for all dependent grids launched by this grid to complete execution.
         """
         launch_dependent_grids()

@@ -17,23 +17,28 @@ modular_py_test(
         "test_stop_cpu.py",
     ],
     data = [
-        "//max/tests/integration/pipelines/python/llama3/testdata",
+        "//max/tests/integration/architectures/llama3/testdata",
     ],
     env = {
-        "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/llama3/testdata",
     },
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/serve",
-        "//max/python/max/serve/schemas",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve/pipelines",
+        "//max/python/max/serve/telemetry",
+        "//max/python/max/serve/worker_interface",
         requirement("async-asgi-testclient"),
+        requirement("fastapi"),
+        requirement("httpx"),
         requirement("pytest-asyncio"),
         requirement("sse-starlette"),
     ],
@@ -51,26 +56,40 @@ modular_py_test(
         "test_tinyllama_serving_cpu.py",
     ],
     data = [
-        "//max/tests/integration/pipelines/python/llama3/testdata",
+        "//max/tests/integration/architectures/llama3/testdata",
     ],
     env = {
-        "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/llama3/testdata",
     },
     tags = [
-        "manual",  # TODO(AITLIB-293)
-        "no-pydeps",  # TODO: Fix and re-enable
         "no-sandbox",
         "requires-network",
-        "run-in-hf-workflow",
     ],
+    # TODO(SERVOPT-949): Investigate and enable on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        # tinyllama test taking too long on asan
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
-        "//max/python/max/pipelines/architectures",
+        "//max/python/max/driver",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/serve",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve/pipelines",
         "//max/python/max/serve/schemas",
-        "//max/tests/integration/pipelines/python/test_common",
+        "//max/python/max/serve/telemetry",
+        "//max/python/max/serve/worker_interface",
+        "//max/tests/integration:hf_repo_lock",
+        "//max/tests/integration/test_common:test_data",
         requirement("async-asgi-testclient"),
+        requirement("fastapi"),
         requirement("pytest-asyncio"),
+        requirement("requests"),
         requirement("sse-starlette"),
     ],
 )
@@ -121,10 +140,10 @@ modular_py_test(
         "test_smollm_serving_gpu.py",
     ],
     data = [
-        "//max/tests/integration/pipelines/python/llama3/testdata",
+        "//max/tests/integration/architectures/llama3/testdata",
     ],
     env = {
-        "PIPELINES_TESTDATA": "max/tests/integration/pipelines/python/llama3/testdata",
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/llama3/testdata",
     },
     exec_properties = {
         # Ensure the test has at least 23GB of GPU memory available.
@@ -147,7 +166,6 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/interfaces",
-        "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
@@ -155,10 +173,10 @@ modular_py_test(
         "//max/python/max/serve:config",
         "//max/python/max/serve/mocks",
         "//max/python/max/serve/pipelines",
-        "//max/python/max/serve/queue",
         "//max/python/max/serve/schemas",
         "//max/python/max/serve/telemetry",
-        "//max/tests/integration/pipelines/python/test_common:test_data",
+        "//max/python/max/serve/worker_interface",
+        "//max/tests/integration/test_common:test_data",
         requirement("async-asgi-testclient"),
         requirement("pytest-asyncio"),
         requirement("sse-starlette"),
@@ -189,5 +207,30 @@ modular_py_test(
     }),
     deps = [
         "//max/python/max/entrypoints",
+    ],
+)
+
+modular_py_test(
+    name = "test_max_serve_e2e",
+    size = "large",
+    srcs = [
+        "test_max_serve_e2e.py",
+    ],
+    tags = [
+        "requires-network",
+    ],
+    # TODO(GEX-3155): Times out on remote macOS CI (~374s due to model compilation)
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/entrypoints",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/serve:config",
+        requirement("httpx"),
+        requirement("pytest-asyncio"),
     ],
 )

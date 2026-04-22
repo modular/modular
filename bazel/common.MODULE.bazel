@@ -1,63 +1,33 @@
 """Define bazel dependencies common to the internal and external repos."""
 
-bazel_dep(name = "abseil-cpp", version = "20250127.1")
 bazel_dep(name = "apple_support", version = "1.24.2", repo_name = "build_bazel_apple_support")
 bazel_dep(name = "aspect_bazel_lib", version = "2.21.2")
-bazel_dep(name = "aspect_rules_js", version = "2.4.1")
-bazel_dep(name = "bazel_skylib", version = "1.8.2")
-bazel_dep(name = "curl", version = "8.8.0")
-bazel_dep(name = "gazelle", version = "0.47.0")
-bazel_dep(name = "glfw", version = "3.3.9.bcr.1")
-bazel_dep(name = "google_benchmark", version = "1.8.5")
-bazel_dep(name = "grpc", version = "1.73.1", repo_name = "com_github_grpc_grpc")
-bazel_dep(name = "grpc-java", version = "1.67.1")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "curl", version = "8.12.0")
+bazel_dep(name = "gazelle", version = "0.50.0")
+bazel_dep(name = "google_benchmark", version = "1.9.4")
+bazel_dep(name = "grpc", version = "1.76.0.bcr.1", repo_name = "com_github_grpc_grpc")
 bazel_dep(name = "imgui", version = "1.91.8")
-bazel_dep(name = "opentelemetry-cpp", version = "1.19.0")
-bazel_dep(name = "opentelemetry-proto", version = "1.5.0")
 bazel_dep(name = "platforms", version = "1.0.0")
-bazel_dep(name = "protobuf", version = "31.1", repo_name = "com_google_protobuf")
-bazel_dep(name = "rules_cc", version = "0.2.16")
-bazel_dep(name = "rules_go", version = "0.58.3", repo_name = "io_bazel_rules_go")
-bazel_dep(name = "rules_java", version = "9.1.0")
+bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
+bazel_dep(name = "rules_cc", version = "0.2.17")
 bazel_dep(name = "rules_mojo", version = "0.6.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
-bazel_dep(name = "rules_proto", version = "7.0.2")
-bazel_dep(name = "rules_pycross", version = "0.8.0")
-bazel_dep(name = "rules_python", version = "1.7.0")
+bazel_dep(name = "rules_proto", version = "7.1.0")
+bazel_dep(name = "rules_pycross", version = "0.8.1")
+bazel_dep(name = "rules_python", version = "1.8.5")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
-
-# TODO: Remove when transitives bump to this version or above
-bazel_dep(name = "rules_foreign_cc", version = "0.13.0")  # NOTE: Avoid direct usage
-bazel_dep(name = "rules_nodejs", version = "6.5.0")
-
-single_version_override(
-    module_name = "abseil-cpp",
-    version = "20250127.1",
-)
 
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.1", dev_dependency = True)
 
 archive_override(
     module_name = "rules_mojo",
-    integrity = "sha256-f3U53KTSaTz3EPbRJY2O2p4gu0ZaBXEICkoeexWEBio=",
-    strip_prefix = "rules_mojo-9844f8a28c4a74f156fedeeec9f4740a0b403fd7",
+    integrity = "sha256-gkappMvXTJYRANGySlRe8ASrcDXHEagi5Xf0RWVcse0=",
+    strip_prefix = "rules_mojo-ca33e95f61e9c48c6036b9e7d8a31ab93c957b1f",
     urls = [
-        "https://github.com/modular/rules_mojo/archive/9844f8a28c4a74f156fedeeec9f4740a0b403fd7.tar.gz",
-    ],
-)
-
-single_version_override(
-    module_name = "gazelle",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/bazel-contrib/bazel-gazelle/pull/2249
-        "//bazel/public-patches:gazelle-package-top.patch",
-        # https://github.com/bazel-contrib/bazel-gazelle/pull/2248
-        "//bazel/public-patches:gazelle-exports-files.patch",
-        # https://github.com/bazel-contrib/bazel-gazelle/pull/2247
-        "//bazel/public-patches:gazelle-default-features.patch",
+        "https://github.com/modular/rules_mojo/archive/ca33e95f61e9c48c6036b9e7d8a31ab93c957b1f.tar.gz",
     ],
 )
 
@@ -65,41 +35,30 @@ single_version_override(
     module_name = "rules_cc",
     patch_strip = 1,
     patches = [
-        # https://github.com/bazelbuild/bazel/pull/26925
-        "//bazel/public-patches:rules_cc_dsym_feature.patch",
-        # https://github.com/bazelbuild/rules_cc/pull/535
-        "//bazel/public-patches:rules_cc_allowlists.patch",
         # https://github.com/bazelbuild/rules_cc/pull/527
         "//bazel/public-patches:rules_cc_textual_hdrs.patch",
+        # https://github.com/bazelbuild/rules_cc/pull/578
+        "//bazel/public-patches:rules_cc_private_api.patch",
+        # https://github.com/bazelbuild/rules_cc/pull/675
+        "//bazel/public-patches:rules_cc_set_soname.patch",
     ],
 )
 
-single_version_override(
-    module_name = "rules_nodejs",
-    patch_strip = 1,
-    patches = [
-        # https://github.com/bazel-contrib/rules_nodejs/pull/3859
-        "//bazel/public-patches:rules_nodejs_toolchains.patch",
-    ],
-    version = "6.5.0",
-)
+bazel_dep(name = "rules_mypy", version = "0.41.0", dev_dependency = True)
 
-# Manually pull in https://github.com/bazel-contrib/rules_jvm_external/pull/1265
-single_version_override(
-    module_name = "rules_jvm_external",
-    version = "6.7",
-)
-
-bazel_dep(name = "rules_mypy", version = "0.39.0", dev_dependency = True)
-single_version_override(
+# TODO: Move back to BCR dep when 0.41.0 is published
+archive_override(
     module_name = "rules_mypy",
+    integrity = "sha256-UhLUFPdE95imwr1z1JnvbIml08t8rxyQlw/jKlu2H2Y=",
     patch_strip = 1,
     patches = [
         # TODO: Should we submit this upstream or force our deps to directly
         # depend on the things that provide their pyi files?
         "//bazel/public-patches:rules_mypy_pyi_files.patch",
-        # https://github.com/bazel-contrib/rules_mypy/pull/118
-        "//bazel/public-patches:rules_mypy_pyinfo.patch",
+    ],
+    strip_prefix = "rules_mypy-0.41.0",
+    urls = [
+        "https://github.com/bazel-contrib/rules_mypy/releases/download/v0.41.0/rules_mypy-0.41.0.tar.gz",
     ],
 )
 
@@ -109,38 +68,18 @@ single_version_override(
     patches = [
         # https://github.com/bazel-contrib/rules_python/pull/3233
         "//bazel/public-patches:rules_python_wheel.patch",
-        # https://github.com/bazel-contrib/rules_python/pull/3420
-        "//bazel/public-patches:rules_python_hdrs.patch",
         # TODO (SDLC-2681): figure out why this is breaking our code.
         # reverts https://github.com/bazel-contrib/rules_python/pull/3242
         "//bazel/public-patches:rules_python_revert.patch",
     ],
 )
 
-# TODO: Remove once >0.8.0 is released
-archive_override(
+single_version_override(
     module_name = "rules_pycross",
-    integrity = "sha256-8nt5EI2mkzePeqw//u/5jGxxfvEx7727OTIb+tTp+Ag=",
-    strip_prefix = "rules_pycross-573feab78c2d559d282d762568bfd88cbb933dfc",
-    urls = [
-        "https://github.com/jvolkman/rules_pycross/archive/573feab78c2d559d282d762568bfd88cbb933dfc.tar.gz",
-    ],
-)
-
-single_version_override(
-    module_name = "aspect_rules_js",
     patch_strip = 1,
     patches = [
-        # https://github.com/aspect-build/rules_js/pull/2330
-        "//bazel/public-patches:aspect_rules_js_toolchains.patch",
-    ],
-)
-
-single_version_override(
-    module_name = "opentelemetry-cpp",
-    patch_strip = 1,
-    patches = [
-        "//bazel/public-patches:opentelemetry.patch",
+        # TODO: Remove when 3.8 is no longer pulled in transitively
+        "//bazel/public-patches:rules_pycross_versions.patch",
     ],
 )
 
@@ -148,19 +87,9 @@ single_version_override(
     module_name = "protobuf",
     patch_strip = 1,
     patches = [
-        # TODO: Remove when this patch is in a release
-        # https://github.com/protocolbuffers/protobuf/pull/22633
-        "//bazel/public-patches:protobuf-platforms.patch",
-        # TODO: https://github.com/protocolbuffers/protobuf/commit/a5220488813040037e59b5625f953f2da7bf73a4
-        "//bazel/public-patches:protobuf-windows.patch",
-        # TODO: https://github.com/protocolbuffers/protobuf/commit/27227205a3986987b7495078aaf7377b49dc38aa
-        "//bazel/public-patches:protobuf-debug-context.patch",
-        # TODO: https://github.com/protocolbuffers/protobuf/commit/158312dc8c58efc777849dc89734f55c696eae1e remove next bump
-        "//bazel/public-patches:protobuf-loads.patch",
-        # TODO: https://github.com/protocolbuffers/protobuf/commit/25d8081ab9991bf56d54ad52f0ce529c4e5aa979 remove next bump
-        "//bazel/public-patches:protobuf-cc-loads.patch",
+        # FIXME: `@system_python` is a dev dep, but used in non-dev code
+        "//bazel/public-patches:protobuf-dev-dep.patch",
     ],
-    version = "31.1",  # TODO: Remove restriction next update
 )
 
 single_version_override(
@@ -175,27 +104,15 @@ single_version_override(
     module_name = "grpc",
     patch_strip = 1,
     patches = [
-        # Revert of https://github.com/grpc/grpc//commit/9a6bcd4c2f2913c1bfe8dccf9e536d8f53c360c2
+        # Partial revert of https://github.com/grpc/grpc/commit/9a6bcd4c2f2913c1bfe8dccf9e536d8f53c360c2
         "//bazel/public-patches:grpc-no-macos-x86.patch",
         # TODO: Drop when logspew is fixed
         "//bazel/public-patches:grpc-warnings.patch",
-        # https://github.com/grpc/grpc/pull/40687
-        "//bazel/public-patches:grpc-rules-python.patch",
     ],
-    version = "1.73.1",
+    version = "1.76.0.bcr.1",
 )
 
-single_version_override(
-    module_name = "grpc-java",
-    patch_strip = 1,
-    patches = [
-        # TODO: Drop when this is pulled from bzlmod instead of grpc_deps.bzl
-        "//bazel/public-patches:grpc-java.patch",
-    ],
-    version = "1.67.1",
-)
-
-DEFAULT_PYTHON_VERSION = "3.12"
+DEFAULT_PYTHON_VERSION = "3.13"
 
 PYTHON_VERSIONS = [
     "3_10",
@@ -289,43 +206,22 @@ filegroup(
 filegroup(
     name = "host",
     srcs = [
-        "bin/mpirun",
-        "bin/prterun",
-        "lib/libmpi.so",
-        "lib/libmpi.so.40.40.7",
         "lib/librocshmem_host.so",
-        "lib/libucp.so.0",
-        "lib/libucs.so.0",
-        "lib/libopen-pal.so.80",
-        "lib/libevent_core-2.1.so.7",
-        "lib/libevent_pthreads-2.1.so.7",
-        "lib/libhwloc.so.15",
-        "lib/libpmix.so.2",
-        "lib/libuct.so.0",
-        "lib/libucm.so.0",
-        "lib/libprrte.so.3",
         "lib/libnl-3.so.200",
-    ] + glob([
-        "share/openmpi/help-*.txt",
-        "share/pmix/help-*.txt",
-        "share/prte/help-*.txt",
-    ]),
+    ]
 )
 
-# Individual targets for MPI tools
-filegroup(
-    name = "mpirun",
-    srcs = ["bin/mpirun"],
-)
-
-filegroup(
-    name = "prterun",
-    srcs = ["bin/prterun"],
-)
 """,
-    # built from commit: https://github.com/modular/rocSHMEM/commit/09569c2c5fa32264f1facbd0357a884089e4c2a4
-    sha256 = "0ed6412e8a2e1021a6b5da3afd4092573a3c75dec75d82c92a46d6f1424b7423",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/rocshmem/3.2.1/0ed6412e8a2e1021a6b5da3afd4092573a3c75dec75d82c92a46d6f1424b7423/rocshmem.tar.gz",
+    # built from commit: https://github.com/modularml/rocm-systems/commit/84f4e1e366b66066ba01d0ec64bfeaee0bf6f7b6
+    sha256 = "9e75030c46158d8ff87d305cf39b9953c5a0d780780fcff93ef89c149835c69e",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/rocshmem/3.2.1/9e75030c46158d8ff87d305cf39b9953c5a0d780780fcff93ef89c149835c69e/rocshmem.tar.gz",
+)
+
+http_archive(
+    name = "llvm-ifs",
+    build_file_content = "filegroup(name = 'llvm-ifs', srcs = glob(['**']), visibility = ['//visibility:public'])",
+    sha256 = "126f4b14273588f221eb98e8d9952675eddd7f8a0466347be9c8e6d0530c9144",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-tools/1/126f4b14273588f221eb98e8d9952675eddd7f8a0466347be9c8e6d0530c9144/tools.tar.gz",
 )
 
 http_archive(
@@ -378,6 +274,7 @@ mojo.gpu_toolchains(
         " A3000 ": "a3000",
         "B100": "b100",
         "B200": "b200",
+        "B300": "b300",
         " RTX 5090": "rtx5090",
         "Laptop GPU": "",
         "RTX 4070 Ti": "",
@@ -387,14 +284,18 @@ mojo.gpu_toolchains(
         "NVIDIA GeForce GTX 1080 Ti": "gtx1080ti",
         "NVIDIA GeForce GTX 1060": "gtx1060",
         "NVIDIA GeForce GTX 970": "gtx970",
+        "GB10": "gb10",
         "MI300X": "mi300x",
         "MI325": "mi325",
         "MI355": "mi355",
+        "MI250X": "gfx90a",
         "Navi 31": "W7900",
         "Navi 31 [Radeon Pro W7900]": "W7900",
         "AMD Radeon RX 6900 XT": "rx6900xt",
         "AMD Radeon PRO W7900": "W7900",
         "AMD Radeon Pro W7900": "W7900",
+        "Phoenix3": "780M",
+        "Strix Halo": "strixhalo",
         "Metal 1": "",  # Unsupported, macOS updates on any hardware get you to Metal 3+
         "Metal 2": "",  # Unsupported, macOS updates on any hardware get you to Metal 3+
         "Metal 3": "metal3",  # macOS 15
@@ -409,9 +310,11 @@ mojo.gpu_toolchains(
         "a3000": "nvidia:sm_86",
         "b100": "nvidia:sm_100a",
         "b200": "nvidia:sm_100a",
+        "b300": "nvidia:sm_103a",
         "h100": "nvidia:sm_90a",
         "h200": "nvidia:sm_90a",
         "l4": "nvidia:sm_89",
+        "gfx90a": "amdgpu:gfx90a",
         "mi300x": "amdgpu:gfx942",
         "mi325": "amdgpu:gfx942",
         "mi355": "amdgpu:gfx950",
@@ -421,7 +324,9 @@ mojo.gpu_toolchains(
         "gtx1060": "nvidia:sm_61",
         "rtx4090": "nvidia:sm_89",
         "rtx5090": "nvidia:sm_120a",
+        "gb10": "nvidia:sm_121",
         "rx6900xt": "amdgpu:gfx1030",
+        "strixhalo": "amdgpu:gfx1151",
         "metal3": "metal:3",
         "metal4": "metal:4",
     },
@@ -430,9 +335,9 @@ use_repo(mojo, "mojo_gpu_toolchains", "mojo_host_platform")
 
 http_archive(
     name = "bazel_clang_tidy",
-    sha256 = "a1d55ba339bf6952c77e5e48c13a4c86b5c63349bf6bd321e0c01e342d31fc3b",
-    strip_prefix = "bazel_clang_tidy-3897fd6fb52c7dd6b99058f13eabba7a4127baa2",
-    url = "https://github.com/erenon/bazel_clang_tidy/archive/3897fd6fb52c7dd6b99058f13eabba7a4127baa2.tar.gz",
+    sha256 = "96da6e935ccc91045cf928dbc57f22508a2729c51f7fb3f56178017b0deb9b3c",
+    strip_prefix = "bazel_clang_tidy-c4d35e0d0b838309358e57a2efed831780f85cd0",
+    url = "https://github.com/erenon/bazel_clang_tidy/archive/c4d35e0d0b838309358e57a2efed831780f85cd0.tar.gz",
 )
 
 http_archive(
@@ -462,18 +367,18 @@ http_archive(
 bazel_dep(name = "sysroot-jammy-aarch64")
 archive_override(
     module_name = "sysroot-jammy-aarch64",
-    integrity = "sha256-9PwIQtthQx6W6KWtPEQcBWncY+76dr/XCll0+Q9FAwA=",
+    integrity = "sha256-ffQulmT//0z6X+gnh1KMf8P+GriRAzQjpCPlBG0J3KY=",
     urls = [
-        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/8/f4fc0842db61431e96e8a5ad3c441c0569dc63eefa76bfd70a5974f90f450300/sysroot-jammy-aarch64.tar.xz",
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-aarch64/9/7df42e9664ffff4cfa5fe82787528c7fc3fe1ab891033423a423e5046d09dca6/sysroot-jammy-aarch64.tar.xz",
     ],
 )
 
 bazel_dep(name = "sysroot-jammy-x86_64")
 archive_override(
     module_name = "sysroot-jammy-x86_64",
-    integrity = "sha256-X+K89JQvjlbk4f40R9nUUsqMfY7r7cSwFMPdOIUlzlc=",
+    integrity = "sha256-R68NQrIzeWqcwGSzh46MSQ/edMIhSM+WhmFj1gs4xsA=",
     urls = [
-        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/8/5fe2bcf4942f8e56e4e1fe3447d9d452ca8c7d8eebedc4b014c3dd388525ce57/sysroot-jammy-x86_64.tar.xz",
+        "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/sysroot-jammy-x86_64/9/47af0d42b233796a9cc064b3878e8c490fde74c22148cf96866163d60b38c6c0/sysroot-jammy-x86_64.tar.xz",
     ],
 )
 
@@ -498,7 +403,7 @@ http_archive(
     url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/20.1.8/a871653a114657136ae0dc25d979046a800aa30d8951e82b00eb5720caf9b4a8/llvm-macos.tar.xz",
 )
 
-SHELLCHECK_VERSION = "v0.10.0"
+SHELLCHECK_VERSION = "v0.11.0"
 
 [
     http_archive(
@@ -515,9 +420,9 @@ SHELLCHECK_VERSION = "v0.10.0"
         ],
     )
     for arch, sha in [
-        ("linux.x86_64", "sha256-bIgasGmOTm6iNSRfIoMoYFRPF7o4ZEL+fp1in4y+34c="),
-        ("linux.aarch64", "sha256-Mkp+id6Poq7Q0MKPPatZz4TG10JkAiwAwir2Ze0aCbs="),
-        ("darwin.aarch64", "sha256-u9LxSCYyju52edpyIfK8OvsBH2qSi4SMgMMh9gRt34E="),
+        ("linux.x86_64", "sha256-jDvhKwXVwXegTCnjx4zomshvFZVoHKsUm2W5fE4icZg="),
+        ("linux.aarch64", "sha256-ErMxwdLba56xPPymQwaxsVeobraduDAj4mHqp+fBRYg="),
+        ("darwin.aarch64", "sha256-Vq/92N5VJ4lNym3D1+Cpmoc7DwBNeqvDCuQH0/SLCnk="),
     ]
 ]
 
@@ -577,9 +482,9 @@ http_archive(
 http_archive(
     name = "sphinx-markdown-builder",
     build_file = "//bazel/public-patches:sphinx-markdown-builder.BUILD",
-    integrity = "sha256-hYIjXHXV+dtu8zeRVcWLoAzomwlL6mL2RgD+LsT4p7Q=",
-    strip_prefix = "sphinx-markdown-builder-0.7.10",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/python/sphinx-markdown-builder/bc944a9b5a1c4706506ee465bb311db49bb648be.zip",
+    integrity = "sha256-AT4fMP40arW8wq0oaW008j6AIo4bF63DE8OfNn2f9Qk=",
+    strip_prefix = "sphinx-markdown-builder-0.7.11",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/python/sphinx-markdown-builder/8360213fde3916e8597cbe25f59532ab2a8ce6a8.zip",
 )
 
 # https://github.com/scottamain/sphinx-click
@@ -589,3 +494,347 @@ http_archive(
     strip_prefix = "sphinx-click-7c1a85c2667ed8b3b4060e94ce07456e5fa4fef6",
     url = "https://github.com/scottamain/sphinx-click/archive/7c1a85c2667ed8b3b4060e94ce07456e5fa4fef6.tar.gz",
 )
+
+# VLLM still requires transformers v4, so we pull this separately and manually add it when it's used.
+# Note this means two transformers within the same venv, this is just a temporary hack until upstream updates to v5.
+http_file(
+    name = "transformers_v4_wheel",
+    downloaded_file_path = "transformers-4.57.6-py3-none-any.whl",
+    sha256 = "4c9e9de11333ddfe5114bc872c9f370509198acf0b87a832a0ab9458e2bd0550",
+    urls = [
+        "https://files.pythonhosted.org/packages/03/b8/e484ef633af3887baeeb4b6ad12743363af7cce68ae51e938e00aaa0529d/transformers-4.57.6-py3-none-any.whl",
+    ],
+)
+
+# Similar to above, transitive dep of transformers v4 vs v5
+http_file(
+    name = "huggingface_hub_v0_wheel",
+    downloaded_file_path = "huggingface_hub-0.36.2-py3-none-any.whl",
+    sha256 = "48f0c8eac16145dfce371e9d2d7772854a4f591bcb56c9cf548accf531d54270",
+    urls = [
+        "https://files.pythonhosted.org/packages/a8/af/48ac8483240de756d2438c380746e7130d1c6f75802ef22f3c6d49982787/huggingface_hub-0.36.2-py3-none-any.whl",
+    ],
+)
+
+# Intersphinx object inventory for Python
+http_archive(
+    name = "python-objects-inv",
+    build_file_content = """
+filegroup(
+    name = "python-objects-inv",
+    srcs = ["max/python/docs/inventories/python/objects.inv"],
+    visibility = ["//visibility:public"],
+)""",
+    sha256 = "e160e55c13c7fa6db17fc81da0a5d4845b877d6810f231b3d9ea050c486474e5",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/python-objects-inv/3.14/e160e55c13c7fa6db17fc81da0a5d4845b877d6810f231b3d9ea050c486474e5/python-objects-inv.tar.gz",
+)
+
+# Intersphinx object inventory for Numpy
+http_archive(
+    name = "numpy-objects-inv",
+    build_file_content = """
+filegroup(
+    name = "numpy-objects-inv",
+    srcs = ["max/python/docs/inventories/numpy/objects.inv"],
+    visibility = ["//visibility:public"],
+)""",
+    sha256 = "0e81fda4ee39068456d5aa205d0100ca88826954072166f66e9516946685f245",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/numpy-objects-inv/2.4/0e81fda4ee39068456d5aa205d0100ca88826954072166f66e9516946685f245/numpy-objects-inv.tar.gz",
+)
+
+RUMDL_VERSION = "0.1.62"
+
+[
+    http_archive(
+        name = "rumdl-{}".format(arch),
+        build_file_content = """exports_files(glob(["rumdl"]))""",
+        integrity = sha,
+        urls = [
+            "https://github.com/rvben/rumdl/releases/download/v{version}/rumdl-v{version}-{arch}.tar.gz".format(
+                arch = arch,
+                version = RUMDL_VERSION,
+            ),
+        ],
+    )
+    for arch, sha in [
+        ("x86_64-unknown-linux-musl", "sha256-Se09mqkYH02VKDhOyKhp1DM5E9OBnsmbvO4TWpmnJOQ="),
+        ("aarch64-unknown-linux-musl", "sha256-fRBlBoF6IYiYR7CIIKCvNHjFFvKpBoeWdRx5MV0qQ/4="),
+        ("aarch64-apple-darwin", "sha256-kzo6eHzmTy+IDbxXihO9UD7yLS1fn6oxqR9R5V72NZk="),
+    ]
+]
+
+# BEGIN GENERATED LOGIT_VERIFICATION GOLDEN HTTP_FILES
+
+LOGIT_VERIFICATION_GOLDENS = [
+    {
+        "name": "torch_llama_golden.tar.gz",
+        "sha256": "03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_llama_golden/6/03d7f428e3fdd43f6436ff19c5c5f7245e7cb71deacd17e8b0d0bd8f35701daa/torch_llama_golden.tar.gz",
+    },
+    {
+        "name": "torch_mpnet_golden.tar.gz",
+        "sha256": "d93f10114938b5102f529f436170e2eb33a3d2c76889acf3406b54603cc1be97",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_mpnet_golden/1/d93f10114938b5102f529f436170e2eb33a3d2c76889acf3406b54603cc1be97/torch_mpnet_golden.tar.gz",
+    },
+    {
+        "name": "torch_gpt-oss_golden.tar.gz",
+        "sha256": "808b22644ad4c499e44408f2e80a14367f8c7cc16a16c7df60c0b2227a1812c3",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_gpt-oss_golden/3/808b22644ad4c499e44408f2e80a14367f8c7cc16a16c7df60c0b2227a1812c3/torch_gpt-oss_golden.tar.gz",
+    },
+    {
+        "name": "torch_olmo-1b-hf_golden.tar.gz",
+        "sha256": "cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_olmo-1b-hf_golden/1/cdb42a9758e27374be0b410b8d38a2f9a66fc3662346702a5930730da2a50302/torch_olmo-1b-hf_golden.tar.gz",
+    },
+    {
+        "name": "torch_llama3-8b_q4_k_golden.tar.gz",
+        "sha256": "5078639f4386c9d7e11eff0b09de2917b41494aae1168efe9e3db2bb4c8be3ef",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_llama3-8b_q4_k_golden/1/5078639f4386c9d7e11eff0b09de2917b41494aae1168efe9e3db2bb4c8be3ef/torch_llama3-8b_q4_k_golden.tar.gz",
+    },
+    {
+        "name": "torch_llama3-8b_bfloat16_golden.tar.gz",
+        "sha256": "1ba2f2214bfffa3e8e5f166d5d1d5573201efa4dcb5c668f4b84fb9466861e56",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_llama3-8b_bfloat16_golden/1/1ba2f2214bfffa3e8e5f166d5d1d5573201efa4dcb5c668f4b84fb9466861e56/torch_llama3-8b_bfloat16_golden.tar.gz",
+    },
+    {
+        "name": "torch_llama3.1-8b_q4_k_golden.tar.gz",
+        "sha256": "13c75e9e445ecf05c1fbc0f2f9e73361062c2efbc62c01575278cfa4d0a64b2e",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_llama3.1-8b_q4_k_golden/1/13c75e9e445ecf05c1fbc0f2f9e73361062c2efbc62c01575278cfa4d0a64b2e/torch_llama3.1-8b_q4_k_golden.tar.gz",
+    },
+    {
+        "name": "20260205_180241_nvidia-Llama-3.1-8B-Instruct-NVFP4_vllm.json.tar.gz",
+        "sha256": "vllm_llama_3_1_8B_nvfp4",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/vllm_llama_3_1_8B_nvfp4/20260205_180241_nvidia-Llama-3.1-8B-Instruct-NVFP4_vllm.json.tar.gz",
+    },
+    {
+        "name": "20260210_031603_nvidia-Llama-3.1-405B-Instruct-NVFP4_vllm.json.tar.gz",
+        "sha256": "vllm_llama_3_1_405B_nvfp4",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/vllm_llama_3_1_405B_nvfp4/20260210_031603_nvidia-Llama-3.1-405B-Instruct-NVFP4_vllm.json.tar.gz",
+    },
+    {
+        "name": "RedHatAI_Meta-Llama-3.1-405B-Instruct-FP8-dynamic_golden.tar.gz",
+        "sha256": "58bcc105671be4a0fb59070924a231ab4fefd02879dd6e826d4d8f99ddfb962f",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/RedHatAI_Meta-Llama-3.1-405B-Instruct-FP8-dynamic_golden/1/58bcc105671be4a0fb59070924a231ab4fefd02879dd6e826d4d8f99ddfb962f/RedHatAI_Meta-Llama-3.1-405B-Instruct-FP8-dynamic_golden.tar.gz",
+    },
+    {
+        "name": "torch_llama3.2-1b_bfloat16_golden.tar.gz",
+        "sha256": "f77876a9612aba6f0df1ab1bd9f3819656f962a46e2b3133d11a4290c936de3a",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_llama3.2-1b_bfloat16_golden/1/f77876a9612aba6f0df1ab1bd9f3819656f962a46e2b3133d11a4290c936de3a/torch_llama3.2-1b_bfloat16_golden.tar.gz",
+    },
+    {
+        "name": "torch_llama3.3-70b-instruct_bfloat16_golden.tar.gz",
+        "sha256": "e4a07947f7f23c0b1bc5d297bbe1575b637abb53270e99b284936bf6d2dc703f",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_llama3.3-70b-instruct_bfloat16_golden/1/e4a07947f7f23c0b1bc5d297bbe1575b637abb53270e99b284936bf6d2dc703f/torch_llama3.3-70b-instruct_bfloat16_golden.tar.gz",
+    },
+    {
+        "name": "torch_mistral_golden.tar.gz",
+        "sha256": "6f4718625a01e6e8b9f002a0bfdad8098cfe78ce50b9cd4175f27b1f020b405a",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_mistral_golden/1/6f4718625a01e6e8b9f002a0bfdad8098cfe78ce50b9cd4175f27b1f020b405a/torch_mistral_golden.tar.gz",
+    },
+    {
+        "name": "torch_internvl3-1b_golden.tar.gz",
+        "sha256": "c0cc901fe70ef9f90801a921aae56e6c8a3ce11e7173cdeed27c46f147f29463",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_internvl3-1b_golden/1/c0cc901fe70ef9f90801a921aae56e6c8a3ce11e7173cdeed27c46f147f29463/torch_internvl3-1b_golden.tar.gz",
+    },
+    {
+        "name": "torch_internvl3-8b_golden.tar.gz",
+        "sha256": "18c65a6f996008b7bb44ccb5369e862df5868a1d13b15165fe80bd8f9edc7415",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_internvl3-8b_golden/1/18c65a6f996008b7bb44ccb5369e862df5868a1d13b15165fe80bd8f9edc7415/torch_internvl3-8b_golden.tar.gz",
+    },
+    {
+        "name": "torch_internvl3-14b_golden.tar.gz",
+        "sha256": "b0b6be883a40a1f44d85abbf077edec5c768fee8302f0595147ce7197da8560f",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_internvl3-14b_golden/1/b0b6be883a40a1f44d85abbf077edec5c768fee8302f0595147ce7197da8560f/torch_internvl3-14b_golden.tar.gz",
+    },
+    {
+        "name": "torch_internvl3-38b_golden.tar.gz",
+        "sha256": "68ce8e1ca017a4b42b1a9f270345dd64e869c57c582d5ade12eb654a42893b21",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_internvl3-38b_golden/1/68ce8e1ca017a4b42b1a9f270345dd64e869c57c582d5ade12eb654a42893b21/torch_internvl3-38b_golden.tar.gz",
+    },
+    {
+        "name": "torch_internvl3_5_8b_golden.tar.gz",
+        "sha256": "c1e88d08b863bc4e5ad250bf91bbe9e6a371f1244f96dd37befb8c1a086afcea",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_internvl3_5_8b_golden/1/c1e88d08b863bc4e5ad250bf91bbe9e6a371f1244f96dd37befb8c1a086afcea/torch_internvl3_5_8b_golden.tar.gz",
+    },
+    {
+        "name": "torch_pixtral_golden.tar.gz",
+        "sha256": "e2ec8c3693bf758df21d5673a35847df88307fb6568a851be531c53e6b18f710",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_pixtral_golden/1/e2ec8c3693bf758df21d5673a35847df88307fb6568a851be531c53e6b18f710/torch_pixtral_golden.tar.gz",
+    },
+    {
+        "name": "torch_qwen2.5-7b-instruct_bfloat16_golden.tar.gz",
+        "sha256": "a18b2a5b0e4a63ba828fa956ffeed04feaf5501721dae0421670c94e93f445a0",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_qwen2.5-7b-instruct_bfloat16_golden/1/a18b2a5b0e4a63ba828fa956ffeed04feaf5501721dae0421670c94e93f445a0/torch_qwen2.5-7b-instruct_bfloat16_golden.tar.gz",
+    },
+    {
+        "name": "torch_qwen2.5-vl-3b-instruct_bfloat16_golden.tar.gz",
+        "sha256": "40a5c716c43ae003113b7a38eff4121619d4ca58bdf4d8b6f6b362529279ba5d",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_qwen2.5-vl-3b-instruct_bfloat16_golden/1/40a5c716c43ae003113b7a38eff4121619d4ca58bdf4d8b6f6b362529279ba5d/torch_qwen2.5-vl-3b-instruct_bfloat16_golden.tar.gz",
+    },
+    {
+        "name": "torch_qwen2.5-vl-7b-instruct_bfloat16_golden.tar.gz",
+        "sha256": "6c5aaac177ce9a8428b972667383621d2bb853a1ec3c44fdd63ca00661fff4e0",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_qwen2.5-vl-7b-instruct_bfloat16_golden/1/6c5aaac177ce9a8428b972667383621d2bb853a1ec3c44fdd63ca00661fff4e0/torch_qwen2.5-vl-7b-instruct_bfloat16_golden.tar.gz",
+    },
+    {
+        "name": "torch_qwen2.5-vl-32b-instruct_bfloat16_golden.tar.gz",
+        "sha256": "62db96f972e210adb18a6042441b49feb5a163bdb6f5592e8788dbb9f887dbe8",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_qwen2.5-vl-32b-instruct_bfloat16_golden/1/62db96f972e210adb18a6042441b49feb5a163bdb6f5592e8788dbb9f887dbe8/torch_qwen2.5-vl-32b-instruct_bfloat16_golden.tar.gz",
+    },
+    {
+        "name": "torch_qwen3-vl-30b-a3b-instruct_bfloat16_golden.tar.gz",
+        "sha256": "43b1500269067c2e25bed53fefc98c3973e2132fabdfb6923acbedc531636bc0",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_qwen3-vl-30b-a3b-instruct_bfloat16_golden/1/43b1500269067c2e25bed53fefc98c3973e2132fabdfb6923acbedc531636bc0/torch_qwen3-vl-30b-a3b-instruct_bfloat16_golden.tar.gz",
+    },
+    {
+        "name": "torch_qwen3-vl-4b-instruct_bfloat16_golden.tar.gz",
+        "sha256": "7c5d43eeab21e1478b79fc849a537766809b1c3aabb7f253309dc47895d1de39",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_qwen3-vl-4b-instruct_bfloat16_golden/1/7c5d43eeab21e1478b79fc849a537766809b1c3aabb7f253309dc47895d1de39/torch_qwen3-vl-4b-instruct_bfloat16_golden.tar.gz",
+    },
+    {
+        "name": "torch_qwen3-vl-4b-instruct_fp8_golden.tar.gz",
+        "sha256": "f1060a92f10622b249b900f03c64a81fe44111141b704b17125063e9da350dd3",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_qwen3-vl-4b-instruct_fp8_golden/1/f1060a92f10622b249b900f03c64a81fe44111141b704b17125063e9da350dd3/torch_qwen3-vl-4b-instruct_fp8_golden.tar.gz",
+    },
+    {
+        "name": "torch_qwen3_8b_golden.tar.gz",
+        "sha256": "a952c1f1cae7dd647abbb01db7232b73d2cd084a561a7da5d3027e95acbeaf71",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_qwen3_8b_golden/1/a952c1f1cae7dd647abbb01db7232b73d2cd084a561a7da5d3027e95acbeaf71/torch_qwen3_8b_golden.tar.gz",
+    },
+    {
+        "name": "torch_qwen3-30b-a3b-instruct-2507_bfloat16_golden.tar.gz",
+        "sha256": "4427d3205be77073d7f0274d8fca0774974fe8677934a5b8dc60b3705aac9aaf",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_qwen3-30b-a3b-instruct-2507_bfloat16_golden/1/4427d3205be77073d7f0274d8fca0774974fe8677934a5b8dc60b3705aac9aaf/torch_qwen3-30b-a3b-instruct-2507_bfloat16_golden.tar.gz",
+    },
+    {
+        "name": "Qwen_Qwen3-30B-A3B-Instruct-2507-FP8_golden.tar.gz",
+        "sha256": "51490a4ac6612bf0a3af0f6953d5a1bff2b12683ca4c134dba9a13ea5c44f2bb",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/Qwen_Qwen3-30B-A3B-Instruct-2507-FP8_golden/1/51490a4ac6612bf0a3af0f6953d5a1bff2b12683ca4c134dba9a13ea5c44f2bb/Qwen_Qwen3-30B-A3B-Instruct-2507-FP8_golden.tar.gz",
+    },
+    {
+        "name": "torch_qwen3_embedding_0.6b_bfloat16_golden.tar.gz",
+        "sha256": "98f263166b17cbc486f6709903c35ab1126f938efc0ea07289abd0419d6b9b48",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_qwen3_embedding_0.6b_bfloat16_golden/1/98f263166b17cbc486f6709903c35ab1126f938efc0ea07289abd0419d6b9b48/torch_qwen3_embedding_0.6b_bfloat16_golden.tar.gz",
+    },
+    {
+        "name": "torch_olmocr_2_7b_fp8_golden.tar.gz",
+        "sha256": "7177335f99779ffdf6dd516a1c6082d75ce3d26b9a7dbe06ec88ebbd729a090e",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_olmocr_2_7b_fp8_golden/1/7177335f99779ffdf6dd516a1c6082d75ce3d26b9a7dbe06ec88ebbd729a090e/torch_olmocr_2_7b_fp8_golden.tar.gz",
+    },
+    {
+        "name": "torch_olmo2_1124_7b_float32_golden.tar.gz",
+        "sha256": "65d0d4860591ae05c7ae3cf062bc0bb5429733db08b49635f3deeeb7369eb122",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_olmo2_1124_7b_float32_golden/1/65d0d4860591ae05c7ae3cf062bc0bb5429733db08b49635f3deeeb7369eb122/torch_olmo2_1124_7b_float32_golden.tar.gz",
+    },
+    {
+        "name": "torch_idefics3_8b_llama3_golden.tar.gz",
+        "sha256": "996834f83014e543593c5a9ae283b16e33e05575720cce9ec4e175c0ad3a5283",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_idefics3_8b_llama3_golden/3/996834f83014e543593c5a9ae283b16e33e05575720cce9ec4e175c0ad3a5283/torch_idefics3_8b_llama3_golden.tar.gz",
+    },
+    {
+        "name": "torch_exaone_3_5_2_4b_instruct_float32_golden.tar.gz",
+        "sha256": "ae16f10ebd7514f5d60f25755babbcff9636a4fa1c68d1470f614474fa907427",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_exaone_3_5_2_4b_instruct_float32_golden/1/ae16f10ebd7514f5d60f25755babbcff9636a4fa1c68d1470f614474fa907427/torch_exaone_3_5_2_4b_instruct_float32_golden.tar.gz",
+    },
+    {
+        "name": "torch_phi_3_5_mini_instruct_bfloat16_golden.tar.gz",
+        "sha256": "23beeadd54f6b299463a0bb5c8d2bdbe010ba27dabb686f942d33e56ec4d0870",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_phi_3_5_mini_instruct_bfloat16_golden/1/23beeadd54f6b299463a0bb5c8d2bdbe010ba27dabb686f942d33e56ec4d0870/torch_phi_3_5_mini_instruct_bfloat16_golden.tar.gz",
+    },
+    {
+        "name": "torch_phi_4_bfloat16_golden.tar.gz",
+        "sha256": "8634be2cd675ea0dbb8a2ce84692572dd003505fa86edd91f0d8b0659d09b6f0",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_phi_4_bfloat16_golden/0/8634be2cd675ea0dbb8a2ce84692572dd003505fa86edd91f0d8b0659d09b6f0/torch_phi_4_bfloat16_golden.tar.gz",
+    },
+    {
+        "name": "torch_llama-gptq_golden.tar.gz",
+        "sha256": "7e5b7b4d1764033be69e85e0badc9dca82c94c8d2def1216d317b149a621daef",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_llama-gptq_golden/0/7e5b7b4d1764033be69e85e0badc9dca82c94c8d2def1216d317b149a621daef/torch_llama-gptq_golden.tar.gz",
+    },
+    {
+        "name": "torch_deepseek-v3-small-random-bfloat16_golden.tar.gz",
+        "sha256": "a014fa9dfbadae61869bb51da13e6e5c9fa6294a03b18b49c9217da6024a13eb",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_deepseek-v3-small-random-bfloat16_golden/1/a014fa9dfbadae61869bb51da13e6e5c9fa6294a03b18b49c9217da6024a13eb/torch_deepseek-v3-small-random-bfloat16_golden.tar.gz",
+    },
+    {
+        "name": "torch_deepseek-v3-small-random-fp8_golden.tar.gz",
+        "sha256": "29b77d635f3e2cb5f3b8df155174ce5a77f5d6d1a074a4283fddcaf090906cc8",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_deepseek-v3-small-random-fp8_golden/1/29b77d635f3e2cb5f3b8df155174ce5a77f5d6d1a074a4283fddcaf090906cc8/torch_deepseek-v3-small-random-fp8_golden.tar.gz",
+    },
+    {
+        "name": "vllm_deepseek-r1_golden.tar.gz",
+        "sha256": "f4b3ce07362060a857724d8721aa008880b2f1da3a9f90aec667672c92f7e5e9",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/vllm_deepseek-r1_golden/1/f4b3ce07362060a857724d8721aa008880b2f1da3a9f90aec667672c92f7e5e9/vllm_deepseek-r1_golden.tar.gz",
+    },
+    {
+        "name": "vllm_kimik2_5_nvfp4_golden.tar.gz",
+        "sha256": "0b26362d7cc605bcc3925fa3d6aff4aeef4ed12fe0ed2f1684f3c8cfbf285822",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/vllm_kimik2_5_nvfp4_golden/1/0b26362d7cc605bcc3925fa3d6aff4aeef4ed12fe0ed2f1684f3c8cfbf285822/vllm_kimik2_5_nvfp4_golden.tar.gz",
+    },
+    {
+        "name": "torch_deepseek-ai_deepseek-v3_1-terminus_golden.tar.gz",
+        "sha256": "d51257199f384cdb3f0e8086d95989899b7a316bb6511b62249d349b47e36447",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_deepseek-ai_deepseek-v3_1-terminus_golden/1/d51257199f384cdb3f0e8086d95989899b7a316bb6511b62249d349b47e36447/torch_deepseek-ai_deepseek-v3_1-terminus_golden.tar.gz",
+    },
+    {
+        "name": "vllm_deepseek-r1-nvfp4_golden.tar.gz",
+        "sha256": "9b19a48a9bba02fe76bda80402950c1ae13c5e0f93444b08c2c6499f4b3247e7",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/vllm_deepseek-r1-nvfp4_golden/9/9b19a48a9bba02fe76bda80402950c1ae13c5e0f93444b08c2c6499f4b3247e7/vllm_deepseek-r1-nvfp4_golden.tar.gz",
+    },
+    {
+        "name": "torch_gemma3-1b_golden.tar.gz",
+        "sha256": "31d4f0ff8f50b9ab0f877d8765114f6bc4ae73677d2cd2d6ce658866fabf15d4",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_gemma3-1b_golden/1/31d4f0ff8f50b9ab0f877d8765114f6bc4ae73677d2cd2d6ce658866fabf15d4/torch_gemma3-1b_golden.tar.gz",
+    },
+    {
+        "name": "torch_gemma3-multimodal_golden.tar.gz",
+        "sha256": "06d0fa8ed540ae7141a42c432af1661c85d31f8584d017345992df7a52c21ccb",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_gemma3-multimodal_golden/1/06d0fa8ed540ae7141a42c432af1661c85d31f8584d017345992df7a52c21ccb/torch_gemma3-multimodal_golden.tar.gz",
+    },
+    {
+        "name": "torch_gemma3-27b_golden.tar.gz",
+        "sha256": "d4747c90804cbfb6ee4ee06ec15c042dd436558354cfae819e0203d1c3610b38",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_gemma3-27b_golden/0/d4747c90804cbfb6ee4ee06ec15c042dd436558354cfae819e0203d1c3610b38/torch_gemma3-27b_golden.tar.gz",
+    },
+    {
+        "name": "vllm_gemma3-27b_golden.tar.gz",
+        "sha256": "1a619d49187cdce335f4492acab40fd950922748e6631c0478572344ff295efc",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/vllm_gemma3-27b_golden/1/1a619d49187cdce335f4492acab40fd950922748e6631c0478572344ff295efc/vllm_gemma3-27b_golden.tar.gz",
+    },
+    {
+        "name": "torch_llasa-8b_bfloat16_golden.tar.gz",
+        "sha256": "301c70b6c564f667ce279151964878354fe58d070f4f31869ecd6e2139172fc1",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_llasa-8b_bfloat16_golden/1/301c70b6c564f667ce279151964878354fe58d070f4f31869ecd6e2139172fc1/torch_llasa-8b_bfloat16_golden.tar.gz",
+    },
+    {
+        "name": "torch_smollm2_360m_instruct_lora_bfloat16_golden.tar.gz",
+        "sha256": "1149947546122f5eef59073a8b06a0fe525051eb6003d2891510bdff8e49be6e",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_smollm2_360m_instruct_lora_bfloat16_golden/1/1149947546122f5eef59073a8b06a0fe525051eb6003d2891510bdff8e49be6e/torch_smollm2_360m_instruct_lora_bfloat16_golden.tar.gz",
+    },
+    {
+        "name": "vllm_llama_3_1_8B_fp8_bf16_lora.tar.gz",
+        "sha256": "6db6cad8339db70f2975e9a610d79a8a57ba9b8c43a949d8008b95a0faf22f28",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/vllm_llama_3_1_8B_fp8_bf16_lora/1/6db6cad8339db70f2975e9a610d79a8a57ba9b8c43a949d8008b95a0faf22f28/vllm_llama_3_1_8B_fp8_bf16_lora.tar.gz",
+    },
+    {
+        "name": "torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz",
+        "sha256": "4a5da181a0bbbd1434ca8b02f51e68200c27535b8c0ed0941d77f0bc2e530f5a",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/4a5da181a0bbbd1434ca8b02f51e68200c27535b8c0ed0941d77f0bc2e530f5a/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz",
+    },
+    {
+        "name": "black-forest-labs_FLUX.2-dev-i2i_golden.tar.gz",
+        "sha256": "11acb0fdf1fa04b468454bf887affaf04868a324a6d327c926e1818afd1749bd",
+        "url": "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/black-forest-labs_FLUX.2-dev-i2i_golden/1/11acb0fdf1fa04b468454bf887affaf04868a324a6d327c926e1818afd1749bd/black-forest-labs_FLUX.2-dev-i2i_golden.tar.gz",
+    },
+]
+
+[
+    http_file(
+        name = entry["name"],
+        sha256 = entry["sha256"],
+        url = entry["url"],
+    )
+    for entry in LOGIT_VERIFICATION_GOLDENS
+]
+
+# END GENERATED LOGIT_VERIFICATION GOLDEN HTTP_FILES

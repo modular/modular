@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,12 +15,12 @@
 
 from __future__ import annotations
 
-from .context import TextAndVisionContext, TextContext
+from .context import PixelContext, TextAndVisionContext, TextContext
 from .exceptions import InputError
 
 
 def validate_requires_vision_context(
-    context: TextContext | TextAndVisionContext,
+    context: TextContext | TextAndVisionContext | PixelContext,
 ) -> None:
     """Validates that the context is a TextAndVisionContext.
 
@@ -35,7 +35,7 @@ def validate_requires_vision_context(
 
 
 def validate_only_one_image(
-    context: TextContext | TextAndVisionContext,
+    context: TextContext | TextAndVisionContext | PixelContext,
 ) -> None:
     """Validates that at most one image is provided in the context.
 
@@ -52,7 +52,7 @@ def validate_only_one_image(
 
 
 def validate_initial_prompt_has_image(
-    context: TextContext | TextAndVisionContext,
+    context: TextContext | TextAndVisionContext | PixelContext,
 ) -> None:
     """Validates that initial prompts contain an image for vision models.
 
@@ -71,7 +71,7 @@ def validate_initial_prompt_has_image(
 
 
 def validate_aspect_ratio_args(
-    context: TextContext | TextAndVisionContext,
+    context: TextContext | TextAndVisionContext | PixelContext,
 ) -> None:
     """Validates that required aspect ratio arguments are present for vision input.
 
@@ -94,7 +94,7 @@ def validate_aspect_ratio_args(
 
 
 def validate_image_shape_5d(
-    context: TextContext | TextAndVisionContext,
+    context: TextContext | TextAndVisionContext | PixelContext,
 ) -> None:
     """Validates that images have the expected 5-dimensional shape.
 
@@ -116,7 +116,7 @@ def validate_image_shape_5d(
 
 
 def validate_image_grid_thw_args(
-    context: TextContext | TextAndVisionContext,
+    context: TextContext | TextAndVisionContext | PixelContext,
 ) -> None:
     """Validates that image_grid_thw is present when vision encoding is needed.
 
@@ -138,7 +138,7 @@ def validate_image_grid_thw_args(
 
 
 def validate_vision_position_ids(
-    context: TextContext | TextAndVisionContext,
+    context: TextContext | TextAndVisionContext | PixelContext,
 ) -> None:
     """Validates that vision_position_ids is present when vision encoding is needed.
 

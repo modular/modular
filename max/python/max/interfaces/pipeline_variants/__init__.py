@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,10 +24,17 @@ from .embeddings_generation import (
     EmbeddingsGenerationInputs,
     EmbeddingsGenerationOutput,
 )
+from .pixel_generation import (
+    PixelGenerationContext,
+    PixelGenerationContextType,
+    PixelGenerationInputs,
+)
 from .text_generation import (
     BatchType,
     ImageContentPart,
     ImageMetadata,
+    MessageContent,
+    SpecDecodingState,
     TextContentPart,
     TextGenerationContext,
     TextGenerationContextType,
@@ -38,6 +45,8 @@ from .text_generation import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
     TextGenerationResponseFormat,
+    VideoContentPart,
+    VLMContextType,
     VLMTextGenerationContext,
 )
 
@@ -45,7 +54,6 @@ __all__ = [
     "AudioGenerationContextType",
     "AudioGenerationInputs",
     "AudioGenerationMetadata",
-    "AudioGenerationOutput",
     "AudioGenerationOutput",
     "AudioGenerationRequest",
     "BatchType",
@@ -55,6 +63,11 @@ __all__ = [
     "EmbeddingsGenerationOutput",
     "ImageContentPart",
     "ImageMetadata",
+    "MessageContent",
+    "PixelGenerationContext",
+    "PixelGenerationContextType",
+    "PixelGenerationInputs",
+    "SpecDecodingState",
     "TextContentPart",
     "TextGenerationContext",
     "TextGenerationContextType",
@@ -65,5 +78,7 @@ __all__ = [
     "TextGenerationRequestMessage",
     "TextGenerationRequestTool",
     "TextGenerationResponseFormat",
+    "VLMContextType",
     "VLMTextGenerationContext",
+    "VideoContentPart",
 ]

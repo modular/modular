@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,7 +16,7 @@
 from dataclasses import dataclass
 
 from max.dtype import DType
-from max.nn.float8_config import Float8InputScaleSpec
+from max.nn.quant_config import QuantConfig
 
 # We always use two groups of SHMEM shared memory buffers to avoid race
 # conditions between the dispatch and combine phases of Expert Parallelism
@@ -24,21 +24,21 @@ from max.nn.float8_config import Float8InputScaleSpec
 #
 # Expert Parallelism consists of two sequential phases, each with two kernels:
 # 1. Dispatch phase: Route tokens to experts on different GPUs
-#    - dispatch_kernel: Initiates token transfer
-#    - dispatch_cb_kernel: Ensures current GPU received all tokens from other
+#    - dispatch_async_kernel: Initiates token transfer
+#    - dispatch_wait_kernel: Ensures current GPU received all tokens from other
 #      GPUs
 # 2. Combine phase: Return expert outputs to original GPUs
-#    - combine_kernel: Initiates expert output transfer
-#    - combine_cb_kernel: Ensures current GPU received all expert outputs
+#    - combine_async_kernel: Initiates expert output transfer
+#    - combine_wait_kernel: Ensures current GPU received all expert outputs
 #
-# When dispatch_cb_kernel completes on the current GPU, it only guarantees that
+# When dispatch_wait_kernel completes on the current GPU, it only guarantees that
 # THIS GPU has received all tokens. Other GPUs may still be writing to their
 # dispatch buffers or reading their own receive buffers. Therefore, we cannot
 # safely reuse dispatch phase buffers for the combine phase.
 #
-# We use dedicated buffers for each phase. When combine_cb_kernel completes, it
-# guarantees all GPUs have at least started their combine_kernel, which implies
-# they've finished their dispatch_cb_kernel. Only then is it safe to reuse the
+# We use dedicated buffers for each phase. When combine_wait_kernel completes, it
+# guarantees all GPUs have at least started their combine_async_kernel, which implies
+# they've finished their dispatch_wait_kernel. Only then is it safe to reuse the
 # dispatch buffers for the next iteration.
 NUM_GROUPS = 2
 
@@ -74,20 +74,114 @@ class EPConfig:
     node_id: int = -1
     """ID of the current node. Will be set by the EPCommInitializer."""
 
-    dispatch_fp8_config: Float8InputScaleSpec | None = None
-    """Configuration for float8 quantization of the dispatch tokens."""
+    dispatch_quant_config: QuantConfig | None = None
+    """Quantization configuration used for dispatch token quantization."""
 
     fused_shared_expert: bool = False
     """Whether to fuse the shared expert computation with the routed experts."""
 
+    def estimate_memory_usage(self) -> int:
+        """Estimate the EP communication memory usage per device per buffer group.
+
+        Returns:
+            Estimated memory usage in bytes per device per buffer group.
+        """
+        return estimate_ep_memory_usage(
+            hidden_size=self.hidden_size,
+            dispatch_dtype=self.dispatch_dtype,
+            combine_dtype=self.combine_dtype,
+            max_tokens_per_rank=self.max_tokens_per_rank,
+            n_experts=self.n_experts,
+            n_nodes=self.n_nodes,
+            n_gpus_per_node=self.n_gpus_per_node,
+            top_k=self.top_k,
+        )
+
     def __post_init__(self):
-        if self.dispatch_dtype.is_float8():
-            if self.dispatch_fp8_config is None:
+        if self.dispatch_dtype != DType.bfloat16:
+            if self.dispatch_quant_config is None:
                 raise ValueError(
-                    "dispatch_fp8_config must be specified when dispatch_dtype is float8_e4m3fn or float8_e4m3fnuz"
+                    "dispatch_quant_config must be specified when dispatch_dtype is not bfloat16"
                 )
 
-            if not self.dispatch_fp8_config.is_block:
-                raise NotImplementedError(
-                    "Only block-wise quantization is supported for float8_e4m3fn and float8_e4m3fnuz"
+            if self.dispatch_dtype.is_float8():
+                if not self.dispatch_quant_config.input_scale.is_block:
+                    raise NotImplementedError(
+                        "Only block-wise quantization is supported for float8_e4m3fn and float8_e4m3fnuz"
+                    )
+
+            elif self.dispatch_dtype in (DType.uint8, DType.float4_e2m1fn):
+                if not self.dispatch_quant_config.is_fp4:
+                    raise ValueError(
+                        "dispatch_quant_config must be an FP4 configuration when dispatch_dtype is uint8 or float4_e2m1fn"
+                    )
+
+            else:
+                raise ValueError(
+                    f"Unsupported dispatch dtype: {self.dispatch_dtype}"
                 )
+
+
+def estimate_ep_memory_usage(
+    *,
+    hidden_size: int,
+    dispatch_dtype: DType,
+    combine_dtype: DType,
+    max_tokens_per_rank: int,
+    n_experts: int,
+    n_nodes: int,
+    n_gpus_per_node: int,
+    top_k: int,
+) -> int:
+    """Estimate the EP communication memory usage per device per buffer group.
+
+    This is a standalone function so it can be called both from
+    :class:`~max.nn.comm.ep.ep_manager.EPCommInitializer` (which has a fully-validated ``EPConfig``)
+    and from memory estimators that only need the numeric fields.
+
+    Args:
+        hidden_size: Model hidden dimension.
+        dispatch_dtype: Data type used for dispatching tokens to experts.
+        combine_dtype: Data type used for combining expert outputs.
+        max_tokens_per_rank: Maximum tokens per GPU rank.
+        n_experts: Total number of routed experts.
+        n_nodes: Total number of nodes in the distributed setup.
+        n_gpus_per_node: Number of GPUs available per node.
+        top_k: Number of experts each token is routed to.
+
+    Returns:
+        Total estimated memory usage in bytes per device per buffer group.
+    """
+
+    def _n_elems_to_bytes(dtype: DType, n_elems: int) -> int:
+        if dtype in (DType.uint8, DType.float4_e2m1fn):
+            # Account for the scales. For NVFP4 format, every 16 FP4 elements
+            # share one FP8 scale factor. The size of the scales is one eighth
+            # of the size of the FP4 quants (8 bits / (16 * 4 bits)).
+            return int(n_elems // 2 * dtype.size_in_bytes * 1.125)
+        else:
+            return n_elems * dtype.size_in_bytes
+
+    d_token_size = _n_elems_to_bytes(dispatch_dtype, hidden_size)
+    dispatch_send_buf_size = max_tokens_per_rank * d_token_size
+    dispatch_recv_buf_size = n_experts * max_tokens_per_rank * d_token_size
+
+    c_token_size = hidden_size * combine_dtype.size_in_bytes
+    # When all the devices are on the same node, we skip the combine send buffer
+    # and directly send tokens to each device's recv buffer. Hence, we don't
+    # need to allocate the combine send buffer.
+    combine_send_buf_size = (
+        max_tokens_per_rank
+        * c_token_size
+        * min(n_experts, n_gpus_per_node * n_nodes * top_k)
+        if n_nodes > 1
+        else 0
+    )
+    combine_recv_buf_size = top_k * max_tokens_per_rank * c_token_size
+
+    return (
+        dispatch_send_buf_size
+        + dispatch_recv_buf_size
+        + combine_send_buf_size
+        + combine_recv_buf_size
+    )

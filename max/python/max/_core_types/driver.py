@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,6 +16,6 @@ from typing import Any, Protocol, runtime_checkable
 
 @runtime_checkable
 class DLPackArray(Protocol):
-    def __dlpack__(self) -> Any: ...
+    def __dlpack__(self, *, stream: None = None) -> Any: ...
 
     def __dlpack_device__(self) -> Any: ...

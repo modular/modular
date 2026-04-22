@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,7 +19,15 @@ from utils import assert_keys
 
 _EXTRA_PREFIX = "group-15-bazel-pyproject-"
 _CPU_EXTRA = _EXTRA_PREFIX + "cpu"
-_GPU_TYPES = ["amd", "nvidia"]
+# Maps dependency-group extra names to their GPU constraint suffix.
+# nvidia-sglang and nvidia-vllm are separate conflict groups but still
+# target nvidia hardware, so they share the "nvidia" constraint.
+_GPU_TYPES: dict[str, str] = {
+    "amd": "amd",
+    "nvidia": "nvidia",
+    "nvidia-sglang": "nvidia",
+    "nvidia-vllm": "nvidia",
+}
 
 
 def _system_environment(platform: Platform, extra: str) -> dict[str, str]:
@@ -85,9 +93,11 @@ class Dependency:
         for platform in ALL_PLATFORMS:
             if not platform.supports_gpu:
                 continue
-            for gpu in _GPU_TYPES:
-                gpu_extra = _EXTRA_PREFIX + gpu
+            for gpu_extra_suffix, constraint_suffix in _GPU_TYPES.items():
+                gpu_extra = _EXTRA_PREFIX + gpu_extra_suffix
                 if marker.evaluate(_system_environment(platform, gpu_extra)):
-                    gpu_constraints.add(f"{platform.constraint}_{gpu}_gpu")
+                    gpu_constraints.add(
+                        f"{platform.constraint}_{constraint_suffix}_gpu"
+                    )
 
         return [], sorted(gpu_constraints)

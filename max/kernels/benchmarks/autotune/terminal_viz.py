@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -40,7 +40,7 @@ def _safe_eval(v: str) -> Any:
         return v
 
 
-def spec_to_dict(spec: str) -> dict:
+def spec_to_dict(spec: str) -> dict:  # type: ignore[type-arg]
     """Convert 'name/$p1=v1/$p2=v2/...' to {'name': name, 'p1': v1, ...}."""
     parts = spec.split("/")
     d = {"name": parts[0]}
@@ -60,6 +60,22 @@ def _extract_unit(col_name: str) -> str:
     return ""
 
 
+def _to_hashable(val: Any) -> Any:
+    """Convert unhashable types (like lists) to hashable equivalents for comparison."""
+    if isinstance(val, list):
+        return tuple(val)
+    return val
+
+
+def _count_unique(series: pd.Series) -> int:
+    """Count unique values in a series, handling unhashable types like lists."""
+    try:
+        return int(series.nunique())
+    except TypeError:
+        # Handle unhashable types by converting to hashable equivalents
+        return int(series.apply(_to_hashable).nunique())
+
+
 def get_display_df(
     merged_df: pd.DataFrame,
 ) -> tuple[pd.DataFrame, dict[str, str], list[str], list[str]]:
@@ -72,7 +88,7 @@ def get_display_df(
 
     # Partition columns into pivots (vary) vs fixed (constant), excluding 'name'
     cols = [c for c in spec_df.columns if c != "name"]
-    pivot_cols = [c for c in cols if spec_df[c].nunique() > 1]
+    pivot_cols = [c for c in cols if _count_unique(spec_df[c]) > 1]
     fixed_params = {
         c: str(spec_df[c].iloc[0]) for c in cols if c not in pivot_cols
     }
@@ -80,9 +96,16 @@ def get_display_df(
     # Build display DataFrame
     display_df = spec_df[pivot_cols].copy() if pivot_cols else pd.DataFrame()
 
-    # Time: "met (s)" is seconds, legacy "met (ms)" was also seconds (mislabeled)
-    time_col = "met (s)" if "met (s)" in merged_df.columns else "met (ms)"
-    time_ms = merged_df[time_col] * 1000
+    # Time: "met (s)" is in seconds, "met (ms)" is in milliseconds (fixed as of Dec 2025)
+    if "met (s)" in merged_df.columns:
+        # Values are in seconds, convert to milliseconds
+        time_ms = merged_df["met (s)"] * 1000
+    elif "met (ms)" in merged_df.columns:
+        # Values are already in milliseconds (no conversion needed)
+        time_ms = merged_df["met (ms)"]
+    else:
+        time_ms = pd.Series([0])
+
     display_df["time_ms"] = time_ms
     display_df["time"] = time_ms.apply(format_time)
 
@@ -103,15 +126,15 @@ def render_bars(
     throughput_cols: Sequence[str],
     bar_width: int = 40,
 ) -> None:
-    """Render Unicode bar chart grouped by secondary pivot."""
+    """Render Unicode bar chart grouped by all secondary pivots."""
     if display_df.empty:
         console.print("[yellow]No results to display.[/yellow]")
         return
 
     max_time = display_df["time_ms"].max()
 
-    # Determine grouping: 2+ pivots -> group by second, compare by first
-    group_col = pivot_cols[1] if len(pivot_cols) >= 2 else None
+    # Determine grouping: 2+ pivots -> group by all except first, compare by first
+    group_cols = list(pivot_cols[1:]) if len(pivot_cols) >= 2 else []
     compare_col = pivot_cols[0] if pivot_cols else None
 
     def render_group(df: pd.DataFrame) -> None:
@@ -141,9 +164,17 @@ def render_bars(
                 f"  {label:12} {bar} {row['time']}{tput_str}{rel_str}"
             )
 
-    if group_col:
-        for group_val, group_df in display_df.groupby(group_col):
-            console.print(f"[bold]{group_col}={group_val}:[/bold]")
+    if group_cols:
+        # Convert unhashable types for groupby
+        groupby_keys = [display_df[c].apply(_to_hashable) for c in group_cols]
+        for group_vals, group_df in display_df.groupby(groupby_keys):
+            # group_vals is a single value when 1 group col, tuple when multiple
+            if not isinstance(group_vals, tuple):
+                group_vals = (group_vals,)
+            group_label = ", ".join(
+                f"{c}={v}" for c, v in zip(group_cols, group_vals, strict=True)
+            )
+            console.print(f"[bold]{group_label}:[/bold]")
             render_group(group_df)
             console.print()
     else:
@@ -205,8 +236,10 @@ def render_summary(
         )
         return
 
+    # Convert unhashable types for groupby
+    groupby_col = display_df[group_col].apply(_to_hashable)
     summary = (
-        display_df.groupby(group_col)["time_ms"].agg(["mean"]).reset_index()
+        display_df.groupby(groupby_col)["time_ms"].agg(["mean"]).reset_index()
     )
     baseline = summary["mean"].iloc[0]
 

@@ -33,7 +33,8 @@ extension for VS Code, and getting started with Mojo programming, see the
 
 ## Example subdirectories
 
-- `life/`: The [Get started with Mojo](https://docs.modular.com/mojo/manual/get-started)
+- `life/`: The
+  [Get started with Mojo](https://docs.modular.com/mojo/manual/get-started)
   tutorial solution. A complete implementation of Conway's Game of Life cellular
   automaton, demonstrating Mojo basics including structs, modules, and Python
   interoperability.

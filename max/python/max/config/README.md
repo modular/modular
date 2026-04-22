@@ -4,11 +4,13 @@ This module provides configuration utilities for Cyclopts CLI applications.
 
 ## Configuration Precedence
 
-Configuration values are resolved in the following order (highest to lowest priority):
+Configuration values are resolved in the following order (highest to lowest
+priority):
 
 1. **CLI arguments** - Values provided directly on the command line
 2. **Environment variables** - Values from `MODULAR_*` environment variables
-3. **Config files (YAML)** - Values from YAML configuration files specified via `--config-file`
+3. **Config files (YAML)** - Values from YAML configuration files specified via
+   `--config-file`
 4. **Defaults** - Default values defined in configuration classes
 
 **Note:** Due to how cyclopts processes config sources, environment variables
@@ -235,9 +237,9 @@ input_len: 512
    support config files.
 2. **Always provide defaults** in your configuration classes to ensure
    the app works without needing to specify any configuration.
-3. **Use name="*" in @Parameter** Add the `@Parameter` decorator to the top level
-   ConfigFileModel to unroll / flatten the variables / would be CLI flags within
-   the singleton config class.
+3. **Use name="*" in @Parameter** Add the `@Parameter` decorator to the top
+   level ConfigFileModel to unroll / flatten the variables / would be CLI flags
+   within the singleton config class.
 4. **Pass only one parent ConfigFileModel arg** to the `@app.default` decorated
    function.
 5. **Use config files** for complex configurations or when you want to

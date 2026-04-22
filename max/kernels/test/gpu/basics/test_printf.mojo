@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from io.io import _printf
+from std.io.io import _printf
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: == test_gpu_printf
-fn test_gpu_printf() raises:
+def test_gpu_printf() raises:
     print("== test_gpu_printf")
 
     #
     # Test that stdlib _printf works on GPU
     #
 
-    fn do_print(x: Int, y: Float64):
+    def do_print(x: Int, y: Float64):
         # CHECK: printf printed 98 123.456!
         _printf["printf printed %ld %g!\n"](x, y)
         # CHECK: printf printed more 0 1 2 3 4 5 6 7 8 9
@@ -41,5 +41,5 @@ fn test_gpu_printf() raises:
         ctx.synchronize()
 
 
-def main():
+def main() raises:
     test_gpu_printf()

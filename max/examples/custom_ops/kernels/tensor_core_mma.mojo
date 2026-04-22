@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,29 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys.info import (
+from std.math import ceildiv
+from std.math.uutils import udivmod
+from std.sys.info import (
     has_amd_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     simd_width_of,
 )
 
 from compiler_internal import register
-from gpu import (
+from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_dim,
     block_idx,
     lane_id,
-    thread_idx,
     warp_id,
 )
-from gpu.host import DeviceBuffer, DeviceContext
-from gpu.memory import AddressSpace, async_copy_wait_all
-from gpu.sync import AMDScheduleBarrierMask
-from gpu.sync import schedule_barrier as amd_schedule_barrier
-from gpu.sync import schedule_group_barrier
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.gpu.memory import AddressSpace, async_copy_wait_all
+from std.gpu.sync import AMDScheduleBarrierMask
+from std.gpu.sync import schedule_barrier as amd_schedule_barrier
+from std.gpu.sync import schedule_group_barrier
 
 # Import AMD helper functions and structs from the kernels subdirectory
 
@@ -61,11 +60,11 @@ from layout.layout_tensor import (
 from layout.math import outer_product_acc
 from layout.swizzle import Swizzle
 from layout.tensor_core import TensorCore
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
-from utils import StaticTuple
-from utils.index import Index, IndexList
+from std.utils import StaticTuple
+from std.utils.index import Index, IndexList
 
 
 @compiler.register("tensor_core_mma")
@@ -77,24 +76,23 @@ struct TensorCoreMMA[algorithm: StaticString]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         # The kind of device this will be run on: "cpu" or "gpu"
         target: StaticString,
         M: Int,
         N: Int,
         K: Int,
     ](
-        output: OutputTensor[dtype = DType.float32, rank=2],
-        a: InputTensor[dtype = DType.float16, rank=2],
-        b: InputTensor[dtype = DType.float16, rank=2],
+        output: OutputTensor[dtype=DType.float32, rank=2, ...],
+        a: InputTensor[dtype=DType.float16, rank=2, ...],
+        b: InputTensor[dtype=DType.float16, rank=2, ...],
         perform_validation: Bool,
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
     ) raises:
         # At graph compilation time, we will know what device we are compiling
         # this operation for, so we can specialize it for the target hardware.
-        @parameter
-        if target == "gpu":
+        comptime if target == "gpu":
             a_layout = a.to_layout_tensor()
             b_layout = b.to_layout_tensor()
 
@@ -149,11 +147,8 @@ struct TensorCoreMMA[algorithm: StaticString]:
             # - "double_buffer": A tiled matrix multiplication using double buffering and AMD Tensor Core instructions.
             # - "mma_tile_buffers": A matrix multiplication using tile buffers and AMD Tensor Core instructions.
 
-            @parameter
-            if Self.algorithm == "naive_tensor":
-
-                @parameter
-                if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+            comptime if Self.algorithm == "naive_tensor":
+                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
                     comptime BM = 64
                     comptime BN = 64
                     comptime BK = 8
@@ -185,9 +180,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         block_dim=(NUM_THREADS, 1),
                     )
             elif Self.algorithm == "basic_shared_mem":
-
-                @parameter
-                if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
                     comptime BM = 64
                     comptime BN = 64
                     comptime BK = 8
@@ -221,9 +214,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         block_dim=(NUM_THREADS, 1),
                     )
             elif Self.algorithm == "multi_block_tiled":
-
-                @parameter
-                if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
                     comptime BM = 256
                     comptime BN = 256
                     comptime BK = 64
@@ -261,9 +252,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         block_dim=(NUM_THREADS, 1),
                     )
             elif Self.algorithm == "scheduler_hints":
-
-                @parameter
-                if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
                     comptime BM = 256
                     comptime BN = 256
                     comptime BK = 64
@@ -301,9 +290,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         block_dim=(NUM_THREADS, 1),
                     )
             elif Self.algorithm == "double_buffer":
-
-                @parameter
-                if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
                     comptime BM = 128
                     comptime BN = 128
                     comptime BK = 32
@@ -341,9 +328,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         block_dim=(NUM_THREADS, 1),
                     )
             elif Self.algorithm == "mma_tile_buffers":
-
-                @parameter
-                if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
                     comptime BM = 256
                     comptime BN = 256
                     comptime BK = 64
@@ -441,7 +426,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn naive_tensor[
+def naive_tensor[
     input_type: DType,
     output_type: DType,
     layout_a: Layout,
@@ -498,12 +483,12 @@ fn naive_tensor[
     comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
-    warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
+    warp_y, warp_x = divmod(warp_id(), BN // MMA_N)
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
-        MMA_M, MMA_N
-    ](warp_y, warp_x)
+    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[MMA_M, MMA_N](
+        warp_y, warp_x
+    )
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
@@ -518,7 +503,7 @@ fn naive_tensor[
             output_type,
             Layout.row_major(1, frag_size),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -528,8 +513,8 @@ fn naive_tensor[
     # No intermediate tile caching - simpler but less efficient
     for k_i in range(ceildiv(K, BK)):
         # Get the tiles of A and B for the current iteration
-        A_block_tile = A.tile[BM, BK](Int(block_idx.y), k_i)
-        B_block_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
+        A_block_tile = A.tile[BM, BK](block_idx.y, k_i)
+        B_block_tile = B.tile[BK, BN](k_i, block_idx.x)
 
         # Get the warp tiles directly from global memory (naive approach)
         A_warp_tile = A_block_tile.tile[MMA_M, MMA_K](warp_y, 0)
@@ -555,7 +540,7 @@ fn naive_tensor[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn basic_shared_mem[
+def basic_shared_mem[
     input_type: DType,
     output_type: DType,
     layout_a: Layout,
@@ -614,12 +599,12 @@ fn basic_shared_mem[
     comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
-    warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
+    warp_y, warp_x = divmod(warp_id(), BN // MMA_N)
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
-        MMA_M, MMA_N
-    ](warp_y, warp_x)
+    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[MMA_M, MMA_N](
+        warp_y, warp_x
+    )
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
@@ -629,13 +614,13 @@ fn basic_shared_mem[
         input_type,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     B_sram_tile = LayoutTensor[
         input_type,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Calculate correct accumulator fragment size based on MMA configuration
@@ -648,7 +633,7 @@ fn basic_shared_mem[
             output_type,
             Layout.row_major(1, frag_size),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -663,8 +648,8 @@ fn basic_shared_mem[
         comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)  # 8x32
 
         # Get the tiles of A and B for the current iteration
-        A_dram_tile = A.tile[BM, BK](Int(block_idx.y), k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
+        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
+        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
 
         # Load tiles using properly sized thread layouts to avoid out-of-bounds access
         copy_dram_to_sram[thread_layout=load_a_layout](A_sram_tile, A_dram_tile)
@@ -695,7 +680,7 @@ fn basic_shared_mem[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn multi_block_tiled[
+def multi_block_tiled[
     input_type: DType,
     output_type: DType,
     layout_a: Layout,
@@ -758,18 +743,17 @@ fn multi_block_tiled[
     comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
-    warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
+    warp_y, warp_x = divmod(warp_id(), BN // MMA_N)
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
-        WM, WN
-    ](warp_y, warp_x)
+    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
+        warp_y, warp_x
+    )
 
     # Ensure warp tile dimensions are multiples of instruction shape
-    constrained[
-        WM % MMA_M == 0 and WN % MMA_N == 0 and K % MMA_K == 0,
-        "Warp tile should be an integer multiple of instruction shape",
-    ]()
+    comptime assert (
+        WM % MMA_M == 0 and WN % MMA_N == 0 and K % MMA_K == 0
+    ), "Warp tile should be an integer multiple of instruction shape"
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
@@ -779,13 +763,13 @@ fn multi_block_tiled[
         input_type,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     B_sram_tile = LayoutTensor[
         input_type,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Calculate correct accumulator fragment size based on MMA configuration
@@ -798,7 +782,7 @@ fn multi_block_tiled[
             output_type,
             Layout.row_major(WM // MMA_M, (WN * frag_size) // MMA_N),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -812,8 +796,8 @@ fn multi_block_tiled[
     # Iterate over tiles of A and B in the K dimension
     for k_i in range(ceildiv(K, BK)):
         # Get the tiles of A and B for the current iteration
-        A_dram_tile = A.tile[BM, BK](Int(block_idx.y), k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
+        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
+        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
 
         # Load tiles using non-vectorized synchronous copy (working version)
         copy_dram_to_sram[thread_layout=load_layout](A_sram_tile, A_dram_tile)
@@ -821,18 +805,13 @@ fn multi_block_tiled[
         barrier()  # Synchronize after loading tiles
 
         # Get the warp tiles of A and B from shared memory
-        A_warp_tile = A_sram_tile.tile[WM, BK](Int(warp_y), 0)
-        B_warp_tile = B_sram_tile.tile[BK, WN](0, Int(warp_x))
+        A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
+        B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
 
         # Iterate over the elements in the K dimension within the tiles
-        @parameter
-        for mma_k in range(BK // MMA_K):
-
-            @parameter
-            for mma_m in range(WM // MMA_M):
-
-                @parameter
-                for mma_n in range(WN // MMA_N):
+        comptime for mma_k in range(BK // MMA_K):
+            comptime for mma_m in range(WM // MMA_M):
+                comptime for mma_n in range(WN // MMA_N):
                     # Get the MMA tiles directly from shared memory
                     A_mma_tile = A_warp_tile.tile[MMA_M, MMA_K](mma_m, mma_k)
                     B_mma_tile = B_warp_tile.tile[MMA_K, MMA_N](mma_k, mma_n)
@@ -852,11 +831,8 @@ fn multi_block_tiled[
                     c_reg_m_n.copy_from(d_reg)
 
     # Write the final accumulated results to the output matrix (f32 -> f32)
-    @parameter
-    for mma_m in range(WM // MMA_M):
-
-        @parameter
-        for mma_n in range(WN // MMA_N):
+    comptime for mma_m in range(WM // MMA_M):
+        comptime for mma_n in range(WN // MMA_N):
             var C_mma_tile = C_warp_tile.tile[MMA_M, MMA_N](mma_m, mma_n)
             var c_reg_m_n = c_reg.tile[1, frag_size](mma_m, mma_n)
 
@@ -870,7 +846,7 @@ fn multi_block_tiled[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn scheduler_hints[
+def scheduler_hints[
     input_type: DType,
     output_type: DType,
     layout_a: Layout,
@@ -933,18 +909,17 @@ fn scheduler_hints[
     comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
-    warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
+    warp_y, warp_x = divmod(warp_id(), BN // MMA_N)
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
-        WM, WN
-    ](warp_y, warp_x)
+    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
+        warp_y, warp_x
+    )
 
     # Ensure warp tile dimensions are multiples of instruction shape
-    constrained[
-        WM % MMA_M == 0 and WN % MMA_N == 0 and K % MMA_K == 0,
-        "Warp tile should be an integer multiple of instruction shape",
-    ]()
+    comptime assert (
+        WM % MMA_M == 0 and WN % MMA_N == 0 and K % MMA_K == 0
+    ), "Warp tile should be an integer multiple of instruction shape"
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
@@ -954,13 +929,13 @@ fn scheduler_hints[
         input_type,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     B_sram_tile = LayoutTensor[
         input_type,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Calculate correct accumulator fragment size based on MMA configuration
@@ -974,7 +949,7 @@ fn scheduler_hints[
             output_type,
             Layout.row_major(WM // MMA_M, (WN * frag_size) // MMA_N),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -988,8 +963,8 @@ fn scheduler_hints[
     # Simplified single-buffer pipeline (similar to basic_shared_mem but with AMD scheduling)
     for k_i in range(ceildiv(K, BK)):
         # Get the tiles of A and B for the current iteration
-        A_dram_tile = A.tile[BM, BK](Int(block_idx.y), k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
+        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
+        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
 
         # Load tiles using synchronous copy (single buffering)
         copy_dram_to_sram[thread_layout=load_layout](A_sram_tile, A_dram_tile)
@@ -997,23 +972,17 @@ fn scheduler_hints[
         barrier()  # Synchronize after loading tiles
 
         # Schedule barrier after loading
-        @parameter
-        if has_amd_gpu_accelerator():
+        comptime if has_amd_gpu_accelerator():
             amd_schedule_barrier()
 
         # Get the warp tiles from shared memory
-        A_warp_tile = A_sram_tile.tile[WM, BK](Int(warp_y), 0)
-        B_warp_tile = B_sram_tile.tile[BK, WN](0, Int(warp_x))
+        A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
+        B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
 
         # Perform MMA operations on current tile with AMD scheduling hints
-        @parameter
-        for mma_k in range(BK // MMA_K):
-
-            @parameter
-            for mma_m in range(WM // MMA_M):
-
-                @parameter
-                for mma_n in range(WN // MMA_N):
+        comptime for mma_k in range(BK // MMA_K):
+            comptime for mma_m in range(WM // MMA_M):
+                comptime for mma_n in range(WN // MMA_N):
                     # Get the MMA tiles from shared memory
                     A_mma_tile = A_warp_tile.tile[MMA_M, MMA_K](mma_m, mma_k)
                     B_mma_tile = B_warp_tile.tile[MMA_K, MMA_N](mma_k, mma_n)
@@ -1030,8 +999,7 @@ fn scheduler_hints[
                     c_reg_m_n.copy_from(d_reg)
 
         # Add AMD scheduling hints between tiles
-        @parameter
-        if has_amd_gpu_accelerator():
+        comptime if has_amd_gpu_accelerator():
             amd_scheduling_hints[
                 input_type,
                 output_type,
@@ -1047,16 +1015,12 @@ fn scheduler_hints[
             ]()
 
     # Final schedule barrier before output phase
-    @parameter
-    if has_amd_gpu_accelerator():
+    comptime if has_amd_gpu_accelerator():
         amd_schedule_barrier()
 
     # === OUTPUT PHASE ===
-    @parameter
-    for mma_m in range(WM // MMA_M):
-
-        @parameter
-        for mma_n in range(WN // MMA_N):
+    comptime for mma_m in range(WM // MMA_M):
+        comptime for mma_n in range(WN // MMA_N):
             var C_mma_tile = C_warp_tile.tile[MMA_M, MMA_N](mma_m, mma_n)
             var c_reg_tile = c_reg.tile[1, frag_size](mma_m, mma_n)
 
@@ -1069,7 +1033,7 @@ fn scheduler_hints[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn double_buffer[
+def double_buffer[
     input_type: DType,
     output_type: DType,
     layout_a: Layout,
@@ -1132,18 +1096,17 @@ fn double_buffer[
     comptime simd_width = simd_width_of[input_type]()
 
     # Calculate warp tile coordinates within the block
-    warp_y, warp_x = divmod(Int(warp_id()), Int(BN // MMA_N))
+    warp_y, warp_x = divmod(warp_id(), BN // MMA_N)
 
     # Get the warp tile of the output matrix C
-    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[
-        WM, WN
-    ](warp_y, warp_x)
+    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
+        warp_y, warp_x
+    )
 
     # Ensure warp tile dimensions are multiples of instruction shape
-    constrained[
-        WM % MMA_M == 0 and WN % MMA_N == 0 and K % MMA_K == 0,
-        "Warp tile should be an integer multiple of instruction shape",
-    ]()
+    comptime assert (
+        WM % MMA_M == 0 and WN % MMA_N == 0 and K % MMA_K == 0
+    ), "Warp tile should be an integer multiple of instruction shape"
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     mma_op = TensorCore[output_type, input_type, Index(MMA_M, MMA_N, MMA_K)]()
@@ -1153,25 +1116,25 @@ fn double_buffer[
         input_type,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     A_sram_buffer_1 = LayoutTensor[
         input_type,
         Layout.row_major(BM, BK),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     B_sram_buffer_0 = LayoutTensor[
         input_type,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
     B_sram_buffer_1 = LayoutTensor[
         input_type,
         Layout.row_major(BK, BN),
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Calculate correct accumulator fragment size based on MMA configuration
@@ -1185,7 +1148,7 @@ fn double_buffer[
             output_type,
             Layout.row_major(WM // MMA_M, (WN * frag_size) // MMA_N),
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -1204,8 +1167,8 @@ fn double_buffer[
     # === PIPELINE STAGE 1: Initial Load ===
     # Load the first tile into buffer 0
     if k_iterations > 0:
-        var A_dram_tile_0 = A.tile[BM, BK](Int(block_idx.y), 0)
-        var B_dram_tile_0 = B.tile[BK, BN](0, Int(block_idx.x))
+        var A_dram_tile_0 = A.tile[BM, BK](block_idx.y, 0)
+        var B_dram_tile_0 = B.tile[BK, BN](0, block_idx.x)
 
         copy_dram_to_sram[thread_layout=load_layout](
             A_sram_buffer_0, A_dram_tile_0
@@ -1234,8 +1197,8 @@ fn double_buffer[
         # === ASYNC LOAD: Start loading NEXT iteration while computing current ===
         var next_k = k_i + 1
         if next_k < k_iterations:
-            var A_dram_tile_next = A.tile[BM, BK](Int(block_idx.y), next_k)
-            var B_dram_tile_next = B.tile[BK, BN](next_k, Int(block_idx.x))
+            var A_dram_tile_next = A.tile[BM, BK](block_idx.y, next_k)
+            var B_dram_tile_next = B.tile[BK, BN](next_k, block_idx.x)
 
             # Start loading next iteration's data into alternate buffers
             # This happens in parallel with computation below
@@ -1263,14 +1226,9 @@ fn double_buffer[
         B_warp_tile = B_compute_buffer.tile[BK, WN](0, warp_x)
 
         # Perform MMA operations on current tile
-        @parameter
-        for mma_k in range(BK // MMA_K):
-
-            @parameter
-            for mma_m in range(WM // MMA_M):
-
-                @parameter
-                for mma_n in range(WN // MMA_N):
+        comptime for mma_k in range(BK // MMA_K):
+            comptime for mma_m in range(WM // MMA_M):
+                comptime for mma_n in range(WN // MMA_N):
                     # Get the MMA tiles from shared memory
                     A_mma_tile = A_warp_tile.tile[MMA_M, MMA_K](mma_m, mma_k)
                     B_mma_tile = B_warp_tile.tile[MMA_K, MMA_N](mma_k, mma_n)
@@ -1294,11 +1252,8 @@ fn double_buffer[
 
     # === OUTPUT PHASE: Write results to global memory manually ===
     # Bypass TensorCore store_d and use direct register-to-memory copy
-    @parameter
-    for mma_m in range(WM // MMA_M):
-
-        @parameter
-        for mma_n in range(WN // MMA_N):
+    comptime for mma_m in range(WM // MMA_M):
+        comptime for mma_n in range(WN // MMA_N):
             var C_mma_tile = C_warp_tile.tile[MMA_M, MMA_N](mma_m, mma_n)
             var c_reg_m_n = c_reg.tile[1, frag_size](mma_m, mma_n)
 
@@ -1312,7 +1267,7 @@ fn double_buffer[
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
-fn mma_tile_buffers[
+def mma_tile_buffers[
     input_type: DType,
     output_type: DType,
     layout_a: Layout,
@@ -1362,9 +1317,9 @@ fn mma_tile_buffers[
     """
     # Validate input constraints
     comptime transpose_b = True
-    constrained[
-        transpose_b, "Transpose b must be true for this implementation"
-    ]()
+    comptime assert (
+        transpose_b
+    ), "Transpose b must be true for this implementation"
 
     # Matrix dimensions from input tensors
     var M = A.dim[0]()
@@ -1379,9 +1334,9 @@ fn mma_tile_buffers[
     comptime simd_width = simd_width_of[input_type]()
 
     # Warp organization
-    comptime num_warps_m = UInt(BM // WM)
-    comptime num_warps_n = UInt(BN // WN)
-    comptime num_warps_k = UInt(BK // WK)
+    comptime num_warps_m = BM // WM
+    comptime num_warps_n = BN // WN
+    comptime num_warps_k = BK // WK
 
     comptime warps_per_block = num_warps_m * num_warps_n * num_warps_k
 
@@ -1395,12 +1350,12 @@ fn mma_tile_buffers[
     comptime num_k_tiles = WK // k_tile_size
 
     # Thread and warp indices
-    var warp_km, warp_n = divmod(warp_id(), num_warps_n)
-    var warp_k, warp_m = divmod(warp_km, num_warps_m)
+    var warp_km, warp_n = udivmod(warp_id(), num_warps_n)
+    var warp_k, warp_m = udivmod(warp_km, num_warps_m)
 
     # Helper function for thread layout
     @parameter
-    fn get_thread_layout() -> Layout:
+    def get_thread_layout() -> Layout:
         # TODO: Document the logic behind this layout
         # Define a layout that corresponds to the below pattern:
         #
@@ -1430,11 +1385,11 @@ fn mma_tile_buffers[
         )
 
         # (((4, 8), (4, 2)):((4, 32), (1, 16))) or (((8, 4), (2, 4)):((2, 64), (1, 16)))
-        return blocked_product(base_layout, tiler_layout)
+        return materialize[blocked_product(base_layout, tiler_layout)]()
 
     # Helper function for shared memory layout
     @parameter
-    fn get_smem_layout[block_rows: Int]() -> Layout:
+    def get_smem_layout[block_rows: Int]() -> Layout:
         # Shared memory layout
         #
         # - base_layout: Layout.row_major(block_rows, k_tile_size) -> block_rowsxk_tile_size tiles
@@ -1465,8 +1420,7 @@ fn mma_tile_buffers[
         comptime num_repeats = BK // k_tile_size
         comptime tiler_layout = Layout.row_major(1, num_repeats)
 
-        # return blocked_product(base_layout, tiler_layout, coalesce_output=True)
-        return blocked_product(base_layout, tiler_layout)
+        return materialize[blocked_product(base_layout, tiler_layout)]()
 
     # AMD TensorCore operator for matrix multiplication
     comptime mma_shape = IndexList[3](MMA_M, MMA_N, MMA_K)
@@ -1480,33 +1434,33 @@ fn mma_tile_buffers[
         num_m_mmas=num_m_mmas,
         num_n_mmas=num_n_mmas,
         simd_width=simd_width,
-        swizzle = Swizzle(3, 0, 1),
+        swizzle=Swizzle(3, 0, 1),
         BK=BK,
         WK=WK,
     ]
 
     var a_tiles = MMATileBuffers[
         get_smem_layout[BM](),
-        tensor_type = type_of(A),
-        thread_layout = get_thread_layout(),
+        tensor_type=type_of(A),
+        thread_layout=get_thread_layout(),
         block_rows=BM,
         warp_rows=WM,
         stride=stride,
         num_mmas=num_m_mmas,
         mma_type=amd_mma,
-    ](A, Int(warp_m), Int(warp_k), Int(block_idx.y))
+    ](A, warp_m, warp_k, block_idx.y)
 
     # B (weights matrix) memory
     var b_tiles = MMATileBuffers[
         get_smem_layout[BN](),
-        tensor_type = type_of(B),
-        thread_layout = get_thread_layout(),
+        tensor_type=type_of(B),
+        thread_layout=get_thread_layout(),
         block_rows=BN,
         warp_rows=WN,
         stride=stride,
         num_mmas=num_n_mmas,
         mma_type=amd_mma,
-    ](B, Int(warp_n), Int(warp_k), Int(block_idx.x))
+    ](B, warp_n, warp_k, block_idx.x)
 
     # Calculate the correct number of accumulator registers based on MMA instruction shape
     # AMD 32x32x8 MFMA requires 16 f32 accumulator values per thread (with WARP_SIZE=64)
@@ -1516,26 +1470,26 @@ fn mma_tile_buffers[
         accum_type,
         Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ]
     var c_reg_tile = c_reg_tile_type.stack_allocation().fill(0)
 
     # Helper functions for matrix operations
     @always_inline
     @parameter
-    fn load_tiles_from_dram():
+    def load_tiles_from_dram():
         a_tiles.load_from_dram()
         b_tiles.load_from_dram()
 
     @always_inline
     @parameter
-    fn copy_tiles_to_shared():
+    def copy_tiles_to_shared():
         a_tiles.copy_to_shared()
         b_tiles.copy_to_shared()
 
     @always_inline
     @parameter
-    fn load_tiles_from_shared[k_tile_idx: Int]():
+    def load_tiles_from_shared[k_tile_idx: Int]():
         a_tiles.load_tile_from_shared[k_tile_idx, is_a=True]()
         b_tiles.load_tile_from_shared[k_tile_idx, is_a=True]()
 
@@ -1562,9 +1516,7 @@ fn mma_tile_buffers[
     var k_iterations = K // BK
     if k_iterations > 2:
         for _ in range(2, k_iterations):
-
-            @parameter
-            for k_tile_idx in range(1, num_k_tiles):
+            comptime for k_tile_idx in range(1, num_k_tiles):
                 load_tiles_from_shared[k_tile_idx]()
 
             mma[0, swap_a_b=transpose_b](a_tiles, b_tiles, c_reg_tile)
@@ -1574,8 +1526,7 @@ fn mma_tile_buffers[
             copy_tiles_to_shared()
             load_tiles_from_dram()
 
-            @parameter
-            for k_tile_idx in range(1, num_k_tiles):
+            comptime for k_tile_idx in range(1, num_k_tiles):
                 mma[k_tile_idx, swap_a_b=transpose_b](
                     a_tiles, b_tiles, c_reg_tile
                 )
@@ -1600,48 +1551,43 @@ fn mma_tile_buffers[
 
     amd_schedule_barrier()
 
-    @parameter
-    for k_tile_idx in range(1, num_k_tiles):
+    comptime for k_tile_idx in range(1, num_k_tiles):
         load_tiles_from_shared[k_tile_idx]()
 
     barrier()
 
     copy_tiles_to_shared()
 
-    @parameter
-    for k_tile_idx in range(num_k_tiles):
+    comptime for k_tile_idx in range(num_k_tiles):
         mma[k_tile_idx, swap_a_b=transpose_b](a_tiles, b_tiles, c_reg_tile)
 
     amd_schedule_barrier()
 
     barrier()
 
-    @parameter
-    for k_tile_idx in range(num_k_tiles):
+    comptime for k_tile_idx in range(num_k_tiles):
         load_tiles_from_shared[k_tile_idx]()
 
-    @parameter
-    for k_tile_idx in range(num_k_tiles):
+    comptime for k_tile_idx in range(num_k_tiles):
         mma[k_tile_idx, swap_a_b=transpose_b](a_tiles, b_tiles, c_reg_tile)
 
     amd_schedule_barrier()
 
     # --- Write results to output tensor ---
     # Output stage: Transfer results from registers to global memory
-    var c_block_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    var c_block_tile = C.tile[BM, BN](block_idx.y, block_idx.x)
     var c_warp_tile = c_block_tile.tile[WM, WN](
-        Int(warp_m), Int(warp_n)
+        warp_m, warp_n
     )  # 128 x 128 -> 128 x (8 x 16)
 
-    @parameter
-    if MMA_M == 16:
+    comptime if MMA_M == 16:
         comptime output_thread_layout = Layout.col_major(16, 4)
-        copy_local_to_dram[
-            output_thread_layout, thread_scope = ThreadScope.WARP
-        ](c_reg_tile.vectorize[1, 4](), c_reg_tile.vectorize[1, 4](), C)
+        copy_local_to_dram[output_thread_layout, thread_scope=ThreadScope.WARP](
+            c_reg_tile.vectorize[1, 4](), c_reg_tile.vectorize[1, 4](), C
+        )
 
     else:
         comptime output_thread_layout = Layout.col_major(32, 2)
         copy_local_to_dram_32_32_8[
-            output_thread_layout, thread_scope = ThreadScope.WARP
+            output_thread_layout, thread_scope=ThreadScope.WARP
         ](c_warp_tile.vectorize[1, 4](), c_reg_tile.vectorize[1, 4](), C)

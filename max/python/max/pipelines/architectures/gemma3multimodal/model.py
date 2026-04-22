@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,6 +17,7 @@ import logging
 import math
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from typing import Any, cast
 
 import numpy as np
@@ -24,31 +25,21 @@ import numpy.typing as npt
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, Type, Value
+from max.graph import BufferType, DeviceRef, Graph, TensorType, Type
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.kv_cache import (
-    NullKVCacheManager,
-    PagedKVCacheManager,
-    load_kv_manager,
-)
-from max.nn import ReturnLogits, Signals
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheInputsSequence,
-    KVCacheParams,
-    PagedCacheValues,
-)
+from max.nn.comm import Signals
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
+    AlwaysSignalBuffersMixin,
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
-    SupportedEncoding,
+    PipelineModelWithKVCache,
 )
 from transformers import AutoConfig
 
@@ -131,11 +122,22 @@ class _VisionStacker:
         np.copyto(out[sl], np.asarray(images[sl], dtype=images[0].dtype))
 
 
+@dataclass
 class Gemma3MultiModalModelInputs(ModelInputs):
     """A class representing inputs for the Gemma3 multi modal model.
 
     This class encapsulates the input tensors required for the Gemma3 multi
-    modal model, for text and vision processing
+    modal model, for text and vision processing.
+
+    Args:
+        tokens: Input token IDs.
+        input_row_offsets: Input row offsets (ragged tensors).
+        return_n_logits: Number of logits to return.
+        signal_buffers: Device buffers for distributed communication.
+        kv_cache_inputs: Inputs for the KV cache.
+        pixel_values: Raw pixel values for vision inputs. Defaults to ``None``.
+        image_token_indices: Pre-computed indices of image tokens. Defaults to
+            ``None``.
     """
 
     tokens: npt.NDArray[np.integer[Any]] | Buffer
@@ -149,40 +151,14 @@ class Gemma3MultiModalModelInputs(ModelInputs):
     signal_buffers: list[Buffer]
     """Device buffers used for synchronization in communication collectives."""
 
+    return_n_logits: Buffer
+    """Number of logits to return, used by speculative decoding for example."""
+
     pixel_values: list[Buffer] | None = None
     """Raw pixel values for vision inputs: [batch, channels, height, width]."""
 
     image_token_indices: list[Buffer] | None = None
     """Pre-computed indices of image tokens in the input sequence."""
-
-    return_n_logits: Buffer
-    """Number of logits to return, used by speculative decoding for example."""
-
-    def __init__(
-        self,
-        tokens: npt.NDArray[np.integer[Any]] | Buffer,
-        input_row_offsets: npt.NDArray[np.integer[Any]] | list[Buffer],
-        return_n_logits: Buffer,
-        signal_buffers: list[Buffer],
-        kv_cache_inputs: KVCacheInputs | None = None,
-        pixel_values: list[Buffer] | None = None,
-        image_token_indices: list[Buffer] | None = None,
-    ) -> None:
-        """
-        Args:
-            tokens: Input token IDs.
-            input_row_offsets: Input row offsets (ragged tensors).
-            return_n_logits: Number of logits to return.
-            signal_buffers: Device buffers for distributed communication.
-            kv_cache_inputs: Inputs for the KV cache.
-        """
-        self.tokens = tokens
-        self.input_row_offsets = input_row_offsets
-        self.signal_buffers = signal_buffers
-        self.kv_cache_inputs = kv_cache_inputs
-        self.return_n_logits = return_n_logits
-        self.pixel_values = pixel_values
-        self.image_token_indices = image_token_indices
 
     @property
     def has_vision_inputs(self) -> bool:
@@ -190,12 +166,30 @@ class Gemma3MultiModalModelInputs(ModelInputs):
         return self.pixel_values is not None
 
 
-class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
+class Gemma3_MultiModalModel(
+    AlwaysSignalBuffersMixin,
+    PipelineModelWithKVCache[TextAndVisionContext],
+):
     """Gemma 3 multimodal pipeline model for text generation.
 
-    This class integrates the Gemma 3 multimodal architecture with the MAX Engine pipeline
-    infrastructure, handling model loading, KV cache management, and input preparation
-    for inference.
+    This class integrates the Gemma 3 multimodal architecture with the MAX
+    pipeline infrastructure, handling model loading, KV cache management, and
+    input preparation for inference.
+
+    Args:
+        pipeline_config: The configuration settings for the entire pipeline.
+        session: The MAX inference session managing the runtime.
+        huggingface_config: The configuration loaded from HuggingFace
+            (:obj:`transformers.AutoConfig`).
+        devices: A list of MAX devices (:obj:`max.driver.Device`) to
+            run the model on.
+        kv_cache_config: Configuration settings for the Key-Value cache
+            (:obj:`max.pipelines.max_config.KVCacheConfig`).
+        weights: The model weights (:obj:`max.graph.weights.Weights`).
+        adapter: An optional adapter to modify weights before loading
+            (:obj:`max.graph.weights.WeightsAdapter`).
+        return_logits: The number of top logits to return from the model
+            execution.
     """
 
     language_model: Model
@@ -213,40 +207,15 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: WeightsAdapter | None = None,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
-        """Initialize a PipelineModel with default values for signal_buffers,
-        then begin the loading of our vision and language models.
-
-        Args:
-            pipeline_config: The configuration settings for the entire pipeline.
-            session: The MAX Engine inference session managing the runtime.
-            huggingface_config: The configuration loaded from HuggingFace
-                (:obj:`transformers.AutoConfig`).
-            encoding: The quantization and data type encoding used for the model
-                (:obj:`max.pipelines.config_enums.SupportedEncoding`).
-            devices: A list of MAX Engine devices (:obj:`max.driver.Device`) to
-                run the model on.
-            kv_cache_config: Configuration settings for the Key-Value cache
-                (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            weights: The model weights (:obj:`max.graph.weights.Weights`).
-            adapter: An optional adapter to modify weights before loading
-                (:obj:`max.graph.weights.WeightsAdapter`).
-            return_logits: The number of top logits to return from the model
-                execution.
-        """
-
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -254,16 +223,25 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             return_logits,
         )
 
-        # Initialize empty signal buffers
-        self.signal_buffers = [
-            Buffer.zeros(
-                shape=(Signals.NUM_BYTES,), dtype=DType.uint8, device=dev
-            )
-            for dev in self.devices
-        ]
+        # signal_buffers are provided by AlwaysSignalBuffersMixin as a cached_property
+        # to avoid GPU memory allocation during compile-only mode (cross-compilation).
+        # Force initialization here to ensure buffers are ready before model execution,
+        # preventing potential race conditions in multi-GPU scenarios.
+        _ = self.signal_buffers
 
         self._stacker = _VisionStacker()
         self.vision_model, self.language_model = self.load_model(session)
+
+    @classmethod
+    def estimate_activation_memory(
+        cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+    ) -> int:
+        del pipeline_config, huggingface_config  # Unused.
+
+        # FIXME: We arbitrarily set some memory for activation memory to leave headroom
+        # for vision processing. We should determine this in a more principled way.
+        # Update: Bumped to 15 GiB after #80736 removed MemoryManager fallthrough.
+        return 15 * 1024 * 1024 * 1024  # 15 GiB
 
     @classmethod
     def calculate_max_seq_len(
@@ -284,7 +262,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         cache_dtype: DType,
     ) -> KVCacheParams:
         """Gets the parameters required to configure the KV cache for InternVL."""
-        return Gemma3ForConditionalGenerationConfig.get_kv_params(
+        return Gemma3ForConditionalGenerationConfig.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
@@ -305,7 +283,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         Returns:
             A tuple of (vision_model, language_model).
         """
-        assert self.pipeline_config.max_batch_size, (
+        assert self.pipeline_config.runtime.max_batch_size, (
             "Expected max_batch_size to be set"
         )
 
@@ -317,52 +295,51 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         vision_weights_dict = convert_safetensor_vision_state_dict(weights_dict)
 
         raw_state_dict = {k: v.data() for k, v in weights_dict.items()}
-        model_config = Gemma3ForConditionalGenerationConfig.generate(
-            pipeline_config=self.pipeline_config,
+        model_config = Gemma3ForConditionalGenerationConfig.initialize(
+            self.pipeline_config
+        )
+        model_config.finalize(
             huggingface_config=self.huggingface_config,
             state_dict=raw_state_dict,
-            dtype=self.dtype,
-            n_devices=len(self.devices),
-            cache_dtype=self.encoding.cache_dtype,
-            kv_cache_config=self.kv_cache_config,
             return_logits=self.return_logits,
         )
         self.config = model_config
 
         input_row_offsets_prealloc_host = Buffer.from_numpy(
-            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
+            np.arange(
+                self.pipeline_config.runtime.max_batch_size + 1,
+                dtype=np.uint32,
+            )
         )
         self._input_row_offsets_prealloc = [
             input_row_offsets_prealloc_host.to(dev) for dev in self.devices
         ]
 
         # Build and compile language model
-        timer = CompilationTimer("language model")
-        language_graph, language_weight_dict = self._build_language_graph(
-            model_config, language_weights_dict
-        )
-        timer.mark_build_complete()
-        language_model = session.load(
-            language_graph, weights_registry=language_weight_dict
-        )
-        timer.done()
+        with CompilationTimer("language model") as timer:
+            language_graph, language_weight_dict = self._build_language_graph(
+                model_config, language_weights_dict
+            )
+            timer.mark_build_complete()
+            language_model = session.load(
+                language_graph, weights_registry=language_weight_dict
+            )
 
         # Build and compile vision model
-        timer = CompilationTimer("vision model")
-        vision_graph, vision_model_state_dict = self._build_vision_graph(
-            model_config, vision_weights_dict
-        )
-        timer.mark_build_complete()
-        vision_model = session.load(
-            vision_graph, weights_registry=vision_model_state_dict
-        )
-        timer.done()
+        with CompilationTimer("vision model") as timer:
+            vision_graph, vision_model_state_dict = self._build_vision_graph(
+                model_config, vision_weights_dict
+            )
+            timer.mark_build_complete()
+            vision_model = session.load(
+                vision_graph, weights_registry=vision_model_state_dict
+            )
 
         return vision_model, language_model
 
     def _language_model_input_types(
         self, config: Gemma3ForConditionalGenerationConfig
-    ) -> Sequence[TensorType]:
+    ) -> Sequence[TensorType | BufferType]:
         """Prepare the Tensor input types that our language graph will work with"""
         device_ref = DeviceRef.from_device(self.devices[0])
         tokens_type = TensorType(
@@ -407,12 +384,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             devices=(DeviceRef(d.label, d.id) for d in self.devices)
         )
 
-        kv_inputs = self.kv_params.get_symbolic_inputs()
-
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
-
         return (
             tokens_type,
             return_n_logits_type,
@@ -420,7 +391,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             *image_embeddings_types,
             *image_token_indices_types,
             *signals.input_types(),
-            *flattened_kv_types,
+            *self.kv_params.get_symbolic_inputs().flatten(),
         )
 
     def _build_language_graph(
@@ -573,7 +544,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             image_token_indices = self._create_empty_indices()
 
         assert model_inputs.kv_cache_inputs
-        curr_kv_cache_inputs = list(model_inputs.kv_cache_inputs)
 
         model_outputs = self.language_model.execute(
             model_inputs.tokens,
@@ -582,7 +552,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             *image_embeddings,
             *image_token_indices,
             *model_inputs.signal_buffers,
-            *curr_kv_cache_inputs,
+            *model_inputs.kv_cache_inputs.flatten(),
         )
 
         if len(model_outputs) == 3:
@@ -604,7 +574,7 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepare our inputs for the first execution pass of the multimodal model."""
@@ -616,7 +586,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         dev = self.devices[0]
         assert kv_cache_inputs is not None
-        kv_cache_inputs = cast(KVCacheInputsSequence, kv_cache_inputs)
         input_row_offsets = Buffer.from_numpy(
             np.cumsum(
                 [0] + [ctx.tokens.active_length for ctx in context_batch],
@@ -723,52 +692,6 @@ class Gemma3_MultiModalModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         # Create tensor and distribute to device
         return [Buffer.from_numpy(np_indices).to(dev) for dev in self.devices]
-
-    def load_kv_manager(
-        self,
-        kv_params: KVCacheParams,
-        max_batch_size: int,
-        max_seq_len: int,
-        session: InferenceSession,
-        available_cache_memory: int,
-    ) -> PagedKVCacheManager | NullKVCacheManager:
-        return load_kv_manager(
-            params=kv_params,
-            max_batch_size=max_batch_size,
-            max_seq_len=max_seq_len,
-            # FIXME: Decrease KVCache memory usage by 10% to leave headroom for
-            # vision processing.
-            available_cache_memory=int(available_cache_memory * 0.9),
-            session=session,
-        )
-
-    def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[Value[Any]]
-    ) -> list[PagedCacheValues]:
-        """Receives KVCache inputs from the language graph, unflattens them, and
-        returns in a list"""
-        kv_params = Gemma3ForConditionalGenerationConfig.get_kv_params(
-            huggingface_config=self.huggingface_config,
-            pipeline_config=self.pipeline_config,
-            devices=[DeviceRef.from_device(d) for d in self.devices],
-            kv_cache_config=self.kv_cache_config,
-            cache_dtype=self.encoding.cache_dtype,
-        )
-        n_devices = kv_params.n_devices
-        fetch_types = kv_params.get_symbolic_inputs()[0]
-        len_of_kv_tuple_per_dev = len(list(fetch_types))
-        kv_caches_per_dev: list[PagedCacheValues] = []
-        for i in range(n_devices):
-            start_idx = i * len_of_kv_tuple_per_dev
-            kv_caches_per_dev.append(
-                PagedCacheValues(
-                    kv_blocks=kv_inputs_flat[start_idx].buffer,
-                    cache_lengths=kv_inputs_flat[start_idx + 1].tensor,
-                    lookup_table=kv_inputs_flat[start_idx + 2].tensor,
-                    max_lengths=kv_inputs_flat[start_idx + 3].tensor,
-                )
-            )
-        return kv_caches_per_dev
 
     def _create_empty_image_embeddings(self) -> list[Buffer]:
         """Create empty image embeddings for text-only inputs."""

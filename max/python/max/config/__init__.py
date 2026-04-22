@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,7 +22,15 @@ from abc import abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Any, TypeVar, Union, get_args, get_origin, get_type_hints
+from typing import (
+    Any,
+    Literal,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 import yaml
 from pydantic import BaseModel, model_validator
@@ -182,7 +190,7 @@ def _get_argparse_type_and_action(
 def convert_max_config_value(
     config_class: type[MAXConfig], value: Any, field_type: Any, field_name: str
 ) -> Any:
-    """Convert a config value to the appropriate type.
+    """Converts a config value to the appropriate type.
 
     Handles enums, Optional types, Union types, lists, and basic types.
 
@@ -273,6 +281,15 @@ def convert_max_config_value(
             field_type = resolved_enum_type
         elif field_type in STRINGLY_TYPED_BASIC_MAPPING:
             field_type = STRINGLY_TYPED_BASIC_MAPPING[field_type]
+
+    # Handle Literal types — validate the value is one of the allowed literals
+    if origin is Literal:
+        if value not in args:
+            raise ValueError(
+                f"Invalid value '{value}' for field '{field_name}'. "
+                f"Allowed values: {', '.join(repr(a) for a in args)}"
+            )
+        return value
 
     # Handle basic types
     if field_type in (int, float, str):
@@ -383,7 +400,7 @@ def _convert_enum_value(
 def get_default_max_config_file_section_name(
     config_class: type[MAXConfig],
 ) -> str:
-    """Get the default section name for a MAXConfig class.
+    """Gets the default section name for a MAXConfig class.
 
     Args:
         config_class: The config class.
@@ -437,7 +454,7 @@ def resolve_max_config_inheritance(
     config_class: type[MAXConfig],
     config_file_path: Path | None = None,
 ) -> dict[str, Any]:
-    """Resolve configuration inheritance by loading base config and merging.
+    """Resolves configuration inheritance by loading base config and merging.
 
     Args:
         config_dict: The current configuration dictionary.
@@ -591,8 +608,7 @@ class MAXConfig:
     @staticmethod
     @abstractmethod
     def help() -> dict[str, str]:
-        """Documentation for this config class. Return a dictionary of config
-        options and their descriptions."""
+        """Returns a dictionary of config options and their descriptions."""
         ...
 
     @staticmethod
@@ -681,26 +697,26 @@ class MAXConfig:
         config_path: str | Path,
         section_name: str | None = None,
     ) -> T:
-        """Load configuration from a YAML file.
+        """Loads configuration from a YAML file.
 
-        Supports both individual config files and comprehensive multi-config files.
-        For comprehensive files, automatically detects the appropriate section based on class name.
+        Supports both individual config files and comprehensive multi-config
+        files. For comprehensive files, automatically detects the appropriate
+        section based on class name.
 
         Args:
-            config_path: Path to the YAML configuration file.
-            section_name: Optional section name for comprehensive configs.
-                         Auto-detected if None.
+            config_path: The path to the YAML configuration file.
+            section_name: The section name for comprehensive configs.
+                Auto-detected if ``None``. Defaults to ``None``.
 
         Returns:
-            Config instance with parameters loaded from the file.
+            A config instance with parameters loaded from the file.
 
         Raises:
-            FileNotFoundError: If the config file doesn't exist.
+            FileNotFoundError: If the config file does not exist.
             ValueError: If the configuration is invalid.
 
-        Examples:
-            ```python
-            # Individual config file
+        .. code-block:: python
+
             config = KVCacheConfig.from_config_file("kv_cache.yaml")
 
             # Comprehensive config file (auto-detects section)
@@ -708,8 +724,9 @@ class MAXConfig:
             sampling_config = SamplingConfig.from_config_file("pipeline.yaml")
 
             # Custom section name
-            config = KVCacheConfig.from_config_file("config.yaml", "my_cache_section")
-            ```
+            config = KVCacheConfig.from_config_file(
+                "config.yaml", "my_cache_section"
+            )
         """
         config_path = Path(config_path)
 
@@ -897,60 +914,53 @@ class MAXConfig:
         formatter_class: type[argparse.HelpFormatter] | None = None,
         required_params: set[str] | None = None,
     ) -> argparse.ArgumentParser:
-        """Create an ArgumentParser populated with all MAXConfig fields as arguments.
+        """Creates an ``ArgumentParser`` populated with all config fields.
 
-        This creates a parser with proper add_argument() calls for each field,
-        using the loaded config values as defaults. Arguments are automatically
-        grouped by their 'group' metadata from field definitions. The parser's
-        parse_args() method is wrapped to automatically convert parsed string
-        values back to their proper types (e.g., enum objects, proper data types)
-        using MAXConfig's type conversion logic.
+        Builds a parser with ``add_argument()`` calls for each field, using
+        the loaded config values as defaults. Arguments are automatically
+        grouped by their ``group`` metadata from field definitions. The
+        parser's ``parse_args()`` method is wrapped to convert parsed string
+        values back to their proper types (for example, enum objects) using
+        :class:`MAXConfig` type conversion logic.
 
         Args:
-            choices_provider: Optional dictionary mapping field names to their valid choices.
-                             This allows external code to specify choices for specific fields.
-            description: Optional description for the argument parser.
-            formatter_class: Optional formatter class for the argument parser. This is forwarded
-                              to the argparse.ArgumentParser constructor.
-            required_params: Optional set of field names that should be marked as required
-                           in the argument parser, regardless of their default values.
+            choices_provider: A dictionary mapping field names to their valid
+                choices. Allows external code to specify choices for specific
+                fields. Defaults to ``None``.
+            description: A description for the argument parser. Defaults to
+                ``None``.
+            formatter_class: A formatter class for the argument parser,
+                forwarded to the ``argparse.ArgumentParser`` constructor.
+                Defaults to ``None``.
+            required_params: A set of field names that should be marked as
+                required in the argument parser, regardless of their default
+                values. Defaults to ``None``.
 
-        Usage:
-            ```python
-            # Basic usage with config file defaults and automatic grouping
+        Returns:
+            A configured ``ArgumentParser`` with an enhanced ``parse_args()``
+            method that:
+
+            - Uses loaded config values as argument defaults.
+            - Converts parsed values to proper types (enums and similar).
+            - Groups arguments by field metadata for better organization.
+            - Maintains compatibility with standard ``argparse`` usage.
+
+        .. code-block:: python
+
             config = KVCacheConfig.from_config_file("kv_cache.yaml")
             parser = config.cli_arg_parsers()
-            args = parser.parse_args()  # Gets config file values as defaults, grouped by metadata
+            args = parser.parse_args()
 
             # With choices for validation
-            choices = {"backend": ["modular", "vllm"], "dataset_name": ["sharegpt", "random"]}
+            choices = {"backend": ["modular", "vllm"],
+                       "dataset_name": ["sharegpt", "random"]}
             parser = config.cli_arg_parsers(choices_provider=choices)
-            parser.add_argument("--custom-arg", help="Custom argument")
-            args = parser.parse_args(["--backend", "vllm"])  # Validates against choices
+            args = parser.parse_args(["--backend", "vllm"])
 
             # With required parameters
             required = {"model", "dataset_name"}
             parser = config.cli_arg_parsers(required_params=required)
-            args = parser.parse_args()  # Will fail if model or dataset_name not provided
-
-            # Empty args uses config file defaults
-            args = parser.parse_args([])  # All values from config file
-            ```
-
-        Returns:
-            A configured ArgumentParser with enhanced parse_args() method that:
-            - Uses loaded config values as argument defaults
-            - Automatically converts parsed values to proper types (enums, etc.)
-            - Groups arguments by field metadata for better organization
-            - Maintains compatibility with standard argparse usage
-
-        Note:
-            The returned parser's parse_args() method automatically handles type
-            conversion, so enum fields will return actual enum objects rather than
-            strings, matching the behavior of loading from config files.
-
-            Fields with 'group' metadata are organized into argument groups.
-            Fields without 'group' metadata are added to the main parser.
+            args = parser.parse_args()
         """
 
         # Create parser

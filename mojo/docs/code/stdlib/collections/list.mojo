@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,19 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn append():
+def append():
     list = [1, 2, 3, 4, 5]
     list.append(6)
     print(list)  # [1, 2, 3, 4, 5, 6]
 
 
-fn insert():
+def insert():
     list = ["one", "three"]
     list.insert(1, "two")
     print(list)  # ['one', 'two', 'three']
 
 
-fn extend():
+def extend():
     list = ["one", "two", "three"]
     more = ["four", "five"]
     list.extend(more^)  # more's values are consumed
@@ -32,15 +32,15 @@ fn extend():
     print(list)  # ['one', 'two', 'three', 'four', 'five']
 
 
-fn extend_span():
+def extend_span():
     numbers = [1, 2, 3]
     more = [4, 5, 6]
     numbers.extend(Span(more))
-    print(numbers.__str__())  # [1, 2, 3, 4, 5, 6]
+    print(numbers)  # [1, 2, 3, 4, 5, 6]
 
 
-fn extend_dtype():
-    from collections import List
+def extend_dtype():
+    from std.collections import List
 
     numbers: List[Int64] = [1, 2]
     more = SIMD[DType.int64, 2](3, 4)
@@ -49,8 +49,8 @@ fn extend_dtype():
     #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]
 
 
-fn extend_dtype_count():
-    from collections import List
+def extend_dtype_count():
+    from std.collections import List
 
     numbers: List[Int64] = [1, 2]
     more = SIMD[DType.int64, 4](3, 4, 5, 6)
@@ -59,7 +59,7 @@ fn extend_dtype_count():
     #  SIMD[DType.int64, 1](3), SIMD[DType.int64, 1](4)]
 
 
-fn pop():
+def pop():
     numbers = ["1", "2", "3", "4", "5"]
     value = numbers.pop()
     print(value)  # 5
@@ -67,11 +67,11 @@ fn pop():
     value = numbers.pop(2)
     print(value)  # 3
     print(numbers)  # ['1', '2', '4']
-    value = numbers.pop(-2)
-    print(value)  # 2, negative index
+    value = numbers.pop(len(numbers) - 2)
+    print(value)  # 2
 
 
-fn resize():
+def resize():
     list = ["z", "y", "x", "w"]
     list.resize(3, "v")
     print(list)  # ['z', 'y', 'x']
@@ -79,7 +79,7 @@ fn resize():
     print(list)  # ['z', 'y', 'x', 'v', 'v', 'v']
 
 
-fn unsafe_resize():
+def unsafe_resize():
     list = [1, 2, 3]
     list.resize(
         unsafe_uninit_length=5
@@ -90,29 +90,29 @@ fn unsafe_resize():
     print(list)  # [1, 2, 3, 10, 20]
 
 
-fn shrink():
+def shrink():
     numbers = [1, 2, 3, 4, 5, 6]
     numbers.shrink(2)
     print(numbers)  # [1, 2]
     # numbers.shrink(8)               # Error: new size is bigger than current
 
 
-fn reverse():
+def reverse():
     list = ["o", "l", "l", "e", "H"]
     list.reverse()
     print("".join(list))  # Hello
 
 
-fn clear():
+def clear():
     list = ["o", "l", "l", "e", "H"]
     print(len(list))  # 5
     list.clear()
     print(len(list))  # 0
 
 
-fn steal():
-    from collections import List
-    from memory import ArcPointer
+def steal():
+    from std.collections import List
+    from std.memory import ArcPointer
 
     list: List[Int64] = [1, 2, 3, 4]
     ptr = list.steal_data()
@@ -124,12 +124,12 @@ fn steal():
     ptr.free()
 
 
-fn count():
+def count():
     list = ["a", "b", "c", "b", "b", "a", "c"]
     print(list.count("b"))  # 3
 
 
-fn main():
+def main():
     append()
     insert()
     extend()

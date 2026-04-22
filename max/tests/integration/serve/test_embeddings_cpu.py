@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,12 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import hf_repo_lock
 import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineConfig
+from max.pipelines.lib import MAXModelConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.serve.schemas.openai import CreateEmbeddingResponse
+
+MPNET_REPO_ID = "sentence-transformers/all-mpnet-base-v2"
+MPNET_REVISION = hf_repo_lock.revision_for_hf_repo(MPNET_REPO_ID)
+assert MPNET_REVISION is not None
 
 
 @pytest.mark.asyncio
@@ -24,9 +31,16 @@ from max.serve.schemas.openai import CreateEmbeddingResponse
     "pipeline_config",
     [
         PipelineConfig(
-            model_path="sentence-transformers/all-mpnet-base-v2",
-            max_length=256,
-            device_specs=[DeviceSpec.cpu()],
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=MPNET_REPO_ID,
+                        huggingface_model_revision=MPNET_REVISION,
+                        device_specs=[DeviceSpec.cpu()],
+                        max_length=256,
+                    )
+                }
+            ),
         )
     ],
     indirect=True,
@@ -37,7 +51,7 @@ async def test_serve_embeddings(app: FastAPI) -> None:
             "/v1/embeddings",
             json={
                 "input": "Turn this sentence into embeddings",
-                "model": "sentence-transformers/all-mpnet-base-v2",
+                "model": MPNET_REPO_ID,
             },
         )
 

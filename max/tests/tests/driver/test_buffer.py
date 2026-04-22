@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -41,6 +41,11 @@ def test_tensor() -> None:
     tensor2 = Buffer(DType.float32, shape)
     shape[0] = 1
     assert (2, 3) == tensor2.shape
+
+
+@pytest.mark.parametrize("dtype", list(DType))
+def test_allocate(dtype: DType) -> None:
+    Buffer(shape=[2], dtype=dtype, device=CPU())
 
 
 def test_get_and_set() -> None:
@@ -277,7 +282,9 @@ def test_host_to_self() -> None:
 def test_host_host_copy() -> None:
     # We should be able to freely copy tensors between host and host.
     host_tensor = Buffer.from_numpy(np.array([1, 2, 3], dtype=np.int32))
-    tensor = host_tensor.copy(CPU())
+    cpu = CPU()
+    tensor = host_tensor.copy(cpu)
+    cpu.synchronize()
 
     assert tensor.shape == host_tensor.shape
     assert tensor.dtype == host_tensor.dtype
@@ -286,7 +293,8 @@ def test_host_host_copy() -> None:
     assert tensor[1].item() == 2
     assert tensor[2].item() == 3
 
-    tensor2 = host_tensor.copy(CPU())
+    tensor2 = host_tensor.copy(cpu)
+    cpu.synchronize()
     assert tensor2[0].item() == 0
     assert tensor2[1].item() == 2
     assert tensor2[2].item() == 3
@@ -654,7 +662,7 @@ def test_from_dlpack_noncontiguous() -> None:
         ValueError,
         match=r"from_dlpack only accepts contiguous arrays. First call np.ascontiguousarray",
     ):
-        tensor = Buffer.from_dlpack(array)
+        Buffer.from_dlpack(array)
 
 
 def test_from_dlpack_torch_noncontiguous() -> None:
@@ -666,7 +674,7 @@ def test_from_dlpack_torch_noncontiguous() -> None:
     with pytest.raises(
         ValueError, match="from_dlpack only accepts contiguous tensors"
     ):
-        max_tensor = Buffer.from_dlpack(torch_tensor)
+        Buffer.from_dlpack(torch_tensor)
 
 
 def test_item_success() -> None:
@@ -704,6 +712,7 @@ def test_aligned() -> None:
 
 def test_unaligned_tensor_copy() -> None:
     """Tests tensor copying and viewing with unaligned memory."""
+    cpu = CPU()
     expected = np.array([1005, 2510, 1325], np.int32)
 
     # Construct a uint8 tensor so that when converted to int32, it becomes the
@@ -717,6 +726,7 @@ def test_unaligned_tensor_copy() -> None:
 
     # Copy operation now works correctly (fixed by GEX-2576).
     tensor8_copy = tensor8[1:].copy()
+    cpu.synchronize()
     # Should correctly preserve element values after copy
     assert tensor8_copy[0].item() == tensor8[1].item()
 
@@ -729,6 +739,7 @@ def test_unaligned_tensor_copy() -> None:
     assert tensor32[0].item() == 1005
 
     tensor32_copy = tensor32.copy()
+    cpu.synchronize()
     assert tensor32_copy._aligned()
     # This now passes because the source view has correct data
     np.testing.assert_array_equal(tensor32_copy.to_numpy(), expected)
@@ -741,9 +752,6 @@ def test_inplace_copy_from_raises() -> None:
     tensor_3_3_noncontig = tensor_3_10_3[:, 0, :]
     assert tensor_3_3_noncontig.shape == (3, 3)
     assert not tensor_3_3_noncontig.is_contiguous
-    with pytest.raises(ValueError) as e:
-        tensor_3_3_noncontig.inplace_copy_from(tensor_3_3_noncontig)
-        assert "Cannot copy from non-contiguous tensor" in str(e.value)
 
     with pytest.raises(ValueError) as e:
         tensor_3_3.inplace_copy_from(tensor_3_3_noncontig)
@@ -759,6 +767,14 @@ def test_inplace_copy_from_raises() -> None:
     with pytest.raises(ValueError) as e:
         tensor_i32.inplace_copy_from(tensor_i16)
         assert "Cannot copy tensors of different dtypes" in str(e.value)
+
+
+def test_inplace_copy_from_self_copy_noncontiguous_noop() -> None:
+    tensor_3_10_3 = Buffer(DType.int32, (3, 10, 3))
+    tensor_3_3_noncontig = tensor_3_10_3[:, 0, :]
+    assert not tensor_3_3_noncontig.is_contiguous
+
+    tensor_3_3_noncontig.inplace_copy_from(tensor_3_3_noncontig)
 
 
 def test_inplace_copy_from_tensor_view() -> None:

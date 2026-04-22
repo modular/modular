@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -27,25 +27,21 @@ from max.graph import (
     TensorValueLike,
     ops,
 )
-from max.nn import (
-    MLP,
-    ColumnParallelLinear,
-    LayerList,
-    Module,
-    ReturnLogits,
-    RMSNorm,
-    VocabParallelEmbedding,
-)
 from max.nn.comm.allreduce import Allreduce
+from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import PagedCacheValues
-from max.nn.transformer.distributed_transformer import forward_sharded_layers
-from max.pipelines.architectures.internvl.embedding_utils import (
-    merge_multimodal_embeddings,
+from max.nn.layer import LayerList, Module
+from max.nn.linear import MLP, ColumnParallelLinear
+from max.nn.norm import RMSNorm
+from max.nn.quant_config import QuantConfig
+from max.nn.transformer.distributed_transformer import (
+    DistributedLogitsPostprocessMixin,
+    forward_sharded_layers,
 )
-from max.pipelines.architectures.internvl.internvl import distribute_value
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from ..model_config import Qwen3VLConfig
-from .moe import Qwen3VLMoE
+from .moe import Qwen3VLMoE, Qwen3VLMoEGate
 from .text_attention import Qwen3VLMoEDecoderAttentionWithRope
 from .text_rotary import Qwen3VLTextRotaryEmbedding
 
@@ -57,6 +53,7 @@ class Qwen3VLMoeTextDecoderLayer(Module):
         config: Qwen3VLConfig,
         dtype: DType,
         layer_idx: int,
+        quant_config: QuantConfig | None = None,
     ):
         super().__init__()
         # Create Multi-head Latent Attention layer.
@@ -76,6 +73,7 @@ class Qwen3VLMoeTextDecoderLayer(Module):
             has_bias=False,
             rms_norm_eps=config.llm_config.rms_norm_eps,
             scale=head_dim**-0.5,
+            quant_config=quant_config,
         )
 
         self.self_attn = Qwen3VLMoEDecoderAttentionWithRope(**mla_kwargs)
@@ -85,12 +83,14 @@ class Qwen3VLMoeTextDecoderLayer(Module):
         self.self_attn_shards = self.self_attn.shard(config.devices)
 
         # Create a shardable MLP or MoE layer
-        self.mlp = self._get_mlp(config, layer_idx)
+        self.mlp = self._get_mlp(config, layer_idx, quant_config)
         self.mlp_shards = self.mlp.shard(config.devices)
+
+        norm_dtype = config.llm_config.norm_dtype or config.dtype
 
         self.input_layernorm = RMSNorm(
             dim=config.llm_config.hidden_size,
-            dtype=dtype,
+            dtype=norm_dtype,
             eps=config.llm_config.rms_norm_eps,
             multiply_before_cast=False,
         )
@@ -102,7 +102,7 @@ class Qwen3VLMoeTextDecoderLayer(Module):
 
         self.post_attention_layernorm = RMSNorm(
             dim=config.llm_config.hidden_size,
-            dtype=dtype,
+            dtype=norm_dtype,
             eps=config.llm_config.rms_norm_eps,
             multiply_before_cast=False,
         )
@@ -172,7 +172,10 @@ class Qwen3VLMoeTextDecoderLayer(Module):
         return hs
 
     def _get_mlp(
-        self, config: Qwen3VLConfig, layer_idx: int
+        self,
+        config: Qwen3VLConfig,
+        layer_idx: int,
+        quant_config: QuantConfig | None,
     ) -> MLP | Qwen3VLMoE:
         """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
         for the TransformerBlock's mlp depending on the layer idx.
@@ -180,6 +183,7 @@ class Qwen3VLMoeTextDecoderLayer(Module):
         Args:
             config: Configuration object containing model parameters
             layer_idx: Layer index
+            quant_config: Configuration for scaled quantization.
 
         Returns:
             List of MLP shards or MoE modules depending on the layer index and config
@@ -194,8 +198,9 @@ class Qwen3VLMoeTextDecoderLayer(Module):
                 num_experts=config.num_experts,
                 num_experts_per_token=config.num_experts_per_tok,
                 moe_dim=config.moe_intermediate_size,
-                mlp_only_layers=config.mlp_only_layers,
+                gate_cls=Qwen3VLMoEGate,
                 dtype=config.dtype,
+                quant_config=quant_config,
             )
             moe = Qwen3VLMoE(**moe_kwargs)
             moe.sharding_strategy = ShardingStrategy.tensor_parallel(
@@ -211,6 +216,7 @@ class Qwen3VLMoeTextDecoderLayer(Module):
                 has_bias=False,
                 activation_function="silu",
                 devices=config.devices,
+                quant_config=quant_config,
             )
             mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
                 len(config.devices)
@@ -218,7 +224,7 @@ class Qwen3VLMoeTextDecoderLayer(Module):
             return mlp
 
 
-class Qwen3VLMoEDecoder(Module):
+class Qwen3VLMoEDecoder(DistributedLogitsPostprocessMixin, Module):
     """Qwen3VL MoE decoder model with support for vision-language tasks.
 
     This decoder implements the Qwen3VL MoE architecture with:
@@ -235,7 +241,7 @@ class Qwen3VLMoEDecoder(Module):
             n_heads=config.llm_config.num_attention_heads,
             theta=config.llm_config.rope_theta,
             max_seq_len=config.llm_config.max_seq_len,
-            dtype=config.dtype,
+            dtype=DType.bfloat16,
             mrope_section=config.mrope_section,
             head_dim=config.llm_config.kv_params.head_dim,
             interleaved=config.llm_config.interleaved_rope_weights,
@@ -261,6 +267,9 @@ class Qwen3VLMoEDecoder(Module):
                 f"Unsupported norm method: {config.llm_config.norm_method}"
             )
 
+        # Extract quant_config from the nested llm_config
+        quant_config = config.llm_config.quant_config
+
         # Create decoder layers
         layers = [
             Qwen3VLMoeTextDecoderLayer(
@@ -268,14 +277,24 @@ class Qwen3VLMoEDecoder(Module):
                 config=config,
                 dtype=config.dtype,
                 layer_idx=i,
+                quant_config=quant_config,
             )
             for i in range(config.llm_config.num_hidden_layers)
         ]
 
+        embedding_output_dtype = config.dtype
+        if (
+            config.llm_config.quant_config
+            and config.llm_config.quant_config.embedding_output_dtype
+        ):
+            embedding_output_dtype = (
+                config.llm_config.quant_config.embedding_output_dtype
+            )
+
         embedding_layer = VocabParallelEmbedding(
             config.llm_config.vocab_size,
             config.llm_config.hidden_size,
-            config.dtype,
+            embedding_output_dtype,
             config.devices,
             quantization_encoding=None,
         )
@@ -283,7 +302,7 @@ class Qwen3VLMoEDecoder(Module):
         output = ColumnParallelLinear(
             config.llm_config.hidden_size,
             config.llm_config.vocab_size,
-            config.dtype,
+            embedding_output_dtype,
             config.devices,
             quantization_encoding=None,
             tied_weight=(
@@ -334,6 +353,9 @@ class Qwen3VLMoEDecoder(Module):
         # Ensure visual_embeds has the same dtype as hidden_states
         if visual_embeds.dtype != hidden_states.dtype:
             visual_embeds = ops.cast(visual_embeds, hidden_states.dtype)
+
+        # FIXME(SERVOPT-924): Fuse the scatter_nd and add op into a single kernel.
+        # This will improve perf and reduce size of activations.
 
         # Create a tensor of zeros with the same shape as hidden_states
         zeros = ops.constant(0, hidden_states.dtype, hidden_states.device)
@@ -399,9 +421,8 @@ class Qwen3VLMoEDecoder(Module):
         ]
 
         # Create position embeddings shared across the decoder layers
-        freqs_cis = distribute_value(
-            self.rope.freqs_cis_position_ids(position_ids), self.devices
-        )
+        freqs_cis_value = self.rope.freqs_cis_position_ids(position_ids)
+        freqs_cis = [freqs_cis_value.to(device) for device in self.devices]
 
         # Process through decoder layers
         for layer_idx, layer in enumerate(self.layers):
@@ -438,75 +459,6 @@ class Qwen3VLMoEDecoder(Module):
                     )
                 ]
 
-        # Retrieve a variable number of tokens
-        last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
-        assert h is not None and len(h) == len(last_token_indices)
-        last_token_h = [
-            ops.gather(h_device, indices, axis=0)
-            for h_device, indices in zip(h, last_token_indices, strict=True)
-        ]
-        last_logits = ops.cast(
-            self.lm_head(
-                [
-                    self.norm_shards[i](last_token_h[i])
-                    for i in range(len(last_token_h))
-                ],
-                signal_buffers,
-            )[0],
-            DType.float32,
+        return self._postprocess_logits(
+            h, input_row_offsets, return_n_logits, signal_buffers
         )
-
-        logits = None
-        offsets = None
-
-        if self.return_logits == ReturnLogits.VARIABLE:
-            return_range = ops.range(
-                return_n_logits[0],
-                ops.constant(0, DType.int64, device=self.devices[0]),
-                ops.constant(-1, DType.int64, device=self.devices[0]),
-                out_dim="return_n_logits_range",
-                device=self.devices[0],
-                dtype=DType.int64,
-            )
-
-            last_indices = [
-                ops.reshape(
-                    ops.unsqueeze(row_offset[1:], -1) - return_range,
-                    shape=(-1,),
-                )
-                for row_offset in input_row_offsets
-            ]
-
-            # Gather, normalize, and get logits
-            variable_tokens = [
-                self.norm_shards[i](ops.gather(h_device, indices, axis=0))
-                for i, (h_device, indices) in enumerate(
-                    zip(h, last_indices, strict=True)
-                )
-            ]
-            logits = ops.cast(
-                self.lm_head(variable_tokens, signal_buffers)[0], DType.float32
-            )
-            offsets = ops.range(
-                0,
-                last_indices[0].shape[0] + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                dtype=DType.int64,
-                device=self.devices[0],
-            )
-        elif self.return_logits == ReturnLogits.ALL:
-            # Apply normalization to all hidden states and get all logits
-            all_normalized = [
-                self.norm_shards[i](h_device) for i, h_device in enumerate(h)
-            ]
-            logits = ops.cast(
-                self.lm_head(all_normalized, signal_buffers)[0], DType.float32
-            )
-            offsets = input_row_offsets[0]
-
-        if offsets is not None:
-            assert logits is not None
-            return (last_logits, logits, offsets)
-        else:
-            return (last_logits,)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,14 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from linalg.matmul.gpu.amd.warp_spec_matmul import warp_specialized_matmul
-from gpu import WARP_SIZE
-from layout import Layout, LayoutTensor
-from gpu.host import DeviceContext
-from layout._fillers import random
+from layout import TileTensor, row_major
+from std.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
-from testing import assert_equal
-from random import random_si64
-from linalg.matmul.gpu.amd.warp_spec_matmul import warp_specialized_matmul
+from std.testing import assert_equal
+from std.random import random_si64
 
 
 def test_warp_specialization_amd[
@@ -36,7 +33,7 @@ def test_warp_specialization_amd[
     b_producer_warps: Int,
     consumer_warps: Int,
     pipeline_stages: Int = 1,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     var device_a = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
     var device_b = ctx.enqueue_create_buffer[DType.bfloat16](N * K)
     var device_c = ctx.enqueue_create_buffer[DType.float32](M * N)
@@ -51,22 +48,10 @@ def test_warp_specialization_amd[
             var val = random_si64(0, 20)
             host_b[i] = val.cast[DType.bfloat16]()
 
-    var a_device_tensor = LayoutTensor[
-        DType.bfloat16,
-        Layout.row_major(M, K),
-    ](device_a)
-
-    var b_device_tensor = LayoutTensor[DType.bfloat16, Layout.row_major(N, K)](
-        device_b
-    )
-
-    var c_device_tensor = LayoutTensor[DType.float32, Layout.row_major(M, N)](
-        device_c
-    )
-
-    var c_device_ref_tensor = LayoutTensor[
-        DType.float32, Layout.row_major(M, N)
-    ](device_c_ref)
+    var a_tt = TileTensor(device_a, row_major[M, K]())
+    var b_tt = TileTensor(device_b, row_major[N, K]())
+    var c_tt = TileTensor(device_c, row_major[M, N]())
+    var c_ref_tt = TileTensor(device_c_ref, row_major[M, N]())
 
     warp_specialized_matmul[
         M,
@@ -83,17 +68,17 @@ def test_warp_specialization_amd[
         consumer_warps,
         pipeline_stages,
     ](
-        a_device_tensor,
-        b_device_tensor,
-        c_device_tensor,
+        a_tt,
+        b_tt,
+        c_tt,
         ctx,
     )
 
     vendor_blas.matmul(
         ctx,
-        c_device_ref_tensor,
-        a_device_tensor,
-        b_device_tensor,
+        c_ref_tt,
+        a_tt,
+        b_tt,
         c_row_major=True,
         transpose_b=True,
     )
@@ -112,7 +97,7 @@ def test_warp_specialization_amd[
         assert_equal(errors, 0)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("Running AMD Warp Specialization Tests")
         # test_warp_specialization_amd[

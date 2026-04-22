@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Defines supported weight file formats and format detection for model checkpoints."""
 
 from enum import Enum
 from pathlib import Path
@@ -24,9 +26,9 @@ class WeightsFormat(str, Enum):
 
     gguf = "gguf"
     """GGUF (GPT-Generated Unified Format) for quantized models.
-    
+
     File extension: ``.gguf``
-    
+
     Optimized for quantized large language models, particularly those from the
     llama.cpp ecosystem. Supports multiple quantization schemes (``Q4_K``,
     ``Q5_K``, ``Q8_0``, etc.) and includes model metadata in the file.
@@ -34,9 +36,9 @@ class WeightsFormat(str, Enum):
 
     safetensors = "safetensors"
     """Safetensors format for secure and efficient tensor storage.
-    
+
     File extension: ``.safetensors``
-    
+
     Designed by Hugging Face for safe serialization that prevents
     arbitrary code execution. Uses memory-mapped files for fast loading
     and supports sharding across multiple files.

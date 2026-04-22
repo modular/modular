@@ -35,3 +35,13 @@ render Markdown and MDX files, such as VS Code, including the
 
 For more information about how to contribute, see the [Contributor
 Guide](../../CONTRIBUTING.md)
+
+## Other docs
+
+- [`/mojo/stdlib/docs`](/mojo/stdlib/docs): Docs for developers working in the
+  Mojo standard library.
+- [`/max/docs`](/max/docs): Docs for developers working in the MAX framework
+  codebase.
+- [`/max/docs/design-docs`](/max/docs/design-docs): Engineering docs that
+  describe how core Modular technologies work.
+- [docs.modular.com](https://docs.modular.com): All other developer docs.

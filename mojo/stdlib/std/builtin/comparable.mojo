@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,17 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements comparison and equality traits for Mojo types."""
 
-from builtin.constrained import _constrained_field_conforms_to
-from reflection import struct_field_names, struct_field_types
-
-
-@deprecated(use=Equatable)
-comptime EqualityComparable = Equatable
-"""Deprecated alias for `Equatable`."""
+from std.builtin.constrained import _constrained_field_conforms_to
+from std.builtin.range import _ZeroStartingRange
+from std.reflection import struct_field_names, struct_field_types
 
 
-trait Equatable:
+trait Equatable(ImplicitlyDestructible):
     """A type which can be compared for equality with other instances of itself.
 
     The `Equatable` trait has a default implementation of `__eq__()` that uses
@@ -44,9 +41,17 @@ trait Equatable:
     Note: The default implementation performs memberwise equality comparison.
     This may not be appropriate for types containing floating-point fields
     (due to NaN semantics) or types requiring custom equality logic.
+
+    Note: The default reflection-based implementation iterates over all fields
+    at compile time. For mutually recursive types (e.g., struct `A` has a field
+    of type `List[B]` and struct `B` has a field of type `A`), this creates an
+    infinite monomorphization cycle that causes the compiler to hang. To fix
+    this, provide an explicit `__eq__()` implementation for at least one type
+    in the cycle.
     """
 
-    fn __eq__(self, other: Self) -> Bool:
+    @always_inline
+    def __eq__(self, other: Self) -> Bool:
         """Define whether two instances of the object are equal to each other.
 
         The default implementation uses reflection to compare all fields for
@@ -64,8 +69,7 @@ trait Equatable:
         comptime names = struct_field_names[Self]()
         comptime types = struct_field_types[Self]()
 
-        @parameter
-        for i in range(names.size):
+        comptime for i in range(names.size):
             comptime T = types[i]
             _constrained_field_conforms_to[
                 conforms_to(T, Equatable),
@@ -74,13 +78,15 @@ trait Equatable:
                 ParentConformsTo="Equatable",
             ]()
             if trait_downcast[Equatable](
-                __struct_field_ref(i, self)
-            ) != trait_downcast[Equatable](__struct_field_ref(i, other)):
+                __struct_field_ref(i._int_mlir_index(), self)
+            ) != trait_downcast[Equatable](
+                __struct_field_ref(i._int_mlir_index(), other)
+            ):
                 return False
         return True
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Define whether two instances of the object are not equal to each
         other.
 
@@ -100,11 +106,11 @@ trait Comparable(Equatable):
     Implementers of this trait must define the `__lt__` and `__eq__` methods.
 
     The default implementations of the default comparison methods can be
-    potentially inefficent for types where comparison is expensive. For such
+    potentially inefficient for types where comparison is expensive. For such
     types, it is recommended to override all the default implementations.
     """
 
-    fn __lt__(self, rhs: Self) -> Bool:
+    def __lt__(self, rhs: Self) -> Bool:
         """Define whether `self` is less than `rhs`.
 
         Args:
@@ -116,7 +122,7 @@ trait Comparable(Equatable):
         ...
 
     @always_inline
-    fn __gt__(self, rhs: Self) -> Bool:
+    def __gt__(self, rhs: Self) -> Bool:
         """Define whether `self` is greater than `rhs`.
 
         Args:
@@ -128,7 +134,7 @@ trait Comparable(Equatable):
         return rhs < self
 
     @always_inline
-    fn __le__(self, rhs: Self) -> Bool:
+    def __le__(self, rhs: Self) -> Bool:
         """Define whether `self` is less than or equal to `rhs`.
 
         Args:
@@ -140,7 +146,7 @@ trait Comparable(Equatable):
         return not rhs < self
 
     @always_inline
-    fn __ge__(self, rhs: Self) -> Bool:
+    def __ge__(self, rhs: Self) -> Bool:
         """Define whether `self` is greater than or equal to `rhs`.
 
         Args:

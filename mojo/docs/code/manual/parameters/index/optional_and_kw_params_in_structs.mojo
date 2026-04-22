@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,11 +14,11 @@
 
 # start-opt-and-kw-params-struct
 struct KwParamStruct[greeting: String = "Hello", name: String = "🔥mojo🔥"]:
-    fn __init__(out self):
+    def __init__(out self):
         print(Self.greeting, Self.name)
 
 
-fn use_kw_params():
+def use_kw_params():
     var a = KwParamStruct[]()  # prints 'Hello 🔥mojo🔥'
     var b = KwParamStruct[name="World"]()  # prints 'Hello World'
     var c = KwParamStruct[greeting="Hola"]()  # prints 'Hola 🔥mojo🔥'

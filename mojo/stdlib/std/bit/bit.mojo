@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,15 +15,15 @@
 You can import these APIs from the `bit` package. For example:
 
 ```mojo
-from bit import count_leading_zeros
+from std.bit import count_leading_zeros
 ```
 """
 
-from sys import llvm_intrinsic, bit_width_of, size_of
+from std.sys import llvm_intrinsic, bit_width_of
 
-from bit._mask import is_negative
+from std.bit.mask import is_negative
 
-from utils._select import _select_register_value as select
+from std.utils._select import _select_register_value as select
 
 # ===-----------------------------------------------------------------------===#
 # count_leading_zeros
@@ -31,7 +31,7 @@ from utils._select import _select_register_value as select
 
 
 @always_inline("nodebug")
-fn count_leading_zeros(val: Int) -> Int:
+def count_leading_zeros(val: Int) -> Int:
     """Counts the number of leading zeros of an integer.
 
     Args:
@@ -44,8 +44,8 @@ fn count_leading_zeros(val: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn count_leading_zeros[
-    dtype: DType, width: Int, //
+def count_leading_zeros[
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Counts the per-element number of leading zeros in a SIMD vector.
 
@@ -63,15 +63,10 @@ fn count_leading_zeros[
         A SIMD value where the element at position `i` contains the number of
         leading zeros at position `i` of the input value.
     """
-    __comptime_assert dtype.is_integral(), "must be integral"
-
-    # HACK(#5003): remove this workaround
-    comptime d = dtype if dtype != DType.int else (
-        DType.int32 if size_of[dtype]() == 4 else DType.int64
+    comptime assert dtype.is_integral(), "must be integral"
+    return llvm_intrinsic["llvm.ctlz", type_of(val), has_side_effect=False](
+        val, False
     )
-    return llvm_intrinsic["llvm.ctlz", SIMD[d, width], has_side_effect=False](
-        val.cast[d](), False
-    ).cast[dtype]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -80,7 +75,7 @@ fn count_leading_zeros[
 
 
 @always_inline("nodebug")
-fn count_trailing_zeros(val: Int) -> Int:
+def count_trailing_zeros(val: Int) -> Int:
     """Counts the number of trailing zeros for an integer.
 
     Args:
@@ -93,8 +88,8 @@ fn count_trailing_zeros(val: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn count_trailing_zeros[
-    dtype: DType, width: Int, //
+def count_trailing_zeros[
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Counts the per-element number of trailing zeros in a SIMD vector.
 
@@ -112,7 +107,7 @@ fn count_trailing_zeros[
         A SIMD value where the element at position `i` contains the number of
         trailing zeros at position `i` of the input value.
     """
-    __comptime_assert dtype.is_integral(), "must be integral"
+    comptime assert dtype.is_integral(), "must be integral"
     return llvm_intrinsic["llvm.cttz", type_of(val), has_side_effect=False](
         val, False
     )
@@ -124,7 +119,7 @@ fn count_trailing_zeros[
 
 
 @always_inline("nodebug")
-fn bit_reverse(val: Int) -> Int:
+def bit_reverse(val: Int) -> Int:
     """Reverses the bitpattern of an integer value.
 
     Args:
@@ -137,8 +132,8 @@ fn bit_reverse(val: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn bit_reverse[
-    dtype: DType, width: Int, //
+def bit_reverse[
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Element-wise reverses the bitpattern of a SIMD vector of integer values.
 
@@ -156,7 +151,7 @@ fn bit_reverse[
         A SIMD value where the element at position `i` has a reversed bitpattern
         of an integer value of the element at position `i` of the input value.
     """
-    __comptime_assert dtype.is_integral(), "must be integral"
+    comptime assert dtype.is_integral(), "must be integral"
     return llvm_intrinsic[
         "llvm.bitreverse", type_of(val), has_side_effect=False
     ](val)
@@ -168,7 +163,7 @@ fn bit_reverse[
 
 
 @always_inline("nodebug")
-fn byte_swap(val: Int) -> Int:
+def byte_swap(val: Int) -> Int:
     """Byte-swaps an integer value with an even number of bytes.
 
     Byte swap an integer value (8 bytes) with an even number of bytes (positive multiple
@@ -186,8 +181,8 @@ fn byte_swap(val: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn byte_swap[
-    dtype: DType, width: Int, //
+def byte_swap[
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Byte-swaps a SIMD vector of integer values with an even number of bytes.
 
@@ -213,10 +208,9 @@ fn byte_swap[
         A SIMD value where the element at position `i` is the value of the
         element at position `i` of the input value with its bytes swapped.
     """
-    __comptime_assert dtype.is_integral(), "must be integral"
+    comptime assert dtype.is_integral(), "must be integral"
 
-    @parameter
-    if bit_width_of[dtype]() < 16:
+    comptime if bit_width_of[dtype]() < 16:
         return val
     return llvm_intrinsic["llvm.bswap", type_of(val), has_side_effect=False](
         val
@@ -229,7 +223,7 @@ fn byte_swap[
 
 
 @always_inline("nodebug")
-fn pop_count(val: Int) -> Int:
+def pop_count(val: Int) -> Int:
     """Counts the number of bits set in an integer value.
 
     Args:
@@ -242,8 +236,8 @@ fn pop_count(val: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn pop_count[
-    dtype: DType, width: Int, //
+def pop_count[
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Counts the number of bits set in a SIMD vector of integer values.
 
@@ -261,7 +255,7 @@ fn pop_count[
         A SIMD value where the element at position `i` contains the number of
         bits set in the element at position `i` of the input value.
     """
-    __comptime_assert dtype.is_integral(), "must be integral"
+    comptime assert dtype.is_integral(), "must be integral"
     return llvm_intrinsic["llvm.ctpop", type_of(val), has_side_effect=False](
         val
     )
@@ -273,8 +267,8 @@ fn pop_count[
 
 
 @always_inline("nodebug")
-fn bit_not[
-    dtype: DType, width: Int, //
+def bit_not[
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Performs a bitwise NOT operation on an SIMD vector of integer values.
 
@@ -292,7 +286,7 @@ fn bit_not[
         A SIMD value where the element at position `i` is computed as a bitwise
         NOT of the integer value at position `i` of the input value.
     """
-    __comptime_assert dtype.is_integral(), "must be integral"
+    comptime assert dtype.is_integral(), "must be integral"
     return ~val
 
 
@@ -302,7 +296,7 @@ fn bit_not[
 
 
 @always_inline("nodebug")
-fn bit_width(val: Int) -> Int:
+def bit_width(val: Int) -> Int:
     """Computes the minimum number of bits required to represent the integer.
 
     Args:
@@ -316,8 +310,8 @@ fn bit_width(val: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn bit_width[
-    dtype: DType, width: Int, //
+def bit_width[
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the minimum number of bits required to represent each element of a SIMD vector of integer values.
 
@@ -334,16 +328,15 @@ fn bit_width[
     Returns:
         A SIMD value where the element at position `i` equals the number of bits required to represent the integer at position `i` of the input.
     """
-    __comptime_assert dtype.is_integral(), "must be integral"
+    comptime assert dtype.is_integral(), "must be integral"
     comptime bitwidth = bit_width_of[dtype]()
 
-    @parameter
-    if dtype.is_unsigned():
-        return bitwidth - count_leading_zeros(val)
+    comptime if dtype.is_unsigned():
+        return SIMD[dtype, width](bitwidth) - count_leading_zeros(val)
     else:
         # For signed integers, handle positive and negative separately
         var abs_val = val.lt(0).select(bit_not(val), val)
-        return bitwidth - count_leading_zeros(abs_val)
+        return SIMD[dtype, width](bitwidth) - count_leading_zeros(abs_val)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -352,7 +345,7 @@ fn bit_width[
 
 
 @always_inline
-fn log2_floor(val: Int) -> Int:
+def log2_floor(val: Int) -> Int:
     """Returns the floor of the base-2 logarithm of an integer value.
 
     Args:
@@ -366,22 +359,8 @@ fn log2_floor(val: Int) -> Int:
 
 
 @always_inline
-fn log2_floor(val: UInt) -> UInt:
-    """Returns the floor of the base-2 logarithm of an integer value.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        The floor of the base-2 logarithm of the input value, which is equal to
-        the position of the highest set bit. Returns UInt.MAX if val is 0.
-    """
-    return UInt(bit_width_of[UInt]() - count_leading_zeros(Int(val)) - 1)
-
-
-@always_inline
-fn log2_floor[
-    dtype: DType, width: Int, //
+def log2_floor[
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Returns the floor of the base-2 logarithm of an integer value.
 
@@ -396,13 +375,12 @@ fn log2_floor[
         The floor of the base-2 logarithm of the input value, which is equal to
         the position of the highest set bit. Returns -1 if val is 0 or negative.
     """
-    __comptime_assert dtype.is_integral(), "dtype must be integral"
+    comptime assert dtype.is_integral(), "dtype must be integral"
 
     comptime bitwidth = bit_width_of[dtype]()
-    var res = bitwidth - count_leading_zeros(val) - 1
+    var res = SIMD[dtype, width](bitwidth) - count_leading_zeros(val) - 1
 
-    @parameter
-    if dtype.is_signed():
+    comptime if dtype.is_signed():
         return res | is_negative(val)
     else:
         return res
@@ -414,7 +392,7 @@ fn log2_floor[
 
 
 @always_inline
-fn log2_ceil(val: Int) -> Int:
+def log2_ceil(val: Int) -> Int:
     """Returns the ceiling of the base-2 logarithm of an integer value.
 
     Args:
@@ -429,7 +407,7 @@ fn log2_ceil(val: Int) -> Int:
 
 
 @always_inline
-fn log2_ceil(val: Scalar) -> type_of(val):
+def log2_ceil(val: Scalar) -> type_of(val):
     """Returns the ceiling of the base-2 logarithm of an integer value.
 
     Args:
@@ -439,9 +417,7 @@ fn log2_ceil(val: Scalar) -> type_of(val):
         The smallest integer `n` such that `2^n` is greater than or equal to
         the input value. Returns 0 if `val` is 0.
     """
-    __comptime_assert (
-        val.dtype.is_integral()
-    ), "the input dtype must be integral"
+    comptime assert val.dtype.is_integral(), "the input dtype must be integral"
     return select(val <= 1, type_of(val)(0), log2_floor(val - 1) + 1)
 
 
@@ -453,7 +429,7 @@ fn log2_ceil(val: Scalar) -> type_of(val):
 
 
 @always_inline
-fn next_power_of_two(val: Int) -> Int:
+def next_power_of_two(val: Int) -> Int:
     """Computes the smallest power of 2 that is greater than or equal to the
     input value. Any integral value less than or equal to 1 will be ceiled to 1.
 
@@ -473,30 +449,8 @@ fn next_power_of_two(val: Int) -> Int:
 
 
 @always_inline
-fn next_power_of_two(val: UInt) -> UInt:
-    """Computes the smallest power of 2 that is greater than or equal to the
-    input value. Any integral value less than or equal to 1 will be ceiled to 1.
-
-    Args:
-        val: The input value.
-
-    Returns:
-        The smallest power of 2 that is greater than or equal to the input
-        value.
-
-    Notes:
-        This operation is called `bit_ceil()` in C++.
-    """
-    return select(
-        val == 0,
-        UInt(1),
-        UInt(1 << (bit_width_of[UInt]() - count_leading_zeros(Int(val - 1)))),
-    )
-
-
-@always_inline
-fn next_power_of_two[
-    dtype: DType, width: Int, //
+def next_power_of_two[
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the smallest power of 2 that is greater than or equal to the
     input value for each element of a SIMD vector. Any integral value less than
@@ -519,7 +473,7 @@ fn next_power_of_two[
         that is greater than or equal to the integer at position `i` of the input
         value.
     """
-    __comptime_assert dtype.is_integral(), "must be integral"
+    comptime assert dtype.is_integral(), "must be integral"
     return val.gt(1).select(1 << bit_width(val - 1), 1)
 
 
@@ -530,7 +484,7 @@ fn next_power_of_two[
 
 
 @always_inline
-fn prev_power_of_two(val: Int) -> Int:
+def prev_power_of_two(val: Int) -> Int:
     """Computes the largest power of 2 that is less than or equal to the input
     value. Any integral value less than or equal to 0 will be floored to 0.
 
@@ -546,8 +500,8 @@ fn prev_power_of_two(val: Int) -> Int:
 
 
 @always_inline
-fn prev_power_of_two[
-    dtype: DType, width: Int, //
+def prev_power_of_two[
+    dtype: DType, width: SIMDSize, //
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the largest power of 2 that is less than or equal to the input
     value for each element of a SIMD vector. Any integral value less than or
@@ -570,7 +524,7 @@ fn prev_power_of_two[
         that is less than or equal to the integer at position `i` of the input
         value.
     """
-    __comptime_assert dtype.is_integral(), "must be integral and unsigned"
+    comptime assert dtype.is_integral(), "must be integral and unsigned"
     return val.gt(0).select(1 << (bit_width(val) - 1), 0)
 
 
@@ -580,7 +534,7 @@ fn prev_power_of_two[
 
 
 @always_inline
-fn rotate_bits_left[shift: Int](x: Int) -> Int:
+def rotate_bits_left[shift: Int](x: Int) -> Int:
     """Shifts the bits of an input to the left by `shift` bits (with
     wrap-around).
 
@@ -597,12 +551,11 @@ fn rotate_bits_left[shift: Int](x: Int) -> Int:
     Returns:
         The input rotated to the left by `shift` elements (with wrap-around).
     """
-    __comptime_assert (
+    comptime assert (
         -bit_width_of[Int]() <= shift < bit_width_of[Int]()
     ), "Constraints: -bit_width_of[Int]() <= shift < bit_width_of[Int]()"
 
-    @parameter
-    if shift == 0:
+    comptime if shift == 0:
         return x
     elif shift < 0:
         return rotate_bits_right[-shift](x)
@@ -613,9 +566,9 @@ fn rotate_bits_left[shift: Int](x: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn rotate_bits_left[
+def rotate_bits_left[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     shift: Int,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_unsigned():
@@ -636,8 +589,7 @@ fn rotate_bits_left[
         SIMD vector with each element rotated left by `shift` bits.
     """
 
-    @parameter
-    if shift == 0:
+    comptime if shift == 0:
         return x
     elif shift < 0:
         return rotate_bits_right[-shift](x)
@@ -653,7 +605,7 @@ fn rotate_bits_left[
 
 
 @always_inline
-fn rotate_bits_right[shift: Int](x: Int) -> Int:
+def rotate_bits_right[shift: Int](x: Int) -> Int:
     """Shifts the bits of an input to the right by `shift` bits (with
     wrap-around).
 
@@ -670,12 +622,11 @@ fn rotate_bits_right[shift: Int](x: Int) -> Int:
     Returns:
         The input rotated to the right by `shift` elements (with wrap-around).
     """
-    __comptime_assert (
+    comptime assert (
         -bit_width_of[Int]() <= shift < bit_width_of[Int]()
     ), "Constraints: -bit_width_of[Int]() <= shift < bit_width_of[Int]()"
 
-    @parameter
-    if shift == 0:
+    comptime if shift == 0:
         return x
     elif shift < 0:
         return rotate_bits_left[-shift](x)
@@ -686,9 +637,9 @@ fn rotate_bits_right[shift: Int](x: Int) -> Int:
 
 
 @always_inline("nodebug")
-fn rotate_bits_right[
+def rotate_bits_right[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     shift: Int,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width] where dtype.is_unsigned():
@@ -709,8 +660,7 @@ fn rotate_bits_right[
         SIMD vector with each element rotated right by `shift` bits.
     """
 
-    @parameter
-    if shift == 0:
+    comptime if shift == 0:
         return x
     elif shift < 0:
         return rotate_bits_left[-shift](x)

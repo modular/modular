@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import bitcast, pack_bits
-from testing import TestSuite
-from testing import assert_equal
+from std.memory import bitcast, pack_bits
+from std.testing import TestSuite
+from std.testing import assert_equal
 
 
-def test_bitcast():
+def test_bitcast() raises:
     assert_equal(
         bitcast[DType.int8, 8](SIMD[DType.int16, 4](1, 2, 3, 4)),
         SIMD[DType.int8, 8](1, 0, 2, 0, 3, 0, 4, 0),
@@ -28,7 +28,7 @@ def test_bitcast():
     )
 
 
-def test_pack_bits():
+def test_pack_bits() raises:
     comptime b1 = Scalar[DType.bool](True)
     assert_equal(pack_bits(b1).cast[DType.bool](), b1)
     assert_equal(pack_bits(b1).cast[DType.uint8](), UInt8(0b0000_0001))
@@ -52,5 +52,5 @@ def test_pack_bits():
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

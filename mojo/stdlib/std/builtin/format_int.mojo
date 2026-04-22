@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,8 +16,8 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from os import abort
-from sys import bit_width_of
+from std.os import abort
+from std.sys import bit_width_of
 
 comptime _DEFAULT_DIGIT_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz"
 
@@ -27,7 +27,7 @@ comptime _DEFAULT_DIGIT_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz"
 # ===-----------------------------------------------------------------------===#
 
 
-fn bin(num: Scalar, /, *, prefix: StaticString = "0b") -> String:
+def bin(num: Scalar, /, *, prefix: StaticString = "0b") -> String:
     """Return the binary string representation an integral value.
 
     ```mojo
@@ -51,7 +51,7 @@ fn bin(num: Scalar, /, *, prefix: StaticString = "0b") -> String:
 
 # Need this until we have constraints to stop the compiler from matching this
 # directly to bin[dtype: DType](num: Scalar[dtype]).
-fn bin(b: Scalar[DType.bool], /, *, prefix: StaticString = "0b") -> String:
+def bin(b: Scalar[DType.bool], /, *, prefix: StaticString = "0b") -> String:
     """Returns the binary representation of a scalar bool.
 
     Args:
@@ -64,7 +64,7 @@ fn bin(b: Scalar[DType.bool], /, *, prefix: StaticString = "0b") -> String:
     return bin(b.cast[DType.int8](), prefix=prefix)
 
 
-fn bin[T: Intable, //](num: T, /, *, prefix: StaticString = "0b") -> String:
+def bin[T: Intable, //](num: T, /, *, prefix: StaticString = "0b") -> String:
     """Returns the binary representation of an indexer type.
 
     Parameters:
@@ -85,7 +85,7 @@ fn bin[T: Intable, //](num: T, /, *, prefix: StaticString = "0b") -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-fn hex(value: Scalar, /, *, prefix: StaticString = "0x") -> String:
+def hex(value: Scalar, /, *, prefix: StaticString = "0x") -> String:
     """Returns the hex string representation of the given integer.
 
     The hexadecimal representation is a base-16 encoding of the integer value.
@@ -103,7 +103,7 @@ fn hex(value: Scalar, /, *, prefix: StaticString = "0x") -> String:
     return _format_int[radix=16](value, prefix=prefix)
 
 
-fn hex[T: Intable, //](value: T, /, *, prefix: StaticString = "0x") -> String:
+def hex[T: Intable, //](value: T, /, *, prefix: StaticString = "0x") -> String:
     """Returns the hex string representation of the given integer.
 
     The hexadecimal representation is a base-16 encoding of the integer value.
@@ -124,7 +124,7 @@ fn hex[T: Intable, //](value: T, /, *, prefix: StaticString = "0x") -> String:
     return hex(Scalar[DType.int](Int(value)), prefix=prefix)
 
 
-fn hex(value: Scalar[DType.bool], /, *, prefix: StaticString = "0x") -> String:
+def hex(value: Scalar[DType.bool], /, *, prefix: StaticString = "0x") -> String:
     """Returns the hex string representation of the given scalar bool.
 
     The hexadecimal representation is a base-16 encoding of the bool.
@@ -147,7 +147,7 @@ fn hex(value: Scalar[DType.bool], /, *, prefix: StaticString = "0x") -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-fn oct(value: Scalar, /, *, prefix: StaticString = "0o") -> String:
+def oct(value: Scalar, /, *, prefix: StaticString = "0o") -> String:
     """Returns the octal string representation of the given integer.
 
     The octal representation is a base-8 encoding of the integer value.
@@ -165,7 +165,7 @@ fn oct(value: Scalar, /, *, prefix: StaticString = "0o") -> String:
     return _format_int[radix=8](value, prefix=prefix)
 
 
-fn oct[T: Intable, //](value: T, /, *, prefix: StaticString = "0o") -> String:
+def oct[T: Intable, //](value: T, /, *, prefix: StaticString = "0o") -> String:
     """Returns the octal string representation of the given integer.
 
     The octal representation is a base-8 encoding of the integer value.
@@ -186,7 +186,7 @@ fn oct[T: Intable, //](value: T, /, *, prefix: StaticString = "0o") -> String:
     return oct(Scalar[DType.int](Int(value)), prefix=prefix)
 
 
-fn oct(value: Scalar[DType.bool], /, *, prefix: StaticString = "0o") -> String:
+def oct(value: Scalar[DType.bool], /, *, prefix: StaticString = "0o") -> String:
     """Returns the octal string representation of the given scalar bool.
 
     The octal representation is a base-8 encoding of the bool.
@@ -209,7 +209,7 @@ fn oct(value: Scalar[DType.bool], /, *, prefix: StaticString = "0o") -> String:
 # ===-----------------------------------------------------------------------===#
 
 
-fn _format_int[
+def _format_int[
     dtype: DType,
     *,
     radix: Int = 10,
@@ -222,7 +222,7 @@ fn _format_int[
     return output^
 
 
-fn _write_int[
+def _write_int[
     dtype: DType,
     W: Writer,
     //,
@@ -236,15 +236,15 @@ fn _write_int[
     The maximum supported radix is 36 unless a custom `digit_chars` mapping is
     provided.
     """
-    __comptime_assert dtype.is_integral(), "Expected integral"
-    __comptime_assert (
+    comptime assert dtype.is_integral(), "Expected integral"
+    comptime assert (
         radix >= 2
     ), "Unable to format integer to string with radix < 2"
-    __comptime_assert radix <= digit_chars.byte_length(), (
+    comptime assert radix <= digit_chars.byte_length(), (
         "Unable to format integer to string when provided radix is larger than"
         " length of available digit value characters"
     )
-    __comptime_assert digit_chars.byte_length() >= 2, (
+    comptime assert digit_chars.byte_length() >= 2, (
         "Unable to format integer to string when provided digit_chars mapping"
         " len is not >= 2"
     )
@@ -267,10 +267,10 @@ fn _write_int[
         # SAFETY:
         #   This static origin is valid as long as we're using a
         #   `StaticString` for `digit_chars`.
-        var zero_char = digit_chars_array[0]
+        var zero_char = digit_chars_array.unsafe_ptr()[]
 
         # Construct a null-terminated buffer of single-byte char.
-        var zero_buf = InlineArray[UInt8, 2](zero_char, 0)
+        var zero_buf: InlineArray[UInt8, 2] = [zero_char, 0]
 
         # TODO(MSTDL-720):
         #   Support printing non-null-terminated strings on GPU and switch
@@ -306,9 +306,9 @@ fn _write_int[
     var remaining_int = value
 
     @parameter
-    fn process_digits[
-        get_digit_value: fn (Scalar[dtype]) -> Scalar[dtype],
-        div_fn: fn (Scalar[dtype]) -> Scalar[dtype],
+    def process_digits[
+        get_digit_value: def(Scalar[dtype]) thin -> Scalar[dtype],
+        div_fn: def(Scalar[dtype]) thin -> Scalar[dtype],
     ]():
         while remaining_int:
             var digit_value = get_digit_value(remaining_int)
@@ -316,7 +316,7 @@ fn _write_int[
             # Write the char representing the value of the least significant
             # digit.
             (buf.unsafe_ptr() + offset).init_pointee_copy(
-                digit_chars_array[Int(digit_value)]
+                digit_chars_array.unsafe_ptr()[Int(digit_value)]
             )
 
             # Position the offset to write the next digit.
@@ -332,20 +332,20 @@ fn _write_int[
 
     if remaining_int >= 0:
 
-        fn pos_digit_value(value: Scalar[dtype]) -> Scalar[dtype]:
-            return value % radix
+        def pos_digit_value(value: Scalar[dtype]) -> Scalar[dtype]:
+            return value % Scalar[dtype](radix)
 
-        fn floor_div(value: Scalar[dtype]) -> Scalar[dtype]:
-            return value / radix
+        def floor_div(value: Scalar[dtype]) -> Scalar[dtype]:
+            return value / Scalar[dtype](radix)
 
         process_digits[pos_digit_value, floor_div]()
     else:
 
-        fn neg_digit_value(value: Scalar[dtype]) -> Scalar[dtype]:
-            return abs(value % -radix)
+        def neg_digit_value(value: Scalar[dtype]) -> Scalar[dtype]:
+            return abs(value % Scalar[dtype](-radix))
 
-        fn ceil_div(value: Scalar[dtype]) -> Scalar[dtype]:
-            return value.__ceildiv__(radix)
+        def ceil_div(value: Scalar[dtype]) -> Scalar[dtype]:
+            return value.__ceildiv__(Scalar[dtype](radix))
 
         process_digits[neg_digit_value, ceil_div]()
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,24 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import Atomic
-from time import time_function
+from std.atomic import Atomic
+from std.time import time_function
 
-from runtime.asyncrt import TaskGroup
-from testing import assert_equal, TestSuite
+from std.runtime.asyncrt import TaskGroup
+from std.testing import assert_equal, TestSuite
 
-from utils.lock import BlockingScopedLock, BlockingSpinLock
+from std.utils.lock import BlockingScopedLock, BlockingSpinLock
 
 
-def test_basic_lock():
+def test_basic_lock() raises:
     var lock = BlockingSpinLock()
     var rawCounter = 0
     var counter = Atomic[DType.int64](0)
     comptime maxI = 100
     comptime maxJ = 100
 
-    @parameter
-    async fn inc():
+    async def inc() unified {mut}:
         with BlockingScopedLock(lock):
             rawCounter += 1
             _ = counter.fetch_add(1)
@@ -41,15 +40,14 @@ def test_basic_lock():
         rawCounter,
     )
 
-    @parameter
-    fn test_atomic() -> None:
+    def test_atomic() unified {mut} -> None:
         var tg = TaskGroup()
         for _ in range(0, maxI):
             for _ in range(0, maxJ):
                 tg.create_task(inc())
         tg.wait[origin_of(lock)._mlir_origin]()
 
-    _ = time_function[test_atomic]()
+    _ = time_function(test_atomic)
     _ = lock^
     # print("Total time taken ", time_ns / (1_000_000_000), " s")
 
@@ -60,10 +58,10 @@ def test_basic_lock():
         ", and raw counter, ",
         rawCounter,
     )
-    assert_equal(counter.load(), rawCounter, "atomic stress test failed")
+    assert_equal(counter.load(), Int64(rawCounter), "atomic stress test failed")
 
     return
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

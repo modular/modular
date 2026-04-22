@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,18 +21,16 @@ from collections import defaultdict
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.quantization import QuantizationEncoding
-from max.nn import (
-    MLP,
-    ColumnParallelLinear,
+from max.nn.attention import TensorParallelAttentionWithRope
+from max.nn.comm import Signals
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.norm import RMSNorm
+from max.nn.transformer import (
     DistributedTransformer,
     DistributedTransformerBlock,
-    Linear,
-    RMSNorm,
-    Signals,
-    TensorParallelAttentionWithRope,
-    VocabParallelEmbedding,
 )
-from max.nn.kv_cache import KVCacheParams
 
 logger = logging.getLogger("max.pipelines")
 from .model_config import Llama3Config, create_rope_embedding
@@ -77,8 +75,8 @@ class DistributedLlama3(DistributedTransformer):
             eps=config.rms_norm_eps,
         )
 
-        fp8_cfg = config.float8_config
-        linear_cls = functools.partial(Linear, float8_config=fp8_cfg)
+        quant_cfg = config.quant_config
+        linear_cls = functools.partial(Linear, quant_config=quant_cfg)
 
         layers = []
         sublayer_groupings_dict = defaultdict(list)
@@ -89,12 +87,13 @@ class DistributedLlama3(DistributedTransformer):
             # quantized models.
             attn_qkv_dtype = (
                 DType.bfloat16
-                if fp8_cfg and layer_idx not in fp8_cfg.attn_qkv_in_float8
+                if quant_cfg
+                and layer_idx not in quant_cfg.attn_quantized_layers
                 else config.dtype
             )
             mlp_dtype = (
                 DType.bfloat16
-                if fp8_cfg and layer_idx not in fp8_cfg.mlp_in_float8
+                if quant_cfg and layer_idx not in quant_cfg.mlp_quantized_layers
                 else config.dtype
             )
 
@@ -109,12 +108,12 @@ class DistributedLlama3(DistributedTransformer):
                 config.intermediate_size,
                 config.devices,
                 linear_cls,
-                float8_config=(
-                    fp8_cfg
-                    if fp8_cfg and (layer_idx in fp8_cfg.mlp_in_float8)
+                quant_config=(
+                    quant_cfg
+                    if quant_cfg
+                    and (layer_idx in quant_cfg.mlp_quantized_layers)
                     else None
                 ),
-                dist_gemm_config=config.dist_gemm_config,
             )
 
             layers.append(
@@ -133,10 +132,10 @@ class DistributedLlama3(DistributedTransformer):
                         devices=config.devices,
                         has_bias=config.attention_bias,
                         # Only pass the float8 config if this attention layer is quantized.
-                        float8_config=(
-                            fp8_cfg
-                            if fp8_cfg
-                            and (layer_idx in fp8_cfg.attn_qkv_in_float8)
+                        quant_config=(
+                            quant_cfg
+                            if quant_cfg
+                            and (layer_idx in quant_cfg.attn_quantized_layers)
                             else None
                         ),
                     ),
@@ -144,7 +143,6 @@ class DistributedLlama3(DistributedTransformer):
                     attention_norm=create_distributed_norm(),
                     mlp_norm=create_distributed_norm(),
                     devices=config.devices,
-                    distributed_gemm_config=config.dist_gemm_config,
                     # TODO: Support residual_multiplier
                     # residual_multiplier=config.residual_multiplier,
                 )
@@ -158,8 +156,8 @@ class DistributedLlama3(DistributedTransformer):
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
             embedding_output_dtype = DType.bfloat16
             embedding_output_quantization = None
-        if fp8_cfg and fp8_cfg.embedding_output_dtype:
-            embedding_output_dtype = fp8_cfg.embedding_output_dtype
+        if quant_cfg and quant_cfg.embedding_output_dtype:
+            embedding_output_dtype = quant_cfg.embedding_output_dtype
 
         embedding_layer = VocabParallelEmbedding(
             config.vocab_size,
@@ -198,7 +196,7 @@ class DistributedLlama3(DistributedTransformer):
         )
 
     def input_types(
-        self, kv_params: KVCacheParams
+        self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model
@@ -210,7 +208,7 @@ class DistributedLlama3(DistributedTransformer):
             DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
         )
 
-        kv_inputs = kv_params.get_symbolic_inputs()
+        kv_inputs = kv_params.get_symbolic_inputs().flatten()
 
         # Construct Graph Inputs
         tokens_type = TensorType(
@@ -219,10 +217,6 @@ class DistributedLlama3(DistributedTransformer):
         input_row_offsets_type = TensorType(
             DType.uint32, shape=["input_row_offsets_len"], device=device_ref
         )
-        # Flatten kv types for each device
-        flattened_kv_types: list[TensorType] = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
 
         signals = Signals(devices=self.config.devices)
 
@@ -236,6 +230,6 @@ class DistributedLlama3(DistributedTransformer):
             return_n_logits_type,
         ]
         all_input_types.extend(signal_buffer_types)
-        all_input_types.extend(flattened_kv_types)
+        all_input_types.extend(kv_inputs)
 
         return tuple(all_input_types)

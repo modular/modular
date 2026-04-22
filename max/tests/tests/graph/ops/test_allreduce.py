@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
+
+import re
 
 import pytest
 from conftest import tensor_types
@@ -148,3 +150,42 @@ def test_allreduce_basic() -> None:
         )
         for output, device in zip(allreduce_outputs, devices, strict=True):
             assert device == output.device
+
+
+def test_allreduce_layer_stages_bundled_ir() -> None:
+    """Test that ops.bundled_allreduce.sum generates bundled allreduce inside mo.parallel."""
+    devices = [
+        DeviceRef.GPU(id=0),
+        DeviceRef.GPU(id=1),
+    ]
+    signals = Signals(devices)
+
+    with Graph(
+        "allreduce_bundled",
+        input_types=[
+            TensorType(dtype=DType.float32, shape=[6, 5], device=devices[0]),
+            TensorType(dtype=DType.float32, shape=[6, 5], device=devices[1]),
+            *signals.input_types(),
+        ],
+    ) as graph:
+        tensor_inputs = [graph.inputs[i].tensor for i in range(len(devices))]
+        signal_buffers = [
+            graph.inputs[len(devices) + i].buffer for i in range(len(devices))
+        ]
+
+        allreduce_outputs = ops.bundled_allreduce.sum(
+            tensor_inputs, signal_buffers
+        )
+        graph.output(*allreduce_outputs)
+
+    ir = str(graph)
+
+    assert re.search(r"mo\.parallel", ir), (
+        "Expected mo.parallel region in IR but not found"
+    )
+    assert re.search(r"mo\.bundled\.allreduce\.sum", ir), (
+        "Expected mo.bundled.allreduce.sum in IR but not found"
+    )
+    assert not re.search(r"mo\.distributed\.allreduce\.sum", ir), (
+        "Did not expect mo.distributed.allreduce.sum in IR"
+    )

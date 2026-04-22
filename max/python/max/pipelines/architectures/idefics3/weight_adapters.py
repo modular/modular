@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -40,6 +40,7 @@ def convert_idefics3_language_model_state_dict(
     naming without this prefix.
 
     This adapter:
+
     1. Filters to only include language model weights (those with
        `language_model.` prefix).
     2. Strips the `language_model.model.` prefix to match DistributedLlama3

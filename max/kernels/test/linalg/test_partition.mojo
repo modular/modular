@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,7 +19,7 @@ comptime b_type = DType.float32
 
 
 # CHECK-LABEL: test_partition
-fn test_partition():
+def test_partition():
     print("== test_partition")
     # Matmul dimensions
     var M = 4
@@ -95,5 +95,5 @@ fn test_partition():
     print(config.shape)
 
 
-fn main():
+def main():
     test_partition()

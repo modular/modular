@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,24 +13,24 @@
 # RUN: %mojo %s 2>&1 1>/dev/null | FileCheck %s --check-prefix=CHECK-STDERR
 
 
-import sys
+import std.sys
 
-from testing import TestSuite
+from std.testing import TestSuite
 
 
 # CHECK-LABEL: test_print_stderr
-def test_print_stderr():
+def test_print_stderr() raises:
     # CHECK-STDERR: stderr
-    print("stderr", file=sys.stderr)
+    print("stderr", file=std.sys.stderr)
     # CHECK-STDERR: a/b/c
-    print("a", "b", "c", sep="/", file=sys.stderr)
+    print("a", "b", "c", sep="/", file=std.sys.stderr)
     # CHECK-STDERR: world
-    print("world", flush=True, file=sys.stderr)
+    print("world", flush=True, file=std.sys.stderr)
     # CHECK-STDERR: helloworld
-    print("hello", end="world", file=sys.stderr)
+    print("hello", end="world", file=std.sys.stderr)
     # CHECK-STDERR: hello world
-    print("hello world", file=sys.stderr)
+    print("hello world", file=std.sys.stderr)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

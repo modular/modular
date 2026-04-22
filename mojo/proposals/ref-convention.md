@@ -329,8 +329,8 @@ commence! 👏
 We have proposed two new conventions: an argument convention and a result
 convention. For both of these conventions, we have used the keyword `ref`. This
 terminology has precedent in C++, C#, and many other languages. However, Mojo
-aims to adopt the syntax of Python, and in Python, a "reference" is understood to
-be a pointer to a heap-allocated, garbage-collected instance of a class. The
+aims to adopt the syntax of Python, and in Python, a "reference" is understood
+to be a pointer to a heap-allocated, garbage-collected instance of a class. The
 argument conventions that we've proposed are entirely unrelated to that feature.
 Therefore, it seems wise to consider other syntaxes for the conventions. We
 encountered a similar issue with the `Reference` type, and this motivated our

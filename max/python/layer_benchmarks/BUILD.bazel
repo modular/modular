@@ -1,0 +1,196 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "benchmark_utils",
+    srcs = ["benchmark_utils.py"],
+    ignore_extra_deps = ["//max/python/max/profiler"],
+    ignore_unresolved_imports = [
+        "max._core.profiler.Trace",
+    ],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/profiler",
+        requirement("numpy"),
+        requirement("tabulate"),
+    ],
+)
+
+# -- Model test bed framework --
+
+modular_py_library(
+    name = "testbed",
+    srcs = glob(
+        ["testbed/**/*.py"],
+        exclude = ["testbed/dump_ir_cli.py"],
+    ),
+    ignore_extra_deps = [
+        "//max/python/max/profiler",
+    ],
+    ignore_unresolved_imports = [
+        "max._core.driver.Buffer",
+        "max._core.profiler.Trace",
+    ],
+    imports = ["."],
+    deps = [
+        ":benchmark_utils",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/profiler",
+        requirement("cyclopts"),
+        requirement("torch"),
+        requirement("numpy"),
+        requirement("tabulate"),
+        requirement("transformers"),
+        requirement("typing-extensions"),
+    ],
+)
+
+modular_py_binary(
+    name = "dump_ir",
+    srcs = ["testbed/dump_ir_cli.py"],
+    imports = ["."],
+    main = "testbed/dump_ir_cli.py",
+    deps = [
+        ":testbed",
+        requirement("cyclopts"),
+    ],
+)
+
+# kbench YAML configs — referenced by kbench at runtime.
+exports_files([
+    "bench_attention_with_rope.yaml",
+    "bench_attention_fp4.yaml",
+    "bench_attention_fp8.yaml",
+    "bench_gemma4_attention.yaml",
+    "bench_gemma3_attention.yaml",
+    "bench_gpt_oss_attention.yaml",
+    "bench_olmo2_attention.yaml",
+    "bench_qwen3_attention.yaml",
+])
+
+# -- Harness tests --
+
+_HARNESS_TEST_DEPS = [
+    ":testbed",
+    "//max/python/max/interfaces",
+]
+
+_GPU_CONSTRAINTS = ["//:has_gpu"] + select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
+_NVIDIA_ONLY = ["//:has_gpu"] + select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//:amd_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
+# Harness tests: {name: gpu_constraints}.
+# Each generates a modular_py_test from test_<name>.py.
+_HARNESS_TESTS = {
+    "harness_attention_with_rope_bf16": _GPU_CONSTRAINTS,
+    "harness_attention_unfused_rope": _GPU_CONSTRAINTS,
+    "harness_attention_with_rope_fp4": ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:amd_gpu": ["@platforms//:incompatible"],
+        "//:b200_gpu": [],  # NVFP4 requires SM100+
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "harness_attention_with_rope_fp8": ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:amd_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],  # FP8 works on H100+ and B200+
+    }),
+    # TODO(KERN-2749): Re-enable on AMD once graph compiler supports
+    # sliding window attention and QK norm on MI355.
+    "harness_gemma4_attention": _NVIDIA_ONLY,
+    # TODO(KERN-2751): Re-enable on AMD once flash_attention[sink=True]
+    # produces correct results on MI355.
+    "harness_gpt_oss_attention": _NVIDIA_ONLY,
+    "harness_olmo2_attention": _GPU_CONSTRAINTS,
+    "harness_qwen2_5vl_attention": _GPU_CONSTRAINTS,
+    "harness_qwen3_attention": _GPU_CONSTRAINTS,
+    # TODO(KERN-2749): Re-enable on AMD once graph compiler supports
+    # sliding window attention and QK norm on MI355.
+    "harness_gemma3_attention": _NVIDIA_ONLY,
+}
+
+[
+    modular_py_test(
+        name = name,
+        srcs = ["test_{}.py".format(name)],
+        exec_properties = {"test.resources:gpu-memory": "10"},
+        gpu_constraints = constraints,
+        imports = ["."],
+        tags = ["gpu"],
+        deps = _HARNESS_TEST_DEPS,
+    )
+    for name, constraints in _HARNESS_TESTS.items()
+]
+
+modular_py_test(
+    name = "harness_rms_norm",
+    srcs = ["test_harness_rms_norm.py"],
+    exec_properties = {"test.resources:gpu-memory": "10"},
+    gpu_constraints = _GPU_CONSTRAINTS,
+    ignore_extra_deps = ["//max/python/max/interfaces"],
+    imports = ["."],
+    tags = ["gpu"],
+    deps = _HARNESS_TEST_DEPS,
+)
+
+modular_py_test(
+    name = "harness_text_encoder",
+    srcs = ["test_harness_text_encoder.py"],
+    # Production UMT5 (24-layer, d_model=4096) needs ~40GB for weights +
+    # activations. Default (10GB) suffices for the small smoke config.
+    exec_properties = {"test.resources:gpu-memory": "10"},
+    gpu_constraints = _GPU_CONSTRAINTS,
+    ignore_extra_deps = ["//max/python/max/interfaces"],
+    imports = ["."],
+    tags = ["gpu"],
+    deps = _HARNESS_TEST_DEPS + [":benchmark_utils"],
+)
+
+modular_py_test(
+    name = "harness_wan_vae_attention",
+    srcs = ["test_harness_wan_vae_attention.py"],
+    # Smoke config (dim=96, 8x8) fits easily. Production tiers
+    # (dim=384, 60x106 at 480p / 90x160 at 720p) use ~40GB because
+    # torch SDPA materializes the NxN attention matrix for head_dim
+    # larger than the flash-attn threshold.
+    exec_properties = {"test.resources:gpu-memory": "40"},
+    gpu_constraints = _GPU_CONSTRAINTS,
+    ignore_extra_deps = ["//max/python/max/interfaces"],
+    imports = ["."],
+    tags = ["gpu"],
+    deps = _HARNESS_TEST_DEPS + [":benchmark_utils"],
+)
+
+modular_py_test(
+    name = "testbed_validation",
+    srcs = ["test_testbed_validation.py"],
+    exec_properties = {"test.resources:gpu-memory": "10"},
+    gpu_constraints = _GPU_CONSTRAINTS,
+    ignore_extra_deps = ["//max/python/max/interfaces"],
+    imports = ["."],
+    tags = ["gpu"],
+    deps = _HARNESS_TEST_DEPS + [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("torch"),
+    ],
+)

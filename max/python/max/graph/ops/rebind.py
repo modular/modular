@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -38,7 +38,7 @@ def rebind(
     Args:
         x: The input symbolic tensor to rebind.
         shape: The symbolic shape to assert for ``x``, as a list of
-               [``Dim``](/max/api/python/graph/type/Dim) values.
+               :obj:`~max.graph.Dim` values.
         message: The message printed if the rebind fails at runtime.
         layout: A layout of the weights used by some operations like `conv`.
 

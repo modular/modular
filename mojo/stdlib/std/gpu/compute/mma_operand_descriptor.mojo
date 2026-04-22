@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,18 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# """This module includes traits abstracting WGMMA operand descriptors."""
+"""Implements traits for abstracting MMA operand descriptors in GPU matrix operations."""
 
 
-@register_passable("trivial")
-trait MMAOperandDescriptor(ImplicitlyCopyable):
+trait MMAOperandDescriptor(TrivialRegisterPassable):
     """Trait for abstracting MMA (Matrix Multiply-Accumulate) operand descriptors.
 
     This trait defines the interface for WGMMA operand descriptors used in GPU matrix operations.
     """
 
     @always_inline
-    fn __add__(self, offset: Int) -> Self:
+    def __add__(self, offset: Int) -> Self:
         """Adds an offset to the operand descriptor.
 
         Args:

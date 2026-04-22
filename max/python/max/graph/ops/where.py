@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,9 +24,7 @@ from .validation import assert_same_device
 def where(
     condition: TensorValueLike, x: TensorValueLike, y: TensorValueLike
 ) -> TensorValue:
-    """
-    Returns ``condition ? x : y`` (element-wise), where ``cond``, ``x`` and ``y``
-    are input tensors.
+    """Returns element-wise ``condition ? x : y`` for input tensors condition, x, and y.
 
     Args:
         condition: The condition tensor to use for selecting elementwise
@@ -38,7 +36,7 @@ def where(
 
     Returns:
         A new symbolic tensor holding either values from either ``x`` or ``y``,
-        based on the elements in `condition`.
+        based on the elements in ``condition``.
     """
     condition = TensorValue(condition)
     if condition.dtype != DType.bool:

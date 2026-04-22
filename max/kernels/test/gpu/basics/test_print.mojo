@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from reflection import source_location
-from gpu.host import DeviceContext
+from std.reflection import source_location
+from std.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: == test_gpu_print_formattable
-fn test_gpu_print_formattable() raises:
+def test_gpu_print_formattable() raises:
     print("== test_gpu_print_formattable")
 
-    fn do_print(x: Int, y: Float64):
+    def do_print(x: Int, y: Float64):
         # ==============================
         # Test printing primitive types
         # ==============================
@@ -57,7 +57,7 @@ fn test_gpu_print_formattable() raises:
         #   expected due to precision loss inherent in shrinking down to
         #   a 16 bit type.
 
-        fn print_casts(value: Float32):
+        def print_casts(value: Float32):
             var a = value.cast[DType.float64]()
             var b = value.cast[DType.bfloat16]()
             var c = value.cast[DType.bfloat16]().cast[DType.float64]()
@@ -92,5 +92,5 @@ fn test_gpu_print_formattable() raises:
         ctx.synchronize()
 
 
-def main():
+def main() raises:
     test_gpu_print_formattable()

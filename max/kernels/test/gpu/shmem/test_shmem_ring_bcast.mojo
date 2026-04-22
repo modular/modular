@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,25 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
-# RUN: %mojo-build %s -o %t
-# RUN: %mpirun-gpu-per-thread %t
+# RUN: %mojo %s
 
-from os import getenv, listdir, setenv
-from os.path import dirname
-from pathlib import Path, cwd
-from subprocess import run
-from sys.ffi import c_int
-from sys.param_env import env_get_string
+from std.ffi import c_int, c_size_t
 
-from gpu.host.device_attribute import DeviceAttribute
-from gpu.host.dim import Dim
-from gpu.host import DeviceBuffer
-from python import Python
+from std.gpu.host import DeviceBuffer
 from shmem import *
-from testing import assert_equal
+from std.testing import assert_equal
 
 
-fn ring_bcast(
+def ring_bcast(
     data: UnsafePointer[c_int, MutAnyOrigin],
     nelem: Int,
     root: c_int,
@@ -47,14 +38,14 @@ fn ring_bcast(
     if mype == npes - 1:
         return
 
-    shmem_put(data, data, UInt(nelem), peer)
+    shmem_put(data, data, c_size_t(nelem), peer)
     shmem_fence()
     shmem_signal_op(psync, 1, SHMEM_SIGNAL_SET, peer)
 
     psync[0] = 0
 
 
-def test_ring_bcast(ctx: SHMEMContext):
+def test_ring_bcast(ctx: SHMEMContext) raises:
     comptime data_len = 32
     var destination = ctx.enqueue_create_buffer[DType.int32](1)
 
@@ -63,7 +54,7 @@ def test_ring_bcast(ctx: SHMEMContext):
     var psync = shmem_calloc[DType.uint64](1)
 
     for i in range(data_len):
-        data_h[i] = shmem_my_pe() + i
+        data_h[i] = shmem_my_pe() + Int32(i)
 
     data.enqueue_copy_from(data_h)
 
@@ -100,5 +91,5 @@ def test_ring_bcast(ctx: SHMEMContext):
         )
 
 
-def main():
+def main() raises:
     shmem_launch[test_ring_bcast]()

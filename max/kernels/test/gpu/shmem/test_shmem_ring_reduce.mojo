@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,20 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
-# RUN: %mojo-build %s -o %t
-# RUN: %mpirun-gpu-per-thread %t
-
-from algorithm import parallelize
-from gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
-from math import iota
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os import abort
+# RUN: %mojo %s
+from std.gpu import block_dim, grid_dim, block_idx, thread_idx, barrier
+from std.math import iota
+from std.os import abort
 from shmem import *
-from sys.ffi import c_int
-from sys.info import size_of
-from gpu.host import DeviceBuffer
+from std.ffi import c_int
+from std.sys.info import size_of
+from std.gpu.host import DeviceBuffer
 
 comptime min_size = 1024 * 1024 * 32
 comptime max_size = min_size * 16
@@ -36,11 +30,11 @@ comptime step_factor = 2
 comptime chunk_size = 1024 * 256
 
 
-fn ring_reduce(
-    dst_ptr: UnsafePointer[c_int],
-    src_ptr: UnsafePointer[c_int],
+def ring_reduce(
+    dst_ptr: UnsafePointer[c_int, MutAnyOrigin],
+    src_ptr: UnsafePointer[c_int, ImmutAnyOrigin],
     nreduce: Int,
-    signal_ptr: UnsafePointer[UInt64],
+    signal_ptr: UnsafePointer[UInt64, MutAnyOrigin],
     chunk_size: Int,
 ):
     """Perform Allreduce using ring algorithm.
@@ -64,13 +58,13 @@ fn ring_reduce(
     var num_threads = block_dim.x
     var num_blocks = grid_dim.x
     var block_idx = block_idx.x
-    var elems_per_block = nreduce // Int(num_blocks)
+    var elems_per_block = nreduce // num_blocks
 
-    if elems_per_block * Int(block_idx + 1) > nreduce:
+    if elems_per_block * (block_idx + 1) > nreduce:
         return
 
-    var src = src_ptr + block_idx * UInt(elems_per_block)
-    var dst = dst_ptr + block_idx * UInt(elems_per_block)
+    var src = src_ptr + block_idx * elems_per_block
+    var dst = dst_ptr + block_idx * elems_per_block
     var signal = signal_ptr + block_idx
 
     var chunk_elems = chunk_size // size_of[DType.int32]()
@@ -81,12 +75,12 @@ fn ring_reduce(
         # Wait for data from previous PE (except PE 0 which starts)
         if mype != 0:
             if thread_id == 0:
-                shmem_signal_wait_until(signal, SHMEM_CMP_GE, chunk + 1)
+                shmem_signal_wait_until(signal, SHMEM_CMP_GE, UInt64(chunk + 1))
 
             barrier()
 
             var i = thread_id
-            while i < UInt(chunk_elems):
+            while i < chunk_elems:
                 dst[i] = dst[i] + src[i]
                 i += num_threads
             barrier()
@@ -112,7 +106,7 @@ fn ring_reduce(
                 shmem_signal_wait_until(
                     signal,
                     SHMEM_CMP_GE,
-                    chunk + 1 if mype == 0 else num_chunks + chunk + 1,
+                    UInt64(chunk + 1 if mype == 0 else num_chunks + chunk + 1),
                 )
             if mype < npes - 2:
                 shmem_put_signal_nbi(
@@ -122,11 +116,11 @@ fn ring_reduce(
         signal[0] = 0
 
 
-def bench_ring_reduce(ctx: SHMEMContext):
+def bench_ring_reduce(ctx: SHMEMContext) raises:
     var min_ints = min_size // size_of[DType.int32]()
-    debug_assert(
-        min_ints % num_blocks == 0, "min_size must be divisible by num_blocks"
-    )
+    assert (
+        min_ints % num_blocks == 0
+    ), "min_size must be divisible by num_blocks"
 
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
@@ -154,7 +148,7 @@ def bench_ring_reduce(ctx: SHMEMContext):
         var num_ints = size // size_of[DType.int32]()
 
         # Warmup iterations
-        for i in range(warmup_iters):
+        for _ in range(warmup_iters):
             ctx.enqueue_function_collective_checked[ring_reduce, ring_reduce](
                 dst,
                 src,
@@ -170,7 +164,7 @@ def bench_ring_reduce(ctx: SHMEMContext):
         ctx.synchronize()
 
         @parameter
-        def benchmark():
+        def benchmark() raises:
             ctx.enqueue_function_collective_checked[ring_reduce, ring_reduce](
                 dst,
                 src,
@@ -185,7 +179,7 @@ def bench_ring_reduce(ctx: SHMEMContext):
             ctx.barrier_all()
 
         var elapsed_ns = dev_ctx.execution_time[benchmark](iters) / iters
-        var elapsed_ms = elapsed_ns / 1e6
+        var elapsed_ms = Float64(elapsed_ns) / 1e6
 
         ctx.synchronize()
 
@@ -195,7 +189,7 @@ def bench_ring_reduce(ctx: SHMEMContext):
 
         # Each element should be i * npes after allreduce
         for i in range(num_ints):
-            var expected = Int32(i * npes)
+            var expected = Int32(Int32(i) * npes)
             if data_h[i] != expected:
                 # Avoid assert_equal overhead on these large buffers
                 abort(
@@ -225,5 +219,5 @@ def bench_ring_reduce(ctx: SHMEMContext):
         size *= step_factor
 
 
-def main():
+def main() raises:
     shmem_launch[bench_ring_reduce]()

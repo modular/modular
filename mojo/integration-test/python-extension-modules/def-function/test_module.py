@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -98,19 +98,19 @@ def _test_takes_zero(fut: Callable[[], None]) -> None:
     )
 
 
-def _test_takes_one(fut: Callable[[list], None]) -> None:
+def _test_takes_one(fut: Callable[[list], None]) -> None:  # type: ignore[type-arg]
     list_obj = [1, 2, 5]
     fut(list_obj)
     assert list_obj[0] == "baz"
 
 
-def _test_takes_two(fut: Callable[[list, str], None]) -> None:
+def _test_takes_two(fut: Callable[[list, str], None]) -> None:  # type: ignore[type-arg]
     list_obj = [1, 2, 5]
     fut(list_obj, "foo")
     assert list_obj[0] == "foo"
 
 
-def _test_takes_three(fut: Callable[[list, str, str], None]) -> None:
+def _test_takes_three(fut: Callable[[list, str, str], None]) -> None:  # type: ignore[type-arg]
     list_obj = [1, 2, 5]
     fut(list_obj, "foo", "bar")
     assert list_obj[0] == "foobar"

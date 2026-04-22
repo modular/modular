@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,13 +13,13 @@
 
 
 from linalg.utils import partition_work
-from nn.conv_utils import ConvShape, get_conv_num_partitions
+from nn.conv.conv_utils import ConvShape, get_conv_num_partitions
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 # CHECK-LABEL: test_conv_partition
-fn test_partition():
+def test_partition():
     print("== test_conv_partition")
     comptime micro_kernel_height = 6
     comptime micro_kernel_width = 4
@@ -84,5 +84,5 @@ fn test_partition():
         print(ho_range)
 
 
-fn main():
+def main():
     test_partition()

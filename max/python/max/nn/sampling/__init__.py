@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,6 +13,23 @@
 """Sampling custom ops."""
 
 from .min_p import MinPSampler
-from .rejection_sampler import RejectionSampler, RejectionSamplerWithResiduals
+from .rejection_sampler import (
+    AcceptanceSampler,
+    RejectionSampler,
+    RejectionSamplerWithResiduals,
+    compute_synthetic_acceptance_base_rate,
+    greedy_acceptance_sampler,
+    stochastic_acceptance_sampler,
+    synthetic_acceptance_sampler,
+)
 
-__all__ = ["MinPSampler", "RejectionSampler", "RejectionSamplerWithResiduals"]
+__all__ = [
+    "AcceptanceSampler",
+    "MinPSampler",
+    "RejectionSampler",
+    "RejectionSamplerWithResiduals",
+    "compute_synthetic_acceptance_base_rate",
+    "greedy_acceptance_sampler",
+    "stochastic_acceptance_sampler",
+    "synthetic_acceptance_sampler",
+]

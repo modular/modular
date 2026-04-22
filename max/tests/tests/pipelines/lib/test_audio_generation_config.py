@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,10 +15,9 @@
 from max.pipelines.lib import AudioGenerationConfig
 
 
-def test_audio_generation_config_missing_help_method() -> None:
-    """Test that AudioGenerationConfig is missing a help() method and should have one."""
-
-    # Check if AudioGenerationConfig has its own help method or inherits from PipelineConfig
-    assert "help" in AudioGenerationConfig.__dict__, (
-        "AudioGenerationConfig should have its own help() method"
+def test_audio_generation_config_field_descriptions() -> None:
+    """Ensure AudioGenerationConfig exposes field descriptions for CLI help."""
+    assert (
+        AudioGenerationConfig.model_fields["audio_decoder"].description
+        == "The name of the audio decoder model architecture."
     )

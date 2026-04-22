@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,41 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from layout import Layout, LayoutTensor
+from layout import TileTensor, row_major
 from nn.pad import pad_constant, pad_reflect, pad_repeat
-from testing import assert_equal
+from std.testing import assert_equal
 
 
 # CHECK-LABEL: test_pad_1d
-fn test_pad_1d() raises:
+def test_pad_1d() raises:
     print("== test_pad_1d")
-
-    comptime in_layout = Layout.row_major(3)
-    comptime out_layout = Layout.row_major(6)
 
     # Create an input matrix of the form
     # [1, 2, 3]
-    var input_stack: InlineArray[Scalar[DType.int], in_layout.size()] = [
+    var input_stack: InlineArray[Scalar[DType.int], 3] = [
         1,
         2,
         3,
     ]
-    var input = LayoutTensor[DType.int, in_layout](input_stack)
+    var input = TileTensor(input_stack, row_major[3]())
 
     # Create a padding array of the form
     # [1, 2]
     var paddings_stack: InlineArray[Scalar[DType.int], 2] = [1, 2]
-    var paddings = LayoutTensor[DType.int, Layout.row_major(2)](paddings_stack)
+    var paddings = TileTensor(paddings_stack, row_major[2]())
 
     # Create an output matrix of the form
     # [0, 0, 0, 0, 0, 0]
-    var output_stack = InlineArray[Scalar[DType.int], out_layout.size()](
-        uninitialized=True
-    )
-    var output = LayoutTensor[DType.int, out_layout](output_stack).fill(0)
+    var output_stack = InlineArray[Scalar[DType.int], 6](uninitialized=True)
+    var output = TileTensor(output_stack, row_major[6]()).fill(0)
 
     var constant = Scalar[DType.int](5)
 
@@ -64,28 +56,27 @@ fn test_pad_1d() raises:
 
 
 # CHECK-LABEL: test_pad_reflect_1d
-fn test_pad_reflect_1d() raises:
+def test_pad_reflect_1d() raises:
     print("== test_pad_reflect_1d")
-
-    comptime in_layout = Layout.row_major(3)
-    comptime out_layout = Layout.row_major(8)
 
     # Create an input matrix of the form
     # [1, 2, 3]
-    var input_stack = InlineArray[Scalar[DType.int], in_layout.size()](1, 2, 3)
-    var input = LayoutTensor[DType.int, in_layout](input_stack)
+    var input_stack: InlineArray[Scalar[DType.int], 3] = [
+        1,
+        2,
+        3,
+    ]
+    var input = TileTensor(input_stack, row_major[3]())
 
     # Create an output matrix of the form
     # [0, 0, 0, 0, 0, 0, 0, 0]
-    var output_stack = InlineArray[Scalar[DType.int], out_layout.size()](
-        uninitialized=True
-    )
-    var output = LayoutTensor[DType.int, out_layout](output_stack).fill(0)
+    var output_stack = InlineArray[Scalar[DType.int], 8](uninitialized=True)
+    var output = TileTensor(output_stack, row_major[8]()).fill(0)
 
     # Create a padding array of the form
     # [3, 2]
-    var paddings_stack = InlineArray[Scalar[DType.int], 2](3, 2)
-    var paddings = LayoutTensor[DType.int, Layout.row_major(2)](paddings_stack)
+    var paddings_stack: InlineArray[Scalar[DType.int], 2] = [3, 2]
+    var paddings = TileTensor(paddings_stack, row_major[2]())
 
     # pad
     pad_reflect(output, input, paddings.ptr)
@@ -104,28 +95,27 @@ fn test_pad_reflect_1d() raises:
 
 
 # CHECK-LABEL: test_pad_repeat_1d
-fn test_pad_repeat_1d() raises:
+def test_pad_repeat_1d() raises:
     print("== test_pad_repeat_1d")
-
-    comptime in_layout = Layout.row_major(3)
-    comptime out_layout = Layout.row_major(8)
 
     # Create an input matrix of the form
     # [1, 2, 3]
-    var input_stack = InlineArray[Scalar[DType.int], in_layout.size()](1, 2, 3)
-    var input = LayoutTensor[DType.int, in_layout](input_stack)
+    var input_stack: InlineArray[Scalar[DType.int], 3] = [
+        1,
+        2,
+        3,
+    ]
+    var input = TileTensor(input_stack, row_major[3]())
 
     # Create an output matrix of the form
     # [0, 0, 0, 0, 0, 0, 0, 0]
-    var output_stack = InlineArray[Scalar[DType.int], out_layout.size()](
-        uninitialized=True
-    )
-    var output = LayoutTensor[DType.int, out_layout](output_stack).fill(0)
+    var output_stack = InlineArray[Scalar[DType.int], 8](uninitialized=True)
+    var output = TileTensor(output_stack, row_major[8]()).fill(0)
 
     # Create a padding array of the form
     # [3, 2]
-    var paddings_stack = InlineArray[Scalar[DType.int], 2](3, 2)
-    var paddings = LayoutTensor[DType.int, Layout.row_major(2)](paddings_stack)
+    var paddings_stack: InlineArray[Scalar[DType.int], 2] = [3, 2]
+    var paddings = TileTensor(paddings_stack, row_major[2]())
 
     # pad
     pad_repeat(output, input, paddings.ptr)
@@ -144,19 +134,14 @@ fn test_pad_repeat_1d() raises:
 
 
 # CHECK-LABEL: test_pad_2d
-fn test_pad_2d() raises:
+def test_pad_2d() raises:
     print("== test_pad_2d")
-
-    comptime in_layout = Layout.row_major(2, 2)
-    comptime out_layout = Layout.row_major(3, 4)
 
     # Create an input matrix of the form
     # [[1, 2],
     #  [3, 4]]
-    var input_stack = InlineArray[Scalar[DType.int], in_layout.size()](
-        uninitialized=True
-    )
-    var input = LayoutTensor[DType.int, in_layout](input_stack)
+    var input_stack = InlineArray[Scalar[DType.int], 4](uninitialized=True)
+    var input = TileTensor(input_stack, row_major[2, 2]())
     input[0, 0] = 1
     input[0, 1] = 2
     input[1, 0] = 3
@@ -164,17 +149,15 @@ fn test_pad_2d() raises:
 
     # Create a padding array of the form
     # [1, 0, 1, 1]
-    var paddings_stack = InlineArray[Scalar[DType.int], 4](1, 0, 1, 1)
-    var paddings = LayoutTensor[DType.int, Layout.row_major(4)](paddings_stack)
+    var paddings_stack: InlineArray[Scalar[DType.int], 4] = [1, 0, 1, 1]
+    var paddings = TileTensor(paddings_stack, row_major[4]())
 
     # Create an output matrix of the form
     # [[0, 0, 0, 0]
     #  [0, 0, 0, 0]
     #  [0, 0, 0, 0]]
-    var output_stack = InlineArray[Scalar[DType.int], out_layout.size()](
-        uninitialized=True
-    )
-    var output = LayoutTensor[DType.int, out_layout](output_stack).fill(0)
+    var output_stack = InlineArray[Scalar[DType.int], 12](uninitialized=True)
+    var output = TileTensor(output_stack, row_major[3, 4]()).fill(0)
 
     var constant = Scalar[DType.int](6)
 
@@ -201,19 +184,14 @@ fn test_pad_2d() raises:
 
 
 # CHECK-LABEL: test_pad_reflect_2d
-fn test_pad_reflect_2d() raises:
+def test_pad_reflect_2d() raises:
     print("== test_pad_reflect_2d")
-
-    comptime in_layout = Layout.row_major(2, 2)
-    comptime out_layout = Layout.row_major(6, 3)
 
     # Create an input matrix of the form
     # [[1, 2],
     #  [3, 4]]
-    var input_stack = InlineArray[Scalar[DType.int], in_layout.size()](
-        uninitialized=True
-    )
-    var input = LayoutTensor[DType.int, in_layout](input_stack)
+    var input_stack = InlineArray[Scalar[DType.int], 4](uninitialized=True)
+    var input = TileTensor(input_stack, row_major[2, 2]())
     input[0, 0] = 1
     input[0, 1] = 2
     input[1, 0] = 3
@@ -221,8 +199,8 @@ fn test_pad_reflect_2d() raises:
 
     # Create a padding array of the form
     # [2, 2, 1, 0]
-    var paddings_stack = InlineArray[Scalar[DType.int], 4](2, 2, 1, 0)
-    var paddings = LayoutTensor[DType.int, Layout.row_major(4)](paddings_stack)
+    var paddings_stack: InlineArray[Scalar[DType.int], 4] = [2, 2, 1, 0]
+    var paddings = TileTensor(paddings_stack, row_major[4]())
 
     # Create an output matrix of the form
     # [[0 0 0]
@@ -231,10 +209,8 @@ fn test_pad_reflect_2d() raises:
     #  [0 0 0]
     #  [0 0 0]
     #  [0 0 0]]
-    var output_stack = InlineArray[Scalar[DType.int], out_layout.size()](
-        uninitialized=True
-    )
-    var output = LayoutTensor[DType.int, out_layout](output_stack).fill(0)
+    var output_stack = InlineArray[Scalar[DType.int], 18](uninitialized=True)
+    var output = TileTensor(output_stack, row_major[6, 3]()).fill(0)
 
     # pad
     pad_reflect(output, input, paddings.ptr)
@@ -268,19 +244,14 @@ fn test_pad_reflect_2d() raises:
 
 
 # CHECK-LABEL: test_pad_repeat_2d
-fn test_pad_repeat_2d() raises:
+def test_pad_repeat_2d() raises:
     print("== test_pad_repeat_2d")
-
-    comptime in_layout = Layout.row_major(2, 2)
-    comptime out_layout = Layout.row_major(6, 3)
 
     # Create an input matrix of the form
     # [[1, 2],
     #  [3, 4]]
-    var input_stack = InlineArray[Scalar[DType.int], in_layout.size()](
-        uninitialized=True
-    )
-    var input = LayoutTensor[DType.int, in_layout](input_stack)
+    var input_stack = InlineArray[Scalar[DType.int], 4](uninitialized=True)
+    var input = TileTensor(input_stack, row_major[2, 2]())
     input[0, 0] = 1
     input[0, 1] = 2
     input[1, 0] = 3
@@ -289,7 +260,7 @@ fn test_pad_repeat_2d() raises:
     # Create a padding array of the form
     # [2, 2, 1, 0]
     var paddings_stack: InlineArray[Scalar[DType.int], 4] = [2, 2, 1, 0]
-    var paddings = LayoutTensor[DType.int, Layout.row_major(4)](paddings_stack)
+    var paddings = TileTensor(paddings_stack, row_major[4]())
 
     # Create an output matrix of the form
     # [[0 0 0]
@@ -298,10 +269,8 @@ fn test_pad_repeat_2d() raises:
     #  [0 0 0]
     #  [0 0 0]
     #  [0 0 0]]
-    var output_stack = InlineArray[Scalar[DType.int], out_layout.size()](
-        uninitialized=True
-    )
-    var output = LayoutTensor[DType.int, out_layout](output_stack).fill(0)
+    var output_stack = InlineArray[Scalar[DType.int], 18](uninitialized=True)
+    var output = TileTensor(output_stack, row_major[6, 3]()).fill(0)
 
     # pad
     pad_repeat(output, input, paddings.ptr)
@@ -335,19 +304,14 @@ fn test_pad_repeat_2d() raises:
 
 
 # CHECK-LABEL: test_pad_3d
-fn test_pad_3d() raises:
+def test_pad_3d() raises:
     print("== test_pad_3d")
-
-    comptime in_layout = Layout.row_major(1, 2, 2)
-    comptime out_layout = Layout.row_major(2, 3, 3)
 
     # Create an input matrix of the form
     # [[[1, 2],
     #   [3, 4]]]
-    var input_stack = InlineArray[Scalar[DType.int], in_layout.size()](
-        uninitialized=True
-    )
-    var input = LayoutTensor[DType.int, in_layout](input_stack)
+    var input_stack = InlineArray[Scalar[DType.int], 4](uninitialized=True)
+    var input = TileTensor(input_stack, row_major[1, 2, 2]())
     input[0, 0, 0] = 1
     input[0, 0, 1] = 2
     input[0, 1, 0] = 3
@@ -356,7 +320,7 @@ fn test_pad_3d() raises:
     # Create a padding array of the form
     # [1, 0, 0, 1, 1, 0]
     var paddings_stack: InlineArray[Scalar[DType.int], 6] = [1, 0, 0, 1, 1, 0]
-    var paddings = LayoutTensor[DType.int, Layout.row_major(6)](paddings_stack)
+    var paddings = TileTensor(paddings_stack, row_major[6]())
 
     # Create an output matrix of the form
     # [[[0, 0, 0]
@@ -365,10 +329,8 @@ fn test_pad_3d() raises:
     #  [[0, 0, 0]
     #   [0, 0, 0]
     #   [0, 0, 0]]]
-    var output_stack = InlineArray[Scalar[DType.int], out_layout.size()](
-        uninitialized=True
-    )
-    var output = LayoutTensor[DType.int, out_layout](output_stack).fill(0)
+    var output_stack = InlineArray[Scalar[DType.int], 18](uninitialized=True)
+    var output = TileTensor(output_stack, row_major[2, 3, 3]()).fill(0)
 
     var constant = Scalar[DType.int](7)
 
@@ -404,20 +366,16 @@ fn test_pad_3d() raises:
 
 
 # CHECK-LABEL: test_pad_reflect_3d
-fn test_pad_reflect_3d() raises:
+def test_pad_reflect_3d() raises:
     print("== test_pad_reflect_3d")
-    comptime in_layout = Layout.row_major(2, 2, 2)
-    comptime out_layout = Layout.row_major(4, 3, 3)
 
     # Create an input matrix of the form
     # [[[1, 2],
     #   [3, 4]],
     #  [[1, 2],
     #   [3 ,4]]]
-    var input_stack = InlineArray[Scalar[DType.int], in_layout.size()](
-        uninitialized=True
-    )
-    var input = LayoutTensor[DType.int, in_layout](input_stack)
+    var input_stack = InlineArray[Scalar[DType.int], 8](uninitialized=True)
+    var input = TileTensor(input_stack, row_major[2, 2, 2]())
     input[0, 0, 0] = 1
     input[0, 0, 1] = 2
     input[0, 1, 0] = 3
@@ -430,7 +388,7 @@ fn test_pad_reflect_3d() raises:
     # Create a padding array of the form
     # [1, 1, 0, 1, 1, 0]
     var paddings_stack: InlineArray[Scalar[DType.int], 6] = [1, 1, 0, 1, 1, 0]
-    var paddings = LayoutTensor[DType.int, Layout.row_major(6)](paddings_stack)
+    var paddings = TileTensor(paddings_stack, row_major[6]())
 
     # Create an output matrix of the form
     # [[[0 0 0]
@@ -445,10 +403,8 @@ fn test_pad_reflect_3d() raises:
     #  [[0 0 0]
     #   [0 0 0]
     #   [0 0 0]]]
-    var output_stack = InlineArray[Scalar[DType.int], out_layout.size()](
-        uninitialized=True
-    )
-    var output = LayoutTensor[DType.int, out_layout](output_stack).fill(0)
+    var output_stack = InlineArray[Scalar[DType.int], 36](uninitialized=True)
+    var output = TileTensor(output_stack, row_major[4, 3, 3]()).fill(0)
 
     # pad
     pad_reflect(output, input, paddings.ptr)
@@ -506,17 +462,13 @@ fn test_pad_reflect_3d() raises:
 
 
 # CHECK-LABEL: test_pad_reflect_3d_singleton
-fn test_pad_reflect_3d_singleton() raises:
+def test_pad_reflect_3d_singleton() raises:
     print("== test_pad_reflect_3d_singleton")
-    comptime in_layout = Layout.row_major(1, 1, 1)
-    comptime out_layout = Layout.row_major(2, 2, 5)
 
     # Create an input matrix of the form
     # [[[1]]]
-    var input_stack = InlineArray[Scalar[DType.int], in_layout.size()](
-        uninitialized=True
-    )
-    var input = LayoutTensor[DType.int, in_layout](input_stack)
+    var input_stack = InlineArray[Scalar[DType.int], 1](uninitialized=True)
+    var input = TileTensor(input_stack, row_major[1, 1, 1]())
     input[0, 0, 0] = 1
 
     # Create a padding array of the form
@@ -529,17 +481,15 @@ fn test_pad_reflect_3d_singleton() raises:
         2,
         2,
     ]
-    var paddings = LayoutTensor[DType.int, Layout.row_major(6)](paddings_stack)
+    var paddings = TileTensor(paddings_stack, row_major[6]())
 
     # Create an output matrix of the form
     # [[[0 0 0 0 0]
     #   [0 0 0 0 0]]
     #  [[0 0 0 0 0]
     #   [0 0 0 0 0]]]
-    var output_stack = InlineArray[Scalar[DType.int], out_layout.size()](
-        uninitialized=True
-    )
-    var output = LayoutTensor[DType.int, out_layout](output_stack).fill(0)
+    var output_stack = InlineArray[Scalar[DType.int], 20](uninitialized=True)
+    var output = TileTensor(output_stack, row_major[2, 2, 5]()).fill(0)
 
     # pad
     pad_reflect(output, input, paddings.ptr)
@@ -573,17 +523,15 @@ fn test_pad_reflect_3d_singleton() raises:
 
 
 # CHECK-LABEL: test_pad_reflect_4d_big_input
-fn test_pad_reflect_4d_big_input() raises:
+def test_pad_reflect_4d_big_input() raises:
     print("== test_pad_reflect_4d_big_input")
 
-    comptime in_layout = Layout.row_major(1, 1, 512, 512)
     comptime in_size = 1 * 1 * 512 * 512
-    comptime out_layout = Layout.row_major(2, 3, 1024, 1024)
     comptime out_size = 2 * 3 * 1024 * 1024
 
     # create a big input matrix and fill it with ones
-    var input_ptr = UnsafePointer[Scalar[DType.int]].alloc(in_size)
-    var input = LayoutTensor[DType.int, in_layout](input_ptr).fill(1)
+    var input_ptr = alloc[Scalar[DType.int]](in_size)
+    var input = TileTensor(input_ptr, row_major[1, 1, 512, 512]()).fill(1)
 
     # create a padding array of the form
     # [1, 0, 1, 1, 256, 256, 256, 256]
@@ -597,11 +545,11 @@ fn test_pad_reflect_4d_big_input() raises:
         256,
         256,
     ]
-    var paddings = LayoutTensor[DType.int, Layout.row_major(8)](paddings_stack)
+    var paddings = TileTensor(paddings_stack, row_major[8]())
 
     # create an even bigger output matrix and fill it with zeros
-    var output_ptr = UnsafePointer[Scalar[DType.int]].alloc(out_size)
-    var output = LayoutTensor[DType.int, out_layout](output_ptr).fill(0)
+    var output_ptr = alloc[Scalar[DType.int]](out_size)
+    var output = TileTensor(output_ptr, row_major[2, 3, 1024, 1024]()).fill(0)
 
     # pad
     pad_reflect(output, input, paddings.ptr)
@@ -613,20 +561,16 @@ fn test_pad_reflect_4d_big_input() raises:
 
 
 # CHECK-LABEL: test_pad_repeat_3d
-fn test_pad_repeat_3d() raises:
+def test_pad_repeat_3d() raises:
     print("== test_pad_repeat_3d")
-    comptime in_layout = Layout.row_major(2, 2, 2)
-    comptime out_layout = Layout.row_major(5, 4, 3)
 
     # Create an input matrix of the form
     # [[[1, 2],
     #   [3, 4]],
     #  [[1, 2],
     #   [3 ,4]]]
-    var input_stack = InlineArray[Scalar[DType.int], in_layout.size()](
-        uninitialized=True
-    )
-    var input = LayoutTensor[DType.int, in_layout](input_stack)
+    var input_stack = InlineArray[Scalar[DType.int], 8](uninitialized=True)
+    var input = TileTensor(input_stack, row_major[2, 2, 2]())
     input[0, 0, 0] = 1
     input[0, 0, 1] = 2
     input[0, 1, 0] = 3
@@ -639,13 +583,11 @@ fn test_pad_repeat_3d() raises:
     # Create a padding array of the form
     # [1, 1, 0, 1, 1, 0]
     var paddings_stack: InlineArray[Scalar[DType.int], 6] = [1, 2, 0, 2, 0, 1]
-    var paddings = LayoutTensor[DType.int, Layout.row_major(6)](paddings_stack)
+    var paddings = TileTensor(paddings_stack, row_major[6]())
 
     # Create an output array equivalent to np.zeros((5, 4, 3))
-    var output_stack = InlineArray[Scalar[DType.int], out_layout.size()](
-        uninitialized=True
-    )
-    var output = LayoutTensor[DType.int, out_layout](output_stack).fill(0)
+    var output_stack = InlineArray[Scalar[DType.int], 60](uninitialized=True)
+    var output = TileTensor(output_stack, row_major[5, 4, 3]()).fill(0)
 
     # pad
     pad_repeat(output, input, paddings.ptr)
@@ -738,7 +680,7 @@ fn test_pad_repeat_3d() raises:
     assert_equal(output[4, 3, 2], 4)
 
 
-def main():
+def main() raises:
     test_pad_1d()
     test_pad_reflect_1d()
     test_pad_repeat_1d()

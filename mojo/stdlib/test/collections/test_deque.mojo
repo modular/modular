@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,17 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Deque
+from std.collections import Deque
 
-from testing import assert_equal, assert_false, assert_raises, assert_true
-from testing import TestSuite
+from test_utils import Observable, check_write_to
+from std.testing import assert_equal, assert_false, assert_raises, assert_true
+from std.testing import TestSuite
 
 # ===-----------------------------------------------------------------------===#
 # Implementation tests
 # ===-----------------------------------------------------------------------===#
 
 
-fn test_impl_init_default() raises:
+def test_impl_init_default() raises:
     q = Deque[Int]()
 
     assert_equal(q._capacity, q.default_capacity)
@@ -32,7 +33,7 @@ fn test_impl_init_default() raises:
     assert_equal(q._shrink, True)
 
 
-fn test_impl_init_capacity() raises:
+def test_impl_init_capacity() raises:
     q = Deque[Int](capacity=-10)
     assert_equal(q._capacity, q.default_capacity)
     assert_equal(q._min_capacity, q.default_capacity)
@@ -50,7 +51,7 @@ fn test_impl_init_capacity() raises:
     assert_equal(q._min_capacity, q.default_capacity)
 
 
-fn test_impl_init_min_capacity() raises:
+def test_impl_init_min_capacity() raises:
     q = Deque[Int](min_capacity=-10)
     assert_equal(q._min_capacity, q.default_capacity)
     assert_equal(q._capacity, q.default_capacity)
@@ -68,7 +69,7 @@ fn test_impl_init_min_capacity() raises:
     assert_equal(q._capacity, q.default_capacity)
 
 
-fn test_impl_init_maxlen() raises:
+def test_impl_init_maxlen() raises:
     q = Deque[Int](maxlen=-10)
     assert_equal(q._maxlen, -1)
     assert_equal(q._capacity, q.default_capacity)
@@ -93,13 +94,13 @@ fn test_impl_init_maxlen() raises:
     assert_equal(q._capacity, q.default_capacity)
 
 
-fn test_impl_init_shrink() raises:
+def test_impl_init_shrink() raises:
     q = Deque[Int](shrink=False)
     assert_equal(q._shrink, False)
     assert_equal(q._capacity, q.default_capacity)
 
 
-fn test_impl_shrink_realloc_empty_deque() raises:
+def test_impl_shrink_realloc_empty_deque() raises:
     # Regression test for issue #5635:
     # When capacity > min_capacity and deque is empty (head == tail),
     # _realloc must recognize this as empty (not full) and shrink correctly.
@@ -127,7 +128,7 @@ fn test_impl_shrink_realloc_empty_deque() raises:
     assert_equal(q[0], 42)
 
 
-fn test_impl_init_list() raises:
+def test_impl_init_list() raises:
     q = Deque(elements=Optional([Int(0), 1, 2]))
     assert_equal(q._head, 0)
     assert_equal(q._tail, 3)
@@ -139,7 +140,7 @@ fn test_impl_init_list() raises:
     _ = q^
 
 
-fn test_impl_init_list_args() raises:
+def test_impl_init_list_args() raises:
     q = Deque(elements=Optional([0, 1, 2]), maxlen=2, capacity=10)
     assert_equal(q._head, 0)
     assert_equal(q._tail, 2)
@@ -150,7 +151,7 @@ fn test_impl_init_list_args() raises:
     _ = q^
 
 
-fn test_impl_init_variadic() raises:
+def test_impl_init_variadic() raises:
     q = Deque(0, 1, 2)
 
     assert_equal(q._head, 0)
@@ -163,7 +164,7 @@ fn test_impl_init_variadic() raises:
     _ = q^
 
 
-fn test_impl_len() raises:
+def test_impl_len() raises:
     q = Deque[Int]()
 
     q._head = 0
@@ -175,7 +176,7 @@ fn test_impl_len() raises:
     assert_equal(len(q), 10)
 
 
-fn test_impl_bool() raises:
+def test_impl_bool() raises:
     q = Deque[Int]()
     assert_false(q)
 
@@ -183,7 +184,7 @@ fn test_impl_bool() raises:
     assert_true(q)
 
 
-fn test_impl_append() raises:
+def test_impl_append() raises:
     q = Deque[Int](capacity=2)
 
     q.append(0)
@@ -231,7 +232,7 @@ fn test_impl_append() raises:
     _ = q^
 
 
-fn test_impl_append_with_maxlen() raises:
+def test_impl_append_with_maxlen() raises:
     q = Deque[Int](maxlen=3)
 
     assert_equal(q._maxlen, 3)
@@ -256,7 +257,7 @@ fn test_impl_append_with_maxlen() raises:
     _ = q^
 
 
-fn test_impl_appendleft() raises:
+def test_impl_appendleft() raises:
     q = Deque[Int](capacity=2)
 
     q.appendleft(0)
@@ -306,7 +307,7 @@ fn test_impl_appendleft() raises:
     _ = q^
 
 
-fn test_impl_appendleft_with_maxlen() raises:
+def test_impl_appendleft_with_maxlen() raises:
     q = Deque[Int](maxlen=3)
 
     assert_equal(q._maxlen, 3)
@@ -331,7 +332,7 @@ fn test_impl_appendleft_with_maxlen() raises:
     _ = q^
 
 
-fn test_impl_extend() raises:
+def test_impl_extend() raises:
     q = Deque[Int](maxlen=4)
     lst = [0, 1, 2]
 
@@ -395,7 +396,7 @@ fn test_impl_extend() raises:
     _ = q^
 
 
-fn test_impl_extendleft() raises:
+def test_impl_extendleft() raises:
     q = Deque[Int](maxlen=4)
     lst = [0, 1, 2]
 
@@ -460,7 +461,7 @@ fn test_impl_extendleft() raises:
     _ = q^
 
 
-fn test_impl_insert() raises:
+def test_impl_insert() raises:
     q = Deque[Int](0, 1, 2, 3, 4, 5)
 
     q.insert(0, 6)
@@ -486,7 +487,7 @@ fn test_impl_insert() raises:
     _ = q^
 
 
-fn test_impl_pop() raises:
+def test_impl_pop() raises:
     q = Deque[Int](capacity=2, min_capacity=2)
     with assert_raises():
         _ = q.pop()
@@ -500,7 +501,7 @@ fn test_impl_pop() raises:
     assert_equal(q._capacity, 2)
 
 
-fn test_popleft() raises:
+def test_popleft() raises:
     q = Deque[Int](capacity=2, min_capacity=2)
     assert_equal(q._capacity, 2)
     with assert_raises():
@@ -515,7 +516,7 @@ fn test_popleft() raises:
     assert_equal(q._capacity, 2)
 
 
-fn test_impl_clear() raises:
+def test_impl_clear() raises:
     q = Deque[Int](capacity=2)
     q.append(1)
     assert_equal(q._tail, 1)
@@ -526,7 +527,7 @@ fn test_impl_clear() raises:
     assert_equal(q._capacity, q._min_capacity)
 
 
-fn test_impl_add() raises:
+def test_impl_add() raises:
     l1 = [1, 2, 3, 4, 5, 6, 7, 8]
     l2 = [9, 10, 11, 12, 13, 14, 15, 16]
     q1 = Deque(elements=l1^, capacity=20, maxlen=30)
@@ -592,7 +593,7 @@ fn test_impl_add() raises:
     _ = q6^
 
 
-fn test_impl_iadd() raises:
+def test_impl_iadd() raises:
     l1 = [1, 2, 3, 4, 5, 6, 7, 8]
     l2 = [9, 10, 11, 12, 13, 14, 15, 16]
     q1 = Deque(elements=l1^, maxlen=10)
@@ -626,7 +627,7 @@ fn test_impl_iadd() raises:
     _ = q2^
 
 
-fn test_impl_mul() raises:
+def test_impl_mul() raises:
     l = [1, 2, 3]
     q = Deque(elements=l^, capacity=3, min_capacity=2, maxlen=7, shrink=False)
 
@@ -673,7 +674,7 @@ fn test_impl_mul() raises:
     _ = q4^
 
 
-fn test_impl_imul() raises:
+def test_impl_imul() raises:
     l = [1, 2, 3]
 
     q = Deque(
@@ -739,7 +740,7 @@ fn test_impl_imul() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-fn test_init_variadic_list() raises:
+def test_init_variadic_list() raises:
     lst1 = [0, 1]
     lst2 = [2, 3]
 
@@ -755,7 +756,7 @@ fn test_init_variadic_list() raises:
     assert_equal(p[1], [2, 3])
 
 
-fn test_copy_trivial() raises:
+def test_copy_trivial() raises:
     q = Deque(1, 2, 3)
 
     p = q.copy()
@@ -766,7 +767,7 @@ fn test_copy_trivial() raises:
     assert_equal(q[0], 1)
 
 
-fn test_copy_list() raises:
+def test_copy_list() raises:
     q = Deque[List[Int]]()
     lst1 = [1, 2, 3]
     lst2 = [4, 5, 6]
@@ -785,7 +786,7 @@ fn test_copy_list() raises:
     assert_equal(q[0], [1, 2, 3])
 
 
-fn test_move_list() raises:
+def test_move_list() raises:
     q = Deque[List[Int]]()
     lst1 = [1, 2, 3]
     lst2 = [4, 5, 6]
@@ -801,26 +802,26 @@ fn test_move_list() raises:
     assert_equal(p[0], [1, 2, 3])
 
 
-fn test_getitem() raises:
+def test_getitem() raises:
     q = Deque(1, 2)
     assert_equal(q[0], 1)
     assert_equal(q[1], 2)
-    assert_equal(q[-1], 2)
-    assert_equal(q[-2], 1)
+    assert_equal(q[len(q) - 1], 2)
+    assert_equal(q[len(q) - 2], 1)
 
 
-fn test_setitem() raises:
+def test_setitem() raises:
     q = Deque(1, 2)
     assert_equal(q[0], 1)
 
     q[0] = 3
     assert_equal(q[0], 3)
 
-    q[-1] = 4
+    q[len(q) - 1] = 4
     assert_equal(q[1], 4)
 
 
-fn test_eq() raises:
+def test_eq() raises:
     q = Deque[Int](1, 2, 3)
     p = Deque[Int](1, 2, 3)
 
@@ -831,7 +832,7 @@ fn test_eq() raises:
     assert_true(q == r)
 
 
-fn test_ne() raises:
+def test_ne() raises:
     q = Deque[Int](1, 2, 3)
     p = Deque[Int](3, 2, 1)
 
@@ -842,7 +843,7 @@ fn test_ne() raises:
     assert_true(q != p)
 
 
-fn test_count() raises:
+def test_count() raises:
     q = Deque(1, 2, 1, 2, 3, 1)
 
     assert_equal(q.count(1), 3)
@@ -854,14 +855,14 @@ fn test_count() raises:
     assert_equal(q.count(2), 3)
 
 
-fn test_contains() raises:
+def test_contains() raises:
     q = Deque[Int](1, 2, 3)
 
     assert_true(1 in q)
     assert_false(4 in q)
 
 
-fn test_index() raises:
+def test_index() raises:
     q = Deque(1, 2, 1, 2, 3, 1)
 
     assert_equal(q.index(2), 1)
@@ -875,11 +876,11 @@ fn test_index() raises:
         _ = q.index(4)
 
 
-fn test_insert() raises:
+def test_insert() raises:
     q = Deque[Int](capacity=4, maxlen=7)
 
-    # negative index outbound
-    q.insert(-10, 0)
+    # index 0 (clamps to beginning)
+    q.insert(0, 0)
     # Deque(0)
     assert_equal(q[0], 0)
     assert_equal(len(q), 1)
@@ -891,14 +892,14 @@ fn test_insert() raises:
     assert_equal(q[1], 0)
     assert_equal(len(q), 2)
 
-    # # positive index eq length
+    # positive index eq length
     q.insert(2, 2)
     # Deque(1, 0, 2)
     assert_equal(q[2], 2)
     assert_equal(q[1], 0)
 
-    # # positive index outbound
-    q.insert(10, 3)
+    # positive index at end
+    q.insert(len(q), 3)
     # Deque(1, 0, 2, 3)
     assert_equal(q[3], 3)
     assert_equal(q[2], 2)
@@ -907,22 +908,22 @@ fn test_insert() raises:
     assert_equal(len(q), 4)
     assert_equal(q._capacity, 8)
 
-    # # positive index inbound
+    # positive index inbound
     q.insert(1, 4)
     # Deque(1, 4, 0, 2, 3)
     assert_equal(q[1], 4)
     assert_equal(q[0], 1)
     assert_equal(q[2], 0)
 
-    # # positive index inbound
+    # positive index inbound
     q.insert(3, 5)
     # Deque(1, 4, 0, 5, 2, 3)
     assert_equal(q[3], 5)
     assert_equal(q[2], 0)
     assert_equal(q[4], 2)
 
-    # # negative index inbound
-    q.insert(-3, 6)
+    # index from end
+    q.insert(len(q) - 3, 6)
     # Deque(1, 4, 0, 6, 5, 2, 3)
     assert_equal(q[3], 6)
     assert_equal(q[2], 0)
@@ -934,7 +935,7 @@ fn test_insert() raises:
         q.insert(3, 7)
 
 
-fn test_remove() raises:
+def test_remove() raises:
     q = Deque[Int](min_capacity=32)
     q.extend([0, 1, 0, 2, 3, 0, 4, 5])
     assert_equal(len(q), 8)
@@ -973,7 +974,7 @@ fn test_remove() raises:
         q.remove(5)
 
 
-fn test_peek_and_peekleft() raises:
+def test_peek_and_peekleft() raises:
     q = Deque[Int](capacity=4)
     assert_equal(q._capacity, 4)
 
@@ -1001,7 +1002,7 @@ fn test_peek_and_peekleft() raises:
     assert_equal(q.peek(), 5)
 
 
-fn test_reverse() raises:
+def test_reverse() raises:
     q = Deque(0, 1, 2, 3)
 
     q.reverse()
@@ -1016,7 +1017,7 @@ fn test_reverse() raises:
     assert_equal(q[4], 4)
 
 
-fn test_rotate() raises:
+def test_rotate() raises:
     q = Deque(0, 1, 2, 3)
 
     q.rotate()
@@ -1036,7 +1037,7 @@ fn test_rotate() raises:
     assert_equal(q[3], 3)
 
 
-fn test_iter() raises:
+def test_iter() raises:
     q = Deque(1, 2, 3)
 
     i = 0
@@ -1052,7 +1053,7 @@ fn test_iter() raises:
     assert_equal(q[0], 4)
 
 
-fn test_iter_with_list() raises:
+def test_iter_with_list() raises:
     q = Deque[List[Int]]()
     lst1 = [1, 2, 3]
     lst2 = [4, 5, 6]
@@ -1079,17 +1080,19 @@ fn test_iter_with_list() raises:
     assert_equal(q[1], [1, 2, 3])
 
 
-fn test_reversed_iter() raises:
+def test_reversed_iter() raises:
     q = Deque(1, 2, 3)
 
-    i = 0
+    var i = 0
     for e in reversed(q):
-        i -= 1
-        assert_equal(e, q[i])
-    assert_equal(-i, len(q))
+        assert_equal(e, q[len(q) - 1 - i])
+        i += 1
+    assert_equal(i, len(q))
 
 
-def _test_deque_iter_bounds[I: Iterator](var deque_iter: I, deque_len: Int):
+def _test_deque_iter_bounds[
+    I: Iterator
+](var deque_iter: I, deque_len: Int) raises:
     var iter = deque_iter^
 
     for i in range(deque_len):
@@ -1097,7 +1100,7 @@ def _test_deque_iter_bounds[I: Iterator](var deque_iter: I, deque_len: Int):
         assert_equal(deque_len - i, lower)
         assert_equal(deque_len - i, upper.value())
         _ = trait_downcast_var[Movable & ImplicitlyDestructible](
-            iter.__next__()^
+            iter.__next__()
         )
 
     var lower, upper = iter.bounds()
@@ -1105,25 +1108,13 @@ def _test_deque_iter_bounds[I: Iterator](var deque_iter: I, deque_len: Int):
     assert_equal(0, upper.value())
 
 
-def test_deque_iter_bounds():
+def test_deque_iter_bounds() raises:
     var deque = Deque(1, 2, 3)
     _test_deque_iter_bounds(iter(deque), len(deque))
     _test_deque_iter_bounds(reversed(deque), len(deque))
 
 
-fn test_str_and_repr() raises:
-    q = Deque(1, 2, 3)
-
-    assert_equal(q.__str__(), "Deque(1, 2, 3)")
-    assert_equal(q.__repr__(), "Deque(1, 2, 3)")
-
-    s = Deque[StaticString]("a", "b", "c")
-
-    assert_equal(s.__str__(), "Deque('a', 'b', 'c')")
-    assert_equal(s.__repr__(), "Deque('a', 'b', 'c')")
-
-
-def test_deque_literal():
+def test_deque_literal() raises:
     var q: Deque[Int] = [1, 2, 3]
     assert_equal(3, len(q))
     assert_equal(1, q[0])
@@ -1139,32 +1130,145 @@ def test_deque_literal():
     assert_equal(0, len(q3))
 
 
-def test_repr_wrap():
-    var s = Deque[StaticString]("a", "b", "c")
-    assert_equal(repr(s), "Deque('a', 'b', 'c')")
+def test_repr_wrap() raises:
+    var s = Deque[String]("a", "b", "c")
+    assert_equal(
+        repr(s),
+        "Deque[String](['a', 'b', 'c'])",
+    )
 
 
-def test_write_to():
+def test_write_to() raises:
     """Test Writable trait implementation."""
-    var deque = Deque[Int](10, 20, 30)
-    var output = String()
-    deque.write_to(output)
+    check_write_to(
+        Deque[Int](10, 20, 30), expected="[10, 20, 30]", is_repr=False
+    )
+    check_write_to(
+        Deque[String]("a", "b", "c"), expected="[a, b, c]", is_repr=False
+    )
+    check_write_to(Deque[Int](), expected="[]", is_repr=False)
+    check_write_to(Deque[Int](42), expected="[42]", is_repr=False)
 
-    assert_equal(output, "Deque(10, 20, 30)")
 
-    # Test with different types
-    var string_deque = Deque[String]("hello", "world")
-    var string_output = String()
-    string_deque.write_to(string_output)
+def test_write_repr_to() raises:
+    """Test write_repr_to implementation."""
+    check_write_to(
+        Deque[Int](1, 2, 3),
+        expected="Deque[Int]([Int(1), Int(2), Int(3)])",
+        is_repr=True,
+    )
+    check_write_to(Deque[Int](1), expected="Deque[Int]([Int(1)])", is_repr=True)
+    check_write_to(Deque[Int](), expected="Deque[Int]([])", is_repr=True)
 
-    assert_equal(string_output, "Deque('hello', 'world')")
 
-    # Test empty deque
-    var empty_deque = Deque[Int]()
-    var empty_output = String()
-    empty_deque.write_to(empty_output)
+struct NonEquatable(Copyable):
+    pass
 
-    assert_equal(empty_output, "Deque()")
+
+def test_deque_conditional_conformances() raises:
+    assert_true(conforms_to(Deque[Int], Equatable))
+    assert_false(conforms_to(Deque[NonEquatable], Equatable))
+
+    assert_true(conforms_to(Deque[Int], Hashable))
+    assert_false(conforms_to(Deque[NonEquatable], Hashable))
+
+    # Verify equal deques produce equal hashes.
+    var d1 = Deque[Int](1, 2, 3)
+    var d2 = Deque[Int](1, 2, 3)
+    assert_equal(hash(d1), hash(d2))
+
+    assert_true(conforms_to(Deque[Int], Writable))
+    assert_false(conforms_to(Deque[NonEquatable], Writable))
+
+
+# ===-------------------------------------------------------------------===#
+# Owned iteration tests
+# ===-------------------------------------------------------------------===#
+
+# We use `MutAnyOrigin` to bypass exclusivity checking
+# otherwise we cannot construct a deque of Observables where
+# all point to the same copy/move/del counter.
+comptime ObservableElement = Observable[
+    CopyOrigin=MutAnyOrigin,
+    MoveOrigin=MutAnyOrigin,
+    DelOrigin=MutAnyOrigin,
+]
+
+
+def make_observable_deque(
+    *, mut copies: Int, mut moves: Int, mut dels: Int, length: Int
+) -> Deque[ObservableElement]:
+    var deque = Deque[ObservableElement]()
+    for _i in range(length):
+        deque.append(
+            ObservableElement(
+                copies=Pointer[Int, MutAnyOrigin](to=copies),
+                moves=Pointer[Int, MutAnyOrigin](to=moves),
+                dels=Pointer[Int, MutAnyOrigin](to=dels),
+            )
+        )
+    return deque^
+
+
+def test_deque_iter_owned() raises:
+    var deque = Deque[Int](1, 2, 3, 4, 5)
+    var result = List[Int]()
+    for elem in deque^:
+        result.append(elem)
+    assert_equal(len(result), 5)
+    assert_equal(result[0], 1)
+    assert_equal(result[1], 2)
+    assert_equal(result[2], 3)
+    assert_equal(result[3], 4)
+    assert_equal(result[4], 5)
+
+
+def test_deque_iter_owned_destroys_elements_if_not_consumed() raises:
+    var copies = 0
+    var moves = 0
+    var dels = 0
+
+    var deque = make_observable_deque(
+        copies=copies, moves=moves, dels=dels, length=2
+    )
+    var _ = deque^.__iter__()
+    assert_equal(copies, 0)
+    assert_equal(dels, 2)
+
+
+def test_deque_iter_owned_destroys_elements_if_partially_consumed() raises:
+    var copies = 0
+    var moves = 0
+    var dels = 0
+
+    var deque = make_observable_deque(
+        copies=copies, moves=moves, dels=dels, length=2
+    )
+
+    var iter = deque^.__iter__()
+    assert_equal(copies, 0)
+    assert_equal(dels, 0)
+
+    var _ = iter.__next__()
+    assert_equal(dels, 1)
+
+    _ = iter^
+    assert_equal(copies, 0)
+    assert_equal(dels, 2)
+
+
+def test_deque_iter_owned_bounds() raises:
+    var deque = Deque[Int](1, 2, 3)
+    var iter = deque^.__iter__()
+    for i in range(3, 0, -1):
+        var lower, upper = iter.bounds()
+        assert_equal(i, lower)
+        assert_equal(i, upper.value())
+        _ = iter.__next__()
+
+    var lower, upper = iter.bounds()
+    assert_equal(0, lower)
+    assert_equal(0, upper.value())
 
 
 # ===-------------------------------------------------------------------===#
@@ -1172,5 +1276,5 @@ def test_write_to():
 # ===-------------------------------------------------------------------===#
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

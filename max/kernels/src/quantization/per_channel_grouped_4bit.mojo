@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,44 +10,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import ceil, ceildiv
-from sys.info import size_of
+from std.math import ceil, ceildiv
+from std.sys.info import size_of
 
-from layout import Layout, LayoutTensor
-from memory import UnsafePointer, bitcast, memcpy
-from utils import IndexList, StaticTuple, product
+from layout import Layout, LayoutTensor, TileTensor
+from std.memory import UnsafePointer, bitcast, memcpy
+from std.utils import IndexList, StaticTuple, product
 
 
 @always_inline
-fn _to_StaticTuple[
-    dtype: DType, size: Int
+def _to_StaticTuple[
+    dtype: DType, size: SIMDSize
 ](data: SIMD[dtype, size]) -> StaticTuple[Scalar[dtype], size]:
     """Convert SIMD to StaticTuple."""
 
     var res = StaticTuple[Scalar[dtype], size]()
 
-    @parameter
-    for i in range(size):
+    comptime for i in range(size):
         res[i] = data[i]
     return res
 
 
 @always_inline
-fn _to_SIMD[
+def _to_SIMD[
     dtype: DType, size: Int
 ](data: StaticTuple[Scalar[dtype], size]) -> SIMD[dtype, size]:
     """Convert StaticTuple to SIMD."""
     var res = SIMD[dtype, size]()
 
-    @parameter
-    for i in range(size):
+    comptime for i in range(size):
         res[i] = data[i]
     return res
 
 
 @always_inline
-fn calculate_symmetric_vector[
-    input_dtype: DType, simd_width: Int, output_bits: Int
+def calculate_symmetric_vector[
+    input_dtype: DType, simd_width: SIMDSize, output_bits: Int
 ](data: SIMD[input_dtype, simd_width]) -> Tuple[
     SIMD[DType.uint8, simd_width],
     Scalar[input_dtype],
@@ -69,10 +67,10 @@ fn calculate_symmetric_vector[
       A vector of the quantized values.
       The associated scale factor.
     """
-    __comptime_assert (
+    comptime assert (
         output_bits >= 1 and output_bits <= 8
     ), "expected a scalar type"
-    __comptime_assert (
+    comptime assert (
         input_dtype.is_floating_point()
     ), "expect accumulating over floating point only."
     var max_value = data.reduce_max()
@@ -88,13 +86,15 @@ fn calculate_symmetric_vector[
     # data is ~[1, 1, 1, 1] + `negative_steps`
     var f32_scale = (max_value / 1.0) if (
         result_range == 0
-    ) else result_range / positive_steps
+    ) else result_range / Scalar[input_dtype](positive_steps)
 
     # TODO: consider clipping values
     var data_rounded = round(data / f32_scale).cast[DType.int8]()
 
     # each bit pattern in `data_quantized`
-    var data_quantized = (data_rounded + negative_steps).cast[DType.uint8]()
+    var data_quantized = (data_rounded + Int8(negative_steps)).cast[
+        DType.uint8
+    ]()
 
     return data_quantized, f32_scale
 
@@ -135,29 +135,29 @@ struct Q4sym[
 
     @staticmethod
     @always_inline
-    fn _check_constraints():
+    def _check_constraints():
         # TODO
-        __comptime_assert (
+        comptime assert (
             Self.group_size.is_power_of_two()
         ), "`group_size` must be a power of 2."
-        __comptime_assert (
+        comptime assert (
             Self.group_size == 8
             or Self.group_size == 16
             or Self.group_size == 32
         ), "Only support some `group_sizes`"
-        __comptime_assert (
+        comptime assert (
             Self.float_dtype.is_floating_point()
         ), "Must be floating point type"
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Construct a default initialized Q4sym."""
         self.scale = StaticTuple[UInt8, 2]()
         self.bits = StaticTuple[UInt8, Self.group_size // 2]()
         self._check_constraints()
 
     @always_inline
-    fn __init__(out self, data: SIMD[Self.float_dtype, Self.group_size]):
+    def __init__(out self, data: SIMD[Self.float_dtype, Self.group_size]):
         """
         Construct an encoded Q4sym from data.
 
@@ -178,14 +178,14 @@ struct Q4sym[
 
     @staticmethod
     @always_inline
-    fn _encode_bits(
+    def _encode_bits(
         qdata: SIMD[DType.uint8, Self.group_size]
     ) -> SIMD[DType.uint8, Self.group_size // 2]:
         var lo_hi = qdata.split()
         return lo_hi[0] | (lo_hi[1] << 4)
 
     @always_inline
-    fn _decode_bits(mut self) -> SIMD[DType.uint8, Self.group_size]:
+    def _decode_bits(mut self) -> SIMD[DType.uint8, Self.group_size]:
         # Extract the lower 4 bits of all bits in the `l_bits` format
         var bits_simd = _to_SIMD[DType.uint8, Self.group_size // 2](self.bits)
         var bits_upper = (bits_simd & 0xF0) >> 4
@@ -195,7 +195,7 @@ struct Q4sym[
         )
 
     @always_inline
-    fn decode_scale(mut self) -> Float16:
+    def decode_scale(mut self) -> Float16:
         """
         Obtain the scale factor.
 
@@ -218,7 +218,7 @@ struct Q4sym[
         return scale_decoded
 
     @always_inline
-    fn decode_unsigned(mut self) -> SIMD[DType.uint8, Self.group_size]:
+    def decode_unsigned(mut self) -> SIMD[DType.uint8, Self.group_size]:
         """
         Decode the stored uint4 numbers to uint8.
 
@@ -230,7 +230,7 @@ struct Q4sym[
         return self._decode_bits()
 
     @always_inline
-    fn decode_signed(mut self) -> SIMD[DType.int8, Self.group_size]:
+    def decode_signed(mut self) -> SIMD[DType.int8, Self.group_size]:
         """
         Decode the stored uint4 numbers to requantized int4 numbers.
 
@@ -245,7 +245,7 @@ struct Q4sym[
         return decoded_result.cast[DType.int8]() - 8
 
     @always_inline
-    fn decode_fully(mut self) -> SIMD[Self.float_dtype, Self.group_size]:
+    def decode_fully(mut self) -> SIMD[Self.float_dtype, Self.group_size]:
         """
         Decode the stored numbers into floating point representation.
 
@@ -264,29 +264,36 @@ struct Q4sym[
     # TODO: support other axis of quantization, right now assume inner-most dim.
     # TODO: support axis which not divisible by group_size
     @staticmethod
-    fn quantize_and_write_to_tensor(
-        input_tensor: LayoutTensor[
-            Self.float_dtype, address_space = AddressSpace.GENERIC, ...
+    def quantize_and_write_to_tensor[
+        input_rank: Int
+    ](
+        input_tt: TileTensor[
+            Self.float_dtype, address_space=AddressSpace.GENERIC, ...
         ],
-        output_tensor: LayoutTensor[
-            mut=True, DType.uint8, address_space = AddressSpace.GENERIC, ...
+        output_tt: TileTensor[
+            mut=True, DType.uint8, address_space=AddressSpace.GENERIC, ...
         ],
-        input_shape: IndexList[input_tensor.rank],
+        input_shape: IndexList[input_rank],
     ):
         """
-        Encodes the floating point numbers in `input_tensor` along the
-        inner-most dimension and writes the result to output_tensor.
+        Encodes the floating point numbers in `input_tt` along the
+        inner-most dimension and writes the result to output_tt.
 
         Args:
-            input_tensor: The input tensor we are encoding.
-            output_tensor: The output tensor containing the encoded input.
+            input_tt: The input tensor we are encoding.
+            output_tt: The output tensor containing the encoded input.
                 The shape of the output should be the same as the input
                 except along the inner dimension where if the original inner
                 dimension was `d`, the corresponding output dimension should be:
                     ceil(`d` / group_size) * size_of(self).
             input_shape: The shape of the input tensor.
         """
-        __comptime_assert (
+        var input_tensor = input_tt.to_layout_tensor()
+        var output_tensor = output_tt.to_layout_tensor()
+        comptime assert (
+            input_rank == input_tensor.rank
+        ), "input_rank must match tensor rank"
+        comptime assert (
             input_tensor.rank == output_tensor.rank
         ), "input tensor and output tensor must have the same rank"
         # TODO: check contiguous inputs and outputs
@@ -294,13 +301,12 @@ struct Q4sym[
         # Read and quantize `input_tensor`` to blocked format, dump the raw
         # struct/block into `output_tensor`
         var size_of_block = size_of[Q4sym[Self.group_size, Self.float_dtype]]()
-        debug_assert(
-            input_shape[input_tensor.rank - 1] % Self.group_size == 0,
-            "Only support fully divisible dimensions right now.",
-        )
+        assert (
+            input_shape[input_tensor.rank - 1] % Self.group_size == 0
+        ), "Only support fully divisible dimensions right now."
 
         var blob_output_ptr = output_tensor.ptr
-        var base_block_ptr = UnsafePointer(blob_output_ptr).bitcast[
+        var base_block_ptr = blob_output_ptr.bitcast[
             Q4sym[Self.group_size, Self.float_dtype]
         ]()
 
@@ -320,9 +326,9 @@ struct Q4sym[
                 var flat_index_input = (
                     input_inner_stride * i + j * Self.group_size
                 )
-                var loaded_group = input_tensor.ptr.load[
-                    width = Self.group_size
-                ](flat_index_input)
+                var loaded_group = input_tensor.ptr.load[width=Self.group_size](
+                    flat_index_input
+                )
 
                 var flat_index_output = output_inner_stride * i + j
                 var output_ptr = base_block_ptr + flat_index_output
@@ -342,40 +348,49 @@ struct Q4sym[
                 _ = encoded_data^
 
     @staticmethod
-    fn dequantize_and_write_to_tensor(
-        input_tensor: LayoutTensor[
-            DType.uint8, address_space = AddressSpace.GENERIC, ...
+    def dequantize_and_write_to_tensor[
+        output_rank: Int
+    ](
+        input_tt: TileTensor[
+            DType.uint8, address_space=AddressSpace.GENERIC, ...
         ],
-        output_tensor: LayoutTensor[
-            Self.float_dtype, address_space = AddressSpace.GENERIC, ...
+        output_tt: TileTensor[
+            mut=True,
+            Self.float_dtype,
+            address_space=AddressSpace.GENERIC,
+            ...,
         ],
-        output_shape: IndexList[output_tensor.rank],
+        output_shape: IndexList[output_rank],
     ):
         """
-        Encodes the floating point numbers in `input_tensor` along the
-        inner-most dimension and writes the result to output_tensor.
+        Encodes the floating point numbers in `input_tt` along the
+        inner-most dimension and writes the result to output_tt.
 
         Args:
-            input_tensor: The input tensor we are decoding.
-            output_tensor: The output tensor containing the decoded input.
+            input_tt: The input tensor we are decoding.
+            output_tt: The output tensor containing the decoded input.
             output_shape: The shape of the output tensor.
         """
-        __comptime_assert (
+        var input_tensor = input_tt.to_layout_tensor()
+        var output_tensor = output_tt.to_layout_tensor()
+        comptime assert (
+            output_rank == output_tensor.rank
+        ), "output_rank must match tensor rank"
+        comptime assert (
             input_tensor.rank == output_tensor.rank
         ), "input tensor and output tensor must have the same rank"
         # Read and dequantize `input_tensor` which are the bytes of the raw
         # blocked format. Write the corresponding results to `output_tensor`
-        debug_assert(
+        assert (
             output_tensor.runtime_layout.shape.value[output_tensor.rank - 1]
             % Self.group_size
-            == 0,
-            "Only support fully divisible dimensions right now.",
-        )
+            == 0
+        ), "Only support fully divisible dimensions right now."
 
         # TODO: check contiguous inputs and outputs
 
         var uint8_input_ptr = input_tensor.ptr
-        var base_block_ptr = UnsafePointer(uint8_input_ptr).bitcast[
+        var base_block_ptr = uint8_input_ptr.bitcast[
             Q4sym[Self.group_size, Self.float_dtype]
         ]()
 
@@ -430,10 +445,8 @@ struct block_Q4_K:
     var q_bits: InlineArray[UInt8, block_QK_K.quantized_k // 2]
 
 
-fn scale_min_k4(
-    src_ptr: UnsafePointer[
-        block_Q4_K, address_space = AddressSpace.GENERIC, ...
-    ],
+def scale_min_k4(
+    src_ptr: UnsafePointer[block_Q4_K, address_space=AddressSpace.GENERIC, ...],
     g: Int,
 ) -> Tuple[Float32, Float32]:
     if g < 4:
@@ -452,14 +465,14 @@ fn scale_min_k4(
         return q_scale.cast[DType.float32](), q_min.cast[DType.float32]()
 
 
-fn q4_k_dequantize_impl(
-    input_tensor: LayoutTensor[
-        DType.uint8, address_space = AddressSpace.GENERIC, ...
-    ],
-    output_tensor: LayoutTensor[
-        mut=True, DType.float32, address_space = AddressSpace.GENERIC, ...
+def q4_k_dequantize_impl(
+    input_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    output_tt: TileTensor[
+        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
 ):
+    var input_tensor = input_tt.to_layout_tensor()
+    var output_tensor = output_tt.to_layout_tensor()
     comptime group_nelems = block_Q4_K.group_size
     # 2 elements per byte.
     comptime group_nbytes = group_nelems // 2
@@ -479,8 +492,7 @@ fn q4_k_dequantize_impl(
         var b_min = src_ptr[].base_min.cast[DType.float32]()
 
         # Process 2 groups at a time to load 6-bit scales/mins.
-        @parameter
-        for group_idx in range(0, block_Q4_K.group_count, 2):
+        comptime for group_idx in range(0, block_Q4_K.group_count, 2):
             var q_scale: Float32
             var q_min: Float32
 
@@ -498,8 +510,7 @@ fn q4_k_dequantize_impl(
             var dst_idx = group_idx * group_nelems
 
             # Dequantize 1st group bits.
-            @parameter
-            for elem_idx in range(group_nelems):
+            comptime for elem_idx in range(group_nelems):
                 dst_ptr[dst_idx + elem_idx] = (
                     d1
                     * (src_ptr[].q_bits[q_bits_idx + elem_idx] & 0xF).cast[
@@ -509,8 +520,7 @@ fn q4_k_dequantize_impl(
                 )
 
             # Dequantize 2nd group bits.
-            @parameter
-            for elem_idx in range(group_nelems):
+            comptime for elem_idx in range(group_nelems):
                 dst_ptr[dst_idx + group_nelems + elem_idx] = (
                     d2
                     * (src_ptr[].q_bits[q_bits_idx + elem_idx] >> 4).cast[
@@ -539,11 +549,17 @@ struct block_Q6_K:
     var base_scale: Float16
 
 
-fn q6_k_dequantize_impl(
-    input_tensor: LayoutTensor[DType.uint8, ...],
-    output_tensor: LayoutTensor[mut=True, DType.float32, ...],
-    output_shape: IndexList[output_tensor.rank],
+def q6_k_dequantize_impl[
+    output_rank: Int
+](
+    input_tt: TileTensor[DType.uint8, address_space=AddressSpace.GENERIC, ...],
+    output_tt: TileTensor[
+        mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
+    output_shape: IndexList[output_rank],
 ):
+    var input_tensor = input_tt.to_layout_tensor()
+    var output_tensor = output_tt.to_layout_tensor()
     comptime group_nelems = block_Q6_K.group_size
     comptime block_nelems = block_QK_K.quantized_k
     comptime block_nbytes = size_of[block_Q6_K]()
@@ -562,11 +578,8 @@ fn q6_k_dequantize_impl(
         var sc = src_ptr[].q_scales.unsafe_ptr()
 
         # Process 8 groups at a time.
-        @parameter
-        for _ in range(0, block_Q6_K.group_count, 8):
-
-            @parameter
-            for l in range(32):
+        comptime for _ in range(0, block_Q6_K.group_count, 8):
+            comptime for l in range(32):
                 var sc_idx = l // 16
                 var q1 = ((ql[l + 0] & 0xF) | (((qh[l] >> 0) & 3) << 4)).cast[
                     DType.int8

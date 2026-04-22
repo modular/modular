@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,13 @@
 
 from . import dtype_promotion, ops
 from .dim import AlgebraicDim, Dim, DimLike, StaticDim, SymbolicDim
-from .graph import Graph, KernelLibrary
+from .graph import (
+    DevicePlacementPolicy,
+    Graph,
+    GraphDebugConfig,
+    KernelLibrary,
+    Module,
+)
 from .type import (
     BufferType,
     DeviceKind,

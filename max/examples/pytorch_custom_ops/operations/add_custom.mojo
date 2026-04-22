@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,27 +12,27 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor, foreach
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 @compiler.register("add_constant_custom")
 struct AddConstantCustom[value: Int]:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
         outp: OutputTensor,
-        x: InputTensor[dtype = outp.dtype, rank = outp.rank],
+        x: InputTensor[dtype=outp.dtype, rank=outp.rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
-        fn add_constant[
+        def add_constant[
             width: Int
         ](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
-            return x.load[width](idx) + Self.value
+            return x.load[width](idx) + Scalar[outp.dtype](Self.value)
 
         foreach[add_constant, target=target](outp, ctx)

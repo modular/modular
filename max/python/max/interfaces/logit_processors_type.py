@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -59,8 +59,13 @@ if TYPE_CHECKING:
 
 @dataclass
 class ProcessorInputs:
+    """Inputs passed to a logits processor callback."""
+
     logits: md.Buffer
+    """The model logits buffer with shape ``(N, vocab_size)`` and ``float32`` dtype."""
+
     context: TextGenerationContext
+    """The generation context containing request state and sampling configuration."""
 
 
 LogitsProcessor: TypeAlias = Callable[[ProcessorInputs], None]
@@ -70,17 +75,22 @@ LogitsProcessor: TypeAlias = Callable[[ProcessorInputs], None]
 class BatchProcessorInputs:
     """Arguments for a batch logits processor.
 
-    - logits: The model logits, a float32 tensor with shape `(N_batch, vocab_size)`.
-      `N_batch` is the number of logits returned by the model for each sequence in the batch.
+    - logits: The model logits, a float32 tensor with shape ``(N_batch, vocab_size)``.
+      ``N_batch`` is the number of logits returned by the model for each sequence in the batch.
     - logit_offsets: If the model returns multiple logits, this is a tensor with
-      shape `(batch_size + 1, 1)` that contains the offsets of each sequence in
-      the batch. Otherwise, this is `None`.
+      shape ``(batch_size + 1, 1)`` that contains the offsets of each sequence in
+      the batch. Otherwise, this is ``None``.
     - context_batch: The batch of contexts containing the inputs to the model.
     """
 
     logits: md.Buffer
+    """The model logits buffer with shape ``(N_batch, vocab_size)`` and ``float32`` dtype."""
+
     logit_offsets: md.Buffer | None
+    """Offsets tensor with shape ``(batch_size + 1, 1)`` for multi-logit models, or ``None``."""
+
     context_batch: Sequence[TextGenerationContext]
+    """The ordered sequence of generation contexts corresponding to each batch entry."""
 
 
 BatchLogitsProcessor: TypeAlias = Callable[[BatchProcessorInputs], None]

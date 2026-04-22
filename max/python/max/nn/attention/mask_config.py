@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,32 +14,23 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import Enum
 
 
 class MHAMaskVariant(str, Enum):
+    """Defines the integer mask variant codes used by multihead attention kernels."""
+
     CAUSAL_MASK = 0
-    CAUSAL_ALIBI_MASK = 1
     NULL_MASK = 2
     CHUNKED_CAUSAL_MASK = 3
     SLIDING_WINDOW_CAUSAL_MASK = 4
 
 
-@dataclass
-class MHAMaskConfig:
-    attention_mask_variant: AttentionMaskVariant
-    positional_encoding_variant: PositionalEncodingVariant
-
-
 class AttentionMaskVariant(str, Enum):
+    """Defines the string mask variant identifiers used in attention configuration."""
+
     NULL_MASK = "null"
     CAUSAL_MASK = "causal"
     TENSOR_MASK = "tensor_mask"
     CHUNKED_CAUSAL_MASK = "chunked_causal"
     SLIDING_WINDOW_CAUSAL_MASK = "sliding_window_causal"
-
-
-class PositionalEncodingVariant(str, Enum):
-    NO_POS = "no_pos"
-    ALIBI_POS = "alibi_pos"

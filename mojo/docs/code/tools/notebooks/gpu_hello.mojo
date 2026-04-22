@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,18 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# Tested on T4 GPU 2 Dec 2025
+from std.gpu.host import DeviceContext
 
 
-from gpu.host import DeviceContext
-
-
-fn kernel():
+def kernel():
     print("Hello from the GPU")
 
 
-def main():
+def main() raises:
     # Launch GPU kernel
     with DeviceContext() as ctx:
-        ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=1)
+        ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
         ctx.synchronize()

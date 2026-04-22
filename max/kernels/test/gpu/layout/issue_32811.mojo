@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,19 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from gpu import block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, thread_idx
 from layout import *
-from layout.layout_tensor import LayoutTensor
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
 
 
-fn gpu_kernel(
-    dst: UnsafePointer[Float32],
-    rhs: UnsafePointer[Float32],
-    lhs: UnsafePointer[Float32],
+def gpu_kernel(
+    dst: UnsafePointer[Float32, MutAnyOrigin],
+    rhs: UnsafePointer[Float32, ImmutAnyOrigin],
+    lhs: UnsafePointer[Float32, ImmutAnyOrigin],
 ):
     dst[block_idx.x * 4 + thread_idx.x] = (
         rhs[block_idx.x * 4 + thread_idx.x]
@@ -35,19 +31,19 @@ fn gpu_kernel(
     )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
-        var vec_a_ptr = UnsafePointer[Float32].alloc(16)
-        var vec_b_ptr = UnsafePointer[Float32].alloc(16)
-        var vec_c_ptr = UnsafePointer[Float32].alloc(16)
+        var vec_a_ptr = alloc[Float32](16)
+        var vec_b_ptr = alloc[Float32](16)
+        var vec_c_ptr = alloc[Float32](16)
 
         var vec_a_dev = ctx.enqueue_create_buffer[DType.float32](16)
         var vec_b_dev = ctx.enqueue_create_buffer[DType.float32](16)
         var vec_c_dev = ctx.enqueue_create_buffer[DType.float32](16)
 
         for i in range(16):
-            vec_a_ptr[i] = i
-            vec_b_ptr[i] = i
+            vec_a_ptr[i] = Float32(i)
+            vec_b_ptr[i] = Float32(i)
             vec_c_ptr[i] = 0
 
         ctx.enqueue_copy(vec_a_dev, vec_a_ptr)

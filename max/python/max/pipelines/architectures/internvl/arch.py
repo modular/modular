@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,27 +12,29 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import TextAndVisionContext
-from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
+from max.pipelines.lib import SupportedArchitecture
 
 from .model import InternVLModel
+from .model_config import InternVLConfig
 from .tokenizer import InternVLTokenizer
 
 internvl_arch = SupportedArchitecture(
     name="InternVLChatModel",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["OpenGVLab/InternVL3-8B-Instruct"],
-    default_encoding=SupportedEncoding.bfloat16,
-    supported_encodings={SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED]},
+    default_encoding="bfloat16",
+    supported_encodings={"bfloat16"},
     pipeline_model=InternVLModel,
     tokenizer=InternVLTokenizer,
     context_type=TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     required_arguments={
         "enable_prefix_caching": False,
         "enable_chunked_prefill": False,
     },
+    config=InternVLConfig,
 )

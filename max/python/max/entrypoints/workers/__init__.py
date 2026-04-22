@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,8 +24,8 @@ from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.config import Settings
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.telemetry_worker import start_telemetry_consumer
-from max.serve.scheduler.queues import SchedulerZmqConfigs
 from max.serve.telemetry.metrics import METRICS
+from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 
 logger = logging.getLogger("max.entrypoints")
 
@@ -106,7 +106,7 @@ def start_workers(
                         pipeline_config,
                         settings,
                         metric_client,
-                        scheduler_zmq_configs=SchedulerZmqConfigs(
+                        model_worker_interface=ZmqModelWorkerInterface(
                             pipeline_task,
                             context_type=PIPELINE_REGISTRY.retrieve_context_type(
                                 pipeline_config

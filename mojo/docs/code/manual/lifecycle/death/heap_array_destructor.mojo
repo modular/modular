@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,13 +16,13 @@ struct HeapArray(Writable):
     var data: UnsafePointer[Int, MutExternalOrigin]
     var size: Int
 
-    fn __init__(out self, *values: Int):
+    def __init__(out self, *values: Int):
         self.size = len(values)
         self.data = alloc[Int](self.size)
         for i in range(self.size):
             (self.data + i).init_pointee_copy(values[i])
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("[")
         for i in range(self.size):
             writer.write(self.data[i])
@@ -30,7 +30,7 @@ struct HeapArray(Writable):
                 writer.write(", ")
         writer.write("]")
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         print("Destroying", self.size, "elements")
         for i in range(self.size):
             (self.data + i).destroy_pointee()

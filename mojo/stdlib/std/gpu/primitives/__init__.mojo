@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -46,14 +46,21 @@ from .grid_controls import (
 # Thread/block/grid indexing
 from .id import (
     block_dim,
+    block_dim_uint,
     block_id_in_cluster,
     block_idx,
+    block_idx_uint,
     cluster_dim,
     cluster_idx,
     global_idx,
+    global_idx_uint,
     grid_dim,
+    grid_dim_uint,
     lane_id,
+    lane_id_uint,
     sm_id,
     thread_idx,
+    thread_idx_uint,
     warp_id,
+    warp_id_uint,
 )

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from os import abort
-from sys import has_accelerator
+from std.math import ceildiv
+from std.os import abort
+from std.sys import has_accelerator
 
-from complex import ComplexSIMD, ComplexScalar
-from gpu import global_idx
-from gpu.host import DeviceContext
+from std.complex import ComplexSIMD, ComplexScalar
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
 
 comptime GRID_WIDTH = 60
 comptime GRID_HEIGHT = 25
@@ -38,7 +38,7 @@ comptime layout = Layout.row_major(GRID_HEIGHT, GRID_WIDTH)
 
 # An interface for this Mojo module must be exported to Python.
 @export
-fn PyInit_mandelbrot_mojo() -> PythonObject:
+def PyInit_mandelbrot_mojo() -> PythonObject:
     try:
         # A Python module is constructed, matching the name of this Mojo module.
         var module = PythonModuleBuilder("mandelbrot_mojo")
@@ -49,10 +49,10 @@ fn PyInit_mandelbrot_mojo() -> PythonObject:
         abort(String("failed to create Python module: ", e))
 
 
-fn run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
+def run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
     """The main GPU dispatch function for the Mandelbrot calculation called from Python.
     """
-    constrained[has_accelerator(), "This example requires a supported GPU"]()
+    comptime assert has_accelerator(), "This example requires a supported GPU"
 
     # Get the context for the attached GPU
     var ctx = DeviceContext()
@@ -80,10 +80,10 @@ fn run_mandelbrot(iterations: PythonObject) raises -> PythonObject:
     with dev_buf.map_to_host() as host_buf:
         var host_tensor = LayoutTensor[int_dtype, layout](host_buf)
         # Return the ASCII art string representation to Python.
-        return PythonObject(draw_mandelbrot(host_tensor, Int(py=iterations)))
+        return draw_mandelbrot(host_tensor, Int(py=iterations))
 
 
-fn mandelbrot(
+def mandelbrot(
     tensor: LayoutTensor[int_dtype, layout, MutAnyOrigin], iterations: Int32
 ):
     """The per-element calculation of iterations to escape in the Mandelbrot set.
@@ -96,8 +96,8 @@ fn mandelbrot(
     comptime SCALE_Y = (MAX_Y - MIN_Y) / GRID_HEIGHT
 
     # Calculate the complex C corresponding to that grid location.
-    var cx = MIN_X + col * SCALE_X
-    var cy = MIN_Y + row * SCALE_Y
+    var cx = MIN_X + Float32(col) * SCALE_X
+    var cy = MIN_Y + Float32(row) * SCALE_Y
     var c = ComplexScalar[float_dtype](cx, cy)
 
     # Perform the Mandelbrot iteration loop calculation.
@@ -117,8 +117,8 @@ fn mandelbrot(
 
 
 def draw_mandelbrot(
-    tensor: LayoutTensor[int_dtype, layout], iterations: Int32
-) -> String:
+    tensor: LayoutTensor[int_dtype, layout, ...], iterations: Int32
+) raises -> String:
     """A helper function to visualize the Mandelbrot set in ASCII art."""
     comptime sr = StringSlice("....,c8M@jawrpogOQEPGJ")
     var buffer = String()

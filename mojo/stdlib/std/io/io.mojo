@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,25 +15,36 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections.string.string_slice import get_static_string
-from format._utils import _WriteBufferHeap, _WriteBufferStack
-from sys import _libc as libc
-from sys import (
+from std.collections.string.string_slice import get_static_string
+from std.format._utils import _WriteBufferHeap, _WriteBufferStack
+from std.sys import _libc as libc
+from std.ffi import (
+    c_char,
+    c_size_t,
+    c_ssize_t,
     external_call,
+    _CPointer,
+)
+from std.memory.unsafe_pointer import unsafe_cast
+from std.sys import (
     is_amd_gpu,
-    is_compile_time,
+    is_apple_gpu,
     is_gpu,
     is_nvidia_gpu,
     stdin,
     stdout,
 )
-from sys._amdgpu import printf_append_args, printf_append_string_n, printf_begin
-from sys._libc import dup, fclose, fdopen, fflush, FILE_ptr
-from sys.ffi import c_char
-from sys.info import CompilationTarget
-from sys.intrinsics import _type_is_eq
+from std.sys._amdgpu import (
+    printf_append_args,
+    printf_append_string_n,
+    printf_begin,
+)
+from std.sys._metal_print import _metal_print_write
+from std.sys._libc import dup, fclose, fdopen, fflush, FILE_ptr
+from std.sys.info import CompilationTarget
+from std.sys.intrinsics import _type_is_eq
 
-from memory import bitcast
+from std.memory import bitcast
 
 from .file_descriptor import FileDescriptor
 
@@ -43,11 +54,10 @@ from .file_descriptor import FileDescriptor
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _fdopen[mode: StaticString = "a"]:
+struct _fdopen[mode: StaticString = "a"](ImplicitlyCopyable, RegisterPassable):
     var handle: FILE_ptr
 
-    fn __init__(out self, stream_id: FileDescriptor):
+    def __init__(out self, stream_id: FileDescriptor):
         """Creates a file handle to the stdout/stderr stream.
 
         Args:
@@ -55,20 +65,19 @@ struct _fdopen[mode: StaticString = "a"]:
         """
 
         self.handle = fdopen(
-            dup(stream_id.value),
-            # Guarantee this is nul terminated.
-            get_static_string[Self.mode]().unsafe_ptr().bitcast[c_char](),
+            dup(Int32(stream_id.value)),
+            Self.mode.as_c_string_slice().unsafe_ptr(),
         )
 
-    fn __enter__(self) -> Self:
+    def __enter__(self) -> Self:
         """Open the file handle for use within a context manager"""
         return self
 
-    fn __exit__(self):
+    def __exit__(self):
         """Closes the file handle."""
         _ = fclose(self.handle)
 
-    fn readline(self) raises -> String:
+    def readline(self) raises -> String:
         """Reads an entire line from stdin or until EOF. Lines are delimited by a newline character.
 
         Returns:
@@ -77,8 +86,8 @@ struct _fdopen[mode: StaticString = "a"]:
         Examples:
 
         ```mojo
-        from io.io import _fdopen
-        from sys import stdin
+        from std.io.io import _fdopen
+        from std.sys import stdin
 
         var line = _fdopen["r"](stdin).readline()
         print(line)
@@ -95,7 +104,7 @@ struct _fdopen[mode: StaticString = "a"]:
         """
         return self.read_until_delimiter("\n")
 
-    fn read_until_delimiter(self, delimiter: StringSlice) raises -> String:
+    def read_until_delimiter(self, delimiter: StringSlice) raises -> String:
         """Reads an entire line from a stream, up to the `delimiter`.
         Does not include the delimiter in the result.
 
@@ -108,8 +117,8 @@ struct _fdopen[mode: StaticString = "a"]:
         Examples:
 
         ```mojo
-        from io.io import _fdopen
-        from sys import stdin
+        from std.io.io import _fdopen
+        from std.sys import stdin
 
         var line = _fdopen["r"](stdin).read_until_delimiter(",")
         print(line)
@@ -125,11 +134,11 @@ struct _fdopen[mode: StaticString = "a"]:
         ```
         """
         # getdelim will allocate the buffer using malloc().
-        var buffer = UnsafePointer[UInt8, MutExternalOrigin]()
-        var n = UInt64(0)
+        var buffer = _CPointer[UInt8, MutExternalOrigin]()
+        var n = c_size_t(0)
         # ssize_t getdelim(char **restrict lineptr, size_t *restrict n,
         #                  int delimiter, FILE *restrict stream);
-        var bytes_read = external_call["getdelim", Int,](
+        var bytes_read = external_call["getdelim", c_ssize_t](
             UnsafePointer(to=buffer),
             UnsafePointer(to=n),
             ord(delimiter),
@@ -140,17 +149,18 @@ struct _fdopen[mode: StaticString = "a"]:
         # raise an error in this case because otherwise, String() will crash mojo
         # if the user sends EOF with no input.
         if bytes_read == -1:
-            if buffer:
-                libc.free(buffer.bitcast[NoneType]())
+            libc.free(unsafe_cast[Type=NoneType](buffer))
             # TODO: check errno to ensure we haven't encountered EINVAL or ENOMEM instead
             raise Error("EOF")
         # Copy the buffer (excluding the delimiter itself) into a Mojo String.
         var s = String(
-            StringSlice[buffer.origin](ptr=buffer, length=bytes_read - 1)
+            StringSlice[MutExternalOrigin](
+                ptr=buffer.unsafe_value(), length=bytes_read - 1
+            )
         )
         # Explicitly free the buffer using free() instead of the Mojo allocator.
-        libc.free(buffer.bitcast[NoneType]())
-        return s
+        libc.free(unsafe_cast[Type=NoneType](buffer))
+        return s^
 
 
 # ===----------------------------------------------------------------------=== #
@@ -159,7 +169,7 @@ struct _fdopen[mode: StaticString = "a"]:
 
 
 @no_inline
-fn _flush(file: FileDescriptor = stdout):
+def _flush(file: FileDescriptor = stdout):
     with _fdopen(file) as fd:
         _ = fflush(fd.handle)
 
@@ -169,9 +179,9 @@ fn _flush(file: FileDescriptor = stdout):
 # ===----------------------------------------------------------------------=== #
 
 
-fn _printf_cpu[
+def _printf_cpu[
     fmt: StaticString, *types: AnyType
-](args: VariadicPack[_, AnyType, *types], file: FileDescriptor = stdout):
+](*args: *types, file: FileDescriptor = stdout):
     # The argument pack will contain references for each value in the pack,
     # but we want to pass their values directly into the C printf call. Load
     # all the members of the pack.
@@ -179,8 +189,8 @@ fn _printf_cpu[
     with _fdopen(file) as fd:
         # FIXME: external_call should handle this
         _ = __mlir_op.`pop.external_call`[
-            func = "KGEN_CompilerRT_fprintf".value,
-            variadicType = __mlir_attr[
+            func="KGEN_CompilerRT_fprintf".value,
+            fnType=__mlir_attr[
                 `(`,
                 `!kgen.pointer<none>,`,
                 `!kgen.pointer<scalar<si8>>`,
@@ -196,15 +206,13 @@ fn _printf_cpu[
 
 
 @no_inline
-fn _printf[
+def _printf[
     fmt: StaticString, *types: AnyType
 ](*args: *types, file: FileDescriptor = stdout):
-    if is_compile_time():
-        _printf_cpu[fmt](args, file)
+    if __is_run_in_comptime_interpreter:
+        _printf_cpu[fmt](*args, file=file)
     else:
-
-        @parameter
-        if is_nvidia_gpu():
+        comptime if is_nvidia_gpu():
             # The argument pack will contain references for each value in the pack,
             # but we want to pass their values directly into the C printf call. Load
             # all the members of the pack.
@@ -219,9 +227,8 @@ fn _printf[
             # This is adapted from Triton's third party method for lowering
             # AMD printf calls:
             # https://github.com/triton-lang/triton/blob/1c28e08971a0d70c4331432994338ee05d31e633/third_party/amd/lib/TritonAMDGPUToLLVM/TargetInfo.cpp#L321
-            fn _to_uint64[T: AnyType, //](value: T) -> UInt64:
-                @parameter
-                if _type_is_eq[T, UInt64]():
+            def _to_uint64[T: AnyType, //](value: T) -> UInt64:
+                comptime if _type_is_eq[T, UInt64]():
                     return rebind[UInt64](value)
                 elif _type_is_eq[T, UInt32]():
                     return UInt64(rebind[UInt32](value))
@@ -253,7 +260,7 @@ fn _printf[
                     return UInt64(rebind[UInt](value))
                 return 0
 
-            comptime args_len = len(VariadicList(types))
+            comptime args_len = types.size
 
             var message = printf_begin()
             message = printf_append_string_n(
@@ -261,19 +268,17 @@ fn _printf[
             )
             comptime k_args_per_group = 7
 
-            @parameter
-            for group in range(0, args_len, k_args_per_group):
+            comptime for group in range(0, args_len, k_args_per_group):
                 comptime bound = min(group + k_args_per_group, args_len)
                 comptime num_args = bound - group
 
                 var arguments = InlineArray[UInt64, k_args_per_group](fill=0)
 
-                @parameter
-                for i in range(num_args):
+                comptime for i in range(num_args):
                     arguments[i] = _to_uint64(args[group + i])
                 message = printf_append_args(
                     message,
-                    num_args,
+                    UInt32(num_args),
                     arguments[0],
                     arguments[1],
                     arguments[2],
@@ -284,13 +289,24 @@ fn _printf[
                     Int32(Int(bound == args_len)),
                 )
 
+        elif is_apple_gpu():
+            # Apple GPU: format the template string and write to the shared
+            # print buffer. Metal doesn't support printf-style variadic args.
+            var buf = _WriteBufferHeap()
+            buf.write_string(fmt)
+            buf.nul_terminate()
+            var s = buf.as_string_slice()
+            _metal_print_write(
+                s.unsafe_ptr().bitcast[UInt8](),
+                s.byte_length(),
+            )
         elif not is_gpu():
-            _printf_cpu[fmt](args, file)
+            _printf_cpu[fmt](*args, file=file)
         else:
             # If we aren't targeting either a known GPU vendor, or CPU, issue
             # a target error.
-            return CompilationTarget.unsupported_target_error[
-                operation = __get_current_function_name()
+            CompilationTarget.unsupported_target_error[
+                operation=__get_current_function_name()
             ]()
 
 
@@ -300,9 +316,9 @@ fn _printf[
 
 
 @no_inline
-fn _snprintf[
+def _snprintf[
     fmt: StaticString, *types: AnyType
-](str: UnsafePointer[mut=True, UInt8], size: Int, *args: *types) -> Int:
+](str: UnsafePointer[mut=True, UInt8, _], size: Int, *args: *types) -> Int:
     """Writes a format string into an output pointer.
 
     Parameters:
@@ -326,8 +342,8 @@ fn _snprintf[
     # FIXME: external_call should handle this
     return Int(
         __mlir_op.`pop.external_call`[
-            func = "snprintf".value,
-            variadicType = __mlir_attr[
+            func="snprintf".value,
+            fnType=__mlir_attr[
                 `(`,
                 `!kgen.pointer<scalar<si8>>,`,
                 `!pop.scalar<index>, `,
@@ -351,7 +367,7 @@ fn _snprintf[
 
 
 @no_inline
-fn print[
+def print[
     *Ts: Writable
 ](
     *values: *Ts,
@@ -365,11 +381,8 @@ fn print[
 
     This function accepts any number of values, but their types must implement
     the [`Writable`](/mojo/std/format/Writable) trait. Most built-in types
-    (like `Int`, `Float64`, `Bool`, `String`) implement both
-    [`Stringable`](/mojo/std/builtin/str/Stringable/) and
-    [`Writable`](/mojo/std/format/Writable) traits. If a type only
-    implements `Stringable`, it can still be printed by first converting it to
-    `String`.
+    (like `Int`, `Float64`, `Bool`, `String`) implement the
+    [`Writable`](/mojo/std/format/Writable) trait.
 
     For string formatting, use the
     [`format()`](/mojo/std/collections/string/string/String#format) function.
@@ -395,12 +408,11 @@ fn print[
         file: The output stream.
     """
 
-    if is_compile_time():
+    if __is_run_in_comptime_interpreter:
         var buffer = _WriteBufferStack(file)
         comptime length = values.__len__()
 
-        @parameter
-        for i in range(length):
+        comptime for i in range(length):
             values[i].write_to(buffer)
             if i < length - 1:
                 sep.write_to(buffer)
@@ -410,14 +422,30 @@ fn print[
         if flush:
             _flush(file=file)
     else:
-
-        @parameter
-        if is_gpu():
+        comptime if is_gpu() and is_apple_gpu():
+            # Apple GPU: same formatting path as other GPUs but output
+            # goes through Metal os_log via _metal_print_write.
             var buffer = _WriteBufferHeap()
             comptime length = values.__len__()
 
-            @parameter
-            for i in range(length):
+            comptime for i in range(length):
+                values[i].write_to(buffer)
+                if i < length - 1:
+                    sep.write_to(buffer)
+
+            end.write_to(buffer)
+            buffer.nul_terminate()
+
+            var slice = buffer.as_string_slice()
+            _metal_print_write(
+                slice.unsafe_ptr().bitcast[UInt8](),
+                slice.byte_length(),
+            )
+        elif is_gpu():
+            var buffer = _WriteBufferHeap()
+            comptime length = values.__len__()
+
+            comptime for i in range(length):
                 values[i].write_to(buffer)
                 if i < length - 1:
                     sep.write_to(buffer)
@@ -427,26 +455,23 @@ fn print[
 
             var slice = buffer.as_string_slice()
 
-            @parameter
-            if is_nvidia_gpu():
+            comptime if is_nvidia_gpu():
                 _printf["%s"](slice.unsafe_ptr())
             elif is_amd_gpu():
                 var msg = printf_begin()
                 _ = printf_append_string_n(msg, slice.as_bytes(), is_last=True)
             else:
-                return CompilationTarget.unsupported_target_error[
-                    operation = __get_current_function_name()
+                CompilationTarget.unsupported_target_error[
+                    operation=__get_current_function_name()
                 ]()
         else:
             var buffer = _WriteBufferStack(file)
             comptime length = values.__len__()
 
-            @parameter
-            for i in range(length):
+            comptime for i in range(length):
                 values[i].write_to(buffer)
 
-                @parameter
-                if i < length - 1:
+                comptime if i < length - 1:
                     sep.write_to(buffer)
 
             end.write_to(buffer)
@@ -460,7 +485,7 @@ fn print[
 # ===----------------------------------------------------------------------=== #
 
 
-fn input(prompt: String = "") raises -> String:
+def input(prompt: String = "") raises -> String:
     """Reads a line of input from the user.
 
     Reads a line from standard input, converts it to a string, and returns that string.

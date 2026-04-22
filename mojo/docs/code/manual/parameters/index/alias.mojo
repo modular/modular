@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,14 +20,14 @@ struct Sentiment(Equatable, ImplicitlyCopyable):
     comptime NEUTRAL = Sentiment(1)
     comptime POSITIVE = Sentiment(2)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
 
-fn is_happy(s: Sentiment):
+def is_happy(s: Sentiment):
     if s == Sentiment.POSITIVE:
         print("Yes. 😀")
     else:

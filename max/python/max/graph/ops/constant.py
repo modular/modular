@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -27,12 +27,14 @@ from ...driver import CPU, Buffer, Device, DLPackArray
 from ..graph import Graph
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue
+from .validation import _check_device_placement
 
 Number: TypeAlias = float | np.number[Any]
 NestedArray: TypeAlias = Sequence["Number | NestedArray"]
 
 
 def shape(literal: NestedArray | Number) -> tuple[int, ...]:
+    """Returns the nested shape of a literal array or number (scalar gives ``()``)."""
     if not isinstance(literal, Sequence):
         return ()
     outer = len(literal)
@@ -43,6 +45,7 @@ def shape(literal: NestedArray | Number) -> tuple[int, ...]:
 
 
 def index(literal: NestedArray | Number, idx: Sequence[int]) -> Number:
+    """Returns the element at the given index into a nested literal."""
     if not idx:
         assert not isinstance(literal, Sequence)
         return cast(Number, literal)
@@ -75,7 +78,6 @@ def constant(
     Returns:
         A graph value containing the constant data as an attribute.
     """
-
     if dtype is not None and dtype.size_in_bits < 8:
         raise TypeError(
             f"Cannot create a constant of type '{dtype}' since it is a sub-byte type."
@@ -106,6 +108,9 @@ def constant(
 
     value = Buffer.from_dlpack(value)
     device = DeviceRef.from_device(device or value.device)
+    if not value.device.is_host:
+        _check_device_placement("ops.constant", "TODO(MXF-249).")
+        value = value.to(CPU())  # lint: allow-host-sync
     dtype = dtype or value.dtype
     if dtype != value.dtype:
         raise ValueError(
@@ -129,6 +134,7 @@ def constant_external(name: str, type: TensorType) -> TensorValue:
         name: The name of the external constant.
             This should be the fully-qualified weight name and must be unique.
         type: The type of the constant value.
+
     Returns:
         A tensor value of the specified type, representing the weight value
         associated with the name at compile time.

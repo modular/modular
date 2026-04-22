@@ -20,27 +20,6 @@ In general, you should prefer safe pointer types when possible, reserving
 For a comparison of standard library pointer types, see [Intro to
 pointers](/mojo/manual/pointers/).
 
-:::note LegacyUnsafePointer
-
-The implementation of `UnsafePointer` documented here replaces an earlier
-version with a slightly different API. The old version has been renamed to
-[`LegacyUnsafePointer`](/mojo/std/memory/legacy_unsafe_pointer/LegacyUnsafePointer/)
-and will be deprecated.
-
-The [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer)
-reference page briefly describes the differences between the new and old
-versions.
-
-To ease this transition, the library currently supports implicit conversion
-between `LegacyUnsafePointer` and `UnsafePointer`, so you can pass a legacy
-pointer to an `UnsafePointer` function, and vice versa.
-
-For more details on migrating to the new `UnsafePointer`, see the migration
-guide provided in the
-[UnsafePointer v2 proposal](https://github.com/modular/modular/blob/main/mojo/proposals/unsafe-pointer-v2.md#migration-guide-from-legacyunsafepointer-to-the-new-unsafepointer).
-
-:::
-
 ## Unsafe pointer basics
 
 An `UnsafePointer` is a type that holds an address to memory. You can store
@@ -112,7 +91,7 @@ At any given time, a pointer can be in one of several states:
 
 - Pointing to initialized memory. You can initialize an allocated, uninitialized
   pointer by moving or copying an existing value into the memory. Or you can get
-  a pointer to an  existing value by calling the constructor with the `to`
+  a pointer to an existing value by calling the constructor with the `to`
   keyword argument.
 
   ```mojo
@@ -168,7 +147,8 @@ not initialized.
 
 To initialize allocated memory, `UnsafePointer` provides the
 [`init_pointee_copy()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#init_pointee_copy)
-and [`init_pointee_move()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#init_pointee_move)
+and
+[`init_pointee_move()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#init_pointee_move)
 methods. For example:
 
 ```mojo
@@ -184,8 +164,8 @@ str_ptr.init_pointee_move(my_string^)
 
 Note that to move the value, you usually need to add the transfer sigil
 (`^`), unless the value is a [trivial
-type](/mojo/manual/types#register-passable-memory-only-and-trivial-types) (like
-`Int`) or a newly-constructed, "owned" value:
+type](/mojo/manual/traits#register-passable) (like `Int`) or a
+newly-constructed, "owned" value:
 
 ```mojo
 str_ptr.init_pointee_move("Owned string")
@@ -244,12 +224,14 @@ str_ptr[] += " pointers" # Works now
 
 ### Destroying or removing values
 
-The [`take_pointee()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#take_pointee)
-method moves a pointee from the memory location pointed to by `ptr`. This is
-a consuming move. It invokes `__moveinit__()` on the destination value. It leaves
+The
+[`take_pointee()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#take_pointee)
+method moves a pointee from the memory location pointed to by `ptr`. This is a
+consuming move. It invokes `__init__(take=)` on the destination value. It leaves
 the memory location uninitialized.
 
-The [`destroy_pointee()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#destroy_pointee)
+The
+[`destroy_pointee()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#destroy_pointee)
 method calls the destructor on the pointee, and leaves the memory location
 pointed to by `ptr` uninitialized.
 
@@ -257,13 +239,13 @@ Both `take_pointee()` and `destroy_pointee()` require that the pointer is
 non-null, and the memory location contains a valid, initialized value of the
 pointee's type; otherwise the function results in undefined behavior.
 
-Calling [`init_pointee_move_from(self, src)`](/mojo/std/memory/unsafe_pointer/UnsafePointer/#init_pointee_move_from)
-moves the value pointed to by `src` into the memory location pointed to by `self`.
-After this operation, ownership of that value transfers from `src` to `self`
-and the memory at `src` is uninitialized:
-do not read from it, and do not invoke destructors on it.
-To make the memory valid again, initialize it with a new value using
-one of the `init_pointee_*()` operations.
+Calling
+[`init_pointee_move_from(self, src)`](/mojo/std/memory/unsafe_pointer/UnsafePointer/#init_pointee_move_from)
+moves the value pointed to by `src` into the memory location pointed to by
+`self`. After this operation, ownership of that value transfers from `src` to
+`self` and the memory at `src` is uninitialized: do not read from it, and do not
+invoke destructors on it. To make the memory valid again, initialize it with a
+new value using one of the `init_pointee_*()` operations.
 
 :::note
 Mojo assumes the destination memory is uninitialized.
@@ -276,15 +258,15 @@ Calling [`free()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#free) on a
 pointer frees the memory allocated by the pointer. It doesn't call the
 destructors on any values stored in the memory—you need to do that explicitly
 (for example, using
-[`destroy_pointee()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#destroy_pointee) or
-one of the other functions described in
+[`destroy_pointee()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#destroy_pointee)
+or one of the other functions described in
 [Destroying or removing values](#destroying-or-removing-values)).
 
 Disposing of a pointer without freeing the associated memory can result in a
 memory leak—where your program keeps taking more and more memory, because not
 all allocated memory is being freed.
 
-On the other hand, if  you have multiple copies of a pointer accessing the same
+On the other hand, if you have multiple copies of a pointer accessing the same
 memory, you need to make sure you only call `free()` on one of them. Freeing the
 same memory twice is also an error.
 
@@ -354,12 +336,12 @@ s = "Testing"
 s_ptr = UnsafePointer(to=s)
 ```
 
-When allocating memory with the `alloc()` function, the returned pointer has
-an `origin` value of `MutExternalOrigin`. This value represents an origin that
-is mutable and doesn't *alias* existing values. For example, it doesn't
-point to the memory allocated for any other variable. That means the compiler
-won't unnecessarily extend the lifetimes of unrelated values. This memory isn't tracked
-by Mojo's lifetime checker and you're responsible for freeing it.
+When allocating memory with the `alloc()` function, the returned pointer has an
+`origin` value of `MutExternalOrigin`. This value represents an origin that is
+mutable and doesn't *alias* existing values. For example, it doesn't point to
+the memory allocated for any other variable. That means the compiler won't
+unnecessarily extend the lifetimes of unrelated values. This memory isn't
+tracked by Mojo's lifetime checker and you're responsible for freeing it.
 
 If you're using a pointer in the implementation of a struct, you usually don't
 have to worry about the origin, as long as the pointer isn't exposed outside of
@@ -376,7 +358,7 @@ of the storage.
 That method looks something like this:
 
 ```mojo
-fn unsafe_ptr(
+def unsafe_ptr(
     ref self,
 ) -> UnsafePointer[T, origin_of(self)]:
 
@@ -417,7 +399,7 @@ You can create a `UnsafePointer` from a raw memory address using the
 `unsafe_from_address` initializer.
 
 ```mojo
-fn write_to_address(mmio_address: Int, value: Int32):
+def write_to_address(mmio_address: Int, value: Int32):
     var ptr = UnsafePointer[Int32, MutExternalOrigin](
       unsafe_from_address=mmio_address
     )
@@ -431,7 +413,7 @@ fn write_to_address(mmio_address: Int, value: Int32):
 This is unsafe, as the caller must ensure the address is valid before writing to
 it, and that the memory is initialized before reading from it. The caller must
 also ensure the pointer's origin and mutability is valid for the address,
-failure to to do may result in undefined behavior.
+failure to do so may result in undefined behavior.
 
 ### Creating a Mojo pointer from a Python pointer
 
@@ -443,9 +425,9 @@ For example, the following code creates a NumPy array and then accesses the
 data using a Mojo pointer:
 
 ```mojo
-from python import Python
+from std.python import Python
 
-def share_array():
+def share_array() raises:
     np = Python.import_module("numpy")
     arr = np.array(Python.list(1, 2, 3, 4, 5, 6, 7, 8, 9))
     ptr = arr.ctypes.data.unsafe_get_as_pointer[DType.int64]()
@@ -453,7 +435,7 @@ def share_array():
         print(ptr[i], end=", ")
     print()
 
-def main():
+def main() raises:
     share_array()
 ```
 
@@ -479,7 +461,7 @@ be set to `(Mut/Immut)ExternalOrigin`, since the pointer points to memory
 external to the mojo program.
 
 ```mojo
-from sys.ffi import external_call
+from std.ffi import external_call
 
 def get_foreign_pointer() -> UnsafePointer[Int, MutExternalOrigin]:
     var ptr = external_call[
@@ -546,7 +528,7 @@ def read_chunks(
 
 When dealing with data read in from a file or from the network, you may also
 need to deal with byte order. Most systems use little-endian byte order (also
-called least-signficicant byte, or LSB) where the least-significant byte in a
+called least-significant byte, or LSB) where the least-significant byte in a
 multibyte value comes first. For example, the number 1001 can be represented in
 hexadecimal as 0x03E9, where E9 is the least-significant byte. Represented as a
 16-bit little-endian integer, the two bytes are ordered E9 03. As a 32-bit
@@ -556,7 +538,7 @@ Big-endian or most-significant byte (MSB) ordering is the opposite: in the
 32-bit case, 00 00 03 E9. MSB ordering is frequently used in file formats and
 when transmitting data over the network. You can use the
 [`byte_swap()`](/mojo/std/bit/bit/byte_swap) function to swap the byte
-order of  a SIMD value from big-endian to little-endian or the reverse. For
+order of a SIMD value from big-endian to little-endian or the reverse. For
 example, if the method above was reading big-endian data, you'd just need to
 change a single line:
 

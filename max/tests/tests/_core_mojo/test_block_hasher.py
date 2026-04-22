@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,9 +22,9 @@ from pytest_benchmark.fixture import BenchmarkFixture
 def test_block_hasher() -> None:
     block_size = 128
     num_tokens = 3000
-    tokens = np.arange(num_tokens)
+    tokens = np.arange(num_tokens, dtype=np.int32)
 
-    hashes = block_hasher(tokens, block_size, hash("None"))
+    hashes = block_hasher(tokens, block_size, 0)
 
     assert isinstance(hashes, list)
     assert isinstance(hashes[0], int)
@@ -43,7 +43,7 @@ def test_block_hasher() -> None:
 
 
 def mojo_block_hasher(tokens: np.ndarray, block_size: int) -> list[int]:
-    return block_hasher(tokens, block_size, hash("None"))
+    return block_hasher(tokens, block_size, 0)
 
 
 def tensor_block_hasher(tokens: np.ndarray, block_size: int) -> list[int]:
@@ -51,7 +51,7 @@ def tensor_block_hasher(tokens: np.ndarray, block_size: int) -> list[int]:
     num_hashes = num_elts // block_size
 
     # Initial hash seed value
-    prev_hash = hash("None")
+    prev_hash = 0
 
     results = []
     for i in range(num_hashes):
@@ -70,7 +70,7 @@ def naive_block_hasher(tokens: np.ndarray, block_size: int) -> list[int]:
     num_hashes = num_elts // block_size
 
     # Initial hash seed value
-    prev_hash = hash("None")
+    prev_hash = 0
 
     results = []
     for i in range(num_hashes):
@@ -85,7 +85,7 @@ def naive_block_hasher(tokens: np.ndarray, block_size: int) -> list[int]:
 
 def test_benchmark_mojo(benchmark: BenchmarkFixture) -> None:
     block_size = 128
-    tokens = np.arange(30000)
+    tokens = np.arange(30000, dtype=np.int32)
 
     _ = benchmark.pedantic(
         mojo_block_hasher,
@@ -98,7 +98,7 @@ def test_benchmark_mojo(benchmark: BenchmarkFixture) -> None:
 
 def test_benchmark_tensor(benchmark: BenchmarkFixture) -> None:
     block_size = 128
-    tokens = np.arange(30000)
+    tokens = np.arange(30000, dtype=np.int32)
 
     _ = benchmark.pedantic(
         tensor_block_hasher,
@@ -111,7 +111,7 @@ def test_benchmark_tensor(benchmark: BenchmarkFixture) -> None:
 
 def test_benchmark_naive(benchmark: BenchmarkFixture) -> None:
     block_size = 128
-    tokens = np.arange(30000)
+    tokens = np.arange(30000, dtype=np.int32)
 
     _ = benchmark.pedantic(
         naive_block_hasher,

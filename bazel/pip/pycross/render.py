@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -55,6 +55,9 @@ def render_constrained_deps(
         for dep in sorted(constrained_deps):
             output += f'            ":{dep}",\n'
         output += "        ],\n"
+
+    if deps_by_gpu_constraints:
+        output += '        "//conditions:default": [],\n'
 
     if had_select:
         output += "    })\n"

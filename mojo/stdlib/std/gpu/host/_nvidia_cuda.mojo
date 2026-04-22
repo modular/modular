@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import external_call
-from gpu.host import DeviceContext, DeviceFunction, DeviceStream
-from gpu.host.device_context import (
-    _ConstCharPtr,
+from std.ffi import _CPointer, external_call
+from std.gpu.host import DeviceContext, DeviceFunction, DeviceStream
+from std.gpu.host.device_context import (
+    _CString,
     _checked,
     _DeviceBufferPtr,
     _DeviceContextPtr,
@@ -39,24 +39,22 @@ struct _CUevent_st:
     pass
 
 
-comptime CUcontext = UnsafePointer[_CUctx_st, MutAnyOrigin]
-comptime CUstream = UnsafePointer[_CUstream_st, MutAnyOrigin]
-comptime CUmodule = UnsafePointer[_CUmod_st, MutAnyOrigin]
-comptime CUevent = UnsafePointer[_CUevent_st, MutAnyOrigin]
+comptime CUcontext = _CPointer[_CUctx_st, ExternalOrigin[mut=True]]
+comptime CUstream = _CPointer[_CUstream_st, ExternalOrigin[mut=True]]
+comptime CUmodule = _CPointer[_CUmod_st, ExternalOrigin[mut=True]]
+comptime CUevent = _CPointer[_CUevent_st, ExternalOrigin[mut=True]]
 
 
 # Accessor function to get access to the underlying CUcontext from a abstract DeviceContext.
 # Use `var cuda_ctx: CUcontext = CUDA(ctx)` where ctx is a `DeviceContext` to get access to the underlying CUcontext.
 @always_inline
-fn CUDA(ctx: DeviceContext) raises -> CUcontext:
+def CUDA(ctx: DeviceContext) raises -> CUcontext:
     var result = CUcontext()
     # const char *AsyncRT_DeviceContext_cuda_context(CUcontext *result, const DeviceContext *ctx)
     _checked(
         external_call[
             "AsyncRT_DeviceContext_cuda_context",
-            _ConstCharPtr,
-            UnsafePointer[CUcontext, origin_of(result)],
-            _DeviceContextPtr,
+            _CString[],
         ](
             UnsafePointer(to=result),
             ctx._handle,
@@ -68,15 +66,13 @@ fn CUDA(ctx: DeviceContext) raises -> CUcontext:
 # Accessor function to get access to the underlying CUstream from a abstract DeviceStream.
 # Use `var cuda_stream: CUstream = CUDA(ctx.stream())` where ctx is a `DeviceContext` to get access to the underlying CUstream.
 @always_inline
-fn CUDA(stream: DeviceStream) raises -> CUstream:
+def CUDA(stream: DeviceStream) raises -> CUstream:
     var result = CUstream()
     # const char *AsyncRT_DeviceStream_cuda_stream(CUstream *result, const DeviceStream *stream)
     _checked(
         external_call[
             "AsyncRT_DeviceStream_cuda_stream",
-            _ConstCharPtr,
-            UnsafePointer[CUstream, origin_of(result)],
-            _DeviceStreamPtr,
+            _CString[],
         ](
             UnsafePointer(to=result),
             stream._handle,
@@ -87,15 +83,13 @@ fn CUDA(stream: DeviceStream) raises -> CUstream:
 
 # Accessor function to get access to the underlying CUmodule from a DeviceFunction.
 @always_inline
-fn CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
+def CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
     var result = CUmodule()
     # const char *AsyncRT_DeviceFunction_cuda_module(CUmodule *result, const DeviceFunction *func)
     _checked(
         external_call[
             "AsyncRT_DeviceFunction_cuda_module",
-            _ConstCharPtr,
-            UnsafePointer[CUmodule, origin_of(result)],
-            _DeviceFunctionPtr,
+            _CString[],
         ](
             UnsafePointer(to=result),
             func._handle,
@@ -104,13 +98,11 @@ fn CUDA_MODULE(func: DeviceFunction) raises -> CUmodule:
     return result
 
 
-fn CUDA_get_current_context() raises -> CUcontext:
+def CUDA_get_current_context() raises -> CUcontext:
     var result = CUcontext()
     # const char *AsyncRT_DeviceContext_cuda_current_context(CUcontext *result)
     _checked(
-        external_call[
-            "AsyncRT_DeviceContext_cuda_current_context", _ConstCharPtr
-        ](
+        external_call["AsyncRT_DeviceContext_cuda_current_context", _CString[]](
             UnsafePointer(to=result),
         )
     )

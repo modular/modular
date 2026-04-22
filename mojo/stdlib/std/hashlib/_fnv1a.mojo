@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,8 +13,8 @@
 
 """Implements the [Fnv1a 64 bit variant](https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function) algorithm as a Hasher type."""
 
-from memory import Span
-from sys import size_of
+from std.memory import Span
+from std.sys import size_of
 
 from .hasher import Hasher
 
@@ -30,11 +30,11 @@ struct Fnv1a(Defaultable, Hasher):
 
     var _value: UInt64
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize the hasher."""
         self._value = 0xCBF29CE484222325
 
-    fn _update_with_bytes(mut self, data: Span[Byte, _]):
+    def _update_with_bytes(mut self, data: Span[Byte, _]):
         """Consume provided data to update the internal buffer.
 
         Args:
@@ -44,7 +44,7 @@ struct Fnv1a(Defaultable, Hasher):
             self._value ^= data[i].cast[DType.uint64]()
             self._value *= 0x100000001B3
 
-    fn _update_with_simd(mut self, value: SIMD[_, _]):
+    def _update_with_simd(mut self, value: SIMD[_, _]):
         """Update the buffer value with new data.
 
         Args:
@@ -58,27 +58,22 @@ struct Fnv1a(Defaultable, Hasher):
         comptime rounds = max(1, size_of[value.dtype]() // 8)
         var bits = value.to_bits()
 
-        @parameter
-        for i in range(value.size):
+        comptime for i in range(value.size):
             var v = bits[i]
 
-            @parameter
-            for r in range(rounds):
-                self._value ^= (v >> (r * 64)).cast[DType.uint64]()
+            comptime for r in range(rounds):
+                self._value ^= (v >> type_of(v)(r * 64)).cast[DType.uint64]()
                 self._value *= 0x100000001B3
 
-    fn update[T: Hashable](mut self, value: T):
+    def update(mut self, value: Some[Hashable]):
         """Update the buffer value with new hashable value.
-
-        Parameters:
-            T: Hashable type.
 
         Args:
             value: Value used for update.
         """
         value.__hash__(self)
 
-    fn finish(var self) -> UInt64:
+    def finish(var self) -> UInt64:
         """Computes the hash value based on all the previously provided data.
 
         Returns:

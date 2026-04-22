@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,40 +11,35 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import has_accelerator, has_apple_gpu_accelerator
+from std.sys import has_accelerator
 
-from gpu.host import DeviceContext
-from gpu import block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, thread_idx
 
 
-fn print_threads():
+def print_threads():
     """Print thread IDs."""
 
     print(
-        "Block index: [",
         block_idx.x,
         block_idx.y,
         block_idx.z,
-        "]\tThread index: [",
         thread_idx.x,
         thread_idx.y,
         thread_idx.z,
-        "]",
+        sep="\t",
     )
 
 
-def main():
-    @parameter
-    if not has_accelerator():
+def main() raises:
+    comptime if not has_accelerator():
         print("No compatible GPU found")
-    elif has_apple_gpu_accelerator():
-        print(
-            "Printing from a kernel is not currently supported on Apple silicon"
-            " GPUs"
-        )
     else:
         ctx = DeviceContext()
-        ctx.enqueue_function_experimental[print_threads](
+        print("block_idx\t\tthread_idx")
+        print("x\ty\tz", "x\ty\tz", sep="\t")
+        print("-" * 20, "-" * 20, sep="\t")
+        ctx.enqueue_function[print_threads, print_threads](
             grid_dim=(2, 2, 1), block_dim=(16, 4, 2)
         )
         ctx.synchronize()

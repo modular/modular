@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,6 +18,7 @@ from max.graph.weights import WeightData, Weights
 # Maps from Safetensor to MAX weight names.
 MISTRAL_SAFETENSOR_MAP = {
     "model.": "",  # Removes the "model" prefix.
+    # Remap unfused Q/K/V projections into StackedLinear namespace.
 }
 
 

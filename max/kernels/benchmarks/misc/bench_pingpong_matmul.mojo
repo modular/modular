@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,68 +11,54 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import align_up
-from sys import (
-    env_get_bool,
-    env_get_dtype,
-    env_get_int,
-    has_nvidia_gpu_accelerator,
-    size_of,
+from std.collections import Optional
+from std.sys import (
+    get_defined_bool,
+    get_defined_dtype,
+    get_defined_int,
     align_of,
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import DimList, NDBuffer
-from gpu.host import DeviceContext
-from internal_utils import arg_parse
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from internal_utils._utils import (
-    InitializationType,
-    ValOrDim,
-    dynamic,
-    init_vector_launch,
-    initialize,
-    random,
-    static,
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
 )
+from std.gpu.host import DeviceContext
+from internal_utils import arg_parse, CacheBustingBuffer
+from internal_utils._utils import InitializationType
+from layout import CoordLike, Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import elementwise_compute_lambda_type
-from utils import IndexList
-from linalg.matmul.gpu.amd.pingpong_kernel import ping_pong_matmul
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from linalg.matmul.gpu.amd.amd_ping_pong_matmul import (
+    structured_ping_pong_matmul as ping_pong_matmul,
+)
+from std.utils import IndexList
 
 
-fn _get_run_name[
+def _get_run_name[
     dtype: DType,
-    shape_c: DimList,
-    shape_a: DimList,
-    shape_b: DimList,
     *,
     transpose_b: Bool,
     cache_busting: Bool,
     use_vendor_blas: Bool,
-](
-    shape_c_dim: IndexList[2],
-    shape_a_dim: IndexList[2],
-    shape_b_dim: IndexList[2],
-) -> String:
+](shape_c: Coord, shape_a: Coord, shape_b: Coord,) -> String:
     var vendor_str = "vendor_matmul" if use_vendor_blas else "matmul"
     var type_str = String("(", dtype, ") : ")
     # M
-    var m_str = String(shape_c_dim[0], "_dynamic")
+    var m_str = String(shape_c[0], "_dynamic")
     # N
     var n_str = String(
-        shape_c_dim[1],
-        "_dynamic" if shape_c.at[1]().is_dynamic() else "",
+        shape_c[1],
+        "_dynamic" if not shape_c.element_types[1].is_static_value else "",
     )
     # K
     var k_str = String(
-        shape_a_dim[1],
-        "_dynamic" if shape_a.at[1]().is_dynamic() else "",
+        shape_a[1],
+        "_dynamic" if not shape_a.element_types[1].is_static_value else "",
     )
 
     var transpose_b_str = String(
@@ -94,112 +80,61 @@ fn _get_run_name[
     )
 
 
-fn bench_matmul[
+def bench_matmul[
     dtype: DType,
-    shape_c: DimList,
-    shape_a: DimList,
-    shape_b: DimList,
     *,
     cache_busting: Bool,
     use_vendor_blas: Bool,
     transpose_b: Bool = False,
     epilogue: Bool = False,
-    register_based_epilogue: Bool = False,
 ](
     ctx: DeviceContext,
     mut b: Bench,
-    shape_c_dim: IndexList[2],
-    shape_a_dim: IndexList[2],
-    shape_b_dim: IndexList[2],
+    shape_c: Coord,
+    shape_a: Coord,
+    shape_b: Coord,
     init_type: InitializationType,
 ) raises:
     # Choose a size larger than the two times the L2 cache
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
     # update: using 512 to be 2x the infinity cache on MI300x
     @always_inline
-    fn get_size(shape: IndexList[2]) -> Int:
-        return shape[0] * shape[1]
+    def get_size(shape: Coord) -> Int:
+        return shape[0].value() * shape[1].value()
 
     comptime simd_size = 4
-    var stride_a = align_up(get_size(shape_a_dim), simd_size)
-    var stride_b = align_up(get_size(shape_b_dim), simd_size)
-    var stride_c = align_up(get_size(shape_c_dim), simd_size)
 
     # Benchmark with the same data type for C as A and B
     comptime c_dtype = dtype
 
-    comptime k128 = 512 * 1024 * 1024
-    var cache_a = (
-        align_up(k128, stride_a * size_of[dtype]()) // size_of[dtype]()
-    )
-    var cache_b = (
-        align_up(k128, stride_b * size_of[dtype]()) // size_of[dtype]()
-    )
-    var cache_c = (
-        align_up(k128, stride_c * size_of[c_dtype]()) // size_of[c_dtype]()
-    )
+    var cb_a = CacheBustingBuffer[dtype](get_size(shape_a), simd_size, ctx)
+    var cb_b = CacheBustingBuffer[dtype](get_size(shape_b), simd_size, ctx)
+    var cb_c = CacheBustingBuffer[c_dtype](get_size(shape_c), simd_size, ctx)
 
-    var buffer_a = ctx.enqueue_create_buffer[dtype](cache_a)
-    var buffer_b = ctx.enqueue_create_buffer[dtype](cache_b)
-    var buffer_c = ctx.enqueue_create_buffer[c_dtype](cache_c)
-
-    # Host allocations
-    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cache_a)
-    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(cache_b)
-
-    # TODO: remove init_on_gpu flag and the loading on CPU
-    comptime init_on_gpu = True
+    cb_a.init_on_device(init_type, ctx)
+    cb_b.init_on_device(init_type, ctx)
 
     @parameter
-    if not init_on_gpu:
-        var a_host = NDBuffer[dtype, 1](a_host_ptr, cache_a)
-        var b_host = NDBuffer[dtype, 1](b_host_ptr, cache_b)
-
-        @parameter
-        if dtype.is_float8():
-            random(a_host)
-            random(b_host)
-        else:
-            initialize(a_host, init_type)
-            initialize(b_host, init_type)
-
-        ctx.enqueue_copy(buffer_a, a_host_ptr)
-        ctx.enqueue_copy(buffer_b, b_host_ptr)
-        ctx.synchronize()
-    else:
-        init_vector_launch[dtype](buffer_a, cache_a, init_type, ctx)
-        init_vector_launch[dtype](buffer_b, cache_b, init_type, ctx)
-
-    @parameter
-    @__copy_capture(cache_a, cache_b, cache_c, stride_a, stride_b, stride_c)
+    @__copy_capture(cb_a, cb_b, cb_c, shape_c, shape_a, shape_b)
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            var offset_a = 0
-            var offset_b = 0
-            var offset_c = 0
-
-            @parameter
-            if cache_busting:
-                offset_a = (iteration * stride_a) % cache_a
-                offset_b = (iteration * stride_b) % cache_b
-                offset_c = (iteration * stride_c) % cache_c
-            var tensor_a = NDBuffer[dtype, 2, MutAnyOrigin, shape_a](
-                buffer_a.unsafe_ptr() + offset_a, shape_a_dim
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            var tensor_a = TileTensor(
+                cb_a.offset_ptr(iteration), row_major(shape_a)
             )
-            var tensor_b = NDBuffer[dtype, 2, MutAnyOrigin, shape_b](
-                buffer_b.unsafe_ptr() + offset_b, shape_b_dim
+            var tensor_b = TileTensor(
+                cb_b.offset_ptr(iteration), row_major(shape_b)
             )
-            var tensor_c = NDBuffer[c_dtype, 2, MutAnyOrigin, shape_c](
-                buffer_c.unsafe_ptr() + offset_c, shape_c_dim
+            var tensor_c = TileTensor(
+                cb_c.offset_ptr(iteration), row_major(shape_c)
             )
 
             @parameter
             @always_inline
             @__copy_capture(tensor_c)
-            fn test_lambda_add_coords_prod[
+            def test_lambda_add_coords_prod[
                 _dtype: DType,
                 width: Int,
                 *,
@@ -207,16 +142,16 @@ fn bench_matmul[
             ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
                 _dtype, width
             ]:
-                var x = tensor_c.load[width=width](idx).cast[_dtype]()
+                comptime assert tensor_c.flat_rank >= 2
+                var x = tensor_c.load[width=width](Coord(idx)).cast[_dtype]()
                 var y = val * x
                 return y
 
-            comptime optional_lambda_fn = OptionalReg[
+            comptime optional_lambda_fn = Optional[
                 elementwise_compute_lambda_type
             ](test_lambda_add_coords_prod) if epilogue else None
 
-            @parameter
-            if use_vendor_blas:
+            comptime if use_vendor_blas:
                 vendor_blas.matmul[use_tf32=True](
                     ctx,
                     tensor_c,
@@ -226,17 +161,18 @@ fn bench_matmul[
                     transpose_b=transpose_b,
                 )
             else:
-                comptime use_ping_pong_matmul = env_get_bool[
+                comptime use_ping_pong_matmul = get_defined_bool[
                     "use_ping_pong_matmul", True
                 ]()
-                comptime enable_swizzle = env_get_bool["enable_swizzle", True]()
+                comptime enable_swizzle = get_defined_bool[
+                    "enable_swizzle", True
+                ]()
 
-                @parameter
-                if use_ping_pong_matmul:
+                comptime if use_ping_pong_matmul:
                     ping_pong_matmul[enable_swizzle=enable_swizzle](
-                        from_ndbuffer_row_major(tensor_a),
-                        from_ndbuffer_row_major(tensor_b),
-                        from_ndbuffer_row_major(tensor_c),
+                        tensor_a,
+                        tensor_b,
+                        tensor_c,
                         ctx,
                     )
                 else:
@@ -244,102 +180,87 @@ fn bench_matmul[
                         use_tensor_core=True,
                         transpose_b=transpose_b,
                         elementwise_compute_lambda_fn=optional_lambda_fn,
-                        register_based_epilogue=register_based_epilogue,
-                    ](tensor_c, tensor_a, tensor_b, ctx)
+                    ](
+                        tensor_c,
+                        tensor_a,
+                        tensor_b,
+                        ctx,
+                    )
 
         b.iter_custom[kernel_launch](ctx)
 
     var flops = ThroughputMeasure(
         BenchMetric.flops,
         # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
-        2 * shape_c_dim[0] * shape_c_dim[1] * shape_a_dim[1],
+        2 * shape_c[0].value() * shape_c[1].value() * shape_a[1].value(),
     )
     b.bench_function[bench_func](
         BenchId(
             _get_run_name[
                 dtype,
-                shape_c,
-                shape_a,
-                shape_b,
                 transpose_b=transpose_b,
                 cache_busting=cache_busting,
                 use_vendor_blas=use_vendor_blas,
-            ](shape_c_dim, shape_a_dim, shape_b_dim)
+            ](shape_c, shape_a, shape_b)
         ),
         # TODO: Pick relevant benchmetric
         [flops],
     )
 
-    # Cleanup host pointers
-    a_host_ptr.free()
-    b_host_ptr.free()
 
-    # Consume device buffers
-    _ = buffer_a^
-    _ = buffer_b^
-    _ = buffer_c^
-
-
-fn create_matmul_bench[
+def create_matmul_bench[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
     dtype: DType,
     *,
     transpose_b: Bool,
     cache_busting: Bool,
     use_vendor_blas: Bool,
     epilogue: Bool,
-    register_based_epilogue: Bool,
 ](
     ctx: DeviceContext,
     mut b: Bench,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
+    m: MType,
+    n: NType,
+    k: KType,
     init_type: InitializationType,
 ) raises:
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
-    var dynamic_b_shape = (n.value, k.value) if transpose_b else (
-        k.value,
-        n.value,
+    var b_shape = Coord(
+        Idx[NType.static_value if transpose_b else KType.static_value](),
+        Idx[KType.static_value if transpose_b else NType.static_value](),
     )
 
     bench_matmul[
         dtype,
-        DimList(m.dim, n.dim),
-        DimList(m.dim, k.dim),
-        static_b_shape,
         transpose_b=transpose_b,
         cache_busting=cache_busting,
         use_vendor_blas=use_vendor_blas,
         epilogue=epilogue,
-        register_based_epilogue=register_based_epilogue,
     ](
         ctx,
         b,
-        (m.value, n.value),
-        (m.value, k.value),
-        dynamic_b_shape,
+        Coord(m, n),
+        Coord(m, k),
+        b_shape,
         init_type,
     )
 
 
-def main():
-    comptime dtype = env_get_dtype["dtype", DType.bfloat16]()
+def main() raises:
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
 
     var M = Int(arg_parse("M", 1))
-    comptime N = env_get_int["N", 1]()
-    comptime K = env_get_int["K", 1]()
+    comptime N = get_defined_int["N", 1]()
+    comptime K = get_defined_int["K", 1]()
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
     )
     comptime cache_busting = True
     comptime transpose_b = True
-    comptime use_vendor_blas = env_get_bool["use_vendor_blas", False]()
-    comptime epilogue = env_get_bool["epilogue", False]()
-    comptime register_based_epilogue = env_get_bool[
-        "register_based_epilogue", True
-    ]()
+    comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
+    comptime epilogue = get_defined_bool["epilogue", False]()
 
     var m = Bench()
     with DeviceContext() as ctx:
@@ -349,13 +270,12 @@ def main():
             cache_busting=cache_busting,
             use_vendor_blas=use_vendor_blas,
             epilogue=epilogue,
-            register_based_epilogue=register_based_epilogue,
         ](
             ctx,
             m,
-            dynamic(M),
-            static[N](),
-            static[K](),
+            Idx(M),
+            Idx[N](),
+            Idx[K](),
             init_type,
         )
 

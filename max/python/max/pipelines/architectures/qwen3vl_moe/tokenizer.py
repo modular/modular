@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -26,9 +26,13 @@ import numpy as np
 import numpy.typing as npt
 import requests
 from max.interfaces import (
+    ImageContentPart,
     ImageMetadata,
+    MessageContent,
+    TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+    TextGenerationRequestTool,
     TokenBuffer,
 )
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
@@ -40,7 +44,10 @@ from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_rope_index,
     get_seqlens,
 )
-from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
+from max.pipelines.lib import (
+    TextAndVisionTokenizer,
+    max_tokens_to_generate,
+)
 from max.pipelines.lib.config import PipelineConfig
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image
@@ -306,7 +313,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
     to handle multimodal inputs for the Qwen3VL model. It mimics the interface
     of the transformers Qwen3VLProcessor.
 
-    - iamge_processor is a custom image processor that handles image preprocessing without PyTorch dependencies.
+    - image_processor is a custom image processor that handles image preprocessing without PyTorch dependencies.
     - tokenizer uses transformers' tokenizer directly instead of AutoProcessor to avoid dependency on PyTorch.
     - no video support yet.
     """
@@ -336,6 +343,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
 
         # Use the pre-loaded HuggingFace config from pipeline_config
         config = pipeline_config.model.huggingface_config
+        assert config is not None
 
         # Extract vision config parameters
         vision_config = config.vision_config
@@ -426,12 +434,15 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             )
 
     def apply_chat_template(
-        self, messages: list[TextGenerationRequestMessage]
+        self,
+        messages: list[TextGenerationRequestMessage],
+        tools: list[TextGenerationRequestTool] | None = None,
     ) -> str:
         """Apply chat template using tokenizer directly (not processor)."""
         templated_message = self.delegate.apply_chat_template(
             [msg.model_dump() for msg in messages],
             tokenize=False,
+            tools=tools,
             add_generation_prompt=True,
         )
         assert isinstance(templated_message, str)
@@ -447,7 +458,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         """
         # Check for video inputs and raise error; we do not support video inputs in MAX
         if request.messages:
-            messages_data = [dict(msg) for msg in request.messages]
+            messages_data = [msg.model_dump() for msg in request.messages]
             for msg in messages_data:
                 contents = msg.get("content", [])
                 if not isinstance(contents, list):
@@ -465,14 +476,16 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         if request.prompt is not None:
             prompt = request.prompt
             if request.images:
-                content = [
-                    {"type": "text", "text": request.prompt},
-                ] + [{"type": "image"} for _ in request.images]
-                messages = [
-                    TextGenerationRequestMessage(
-                        role="user",
-                        content=content,
+                if not isinstance(request.prompt, str):
+                    raise ValueError(
+                        "prompt must be a string when images are provided"
                     )
+                content: list[MessageContent] = [
+                    TextContentPart(text=request.prompt)
+                ]
+                content.extend(ImageContentPart() for _ in request.images)
+                messages = [
+                    TextGenerationRequestMessage(role="user", content=content)
                 ]
                 new_request = TextGenerationRequest(
                     request_id=request.request_id,
@@ -488,31 +501,11 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
 
         # Step 2: Load and process images
         image_inputs = None
-        if request.messages:
-            messages_data = [dict(msg) for msg in request.messages]
-            imgs: list[Image.Image] = []
-            for msg in messages_data:
-                contents = msg.get("content", [])
-                if not isinstance(contents, list):
-                    continue
-                for item in contents:
-                    if isinstance(item, dict) and item.get("type") == "image":
-                        ele: dict[str, Any] = {}
-                        if "image" in item:
-                            ele["image"] = item["image"]
-                        if "image_url" in item:
-                            ele["image_url"] = item["image_url"]
-                        imgs.append(_load_image(ele))
-            image_inputs = imgs
-        else:
-            if request.images:
-                logger.info(
-                    "Loading images from request.images without resizing"
-                )
-                image_inputs = [
-                    _load_image({"image": image_data})
-                    for image_data in request.images
-                ]
+        if request.images:
+            image_inputs = [
+                _load_image({"image": image_data})
+                for image_data in request.images
+            ]
 
         # Check for BOS token BEFORE image expansion
         # This matches transformers' processing_utils.py line 1693-1694
@@ -615,12 +608,6 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             if request.response_format
             else None
         )
-
-        # Determine EOS token IDs
-        if request.sampling_params.ignore_eos:
-            eos_token_ids = set()
-        else:
-            eos_token_ids = self._default_eos_token_ids
 
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
             raise ValueError(
@@ -730,7 +717,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
         # images are redundant since we have the pixel values in the vision_data.
         context = Qwen3VLTextAndVisionContext(
             request_id=request.request_id,
-            eos_token_ids=eos_token_ids,
+            eos_tracker=await self.create_eos_tracker(request),
             tokens=TokenBuffer(
                 array=encoded_prompt.astype(np.int64, copy=False),
             ),
@@ -739,6 +726,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             else self.max_length,
             json_schema=json_schema,
             sampling_params=request.sampling_params,
+            target_endpoint=request.target_endpoint,
             images=images,
             vision_token_ids=[self.image_token_id],
             # Qwen3VL-specific fields

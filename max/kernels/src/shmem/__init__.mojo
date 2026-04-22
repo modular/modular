@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,11 +15,11 @@ abstract over both NVSHMEM and ROCSHMEM, exposing a similar API to DeviceContext
 with a symmetric heap that is accessible by inter-node and intra-node GPUs.
 
 ```mojo
-from testing import assert_equal
+from std.testing import assert_equal
 from shmem import shmem_my_pe, shmem_n_pes, shmem_p, SHMEMContext
 
 
-fn simple_shift_kernel(destination: UnsafePointer[Int32]):
+def simple_shift_kernel(destination: UnsafePointer[Int32, _]):
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
     var peer = (mype + 1) % npes
@@ -27,11 +27,11 @@ fn simple_shift_kernel(destination: UnsafePointer[Int32]):
     shmem_p(destination, mype, peer)
 
 
-def main():
+def main() raises:
     with SHMEMContext() as ctx:
         var destination = ctx.enqueue_create_buffer[DType.int32](1)
         ctx.enqueue_function[simple_shift_kernel](
-            destination.unsafe_ptr(), grid_dim=1, block_dim=1
+            destination, grid_dim=1, block_dim=1
         )
         ctx.barrier_all()
 
@@ -71,7 +71,8 @@ from .shmem_api import (
     shmem_get,
     shmem_get_nbi,
     shmem_init,
-    shmem_init_thread,
+    shmem_init_thread_mpi,
+    shmem_init_thread_tcp,
     shmem_malloc,
     shmem_module_init,
     shmem_my_pe,

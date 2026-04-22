@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import bit_width_of
+from std.sys.info import bit_width_of
 
-from bit._mask import is_negative, splat
-from testing import assert_equal
-from testing import TestSuite
+from std.bit.mask import is_negative, splat
+from std.testing import assert_equal
+from std.testing import TestSuite
 
 
-def test_is_negative():
+def test_is_negative() raises:
     comptime dtypes = (
         DType.int8,
         DType.int16,
@@ -28,14 +28,12 @@ def test_is_negative():
     )
     comptime widths = (1, 2, 4, 8)
 
-    @parameter
-    for i in range(len(dtypes)):
+    comptime for i in range(len(dtypes)):
         comptime D = dtypes[i]
         var last_value = 2 ** (bit_width_of[D]() - 1) - 1
         var values = [1, 2, last_value - 1, last_value]
 
-        @parameter
-        for j in range(len(widths)):
+        comptime for j in range(len(widths)):
             comptime S = SIMD[D, widths[j]]
 
             for k in values:
@@ -43,7 +41,7 @@ def test_is_negative():
                 assert_equal(S(0), is_negative(S(k)))
 
 
-def test_splat():
+def test_splat() raises:
     comptime dtypes = (
         DType.int8,
         DType.int16,
@@ -57,19 +55,17 @@ def test_splat():
     )
     comptime widths = (1, 2, 4, 8)
 
-    @parameter
-    for i in range(len(dtypes)):
+    comptime for i in range(len(dtypes)):
         comptime D = dtypes[i]
 
-        @parameter
-        for j in range(len(widths)):
+        comptime for j in range(len(widths)):
             comptime w = widths[j]
             comptime B = SIMD[DType.bool, w]
             assert_equal(SIMD[D, w](-1), splat[D](B(fill=True)))
             assert_equal(SIMD[D, w](0), splat[D](B(fill=False)))
 
 
-def test_compare():
+def test_compare() raises:
     comptime dtypes = (
         DType.int8,
         DType.int16,
@@ -79,14 +75,12 @@ def test_compare():
     )
     comptime widths = (1, 2, 4, 8)
 
-    @parameter
-    for i in range(len(dtypes)):
+    comptime for i in range(len(dtypes)):
         comptime D = dtypes[i]
         var last_value = 2 ** (bit_width_of[D]() - 1) - 1
         var values = [1, 2, last_value - 1, last_value]
 
-        @parameter
-        for j in range(len(widths)):
+        comptime for j in range(len(widths)):
             comptime S = SIMD[D, widths[j]]
 
             for k in values:
@@ -103,5 +97,5 @@ def test_compare():
                 assert_equal(S(-1), splat[D]((-s_k).le(-s_k)))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

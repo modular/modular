@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,7 +24,7 @@ are multiple MAX Serve instances running on the same host.
 import queue
 
 from max.interfaces import get_blocking
-from max.serve.queue.zmq_queue import ZmqPullSocket, ZmqPushSocket
+from max.serve.worker_interface.zmq_queue import ZmqPullSocket, ZmqPushSocket
 
 ZMQ_RESET_PREFIX_CACHE_ENDPOINT = "reset_prefix_cache"
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,7 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 """Utility functions for graph operations."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+
+from ..value import (
+    BufferValue,
+    BufferValueLike,
+    TensorValue,
+    TensorValueLike,
+)
+
+
+def _buffer_values(values: Iterable[BufferValueLike]) -> list[BufferValue]:
+    return [BufferValue(v) for v in values]
+
+
+def _tensor_values(values: Iterable[TensorValueLike]) -> list[TensorValue]:
+    return [TensorValue(v) for v in values]
 
 
 def _axis_out_of_range_error(

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType, TensorValue, Weight, ops
+from max.graph import DeviceRef, TensorValue, Weight, ops
 
 from ..layer import Module
 
@@ -28,14 +28,20 @@ from ..layer import Module
 class GroupNorm(Module):
     """Group normalization block.
 
-    Divides channels into groups and computes normalization stats per group.
-    Follows the implementation pattern from PyTorch's group_norm.
+    This layer divides channels into groups and computes normalization
+    statistics per group.
+
+    When called, ``GroupNorm`` accepts a :class:`~max.graph.TensorValue` of shape
+    ``(N, C, *)`` where ``C`` is the number of channels. Then, it returns a
+    normalized :class:`~max.graph.TensorValue` of the same shape.
 
     Args:
-        num_groups: Number of groups to separate the channels into
-        num_channels: Number of input channels
-        eps: Small constant added to denominator for numerical stability
-        affine: If True, apply learnable affine transform parameters
+        num_groups: The number of groups to divide the channels into.
+        num_channels: The number of input channels.
+        eps: A small value added to the denominator for numerical stability.
+        affine: Whether to apply a learnable affine transformation after
+            normalization.
+        device: The target :class:`~max.graph.DeviceRef` for computation.
     """
 
     def __init__(
@@ -79,7 +85,7 @@ class GroupNorm(Module):
         """Apply group normalization to input tensor.
 
         Args:
-            x: Input tensor of shape [N, C, *] where C is number of channels
+            x: Input tensor of shape ``[N, C, *]`` where ``C`` is number of channels
 
         Returns:
             Normalized tensor of same shape as input
@@ -114,17 +120,4 @@ class GroupNorm(Module):
             ).to(x.device)
         )
 
-        return ops.custom(
-            "group_norm",
-            x.device,
-            [
-                x,
-                gamma,
-                beta,
-                ops.constant(self.eps, dtype=x.dtype, device=DeviceRef.CPU()),
-                ops.constant(
-                    self.num_groups, dtype=DType.int32, device=DeviceRef.CPU()
-                ),
-            ],
-            [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
-        )[0].tensor
+        return ops.group_norm(x, gamma, beta, self.num_groups, self.eps)

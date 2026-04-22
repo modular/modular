@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,15 +15,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite
+from std.testing import TestSuite
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 # CHECK-LABEL: test_debug_assert
-def test_debug_assert():
+def test_debug_assert() raises:
     print("== test_debug_assert")
     debug_assert(True, "ok")
     debug_assert(Bool(3), Error("also ok"))
@@ -32,7 +32,7 @@ def test_debug_assert():
 
 
 # CHECK-LABEL: test_debug_assert_multiple_args
-def test_debug_assert_multiple_args():
+def test_debug_assert_multiple_args() raises:
     print("== test_debug_assert_multiple_args")
     debug_assert(True, "passing multiple args: ", 42, ", ", 4.2)
     # CHECK: is reached
@@ -40,7 +40,7 @@ def test_debug_assert_multiple_args():
 
 
 # CHECK-LABEL: test_debug_assert_writable
-def test_debug_assert_writable():
+def test_debug_assert_writable() raises:
     print("== test_debug_assert_writable")
     debug_assert(True, WritableOnly("failed with Writable arg"))
     # CHECK: is reached
@@ -51,5 +51,5 @@ def test_debug_assert_writable():
 struct WritableOnly(Writable):
     var message: String
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(self.message)

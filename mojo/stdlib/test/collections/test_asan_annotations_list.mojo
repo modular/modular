@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,11 +24,11 @@
 # RUN: not %t 11 2>&1 | FileCheck --check-prefix CHECK_11 %s
 # RUN: not %t 12 2>&1 | FileCheck --check-prefix CHECK_12 %s
 
-from sys.arg import argv
-from testing import assert_equal
+from std.sys.arg import argv
+from std.testing import assert_equal
 
 
-def main():
+def main() raises:
     if len(argv()) <= 1:
         return
     var test = argv()[1]

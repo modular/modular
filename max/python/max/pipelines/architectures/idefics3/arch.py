@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,21 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
+from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import TextAndVisionContext
-from max.pipelines.lib import SupportedArchitecture, SupportedEncoding
+from max.pipelines.lib import SupportedArchitecture
 
 from .model import Idefics3Model
+from .model_config import Idefics3Config
 from .tokenizer import Idefics3Tokenizer
 
 idefics3_arch = SupportedArchitecture(
     name="Idefics3ForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     example_repo_ids=["HuggingFaceM4/Idefics3-8B-Llama3"],
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        "bfloat16",
     },
     pipeline_model=Idefics3Model,
     tokenizer=Idefics3Tokenizer,
@@ -36,4 +37,5 @@ idefics3_arch = SupportedArchitecture(
         "enable_chunked_prefill": False,
         "enable_prefix_caching": False,
     },
+    config=Idefics3Config,
 )

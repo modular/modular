@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,7 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Qwen2 transformer architecture for text generation."""
 
 from .arch import qwen2_arch
+from .model import Qwen2Model
+from .model_config import Qwen2Config
 
-__all__ = ["qwen2_arch"]
+__all__ = ["Qwen2Config", "Qwen2Model", "qwen2_arch"]

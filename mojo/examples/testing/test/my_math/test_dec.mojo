@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,20 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 from my_math import dec
-from testing import assert_equal, assert_raises, TestSuite
+from std.testing import assert_equal, assert_raises, TestSuite
 
 
-def test_dec_valid():
+def test_dec_valid() raises:
     assert_equal(dec(1), 0)
     assert_equal(dec(0), -1)
 
 
-def test_dec_min():
+def test_dec_min() raises:
     with assert_raises():
         # Assign the return value to the discard pattern to prevent the Mojo
         # compiler from warning that it is unused.
         _ = dec(Int.MIN)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

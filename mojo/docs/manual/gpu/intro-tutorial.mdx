@@ -6,9 +6,6 @@ github_url: https://github.com/modular/modular/tree/main/mojo/examples/gpu-intro
 image: /images/artwork/mojo-motorcycle.jpg
 ---
 
-import Requirements from '@site/src/components/Requirements';
-import { requirementsWithGPU } from '@site/docs/max/requirements';
-
 This tutorial introduces you to GPU programming with Mojo. You'll learn how to
 write a simple program that performs vector addition on a GPU, exploring
 fundamental concepts of GPU programming along the way.
@@ -26,18 +23,15 @@ adding more complexity. The concepts you learn here will serve as a foundation
 for more advanced GPU programming with Mojo. If you just want to see the
 finished code, you can [get it on
 GitHub](https://github.com/modular/modular/tree/main/mojo/examples/gpu-intro).
+See [GPU compatibility](/mojo/requirements#gpu-compatibility) for a list of
+compatible GPUs and software requirements.
 
 :::tip
 
 **Tip:** To use AI coding assistants with Mojo, see our guide for
-[using AI coding assistants](/max/coding-assistants/).
+[using Mojo AI skills](/mojo/tools/skills/).
 
 :::
-
-System requirements:
-
-<Requirements requirementsData={requirementsWithGPU}
-url="/mojo/manual/install#system-requirements" />
 
 ## 1. Create a Mojo project
 
@@ -113,12 +107,11 @@ obtains a reference to the GPU device. Using any editor, create a file named
 `vector_addition.mojo` with the following code:
 
 ```mojo title="vector_addition.mojo"
-from gpu.host import DeviceContext
-from sys import has_accelerator
+from std.gpu.host import DeviceContext
+from std.sys import has_accelerator
 
-def main():
-    @parameter
-    if not has_accelerator():
+def main() raises:
+    comptime if not has_accelerator():
         print("No compatible GPU found")
     else:
         ctx = DeviceContext()
@@ -140,14 +133,15 @@ Found GPU: NVIDIA A10G
 
 :::note
 
-Mojo requires a [compatible GPU development
-environment](/max/faq/#gpu-requirements) to compile kernel functions, otherwise
-it raises a compile-time error. In our code, we're using the
-[`@parameter`](/mojo/manual/decorators/parameter) decorator to evaluate the
-`has_accelerator()` function at compile time and compile only the corresponding
-branch of the `if` statement. As a result, if you don't have a compatible GPU
-development environment, you'll see the following message when you run the
-program:
+Mojo requires a
+[compatible GPU development environment](/mojo/requirements#gpu-compatibility)
+to compile kernel functions, otherwise it raises a compile-time error. In our
+code, we're using the
+[`comptime if`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if)
+statement to evaluate the `has_accelerator()` function at compile time and
+compile only the corresponding branch of the `if` statement. As a result, if you
+don't have a compatible GPU development environment, you'll see the following
+message when you run the program:
 
 ```output
 No compatible GPU found
@@ -190,29 +184,13 @@ write a simple kernel function that prints the thread block and thread indices.
 Add the following code to your `vector_addition.mojo` file:
 
 ```mojo title="vector_addition.mojo"
-from gpu import block_idx, thread_idx
+from std.gpu import block_idx, thread_idx
 
-fn print_threads():
+def print_threads():
     """Print thread IDs."""
 
-    print("Block index: [",
-        block_idx.x,
-        "]\tThread index: [",
-        thread_idx.x,
-        "]"
-    )
+    print(block_idx.x, thread_idx.x, sep="\t")
 ```
-
-:::note
-
-We're using `fn` here without the `raises` keyword because a kernel function is
-not allowed to raise an error condition. In contrast, when you define a Mojo
-function with `def`, the compiler always assumes that the function *can* raise
-an error condition. See the [Functions](/mojo/manual/functions) section of the
-Mojo Manual for more information on the difference between using `fn` and `def`
-to define functions in Mojo.
-
-:::
 
 ## 4. Compile and run the kernel
 
@@ -221,38 +199,27 @@ our GPU and then run it, specifying the number of thread blocks in the grid and
 the number of threads per thread block. For this initial example, let's define a
 grid consisting of 2 thread blocks, each with 64 threads.
 
-Modify the `main()` function and add `has_apple_gpu_accelerator()` to the list
-of imports from the `sys` module so that your program looks like this:
+Modify the `main()` function so that your program looks like this:
 
 ```mojo title="vector_addition.mojo"
-from sys import has_accelerator, has_apple_gpu_accelerator
+from std.sys import has_accelerator
 
-from gpu.host import DeviceContext
-from gpu import block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, thread_idx
 
 
-fn print_threads():
+def print_threads():
     """Print thread IDs."""
 
-    print("Block index: [",
-        block_idx.x,
-        "]\tThread index: [",
-        thread_idx.x,
-        "]"
-    )
+    print(block_idx.x, thread_idx.x, sep="\t")
 
 
-def main():
-    @parameter
-    if not has_accelerator():
+def main() raises:
+    comptime if not has_accelerator():
         print("No compatible GPU found")
-    elif has_apple_gpu_accelerator():
-        print(
-            "Printing from a kernel is not currently supported on Apple silicon"
-            " GPUs"
-        )
     else:
         ctx = DeviceContext()
+        print("block\tthread")
         ctx.enqueue_function[print_threads, print_threads](
             grid_dim=2, block_dim=64
         )
@@ -266,33 +233,30 @@ Save the file and run it:
 mojo vector_addition.mojo
 ```
 
-You should see something like the following output (which is abbreviated here):
+You should see something like the following output (which is abbreviated here).
+The kernel prints the block and thread index for each thread as tab-separated
+numeric values, with the `main()` function printing a header row before
+launching the kernel. The output order is indeterminate because the threads
+execute concurrently.
 
 ```output
-Block index: [ 1 ] Thread index: [ 32 ]
-Block index: [ 1 ] Thread index: [ 33 ]
-Block index: [ 1 ] Thread index: [ 34 ]
+block	thread
+1	32
+1	33
+1	34
 ...
-Block index: [ 0 ] Thread index: [ 30 ]
-Block index: [ 0 ] Thread index: [ 31 ]
+0	30
+0	31
 Program finished
 ```
 
-:::caution If you're completing this tutorial on macOS
+:::note Known limitation
 
-Printing from within a kernel function is not currently supported on Apple
-silicon GPUs. If you run this program on macOS, you'll see only the following
-output:
-
-```output
-Printing from a kernel is not currently supported on Apple silicon GPUs
-```
-
-If you're completing this tutorial on macOS, go ahead and read the rest of this
-step and the next step to learn the concepts of compiling and running a kernel.
-You'll be able to continue the hands-on portion of the tutorial starting with
-[6. Allocate host memory for the input vectors](#6-allocate-host-memory-for-the-input-vectors),
-where we'll begin writing a different kernel that doesn't use `print()`.
+On Apple silicon GPUs, each `print()` call inside a GPU kernel currently
+supports at most one string literal argument. To ensure readable output across
+all GPU platforms, the examples here print numeric values only, with the host
+printing column headers before launching the kernel. This restriction doesn't
+apply to NVIDIA or AMD GPUs.
 
 :::
 
@@ -317,27 +281,19 @@ information on Mojo function arguments and the
 [Parameters](/mojo/manual/parameters) section for more information on Mojo
 compile-time parameters and metaprogramming.)
 
-:::note
+:::note API variants
 
-`DeviceContext` also includes
-[`enqueue_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function)
-and
-[`compile_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#compile_function)
-methods. However, these methods currently don't typecheck the arguments to the
-compiled kernel function, which can lead to obscure run-time errors if the
-argument ordering, types, or count doesn't match the kernel function's
-definition. Additionally, these methods currently have known issues with Apple
-silicon GPUs.
+The `compile_function_unchecked()` and `enqueue_function_unchecked()` methods
+are deprecated and will be removed in a future release because they don't
+perform compile-time type checking of the kernel function arguments. You'll
+encounter run-time errors if the values you pass don't conform to the expected
+argument types.
 
-For compile-time typechecking, we recommend that you use the
-`enqueue_function()` and `compile_function()` methods, which
-also work correctly on Apple silicon GPUs.
-
-Note that `enqueue_function()` and `compile_function()`
-currently require the kernel function to be provided *twice* as parameters. This
-requirement will be removed in a future API update, when typechecking will
-become the default behavior for both `enqueue_function()` and
-`compile_function()`.
+The `compile_function_experimental()` and `enqueue_function_experimental()`
+methods perform compile-time type checking but require the kernel function as a
+parameter only once instead of twice. Once we verify these APIs work correctly,
+we'll rename them to `compile_function()` and `enqueue_function()` to make
+type-checking the default behavior.
 
 :::
 
@@ -402,7 +358,7 @@ all operations in its queue.
 
 ## 5. Manage grid dimensions
 
-The grid in the previous step consisted of a one-dimensional grid of 2 thread
+The previous step used a one-dimensional grid of 2 thread
 blocks with 64 threads in each block. However, you can also organize the thread
 blocks in a two- or three-dimensional grid. Similarly, you can arrange
 the threads in a thread block across one, two, or three dimensions. Typically,
@@ -427,21 +383,28 @@ modify our `print_threads()` kernel function to print the `x`, `y`, and `z`
 components of the thread block and thread indices for each thread.
 
 ```mojo title="vector_addition.mojo"
-fn print_threads():
+def print_threads():
     """Print thread IDs."""
 
-    print("Block index: [",
-        block_idx.x, block_idx.y, block_idx.z,
-        "]\tThread index: [",
-        thread_idx.x, thread_idx.y, thread_idx.z,
-        "]"
+    print(
+        block_idx.x,
+        block_idx.y,
+        block_idx.z,
+        thread_idx.x,
+        thread_idx.y,
+        thread_idx.z,
+        sep="\t",
     )
 ```
 
-Then, update `main()` to enqueue the kernel function with a 2x2x1 grid of
-thread blocks and a 16x4x2 arrangement of threads within each thread block:
+Then, update `main()` to print column headers and enqueue the kernel function
+with a 2x2x1 grid of thread blocks and a 16x4x2 arrangement of threads within
+each thread block:
 
 ```mojo title="vector_addition.mojo"
+        print("block_idx\t\tthread_idx")
+        print("x\ty\tz", "x\ty\tz", sep="\t")
+        print("-" * 20, "-" * 20, sep="\t")
         ctx.enqueue_function[print_threads, print_threads](
             grid_dim=(2, 2, 1),
             block_dim=(16, 4, 2)
@@ -457,12 +420,15 @@ mojo vector_addition.mojo
 You should see something like the following output (which is abbreviated here):
 
 ```output
-Block index: [ 1 1 0 ] Thread index: [ 0 2 0 ]
-Block index: [ 1 1 0 ] Thread index: [ 1 2 0 ]
-Block index: [ 1 1 0 ] Thread index: [ 2 2 0 ]
+block_idx		thread_idx
+x	y	z	x	y	z
+--------------------	--------------------
+1	1	0	0	2	0
+1	1	0	1	2	0
+1	1	0	2	2	0
 ...
-Block index: [ 0 0 0 ] Thread index: [ 14 1 0 ]
-Block index: [ 0 0 0 ] Thread index: [ 15 1 0 ]
+0	0	0	14	1	0
+0	0	0	15	1	0
 Program finished
 ```
 
@@ -515,18 +481,17 @@ After making these changes, your `vector_addition.mojo` file should look like
 this:
 
 ```mojo title="vector_addition.mojo"
-from gpu.host import DeviceContext
-from gpu import block_idx, thread_idx
-from sys import has_accelerator
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, thread_idx
+from std.sys import has_accelerator
 
 # Vector data type and size
 comptime float_dtype = DType.float32
 comptime vector_size = 1000
 
 
-def main():
-    @parameter
-    if not has_accelerator():
+def main() raises:
+    comptime if not has_accelerator():
         print("No compatible GPU found")
     else:
         # Get the context for the attached GPU
@@ -630,7 +595,8 @@ buffer as a run-time argument and returns a `DeviceBuffer`. The operation is
 asynchronous, but we don't need to call the `synchronize()` method yet because
 we have more operations to add to the queue.
 
-The [`enqueue_copy()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_copy)
+The
+[`enqueue_copy()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_copy)
 method is overloaded to support copying from host to device, device to host, or
 even device to device for systems that have multiple GPUs. In this example, we
 use it to copy the data in our `HostBuffer`s to the `DeviceBuffer`s.
@@ -655,7 +621,7 @@ the copy operations in the previous example with the following equivalent code:
 ## 8. Create `LayoutTensor` views
 
 One last step before writing the kernel function is that we're going to create a
-[`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor) view for each
+[`LayoutTensor`](/mojo/layout/layout_tensor/LayoutTensor) view for each
 of the vectors. `LayoutTensor` provides a powerful abstraction for
 multi-dimensional data with precise control over memory organization. It
 supports various memory layouts (row-major, column-major, tiled),
@@ -671,7 +637,7 @@ First, add the following import to the top of the file:
 from layout import Layout, LayoutTensor
 ```
 
-A [`Layout`](/mojo/kernels/layout/layout/Layout) is a representation of memory
+A [`Layout`](/mojo/layout/layout/Layout) is a representation of memory
 layouts using shape and stride information, and it maps between logical
 coordinates and linear memory indices. We'll need to use the same `Layout`
 definition multiple times, so add the following `comptime` value to the top of
@@ -697,8 +663,8 @@ Now we're ready to write the kernel function. First, add the following imports
 (note that we've added `block_dim` to the list of imports from `gpu`):
 
 ```mojo title="vector_addition.mojo"
-from gpu import block_dim, block_idx, thread_idx
-from math import ceildiv
+from std.gpu import block_dim, block_idx, thread_idx
+from std.math import ceildiv
 ```
 
 Then, add the following code to `vector_addition.mojo` just before the
@@ -711,7 +677,7 @@ comptime block_size = 256
 comptime num_blocks = ceildiv(vector_size, block_size)
 
 
-fn vector_addition(
+def vector_addition(
     lhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
     rhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
     out_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
@@ -797,11 +763,11 @@ back to the CPU. Add the following code to the end of the `main()` function:
   <summary>Click here to see the complete version of `vector_addition.mojo`.</summary>
 
 ```mojo title="vector_addition.mojo"
-from math import ceildiv
-from sys import has_accelerator
+from std.math import ceildiv
+from std.sys import has_accelerator
 
-from gpu.host import DeviceContext
-from gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
 from layout import Layout, LayoutTensor
 
 # Vector data type and size
@@ -815,7 +781,7 @@ comptime block_size = 256
 comptime num_blocks = ceildiv(vector_size, block_size)
 
 
-fn vector_addition(
+def vector_addition(
     lhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
     rhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
     out_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
@@ -830,9 +796,8 @@ fn vector_addition(
         out_tensor[tid] = lhs_tensor[tid] + rhs_tensor[tid]
 
 
-def main():
-    @parameter
-    if not has_accelerator():
+def main() raises:
+    comptime if not has_accelerator():
         print("No compatible GPU found")
     else:
         # Get the context for the attached GPU
@@ -955,28 +920,17 @@ covered:
 Now that you understand the basics of GPU programming with Mojo, here are some
 suggested next steps:
 
-import MDXListing from '@site/src/components/Listing/MDXListing';
+import ListingCard from '@site/src/components/Listing/ListingCard';
+import ListingCards from '@site/src/components/Listing/ListingCards';
 
-export const Puzzles = {
-    title: "GPU Puzzles",
-    description: "Learn to program GPUs in Mojo by solving increasingly complex challenges",
-    metadata: {
-        permalink: "https://puzzles.modular.com/introduction.html"
-    }
-};
-
-export const Examples = {
-    title: "GPU code examples",
-    description: "Check out some more examples for programming GPUs with Mojo",
-    metadata: {
-        permalink: "https://github.com/modular/modular/tree/main/mojo/examples/gpu-functions"
-    }
-};
-
-export const nextSteps = [
-    '../../layout/layouts',
-    Puzzles,
-    Examples,
-]
-
-<MDXListing mdxList={nextSteps} />
+<ListingCards>
+  <ListingCard title="Introduction to layouts"
+    url="/mojo/manual/layout/layouts"
+    description="Using layouts to describe multidimensional data." />
+  <ListingCard title="GPU Puzzles"
+    url="https://puzzles.modular.com/introduction.html"
+    description="Learn to program GPUs in Mojo by solving increasingly complex challenges" />
+  <ListingCard title="GPU code examples"
+    url="https://github.com/modular/modular/tree/main/mojo/examples/gpu-functions"
+    description="Check out some more examples for programming GPUs with Mojo" />
+</ListingCards>

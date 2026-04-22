@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -111,7 +111,7 @@ def test_column_parallel_linear_tied_weight_valid() -> None:
 
 
 def test_column_parallel_linear_tied_weight_with_float8() -> None:
-    """Tests ColumnParallelLinear with tied_weight and float8_config."""
+    """Tests ColumnParallelLinear with tied_weight and quant_config."""
     gpu0 = DeviceRef.GPU(id=0)
     tied_weight = Weight(
         name="tied_weight",
@@ -132,8 +132,8 @@ def test_column_parallel_linear_tied_weight_with_float8() -> None:
             dtype=DType.float32,
             devices=[gpu0],
             tied_weight=tied_weight,
-            # Dummy float8_config.
-            float8_config={},
+            # Dummy quant_config.
+            quant_config={},
         )
 
 

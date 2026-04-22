@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,13 +14,10 @@
 from layout import *
 from layout.int_tuple import product
 from layout.layout_tensor import *
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.testing import assert_equal
 
 
-fn test_vectorize_2() raises:
+def test_vectorize_2() raises:
     var tensor = LayoutTensor[
         DType.float32,
         Layout(IntTuple(IntTuple(16, 32), 4), IntTuple(IntTuple(32, 1), 512)),
@@ -29,7 +26,7 @@ fn test_vectorize_2() raises:
 
     var n = product(tensor.layout.shape)
     for i in range(n):
-        tensor.ptr[i] = i
+        tensor.ptr[i] = Float32(i)
 
     var frag = tensor._vectorize_2[origin_of(), IntTuple(IntTuple(1, 4), 1)]()
     var crd = RuntimeTuple[IntTuple(2)]()
@@ -54,7 +51,7 @@ fn test_vectorize_2() raises:
 
     n = product(three_dim_tensor.layout.shape)
     for i in range(n):
-        three_dim_tensor.ptr[i] = i
+        three_dim_tensor.ptr[i] = Float32(i)
 
     var frag_3dt = three_dim_tensor._vectorize_2[
         origin_of(), IntTuple(1, 4, 1)
@@ -81,7 +78,7 @@ fn test_vectorize_2() raises:
 
     n = product(tensor2.layout.shape)
     for i in range(n):
-        tensor2.ptr[i] = i
+        tensor2.ptr[i] = Float32(i)
 
     var frag2 = tensor2.vectorize[2]()
     var val2 = frag2[crd]
@@ -90,7 +87,7 @@ fn test_vectorize_2() raises:
 
     n = product(tensor2.layout.shape)
     for i in range(n):
-        tensor2.ptr[i] = i
+        tensor2.ptr[i] = Float32(i)
 
     var frag3 = tensor2._vectorize_2[2]()
     var val3 = frag3[crd]
@@ -100,15 +97,15 @@ fn test_vectorize_2() raises:
     comptime layout_unknown = Layout(
         IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE), IntTuple(UNKNOWN_VALUE, 1)
     )
-    var heap = UnsafePointer[Int32].alloc(64, alignment=8)
+    var heap = alloc[Int32](64, alignment=8)
     var tensor4 = LayoutTensor[
         DType.int32,
         layout_unknown,
-        linear_idx_type = DType.int32,
-        layout_int_type = DType.int32,
+        linear_idx_type=DType.int32,
+        layout_int_type=DType.int32,
     ](heap, RuntimeLayout[layout_unknown]({8, 8}, {8, 1}))
     for i in range(64):
-        tensor4.ptr[i] = i
+        tensor4.ptr[i] = Int32(i)
     var frag4 = tensor4._vectorize_2[2]()
     var val4 = frag4[crd]
     assert_equal(val4[0], 16)
@@ -116,5 +113,5 @@ fn test_vectorize_2() raises:
     heap.free()
 
 
-def main():
+def main() raises:
     test_vectorize_2()

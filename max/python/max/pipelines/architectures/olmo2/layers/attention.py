@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,14 +19,11 @@ import math
 from collections.abc import Callable
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, Weight, ops
-from max.nn import RMSNorm
+from max.graph import DeviceRef, TensorValue, ops
 from max.nn.kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
-    fused_qk_ragged_rope,
-    fused_qkv_ragged_matmul,
-    rms_norm_key_cache,
+    rope_split_store_ragged,
 )
 from max.nn.kv_cache import (
     KVCacheParams,
@@ -34,7 +31,9 @@ from max.nn.kv_cache import (
 )
 from max.nn.layer import Module
 from max.nn.linear import Linear
+from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.stacked_linear import StackedLinear
 
 
 class Olmo2Attention(Module):
@@ -93,12 +92,6 @@ class Olmo2Attention(Module):
 
         self.qk_norm_eps = rms_norm_eps
 
-        if not self.kv_params.cache_strategy.uses_opaque():
-            raise ValueError(
-                f"{self.kv_params.cache_strategy} cache strategy, not supported"
-                " in Attention layer."
-            )
-
         # OLMo2: RMSNorm on full projection dimension
         self.q_norm = RMSNorm(
             num_attention_heads * self.kv_params.head_dim,
@@ -114,44 +107,19 @@ class Olmo2Attention(Module):
         self.q_weight_dim = self.kv_params.head_dim * num_attention_heads
         self.kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
 
-        self.q_proj = Weight(
-            name="q_proj.weight",
+        self.qkv_proj = StackedLinear(
+            in_dim=hidden_size,
+            out_dims=[
+                self.q_weight_dim,
+                self.kv_weight_dim,
+                self.kv_weight_dim,
+            ],
+            names=["q_proj", "k_proj", "v_proj"],
             dtype=dtype,
-            shape=[self.q_weight_dim, hidden_size],
             device=devices[0],
+            stacked=False,
+            has_bias=has_bias,
         )
-        self.k_proj = Weight(
-            name="k_proj.weight",
-            dtype=dtype,
-            shape=[self.kv_weight_dim, hidden_size],
-            device=devices[0],
-        )
-        self.v_proj = Weight(
-            name="v_proj.weight",
-            dtype=dtype,
-            shape=[self.kv_weight_dim, hidden_size],
-            device=devices[0],
-        )
-
-        if has_bias:
-            self.bias_q = Weight(
-                name="q_proj.bias",
-                dtype=dtype,
-                shape=[self.q_weight_dim],
-                device=devices[0],
-            )
-            self.bias_k = Weight(
-                name="k_proj.bias",
-                dtype=dtype,
-                shape=[self.kv_weight_dim],
-                device=devices[0],
-            )
-            self.bias_v = Weight(
-                name="v_proj.bias",
-                dtype=dtype,
-                shape=[self.kv_weight_dim],
-                device=devices[0],
-            )
 
         self.o_proj = linear_cls(
             in_dim=self.q_weight_dim,
@@ -159,21 +127,6 @@ class Olmo2Attention(Module):
             dtype=dtype,
             device=devices[0],
         )
-
-    @property
-    def wqkv(self) -> TensorValue:
-        """The concatenation of q, k, and v weight vectors."""
-        wq: TensorValue = self.q_proj
-        wk: TensorValue = self.k_proj
-        wv: TensorValue = self.v_proj
-        return ops.concat((wq, wk, wv)).to(self.devices[0])
-
-    @property
-    def wqkv_bias(self) -> TensorValue | None:
-        """The concatenation of q, k, and v bias weight vectors."""
-        if not self.has_bias:
-            return None
-        return ops.concat((self.bias_q, self.bias_k, self.bias_v))
 
     def __call__(
         self,
@@ -185,51 +138,32 @@ class Olmo2Attention(Module):
     ) -> TensorValue:
         total_seq_len = x.shape[0]
 
-        # Project input to Q, K, V
-        wqkv = self.wqkv
-        xq = fused_qkv_ragged_matmul(
-            self.kv_params,
-            input=x,
-            wqkv=wqkv,
-            bias=self.wqkv_bias,
+        # QKV matmul.
+        qkv = self.qkv_proj(x)
+
+        # Apply full-dimension QK norm before rope.
+        head_dim = self.kv_params.head_dim
+        q_dim = self.n_heads * head_dim
+        kv_dim = self.kv_weight_dim
+        x_q, x_k, x_v = ops.split(qkv, [q_dim, kv_dim, kv_dim], axis=-1)
+        x_q = self.q_norm(x_q)
+        x_k = self.k_norm(x_k)
+        qkv = ops.concat((x_q, x_k, x_v), axis=-1)
+
+        # Fused rope + split + KV store.
+        rope = self.rope
+        freqs_cis = ops.cast(rope.freqs_cis, qkv.dtype).to(qkv.device)
+        xq = rope_split_store_ragged(
+            kv_params=self.kv_params,
+            qkv=qkv,
             input_row_offsets=input_row_offsets,
+            freqs_cis=freqs_cis,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=self.n_heads,
+            interleaved=rope.interleaved,
         )
-
-        # Reshape and apply RMSNorm to Q
-        xq = xq.reshape((-1, self.n_heads * self.kv_params.head_dim))
-        xq = self.q_norm(xq)
-        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
-
-        # Apply RMSNorm to K
-        rms_norm_key_cache(
-            self.kv_params,
-            kv_collection=kv_collection,
-            gamma=self.k_norm.weight.cast(self.kv_params.dtype).to(
-                self.devices[0]
-            ),
-            epsilon=self.qk_norm_eps,
-            layer_idx=layer_idx,
-            total_seq_len=total_seq_len,
-            input_row_offsets=input_row_offsets,
-            weight_offset=0.0,
-            per_head_norm=False,
-        )
-
-        # Apply RoPE
-        freqs_cis = ops.cast(freqs_cis, xq.dtype).to(xq.device)
-
-        xq = fused_qk_ragged_rope(
-            self.kv_params,
-            xq,
-            input_row_offsets,
-            kv_collection,
-            freqs_cis,
-            layer_idx,
-            interleaved=self.rope.interleaved,
-        )
+        xq = xq.reshape((-1, self.n_heads, head_dim))
 
         attn_out = flash_attention_ragged(
             self.kv_params,

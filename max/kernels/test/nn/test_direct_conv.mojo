@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,22 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.math import ceildiv, isclose
+from std.random import rand
+from std.sys.info import num_physical_cores, simd_width_of
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import ceildiv, isclose
-from random import rand
-from sys.info import num_physical_cores, simd_width_of
-
-from layout import LayoutTensor, Layout, RuntimeLayout
-from nn.conv import (
+from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import lt_to_tt
+from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
     Naive2dConvolution,
     pack_conv_filter_shape,
     pack_filter,
 )
-from nn.conv_utils import (
+from nn.conv.conv_utils import (
     ConvShape,
     get_conv_num_partitions,
     get_conv_num_tasks,
@@ -34,14 +32,14 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime simd_size: Int = simd_width_of[DType.float32]()
 comptime dtype = DType.float32
 
 
 # CHECK-LABEL: test_direct_conv
-fn test[
+def test[
     dtype: DType, filter_packed: Bool
 ](
     N: Int,
@@ -79,10 +77,10 @@ fn test[
         num_groups=num_groups,
     )
 
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(N * H * W * C)
-    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(R * S * C * F)
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(N * HO * WO * F)
-    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(N * HO * WO * F)
+    var input_ptr = alloc[Scalar[dtype]](N * H * W * C)
+    var filter_ptr = alloc[Scalar[dtype]](R * S * C * F)
+    var output_ptr = alloc[Scalar[dtype]](N * HO * WO * F)
+    var output_ref_ptr = alloc[Scalar[dtype]](N * HO * WO * F)
 
     rand[dtype](input_ptr, N * H * W * C)
     rand[dtype](filter_ptr, R * S * C * F)
@@ -110,8 +108,10 @@ fn test[
         filter_ptr,
         RuntimeLayout[layout_4d].row_major(Index(R, S, C // num_groups, F)),
     )
-    var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
-    var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    var packed_filter_shape = pack_conv_filter_shape(
+        lt_to_tt(filter), num_groups
+    )
+    var packed_filter_ptr = alloc[Scalar[dtype]](
         packed_filter_shape.flattened_length()
     )
     var packed_filter = LayoutTensor[dtype, layout_5d](
@@ -125,9 +125,8 @@ fn test[
         output_ref_ptr, RuntimeLayout[layout_4d].row_major(Index(N, HO, WO, F))
     )
 
-    @parameter
-    if filter_packed:
-        pack_filter(filter, packed_filter, num_groups)
+    comptime if filter_packed:
+        pack_filter(lt_to_tt(filter), lt_to_tt(packed_filter), num_groups)
 
     # Reference: naive conv
     Naive2dConvolution[
@@ -152,15 +151,11 @@ fn test[
     # Test direct conv
     comptime conv_attr = ConvInfoStatic[2]()
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         ConvDirectNHWC[
             layout_4d,
             layout_5d,
             layout_4d,
-            input.origin,
-            filter.origin,
-            output.origin,
             dtype,
             dtype,
             dtype,
@@ -177,9 +172,6 @@ fn test[
             layout_4d,
             layout_4d,
             layout_4d,
-            _,
-            _,
-            _,
             dtype,
             dtype,
             dtype,
@@ -220,7 +212,7 @@ fn test[
     print("Succeed")
 
 
-def main():
+def main() raises:
     """It only includes shapes where F is multiple simd_size."""
     # No packing or padding.
     test[DType.float32, False](

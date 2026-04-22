@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -310,7 +310,7 @@ def sample_synthetic_tts_requests(
         # set *both* audio_prompt_tokens *and* _assistant_message_override in
         # the request. So we take the string that we just generated through
         # reverse tokenization, and re-tokenize it once more to get the array of
-        # integers back. This is messy & ineffecient; see PAQ-992
+        # integers back. This is messy & inefficient; see PAQ-992
         audio_prompt_speech_tokens = tokenizer(
             audio_prompt_speech_tokens_message, add_special_tokens=False
         ).input_ids

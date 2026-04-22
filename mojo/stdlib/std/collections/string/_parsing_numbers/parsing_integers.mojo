@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import memcmp, memcpy
+from std.memory import memcmp, memcpy
 
 from .constants import CONTAINER_SIZE, MAXIMUM_UINT64_AS_STRING
 
 
-fn standardize_string_slice(
-    x: StringSlice[mut=False],
+def standardize_string_slice(
+    x: StringSlice[mut=False, _],
 ) -> InlineArray[Byte, CONTAINER_SIZE]:
     """Put the input string in an inline array, aligned to the right and padded
     with "0" on the left.
     """
-    var standardized_x = InlineArray[Byte, CONTAINER_SIZE](fill=ord("0"))
+    var standardized_x = InlineArray[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
     var std_x_ptr = standardized_x.unsafe_ptr()
     var x_len = x.byte_length()
     memcpy(
@@ -39,7 +39,7 @@ fn standardize_string_slice(
 # to the simd width and the base, but Mojo's compile-time
 # computation is not yet powerful enough yet.
 # For now we focus on base 10.
-fn to_integer(x: StringSlice[mut=False]) raises -> UInt64:
+def to_integer(x: StringSlice[mut=False, _]) raises -> UInt64:
     """The input does not need to be padded with "0" on the left.
     The function returns the integer value represented by the input string.
     """
@@ -48,7 +48,7 @@ fn to_integer(x: StringSlice[mut=False]) raises -> UInt64:
     return to_integer(standardize_string_slice(x))
 
 
-fn to_integer(
+def to_integer(
     standardized_x: InlineArray[Byte, CONTAINER_SIZE]
 ) raises -> UInt64:
     """Takes a inline array containing the ASCII representation of a number.
@@ -87,7 +87,9 @@ fn to_integer(
     var accumulator = SIMD[DType.uint64, simd_width](0)
 
     # We use memcmp to check that the number is not too large.
-    comptime max_standardized_x = String(UInt64.MAX).rjust(CONTAINER_SIZE, "0")
+    comptime max_standardized_x = String(UInt64.MAX).ascii_rjust(
+        CONTAINER_SIZE, "0"
+    )
     var too_large = (
         memcmp(std_x_ptr, max_standardized_x.unsafe_ptr(), CONTAINER_SIZE) == 1
     )
@@ -104,8 +106,7 @@ fn to_integer(
     # actual conversion
     comptime vector_with_exponents = get_vector_with_exponents()
 
-    @parameter
-    for i in range(CONTAINER_SIZE // simd_width):
+    comptime for i in range(CONTAINER_SIZE // simd_width):
         var ascii_vector = (std_x_ptr + i * simd_width).load[width=simd_width]()
         var as_digits = ascii_vector - SIMD[DType.uint8, simd_width](ord("0"))
         var as_digits_index = as_digits.cast[DType.uint64]()
@@ -113,12 +114,12 @@ fn to_integer(
             vector_with_exponents.unsafe_ptr() + i * simd_width
         ).load[width=simd_width]()
         accumulator += as_digits_index * vector_slice
-    return Int(accumulator.reduce_add())
+    return UInt64(Int(accumulator.reduce_add()))
 
 
-fn get_vector_with_exponents() -> InlineArray[UInt64, CONTAINER_SIZE]:
+def get_vector_with_exponents() -> InlineArray[UInt64, CONTAINER_SIZE]:
     """Returns (0, 0, 0, 0, 10**19, 10**18, 10**17, ..., 10, 1)."""
     var result = InlineArray[UInt64, CONTAINER_SIZE](uninitialized=True)
     for i in range(4, CONTAINER_SIZE):
-        result[i] = 10 ** (CONTAINER_SIZE - i - 1)
+        result[i] = UInt64(10) ** UInt64(CONTAINER_SIZE - i - 1)
     return result^

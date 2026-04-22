@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,11 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_false, assert_true, TestSuite
+from std.testing import (
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
+    assert_raises,
+    TestSuite,
+)
 from test_utils import CopyCounter, MoveOnly
 
 
-def test_tuple_contains():
+def test_tuple_contains() raises:
     var a = (123, True, StaticString("Mojo is awesome"))
 
     assert_true(StaticString("Mojo is awesome") in a)
@@ -109,7 +116,7 @@ def test_tuple_contains():
     assert_false(d_alias.__contains__("Hello world"))
 
 
-def test_tuple_unpack():
+def test_tuple_unpack() raises:
     (var list) = [a + b for a, b in [(1, 2), (3, 4)]]
     assert_equal(list, [3, 7])
 
@@ -117,16 +124,36 @@ def test_tuple_unpack():
     assert_equal(list2, [3, 7])
 
 
-def test_tuple_default():
+def test_tuple_default() raises:
     var t: Tuple[Int, String, Float32] = {}
     assert_equal(t[0], 0)
     assert_equal(t[1], "")
     assert_equal(t[2], 0.0)
 
 
-def test_tuple_comparison():
-    assert_true((1, 2, 3) == (1, 2, 3))
+def _default_construct[T: Defaultable]() -> T:
+    return T()
+
+
+def test_tuple_defaultable_generic_constraint() raises:
+    var direct = Tuple[Int, String]()
+    assert_equal(direct[0], 0)
+    assert_equal(direct[1], "")
+
+    var pair = _default_construct[Tuple[Int, String]]()
+    assert_equal(pair[0], 0)
+    assert_equal(pair[1], "")
+
+    var nested = _default_construct[Tuple[Int, Tuple[String, Float32]]]()
+    assert_equal(nested[0], 0)
+    assert_equal(nested[1][0], "")
+    assert_equal(nested[1][1], 0.0)
+
+
+def test_tuple_comparison() raises:
+    assert_equal((1, 2, 3), (1, 2, 3))
     assert_false((1, 2, 3) != (1, 2, 3))
+    assert_not_equal((1, 2, 3), (1, 2, 4))
     assert_false((1, 2, 3) < (1, 2, 3))
     assert_false((1, 2, 3) > (1, 2, 3))
     assert_true((1, 2, 3) <= (1, 2, 3))
@@ -141,84 +168,58 @@ def test_tuple_comparison():
     assert_true((1, 2, 3) >= (1, 2, 2))
 
 
-def test_tuple_comparison_different_types():
+def test_tuple_comparison_different_types() raises:
     assert_false((1, "foo") == (1, "bar"))
     assert_true((1, "foo") != (1, "bar"))
     assert_false((1, "foo") < (1, "bar"))
     assert_true((1, "foo") > (1, "bar"))
 
 
-def test_tuple_comparison_different_lengths():
-    assert_false((1, 2, 3) == (1, 2))
-    assert_true((1, 2, 3) != (1, 2))
-    assert_false((1, 2, 3) < (1, 2))
-    assert_true((1, 2, 3) > (1, 2))
-    assert_false((1, 2, 3) <= (1, 2))
-    assert_true((1, 2, 3) >= (1, 2))
-
-
-def test_tuple_comparison_different_types_and_lengths():
-    assert_false((1, "foo") == (1, "bar", "baz"))
-    assert_true((1, "foo") != (1, "bar", "baz"))
-    assert_false((1, "foo") < (1, "bar", "baz"))
-    assert_true((1, "foo") > (1, "bar", "baz"))
-    assert_false((1, "foo") <= (1, "bar", "baz"))
-    assert_true((1, "foo") >= (1, "bar", "baz"))
-
-
-def test_tuple_reverse_odd():
+def test_tuple_reverse_odd() raises:
     var t = ("hi", 1, 4.5)
     var reversed_t = t^.reverse()
-    assert_equal(reversed_t[0], 4.5)
-    assert_equal(reversed_t[1], 1)
-    assert_equal(reversed_t[2], "hi")
+    assert_equal(reversed_t, (4.5, 1, "hi"))
 
 
-def test_tuple_reverse_empty():
+def test_tuple_reverse_empty() raises:
     var t = Tuple[]()
-    var t_reversed = t^.reverse()
-    assert_true(t_reversed == ())
+    assert_equal(t^.reverse(), ())
 
 
-def test_tuple_reverse_even():
+def test_tuple_reverse_even() raises:
     var t = (Bool(True), Int(42))
     var t_reversed = t^.reverse()
-    assert_equal(t_reversed[0], Int(42))
-    assert_equal(t_reversed[1], Bool(True))
+    assert_equal(t_reversed, (Int(42), Bool(True)))
 
 
-def test_tuple_reverse_copy_count():
+def test_tuple_reverse_copy_count() raises:
     var t = (CopyCounter(),)
     var t2 = t^.reverse()
     assert_equal(t2[0].copy_count, 0)
 
 
-def test_tuple_concat():
+def test_tuple_concat() raises:
     var t = ("hi", "hey", 1)
     var t2 = (4.5, "hello")
     var concatted = t^.concat(t2^)
-    assert_equal(concatted[0], "hi")
-    assert_equal(concatted[1], "hey")
-    assert_equal(concatted[2], 1)
-    assert_equal(concatted[3], 4.5)
-    assert_equal(concatted[4], "hello")
+    assert_equal(concatted, ("hi", "hey", 1, 4.5, "hello"))
 
 
-def test_tuple_empty_concat():
+def test_tuple_empty_concat() raises:
     var t = ()
     var t2 = ()
     var concatted = t^.concat(t2^)
-    assert_true(concatted == ())
+    assert_equal(concatted, ())
 
 
-def test_tuple_identity_concat():
+def test_tuple_identity_concat() raises:
     var t = (Bool(True),)
     var t2 = ()
     var concatted = t^.concat(t2^)
-    assert_true(concatted == (Bool(True),))
+    assert_equal(concatted, (Bool(True),))
 
 
-def test_tuple_concat_copy_count():
+def test_tuple_concat_copy_count() raises:
     var t = (CopyCounter(),)
     var t2 = (String(""),)
     var t3 = t^.concat(t2^)
@@ -226,26 +227,152 @@ def test_tuple_concat_copy_count():
 
 
 # This test doesn't need to run, it just needs to compile
-def test_tuple_size_parse_time():
-    fn func_with_where_clause(t: Tuple) where type_of(t).__len__() < 4:
+def test_tuple_size_parse_time() raises:
+    def func_with_where_clause(t: Tuple) where type_of(t).__len__() < 4:
         pass
 
     func_with_where_clause((1, 3, 2))
 
 
-def test_tuple_conforms_copyable():
-    assert_true(conforms_to(Tuple[], Copyable))
-    assert_true(conforms_to(Tuple[Int], Copyable))
-    assert_true(conforms_to(Tuple[Int, String], Copyable))
-    assert_true(conforms_to(Tuple[Int, Tuple[Int, Float32]], Copyable))
-
-
-def test_tuple_works_with_non_copyable_types():
+def test_tuple_works_with_non_copyable_types() raises:
     var tuple = (MoveOnly[Int](42), 55)
     var moved = tuple^
     assert_equal(moved[0].data, 42)
     assert_equal(moved[1], 55)
 
 
-def main():
+def test_tuple_write_to() raises:
+    var s = String()
+    (1, 2, 3).write_to(s)
+    assert_equal(s, "(1, 2, 3)")
+
+    s = String()
+    (1,).write_to(s)
+    assert_equal(s, "(1,)")
+
+    s = String()
+    ().write_to(s)
+    assert_equal(s, "()")
+
+    # write_to uses write_to on elements, so strings are unquoted.
+    s = String()
+    (1, "hello").write_to(s)
+    assert_equal(s, "(1, hello)")
+
+    s = String()
+    (True, 42, "hi").write_to(s)
+    assert_equal(s, "(True, 42, hi)")
+
+
+def test_tuple_write_repr_to() raises:
+    var s = String()
+    (1, 2, 3).write_repr_to(s)
+    assert_equal(s, "Tuple[Int, Int, Int](Int(1), Int(2), Int(3))")
+
+    s = String()
+    (1,).write_repr_to(s)
+    assert_equal(s, "Tuple[Int](Int(1),)")
+
+    s = String()
+    ().write_repr_to(s)
+    assert_equal(s, "Tuple[]()")
+
+    # write_repr_to uses write_repr_to on elements, so strings are quoted.
+    s = String()
+    (1, "hello").write_repr_to(s)
+    assert_equal(s, "Tuple[Int, String](Int(1), 'hello')")
+
+    s = String()
+    (True, 42, "hi").write_repr_to(s)
+    assert_equal(s, "Tuple[Bool, Int, String](True, Int(42), 'hi')")
+
+
+def test_tuple_assert_equal() raises:
+    # Direct tuple-to-tuple comparisons via assert_equal.
+    assert_equal((), ())
+    assert_equal((1,), (1,))
+    assert_equal((1, 2, 3), (1, 2, 3))
+    assert_equal((1, "hello"), (1, "hello"))
+    assert_equal((True, 42, "hi"), (True, 42, "hi"))
+
+
+def test_tuple_assert_not_equal() raises:
+    assert_not_equal((1, 2), (1, 3))
+    assert_not_equal((1, "foo"), (1, "bar"))
+
+
+def test_tuple_conditional_conformances() raises:
+    # Copyable conformance is conditional on all element types being Copyable.
+    assert_true(conforms_to(Tuple[], Copyable))
+    assert_true(conforms_to(Tuple[Int], Copyable))
+    assert_true(conforms_to(Tuple[Int, String], Copyable))
+    assert_true(conforms_to(Tuple[Int, Tuple[Int, Float32]], Copyable))
+
+    # Defaultable conformance is conditional on all element types being
+    # Defaultable.
+    assert_true(conforms_to(Tuple[], Defaultable))
+    assert_true(conforms_to(Tuple[Int], Defaultable))
+    assert_true(conforms_to(Tuple[Int, String], Defaultable))
+    assert_true(conforms_to(Tuple[Int, Tuple[Int, Float32]], Defaultable))
+
+    # ImplicitlyCopyable conformance is conditional on all element types being
+    # ImplicitlyCopyable (and Copyable).
+    assert_true(conforms_to(Tuple[], ImplicitlyCopyable))
+    assert_true(conforms_to(Tuple[Int], ImplicitlyCopyable))
+    assert_true(conforms_to(Tuple[Int, String], ImplicitlyCopyable))
+
+    # Writable conformance is conditional on all element types being Writable.
+    assert_true(conforms_to(Tuple[Int], Writable))
+    assert_true(conforms_to(Tuple[Int, String], Writable))
+    assert_true(conforms_to(Tuple[], Writable))
+
+    # Equatable conformance is conditional on all element types being Equatable.
+    assert_true(conforms_to(Tuple[], Equatable))
+    assert_true(conforms_to(Tuple[Int], Equatable))
+    assert_true(conforms_to(Tuple[Int, String], Equatable))
+
+    # Hashable conformance is conditional on all element types being Hashable.
+    assert_true(conforms_to(Tuple[], Hashable))
+    assert_true(conforms_to(Tuple[Int], Hashable))
+    assert_true(conforms_to(Tuple[Int, String], Hashable))
+
+    # conforms_to correctly returns False for non-conforming element types.
+    assert_false(conforms_to(Tuple[MoveOnly[Int]], Copyable))
+    assert_false(conforms_to(Tuple[MoveOnly[Int]], Defaultable))
+    assert_false(conforms_to(Tuple[MoveOnly[Int]], ImplicitlyCopyable))
+    assert_false(conforms_to(Tuple[MoveOnly[Int]], Writable))
+
+
+def test_tuple_hash() raises:
+    # Equal tuples should produce the same hash.
+    assert_equal(hash((1, 2, 3)), hash((1, 2, 3)))
+    assert_equal(hash(("a", "b")), hash(("a", "b")))
+
+    # Empty tuple hashing.
+    assert_equal(hash(Tuple[]()), hash(Tuple[]()))
+
+    # Different tuples should (likely) produce different hashes.
+    assert_not_equal(hash((1, 2, 3)), hash((1, 2, 4)))
+    assert_not_equal(hash((1, 2)), hash((2, 1)))
+
+
+def test_tuple_assert_equal_failure_message() raises:
+    with assert_raises(contains="left: (1, 2)"):
+        assert_equal((1, 2), (1, 3))
+
+
+def test_tuple_conditional_register_passable() raises:
+    # All RP types
+    assert_true(conforms_to(Tuple[Int, Bool], RegisterPassable))
+    assert_true(conforms_to(Tuple[Int], RegisterPassable))
+
+    # All non-RP types
+    assert_false(conforms_to(Tuple[String, List[Int]], RegisterPassable))
+
+    # Mixture of RP and non-RP
+    assert_false(conforms_to(Tuple[Int, String], RegisterPassable))
+    assert_false(conforms_to(Tuple[Bool, List[Int], Int], RegisterPassable))
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

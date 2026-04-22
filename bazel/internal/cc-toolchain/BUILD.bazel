@@ -71,7 +71,10 @@ cc_sysroot(
             "//conditions:default": [],
         }),
         artifact_name_patterns = select({
-            "@platforms//os:macos": [":macos-dylib-pattern"],
+            "@platforms//os:macos": [
+                ":macos-dylib-pattern",
+                ":macos-tbd-pattern",
+            ],
             "//conditions:default": [],
         }),
         compiler = "clang",
@@ -87,6 +90,7 @@ cc_sysroot(
             "//bazel/internal/cc-toolchain/features:gcc_quoting_for_param_files",
             "//bazel/internal/cc-toolchain/features:module_maps",
             "//bazel/internal/cc-toolchain/features:non_opt_feature",
+            "//bazel/internal/cc-toolchain/features:set_soname",
             "//bazel/internal/cc-toolchain/features:sysroot",
             "@rules_cc//cc/toolchains/args/preprocessor_defines:feature",
             "@rules_cc//cc/toolchains/args/random_seed:feature",
@@ -97,6 +101,7 @@ cc_sysroot(
             "//bazel/internal/cc-toolchain/features:opt_feature",
             "@rules_cc//cc/toolchains/args:experimental_replace_legacy_action_config_features",
             "//bazel/internal/cc-toolchain/features:supports_start_end_lib",  # https://github.com/bazelbuild/rules_cc/issues/322
+            "//bazel/internal/cc-toolchain/args/interface-libraries",
         ],
         known_features = [
             # Only optional features need to be included here
@@ -110,6 +115,7 @@ cc_sysroot(
             "//bazel/internal/cc-toolchain/features:use_module_maps",
             "//bazel/internal/cc-toolchain/features:parse_headers",
             "@rules_cc//cc/toolchains/args/generate_linkmap:feature",
+            "@rules_cc//cc/toolchains/args/thin_lto:feature",
         ] + [
             "//bazel/internal/cc-toolchain/features:" + name
             for name in MARKER_FEATURES
@@ -135,6 +141,13 @@ cc_artifact_name_pattern(
     name = "macos-dylib-pattern",
     category = "@rules_cc//cc/toolchains/artifacts:dynamic_library",
     extension = ".dylib",
+    prefix = "lib",
+)
+
+cc_artifact_name_pattern(
+    name = "macos-tbd-pattern",
+    category = "@rules_cc//cc/toolchains/artifacts:interface_library",
+    extension = ".tbd",
     prefix = "lib",
 )
 

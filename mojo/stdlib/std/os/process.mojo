@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,17 +15,18 @@
 Example:
 
 ```mojo
-from os import Process
-from collections import List
+from std.os import Process
+from std.collections import List
 _ = Process.run("echo", ["== TEST_ECHO"])
 ```
 """
-from collections import List, Optional
-from collections.string import StringSlice
-from sys import CompilationTarget
-from sys._libc import (
+from std.collections import List, Optional
+from std.collections.string import StringSlice
+from std.sys import CompilationTarget
+from std.sys._libc import (
     waitpid,
     posix_spawnp,
+    _get_environ,
     kill,
     SignalCodes,
     pipe,
@@ -35,8 +36,8 @@ from sys._libc import (
     close,
     WaitFlags,
 )
-from sys.ffi import c_char, c_int, c_pid_t, get_errno
-from sys.os import abort, sep
+from std.ffi import c_char, c_int, c_pid_t, get_errno, CStringSlice
+from .os import abort, sep
 
 
 # ===----------------------------------------------------------------------=== #
@@ -56,7 +57,7 @@ struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable):
     var term_signal: Optional[Int]
     """The signal number that terminated the process."""
 
-    fn __init__(
+    def __init__(
         out self,
         exit_code: Optional[Int] = None,
         term_signal: Optional[Int] = None,
@@ -71,7 +72,7 @@ struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable):
         self.term_signal = term_signal
 
     @staticmethod
-    fn running() -> Self:
+    def running() -> Self:
         """Creates a status for a running process.
 
         Returns:
@@ -79,7 +80,7 @@ struct ProcessStatus(Copyable, ImplicitlyCopyable, Movable):
         """
         return Self()
 
-    fn has_exited(self) -> Bool:
+    def has_exited(self) -> Bool:
         """Checks if the process has terminated.
 
         Returns:
@@ -102,7 +103,7 @@ struct Pipe:
     var fd_out: Optional[FileDescriptor]
     """File descriptor for pipe output."""
 
-    fn __init__(
+    def __init__(
         out self,
         in_close_on_exec: Bool = True,
         out_close_on_exec: Bool = True,
@@ -124,23 +125,27 @@ struct Pipe:
 
         if in_close_on_exec:
             if not self._set_close_on_exec(pipe_fds[0]):
+                _ = close(pipe_fds[0])
+                _ = close(pipe_fds[1])
                 raise Error("Failed to configure input pipe close on exec")
 
         if out_close_on_exec:
             if not self._set_close_on_exec(pipe_fds[1]):
+                _ = close(pipe_fds[0])
+                _ = close(pipe_fds[1])
                 raise Error("Failed to configure output pipe close on exec")
 
         self.fd_in = FileDescriptor(Int(pipe_fds[0]))
         self.fd_out = FileDescriptor(Int(pipe_fds[1]))
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Ensures pipes input and output file descriptors are closed, when the object is destroyed.
         """
         self.set_input_only()
         self.set_output_only()
 
     @staticmethod
-    fn _set_close_on_exec(fd: c_int) -> Bool:
+    def _set_close_on_exec(fd: c_int) -> Bool:
         return (
             fcntl(
                 fd,
@@ -151,21 +156,21 @@ struct Pipe:
         )
 
     @always_inline
-    fn set_input_only(mut self):
+    def set_input_only(mut self):
         """Close the output descriptor/ channel for this side of the pipe."""
         if self.fd_out:
-            _ = close(rebind[Int](self.fd_out.value()))
+            _ = close(Int32(rebind[Int](self.fd_out.value())))
             self.fd_out = None
 
     @always_inline
-    fn set_output_only(mut self):
+    def set_output_only(mut self):
         """Close the input descriptor/ channel for this side of the pipe."""
         if self.fd_in:
-            _ = close(rebind[Int](self.fd_in.value()))
+            _ = close(Int32(rebind[Int](self.fd_in.value())))
             self.fd_in = None
 
     @always_inline
-    fn write_bytes(mut self, bytes: Span[Byte, _]) raises:
+    def write_bytes(mut self, bytes: Span[Byte, _]) raises:
         """Writes a span of bytes to the pipe.
 
         Args:
@@ -180,7 +185,7 @@ struct Pipe:
             raise Error("Can not write from read only side of pipe")
 
     @always_inline
-    fn read_bytes(mut self, buffer: Span[mut=True, Byte]) raises -> UInt:
+    def read_bytes(mut self, buffer: Span[mut=True, Byte, _]) raises -> UInt:
         """Read a number of bytes from this pipe.
 
         Args:
@@ -218,7 +223,7 @@ struct Process:
     var status: Optional[ProcessStatus]
     """Cached status of the process. `None` if the process has not been waited on yet."""
 
-    fn __init__(out self, child_pid: c_pid_t):
+    def __init__(out self, child_pid: c_pid_t):
         """Struct to manage metadata about child process.
         Use the `run` static method to create new process.
 
@@ -229,7 +234,7 @@ struct Process:
         self.child_pid = child_pid
         self.status = None
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Waits for the process to exit when the `Process` object is destroyed.
         """
         try:
@@ -238,7 +243,7 @@ struct Process:
             # Errors in __del__ should be suppressed.
             pass
 
-    fn _kill(mut self, signal: Int) -> Bool:
+    def _kill(mut self, signal: Int) -> Bool:
         # We need to check the "cached" status to avoid trying to
         # kill a process after already having waited upon its exit.
         # Such a process no longer exists and its pid could be reused
@@ -246,9 +251,11 @@ struct Process:
             return False
 
         # `kill` returns 0 on success and -1 on failure
-        return kill(self.child_pid, signal) > -1
+        return kill(Int32(self.child_pid), Int32(signal)) > -1
 
-    fn _check_status(self, pid: c_pid_t, status: c_int) raises -> ProcessStatus:
+    def _check_status(
+        self, pid: c_pid_t, status: c_int
+    ) raises -> ProcessStatus:
         """Helper to decode the result of a waitpid call.
 
         The decoding logic is a direct implementation of the standard C macros
@@ -287,7 +294,7 @@ struct Process:
             var err = get_errno()
             raise Error("waitpid failed with errno " + String(err))
 
-    fn hangup(mut self) -> Bool:
+    def hangup(mut self) -> Bool:
         """Send the Hang up signal to the managed child process.
 
         Returns:
@@ -295,7 +302,7 @@ struct Process:
         """
         return self._kill(SignalCodes.HUP)
 
-    fn interrupt(mut self) -> Bool:
+    def interrupt(mut self) -> Bool:
         """Send the Interrupt signal to the managed child process.
 
         Returns:
@@ -303,7 +310,7 @@ struct Process:
         """
         return self._kill(SignalCodes.INT)
 
-    fn kill(mut self) -> Bool:
+    def kill(mut self) -> Bool:
         """Send the Kill signal to the managed child process.
 
         Returns:
@@ -311,7 +318,7 @@ struct Process:
         """
         return self._kill(SignalCodes.KILL)
 
-    fn poll(mut self) raises -> ProcessStatus:
+    def poll(mut self) raises -> ProcessStatus:
         """Check if the child process has terminated in a non-blocking way.
 
         This method updates the internal state of the `Process` object.
@@ -335,7 +342,7 @@ struct Process:
             self.status = result
         return result
 
-    fn wait(mut self) raises -> ProcessStatus:
+    def wait(mut self) raises -> ProcessStatus:
         """Wait for the child process to terminate (blocking).
 
         This method updates the internal state of the `Process` object.
@@ -361,7 +368,7 @@ struct Process:
         return result
 
     @staticmethod
-    fn run(var path: String, argv: List[String]) raises -> Process:
+    def run(var path: String, argv: List[String]) raises -> Process:
         """Spawn new process from file executable.
 
         Args:
@@ -375,62 +382,48 @@ struct Process:
             Error: If the process fails to spawn.
         """
 
-        @parameter
-        if CompilationTarget.is_linux() or CompilationTarget.is_macos():
-            var file_name = String(path.split(sep)[-1])
+        comptime assert (
+            CompilationTarget.is_linux() or CompilationTarget.is_macos()
+        ), "Unknown platform process execution not implemented"
+        var parts = path.split(sep)
+        var file_name = String(parts[len(parts) - 1])
 
-            var arg_count = len(argv)
-            var argv_array_ptr_cstr_ptr = List[
-                UnsafePointer[mut=False, c_char, ImmutAnyOrigin]
-            ](
-                length=arg_count + 2,
-                fill=UnsafePointer[mut=False, c_char, ImmutAnyOrigin](),
-            )
-            var offset = 0
-            # Arg 0 in `argv` ptr array should be the file name
-            argv_array_ptr_cstr_ptr[
-                offset
-            ] = file_name.as_c_string_slice().unsafe_ptr()
+        var arg_count = len(argv)
+        var argv_array_ptr_cstr_ptr = List[
+            Optional[CStringSlice[ImmutAnyOrigin]]
+        ](
+            length=arg_count + 2,
+            fill={},
+        )
+        var offset = 0
+        # Arg 0 in `argv` ptr array should be the file name
+        argv_array_ptr_cstr_ptr[offset] = rebind[CStringSlice[ImmutAnyOrigin]](
+            file_name.as_c_string_slice()
+        )
+        offset += 1
+
+        for var arg in argv:
+            argv_array_ptr_cstr_ptr[offset] = rebind[
+                CStringSlice[ImmutAnyOrigin]
+            ](arg.as_c_string_slice())
             offset += 1
 
-            for var arg in argv:
-                argv_array_ptr_cstr_ptr[
-                    offset
-                ] = arg.as_c_string_slice().unsafe_ptr()
-                offset += 1
+        # `argv` ptr array terminates with NULL PTR
+        argv_array_ptr_cstr_ptr[offset] = {}
 
-            # `argv` ptr array terminates with NULL PTR
-            argv_array_ptr_cstr_ptr[offset] = UnsafePointer[
-                mut=False, c_char, ImmutAnyOrigin
-            ]()
-            var path_cptr = path.as_c_string_slice().unsafe_ptr()
+        var pid: c_pid_t = 0
 
-            var pid: c_pid_t = 0
+        var has_error_code = posix_spawnp(
+            UnsafePointer(to=pid),
+            path.as_c_string_slice(),
+            # Safety: `argv_array_ptr_cstr_ptr` has at least 2 elements so is non-null
+            argv_array_ptr_cstr_ptr.unsafe_ptr(),
+            _get_environ(),  # inherit parent's environment
+        )
 
-            var has_error_code = posix_spawnp(
-                UnsafePointer(to=pid),
-                path_cptr,
-                argv_array_ptr_cstr_ptr.unsafe_ptr(),
-                UnsafePointer[
-                    mut=False,
-                    UnsafePointer[mut=False, Int8, ImmutAnyOrigin],
-                    ImmutAnyOrigin,
-                ](),
+        if has_error_code > 0:
+            raise Error(
+                t"Failed to execute {path}, EINT error code: {has_error_code}"
             )
 
-            if has_error_code > 0:
-                raise Error(
-                    "Failed to execute "
-                    + path
-                    + ", EINT error code: "
-                    + String(has_error_code)
-                )
-
-            return Process(child_pid=pid)
-        else:
-            constrained[
-                False, "Unknown platform process execution not implemented"
-            ]()
-            abort[prefix="ERROR:"](
-                "Unknown platform process execution not implemented"
-            )
+        return Process(child_pid=pid)

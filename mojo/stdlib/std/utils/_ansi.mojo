@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import _Global
-from sys._io import stdout
+from std.ffi import _Global
+from std.sys._io import stdout
 
 
-fn _is_stdout_tty() -> Bool:
+def _is_stdout_tty() -> Bool:
     return stdout.isatty()
 
 
 comptime _USE_COLOR = _Global["IS_STDOUT_TTY", _is_stdout_tty]
 
 
-fn _use_color() -> Bool:
+def _use_color() -> Bool:
     try:
         return _USE_COLOR.get_or_create_ptr()[]
     except:
@@ -45,7 +45,7 @@ struct Color(ImplicitlyCopyable, Writable):
     comptime BOLD_WHITE = Self("\033[1;97m")
     comptime END = Self("\033[0m")
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if _use_color():
             writer.write(self.color)
 
@@ -56,10 +56,10 @@ struct Text[W: Writable, origin: ImmutOrigin, //, color: Color](Writable):
 
     var writable: Pointer[Self.W, Self.origin]
 
-    fn __init__(out self, ref [Self.origin]w: Self.W):
+    def __init__(out self, ref[Self.origin] w: Self.W):
         self.writable = Pointer(to=w)
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(self.color)
         self.writable[].write_to(writer)
         writer.write(Color.END)

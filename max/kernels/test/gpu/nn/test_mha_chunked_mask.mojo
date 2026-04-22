@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from nn.mha_mask import MASK_VALUE, ChunkedMask, TileMaskStatus
-from testing import assert_equal
+from nn.attention.mha_mask import MASK_VALUE, ChunkedMask, TileMaskStatus
+from std.testing import assert_equal
 
-from utils.index import Index
+from std.utils.index import Index
 
 
-def test_chunked_mask_status():
+def test_chunked_mask_status() raises:
     var mask = ChunkedMask[local_window_size=4]()
 
     assert_equal(mask.status(Index(0, 0), Index(4, 4)), TileMaskStatus.NO_MASK)
@@ -60,7 +60,7 @@ def test_chunked_mask_status():
     )
 
 
-def test_chunked_mask_apply():
+def test_chunked_mask_apply() raises:
     var mask = ChunkedMask[local_window_size=4]()
 
     var score_vec = SIMD[DType.float32, 4](0.0)
@@ -88,6 +88,6 @@ def test_chunked_mask_apply():
     )
 
 
-def main():
+def main() raises:
     test_chunked_mask_status()
     test_chunked_mask_apply()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
+from std import time
 
 from gridv3 import Grid
-from python import Python
+from std.python import Python
 
 
 def run_display(
@@ -24,7 +24,7 @@ def run_display(
     background_color: String = "black",
     cell_color: String = "green",
     pause: Float64 = 0.1,
-) -> None:
+) raises -> None:
     # Import the pygame Python package
     pygame = Python.import_module("pygame")
 
@@ -35,8 +35,8 @@ def run_display(
     window = pygame.display.set_mode(Python.tuple(window_width, window_height))
     pygame.display.set_caption("Conway's Game of Life")
 
-    cell_height = window_height / grid.rows
-    cell_width = window_width / grid.cols
+    cell_height = Float64(window_height) / Float64(grid.rows)
+    cell_width = Float64(window_width) / Float64(grid.cols)
     border_size = 1
     cell_fill_color = pygame.Color(cell_color)
     background_fill_color = pygame.Color(background_color)
@@ -60,10 +60,10 @@ def run_display(
         for row in range(grid.rows):
             for col in range(grid.cols):
                 if grid[row, col]:
-                    x = col * cell_width + border_size
-                    y = row * cell_height + border_size
-                    width = cell_width - border_size
-                    height = cell_height - border_size
+                    x = Float64(col) * cell_width + Float64(border_size)
+                    y = Float64(row) * cell_height + Float64(border_size)
+                    width = cell_width - Float64(border_size)
+                    height = cell_height - Float64(border_size)
                     pygame.draw.rect(
                         window,
                         cell_fill_color,
@@ -83,6 +83,6 @@ def run_display(
     pygame.quit()
 
 
-def main():
+def main() raises:
     start = Grid[128, 128].random()
     run_display(start^)

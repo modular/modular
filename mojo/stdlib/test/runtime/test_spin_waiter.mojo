@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_true, TestSuite
+from std.testing import assert_true, TestSuite
 
-from utils.lock import SpinWaiter
+from std.utils.lock import SpinWaiter
 
 
-def test_spin_waiter():
+def test_spin_waiter() raises:
     var waiter = SpinWaiter()
     comptime RUNS = 1000
     for _ in range(RUNS):
@@ -24,5 +24,5 @@ def test_spin_waiter():
     assert_true(True)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

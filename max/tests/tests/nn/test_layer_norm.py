@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -55,7 +55,7 @@ def test_layer_norm_basic() -> None:
     )
 
     # Find the layer_norm op in the IR.
-    layer_norm_op = assert_single_op(g, "mo.layer_norm")
+    layer_norm_op = assert_single_op(g, "mo.reduce.layer_norm")
 
     # Check the output type.
     assert_op_output_shape(layer_norm_op, "[2, 10, 64]")
@@ -75,7 +75,7 @@ def test_layer_norm_no_bias() -> None:
     )
 
     # Check that the graph still works without bias.
-    assert_single_op(g, "mo.layer_norm")
+    assert_single_op(g, "mo.reduce.layer_norm")
 
 
 @pytest.mark.parametrize("shape, dim", COMMON_NORM_TEST_SHAPES)
@@ -90,7 +90,7 @@ def test_layer_norm_shapes(shape, dim) -> None:  # noqa: ANN001
     )
 
     # Verify the graph contains a layer_norm op.
-    assert_single_op(g, "mo.layer_norm")
+    assert_single_op(g, "mo.reduce.layer_norm")
 
 
 def test_constant_layer_norm_basic() -> None:
@@ -104,4 +104,4 @@ def test_constant_layer_norm_basic() -> None:
         input_types=[TensorType(DType.float32, (2, 10, 64), DeviceRef.CPU())],
     )
 
-    assert_single_op(g, "mo.layer_norm")
+    assert_single_op(g, "mo.reduce.layer_norm")

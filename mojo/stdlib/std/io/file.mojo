@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -31,16 +31,16 @@ with open("my_file.txt", "r") as f:
 
 """
 
-from format._utils import _WriteBufferStack
-from os import PathLike, abort, makedirs, remove
-from os import SEEK_END
-from os.path import dirname
-from sys import external_call, size_of
-from sys._libc_errno import ErrNo, get_errno
-from sys.ffi import c_int, c_ssize_t
-from sys.info import platform_map
+from std.format._utils import _WriteBufferStack
+from std.os import PathLike, abort, makedirs, remove
+from std.os import SEEK_END
+from std.os.path import dirname
+from std.ffi import c_int, c_ssize_t, external_call, _CPointer
+from std.sys import size_of
+from std.sys._libc_errno import ErrNo, get_errno
+from std.sys.info import platform_map
 
-from memory import Span
+from std.memory import Span
 
 # ===----------------------------------------------------------------------=== #
 # open() syscall flags
@@ -55,16 +55,20 @@ comptime O_RDWR = 0x0002
 """Open file for reading and writing."""
 
 # File creation flags
-comptime O_CREAT = platform_map["O_CREAT", linux=0x0040, macos=0x0200]()
+comptime O_CREAT = platform_map[T=Int, "O_CREAT", linux=0x0040, macos=0x0200]()
 """Create file if it doesn't exist."""
 
-comptime O_TRUNC = platform_map["O_TRUNC", linux=0x0200, macos=0x0400]()
+comptime O_TRUNC = platform_map[T=Int, "O_TRUNC", linux=0x0200, macos=0x0400]()
 """Truncate file to zero length."""
 
-comptime O_APPEND = platform_map["O_APPEND", linux=0x0400, macos=0x0008]()
+comptime O_APPEND = platform_map[
+    T=Int, "O_APPEND", linux=0x0400, macos=0x0008
+]()
 """Append mode: writes always go to end of file."""
 
-comptime O_CLOEXEC = platform_map["O_CLOEXEC", linux=0x80000, macos=0x1000000]()
+comptime O_CLOEXEC = platform_map[
+    T=Int, "O_CLOEXEC", linux=0x80000, macos=0x1000000
+]()
 """Close file descriptor on exec."""
 
 # ===----------------------------------------------------------------------=== #
@@ -72,7 +76,7 @@ comptime O_CLOEXEC = platform_map["O_CLOEXEC", linux=0x80000, macos=0x1000000]()
 # ===----------------------------------------------------------------------=== #
 
 
-fn _open_file(path: String, mode: String) raises -> Int:
+def _open_file(path: String, mode: String) raises -> Int:
     """Open a file and return its file descriptor.
 
     This function implements the complex logic for opening files with proper
@@ -152,17 +156,6 @@ fn _open_file(path: String, mode: String) raises -> Int:
             var err = get_errno()
             raise Error("Failed to set file permissions: " + String(err))
 
-    # For append mode, seek to end (though O_APPEND should handle this)
-    if mode == "a":
-        var pos = external_call["lseek", Int64](
-            Int(fd), Int64(0), Int(SEEK_END)
-        )
-        if pos < 0:
-            # Clean up: close the file descriptor before raising
-            _ = external_call["close", c_int](fd)
-            var err = get_errno()
-            raise Error("Failed to seek to end in append mode: " + String(err))
-
     return Int(fd)
 
 
@@ -177,11 +170,11 @@ struct FileHandle(Defaultable, Movable, Writer):
     var handle: Int
     """The underlying file descriptor (Unix fd)."""
 
-    fn __init__(out self):
+    def __init__(out self):
         """Default constructor."""
         self.handle = -1
 
-    fn __init__(out self, path: StringSlice, mode: StringSlice) raises:
+    def __init__(out self, path: StringSlice, mode: StringSlice) raises:
         """Construct the FileHandle using the file path and mode.
 
         Args:
@@ -194,14 +187,14 @@ struct FileHandle(Defaultable, Movable, Writer):
         """
         self.handle = _open_file(String(path), String(mode))
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Closes the file handle."""
         try:
             self.close()
         except:
             pass
 
-    fn close(mut self) raises:
+    def close(mut self) raises:
         """Closes the file handle.
 
         Raises:
@@ -220,7 +213,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         self.handle = -1
 
-    fn read(self, size: Int = -1) raises -> String:
+    def read(self, size: Int = -1) raises -> String:
         """Reads data from a file and sets the file handle seek position. If
         size is left as the default of -1, it will read to the end of the file.
         Setting size to a number larger than what's in the file will set
@@ -249,21 +242,23 @@ struct FileHandle(Defaultable, Movable, Writer):
         Read the first 8 bytes, skip 2 bytes, and then read the next 8 bytes:
 
         ```mojo
-        import os
+        from std.os import SEEK_CUR
         var file = open("/tmp/example.txt", "r")
         var word1 = file.read(8)
         print(word1)
-        _ = file.seek(2, os.SEEK_CUR)
+        _ = file.seek(2, SEEK_CUR)
         var word2 = file.read(8)
         print(word2)
         ```
 
         Read the last 8 bytes in the file, then the first 8 bytes
         ```mojo
-        _ = file.seek(-8, os.SEEK_END)
+        from std.os import SEEK_SET, SEEK_END
+        var file = open("/tmp/example.txt", "r")
+        _ = file.seek(-8, SEEK_END)
         var last_word = file.read(8)
         print(last_word)
-        _ = file.seek(8, os.SEEK_SET) # os.SEEK_SET is the default start of file
+        _ = file.seek(8, SEEK_SET) # SEEK_SET is the default start of file
         var first_word = file.read(8)
         print(first_word)
         ```
@@ -272,7 +267,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         var bytes = self.read_bytes(size)
         return String(from_utf8=bytes)
 
-    fn read[
+    def read[
         dtype: DType, origin: MutOrigin
     ](self, buffer: Span[Scalar[dtype], origin]) raises -> Int:
         """Read data from the file into the Span.
@@ -300,8 +295,8 @@ struct FileHandle(Defaultable, Movable, Writer):
         Examples:
 
         ```mojo
-        import os
-        from sys.info import size_of
+        from std.os import SEEK_CUR
+        from std.sys.info import size_of
 
         comptime file_name = "/tmp/example.txt"
         var file = open(file_name, "r")
@@ -315,7 +310,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         print(first_element)
 
         # Skip 2 elements
-        _ = file.seek(2 * size_of[DType.float32](), os.SEEK_CUR)
+        _ = file.seek(2 * size_of[DType.float32](), SEEK_CUR)
 
         # Allocate and load 8 more elements from file handle seek position
         var buffer2 = InlineArray[Float32, size=8](fill=0)
@@ -341,9 +336,9 @@ struct FileHandle(Defaultable, Movable, Writer):
             var err = get_errno()
             raise Error("Failed to read from file: " + String(err))
 
-        return Int(bytes_read)
+        return bytes_read
 
-    fn read_bytes(self, size: Int = -1) raises -> List[UInt8]:
+    def read_bytes(self, size: Int = -1) raises -> List[UInt8]:
         """Reads data from a file and sets the file handle seek position. If
         size is left as default of -1, it will read to the end of the file.
         Setting size to a number larger than what's in the file will be handled
@@ -372,21 +367,21 @@ struct FileHandle(Defaultable, Movable, Writer):
         8 bytes:
 
         ```mojo
-        import os
+        from std.os import SEEK_CUR
         var file = open("/tmp/example.txt", "r")
         var list1 = file.read(8)
-        _ = file.seek(2, os.SEEK_CUR)
+        _ = file.seek(2, SEEK_CUR)
         var list2 = file.read(8)
         ```
 
         Reading the last 8 bytes in the file, then the first 8 bytes:
 
         ```mojo
-        import os
+        from std.os import SEEK_SET, SEEK_END
         var file = open("/tmp/example.txt", "r")
-        _ = file.seek(-8, os.SEEK_END)
+        _ = file.seek(-8, SEEK_END)
         var last_data = file.read(8)
-        _ = file.seek(8, os.SEEK_SET) # os.SEEK_SET is the default start of file
+        _ = file.seek(8, SEEK_SET) # SEEK_SET is the default start of file
         var first_data = file.read(8)
         ```
         """
@@ -415,7 +410,7 @@ struct FileHandle(Defaultable, Movable, Writer):
                 var err = get_errno()
                 raise Error("Failed to read from file: " + String(err))
 
-            num_read += Int(chunk_bytes_read)
+            num_read += chunk_bytes_read
 
             # If we read all of the 'size' bytes then we're done.
             if num_read == size or chunk_bytes_read == 0:
@@ -429,7 +424,9 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         return result^
 
-    fn seek(self, offset: UInt64, whence: UInt8 = os.SEEK_SET) raises -> UInt64:
+    def seek(
+        self, offset: UInt64, whence: UInt8 = os.SEEK_SET
+    ) raises -> UInt64:
         """Seeks to the given offset in the file.
 
         Args:
@@ -451,26 +448,25 @@ struct FileHandle(Defaultable, Movable, Writer):
         Skip 32 bytes from the current read position:
 
         ```mojo
-        import os
+        from std.os import SEEK_CUR
         var f = open("/tmp/example.txt", "r")
-        _ = f.seek(32, os.SEEK_CUR)
+        _ = f.seek(32, SEEK_CUR)
         ```
 
         Start from 32 bytes from the end of the file:
 
         ```mojo
-        import os
+        from std.os import SEEK_END
         var f = open("/tmp/example.txt", "r")
-        _ = f.seek(-32, os.SEEK_END)
+        _ = f.seek(-32, SEEK_END)
         ```
         """
         if self.handle < 0:
             raise "invalid file handle"
 
-        debug_assert(
-            whence >= 0 and whence < 3,
-            "Second argument to `seek` must be between 0 and 2.",
-        )
+        assert (
+            whence >= 0 and whence < 3
+        ), "Second argument to `seek` must be between 0 and 2."
 
         var fd = self._get_raw_fd()
         # lseek returns off_t which is typically Int64 on Unix systems
@@ -482,7 +478,7 @@ struct FileHandle(Defaultable, Movable, Writer):
 
         return UInt64(pos)
 
-    fn write_once(mut self, bytes: Span[Byte, _]) raises -> Int:
+    def write_once(mut self, bytes: Span[Byte, _]) raises -> Int:
         """Attempt to write bytes to the file, returning the number of bytes written.
 
         This is a low-level method that performs a single write syscall. It may
@@ -527,9 +523,9 @@ struct FileHandle(Defaultable, Movable, Writer):
             var err = get_errno()
             raise Error("Failed to write to file: " + String(err))
 
-        return Int(bytes_written)
+        return bytes_written
 
-    fn write_all(mut self, bytes: Span[Byte, _]) raises:
+    def write_all(mut self, bytes: Span[Byte, _]) raises:
         """Write all bytes to the file, handling partial writes automatically.
 
         This method guarantees that all bytes are written by looping until
@@ -572,7 +568,7 @@ struct FileHandle(Defaultable, Movable, Writer):
             total_written += chunk_written
 
     @always_inline
-    fn write_bytes(mut self, bytes: Span[Byte, _]):
+    def write_bytes(mut self, bytes: Span[Byte, _]):
         """Write a span of bytes to the file.
 
         This method is required by the Writer trait and handles partial writes
@@ -621,9 +617,9 @@ struct FileHandle(Defaultable, Movable, Writer):
             if bytes_written == 0:
                 abort("write() returned 0 bytes (file may be full or closed)")
 
-            total_written += Int(bytes_written)
+            total_written += bytes_written
 
-    fn write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSlice):
         """
         Write a `StringSlice` to this `FileHandle`.
 
@@ -634,7 +630,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         """
         self.write_bytes(string.as_bytes())
 
-    fn write[*Ts: Writable](mut self, *args: *Ts):
+    def write[*Ts: Writable](mut self, *args: *Ts):
         """Write a sequence of Writable arguments to the provided Writer.
 
         Parameters:
@@ -647,20 +643,19 @@ struct FileHandle(Defaultable, Movable, Writer):
             Passing an invalid file handle (e.g., after calling `close()`) is
             undefined behavior. In debug builds, this will trigger an assertion.
         """
-        debug_assert(self.handle >= 0, "invalid file handle in write()")
+        assert self.handle >= 0, "invalid file handle in write()"
 
         var file = FileDescriptor(self._get_raw_fd())
         var buffer = _WriteBufferStack(file)
 
-        @parameter
-        for i in range(args.__len__()):
+        comptime for i in range(args.__len__()):
             args[i].write_to(buffer)
 
         buffer.flush()
 
-    fn _write(
+    def _write(
         self,
-        ptr: UnsafePointer[mut=False, UInt8, address_space=_],
+        ptr: UnsafePointer[mut=False, UInt8, _, address_space=_],
         len: Int,
     ) raises:
         """Write the data to the file, handling partial writes automatically.
@@ -694,9 +689,9 @@ struct FileHandle(Defaultable, Movable, Writer):
                     "Write returned 0 bytes (file may be full or closed)"
                 )
 
-            total_written += Int(bytes_written)
+            total_written += bytes_written
 
-    fn __enter__(var self) -> Self:
+    def __enter__(var self) -> Self:
         """The function to call when entering the context.
 
         Returns:
@@ -704,7 +699,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         """
         return self^
 
-    fn _get_raw_fd(self) -> Int:
+    def _get_raw_fd(self) -> Int:
         """Get the raw Unix file descriptor.
 
         Returns:
@@ -713,7 +708,7 @@ struct FileHandle(Defaultable, Movable, Writer):
         return self.handle
 
 
-fn open[
+def open[
     PathLike: os.PathLike
 ](path: PathLike, mode: StringSlice) raises -> FileHandle:
     """Opens the file specified by path using the mode provided, returning a

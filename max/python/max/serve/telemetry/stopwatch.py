@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,14 +18,19 @@ from types import TracebackType
 
 
 class StopWatch:
-    """Simple stopwatch which supports the ContextManager protocol.
-        with Stopwatch() as sw:
-    sw.elapsed reports time since the scope was entered and reports
-    the time in scope after the scope is exited.
-    Stopwatch can be re-entered.
-    Stopwatch can used without scopes by calling reset.
-    To override the timers (i.e. setting start time) externally should use
-    the `time_ns` class method exposed to ensure that the same baseline is used.
+    """A simple stopwatch that supports the context manager protocol.
+
+    When used as a context manager, ``elapsed`` reports the time since the
+    scope was entered and holds the total time after the scope is exited.
+    The stopwatch can be re-entered. It can also be used without scopes by
+    calling ``reset``. To override the start time externally, use the
+    ``time_ns`` class method to ensure the same baseline is used.
+
+    .. code-block:: python
+
+        with StopWatch() as sw:
+            do_work()
+        print(sw.elapsed_ms)
     """
 
     @classmethod
@@ -83,10 +88,16 @@ class StopWatch:
 def record_ms(
     fn: Callable[[float], None], on_error: bool = False
 ) -> Generator[StopWatch, None, None]:
-    """Start a StopWatch and call fn(elapsed_ms) when complete. yields a stopwatch for intermediate timings.
+    """Starts a :class:`StopWatch` and calls ``fn(elapsed_ms)`` when complete.
 
-    fn: call this function with the duration of the stopwatch.  duration passed in ms
-    on_error: should results be recorded if an exception happens during execution?
+    Args:
+        fn: Called with the elapsed duration in milliseconds when the block
+            completes.
+        on_error: If ``True``, records results even when an exception is raised.
+            Defaults to ``False``.
+
+    Yields:
+        A :class:`StopWatch` instance for intermediate timing measurements.
     """
     sw = StopWatch()
     try:

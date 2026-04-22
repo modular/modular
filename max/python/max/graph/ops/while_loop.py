@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -36,7 +36,7 @@ def while_loop(
 
     Both the predicate and body functions must take in as arguments the same
     number and types of values as specified in the init_args. The predication
-    function must return only a boolean scalar tensor of type :class:`DType.bool`.
+    function must return only a boolean scalar tensor of type :attr:`~max.dtype.DType.bool`.
     The body function must return a list of values matching the types of init_args,
     (or may return a value directly if there is only one).
 
@@ -85,7 +85,7 @@ def while_loop(
 
         predicate:
             Callable that takes loop arguments and returns a boolean scalar tensor
-            of type :class:`DType.bool` determining loop continuation.
+            of type :attr:`~max.dtype.DType.bool` determining loop continuation.
 
         body:
             Callable that takes loop arguments and returns updated values matching
@@ -96,12 +96,11 @@ def while_loop(
 
     Raises:
         ValueError: If init_args is empty.
-        NotImplementedError: If any init_arg is a :class:`BufferValue`.
+        NotImplementedError: If any init_arg is a :class:`~max.graph.BufferValue`.
 
     Note:
         Buffer operations are currently not supported.
     """
-
     initial_values = (
         list(initial_values)
         if isinstance(initial_values, Iterable)
@@ -146,10 +145,12 @@ def while_loop(
 
         Args:
             user_func: The user's predicate or body function that operates on
-                     loop variables only.
+                loop variables only.
             block_args: The block arguments from the while loop operation, which
-                      include both loop variables and the execution chain as
-                      the last element.
+                include both loop variables and the execution chain as the last
+                element.
+            is_cond_block: If True, this is the condition block; the wrapper
+                yields [condition] + loop_vars for the cond block.
 
         Returns:
             A function that properly manages the execution chain state before
@@ -194,8 +195,12 @@ def while_loop(
             # carried values, so add loop_vars to the result list when building
             # the cond block.
             if is_cond_block:
-                # Condition is expected to be on CPU
-                result = result.to(DeviceRef.CPU())
+                if not result.device.is_cpu():
+                    raise ValueError(
+                        "The predicate for `ops.while_loop` must reside on"
+                        f" CPU, but got a tensor on {result.device}. Transfer"
+                        " it explicitly with `ops.transfer_to(pred, CPU())`."
+                    )
                 return [result] + loop_vars
             else:
                 return result
@@ -219,8 +224,10 @@ def while_loop(
     assert len(device_chains) == len(Graph.current.device_chains)
 
     def while_condition_op(args) -> mlir.OpView:  # noqa: ANN001
-        """Adaptor for mo.WhileConditionOp, whose constructor takes the
-        condition value and the list of yielded values."""
+        """Adaptor for ``mo.WhileConditionOp``.
+
+        The constructor takes the condition value and the list of yielded values.
+        """
         condition, *results = args
         return mo.WhileConditionOp(condition, results)
 

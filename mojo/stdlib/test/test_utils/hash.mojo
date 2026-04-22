@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,15 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides utilities for testing hash function quality and distribution."""
 
-from hashlib.hasher import Hasher
+from std.hashlib.hasher import Hasher
 
-from bit import pop_count
-from reflection import call_location
-from testing import assert_true
+from std.bit import pop_count
+from std.reflection import call_location
+from std.testing import assert_true
 
 
-def dif_bits(i1: UInt64, i2: UInt64) -> Int:
+def dif_bits(i1: UInt64, i2: UInt64) raises -> Int:
     """Computes the number of differing bits between two integers.
 
     Args:
@@ -27,17 +28,23 @@ def dif_bits(i1: UInt64, i2: UInt64) -> Int:
 
     Returns:
         The number of bits that differ between the two integers.
+
+    Raises:
+        Error: if an error occurs during computation.
     """
     return Int(pop_count(i1 ^ i2))
 
 
 @always_inline
-def assert_dif_hashes(hashes: List[UInt64], upper_bound: Int):
+def assert_dif_hashes(hashes: List[UInt64], upper_bound: Int) raises:
     """Asserts that all pairs of hashes differ by more than the upper bound.
 
     Args:
         hashes: List of hash values to compare.
         upper_bound: Minimum number of differing bits required between hashes.
+
+    Raises:
+        Error: if any pair of hashes differs by fewer than `upper_bound` bits.
     """
     var min_diff = 64
     var max_diff = 0
@@ -92,7 +99,7 @@ def assert_dif_hashes(hashes: List[UInt64], upper_bound: Int):
 @always_inline
 def assert_fill_factor[
     label: String, HasherType: Hasher
-](words: List[String], num_buckets: Int, lower_bound: Float64):
+](words: List[String], num_buckets: Int, lower_bound: Float64) raises:
     """Asserts that the hash function achieves a minimum fill factor.
 
     Parameters:
@@ -103,15 +110,18 @@ def assert_fill_factor[
         words: List of strings to hash.
         num_buckets: Number of buckets to distribute hashes into.
         lower_bound: Minimum required fill factor (0.0 to 1.0).
+
+    Raises:
+        Error: if the achieved fill factor is below `lower_bound`.
     """
     # A perfect hash function is when the number of buckets is equal to number of words
     # and the fill factor results in 1.0
-    var buckets = [0] * num_buckets
+    var buckets = List([0]) * num_buckets
     var hash_samples = List[UInt64]()
 
     for idx, w in enumerate(words):
-        var h = hash[HasherType=HasherType](w)
-        buckets[h % num_buckets] += 1
+        var h = hash[HasherType](w)
+        buckets[Int(h % UInt64(num_buckets))] += 1
 
         # Collect first 5 hash samples for debugging
         if idx < 5:

@@ -2,6 +2,20 @@ load("//bazel:api.bzl", "modular_generate_stubfiles", "modular_nanobind_extensio
 
 package(default_visibility = ["//max:consumers"])
 
+# Type stub files for the _core C extension. These .pyi files define the
+# Python nanobind-generated symbols whose source lives in C++. The Sphinx docs
+# build uses them at runtime to resolve "source" links for C-extension APIs
+# (see _find_pyi_stub in conf.py.in). They are kept in this separate filegroup
+# so that only the docs build — not every binary — carries them in its runfiles.
+filegroup(
+    name = "_core_pyi_stubs",
+    srcs = glob(["_core/**/*.pyi"]),
+    visibility = [
+        "//bazel/internal:__pkg__",
+        "//oss/modular/bazel/internal:__pkg__",
+    ],
+)
+
 modular_nanobind_extension(
     name = "_core.bindings",
     srcs = ["//max/python/max/_core/internal:_core.cpp"],
@@ -27,7 +41,7 @@ When you modify a .cpp file in the _core/src directory, you can run
     full_name = "max._core",
     header = """
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -49,8 +63,37 @@ When you modify a .cpp file in the _core/src directory, you can run
         "//max/python/max/_mlir",
         "//max/python/max/mlir",
         requirement("numpy"),
-        requirement("typing-extensions"),
     ],
+)
+
+modular_py_library(
+    name = "interpreter",
+    srcs = [
+        "_interpreter.py",
+    ],
+    # _interpreter_ops is optional - Mojo kernels may not be available
+    ignore_extra_deps = [
+        "//max/python/max/_interpreter_ops",
+    ],
+    deps = [
+        ":_core",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/graph",
+    ],
+)
+
+modular_py_library(
+    name = "_mlir_context",
+    srcs = ["_mlir_context.py"],
+    deps = [
+        "//max/python/max/mlir",
+    ],
+)
+
+alias(
+    name = "tensor",
+    actual = "//max/python/max/experimental",
 )
 
 modular_py_library(
@@ -59,6 +102,7 @@ modular_py_library(
     tags = ["no-pydeps"],  # All deps are unused
     deps = [
         ":_core",
+        ":tensor",
         "//max/python/max/_core_mojo",
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -68,11 +112,13 @@ modular_py_library(
         "//max/python/max/entrypoints:gpu-query",
         "//max/python/max/entrypoints:pipelines",
         "//max/python/max/entrypoints:replay_recording",
-        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/experimental/torch",
         "//max/python/max/graph",
         "//max/python/max/interfaces",
         "//max/python/max/mlir",
         "//max/python/max/nn",
+        "//max/python/max/nn/hooks",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/profiler",
@@ -80,6 +126,5 @@ modular_py_library(
         "//max/python/max/serve:debug",
         "//max/python/max/serve/mocks",
         "//max/python/max/support",
-        "//max/python/max/torch",
     ],
 )

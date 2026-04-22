@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,79 +20,118 @@ from typing import Any
 from max.mlir.dialects import mo
 
 from ..graph import Graph
-from ..type import DeviceRef, Type, _ChainType
+from ..type import Type, _ChainType
 from ..value import TensorValue, TensorValueLike, Value, _ChainValue
 
 
 def cond(
     pred: TensorValueLike,
     out_types: Iterable[Type[Any]] | None,
-    then_fn: Callable[[], Iterable[Value[Any]] | Value[Any] | None],
-    else_fn: Callable[[], Iterable[Value[Any]] | Value[Any] | None],
+    then_fn: Callable[
+        [],
+        Iterable[Value[Any] | TensorValueLike]
+        | Value[Any]
+        | TensorValueLike
+        | None,
+    ],
+    else_fn: Callable[
+        [],
+        Iterable[Value[Any] | TensorValueLike]
+        | Value[Any]
+        | TensorValueLike
+        | None,
+    ],
 ) -> list[TensorValue]:
     """Conditionally execute one of two branches based on a boolean predicate.
 
-    Both branches must return the same number and types of values as specified
-    in ``out_types``. Buffer mutations in branches are tracked automatically
-    through the chain mechanism.
+    This function provides conditional execution in the computation graph, where
+    one of two branches is executed based on the runtime value of a boolean
+    predicate. Both branches must return the same number and types of values as
+    specified in ``out_types``. Buffer mutations in branches are tracked
+    automatically through the chain mechanism.
 
-    Examples:
+    The predicate is evaluated at runtime to determine which branch to execute.
+    Both branches are compiled but only the selected branch is executed based
+    on the predicate value.
 
-    1. Basic conditional with return values:
+    This example shows a basic conditional with return values:
 
-        .. code-block:: python
+    .. code-block:: python
 
-            def then_fn():
-                return ops.constant(1, DType.int32, device=DeviceRef.CPU())
-            def else_fn():
-                return ops.constant(0, DType.int32, device=DeviceRef.CPU())
+        def then_fn():
+            return ops.constant(1, DType.int32, device=DeviceRef.CPU())
 
-            result = ops.cond(
-                pred,
-                [TensorType(DType.int32, [], device=device)],
-                then_fn,
-                else_fn
-            )
+        def else_fn():
+            return ops.constant(0, DType.int32, device=DeviceRef.CPU())
 
-    2. Conditional with buffer mutations:
+        device = DeviceRef.CPU()
+        pred = ops.constant(True, DType.bool, device=device)
+        result = ops.cond(
+            pred,
+            [TensorType(DType.int32, [], device=device)],
+            then_fn,
+            else_fn
+        )
 
-        .. code-block:: python
+    This example shows a conditional with buffer mutations, where branches
+    don't return values:
 
-            def then_fn():
-                ops.inplace_custom("increment", device=buffer.device, values=[buffer])
-            def else_fn():
-                ops.inplace_custom("decrement", device=buffer.device, values=[buffer])
+    .. code-block:: python
 
-            ops.cond(pred, None, then_fn, else_fn)
+        def then_fn():
+            ops.inplace_custom("increment", device=buffer.device, values=[buffer])
 
-    ::
+        def else_fn():
+            ops.inplace_custom("decrement", device=buffer.device, values=[buffer])
+
+        ops.cond(pred, None, then_fn, else_fn)
+
+    This example shows a conditional with multiple return values:
+
+    .. code-block:: python
+
+        def then_fn():
+            a = ops.constant(1, DType.float32, device=device)
+            b = ops.constant(2, DType.float32, device=device)
+            return a, b
+
+        def else_fn():
+            a = ops.constant(0, DType.float32, device=device)
+            b = ops.constant(-1, DType.float32, device=device)
+            return a, b
+
+        device = DeviceRef.CPU()
+        out_types = [
+            TensorType(DType.float32, [], device=device),
+            TensorType(DType.float32, [], device=device)
+        ]
+        results = ops.cond(pred, out_types, then_fn, else_fn)
+
     Args:
-        pred:
-            Boolean scalar tensor of type :obj:`DType.bool` determining branch execution
-
-        out_types:
-            Expected output types for both branches. Use :obj:`None` for branches that don't return values
-
-        then_fn:
-            Callable executed when ``pred`` is True. Must return values matching ``out_types`` if ``out_types`` is not :obj:`None`
-
-        else_fn:
-            Callable executed when ``pred`` is False. Must return values matching ``out_types`` if ``out_types`` is not :obj:`None`
+        pred: Boolean scalar tensor of type :attr:`DType.bool` determining branch
+            execution.
+        out_types: Expected output types for both branches. Use :obj:`None` for
+            branches that don't return values.
+        then_fn: Callable executed when ``pred`` is True. Must return values
+            matching ``out_types`` if ``out_types`` is not :obj:`None`.
+        else_fn: Callable executed when ``pred`` is False. Must return values
+            matching ``out_types`` if ``out_types`` is not :obj:`None`.
 
     Returns:
-        List of output values from executed branch. Returns empty list when ``out_types``
-        is :obj:`None`
+        List of output values from executed branch. Returns empty list when
+        ``out_types`` is :obj:`None`.
 
     Raises:
-        ValueError: If branches return different numbers of results or result types
-                  don't match ``out_types``
-
-    Note:
-        Buffer operations in branches automatically update the global chain state to
-        maintain mutation ordering constraints
+        ValueError: If branches return different numbers of results or result
+            types don't match ``out_types``.
     """
     pred = TensorValue(pred)
-    pred = pred.to(DeviceRef.CPU())
+    if not pred.device.is_cpu():
+        raise ValueError(
+            "The predicate for `ops.cond` must reside on CPU, but got a"
+            f" tensor on {pred.device}. Transfer it explicitly with"
+            " `ops.transfer_to(pred, CPU())`."
+        )
     out_types_actual = [
         *(t.to_mlir() for t in out_types or []),
         _ChainType().to_mlir(),

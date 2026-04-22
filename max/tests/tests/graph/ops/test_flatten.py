@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -85,7 +85,7 @@ def test_flatten_failure_indexing(
 
     with Graph("flatten", input_types=[input_type]) as graph:
         with pytest.raises(IndexError):
-            out = graph.inputs[0].tensor.flatten(start, end)
+            graph.inputs[0].tensor.flatten(start, end)
 
 
 @settings(suppress_health_check=[HealthCheck.filter_too_much])
@@ -117,4 +117,4 @@ def test_flatten_failure_start_greater_end(
 
     with Graph("flatten", input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
-            out = graph.inputs[0].tensor.flatten(start, end)
+            graph.inputs[0].tensor.flatten(start, end)

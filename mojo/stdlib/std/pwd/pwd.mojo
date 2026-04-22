@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,7 +21,7 @@ Constraints:
     Available on Linux and macOS only.
 """
 
-from sys import CompilationTarget
+from std.sys import CompilationTarget
 
 # ===----------------------------------------------------------------------=== #
 # Passwd
@@ -31,7 +31,7 @@ from ._macos import _getpw_macos
 
 
 @fieldwise_init
-struct Passwd(Copyable, Stringable, Writable):
+struct Passwd(Copyable, Writable):
     """Represents user account information retrieved from the user password
     database related to a user ID."""
 
@@ -50,7 +50,7 @@ struct Passwd(Copyable, Stringable, Writable):
     var pw_shell: String
     """Shell program."""
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Formats this string to the provided Writer.
 
         Args:
@@ -65,26 +65,8 @@ struct Passwd(Copyable, Stringable, Writable):
         writer.write("', pw_shell='", self.pw_shell)
         writer.write("')")
 
-    @no_inline
-    fn __str__(self) -> String:
-        """Gets the Passwd struct as a string.
 
-        Returns:
-          A compact string of the Passwd struct.
-        """
-        return String.write(self)
-
-    @no_inline
-    fn __repr__(self) -> String:
-        """Gets the Passwd struct as a string.
-
-        Returns:
-          A compact string representation of Passwd struct.
-        """
-        return String.write(self)
-
-
-fn getpwuid(uid: Int) raises -> Passwd:
+def getpwuid(uid: Int) raises -> Passwd:
     """Retrieve the password database entry for a given user ID.
 
     Args:
@@ -104,14 +86,13 @@ fn getpwuid(uid: Int) raises -> Passwd:
         only.
     """
 
-    @parameter
-    if CompilationTarget.is_macos():
+    comptime if CompilationTarget.is_macos():
         return _getpw_macos(UInt32(uid))
     else:
         return _getpw_linux(UInt32(uid))
 
 
-fn getpwnam(var name: String) raises -> Passwd:
+def getpwnam(var name: String) raises -> Passwd:
     """
     Retrieves the user ID in the password database for the given user name.
 
@@ -132,8 +113,7 @@ fn getpwnam(var name: String) raises -> Passwd:
         only.
     """
 
-    @parameter
-    if CompilationTarget.is_macos():
+    comptime if CompilationTarget.is_macos():
         return _getpw_macos(name)
     else:
         return _getpw_linux(name)

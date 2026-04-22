@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,14 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 # Test for https://github.com/modular/modular/issues/1505
 
-from random import random_ui64
+from std.random import random_ui64
 
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 
-from utils import IndexList
+from std.utils import IndexList
 
 
-fn gen_perm() -> IndexList[64]:
+def gen_perm() -> IndexList[64]:
     var result = IndexList[64]()
 
     for i in range(64):
@@ -27,7 +27,7 @@ fn gen_perm() -> IndexList[64]:
     return result
 
 
-def test_issue_1505():
+def test_issue_1505() raises:
     comptime p = gen_perm()
 
     # generate random data to prevent that everything gets simplified
@@ -106,5 +106,5 @@ def test_issue_1505():
         assert_equal(data1[p[i]], data2[i])
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

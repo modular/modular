@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,13 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
-from collections import OptionalReg
-from math import ceildiv, floor
-from sys import argv, env_get_string
-from builtin.device_passable import DevicePassable
-
-from benchmark import (
+import std.time
+from std.collections import Optional
+from std.math import ceildiv, floor
+from std.os import getenv
+from std.sys import argv, get_defined_bool, get_defined_string
+from std.builtin.device_passable import DevicePassable
+from std.memory import bitcast
+from std.benchmark import (
     Bench,
     Bencher,
     BenchId,
@@ -25,32 +26,14 @@ from benchmark import (
     clobber_memory,
     keep,
 )
-from buffer import Dim, DimList
-from buffer.dimlist import _make_tuple
-from compile import compile_info
-from gpu import *
-from gpu.host import DeviceBuffer, DeviceContext
-from random import Random
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from tensor import DynamicTensor
-from utils import IndexList
+from std.compile import compile_info
+from std.gpu import block_dim, global_idx, grid_dim
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.random import Random
+from std.utils import IndexList
 
 
-struct ValOrDim[dim: Dim = Dim()](Defaultable):
-    var value: Int
-
-    fn __init__(out self):
-        __comptime_assert (
-            not Self.dim.is_dynamic()
-        ), "Can't construct a dynamic dim with no runtime value"
-        self.value = Self.dim.get()
-
-    fn __init__(out self, v: Int):
-        self.value = v
-
-
-@register_passable("trivial")
-struct InitializationType(DevicePassable, Equatable, ImplicitlyCopyable):
+struct InitializationType(DevicePassable, Equatable, TrivialRegisterPassable):
     var _value: Int
     comptime zero = InitializationType(0)
     comptime one = InitializationType(1)
@@ -60,31 +43,27 @@ struct InitializationType(DevicePassable, Equatable, ImplicitlyCopyable):
 
     comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: MutOpaquePointer[_]):
+    def _to_device_type(self, target: MutOpaquePointer[_]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return "InitializationType"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = value
 
-    fn __init__(out self, value: Float64):
+    def __init__(out self, value: Float64):
         self._value = Int(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
     @staticmethod
-    fn from_str(str: String) raises -> Self:
+    def from_str(str: String) raises -> Self:
         if str == "zero":
             return InitializationType.zero
         elif str == "one":
@@ -100,23 +79,22 @@ struct InitializationType(DevicePassable, Equatable, ImplicitlyCopyable):
 
 
 # TODO: refactor the following to run exactly once.
-fn bench_compile_time[
-    func_type: __TypeOfAllTypes,
+def bench_compile_time[
+    func_type: TrivialRegisterPassable,
     //,
     func: func_type,
     emission_kind: StaticString = "asm",
 ](mut m: Bench, name: String) raises:
-    __comptime_assert emission_kind in ("asm", "llvm", "ptx")
+    comptime assert emission_kind in ("asm", "llvm", "ptx")
 
     # TODO: add docstring, this function should be used on its own or at the end of measured benchmarks.
     @always_inline
     @parameter
-    fn bench_call(mut b: Bencher) raises:
+    def bench_call(mut b: Bencher) raises:
         @always_inline
         @parameter
-        fn bench_iter() raises:
-            @parameter
-            if emission_kind == "asm" or emission_kind == "llvm":
+        def bench_iter() raises:
+            comptime if emission_kind == "asm" or emission_kind == "llvm":
                 var s = compile_info[func, emission_kind=emission_kind]().asm
                 keep(s.unsafe_ptr())
             elif emission_kind == "ptx":
@@ -142,7 +120,7 @@ fn bench_compile_time[
     )
 
 
-fn parse_shape[name: StaticString]() -> List[Int]:
+def parse_shape[name: StaticString]() -> List[Int]:
     """Parse string to get an integer-valued shape (2+ dims) define.
 
     For example, the following shapes:
@@ -164,15 +142,11 @@ fn parse_shape[name: StaticString]() -> List[Int]:
     var vals: List[Int] = List[Int]()
     var sum: Int = 0
 
-    @parameter
-    for i in range(len(name)):
+    comptime for i in range(name.byte_length()):
         comptime diff = Int(name_unsafe_ptr[i] - zero)
-        __comptime_assert Bool(name_unsafe_ptr[i] == x_ptr) or Bool(
-            0 <= diff <= 9
-        )
+        comptime assert name_unsafe_ptr[i] == x_ptr or 0 <= diff <= 9
 
-        @parameter
-        if name_unsafe_ptr[i] == x_ptr:
+        comptime if name_unsafe_ptr[i] == x_ptr:
             vals.append(sum)
             sum = 0
             continue
@@ -181,7 +155,7 @@ fn parse_shape[name: StaticString]() -> List[Int]:
     return vals^
 
 
-fn env_get_shape[name: StaticString, default: StaticString]() -> List[Int]:
+def get_defined_shape[name: StaticString, default: StaticString]() -> List[Int]:
     """Try to get an integer-valued shape (2+ dims) define.
     Compilation fails if the name is not defined.
 
@@ -198,74 +172,75 @@ fn env_get_shape[name: StaticString, default: StaticString]() -> List[Int]:
     Returns:
         A List[Int] parameter value.
     """
-    comptime shape_str = env_get_string[name, default]()
+    comptime shape_str = get_defined_string[name, default]()
     comptime shape: List[Int] = parse_shape[shape_str]()
     return materialize[shape]()
 
 
-fn int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
+def int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
     var t = IndexList[len(x)]()
 
-    @parameter
-    for i in range(len(x)):
+    comptime for i in range(len(x)):
         comptime xi = x[i]
         t[i] = xi
     return t
 
 
-fn static[d: Int]() -> ValOrDim[d]:
-    return ValOrDim[d]()
+def _get_arg(handle: String) -> Optional[String]:
+    """Return the value for the given arg handle, or None if not found.
+
+    When KBENCH_USE_ENV_ARGS is set, reads from the KBENCH_ARG_<handle>
+    environment variable; otherwise searches argv() for --handle=value.
+    """
+    comptime if get_defined_bool["KBENCH_USE_ENV_ARGS", False]():
+        var env_val = getenv("KBENCH_ARG_" + handle, "")
+        if env_val:
+            return env_val
+        return None
+    else:
+        var args = argv()
+        var prefix = "--" + handle + "="
+        for i in range(len(args)):
+            if args[i].startswith(prefix):
+                var name_val = String(args[i]).split("=", 1)
+                if len(name_val) >= 2:
+                    return String(name_val[1])
+        return None
 
 
-fn dynamic(d: Int) -> ValOrDim[]:
-    return ValOrDim(d)
-
-
-fn arg_parse(handle: String, default: Int) raises -> Int:
-    # TODO: add constraints on dtype of return value
-    var args = argv()
-    for i in range(len(args)):
-        if args[i].startswith("--" + handle):
-            var name_val = args[i].split("=")
-            return Int(name_val[1])
+def arg_parse(handle: String, default: Int) raises -> Int:
+    var val = _get_arg(handle)
+    if val:
+        return Int(val.value())
     return default
 
 
-fn arg_parse(handle: String, default: Bool) raises -> Bool:
-    var args = argv()
-    for i in range(len(args)):
-        if args[i].startswith("--" + handle):
-            var name_val = args[i].split("=")
-            if name_val[1] == "True":
-                return True
-            elif name_val[1] == "False":
-                return False
+def arg_parse(handle: String, default: Bool) raises -> Bool:
+    var val = _get_arg(handle)
+    if val:
+        if val.value() == "True":
+            return True
+        elif val.value() == "False":
+            return False
     return default
 
 
-fn arg_parse(handle: String, default: String) raises -> String:
-    # TODO: add constraints on dtype of return value
-    var args = argv()
-    for i in range(len(args)):
-        if args[i].startswith("--" + handle):
-            var name_val = args[i].split("=")
-            return String(name_val[1])
+def arg_parse(handle: String, default: String) raises -> String:
+    var val = _get_arg(handle)
+    if val:
+        return val.value()
     return default
 
 
-fn arg_parse(handle: String, default: Float64) raises -> Float64:
-    # TODO: add constraints on dtype of return value
-    var args = argv()
-    for i in range(len(args)):
-        if args[i].startswith("--" + handle):
-            var name_val = args[i].split("=")
-            return atof(name_val[1])
+def arg_parse(handle: String, default: Float64) raises -> Float64:
+    var val = _get_arg(handle)
+    if val:
+        return atof(val.value())
     return default
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Mode(ImplicitlyCopyable, Stringable):
+struct Mode(TrivialRegisterPassable, Writable):
     var _value: Int
     var handle: StaticString
     comptime NONE = Self(0x0, "none")
@@ -274,7 +249,7 @@ struct Mode(ImplicitlyCopyable, Stringable):
     comptime VERIFY = Self(0x4, "verify")
     comptime SEP = "+"
 
-    fn __init__(out self, handle: String = "run+benchmark+verify") raises:
+    def __init__(out self, handle: String = "run+benchmark+verify") raises:
         var handle_lower = handle.lower().split(Self.SEP)
         self = Self.NONE
         for h in handle_lower:
@@ -285,10 +260,15 @@ struct Mode(ImplicitlyCopyable, Stringable):
             elif String(Self.VERIFY.handle) == h:
                 self.append(Self.VERIFY)
 
-    fn append(mut self, other: Self):
+    def append(mut self, other: Self):
         self._value |= other._value
 
-    fn __str__(self) -> String:
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes the mode as a string.
+
+        Args:
+            writer: The writer to write to.
+        """
         s = List[String]()
         if Self.RUN == self:
             s.append(Self.RUN.handle)
@@ -298,15 +278,15 @@ struct Mode(ImplicitlyCopyable, Stringable):
             s.append(Self.VERIFY.handle)
         if Self.NONE == self:
             s.append(Self.NONE.handle)
-        return StaticString(Self.SEP).join(s)
+        writer.write(StaticString(Self.SEP).join(s))
 
-    fn __eq__(self, mode: Self) -> Bool:
+    def __eq__(self, mode: Self) -> Bool:
         if mode._value == self._value == Self.NONE._value:
             return True
         return True if self._value & mode._value else False
 
 
-fn update_bench_config_args(mut b: Bench) raises:
+def update_bench_config_args(mut b: Bench) raises:
     # TODO: refactor and move to bencher.mojo when internal_utils is available in oss.
 
     # b.config.out_file = Path(arg_parse("bench-out-file", String(b.config.out_file)))
@@ -339,18 +319,18 @@ struct Timer:
 
     var report: List[String]
 
-    fn __init__(out self):
-        self.start = Float64(time.perf_counter_ns())
+    def __init__(out self):
+        self.start = Float64(std.time.perf_counter_ns())
         self.current = self.start
         self.report = List[String]()
 
-    fn measure(mut self, msg: String):
-        var current = Float64(time.perf_counter_ns())
+    def measure(mut self, msg: String):
+        var current = Float64(std.time.perf_counter_ns())
         var elapsed = current - self.current
         self.current = current
         self.report.append("[" + msg + "] " + String(elapsed / 1e6) + " (ms)")
 
-    fn print(self) raises:
+    def print(self) raises:
         for i in range(len(self.report)):
             print(self.report[i])
         print(
@@ -364,7 +344,7 @@ struct Timer:
 
 
 # TODO: limited support for 1D, generalize to n-D
-fn init_vector_gpu[
+def init_vector_gpu[
     dtype: DType
 ](
     x: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -376,15 +356,12 @@ fn init_vector_gpu[
     var stride = grid_dim.x * block_dim.x
 
     @parameter
-    fn apply(values: SIMD[dtype, 4]):
-        @parameter
-        for i in range(4):
-
-            @parameter
-            if i == 3:
-                if tid >= UInt(len):
+    def apply(values: SIMD[dtype, 4]):
+        comptime for i in range(4):
+            comptime if i == 3:
+                if tid >= len:
                     return
-            x[tid] = Scalar[dtype](values[i])
+            x[tid] = values[i]
             tid += stride
 
     var values = SIMD[dtype, 4]()
@@ -396,31 +373,43 @@ fn init_vector_gpu[
         values = SIMD[dtype, 4](value)
     elif mode == InitializationType.uniform_distribution:
         var rng = Random(offset=UInt64(tid))
-        values = SIMD[dtype, 4](rng.step_uniform())
+
+        comptime if dtype.is_floating_point():
+            values = SIMD[dtype, 4](rng.step_uniform())
+
+        elif dtype.is_unsigned():
+            values = (rng.step() & Scalar[dtype].MAX.cast[DType.uint32]()).cast[
+                dtype
+            ]()
+        else:
+            comptime assert (
+                False
+            ), "unsupported dtype for uniform distribution initialization"
+
     elif mode == InitializationType.arange:
         values = SIMD[dtype, 4](
             UInt64(tid).cast[dtype](),
             UInt64(tid + stride).cast[dtype](),
-            UInt64(tid + UInt(2 * Int(stride))).cast[dtype](),
-            UInt64(tid + UInt(3 * Int(stride))).cast[dtype](),
+            UInt64(tid + 2 * stride).cast[dtype](),
+            UInt64(tid + 3 * stride).cast[dtype](),
         )
     apply(values)
 
 
-fn init_vector_launch[
+def init_vector_launch[
     dtype: DType, block_dim: Int = 256
 ](
     out_device: DeviceBuffer[dtype],
     length: Int,
     init_type: InitializationType,
     context: DeviceContext,
-    value: OptionalReg[Scalar[dtype]] = None,
+    value: Optional[Scalar[dtype]] = None,
 ) raises:
     var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
     # using num-threads = 1/4th of length to initialize the array
 
     comptime kernel = init_vector_gpu[dtype]
-    context.enqueue_function_experimental[kernel](
+    context.enqueue_function[kernel, kernel](
         out_device,
         length,
         init_type,
@@ -430,19 +419,69 @@ fn init_vector_launch[
     )
 
 
-fn _pretty_print_float(val: Float64) -> String:
+# GPU kernel to initialize MXFP8 scale buffers with random exponents.
+# float8_e8m0fnu: exponent-only format, value = 2^(stored_value - 127).
+# Random exponents 127 + (0,1,2,3) -> scale values of 1, 2, 4, 8.
+# Each thread processes 4 elements for better memory throughput.
+def _init_block_scaled_scales_gpu[
+    dtype: DType
+](x: UnsafePointer[Scalar[dtype], MutAnyOrigin], len: Int):
+    var tid = global_idx.x
+    var stride = grid_dim.x * block_dim.x
+
+    @parameter
+    def apply(values: SIMD[dtype, 4]):
+        comptime for i in range(4):
+            comptime if i == 3:
+                if tid >= len:
+                    return
+            x[tid] = Scalar[dtype](values[i])
+            tid += stride
+
+    # Generate 4 random exponents per thread for better throughput.
+    # step_uniform returns SIMD[float32, 4] with values in [0, 1).
+    # Multiply by 4 and cast to get values 0, 1, 2, or 3.
+    # Then add 127 to get exponents -> scale values of 1, 2, 4, 8.
+    var rng = Random(offset=UInt64(tid))
+
+    comptime if dtype == DType.float8_e8m0fnu:
+        var rand_floats = rng.step_uniform() * 4
+        var rand_u8 = rand_floats.cast[DType.uint8]() & 3
+        var values = bitcast[dtype, 4](rand_u8 + 127)
+        apply(values)
+    else:
+        var values = SIMD[dtype, 4](rng.step_uniform())
+        apply(values)
+
+
+def _init_block_scaled_scales_launch[
+    dtype: DType, block_dim: Int = 256
+](out_device: DeviceBuffer[dtype], length: Int, context: DeviceContext,) raises:
+    var num_blocks = ceildiv(ceildiv(length, 4), block_dim)
+    # using num-threads = 1/4th of length to initialize the array
+
+    comptime kernel = _init_block_scaled_scales_gpu[dtype]
+    context.enqueue_function_experimental[kernel](
+        out_device,
+        length,
+        grid_dim=(num_blocks),
+        block_dim=(block_dim),
+    )
+
+
+def _pretty_print_float(val: Float64) -> String:
     """Converts float to string, omitting fractional part if not needed.
 
     Examples:
         _pretty_print_float(2.0) returns "2"
         _pretty_print_float(2.5) returns "2.5"
     """
-    if Float64(floor(val)) == val:
+    if floor(val) == val:
         return String(Int(val))
     return String(val)
 
 
-fn human_readable_size(size: Int) -> String:
+def human_readable_size(size: Int) -> String:
     """Formats a byte size into human-readable form (KB, MB, GB).
 
     Args:

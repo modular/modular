@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_ui64, seed
-from sys import bit_width_of
-from sys.intrinsics import likely, unlikely
+from std.random import random_ui64, seed
+from std.sys import bit_width_of
+from std.sys.intrinsics import likely, unlikely
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
-from bit import bit_width, count_leading_zeros
-from bit._mask import splat
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from std.bit import bit_width, count_leading_zeros
+from std.bit.mask import splat
 
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
@@ -28,7 +28,7 @@ from bit._mask import splat
 # ===-----------------------------------------------------------------------===#
 
 
-fn next_power_of_two_int_v1(val: Int) -> Int:
+def next_power_of_two_int_v1(val: Int) -> Int:
     if val <= 1:
         return 1
 
@@ -38,46 +38,57 @@ fn next_power_of_two_int_v1(val: Int) -> Int:
     return 1 << bit_width(val - 1)
 
 
-fn next_power_of_two_int_v2(val: Int) -> Int:
+def next_power_of_two_int_v2(val: Int) -> Int:
     if val <= 1:
         return 1
 
     return 1 << (bit_width_of[Int]() - count_leading_zeros(val - 1))
 
 
-fn next_power_of_two_int_v3(val: Int) -> Int:
+def next_power_of_two_int_v3(val: Int) -> Int:
     var v = Scalar[DType.int](val)
     return Int(
         mlir_value=v.gt(1)
-        .select(1 << (bit_width_of[Int]() - count_leading_zeros(v - 1)), 1)
+        .select(
+            1
+            << (
+                Scalar[DType.int](bit_width_of[Int]())
+                - count_leading_zeros(v - 1)
+            ),
+            1,
+        )
         .__mlir_index__()
     )
 
 
-fn next_power_of_two_int_v4(val: Int) -> Int:
+def next_power_of_two_int_v4(val: Int) -> Int:
     return 1 << (
         (bit_width_of[Int]() - count_leading_zeros(val - 1))
         & splat(likely(val > 1))
     )
 
 
-fn next_power_of_two_uint_v1(val: UInt) -> UInt:
+def next_power_of_two_uint_v1(val: UInt) -> UInt:
     if unlikely(val == 0):
         return 1
 
     return UInt(1 << (bit_width_of[UInt]() - count_leading_zeros(Int(val - 1))))
 
 
-fn next_power_of_two_uint_v2(val: UInt) -> UInt:
-    var v = Scalar[DType.int](val)
+def next_power_of_two_uint_v2(val: UInt) -> UInt:
     return UInt(
-        mlir_value=v.ne(0)
-        .select(1 << (bit_width_of[UInt]() - count_leading_zeros(v - 1)), 1)
-        .__mlir_index__()
+        val.eq(0).select(
+            1
+            << (
+                Scalar[DType.uint](bit_width_of[UInt]())
+                - count_leading_zeros(val - 1)
+            ),
+            1,
+        )
     )
 
 
-fn next_power_of_two_uint_v3(val: UInt) -> UInt:
+def next_power_of_two_uint_v3(val: UInt) -> UInt:
     return UInt(
         1
         << (
@@ -87,7 +98,7 @@ fn next_power_of_two_uint_v3(val: UInt) -> UInt:
     )
 
 
-fn next_power_of_two_uint_v4(val: UInt) -> UInt:
+def next_power_of_two_uint_v4(val: UInt) -> UInt:
     return UInt(
         1
         << (
@@ -97,10 +108,10 @@ fn next_power_of_two_uint_v4(val: UInt) -> UInt:
     )
 
 
-fn _build_list[start: Int, stop: Int]() -> List[Int]:
+def _build_list[start: Int, stop: Int]() -> List[Int]:
     var values = List[Int](capacity=10_000)
     for _ in range(10_000):
-        values.append(Int(random_ui64(start, stop)))
+        values.append(Int(random_ui64(UInt64(start), UInt64(stop))))
     return values^
 
 
@@ -108,12 +119,14 @@ comptime width = bit_width_of[Int]()
 
 
 @parameter
-fn bench_next_power_of_two_int[func: fn (Int) -> Int](mut b: Bencher) raises:
+def bench_next_power_of_two_int[
+    func: def(Int) thin -> Int
+](mut b: Bencher) raises:
     var _values = _build_list[0, 2**width - 1]()
 
     @always_inline
     @parameter
-    fn call_fn() raises:
+    def call_fn() raises:
         for _ in range(10_000):
             for i in range(len(_values)):
                 var result = func(_values.unsafe_get(i))
@@ -123,12 +136,14 @@ fn bench_next_power_of_two_int[func: fn (Int) -> Int](mut b: Bencher) raises:
 
 
 @parameter
-fn bench_next_power_of_two_uint[func: fn (UInt) -> UInt](mut b: Bencher) raises:
+def bench_next_power_of_two_uint[
+    func: def(UInt) thin -> UInt
+](mut b: Bencher) raises:
     var _values = _build_list[0, 2**width - 1]()
 
     @always_inline
     @parameter
-    fn call_fn() raises:
+    def call_fn() raises:
         for _ in range(10_000):
             for i in range(len(_values)):
                 var result = func(UInt(_values.unsafe_get(i)))
@@ -140,7 +155,7 @@ fn bench_next_power_of_two_uint[func: fn (UInt) -> UInt](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     seed()
     var m = Bench(BenchConfig(num_repetitions=10))
     m.bench_function[bench_next_power_of_two_int[next_power_of_two_int_v1]](
@@ -173,7 +188,10 @@ def main():
         n = info.name
         time = info.result.mean("ms")
         avg, amnt = results.get(n, (Float64(0), 0))
-        results[n] = ((avg * amnt + time) / (amnt + 1), amnt + 1)
+        results[n] = (
+            (avg * Float64(amnt) + time) / Float64((amnt + 1)),
+            amnt + 1,
+        )
     print("")
     for k_v in results.items():
         print(k_v.key, k_v.value[0], sep=",")

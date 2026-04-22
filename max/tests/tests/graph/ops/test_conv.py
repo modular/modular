@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,6 +21,7 @@ from hypothesis import assume, given, reject
 from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, Weight, ops
+from max.graph.type import FilterLayout
 
 shared_dtypes = st.shared(st.from_type(DType))
 static_tensor_type = tensor_types(
@@ -64,6 +65,7 @@ def test_conv_valid(
                 graph.inputs[1].tensor,
                 stride=stride,
                 padding=padding,
+                filter_layout=FilterLayout.RSCF,
             )
         except ValueError:
             reject()
@@ -101,6 +103,7 @@ def test_conv_dtype_promote_np(graph_builder: GraphBuilder) -> None:
         out = ops.conv2d(
             graph.inputs[0].tensor,
             filter,
+            filter_layout=FilterLayout.RSCF,
         )
         # The numpy filter has a weak dtype. This all resolves happily.
         assert out.dtype == DType.bfloat16
@@ -122,6 +125,7 @@ def test_conv_dtype_promote_weight(graph_builder: GraphBuilder) -> None:
         out = ops.conv2d(
             graph.inputs[0].tensor,
             filter,
+            filter_layout=FilterLayout.RSCF,
         )
         # Both input and filter dtype exactly match.
         assert out.dtype == DType.bfloat16
@@ -144,6 +148,7 @@ def test_conv_dtype_promote_weight_success(graph_builder: GraphBuilder) -> None:
         out = ops.conv2d(
             graph.inputs[0].tensor,
             filter,
+            filter_layout=FilterLayout.RSCF,
         )
         assert out.dtype == DType.float32
 
@@ -166,9 +171,10 @@ def test_conv_dtype_promote_weight_failed(graph_builder: GraphBuilder) -> None:
                 r" Insert an explicit cast op if this conversion is wanted"
             ),
         ):
-            out = ops.conv2d(
+            ops.conv2d(
                 graph.inputs[0].tensor,
                 filter,
+                filter_layout=FilterLayout.RSCF,
             )
 
 
@@ -195,8 +201,32 @@ def test_conv_symbolic_shapes(graph_builder: GraphBuilder) -> None:
             dilations,
             paddings,
             num_groups,
+            filter_layout=FilterLayout.RSCF,
         )
 
+        graph.output(out)
+
+
+def test_conv_fcrs_layout(graph_builder: GraphBuilder) -> None:
+    """Test that conv2d with FCRS layout accepts FCRS-shaped filters."""
+    x_type = TensorType(DType.float32, [1, 8, 8, 3], device=DeviceRef.CPU())
+    # FCRS filter: [out_channels, in_channels, height, width]
+    filter_shape = [16, 3, 3, 3]
+    filter = Weight(
+        "filter",
+        dtype=DType.float32,
+        shape=filter_shape,
+        device=DeviceRef.CPU(),
+    )
+    with graph_builder(input_types=[x_type]) as graph:
+        out = ops.conv2d(
+            graph.inputs[0].tensor,
+            filter,
+            filter_layout=FilterLayout.FCRS,
+        )
+        # Output: [1, 6, 6, 16] (NHWC with 16 output channels from FCRS dim 0)
+        assert out.shape == [1, 6, 6, 16]
+        assert out.dtype == DType.float32
         graph.output(out)
 
 

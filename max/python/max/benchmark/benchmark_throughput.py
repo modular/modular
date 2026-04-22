@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,20 +12,21 @@
 # ===----------------------------------------------------------------------=== #
 # File contains code from the vllm project
 # https://github.com/vllm-project/vllm/blob/v0.6.0/benchmarks/benchmark_throughput.py
-# used under the Apache 2 licenced
+# used under the Apache 2 license
 
-"""Benchmark offline inference throughput."""
+"""Benchmark offline inference throughput.
+
+This script is deprecated and will be removed in a future MAX release.
+"""
 
 from __future__ import annotations
 
 import asyncio
-import enum
 import json
 import os
 import random
 import time
 import warnings
-from collections.abc import Mapping
 from dataclasses import dataclass
 
 import pyarrow.parquet
@@ -34,7 +35,6 @@ from cyclopts.config import Env
 from huggingface_hub import hf_hub_download
 from max.benchmark.benchmark_shared.config import (
     BenchmarkCommonConfig,
-    BenchmarkPipelineConfig,
     SamplingConfig,
 )
 from max.benchmark.benchmark_shared.datasets import (
@@ -42,17 +42,26 @@ from max.benchmark.benchmark_shared.datasets import (
     CodeDebugBenchmarkDataset,
 )
 from max.config import ConfigFileModel
-from max.entrypoints.cli import DevicesOptionType
 from max.interfaces import (
     PipelinesFactory,
     PipelineTask,
     RequestID,
     SamplingParams,
     SamplingParamsInput,
+    TextGenerationOutput,
     TextGenerationRequest,
 )
-from max.nn.kv_cache import KVCacheStrategy
-from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextTokenizer
+from max.pipelines import (
+    PIPELINE_REGISTRY,
+    PipelineConfig,
+    TextAndVisionContext,
+    TextContext,
+    TextTokenizer,
+)
+from max.pipelines.lib.device_specs import (
+    device_specs_from_normalized_device_handle,
+    normalize_device_specs_input,
+)
 from max.serve.config import Settings
 from max.serve.pipelines.llm import (
     EmbeddingsGenerationOutput,
@@ -60,8 +69,8 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
 )
 from max.serve.pipelines.model_worker import start_model_worker
-from max.serve.scheduler.queues import SchedulerZmqConfigs
 from max.serve.telemetry.metrics import NoopClient
+from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 from pydantic import Field
 from tqdm import tqdm
 from transformers import AutoTokenizer
@@ -71,15 +80,6 @@ DESCRIPTION = """
     Synthetic benchmark to measure batched pipeline performance without
     serving or scheduling overhead.
 """
-
-
-class ThroughputBenchmarkPipelineConfig(BenchmarkPipelineConfig):
-    """Configuration class for throughput benchmark pipeline options."""
-
-    quantization_encoding: str | None = Field(default=None)
-    """Quantization encoding to benchmark. Default is None in throughput benchmarks."""
-    max_length: int | None = Field(default=2048)
-    """Maximum length of the sequence."""
 
 
 class ThroughputBenchmarkCommonConfig(BenchmarkCommonConfig):
@@ -93,9 +93,7 @@ class ThroughputBenchmarkCommonConfig(BenchmarkCommonConfig):
 class ThroughputBenchmarkConfig(ConfigFileModel):
     """Configuration class for benchmark options."""
 
-    pipeline: ThroughputBenchmarkPipelineConfig = (
-        ThroughputBenchmarkPipelineConfig()
-    )
+    pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
     """Configuration class for pipeline options."""
 
     other: ThroughputBenchmarkCommonConfig = ThroughputBenchmarkCommonConfig()
@@ -117,14 +115,6 @@ class ThroughputBenchmarkConfig(ConfigFileModel):
     async_engine: bool = Field(default=True)
     """Use Modular async pipeline engine rather than LLM class."""
 
-    # TODO: These have different default values than ones configured via
-    # PipelineConfig constructor.
-    # KV Cache configuration (throughput-specific)
-    cache_strategy: KVCacheStrategy = Field(
-        default=KVCacheStrategy.PAGED,
-    )
-    """The KVCache strategy to use."""
-
     kv_cache_page_size: int | None = Field(default=None)
     """Number of tokens in a single page in the paged kv cache."""
 
@@ -145,14 +135,6 @@ class ThroughputBenchmarkConfig(ConfigFileModel):
 
     show_text: bool = Field(default=False)
     """Whether to show generated text."""
-
-    @classmethod
-    def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
-        """Get the enum mapping for ThroughputBenchmarkConfig."""
-        return {
-            "KVCacheStrategy": KVCacheStrategy,
-            "PipelineTask": PipelineTask,
-        }
 
 
 @dataclass
@@ -319,6 +301,7 @@ def print_results(
         if isinstance(outputs, EmbeddingsGenerationOutput):
             output_text = str(outputs.embeddings)
         else:
+            # TODO: (MODELS-1119) determine whether to include reasoning tokens in print
             output_text = "".join(
                 chunk.decoded_tokens
                 for chunk in outputs
@@ -360,7 +343,9 @@ async def run_max_async(
     pipeline_task: PipelineTask,
     top_k: int | None,
 ) -> tuple[float, list[int]]:
-    scheduler_zmq_configs = SchedulerZmqConfigs(
+    model_worker_interface = ZmqModelWorkerInterface[
+        TextAndVisionContext | TextContext, TextGenerationOutput
+    ](
         pipeline_task,
         context_type=PIPELINE_REGISTRY.retrieve_context_type(config),
     )
@@ -371,16 +356,16 @@ async def run_max_async(
             pipeline_config=config,
             settings=Settings(),
             metric_client=NoopClient(),
-            scheduler_zmq_configs=scheduler_zmq_configs,
-        ) as worker_monitor,
+            model_worker_interface=model_worker_interface,
+        ) as model_worker,
+    ):
         # Create dynamic and continuous batching workers and associated queues
         # to feed the model worker process.
-        TokenGeneratorPipeline(
+        pipeline = TokenGeneratorPipeline(
             model_name=model_name,
             tokenizer=tokenizer,
-            scheduler_zmq_configs=scheduler_zmq_configs,
-        ) as pipeline,
-    ):
+            model_worker=model_worker,
+        )
         # Start timing and create a progress bar.
         pbar = tqdm(total=len(requests))
 
@@ -456,34 +441,16 @@ def run(benchmark_config: ThroughputBenchmarkConfig) -> None:
 
     random.seed(benchmark_config.other.seed)
 
-    # TODO: This is mostly a translation layer to convert the benchmark_config.pipeline
-    # to a PipelineConfig. We should just use the PipelineConfig class directly
-    # instead of this translation layer.
-    pipeline_config_dict = benchmark_config.pipeline.model_dump()
-    if pipeline_config_dict.get("devices") is not None:
-        pipeline_config_dict["device_specs"] = DevicesOptionType.device_specs(
-            pipeline_config_dict["devices"]
+    pipeline_config = benchmark_config.pipeline
+    if benchmark_config.devices is not None:
+        device_handle = normalize_device_specs_input(benchmark_config.devices)
+        pipeline_config.model.device_specs = (
+            device_specs_from_normalized_device_handle(device_handle)
         )
-    if pipeline_config_dict.get("kv_cache_page_size") is not None:
-        pipeline_config_dict["kv_cache_page_size"] = pipeline_config_dict[
-            "kv_cache_page_size"
-        ]
-    if pipeline_config_dict.get("cache_strategy") is not None:
-        pipeline_config_dict["cache_strategy"] = pipeline_config_dict[
-            "cache_strategy"
-        ]
-    if pipeline_config_dict.get("enable_prefix_caching") is not None:
-        pipeline_config_dict["enable_prefix_caching"] = pipeline_config_dict[
-            "enable_prefix_caching"
-        ]
-    if pipeline_config_dict.get("weight_path") is None:
-        pipeline_config_dict.pop("weight_path", None)
-    elif isinstance(pipeline_config_dict["weight_path"], str):
-        pipeline_config_dict["weight_path"] = [
-            pipeline_config_dict["weight_path"]
-        ]
 
-    pipeline_config = PipelineConfig(**pipeline_config_dict)
+    defer_resolve = os.getenv("MODULAR_PIPELINE_DEFER_RESOLVE", "").lower()
+    if defer_resolve in {"1", "true", "yes"}:
+        pipeline_config.resolve()
 
     tokenizer = AutoTokenizer.from_pretrained(
         benchmark_config.other.tokenizer or pipeline_config.model.model_path,
@@ -520,19 +487,19 @@ def run(benchmark_config: ThroughputBenchmarkConfig) -> None:
             )
 
             # code_debug is a long-context dataset based on InfiniteBench
-            def sample_requests_func(  # noqa: ANN202
+            def sample_requests_func(
                 dataset_path: str,
                 num_requests: int,
                 tokenizer: PreTrainedTokenizerBase,
                 **kwargs,
-            ):
+            ) -> list[RequestPayload]:
                 # CodeDebugBenchmarkDataset.sample_requests doesn't take dataset_path
                 # because it already knows its dataset path
                 sampled = benchmark_dataset.sample_requests(
                     num_requests=num_requests, tokenizer=tokenizer, **kwargs
                 )
                 converted = []
-                for request in sampled:
+                for request in sampled.requests:
                     # keep mypy happy
                     assert request.output_len is not None, (
                         "output_len is required for CodeDebugBenchmarkDataset"
@@ -550,7 +517,7 @@ def run(benchmark_config: ThroughputBenchmarkConfig) -> None:
 
         else:
             sample_requests_func = sample_requests  # type: ignore
-            optional_kwargs["max_length"] = pipeline_config.max_length
+            optional_kwargs["max_length"] = pipeline_config.model.max_length
 
         requests = sample_requests_func(
             dataset_path=dataset_path,
@@ -580,21 +547,20 @@ def run(benchmark_config: ThroughputBenchmarkConfig) -> None:
         )
         print(f"INFO: MODEL config = {pipeline_config}")
 
-        run_kwargs = dict(
-            model_name=pipeline_config.model.model_name,
-            requests=requests,
-            config=pipeline_config,
-            model_factory=model_factory,
-            tokenizer=model_tokenizer,
-            show_text=benchmark_config.show_text,
-            pipeline_task=benchmark_config.pipeline_task,
-            top_k=benchmark_config.sampling.top_k,
-        )
-
+        assert isinstance(model_tokenizer, TextTokenizer)
         print("\nExecuting...")
         if benchmark_config.async_engine:
             elapsed_time, generated_tokens_len = asyncio.run(
-                run_max_async(**run_kwargs)
+                run_max_async(
+                    model_name=pipeline_config.model.model_name,
+                    requests=requests,
+                    config=pipeline_config,
+                    model_factory=model_factory,
+                    tokenizer=model_tokenizer,
+                    show_text=benchmark_config.show_text,
+                    pipeline_task=benchmark_config.pipeline_task,
+                    top_k=benchmark_config.sampling.top_k,
+                )
             )
         else:
             raise ValueError("Non-async LLM Engine not supported yet")
@@ -617,13 +583,13 @@ def run(benchmark_config: ThroughputBenchmarkConfig) -> None:
                 f"task#{i}: [{prompt_len}, {output_real}({output_len})]", end=""
             )
             if (
-                pipeline_config.max_length is not None
-                and output_real + prompt_len >= pipeline_config.max_length
+                pipeline_config.model.max_length is not None
+                and output_real + prompt_len >= pipeline_config.model.max_length
             ):
                 print(
                     (
                         "  # [WARNING] limited by maximum sequence length"
-                        f" ({pipeline_config.max_length}) from the pipeline config."
+                        f" ({pipeline_config.model.max_length}) from the pipeline config."
                     ),
                     end="",
                 )
@@ -668,6 +634,8 @@ def main() -> None:
     if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(directory)
 
+    os.environ.setdefault("MODULAR_PIPELINE_DEFER_RESOLVE", "1")
+
     # Create cyclopts app with environment variable config source
     # This must be set early so that --help can display MODULAR_ env vars
     app = App(
@@ -679,6 +647,7 @@ def main() -> None:
             # Environment variable names follow pattern: MODULAR_<PARAM_NAME>
             Env(prefix="MODULAR_"),
         ],
+        result_action="return_value",
     )
 
     # Define benchmark command with cyclopts
@@ -688,22 +657,15 @@ def main() -> None:
     ) -> None:
         """Run the pipeline latency benchmark."""
         # Validate that model is provided (required for benchmark).
-        if not benchmark_config.pipeline.model:
+        if not benchmark_config.pipeline.model.model_path:
             raise ValueError(
-                "model is required. Please provide --pipeline.model argument, set it in the config file, "
-                "or set MODULAR_PIPELINE_MODEL environment variable."
+                "model is required. Please provide --pipeline.models.main.model_path argument, set it in the config file, "
+                "or set MODULAR_PIPELINE_MODELS_MAIN_MODEL_PATH environment variable."
             )
 
         if benchmark_config.other.tokenizer is None:
-            benchmark_config.other.tokenizer = benchmark_config.pipeline.model
-
-        # Validate cache strategy
-        if (
-            benchmark_config.enable_prefix_caching
-            and benchmark_config.cache_strategy != KVCacheStrategy.PAGED
-        ):
-            raise ValueError(
-                "prefix caching is only supported with paged attention"
+            benchmark_config.other.tokenizer = (
+                benchmark_config.pipeline.model.model_path
             )
 
         if (

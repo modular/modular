@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
 
-from testing import assert_equal
-from testing import TestSuite
+from std.testing import assert_equal
+from std.testing import TestSuite
 
 
-def test_size_of_dtypes():
+def test_size_of_dtypes() raises:
     assert_equal(size_of[DType.int8](), 1)
     assert_equal(size_of[DType.int16](), 2)
     assert_equal(size_of[DType.int32](), 4)
@@ -35,5 +35,5 @@ def test_size_of_dtypes():
     assert_equal(size_of[DType.invalid](), 0)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -23,9 +23,7 @@ from ..layer import Module
 
 
 class DistributedAttentionImpl(Module, ABC):
-    """
-    A generalized Distributed attention interface.
-    """
+    """A generalized Distributed attention interface."""
 
     @abstractmethod
     def __call__(
@@ -35,5 +33,20 @@ class DistributedAttentionImpl(Module, ABC):
         signal_buffers: list[BufferValue],
         kv_collections: list[PagedCacheValues],
         freqs_cis: list[TensorValue],
-        input_row_offsets: TensorValue,
-    ) -> list[TensorValue]: ...
+        input_row_offsets: list[TensorValue],
+    ) -> list[TensorValue]:
+        """Runs a distributed attention forward pass.
+
+        Args:
+            layer_idx: The index of the current transformer layer.
+            x: Per-device input tensors, one per device.
+            signal_buffers: Per-device signal buffers used for collective
+                communication.
+            kv_collections: Per-device paged KV cache values.
+            freqs_cis: Per-device rotary embedding frequency tensors.
+            input_row_offsets: Per-device ragged row offset tensors.
+
+        Returns:
+            A list of output tensors, one per device.
+        """
+        ...

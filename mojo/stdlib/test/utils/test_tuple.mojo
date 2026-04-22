@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite, assert_equal, assert_false, assert_true
+from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
-from utils import IndexList
+from std.utils import IndexList
 
 
-def test_static_int_tuple():
+def test_static_int_tuple() raises:
     assert_equal(String(IndexList[1](1)), "(1,)")
 
     assert_equal(String(IndexList[3](2)), "(2, 2, 2)")
@@ -50,10 +50,10 @@ def test_static_int_tuple():
     assert_equal(String(IndexList[5](1, 2, 3, 4, 5)), "(1, 2, 3, 4, 5)")
 
 
-def test_tuple_literal():
+def test_tuple_literal() raises:
     assert_equal(len((1, 2, (3, 4), 5)), 4)
     assert_equal(len(()), 0)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

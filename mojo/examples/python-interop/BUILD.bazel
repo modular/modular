@@ -7,10 +7,6 @@ modular_py_binary(
     srcs = ["hello.py"],
     data = ["hello_mojo.mojo"],
     imports = ["."],
-    mojo_deps = select({
-        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
-        "//conditions:default": [],
-    }),
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
         "//:ubsan": ["@platforms//:incompatible"],
@@ -26,10 +22,6 @@ modular_py_binary(
     srcs = ["person.py"],
     data = ["person_module.mojo"],
     imports = ["."],
-    mojo_deps = select({
-        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
-        "//conditions:default": [],
-    }),
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],
         "//:ubsan": ["@platforms//:incompatible"],
@@ -47,10 +39,7 @@ modular_py_binary(
     imports = ["."],
     mojo_deps = [
         "//max:layout",
-    ] + select({
-        "//:emit_mojo_enabled": ["//max:MOGGKernelAPI"],
-        "//conditions:default": [],
-    }),
+    ],
     target_compatible_with = ["//:has_gpu"],
     deps = [
         "@mojo//:python",

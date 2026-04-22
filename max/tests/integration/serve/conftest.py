@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -28,15 +28,19 @@ from max.interfaces import (
 )
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.core import TextContext
-from max.pipelines.lib import MAXModelConfig, PipelineConfig
+from max.pipelines.lib import (
+    MAXModelConfig,
+    PipelineConfig,
+    PipelineRuntimeConfig,
+)
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import (
     EchoPipelineTokenizer,
     EchoTokenGenerator,
 )
-from max.serve.queue.zmq_queue import generate_zmq_ipc_path
 from max.serve.telemetry.common import configure_metrics
+from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 
 
 class SleepyEchoTokenGenerator(EchoTokenGenerator):
@@ -56,12 +60,16 @@ def echo_factory():  # noqa: ANN201
 
 @pytest.fixture
 def mock_pipeline_config() -> PipelineConfig:
+    runtime = PipelineRuntimeConfig.model_construct(
+        zmq_endpoint_base=generate_zmq_ipc_path(),
+        max_batch_size=1,
+    )
     pipeline_config = PipelineConfig.model_construct(
-        max_batch_size=1, zmq_endpoint_base=generate_zmq_ipc_path()
+        runtime=runtime,
     )
 
     model_config = MAXModelConfig.model_construct(served_model_name="echo")
-    pipeline_config._model = model_config
+    pipeline_config.model = model_config
     return pipeline_config
 
 
@@ -75,7 +83,7 @@ def echo_app(mock_pipeline_config: PipelineConfig) -> FastAPI:
         tokenizer=tokenizer,
     )
 
-    settings = Settings(MAX_SERVE_USE_HEARTBEAT=True)
+    settings = Settings(use_heartbeat=True)
     app = fastapi_app(settings, serving_settings)
     return app
 

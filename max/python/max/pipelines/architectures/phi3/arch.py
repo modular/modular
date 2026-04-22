@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,16 +13,14 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
-from max.nn.kv_cache import KVCacheStrategy
 from max.pipelines.core import TextContext
 from max.pipelines.lib import (
-    RopeType,
     SupportedArchitecture,
-    SupportedEncoding,
     TextTokenizer,
 )
 
 from ..llama3 import weight_adapters
+from ..llama3.model_config import Llama3Config
 from .model import Phi3Model
 
 phi3_arch = SupportedArchitecture(
@@ -30,17 +28,18 @@ phi3_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["microsoft/phi-4", "microsoft/Phi-3.5-mini-instruct"],
     default_weights_format=WeightsFormat.gguf,
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.float32: [KVCacheStrategy.PAGED],
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
+        "float32",
+        "bfloat16",
     },
     pipeline_model=Phi3Model,
     tokenizer=TextTokenizer,
     context_type=TextContext,
-    rope_type=RopeType.longrope,
+    rope_type="longrope",
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
+    config=Llama3Config,
 )

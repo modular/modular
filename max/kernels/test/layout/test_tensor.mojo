@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,25 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import align_of
+from std.math import ceildiv
+from std.sys import align_of
 
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import UNKNOWN_VALUE, product
-from layout.layout import Layout
+from layout import Layout, UNKNOWN_VALUE
+from layout.int_tuple import product
 from layout.layout_tensor import *
-from testing import assert_equal
+from std.testing import assert_equal
 
 
-fn print_raw_major_tensor(tensor: LayoutTensor):
+def print_raw_major_tensor(tensor: LayoutTensor):
     for i in range(tensor.shape[0]()):
         for j in range(tensor.shape[1]()):
             print(tensor[i, j], "\t", end="")
         print("")
 
 
-fn print_tile_tensor(tensor: LayoutTensor):
+def print_tile_tensor(tensor: LayoutTensor):
     for i in range(tensor.shape[0]()):
         for j in range(tensor.shape[1]()):
             print(tensor[i, j], "\t", end="")
@@ -37,23 +37,24 @@ fn print_tile_tensor(tensor: LayoutTensor):
 
 
 # Print for shape ((m, n), (p, q)) in a 2D format
-fn print_mode2_shape2_tensor[
+def print_mode2_shape2_tensor[
     layout: Layout, dtype: DType
 ](tensor: LayoutTensor[dtype, layout, MutAnyOrigin]):
-    __comptime_assert (
+    comptime assert (
         len(layout) == 2
         and len(layout.shape[0]) == 2
         and len(layout.shape[1]) == 2
     )
+    var materialized_layout = materialize[layout]()
     for i in range(product(layout.shape[0])):
         for j in range(product(layout.shape[1])):
-            var idx = layout(IntTuple(i, j))
+            var idx = materialized_layout(IntTuple(i, j))
             print(tensor.ptr[idx], "\t", end="")
         print("")
 
 
 # CHECK-LABEL: test_basic_tensor_ops
-fn test_basic_tensor_ops() raises:
+def test_basic_tensor_ops() raises:
     print("== test_basic_tensor_ops")
 
     var managed_tensor = ManagedLayoutTensor[
@@ -148,7 +149,7 @@ fn test_basic_tensor_ops() raises:
 #   TH_1    TH_3    TH_1    TH_3
 #   TH_0    TH_2    TH_0    TH_2
 #   TH_1    TH_3    TH_1    TH_3
-fn test_tesnsor_fragments() raises:
+def test_tesnsor_fragments() raises:
     print("== test_tesnsor_fragments")
 
     var managed_tensor = ManagedLayoutTensor[
@@ -178,7 +179,7 @@ fn test_tesnsor_fragments() raises:
     # CHECK: 13.0    15.0
     # CHECK: 21.0    23.0
     # CHECK: 29.0    31.0
-    for th_i in range(UInt(4)):
+    for th_i in range(4):
         print("----fragments-data[", th_i, "]----")
         var fragment_4x2 = tensor.distribute[Layout(IntTuple(2, 2))](th_i)
         print_tile_tensor(fragment_4x2)
@@ -187,7 +188,7 @@ fn test_tesnsor_fragments() raises:
 
 
 # CHECK-LABEL: test_tensor_tile_and_distribute
-fn test_tensor_tile_and_distribute() raises:
+def test_tensor_tile_and_distribute() raises:
     print("== test_tensor_tile_and_distribute")
 
     var managed_tensor = ManagedLayoutTensor[
@@ -273,14 +274,14 @@ fn test_tensor_tile_and_distribute() raises:
             for th_i in range(4):
                 var fragment_2x2 = tile_4x4.distribute[
                     Layout(IntTuple(2, 2), IntTuple(2, 1))
-                ](UInt(th_i))
+                ](th_i)
                 print("----fragments-data[", th_i, "]----")
                 print_tile_tensor(fragment_2x2)
     _ = managed_tensor^
 
 
 # CHECK-LABEL: test_tensor_tile_and_distribute_custom_layout
-fn test_tensor_tile_and_distribute_custom_layout() raises:
+def test_tensor_tile_and_distribute_custom_layout() raises:
     print("== test_tensor_tile_and_distribute_custom_layout")
     var managed_tensor = ManagedLayoutTensor[
         DType.float32, Layout(IntTuple(2, 4))
@@ -301,7 +302,7 @@ fn test_tensor_tile_and_distribute_custom_layout() raises:
     # CHECK: ----fragments-data[ 3 ]----
     # CHECK: 5.0   7.0
     print("row-major-thread-layout")
-    for th_i in range(UInt(4)):
+    for th_i in range(4):
         var fragments_1x2 = tensor.distribute[
             Layout(IntTuple(2, 2), IntTuple(2, 1))
         ](th_i)
@@ -318,7 +319,7 @@ fn test_tensor_tile_and_distribute_custom_layout() raises:
     # CHECK: ----fragments-data[ 3 ]----
     # CHECK: 5.0   7.0
     print("col-major-thread-layout")
-    for th_i in range(UInt(4)):
+    for th_i in range(4):
         var fragments_1x2 = tensor.distribute[
             Layout(IntTuple(2, 2), IntTuple(1, 2))
         ](th_i)
@@ -329,7 +330,7 @@ fn test_tensor_tile_and_distribute_custom_layout() raises:
 
 
 # CHECK-LABEL: test_copy_to_tile_major_layout
-fn test_copy_to_tile_major_layout():
+def test_copy_to_tile_major_layout():
     print("== test_copy_to_tile_major_layout")
     var mat_4x4_row_major = LayoutTensor[
         DType.float32, Layout(IntTuple(4, 4), IntTuple(4, 1)), MutAnyOrigin
@@ -354,7 +355,7 @@ fn test_copy_to_tile_major_layout():
     var mat_4x4_tiled_2x2 = LayoutTensor[
         DType.float32, tiled_major_layout, MutAnyOrigin
     ].stack_allocation[stack_alignment=16]()
-    print_layout(tiled_major_layout)
+    print_layout(materialize[tiled_major_layout]())
 
     mat_4x4_tiled_2x2.copy_from(mat_4x4_row_major)
 
@@ -388,7 +389,7 @@ fn test_copy_to_tile_major_layout():
 # TH_1 TH_3 TH_5 TH_7 TH_1 TH_3 TH_5 TH_7
 # TH_0 TH_2 TH_4 TH_6 TH_0 TH_2 TH_4 TH_6
 # TH_1 TH_3 TH_5 TH_7 TH_1 TH_3 TH_5 TH_7
-fn test_distribute_tiled_layout():
+def test_distribute_tiled_layout():
     print("== test_distribute_tiled_layout")
     var tensor = LayoutTensor[
         DType.float32, Layout(IntTuple(4, 8), IntTuple(8, 1)), MutAnyOrigin
@@ -421,14 +422,14 @@ fn test_distribute_tiled_layout():
     # CHECK: ----fragments-data[ 7 ]----
     # CHECK: 11.0   15.0
     # CHECK: 27.0   31.0
-    for th_i in range(UInt(8)):
+    for th_i in range(8):
         var thread_tile = tensor.distribute[threads_2x4_layout](th_i)
         print("----fragments-data[", th_i, "]----")
         print(thread_tile)
 
 
 # CHECK-LABEL: test_distribute_with_tile_size
-fn test_distribute_with_tile_size():
+def test_distribute_with_tile_size():
     print("== test_distribute_with_tile_size")
 
     var tensor0 = LayoutTensor[
@@ -499,11 +500,9 @@ fn test_distribute_with_tile_size():
     # CHECK: [50.0, 51.0, 58.0, 59.0] [54.0, 55.0, 62.0, 63.0]
     # CHECK: [114.0, 115.0, 122.0, 123.0] [118.0, 119.0, 126.0, 127.0]
 
-    for tid in range(thread_layout.size()):
+    for tid in range(comptime (thread_layout.size())):
         print("----thread[", tid, "]----")
-        var tile = tensor0.vectorize[2, 2]().distribute[thread_layout](
-            UInt(tid)
-        )
+        var tile = tensor0.vectorize[2, 2]().distribute[thread_layout](tid)
         print(tile)
     var tensor8x1 = LayoutTensor[
         DType.float32, Layout(IntTuple(8, 1)), MutAnyOrigin
@@ -541,16 +540,16 @@ fn test_distribute_with_tile_size():
     # CHECK: [4.0, 5.0]
     # CHECK: ----thread[ 7 ]----
     # CHECK: [6.0, 7.0]
-    for tid in range(thread_layout.size()):
+    for tid in range(comptime (thread_layout.size())):
         print("----thread[", tid, "]----")
         var tile = tensor8x1.vectorize[2, 1]().distribute[
             thread_layout, axis=0
-        ](UInt(tid))
+        ](tid)
         print(tile)
 
 
 # CHECK-LABEL: test_vectorize_reads
-fn test_vectorize_reads():
+def test_vectorize_reads():
     print("== test_vectorize_reads")
     var tensor = LayoutTensor[
         DType.float32, Layout(IntTuple(8, 8), IntTuple(1, 8)), MutAnyOrigin
@@ -558,9 +557,9 @@ fn test_vectorize_reads():
     arange(tensor)
     var tensor_8_2_vec = tensor.vectorize[1, 4]()
     # CHECK: ((8, 2):(1, 32))
-    print(tensor_8_2_vec.layout)
+    print(materialize[tensor_8_2_vec.layout]())
     # CHECK: ((1, 4):(0, 8))
-    print(tensor_8_2_vec.element_layout)
+    print(materialize[tensor_8_2_vec.element_layout]())
     # CHECK: [0.0, 1.0, 2.0, 3.0] [4.0, 5.0, 6.0, 7.0]
     # CHECK: [8.0, 9.0, 10.0, 11.0] [12.0, 13.0, 14.0, 15.0]
     # CHECK: [16.0, 17.0, 18.0, 19.0] [20.0, 21.0, 22.0, 23.0]
@@ -573,25 +572,25 @@ fn test_vectorize_reads():
 
     var tensor_2_8_vec = tensor.vectorize[4, 1]()
     # CHECK: ((2, 8):(4, 8))
-    print(tensor_2_8_vec.layout)
+    print(materialize[tensor_2_8_vec.layout]())
     # CHECK: ((4, 1):(1, 0))
-    print(tensor_2_8_vec.element_layout)
+    print(materialize[tensor_2_8_vec.element_layout]())
     # CHECK: [0.0, 8.0, 16.0, 24.0] [1.0, 9.0, 17.0, 25.0] [2.0, 10.0, 18.0, 26.0] [3.0, 11.0, 19.0, 27.0] [4.0, 12.0, 20.0, 28.0] [5.0, 13.0, 21.0, 29.0] [6.0, 14.0, 22.0, 30.0] [7.0, 15.0, 23.0, 31.0]
     # CHECK: [32.0, 40.0, 48.0, 56.0] [33.0, 41.0, 49.0, 57.0] [34.0, 42.0, 50.0, 58.0] [35.0, 43.0, 51.0, 59.0] [36.0, 44.0, 52.0, 60.0] [37.0, 45.0, 53.0, 61.0] [38.0, 46.0, 54.0, 62.0] [39.0, 47.0, 55.0, 63.0]
     print(tensor_2_8_vec)
 
     var tensor_2_vec = tensor.vectorize[4, 4]()
     # CHECK: ((2, 2):(4, 32))
-    print(tensor_2_vec.layout)
+    print(materialize[tensor_2_vec.layout]())
     # CHECK: (4, 4):(1, 8))
-    print(tensor_2_vec.element_layout)
+    print(materialize[tensor_2_vec.element_layout]())
     # CHECK: [0.0, 8.0, 16.0, 24.0, 1.0, 9.0, 17.0, 25.0, 2.0, 10.0, 18.0, 26.0, 3.0, 11.0, 19.0, 27.0] [4.0, 12.0, 20.0, 28.0, 5.0, 13.0, 21.0, 29.0, 6.0, 14.0, 22.0, 30.0, 7.0, 15.0, 23.0, 31.0]
     # CHECK: [32.0, 40.0, 48.0, 56.0, 33.0, 41.0, 49.0, 57.0, 34.0, 42.0, 50.0, 58.0, 35.0, 43.0, 51.0, 59.0] [36.0, 44.0, 52.0, 60.0, 37.0, 45.0, 53.0, 61.0, 38.0, 46.0, 54.0, 62.0, 39.0, 47.0, 55.0, 63.0]
     print(tensor_2_vec)
 
 
 # CHECK-LABEL: test_vectorize_writes
-fn test_vectorize_writes():
+def test_vectorize_writes():
     print("== test_vectorize_writes")
     var tensor = (
         LayoutTensor[
@@ -624,7 +623,7 @@ fn test_vectorize_writes():
 
 
 # CHECK-LABEL: test_slice
-fn test_slice():
+def test_slice():
     print("==test_slice")
     var tensor = LayoutTensor[
         DType.float32, Layout(IntTuple(4, 4), IntTuple(1, 4)), MutAnyOrigin
@@ -667,7 +666,7 @@ fn test_slice():
 
 
 # CHECK-LABEL: test_copy_vectorized
-fn test_copy_vectorized():
+def test_copy_vectorized():
     print("== test_copy_vectorized")
     var tensor_8_8 = LayoutTensor[
         DType.float32, Layout(IntTuple(8, 8), IntTuple(8, 1)), MutAnyOrigin
@@ -689,9 +688,7 @@ fn test_copy_vectorized():
             Layout(IntTuple(8, 8), IntTuple(8, 1)),
             MutAnyOrigin,
         ]
-        .stack_allocation[
-            stack_alignment = align_of[SIMD[DType.float32, 4]]()
-        ]()
+        .stack_allocation[stack_alignment=align_of[SIMD[DType.float32, 4]]()]()
         .vectorize[1, 4]()
         .fill(0)
     )
@@ -737,9 +734,7 @@ fn test_copy_vectorized():
             Layout(IntTuple(8, 8), IntTuple(8, 1)),
             MutAnyOrigin,
         ]
-        .stack_allocation[
-            stack_alignment = align_of[SIMD[DType.float32, 4]]()
-        ]()
+        .stack_allocation[stack_alignment=align_of[SIMD[DType.float32, 4]]()]()
         .vectorize[4, 4]()
         .fill(0)
     )
@@ -751,7 +746,7 @@ fn test_copy_vectorized():
 
 
 # CHECK-LABEL: test_distribute_vectorized
-fn test_distribute_vectorized():
+def test_distribute_vectorized():
     print("== test_distribute_vectorized")
     var tensor_8_8 = LayoutTensor[
         DType.float32, Layout(IntTuple(8, 8), IntTuple(8, 1)), MutAnyOrigin
@@ -789,7 +784,7 @@ fn test_distribute_vectorized():
     # CHECK: [28.0, 29.0, 30.0, 31.0]
     # CHECK: [44.0, 45.0, 46.0, 47.0]
     # CHECK: [60.0, 61.0, 62.0, 63.0]
-    for tid in range(UInt(4)):
+    for tid in range(4):
         var fragments = tensor_8_2xv4.distribute[Layout(IntTuple(2, 2))](tid)
         print("----thread[", tid, "]----")
         print(fragments)
@@ -798,13 +793,13 @@ fn test_distribute_vectorized():
     # This will become easier when we can vectorize nested layout.
     ptr = stack_allocation[64 * 32, DType.float32, alignment=16]()
     for i in range(64 * 32):
-        ptr[i] = i
+        ptr[i] = Float32(i)
 
     tensor_4x16x64 = LayoutTensor[
         DType.float32,
         Layout(IntTuple(IntTuple(16, 16), 4), IntTuple(IntTuple(32, 2), 512)),
         MutAnyOrigin,
-        element_layout = Layout(2),
+        element_layout=Layout(2),
     ](ptr)
 
     comptime thread_layout = Layout(
@@ -833,7 +828,7 @@ fn test_distribute_vectorized():
     print(tensor_4x16x64.distribute[thread_layout](111))
 
 
-fn test_distribute_axis_projection():
+def test_distribute_axis_projection():
     var tensor_4x4 = LayoutTensor[
         DType.float32, Layout(IntTuple(4, 4), IntTuple(4, 1)), MutAnyOrigin
     ].stack_allocation[stack_alignment=16]()
@@ -886,7 +881,7 @@ fn test_distribute_axis_projection():
     # CHECK: =====
     # CHECK: th_id 15
     # CHECK: [12.0, 13.0, 14.0, 15.0]
-    for th_id in range(UInt(16)):
+    for th_id in range(16):
         print("th_id", th_id)
         var tensor = tensor_4x4.vectorize[1, 4]().distribute[
             Layout.row_major(4, 4), axis=0
@@ -941,7 +936,7 @@ fn test_distribute_axis_projection():
     # CHECK: =====
     # CHECK: th_id 15
     # CHECK: [3.0, 7.0, 11.0, 15.0]
-    for th_id in range(UInt(16)):
+    for th_id in range(16):
         print("th_id", th_id)
         var tensor = tensor_4x4.vectorize[4, 1]().distribute[
             Layout.row_major(4, 4), axis=1
@@ -950,7 +945,7 @@ fn test_distribute_axis_projection():
         print("=====")
 
 
-fn test_split():
+def test_split():
     var tensor_4x4 = LayoutTensor[
         DType.float32, Layout(IntTuple(4, 4), IntTuple(4, 1)), MutAnyOrigin
     ].stack_allocation[stack_alignment=16]()
@@ -988,7 +983,7 @@ fn test_split():
 
 
 # DISABLED-CHECK-LABEL: test_copy_subtiles_scalars
-# fn test_copy_subtiles_scalars():
+# def test_copy_subtiles_scalars():
 #    print("== test_copy_subtiles_scalars")
 #    var tensor_13x7 = LayoutTensor[
 #        DType.float32, Layout.row_major(13, 7)
@@ -1097,7 +1092,7 @@ fn test_split():
 
 
 # DISABLED-CHECK-LABEL: test_copy_distributed_subtiles_scalars
-# fn test_copy_distributed_subtiles_scalars():
+# def test_copy_distributed_subtiles_scalars():
 #    print("== test_copy_distributed_subtiles_scalars")
 #    var tensor_13x7 = LayoutTensor[
 #        DType.float32, Layout.row_major(13, 7)
@@ -1260,7 +1255,7 @@ fn test_split():
 #            ](tile_4x4)
 #            print(tile_4x4_cache)
 #
-#            for th_id in range(UInt(4)):
+#            for th_id in range(4):
 #                print("----fragments-data[", th_id, "]----")
 #                var tile_2x2 = tile_4x4.distribute[Layout.row_major(2, 2)](
 #                    th_id
@@ -1277,7 +1272,7 @@ fn test_split():
 #
 
 
-fn test_copy_subtiles_scalars_back():
+def test_copy_subtiles_scalars_back():
     print("== test_copy_subtiles_scalars_back")
 
     var tensor_13x7 = (
@@ -1420,7 +1415,7 @@ fn test_copy_subtiles_scalars_back():
 
 
 # CHECK-LABEL: test_slice_with_offsets
-fn test_slice_with_offsets():
+def test_slice_with_offsets():
     print("== test_slice_with_offsets")
 
     var tensor_4x3x2_row_major = LayoutTensor[
@@ -1428,7 +1423,7 @@ fn test_slice_with_offsets():
     ].stack_allocation[stack_alignment=16]()
 
     for i in range(4 * 3 * 2):
-        tensor_4x3x2_row_major.ptr[i] = i
+        tensor_4x3x2_row_major.ptr[i] = Float32(i)
 
     # CHECK: slice-of[0:3,:2,0]
     # CHECK: 0.0 2.0
@@ -1436,7 +1431,7 @@ fn test_slice_with_offsets():
     # CHECK: 12.0 14.0
     print("slice-of[0:3,:2,0]")
     print(
-        tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices= (0, 1)](
+        tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices=(0, 1)](
             IndexList[1](0)
         )
     )
@@ -1447,7 +1442,7 @@ fn test_slice_with_offsets():
     # CHECK: 13.0 15.0
     print("slice-of-[0:3,:2,1]")
     print(
-        tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices= (0, 1)](
+        tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices=(0, 1)](
             IndexList[1](1)
         )
     )
@@ -1458,7 +1453,7 @@ fn test_slice_with_offsets():
     # CHECK: 16.0 17.0
     print("slice-of-[2,:,:]")
     print(
-        tensor_4x3x2_row_major.slice[:, :, slice_indices= (1, 2)](
+        tensor_4x3x2_row_major.slice[:, :, slice_indices=(1, 2)](
             IndexList[1](2)
         )
     )
@@ -1470,7 +1465,7 @@ fn test_slice_with_offsets():
     # CHECK: 14.0 15.0
     # CHECK: 20.0 21.0
     print(
-        tensor_4x3x2_row_major.slice[:, :, slice_indices= (0, 2)](
+        tensor_4x3x2_row_major.slice[:, :, slice_indices=(0, 2)](
             IndexList[1](1)
         )
     )
@@ -1482,7 +1477,7 @@ fn test_slice_with_offsets():
     # CHECK: 18.0
     print("slice-of-[:,0,0]")
     print(
-        tensor_4x3x2_row_major.slice_1d[:, slice_indices = IndexList[1](0)](
+        tensor_4x3x2_row_major.slice_1d[:, slice_indices=IndexList[1](0)](
             IndexList[2](0, 0)
         )
     )
@@ -1493,14 +1488,14 @@ fn test_slice_with_offsets():
     # CHECK: 17.0
     print("slice-of-[2,:,1]")
     print(
-        tensor_4x3x2_row_major.slice_1d[:, slice_indices = IndexList[1](1)](
+        tensor_4x3x2_row_major.slice_1d[:, slice_indices=IndexList[1](1)](
             IndexList[2](2, 1)
         )
     )
 
 
 # CHECK-LABEL: test_layout_tensor_iterator
-fn test_layout_tensor_iterator():
+def test_layout_tensor_iterator():
     print("== test_layout_tensor_iterator")
 
     comptime size = 64
@@ -1508,7 +1503,7 @@ fn test_layout_tensor_iterator():
 
     var arr = InlineArray[Scalar[type], size](uninitialized=True)
     for i in range(size):
-        arr[i] = i
+        arr[i] = Float32(i)
 
     comptime layout_2x2_8x1 = Layout(IntTuple(2, 2), IntTuple(8, 1))
 
@@ -1599,7 +1594,7 @@ fn test_layout_tensor_iterator():
 
 
 # CHECK-LABEL: test_nested_layout_tensor_iterator
-fn test_nested_layout_tensor_iterator():
+def test_nested_layout_tensor_iterator():
     print("== test_nested_layout_tensor_iterator")
     comptime N = 128
     comptime K = 8
@@ -1609,7 +1604,7 @@ fn test_nested_layout_tensor_iterator():
 
     var arr = InlineArray[Scalar[type], size](uninitialized=True)
     for i in range(size):
-        arr[i] = i
+        arr[i] = Float32(i)
 
     # Here we define a float32 tensor (64 * TN, 2 * TK):
     #              K
@@ -1680,7 +1675,7 @@ fn test_nested_layout_tensor_iterator():
 
 
 # DISABLED-CHECK-LABEL: test_copy_from_bigger_tensor
-# fn test_copy_from_bigger_tensor():
+# def test_copy_from_bigger_tensor():
 #    print("== test_copy_from_bigger_tensor")
 #    var tensor_5x7 = LayoutTensor[
 #        DType.float32, Layout.row_major(8, 8)
@@ -1706,7 +1701,7 @@ fn test_nested_layout_tensor_iterator():
 
 
 # DISABLED-CHECK-LABEL: test_copy_from_smaller_tensor
-# fn test_copy_from_smaller_tensor():
+# def test_copy_from_smaller_tensor():
 #     print("== test_copy_from_smaller_tensor")
 #     var tensor_5x7 = LayoutTensor[
 #         DType.float32, Layout.row_major(8, 8)
@@ -1732,7 +1727,7 @@ fn test_nested_layout_tensor_iterator():
 
 
 # DISABLED-CHECK-LABEL: test_copy_from_vectorized_masked_write
-# fn test_copy_from_vectorized_masked_write():
+# def test_copy_from_vectorized_masked_write():
 #    print("== test_copy_from_vectorized_masked_write")
 #
 #    var tensor_4x8 = LayoutTensor[
@@ -1831,7 +1826,7 @@ fn test_nested_layout_tensor_iterator():
 #
 
 
-# fn test_copy_from_vectorized_masked_read():
+# def test_copy_from_vectorized_masked_read():
 #    print("== test_copy_from_vectorized_masked_read")
 #    var tensor_8x8 = LayoutTensor[
 #        DType.float32, Layout.row_major(8, 8)
@@ -1908,7 +1903,7 @@ fn test_nested_layout_tensor_iterator():
 
 
 # CHECK-LABEL: test_binary_math_ops
-fn test_binary_math_ops() raises:
+def test_binary_math_ops() raises:
     print("== test_binary_math_ops")
 
     var managed_tensor_a = ManagedLayoutTensor[
@@ -1979,7 +1974,7 @@ fn test_binary_math_ops() raises:
     _ = managed_tensor_b^
 
 
-fn test_vectorized_tile() raises:
+def test_vectorized_tile() raises:
     var managed_tensor_a = ManagedLayoutTensor[
         DType.float32, Layout(IntTuple(8, 4))
     ]()
@@ -1992,7 +1987,7 @@ fn test_vectorized_tile() raises:
     assert_equal(Int(vt.element_layout.shape[1]), 2)
 
 
-fn test_nested_tile() raises:
+def test_nested_tile() raises:
     comptime base_layout = Layout.row_major(8, 8)
     comptime tiler_layout = Layout.row_major(2, 2)
     comptime layout = blocked_product(base_layout, tiler_layout)
@@ -2005,7 +2000,7 @@ fn test_nested_tile() raises:
             assert_equal(vt[i, j], tensor_a[i, j])
 
 
-fn test_tensor_size() raises:
+def test_tensor_size() raises:
     comptime layout = Layout.row_major(4, 4)
     var stack = InlineArray[UInt32, layout.size()](uninitialized=True)
     var tensor = LayoutTensor[DType.uint32, layout](stack)
@@ -2019,7 +2014,7 @@ fn test_tensor_size() raises:
 
 
 # This test doesn't need to run, it just needs to compile
-fn test_merge():
+def test_merge():
     comptime layout = Layout.row_major(4, 4)
     var stack = InlineArray[UInt32, layout.size()](uninitialized=True)
     var tensor = LayoutTensor[DType.uint32, layout](stack)
@@ -2029,7 +2024,29 @@ fn test_merge():
     print(a)
 
 
-def main():
+def test_flatten_vectorize() raises:
+    """Regression test: flatten().vectorize[N]() must report correct dims
+    and allow element access. Previously, the compile-time layout of the
+    vectorized view had shape 0 (from UNKNOWN_VALUE / N = -1 / N = 0),
+    causing bounds-check assertions to fire on valid accesses.
+    """
+    comptime W = 4
+    var managed = ManagedLayoutTensor[DType.float32, Layout.row_major(W, W)]()
+    var t = managed.tensor()
+    for i in range(W * W):
+        t.ptr[i] = Float32(i)
+    var v = t.flatten().vectorize[W]()
+    # The vectorized view should have dim[0] == W (not 0).
+    assert_equal(v.dim[0](), W)
+    assert_equal(v.size(), W)
+    # Verify element reads produce correct values.
+    assert_equal(v[0][0], Float32(0))
+    assert_equal(v[0][3], Float32(3))
+    assert_equal(v[3][0], Float32(12))
+    assert_equal(v[3][3], Float32(15))
+
+
+def main() raises:
     test_basic_tensor_ops()
     test_tesnsor_fragments()
     test_tensor_tile_and_distribute()
@@ -2062,3 +2079,4 @@ def main():
     test_vectorized_tile()
     test_nested_tile()
     test_tensor_size()
+    test_flatten_vectorize()

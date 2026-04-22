@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,6 +17,6 @@ This module provides diagnostic utilities for monitoring and analyzing
 system performance, including GPU utilization and memory usage.
 """
 
-from . import gpu
+from . import cpu, gpu
 
-__all__ = ["gpu"]
+__all__ = ["cpu", "gpu"]

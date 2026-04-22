@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,7 @@
 # RUN: cat %t.csv | FileCheck %s --check-prefix=CHECK-OUT
 # RUN: %mojo %s -t | FileCheck %s --check-prefix=CHECK-TEST
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     BenchConfig,
     Bencher,
@@ -23,28 +23,28 @@ from benchmark import (
     Format,
     ThroughputMeasure,
 )
-from testing import TestSuite
+from std.testing import TestSuite
 
 
 @parameter
-fn bench1(mut b: Bencher):
+def bench1(mut b: Bencher):
     @parameter
-    fn to_bench():
+    def to_bench():
         print("hello")
 
     b.iter[to_bench]()
 
 
 @parameter
-fn bench2(mut b: Bencher, mystr: String) raises:
+def bench2(mut b: Bencher, mystr: String) raises:
     @parameter
-    fn to_bench():
+    def to_bench():
         print(mystr)
 
     b.iter[to_bench]()
 
 
-def test_mojobench():
+def test_mojobench() raises:
     var m = Bench(BenchConfig(max_iters=10_000))
     m.bench_function[bench1](
         BenchId("bench1"),
@@ -62,8 +62,10 @@ def test_mojobench():
             BenchId("bench2", String(i)),
             input_val,
             [
-                ThroughputMeasure(BenchMetric.elements, len(input_val)),
-                ThroughputMeasure(BenchMetric.flops, len(input_val)),
+                ThroughputMeasure(
+                    BenchMetric.elements, input_val.byte_length()
+                ),
+                ThroughputMeasure(BenchMetric.flops, input_val.byte_length()),
             ],
         )
 
@@ -97,7 +99,7 @@ def test_mojobench():
     # CHECK-TEST-COUNT-1: hello
 
 
-def main():
+def main() raises:
     # NOTE: we pass an empty list since the benchmark infra also tries to parse
     # the arguments for its own purposes.
     TestSuite.discover_tests[__functions_in_module()](

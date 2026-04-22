@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -24,17 +24,17 @@ Instructions, ACM Transactions on the Web 12 (3), 2018.
 https://arxiv.org/abs/1704.00605
 """
 
-from math import iota
-from sys import llvm_intrinsic
+from std.math import iota, ceildiv
+from std.sys import llvm_intrinsic
 
-from memory import Span, bitcast, memcpy
+from std.memory import Span, bitcast, memcpy
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime Bytes = SIMD[DType.uint8, _]
 
 
-fn _base64_simd_mask[
+def _base64_simd_mask[
     simd_width: Int
 ](nb_value_to_load: Int) -> SIMD[DType.bool, simd_width]:
     comptime mask = iota[DType.uint8, simd_width]()
@@ -53,8 +53,8 @@ fn _base64_simd_mask[
 # |                                                                   |
 # |--- ascii(d) ---|--- ascii(c) ---|--- ascii(b) ---|--- ascii(a) ---|
 # |. . d₅d₄d₃d₂d₁d₀|. . c₅c₄c₃c₂c₁c₀|. . b₅b₄b₃b₂b₁b₀|. . a₅a₄a₃a₂a₁a₀|
-fn _6bit_to_byte[width: Int](input: Bytes[width]) -> Bytes[width]:
-    __comptime_assert width in [
+def _6bit_to_byte[width: SIMDSize](input: Bytes[width]) -> Bytes[width]:
+    comptime assert width in [
         4,
         8,
         16,
@@ -62,7 +62,7 @@ fn _6bit_to_byte[width: Int](input: Bytes[width]) -> Bytes[width]:
         64,
     ], "width must be between 4 and 64"
 
-    fn indices() -> IndexList[width]:
+    def indices() -> IndexList[width]:
         var perm = [1, 0, 2, 1]
         var res = IndexList[width]()
         for i in range(width // 4):
@@ -71,13 +71,13 @@ fn _6bit_to_byte[width: Int](input: Bytes[width]) -> Bytes[width]:
         return res
 
     @always_inline
-    fn combine[
+    def combine[
         mask: Bytes[4], shift: Int
     ](shuffled: Bytes[width]) -> Bytes[width]:
         var `6bit` = shuffled & _repeat_until[width](mask)
         return _rshift_bits_in_u16[shift](`6bit`)
 
-    var shuffled = input.shuffle[mask = indices()]()
+    var shuffled = input.shuffle[mask=indices()]()
     var a = combine[
         Bytes[4](0b0000_0000, 0b1111_1100, 0b0000_0000, 0b0000_0000), 10
     ](shuffled)
@@ -115,14 +115,14 @@ comptime END_SECOND_RANGE = 51
 # fmt: on
 
 
-fn _to_b64_ascii[width: Int, //](input: Bytes[width]) -> Bytes[width]:
+def _to_b64_ascii[width: SIMDSize, //](input: Bytes[width]) -> Bytes[width]:
     var abcd = _6bit_to_byte(input)
     var target_indices = _sub_with_saturation(abcd, END_SECOND_RANGE)
     var offset_indices = abcd.gt(END_FIRST_RANGE).select(target_indices, 13)
     return abcd + OFFSETS._dynamic_shuffle(offset_indices)
 
 
-fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
+def _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
     width: Int
 ]() -> SIMD[DType.uint8, width]:
     """This is a lookup table to know how many bytes we need to store in the output buffer
@@ -141,11 +141,11 @@ fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
         if i % 3 != 0:
             group_of_3_bytes += 1
 
-        result[i] = group_of_3_bytes * 4
+        result[i] = UInt8(group_of_3_bytes * 4)
     return result
 
 
-fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load[
+def _get_number_of_bytes_to_store_from_number_of_bytes_to_load[
     max_size: Int
 ](nb_of_elements_to_load: Int) -> Int:
     comptime table = _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load[
@@ -154,7 +154,7 @@ fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load[
     return Int(table[nb_of_elements_to_load])
 
 
-fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
+def _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
     width: Int
 ]() -> SIMD[DType.uint8, width]:
     """This is a lookup table to know how many bytes we need to store in the output buffer
@@ -176,11 +176,13 @@ fn _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equa
         else:
             incomplete_groups_of_6_bits = 1
 
-        result[i] = complete_groups_of_6_bits + incomplete_groups_of_6_bits
+        result[i] = UInt8(
+            complete_groups_of_6_bits + incomplete_groups_of_6_bits
+        )
     return result
 
 
-fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
+def _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
     max_size: Int
 ](nb_of_elements_to_load: Int) -> Int:
     comptime table = _get_table_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign[
@@ -189,10 +191,10 @@ fn _get_number_of_bytes_to_store_from_number_of_bytes_to_load_without_equal_sign
     return Int(table[nb_of_elements_to_load])
 
 
-fn load_incomplete_simd[
+def load_incomplete_simd[
     width: Int
 ](
-    pointer: UnsafePointer[mut=False, UInt8], nb_of_elements_to_load: Int
+    pointer: UnsafePointer[mut=False, UInt8, _], nb_of_elements_to_load: Int
 ) -> SIMD[DType.uint8, width]:
     var result = SIMD[DType.uint8, width](0)
     var tmp_buffer_pointer = UnsafePointer(to=result).bitcast[UInt8]()
@@ -201,15 +203,13 @@ fn load_incomplete_simd[
 
 
 @no_inline
-fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
+def _b64encode(input_bytes: Span[mut=False, Byte, _], mut result: String):
     comptime simd_width = sys.simd_byte_width()
     comptime input_simd_width = simd_width * 3 // 4
     comptime equal_vector = SIMD[DType.uint8, simd_width](ord("="))
 
     # 4 character bytes for each 3 bytes (or less) block
-    result.resize(
-        unsafe_uninit_length=Int(4 * ((len(input_bytes) + 3 - 1) / 3))
-    )
+    result.resize(unsafe_uninit_length=4 * ceildiv(len(input_bytes), 3))
     var input_bytes_len = len(input_bytes)
     var input_index = 0
     var res_ptr = result.unsafe_ptr_mut()
@@ -272,24 +272,23 @@ fn _b64encode(input_bytes: Span[mut=False, Byte], mut result: String):
 # Utility functions
 
 
-fn _repeat_until[width: Int](v: SIMD) -> SIMD[v.dtype, width]:
-    __comptime_assert width >= v.size, "width must be at least v.size"
+def _repeat_until[width: Int](v: SIMD) -> SIMD[v.dtype, width]:
+    comptime assert width >= v.size, "width must be at least v.size"
 
-    @parameter
-    if width == v.size:
+    comptime if width == v.size:
         return v._refine[new_size=width]()
     return _repeat_until[width](v.join(v))
 
 
-fn _rshift_bits_in_u16[shift: Int](input: Bytes) -> type_of(input):
+def _rshift_bits_in_u16[shift: Int](input: Bytes) -> type_of(input):
     var u16 = bitcast[DType.uint16, input.size // 2](input)
     var res = bit.rotate_bits_right[shift](u16)
     return bitcast[DType.uint8, input.size](res)
 
 
 @always_inline
-fn _sub_with_saturation[
-    width: Int, //
+def _sub_with_saturation[
+    width: SIMDSize, //
 ](a: SIMD[DType.uint8, width], b: SIMD[DType.uint8, width]) -> SIMD[
     DType.uint8, width
 ]:

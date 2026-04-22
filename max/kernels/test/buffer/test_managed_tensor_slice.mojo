@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,19 +13,18 @@
 """Tests for ManagedTensorSlice - a tensor view type for custom graph operations.
 """
 
-from buffer.dimlist import DimList
-from compiler_internal.directives import StaticTensorSpec
+from compiler_internal.directives import get_row_major_tensor_spec_static
 from tensor import ManagedTensorSlice, IOUnknown
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 
-from utils import IndexList
+from std.utils import IndexList
 
 
-def test_basic_construction():
+def test_basic_construction() raises:
     """Test basic ManagedTensorSlice construction from pointer and shape."""
     var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
     # Shape-only constructor computes row-major strides automatically
-    comptime spec = StaticTensorSpec[DType.float32, 2](DimList(3, 4))
+    comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 3, 4]()
     var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=spec](
         storage.unsafe_ptr(), IndexList[2](3, 4)
     )
@@ -34,10 +33,12 @@ def test_basic_construction():
     assert_equal(tensor.size(), 12)
 
 
-def test_shape_and_strides():
+def test_shape_and_strides() raises:
     """Test shape() and strides() methods."""
     var storage = InlineArray[Float32, 2 * 3 * 4](uninitialized=True)
-    comptime spec = StaticTensorSpec[DType.float32, 3](DimList(2, 3, 4))
+    comptime spec = get_row_major_tensor_spec_static[
+        DType.float32, 3, 2, 3, 4
+    ]()
     var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=spec](
         storage.unsafe_ptr(), IndexList[3](2, 3, 4)
     )
@@ -53,10 +54,10 @@ def test_shape_and_strides():
     assert_equal(strides[2], 1)
 
 
-def test_dim_size():
+def test_dim_size() raises:
     """Test dim_size methods (compile-time and runtime)."""
     var storage = InlineArray[Float32, 5 * 7](uninitialized=True)
-    comptime spec = StaticTensorSpec[DType.float32, 2](DimList(5, 7))
+    comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 5, 7]()
     var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=spec](
         storage.unsafe_ptr(), IndexList[2](5, 7)
     )
@@ -70,10 +71,10 @@ def test_dim_size():
     assert_equal(tensor.dim_size(1), 7)
 
 
-def test_getitem_setitem():
+def test_getitem_setitem() raises:
     """Test __getitem__ and __setitem__ operations."""
     var storage = InlineArray[Float32, 2 * 3](uninitialized=True)
-    comptime spec = StaticTensorSpec[DType.float32, 2](DimList(2, 3))
+    comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 2, 3]()
     var tensor = ManagedTensorSlice[
         mut=True, io_spec=IOUnknown, static_spec=spec
     ](storage.unsafe_ptr(), IndexList[2](2, 3))
@@ -99,10 +100,10 @@ def test_getitem_setitem():
     assert_equal(tensor[IndexList[2](1, 0)], 4.0)
 
 
-def test_simd_load_store():
+def test_simd_load_store() raises:
     """Test SIMD load and store operations."""
     var storage = InlineArray[Float32, 8](uninitialized=True)
-    comptime spec = StaticTensorSpec[DType.float32, 1](DimList(8))
+    comptime spec = get_row_major_tensor_spec_static[DType.float32, 1, 8]()
     var tensor = ManagedTensorSlice[
         mut=True, io_spec=IOUnknown, static_spec=spec
     ](storage.unsafe_ptr(), IndexList[1](8))
@@ -122,10 +123,10 @@ def test_simd_load_store():
     assert_equal(loaded2, SIMD[DType.float32, 4](5.0, 6.0, 7.0, 8.0))
 
 
-def test_to_layout_tensor():
+def test_to_layout_tensor() raises:
     """Test to_layout_tensor() conversion."""
     var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
-    comptime spec = StaticTensorSpec[DType.float32, 2](DimList(3, 4))
+    comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 3, 4]()
     var tensor = ManagedTensorSlice[
         mut=True, io_spec=IOUnknown, static_spec=spec
     ](storage.unsafe_ptr(), IndexList[2](3, 4))
@@ -148,10 +149,10 @@ def test_to_layout_tensor():
     assert_equal(Int(layout_tensor.runtime_layout.shape[1]), 4)
 
 
-def test_stride_length():
+def test_stride_length() raises:
     """Test stride_length methods."""
     var storage = InlineArray[Float32, 3 * 5](uninitialized=True)
-    comptime spec = StaticTensorSpec[DType.float32, 2](DimList(3, 5))
+    comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 3, 5]()
     var tensor = ManagedTensorSlice[io_spec=IOUnknown, static_spec=spec](
         storage.unsafe_ptr(), IndexList[2](3, 5)
     )
@@ -165,10 +166,10 @@ def test_stride_length():
     assert_equal(tensor.stride_length(1), 1)
 
 
-def test_simd_load_store_2d():
+def test_simd_load_store_2d() raises:
     """Test SIMD load and store operations on 2D tensor."""
     var storage = InlineArray[Float32, 4 * 8](uninitialized=True)
-    comptime spec = StaticTensorSpec[DType.float32, 2](DimList(4, 8))
+    comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 4, 8]()
     var tensor = ManagedTensorSlice[
         mut=True, io_spec=IOUnknown, static_spec=spec
     ](storage.unsafe_ptr(), IndexList[2](4, 8))
@@ -202,10 +203,10 @@ def test_simd_load_store_2d():
     assert_equal(loaded_row3, SIMD[DType.float32, 4](30.0, 31.0, 32.0, 33.0))
 
 
-def test_to_tile_tensor():
+def test_to_tile_tensor() raises:
     """Test to_tile_tensor() conversion."""
     var storage = InlineArray[Float32, 3 * 4](uninitialized=True)
-    comptime spec = StaticTensorSpec[DType.float32, 2](DimList(3, 4))
+    comptime spec = get_row_major_tensor_spec_static[DType.float32, 2, 3, 4]()
     var tensor = ManagedTensorSlice[
         mut=True, io_spec=IOUnknown, static_spec=spec
     ](storage.unsafe_ptr(), IndexList[2](3, 4))
@@ -219,15 +220,15 @@ def test_to_tile_tensor():
     var tile_tensor = tensor.to_tile_tensor[DType.int64]()
 
     # Verify the layout tensor has the same data
-    __comptime_assert tile_tensor.rank == 2
-    assert_equal(tile_tensor[(0, 0)], 0.0)
-    assert_equal(tile_tensor[(1, 1)], 5.0)
-    assert_equal(tile_tensor[(2, 3)], 11.0)
+    comptime assert tile_tensor.flat_rank == 2
+    assert_equal(tile_tensor[0, 0], 0.0)
+    assert_equal(tile_tensor[1, 1], 5.0)
+    assert_equal(tile_tensor[2, 3], 11.0)
 
     # Verify dimensions
-    assert_equal(tile_tensor.layout.shape[0].value(), 3)
-    assert_equal(tile_tensor.layout.shape[1].value(), 4)
+    assert_equal(tile_tensor.layout.shape[0]().value(), 3)
+    assert_equal(tile_tensor.layout.shape[1]().value(), 4)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

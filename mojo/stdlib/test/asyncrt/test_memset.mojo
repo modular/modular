@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from gpu.host import DeviceContext
-from testing import TestSuite, assert_equal
+from std.gpu.host import DeviceContext
+from std.testing import TestSuite, assert_equal
 
 
-fn _run_memset[
+def _run_memset[
     dtype: DType
 ](ctx: DeviceContext, length: Int, val: Scalar[dtype]) raises:
     print("-")
@@ -28,8 +28,8 @@ fn _run_memset[
 
     # Initialize the input and outputs with known values.
     for i in range(length):
-        in_host[i] = i
-        out_host[i] = length + i
+        in_host[i] = Scalar[dtype](i)
+        out_host[i] = Scalar[dtype](length + i)
 
     # Copy to and from device buffers.
     in_host.enqueue_copy_to(on_dev)
@@ -49,7 +49,7 @@ fn _run_memset[
         )
 
 
-fn _run_memset_cascade[
+def _run_memset_cascade[
     dtype: DType
 ](ctx: DeviceContext, length: Int, val: Scalar[dtype]) raises:
     print("-")
@@ -67,7 +67,7 @@ fn _run_memset_cascade[
             )
 
 
-def test_memset():
+def test_memset() raises:
     var ctx = create_test_device_context()
 
     print("-------")
@@ -92,5 +92,5 @@ def test_memset():
     print("Done.")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

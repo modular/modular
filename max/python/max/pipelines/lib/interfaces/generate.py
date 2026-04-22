@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -33,30 +33,45 @@ from max.interfaces import (
     TextGenerationInputs,
     TextGenerationOutput,
 )
-from max.kv_cache import NullKVCacheManager
-from max.kv_cache.paged_cache import PagedKVCacheManager
+from max.kv_cache.paged_kv_cache import PagedKVCacheManager
+
+from .pipeline_model import PipelineModelWithKVCache
 
 
 @runtime_checkable
 class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
-    @property
-    def kv_managers(self) -> list[PagedKVCacheManager | NullKVCacheManager]: ...
+    """Protocol for pipelines that support text generation."""
+
+    _pipeline_model: PipelineModelWithKVCache[TextGenerationContextType]
 
     @property
-    def pipeline_config(self) -> PipelineConfig: ...
+    def kv_manager(self) -> PagedKVCacheManager:
+        """Returns the KV cache managers for this pipeline."""
+        ...
+
+    @property
+    def pipeline_config(self) -> PipelineConfig:
+        """Returns the pipeline configuration."""
+        ...
 
     @property
     def tokenizer(
         self,
     ) -> PipelineTokenizer[
         TextGenerationContextType, npt.NDArray[np.integer[Any]], RequestType
-    ]: ...
+    ]:
+        """Returns the tokenizer for this pipeline."""
+        ...
 
     def execute(
         self, inputs: TextGenerationInputs[TextGenerationContextType]
-    ) -> PipelineOutputsDict[TextGenerationOutput]: ...
+    ) -> PipelineOutputsDict[TextGenerationOutput]:
+        """Executes the pipeline for the given inputs."""
+        ...
 
-    def release(self, request_id: RequestID) -> None: ...
+    def release(self, request_id: RequestID) -> None:
+        """Releases resources for the given request."""
+        ...
 
     def generate(
         self, prompts: RequestType | list[RequestType]
@@ -86,6 +101,7 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
     async def generate_async(
         self, prompts: RequestType | list[RequestType]
     ) -> Any:
+        """Generates outputs asynchronously for the given prompts."""
         if not isinstance(prompts, list):
             prompts = [prompts]
 
@@ -94,34 +110,23 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             context = await self.tokenizer.new_context(prompt)
             context_batch.append(context)
 
-        kv_managers = self.kv_managers
         data_parallel_degree = self.pipeline_config.model.data_parallel_degree
 
         # Create inputs to the model. If data parallelism is enabled, group them
         # by replica.
-        batches: list[dict[RequestID, TextGenerationContextType]] = []
+        batches: list[list[TextGenerationContextType]] = []
         batch_to_replica_idx: dict[RequestID, int] = {}
-        if data_parallel_degree > 1 and len(kv_managers) > 1:
-            # We don't support speculative decoding when data parallelism is
-            # enabled, because the KV cache managers might place the same
-            # context on different devices/replicas.
-            raise ValueError(
-                "Having multiple KV managers (e.g. when using"
-                " speculative decoding) is not supported when data "
-                "parallelism is enabled."
-            )
-        batches = [{} for _ in range(data_parallel_degree)]
-        for context in context_batch:
+        batches = [[] for _ in range(data_parallel_degree)]
+        for i, context in enumerate(context_batch):
             req_id = context.request_id
             # Use whatever replica the main models KVCache recommends.
-            replica_idx = kv_managers[0].get_or_recommend_replica(context)
-            # Claim the slot for all kv_managers (eg: main + draft model)
-            for kv_manager in self.kv_managers:
-                kv_manager.claim(req_id, replica_idx=replica_idx)
-            batches[replica_idx][req_id] = context
+            replica_idx = i % data_parallel_degree
+            # Claim the slot for the KV cache manager
+            self.kv_manager.claim(req_id, replica_idx=replica_idx)
+            batches[replica_idx].append(context)
             batch_to_replica_idx[req_id] = replica_idx
 
-        num_steps = self.pipeline_config.max_num_steps
+        num_steps = self.pipeline_config.runtime.max_num_steps
         inputs = TextGenerationInputs(
             batches=batches,
             num_steps=num_steps,
@@ -134,10 +139,26 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
         try:
             while done < len(context_batch):
                 for replica_batch in batches:
-                    for ctx in replica_batch.values():
-                        for kv_manager in self.kv_managers:
-                            kv_manager.alloc(ctx, num_steps=num_steps)
+                    for ctx in replica_batch:
+                        replica_idx = batch_to_replica_idx[ctx.request_id]
+                        self.kv_manager.alloc(
+                            ctx,
+                            replica_idx=replica_idx,
+                            num_steps=num_steps,
+                        )
+
                 step_outputs = self.execute(inputs)
+
+                # Filter out all responses for requests that are already released.
+                # We can get a response for a request that is already released due to
+                # the quirk of overlap scheduling where the pipeline may produce an extra
+                # token after EOS.
+                step_outputs = {
+                    request_id: output
+                    for request_id, output in step_outputs.items()
+                    if request_id in batch_to_replica_idx
+                }
+
                 outputs = []
                 for request_id, output in step_outputs.items():
                     outputs.append(output)
@@ -146,10 +167,23 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                         # Remove the request from the batch passed to the next
                         # call to execute.
                         replica_idx = batch_to_replica_idx[request_id]
-                        batches[replica_idx].pop(request_id)
+                        replica_batch = batches[replica_idx]
+                        for idx, ctx in enumerate(replica_batch):
+                            if ctx.request_id == request_id:
+                                replica_batch.pop(idx)
+                                break
+                        else:
+                            raise KeyError(
+                                "Request ID not found in replica batch: "
+                                f"{request_id}"
+                            )
 
-                        self.release(request_id)
-                yield outputs
+                        self.kv_manager.release(
+                            request_id, replica_idx=replica_idx
+                        )
+
+                if outputs:
+                    yield outputs
 
                 # Yield to the event loop.  If at no other point (e.g.
                 # tokenizer.decode which we await earlier does not yield to the
@@ -161,5 +195,14 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
         finally:
             # Release remaining requests if the generation was interrupted.
             for batch in batches:
-                for request_id in batch:
-                    self.release(request_id)
+                for context in batch:
+                    if self.kv_manager.contains(
+                        context.request_id,
+                        batch_to_replica_idx[context.request_id],
+                    ):
+                        self.kv_manager.release(
+                            context.request_id,
+                            replica_idx=batch_to_replica_idx[
+                                context.request_id
+                            ],
+                        )
