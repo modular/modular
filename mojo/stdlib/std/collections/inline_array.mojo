@@ -296,13 +296,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         Returns:
             The host type's name.
         """
-        return String(
-            "InlineArray[",
-            get_type_name[Self.ElementType](),
-            ", ",
-            Self.size,
-            "]",
-        )
+        return t"InlineArray[{get_type_name[Self.ElementType]()}, {Self.size}]"
 
     # ===------------------------------------------------------------------===#
     # Life cycle methods

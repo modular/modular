@@ -192,11 +192,7 @@ struct Span[
         Returns:
             This type's name.
         """
-        return String(
-            "Span[",
-            get_type_name[Self.T](),
-            "]",
-        )
+        return t"Span[{get_type_name[Self.T]()}]"
 
     # ===------------------------------------------------------------------===#
     # Life cycle methods
