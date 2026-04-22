@@ -31,7 +31,7 @@ from typing import ClassVar
 import numpy as np
 import pytest
 from max.dtype import DType
-from max.experimental.distributed_functional import (
+from max.experimental.functional import (
     full,
     layer_norm,
     matmul,

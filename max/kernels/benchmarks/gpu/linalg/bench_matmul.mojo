@@ -157,9 +157,9 @@ def verify_matmul[
                 rand(b_host.ptr, b_host.num_elements())
             elif init_type == InitializationType.arange:
                 for i in range(a_host.num_elements()):
-                    a_host.ptr[i] = Scalar[a_type](i)
+                    a_host.raw_store(i, Scalar[a_type](i))
                 for i in range(b_host.num_elements()):
-                    b_host.ptr[i] = Scalar[a_type](i)
+                    b_host.raw_store(i, Scalar[a_type](i))
         # Move operands to the Device
         ctx.enqueue_copy(a_device, a_host_ptr)
         ctx.enqueue_copy(b_device, b_host_ptr)
@@ -371,9 +371,9 @@ def bench_matmul[
                 rand(b_host.ptr, b_host.num_elements())
             elif init_type == InitializationType.arange:
                 for i in range(a_host.num_elements()):
-                    a_host.ptr[i] = Scalar[a_type](i)
+                    a_host.raw_store(i, Scalar[a_type](i))
                 for i in range(b_host.num_elements()):
-                    b_host.ptr[i] = Scalar[a_type](i)
+                    b_host.raw_store(i, Scalar[a_type](i))
 
         ctx.enqueue_copy(cb_a.device_buffer(), a_host_ptr)
         ctx.enqueue_copy(cb_b.device_buffer(), b_host_ptr)

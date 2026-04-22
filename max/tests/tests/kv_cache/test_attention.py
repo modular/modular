@@ -267,9 +267,9 @@ def test_distributed_attention_with_rope_separate_projections(
     )
 
     # Verify sharding strategies for separate projections.
-    q_ss = dist_attn.qkv_proj._child("q").sharding_strategy
-    k_ss = dist_attn.qkv_proj._child("k").sharding_strategy
-    v_ss = dist_attn.qkv_proj._child("v").sharding_strategy
+    q_ss = dist_attn.qkv_proj._child("q_proj").sharding_strategy
+    k_ss = dist_attn.qkv_proj._child("k_proj").sharding_strategy
+    v_ss = dist_attn.qkv_proj._child("v_proj").sharding_strategy
     o_ss = dist_attn.o_proj.sharding_strategy
     assert q_ss is not None
     assert k_ss is not None
