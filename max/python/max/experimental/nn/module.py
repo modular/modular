@@ -28,10 +28,8 @@ from max.experimental.realization_context import (
     GraphRealizationContext,
     _session,
 )
-from max.experimental.tensor import (
-    Tensor,
-    realization_context,
-)
+from max.experimental.sharding import DeviceMapping, DeviceMesh
+from max.experimental.tensor import Tensor, realization_context
 from max.graph import DeviceRef, Graph
 from rich.pretty import pretty_repr
 from typing_extensions import ParamSpec, Self, TypeVar, dataclass_transform
@@ -690,8 +688,11 @@ class Module(Generic[_P, _R]):
             value = value.to_device()
         object.__setattr__(self, "_module_target_device", value)
 
-    def to(self, device: Device) -> Self:
-        """Sets this module's device and transfers all weight parameters to it.
+    def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
+        """Transfers all module parameters to a device, mesh, or mapping.
+
+        See :meth:`~max.experimental.Tensor.to` for details about using
+        ``Device`` vs ``DeviceMesh`` vs ``DeviceMapping``.
 
         This is the single entry point for device placement. After calling
         ``to(device)``, both weight storage and :meth:`input_types` reflect the
@@ -724,22 +725,40 @@ class Module(Generic[_P, _R]):
         placement.
 
         Args:
-            device: The device to which all model parameters will be
-                transferred and which :meth:`input_types` will use as the
-                computation device.
+            target: The target for all module parameters. Can be:
+
+                - :class:`~max.driver.Device`: Target device for transfer.
+                - :class:`~max.experimental.sharding.DeviceMesh`: New mesh,
+                  keeping existing placements (or fully replicated for
+                  unsharded parameters).
+                - :class:`~max.experimental.sharding.DeviceMapping`: New mesh
+                  and placements; triggers shard collective for multi-device.
 
         Returns:
             A reference to the model. The transfer is applied mutably; the
             module's :attr:`device` property and all internal parameters are
             updated in place.
         """
-        object.__setattr__(self, "_module_target_device", device)
+        # Determine the primary device for the module's device property
+        if isinstance(target, Device):
+            primary_device = target
+        elif isinstance(target, DeviceMapping):
+            primary_device = target.mesh.devices[0]
+        elif isinstance(target, DeviceMesh):
+            primary_device = target.devices[0]
+        else:
+            raise TypeError(
+                f"to() expects Device, DeviceMesh, or DeviceMapping, "
+                f"got {type(target).__name__}"
+            )
+
+        object.__setattr__(self, "_module_target_device", primary_device)
         pinned = _get_pinned_device_fields(type(self))
         for name, attr in self.local_parameters:
             if name not in pinned:
-                setattr(self, name, attr.to(device))
+                setattr(self, name, attr.to(target))
         for _, child in self.children:
-            child.to(device)
+            child.to(target)
         return self
 
     @contextlib.contextmanager
