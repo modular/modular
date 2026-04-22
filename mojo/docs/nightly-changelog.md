@@ -200,6 +200,10 @@ This version is still a work in progress.
   To provide a gradual migration path, explicitly typed aliases are
   available temporarily.
 
+- `BenchConfig` and `Mode` in `std.benchmark.bencher` now conform to `Writable`,
+  enabling use with `String()`, `print()`, and any `Writer`-based formatting.
+  `Mode` also conforms to `Equatable`, supporting `==` and `!=` comparisons.
+
   | Base         | `UInt` Accessor   | `Int` Accessor    |
   |--------------|-------------------|-------------------|
   | `thread_idx` | `thread_idx_uint` | `thread_idx_int`  |
