@@ -740,6 +740,10 @@ def IndirectOriginAttr : LITTypedAttr<"IndirectOrigin", "indirect.origin",  [
       return get(base);
     }], "TypedAttr">,
   ];
+
+  let extraClassDeclaration = [{
+    static IndirectOriginAttr getFromBytecode(TypedAttr base, OriginType type);
+  }];
 }
 
 //===----------------------------------------------------------------------===//

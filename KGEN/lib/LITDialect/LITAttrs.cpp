@@ -813,6 +813,11 @@ TypedAttr IndirectOriginAttr::get(TypedAttr baseOrigin) {
                                        baseType);
 }
 
+IndirectOriginAttr IndirectOriginAttr::getFromBytecode(TypedAttr base,
+                                                       OriginType type) {
+  return Base::get(type.getContext(), base, type);
+}
+
 // Fields are simple constants if their base is.
 bool IndirectOriginAttr::isConstant() const {
   return ParameterAttr::isSimpleConstant(getBase());

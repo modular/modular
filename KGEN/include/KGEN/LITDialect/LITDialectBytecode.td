@@ -147,6 +147,13 @@ def FnMetadataAttr : DialectAttribute<(attr
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
 
+def DeprecationInfoAttr : DialectAttribute<(attr
+  StringAttr:$warning,
+  OptionalAttribute<"StringAttr">:$replacement
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
+
 def DocStringAttr : DialectAttribute<(attr
   StringAttr:$string,
   OptionalAttribute<"FileLineColLoc">:$location
@@ -183,6 +190,18 @@ def AnyOriginAttr : DialectAttribute<(attr
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
 
+def ComptimeOriginAttr : DialectAttribute<(attr
+  ConcreteType<"OriginType">:$type
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
+
+def StaticOriginAttr : DialectAttribute<(attr
+  ConcreteType<"OriginType">:$type
+)> {
+  let cBuilder = "get<$_resultType>(context, $_args)";
+}
+
 def WrappedOriginUnionAttr : DialectAttribute<(attr
   TypedAttrArray:$operands,
   ConcreteType<"OriginType">:$type
@@ -200,7 +219,7 @@ def WrappedOriginFieldAttr : DialectAttribute<(attr
 )>;
 
 def WrappedIndirectOriginAttr : DialectAttribute<(attr
-  TypedAttr:$baseOrigin,
+  TypedAttr:$base,
   ConcreteType<"OriginType">:$type
 )>;
 
@@ -243,12 +262,12 @@ def TypeConventionAttr : DialectAttribute<(attr
   EnumAttr<"TypeConvention">:$value
 )>;
 
-def PassingKindAttr : DialectAttribute<(attr
-  EnumAttr<"PassingKind">:$value
-)>;
-
 def VarDeclKindAttr : DialectAttribute<(attr
   EnumAttr<"VarDeclKind">:$value
+)>;
+
+def ImplicitConversionKindAttr : DialectAttribute<(attr
+  EnumAttr<"ImplicitConversionKind">:$value
 )>;
 
 def RefPackAttr : DialectAttribute<(attr
@@ -283,6 +302,11 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     RefPackAttr,
     TypeConventionAttr,
     VarDeclKindAttr,
+    DeprecationInfoAttr,
+    ComptimeOriginAttr,
+    StaticOriginAttr,
+    WrappedIndirectOriginAttr,
+    ImplicitConversionKindAttr,
   ];
 }
 
