@@ -238,8 +238,8 @@ def bench_dispatch[
             FormatHandlerType,
         ]
 
-        var func_dispatch_wait = ctx.compile_function_experimental[
-            dispatch_wait
+        var func_dispatch_wait = ctx.compile_function[
+            dispatch_wait, dispatch_wait
         ]()
 
         comptime combine_async = combine_async_kernel[

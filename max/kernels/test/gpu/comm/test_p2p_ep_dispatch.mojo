@@ -93,7 +93,11 @@ trait DispatchTestT(ImplicitlyDestructible):
 
     @always_inline
     def get_token_handler(
-        self, dev_idx: Int, slot_idx: Int, out result: Self.TokenFormatType
+        self,
+        dev_idx: Int,
+        slot_idx: Int,
+        ctx: DeviceContext,
+        out result: Self.TokenFormatType,
     ):
         ...
 
@@ -172,7 +176,11 @@ struct BF16DispatchTest[
 
     @always_inline
     def get_token_handler(
-        self, dev_idx: Int, slot_idx: Int, out result: Self.TokenFormatType
+        self,
+        dev_idx: Int,
+        slot_idx: Int,
+        ctx: DeviceContext,
+        out result: Self.TokenFormatType,
     ):
         var output_tensor = TileTensor[origin=MutAnyOrigin](
             ptr=self.device_output_bufs_list[dev_idx].unsafe_ptr()
@@ -318,7 +326,11 @@ struct BlockwiseFP8DispatchTest[
 
     @always_inline
     def get_token_handler(
-        self, dev_idx: Int, slot_idx: Int, out result: Self.TokenFormatType
+        self,
+        dev_idx: Int,
+        slot_idx: Int,
+        ctx: DeviceContext,
+        out result: Self.TokenFormatType,
     ):
         var output_tensor = TileTensor[origin=MutAnyOrigin](
             ptr=self.device_output_bufs_list[dev_idx].unsafe_ptr()
@@ -439,7 +451,6 @@ struct NVFP4DispatchTest[
         fp4_dtype=Self.fp4_dtype,
         scales_dtype=Self.scales_dtype,
         output_layout=type_of(Self.output_layout),
-        scales_layout=type_of(Self.output_scales_layout),
         scales_offset_layout=type_of(Self.output_scales_offset_layout),
         Self.hidden_size,
         Self.top_k,
@@ -527,7 +538,11 @@ struct NVFP4DispatchTest[
 
     @always_inline
     def get_token_handler(
-        self, dev_idx: Int, slot_idx: Int, out result: Self.TokenFormatType
+        self,
+        dev_idx: Int,
+        slot_idx: Int,
+        ctx: DeviceContext,
+        out result: Self.TokenFormatType,
     ):
         var output_tensor = TileTensor[origin=MutAnyOrigin](
             ptr=self.device_output_bufs_list[dev_idx].unsafe_ptr()
@@ -549,7 +564,10 @@ struct NVFP4DispatchTest[
         )
 
         result = Self.TokenFormatType(
-            output_tensor, output_scales_tensor, output_scales_offset_tensor
+            output_tensor,
+            output_scales_tensor,
+            output_scales_offset_tensor,
+            ctx,
         )
 
     @always_inline
@@ -750,7 +768,11 @@ struct MXFP4DispatchTest[
 
     @always_inline
     def get_token_handler(
-        self, dev_idx: Int, slot_idx: Int, out result: Self.TokenFormatType
+        self,
+        dev_idx: Int,
+        slot_idx: Int,
+        ctx: DeviceContext,
+        out result: Self.TokenFormatType,
     ):
         var output_tensor = TileTensor[origin=MutAnyOrigin](
             ptr=self.device_output_bufs_list[dev_idx].unsafe_ptr()
@@ -1054,7 +1076,9 @@ def test_dispatch_common[
     @parameter
     def run_dispatch_async_wait(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        var format_handler = dispatch_test.get_token_handler(dev_idx, slot_idx)
+        var format_handler = dispatch_test.get_token_handler(
+            dev_idx, slot_idx, ctx
+        )
         ep_dispatch_wait_kernel_api[
             n_experts,
             n_tokens_per_rank,

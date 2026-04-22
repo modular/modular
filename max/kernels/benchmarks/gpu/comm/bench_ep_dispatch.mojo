@@ -230,7 +230,7 @@ def bench_dispatch[
             FormatHandlerType,
         ]
 
-        var func_wait = ctx.compile_function_experimental[dispatch_wait]()
+        var func_wait = ctx.compile_function[dispatch_wait, dispatch_wait]()
 
         @always_inline
         @parameter

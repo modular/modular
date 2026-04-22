@@ -19,6 +19,7 @@ Helper functions for Expert Parallelism (EP) Communication Kernels.
 from std.collections import OptionalReg
 
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from std.gpu.host import FuncAttribute
 from std.gpu.host.info import is_gpu
 from layout import TensorLayout, TileTensor, Idx
 from layout.tile_tensor import row_major
@@ -361,6 +362,7 @@ def ep_dispatch_wait_kernel_api[
             )
         )
 
+        var smem_size = UInt32(token_fmt_type.dispatch_smem_size)
         gpu_ctx.enqueue_function[dispatch_wait, dispatch_wait](
             token_handler,
             row_offsets,
@@ -373,6 +375,10 @@ def ep_dispatch_wait_kernel_api[
             maybe_fused_shared_expert_input,
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
+            shared_mem_bytes=Int(smem_size),
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                smem_size
+            ),
         )
 
 
@@ -513,7 +519,12 @@ def ep_fused_dispatch_kernel_api[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(context),
     ):
-        var func = gpu_ctx.compile_function[fused_dispatch, fused_dispatch]()
+        var smem_size = UInt32(token_fmt_type.dispatch_smem_size)
+        var func = gpu_ctx.compile_function[fused_dispatch, fused_dispatch](
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                smem_size
+            ),
+        )
 
         comptime if use_shmem:
             var cached_module_key = String(
@@ -557,6 +568,7 @@ def ep_fused_dispatch_kernel_api[
             my_rank,
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
+            shared_mem_bytes=Int(smem_size),
             attributes=pdl_launch_attributes(PDLLevel(1)),
         )
 
