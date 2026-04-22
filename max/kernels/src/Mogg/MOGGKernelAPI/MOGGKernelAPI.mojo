@@ -98,6 +98,7 @@ from linalg.fp8_quantization import (
 from linalg.fp4_quantization import (
     block_scaled_matmul,
     quantize_dynamic_block_scaled,
+    grouped_quantize_dynamic_scaled_fp4_async,
     block_scales_interleave,
     quantize_mxfp4_amd,
     quantize_dynamic_block_scaled_mxfp4,
@@ -9240,6 +9241,44 @@ struct Struct_quantize_dynamic_block_scaled:
             scales.to_tile_tensor[DType.int64](),
             input.to_tile_tensor[DType.int64](),
             tensor_sf,
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.grouped.quantize.dynamic.block.scaled")
+struct Struct_grouped_quantize_dynamic_block_scaled:
+    @always_inline
+    @staticmethod
+    def execute[
+        out_dtype: DType,
+        scales_type: DType,
+        in_dtype: DType,
+        //,
+        scales_rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=out_dtype, rank=2, ...],
+        scales: OutputTensor[dtype=scales_type, rank=scales_rank, ...],
+        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        scales_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        sf_tensor: InputTensor[dtype=DType.float32, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "grouped quantize dynamic block scaled only supports GPUs"
+
+        cuda_ctx = context.get_device_context()
+        grouped_quantize_dynamic_scaled_fp4_async(
+            output.to_tile_tensor[DType.int64](),
+            scales.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            row_offsets.to_tile_tensor[DType.int64](),
+            scales_offsets.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            sf_tensor.to_tile_tensor[DType.int64](),
             cuda_ctx,
         )
 

@@ -5091,6 +5091,89 @@ def quantize_dynamic_block_scaled_fp4(
     return result[0].tensor, result[1].tensor
 
 
+def grouped_quantize_dynamic_block_scaled_fp4(
+    input: TensorValue,
+    row_offsets: TensorValue,
+    scales_offsets: TensorValue,
+    expert_ids: TensorValue,
+    sf_tensor: TensorValue,
+    sf_vector_size: int = 16,
+    scales_type: DType = DType.float8_e4m3fn,
+    out_type: DType = DType.uint8,
+) -> tuple[TensorValue, TensorValue]:
+    """Grouped dynamic FP4 quantization for MoE experts.
+
+    Quantizes a concatenated token tensor where different row ranges belong
+    to different experts, each with its own tensor-wise scale factor.
+
+    Args:
+        input: The concatenated input tensor. Shape: ``[total_tokens, K]``,
+            dtype ``bfloat16``.
+        row_offsets: Cumulative token offsets per expert.
+            Shape: ``[num_experts + 1]``, dtype ``uint32``.
+        scales_offsets: Per-expert scale tile offset corrections.
+            Shape: ``[num_experts]``, dtype ``uint32``.
+        expert_ids: Expert ID mapping (typically identity).
+            Shape: ``[num_experts]``, dtype ``int32``.
+        sf_tensor: Per-expert tensor-wise scale factors.
+            Shape: ``[num_experts]``, dtype ``float32``.
+        sf_vector_size: The block size for the scaling factors.
+        scales_type: Scale factor dtype. ``float8_e4m3fn`` for NVFP4.
+        out_type: Output dtype. ``uint8`` for packed FP4.
+
+    Returns:
+        The quantized tensor ``[total_tokens, K // 2]`` and scales in
+        rank-5 interleaved layout
+        ``[total_m_tiles, K_tiles, 32, 4, 4]``.
+    """
+    if input.rank != 2:
+        raise ValueError("input tensor must be rank 2")
+
+    if input.dtype != DType.bfloat16:
+        raise ValueError("input tensor dtype must be bfloat16")
+
+    if not _is_sm10x_gpu():
+        # route to the fallback kernel
+        return quantize_dynamic_block_scaled_fp4(
+            input, sf_tensor[0], sf_vector_size, scales_type, out_type
+        )
+
+    SF_ATOM_M = [32, 4]
+    SF_ATOM_K = 4
+    SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+    SF_K_GROUP_SIZE = SF_ATOM_K * 16
+
+    total_m_tiles = ceildiv(input.shape[0], Dim(SF_MN_GROUP_SIZE))
+    total_m_tiles += expert_ids.shape[0]  # add one padding tile for each group
+    scales_shape: list[Dim | int] = [
+        total_m_tiles,
+        ceildiv(input.shape[1], Dim(SF_K_GROUP_SIZE)),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
+    ]
+
+    result = ops.custom(
+        "mo.grouped.quantize.dynamic.block.scaled",
+        device=input.device,
+        values=[input, row_offsets, scales_offsets, expert_ids, sf_tensor],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[input.shape[0], input.shape[1] // 2],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=scales_type,
+                shape=scales_shape,
+                device=input.device,
+            ),
+        ],
+    )
+
+    return result[0].tensor, result[1].tensor
+
+
 def quantize_dynamic_block_scaled_mxfp4(
     input: TensorValue,
     scales_type: DType = DType.float8_e8m0fnu,

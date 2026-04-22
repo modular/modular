@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_up, ceildiv
-from std.math.uutils import ufloordiv
+from std.math.uutils import uceildiv, udivmod, ufloordiv
+from std.memory import stack_allocation
 from std.gpu import (
     block_idx,
     thread_idx,
@@ -1143,6 +1144,303 @@ def quantize_dynamic_scaled_fp4_async[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_use)
         ),
+        attributes=pdl_launch_attributes(PDLLevel(1)),
+    )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__llvm_arg_metadata(scales_tma_op, `nvvm.grid_constant`)
+@__name("grouped_quantize_dynamic_scaled_async_fp4_kernel", mangle=True)
+def grouped_quantize_dynamic_scaled_fp4_async_kernel[
+    output_dtype: DType,
+    scales_dtype: DType,
+    input_dtype: DType,
+    scales_tile_rank: Int,
+    scales_tile_shape: IndexList[scales_tile_rank],
+    scales_desc_shape: IndexList[scales_tile_rank],
+    scales_swizzle_mode: TensorMapSwizzle,
+    output_layout: TensorLayout,
+    input_layout: TensorLayout,
+    row_offsets_layout: TensorLayout,
+    scales_offsets_layout: TensorLayout,
+    expert_ids_layout: TensorLayout,
+    sf_layout: TensorLayout,
+    num_threads: Int = 128,
+](
+    output_tensor: TileTensor[output_dtype, output_layout, MutAnyOrigin],
+    scales_tma_op: TMATensorTile[
+        scales_dtype, scales_tile_rank, scales_tile_shape, scales_desc_shape
+    ],
+    input_tensor: TileTensor[input_dtype, input_layout, ImmutAnyOrigin],
+    row_offsets: TileTensor[DType.uint32, row_offsets_layout, ImmutAnyOrigin],
+    scales_offsets: TileTensor[
+        DType.uint32, scales_offsets_layout, ImmutAnyOrigin
+    ],
+    expert_ids: TileTensor[DType.int32, expert_ids_layout, ImmutAnyOrigin],
+    sf_tensor: TileTensor[
+        DType.float32, sf_layout, ImmutAnyOrigin
+    ],  # tensor-wise scale factor
+):
+    comptime assert row_offsets.flat_rank == 1, "row_offsets must be rank 1"
+    comptime assert (
+        scales_offsets.flat_rank == 1
+    ), "scales_offsets must be rank 1"
+    comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
+    comptime assert sf_tensor.flat_rank == 1, "sf_tensor must be rank 1"
+    comptime assert scales_offsets_layout.all_dims_known
+    comptime num_experts = scales_offsets_layout.static_shape[0]
+
+    comptime SF_VECTOR_SIZE = 16 if scales_dtype == NVFP4_SF_DTYPE else 32
+    comptime SF_K_GROUP_SIZE = SF_VECTOR_SIZE * SF_ATOM_K
+
+    # Each block process a SF_MN_GROUP_SIZE x SF_K_GROUP_SIZE tile
+    var scale_tile_idx = block_idx.x
+    var k_idx = block_idx.y
+
+    # Finds expert id for current block through bisect search
+    # row_offsets is of size num_experts + 1, scales_offsets is of size num_experts
+    # For a given expert_idx, it's corresponding scales tiles start at:
+    # row_offsets[expert_idx] // SF_MN_GROUP_SIZE + scales_offsets[expert_idx]
+    # and there will be ceildiv(row_offsets[expert_idx + 1] -
+    # row_offsets[expert_idx], SF_MN_GROUP_SIZE) scales tiles for this expert.
+    var low = 0
+    var high = num_experts
+    while low + 1 != high:
+        var mid = ufloordiv(low + high, 2)
+        var mid_start = ufloordiv(
+            Int(row_offsets[mid]), SF_MN_GROUP_SIZE
+        ) + Int(scales_offsets[mid])
+        if scale_tile_idx >= mid_start:
+            low = mid
+        else:
+            high = mid
+    var expert_idx = low
+
+    # Tail tiles beyond last expert's range: exit early.
+    var curr_expert_start = Int(row_offsets[expert_idx])
+    var curr_expert_end = Int(row_offsets[expert_idx + 1])
+    var expert_tiles_start = ufloordiv(
+        curr_expert_start, SF_MN_GROUP_SIZE
+    ) + Int(scales_offsets[expert_idx])
+    var expert_num_tiles = uceildiv(
+        curr_expert_end - curr_expert_start, SF_MN_GROUP_SIZE
+    )
+
+    var expert_id = expert_ids[expert_idx]
+    var input_sf = sf_tensor[expert_id]
+
+    var token_start = (
+        curr_expert_start
+        + (scale_tile_idx - expert_tiles_start) * SF_MN_GROUP_SIZE
+    )
+    var num_tokens = min(curr_expert_end - token_start, SF_MN_GROUP_SIZE)
+
+    comptime scales_smem_tile_size = align_up(
+        Coord(scales_tile_shape).product(), 128
+    )
+    var smem_ptr = stack_allocation[
+        scales_smem_tile_size,
+        Scalar[scales_dtype],
+        alignment=128,
+        address_space=AddressSpace.SHARED,
+    ]()
+
+    var scales_smem = TileTensor(
+        smem_ptr,
+        row_major(Coord(scales_tile_shape)),
+    )
+
+    # We can safetly prefetch the row_offsets and scales_offsets before
+    # `wait_on_dependent_grids()`.
+    with PDL():
+        if scale_tile_idx >= expert_tiles_start + expert_num_tiles:
+            return
+
+        comptime ELEMENTS_PER_THREAD = 8
+        comptime NUM_THREADS_PER_SF = SF_VECTOR_SIZE // ELEMENTS_PER_THREAD
+        comptime OUTPUT_WIDTH = 4 if output_dtype == DType.uint8 else 8
+        comptime num_threads_per_row = SF_K_GROUP_SIZE // ELEMENTS_PER_THREAD
+        comptime rows_per_iter = num_threads // num_threads_per_row
+        comptime num_iters = SF_MN_GROUP_SIZE // rows_per_iter
+
+        var row_in_iter, col_thread_idx = udivmod(
+            thread_idx.x, num_threads_per_row
+        )
+        var input_col = (
+            k_idx * SF_K_GROUP_SIZE + col_thread_idx * ELEMENTS_PER_THREAD
+        )
+        var output_col = (
+            ufloordiv(input_col, 2) if output_dtype
+            == DType.uint8 else input_col
+        )
+
+        comptime for iter_idx in range(num_iters):
+            var local_row = iter_idx * rows_per_iter + row_in_iter
+            var is_valid = local_row < num_tokens
+
+            var input_vector = SIMD[input_dtype, ELEMENTS_PER_THREAD](0)
+            if is_valid:
+                var global_row = token_start + local_row
+                input_vector = input_tensor.load[width=ELEMENTS_PER_THREAD](
+                    (Idx(global_row), Idx(input_col))
+                )
+
+            var thread_max = abs(input_vector).reduce_max()
+            thread_max = max(shuffle_xor(thread_max, 1), thread_max)
+            comptime if NUM_THREADS_PER_SF == 4:
+                thread_max = max(shuffle_xor(thread_max, 2), thread_max)
+            var group_max = thread_max.cast[DType.float32]()
+
+            var scale_factor: Float32
+            comptime if output_dtype == DType.uint8:
+                scale_factor = input_sf * group_max * recip(Float32(6.0))
+            else:
+                scale_factor = group_max * recip(Float32(448.0))
+            var fp8_scale_factor = scale_factor.cast[scales_dtype]()
+
+            var output_scale = Float32(0.0)
+            if group_max != 0:
+                comptime if output_dtype == DType.uint8:
+                    output_scale = recip(
+                        fp8_scale_factor.cast[DType.float32]() * recip(input_sf)
+                    )
+                else:
+                    output_scale = recip(fp8_scale_factor.cast[DType.float32]())
+
+            if is_valid:
+                var global_row = token_start + local_row
+                var input_f32 = (
+                    input_vector.cast[DType.float32]() * output_scale
+                )
+                var output_vector: SIMD[output_dtype, OUTPUT_WIDTH]
+                comptime if output_dtype == DType.uint8:
+                    output_vector = bitcast[output_dtype, OUTPUT_WIDTH](
+                        cast_fp32_to_fp4e2m1(input_f32)
+                    )
+                else:
+                    output_vector = rebind[SIMD[output_dtype, OUTPUT_WIDTH]](
+                        input_f32.cast[output_dtype]()
+                    )
+                output_tensor.store(
+                    (Idx(global_row), Idx(output_col)), output_vector
+                )
+
+            if col_thread_idx % NUM_THREADS_PER_SF == 0:
+                var sf_group = col_thread_idx // NUM_THREADS_PER_SF
+                var smem_idx = (
+                    (local_row % 32) * 16
+                    + (local_row // 32) * SF_ATOM_K
+                    + sf_group
+                )
+                scales_smem.ptr.store(smem_idx, fp8_scale_factor)
+
+        barrier()
+
+        if thread_idx.x == 0:
+            fence_async_view_proxy()
+            scales_tma_op.async_store(
+                scales_smem,
+                StaticTuple[UInt32, 4](
+                    0, 0, UInt32(k_idx), UInt32(scale_tile_idx)
+                ),
+            )
+            scales_tma_op.commit_group()
+            scales_tma_op.wait_group[0]()
+
+
+def grouped_quantize_dynamic_scaled_fp4_async[
+    input_dtype: DType,
+    output_dtype: DType,
+    scales_dtype: DType,
+    //,
+](
+    output_tensor: TileTensor[
+        mut=True, output_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    scales_tensor: TileTensor[
+        mut=True, scales_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    input_tensor: TileTensor[
+        mut=False, input_dtype, address_space=AddressSpace.GENERIC, ...
+    ],
+    row_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    scales_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    expert_ids: TileTensor[
+        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
+    ],
+    sf_tensor: TileTensor[
+        mut=False, DType.float32, address_space=AddressSpace.GENERIC, ...
+    ],
+    ctx: DeviceContext,
+) raises:
+    var scales_tensor_lt = scales_tensor.to_layout_tensor()
+    comptime scales_lt_layout = scales_tensor_lt.layout
+
+    comptime scales_4d_layout[layout: Layout] = Layout.row_major(
+        layout.shape[0].value(),
+        layout.shape[1].value(),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1] * SF_ATOM_K,
+    )
+
+    var scales_4d_tensor = LayoutTensor[
+        scales_dtype, scales_4d_layout[scales_lt_layout], MutAnyOrigin
+    ](
+        scales_tensor.ptr,
+        RuntimeLayout[scales_4d_layout[scales_lt_layout]].row_major(
+            IndexList[4](
+                scales_tensor_lt.dim(0),
+                scales_tensor_lt.dim(1),
+                scales_tensor_lt.dim(2),
+                scales_tensor_lt.dim(3) * scales_tensor_lt.dim(4),
+            ),
+        ),
+    )
+
+    comptime scales_tma_tile_shape = Index(
+        1, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
+    )
+    var scales_tma_op = create_tensor_tile[
+        scales_tma_tile_shape,
+        swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
+    ](ctx, scales_4d_tensor)
+
+    comptime kernel = grouped_quantize_dynamic_scaled_fp4_async_kernel[
+        output_dtype,
+        scales_dtype,
+        input_dtype,
+        scales_tma_op.rank,
+        scales_tma_op.tile_shape,
+        scales_tma_op.desc_shape,
+        TensorMapSwizzle.SWIZZLE_NONE,
+        output_tensor.LayoutType,
+        input_tensor.LayoutType,
+        row_offsets.LayoutType,
+        scales_offsets.LayoutType,
+        expert_ids.LayoutType,
+        sf_tensor.LayoutType,
+    ]
+
+    ctx.enqueue_function[kernel, kernel](
+        output_tensor,
+        scales_tma_op,
+        input_tensor,
+        row_offsets,
+        scales_offsets,
+        expert_ids,
+        sf_tensor,
+        grid_dim=(
+            scales_tensor.dim[0](),
+            scales_tensor.dim[1](),
+            1,
+        ),
+        block_dim=(128,),
         attributes=pdl_launch_attributes(PDLLevel(1)),
     )
 
