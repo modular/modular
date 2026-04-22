@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import InputModality, PipelineTask
-from max.pipelines.core import PixelContext
+from max.pipelines.core import PixelContext, validate_flux2_max_pixel_area
 from max.pipelines.lib import PixelGenerationTokenizer, SupportedArchitecture
 from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
@@ -64,6 +64,7 @@ flux2_modulev3_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     tokenizer=PixelGenerationTokenizer,
     config=Flux2ArchConfig,
+    context_validators=[validate_flux2_max_pixel_area],
 )
 
 flux2_klein_modulev3_arch = SupportedArchitecture(
@@ -83,4 +84,5 @@ flux2_klein_modulev3_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     tokenizer=PixelGenerationTokenizer,
     config=Flux2ArchConfig,
+    context_validators=[validate_flux2_max_pixel_area],
 )
