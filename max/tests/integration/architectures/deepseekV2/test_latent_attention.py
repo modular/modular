@@ -13,9 +13,7 @@
 
 import typing
 
-import pytest
 import torch
-from max.driver import accelerator_api
 from max.dtype import DType
 from torch_reference.configuration_deepseek import DeepseekV2Config
 from torch_reference.modeling_deepseek import DeepseekV2Attention
@@ -40,9 +38,6 @@ def generate_torch_outputs(
     return torch_output[0]
 
 
-@pytest.mark.skipif(
-    accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
-)
 def test_latent_attention_decode(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,
@@ -61,9 +56,6 @@ def test_latent_attention_decode(
     torch.testing.assert_close(torch_output, max_output, **tol)
 
 
-@pytest.mark.skipif(
-    accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
-)
 def test_latent_attention_prefill(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,

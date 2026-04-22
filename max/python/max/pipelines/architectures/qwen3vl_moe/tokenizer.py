@@ -726,6 +726,7 @@ class Qwen3VLTokenizer(TextAndVisionTokenizer):
             else self.max_length,
             json_schema=json_schema,
             sampling_params=request.sampling_params,
+            target_endpoint=request.target_endpoint,
             images=images,
             vision_token_ids=[self.image_token_id],
             # Qwen3VL-specific fields

@@ -98,6 +98,18 @@ class PrefillScheduler(Scheduler):
             total_num_pages=kv_cache.get_num_pages(replica_idx=0),
         )
 
+        # Register draft KV cache blocks for speculative decoding so that
+        # target and draft KV are bundled into a single NIXL transfer.
+        draft_kv_blocks = getattr(pipeline, "draft_kv_blocks", None)
+        if isinstance(draft_kv_blocks, list):
+            self.transfer_engine.register_tensor_group(
+                name="draft",
+                # draft_kv_blocks is list[Buffer] (one per replica).
+                # Wrap each in a list for the [replica][tp_shard=1] shape.
+                tensors=[[buf] for buf in draft_kv_blocks],
+                total_num_pages=kv_cache.get_num_pages(replica_idx=0),
+            )
+
         self.outstanding_cancelled_requests: set[RequestID] = set()
 
         # Maps req_id → (context, src_replica_idx) for CE-complete requests
