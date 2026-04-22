@@ -101,7 +101,7 @@ class RaggedAttention(Module):
         self.qkv_proj = StackedLinear(
             in_dim=hidden_size,
             out_dims=[hidden_size, kv_weight_dim, kv_weight_dim],
-            names=["q", "k", "v"],
+            names=["q_proj", "k_proj", "v_proj"],
             dtype=dtype,
             device=self.devices[0],
             stacked=stacked_qkv,

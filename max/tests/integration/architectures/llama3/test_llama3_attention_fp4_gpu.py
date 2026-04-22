@@ -98,8 +98,7 @@ def attention_weights_and_scales(
         if key in "kv":
             outdim = config.head_dim * config.num_key_value_heads
 
-        # QKV projections use StackedLinear namespace; o_proj stays as-is.
-        prefix = f"qkv_proj.{key}" if key in "qkv" else "o_proj"
+        prefix = f"{key}_proj" if key in "qkv" else "o_proj"
         state_dict.update(
             {
                 f"{prefix}.input_scale": torch.tensor(

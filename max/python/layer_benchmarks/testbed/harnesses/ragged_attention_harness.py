@@ -72,18 +72,6 @@ AttentionStaticParamsT = TypeVar(
 )
 
 
-# Base mapping from HuggingFace parameter names to torch weight dict keys.
-# With stacked_qkv=True the MAX layer takes a single stacked weight, but
-# the correctness path stores separate tensors under HF-style names so they
-# can be loaded into the HuggingFace reference layer.
-HF_TO_HARNESS_BASE: dict[str, str] = {
-    "q_proj.weight": "qkv_proj.q.weight",
-    "k_proj.weight": "qkv_proj.k.weight",
-    "v_proj.weight": "qkv_proj.v.weight",
-    "o_proj.weight": "o_proj.weight",
-}
-
-
 class RaggedAttentionHarness(
     LayerTestHarness[
         AttentionStaticParamsT,

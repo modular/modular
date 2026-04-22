@@ -210,6 +210,16 @@ This version is still a work in progress.
   falling back to compilation.
 - Added `distributed_reducescatter_sum` collective to `distributed_functional`
   for hardware-accelerated reduce-and-scatter tensor distribution.
+- Added `max.nn.StackedLinear` for QKV-style stacked projections, with a
+  fused (`stacked=True`) and an unfused (`stacked=False`) layout. Unfused
+  mode opts into a new `Module._omit_module_attr_name` flag, which drops
+  the wrapper's own attribute name from descendant weight FQNs, so a
+  `self.qkv_proj = StackedLinear(names=["q_proj", "k_proj", "v_proj"],
+  stacked=False)` exposes weights at `self_attn.q_proj.weight` rather
+  than `self_attn.qkv_proj.q_proj.weight`. This lets HuggingFace
+  checkpoint names flow into models without per-architecture remapping
+  in their `weight_adapters.py`.
+
 - `Module.compile()` now accepts a `custom_extensions` parameter for loading
   custom Mojo kernel libraries at graph construction time, fixing validation
   failures for kernels with struct-level parameters.

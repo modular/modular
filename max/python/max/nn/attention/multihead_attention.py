@@ -118,7 +118,7 @@ class MultiheadAttention(Module):
         self.qkv_proj = StackedLinear(
             in_dim=self.embed_dim,
             out_dims=[self.embed_dim, self.embed_dim, self.embed_dim],
-            names=["q", "k", "v"],
+            names=["q_proj", "k_proj", "v_proj"],
             dtype=dtype,
             device=self.devices[0],
             stacked=self.stacked_qkv,

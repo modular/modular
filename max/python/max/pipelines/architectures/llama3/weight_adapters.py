@@ -24,10 +24,6 @@ from transformers import LlamaConfig
 LLAMA_SAFETENSOR_MAPPING = {
     "model.": "",  # Removes the "model" prefix.
     "g_idx": "perm_idx",  # Specific to Llama GPT-Q weights.
-    # Remap unfused Q/K/V projections into StackedLinear namespace.
-    "self_attn.q_proj.": "self_attn.qkv_proj.q.",
-    "self_attn.k_proj.": "self_attn.qkv_proj.k.",
-    "self_attn.v_proj.": "self_attn.qkv_proj.v.",
 }
 
 
@@ -88,17 +84,7 @@ def _convert_safetensor_with_model_config(
     if hasattr(huggingface_config, "quantization_config"):
         UNUSED_KEYS = [".bias", ".qzeros"]
         if huggingface_config.quantization_config.get("desc_act") is True:
-            # StackedLinear remaps legacy {q,k,v}_proj names into
-            # qkv_proj.{q,k,v} child modules. Keep legacy suffixes for
-            # compatibility with any un-remapped input state dicts.
-            UNUSED_KEYS.extend(
-                [
-                    "v_proj.perm_idx",
-                    "k_proj.perm_idx",
-                    "qkv_proj.v.perm_idx",
-                    "qkv_proj.k.perm_idx",
-                ]
-            )
+            UNUSED_KEYS.extend(["v_proj.perm_idx", "k_proj.perm_idx"])
         else:
             UNUSED_KEYS.append("perm_idx")
         keys_to_remove = [
@@ -123,10 +109,7 @@ def convert_safetensor_state_dict(
     )
 
 
-# Maps from GGUF to MAX weight names for non-quantized attention.
-# AttentionWithRope now loads Q/K/V through StackedLinear child modules
-# (`self_attn.qkv_proj.{q,k,v}`), so fp32/bf16 GGUF checkpoints must map
-# into that namespace.
+# Maps from GGUF to MAX weight names.
 LLAMA_GGUF_UNFUSED_QKV_MAPPING = {
     "token_embd": "embed_tokens",
     "blk": "layers",
@@ -135,22 +118,15 @@ LLAMA_GGUF_UNFUSED_QKV_MAPPING = {
     "ffn_gate": "mlp.gate_proj",
     "ffn_norm": "post_attention_layernorm",
     "attn_norm": "input_layernorm",
-    "attn_q": "self_attn.qkv_proj.q",
-    "attn_v": "self_attn.qkv_proj.v",
-    "attn_k": "self_attn.qkv_proj.k",
+    "attn_q": "self_attn.q_proj",
+    "attn_v": "self_attn.v_proj",
+    "attn_k": "self_attn.k_proj",
     "attn_output": "self_attn.o_proj",
     "output.weight": "lm_head.weight",
     "output_norm": "norm",
 }
 
-# Maps from GGUF to MAX weight names for quantized attention.
-# GGUFQAttentionWithRope expects legacy `q_proj/k_proj/v_proj` names.
-LLAMA_GGUF_QUANTIZED_MAPPING = {
-    **LLAMA_GGUF_UNFUSED_QKV_MAPPING,
-    "attn_q": "self_attn.q_proj",
-    "attn_v": "self_attn.v_proj",
-    "attn_k": "self_attn.k_proj",
-}
+LLAMA_GGUF_QUANTIZED_MAPPING = LLAMA_GGUF_UNFUSED_QKV_MAPPING
 
 
 def convert_gguf_state_dict(

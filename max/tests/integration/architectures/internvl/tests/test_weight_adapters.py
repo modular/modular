@@ -57,7 +57,7 @@ def test_weight_filtering_and_mapping() -> None:
 
     expected_outputs = {
         "layers.0.input_layernorm.weight",
-        "layers.0.self_attn.qkv_proj.q.bias",
+        "layers.0.self_attn.q_proj.bias",
         "lm_head.weight",
     }
 

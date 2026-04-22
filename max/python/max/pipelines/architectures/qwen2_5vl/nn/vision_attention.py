@@ -65,7 +65,7 @@ class DistributedVisionWindowAttention(Module, Shardable):
         self.qkv_proj = StackedLinear(
             in_dim=hidden_size,
             out_dims=[hidden_size, hidden_size, hidden_size],
-            names=["q", "k", "v"],
+            names=["q_proj", "k_proj", "v_proj"],
             dtype=self.dtype,
             device=self.devices[0],
             stacked=True,

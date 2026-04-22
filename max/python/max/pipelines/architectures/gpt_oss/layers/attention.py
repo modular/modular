@@ -119,7 +119,7 @@ class GptOssAttention(Module, Shardable):
                 self.kv_weight_dim,
                 self.kv_weight_dim,
             ],
-            names=["q", "k", "v"],
+            names=["q_proj", "k_proj", "v_proj"],
             dtype=dtype,
             device=devices[0],
             stacked=False,

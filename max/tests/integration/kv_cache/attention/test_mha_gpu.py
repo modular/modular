@@ -48,13 +48,12 @@ def create_attention_weights(
                 3 * hidden_size, dtype=dtype, device=device
             )
     else:
-        # Create separate Q, K, V weights
         for proj in ["q", "k", "v"]:
-            weights[f"qkv_proj.{proj}.weight"] = std * torch.randn(
+            weights[f"{proj}_proj.weight"] = std * torch.randn(
                 hidden_size, hidden_size, dtype=dtype, device=device
             )
             if has_bias:
-                weights[f"qkv_proj.{proj}.bias"] = std * torch.randn(
+                weights[f"{proj}_proj.bias"] = std * torch.randn(
                     hidden_size, dtype=dtype, device=device
                 )
 
@@ -98,9 +97,9 @@ def generate_torch_outputs(
         qkv_weight = attention_weights["qkv_proj.weight"]
         q_weight, k_weight, v_weight = qkv_weight.chunk(3, dim=0)
     else:
-        q_weight = attention_weights["qkv_proj.q.weight"]
-        k_weight = attention_weights["qkv_proj.k.weight"]
-        v_weight = attention_weights["qkv_proj.v.weight"]
+        q_weight = attention_weights["q_proj.weight"]
+        k_weight = attention_weights["k_proj.weight"]
+        v_weight = attention_weights["v_proj.weight"]
 
     o_weight = attention_weights["o_proj.weight"]
 
@@ -115,9 +114,9 @@ def generate_torch_outputs(
             qkv_bias = attention_weights["qkv_proj.bias"]
             q_bias, k_bias, v_bias = qkv_bias.chunk(3, dim=0)
         else:
-            q_bias = attention_weights["qkv_proj.q.bias"]
-            k_bias = attention_weights["qkv_proj.k.bias"]
-            v_bias = attention_weights["qkv_proj.v.bias"]
+            q_bias = attention_weights["q_proj.bias"]
+            k_bias = attention_weights["k_proj.bias"]
+            v_bias = attention_weights["v_proj.bias"]
 
         o_bias = attention_weights["o_proj.bias"]
 

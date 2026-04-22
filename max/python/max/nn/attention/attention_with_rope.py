@@ -145,7 +145,7 @@ class AttentionWithRope(Module, Shardable):
         self.qkv_proj = StackedLinear(
             in_dim=hidden_size,
             out_dims=[q_weight_dim, kv_weight_dim, kv_weight_dim],
-            names=["q", "k", "v"],
+            names=["q_proj", "k_proj", "v_proj"],
             dtype=dtype,
             device=self.devices[0],
             stacked=stacked_qkv,
@@ -359,9 +359,9 @@ class AttentionWithRope(Module, Shardable):
         if self.stacked_qkv:
             return self.qkv_proj.weight
         else:
-            wq: TensorValue = self.qkv_proj._child("q").weight
-            wk: TensorValue = self.qkv_proj._child("k").weight
-            wv: TensorValue = self.qkv_proj._child("v").weight
+            wq: TensorValue = self.qkv_proj._child("q_proj").weight
+            wk: TensorValue = self.qkv_proj._child("k_proj").weight
+            wv: TensorValue = self.qkv_proj._child("v_proj").weight
             if self.clip_qkv:
                 wq = clamp(wq, min=-self.clip_qkv, max=self.clip_qkv)
                 wk = clamp(wk, min=-self.clip_qkv, max=self.clip_qkv)
@@ -379,9 +379,9 @@ class AttentionWithRope(Module, Shardable):
         assert not self.stacked_qkv
 
         # Access bias, which should all exist since has_bias=True.
-        q_bias = self.qkv_proj._child("q").bias
-        k_bias = self.qkv_proj._child("k").bias
-        v_bias = self.qkv_proj._child("v").bias
+        q_bias = self.qkv_proj._child("q_proj").bias
+        k_bias = self.qkv_proj._child("k_proj").bias
+        v_bias = self.qkv_proj._child("v_proj").bias
         assert q_bias is not None
         assert k_bias is not None
         assert v_bias is not None
@@ -398,9 +398,9 @@ class AttentionWithRope(Module, Shardable):
                 "QKV input scale not implemented for stacked_qkv=True"
             )
 
-        q_is = self.qkv_proj._child("q").input_scale
-        k_is = self.qkv_proj._child("k").input_scale
-        v_is = self.qkv_proj._child("v").input_scale
+        q_is = self.qkv_proj._child("q_proj").input_scale
+        k_is = self.qkv_proj._child("k_proj").input_scale
+        v_is = self.qkv_proj._child("v_proj").input_scale
         assert q_is is not None
         assert k_is is not None
         assert v_is is not None
@@ -421,9 +421,9 @@ class AttentionWithRope(Module, Shardable):
                 "QKV weight scale not implemented for stacked_qkv=True"
             )
 
-        q_ws = self.qkv_proj._child("q").weight_scale
-        k_ws = self.qkv_proj._child("k").weight_scale
-        v_ws = self.qkv_proj._child("v").weight_scale
+        q_ws = self.qkv_proj._child("q_proj").weight_scale
+        k_ws = self.qkv_proj._child("k_proj").weight_scale
+        v_ws = self.qkv_proj._child("v_proj").weight_scale
         assert q_ws is not None
         assert k_ws is not None
         assert v_ws is not None
@@ -469,9 +469,9 @@ class AttentionWithRope(Module, Shardable):
                 "QKV input scale not implemented for stacked_qkv=True"
             )
 
-        q_ws2 = self.qkv_proj._child("q").weight_scale_2
-        k_ws2 = self.qkv_proj._child("k").weight_scale_2
-        v_ws2 = self.qkv_proj._child("v").weight_scale_2
+        q_ws2 = self.qkv_proj._child("q_proj").weight_scale_2
+        k_ws2 = self.qkv_proj._child("k_proj").weight_scale_2
+        v_ws2 = self.qkv_proj._child("v_proj").weight_scale_2
         assert q_ws2 is not None
         assert k_ws2 is not None
         assert v_ws2 is not None
