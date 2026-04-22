@@ -1058,41 +1058,13 @@ ParseResult StmtParser::parseComptimeAssertStmtBody(LexerCursor startCursor,
 
   TypedAttr message;
   if (messageExpr) {
-    // Parse the message into an expression with std "StringSlice" type.
-    auto stringSliceType =
-        shared.lookupBuiltinType("StringSlice", *curDeclScope, kwLoc)
-            .getWithoutParameters(emitter.shared);
-
     IREmitter paramEmitter = emitter.getParamEmitter(EC_ComptimeAssert);
     CValue messageVal =
         paramEmitter.emitExprCValue(messageExpr, EC_ComptimeAssert);
-
-    // If not already a StringSlice, convert to one.
-    if (messageVal && messageVal.getType().getDecl(emitter.shared) !=
-                          stringSliceType.getDecl(emitter.shared)) {
-      if (!paramEmitter.canImplicitlyConvertToType(
-              {messageVal, messageExpr}, stringSliceType, getDeclScope())) {
-        emitter.emitError(messageExpr->getLoc())
-            << "cannot implicitly convert " << messageVal.getType()
-            << " to a `StringSlice` for message";
-        return failure();
-      }
-
-      ValueDest dest(EC_ComptimeAssert);
-      messageVal = paramEmitter.emitConstructorCall(
-          stringSliceType,
-          CallOperands(CallSyntax::kTypeCall, expr,
-                       {{messageVal, messageExpr}}),
-          dest);
-    }
-    auto messagePVal =
-        paramEmitter.emitPValue({messageVal, messageExpr}, EC_ComptimeAssert);
-    if (!messagePVal)
+    message = paramEmitter.emitStringExprAsDataToStr(messageVal, messageExpr,
+                                                     kwLoc, EC_ComptimeAssert);
+    if (!message)
       return failure();
-    message = ParamOperatorAttr::get(
-        POC::DataToStr,
-        {messagePVal,
-         ParamListAttr::get({}, ParamListType::get(messagePVal.getType()))});
   } else {
     message = StringAttr::get({}, KGEN::StringType::get(builder.getContext()));
   }

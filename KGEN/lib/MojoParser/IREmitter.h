@@ -497,6 +497,13 @@ public:
   CValue emitConstructorCall(ASTType type, CallOperands &&operands,
                              ValueDest &dest);
 
+  /// Convert a CValue string expression into a DataToStr-wrapped parameter
+  /// attribute. Handles t-string -> String conversion, StringSlice conversion,
+  /// PValue emission, and DataToStr wrapping. Returns a null TypedAttr on
+  /// failure.
+  TypedAttr emitStringExprAsDataToStr(CValue val, ExprNode *expr, SMLoc loc,
+                                      ExprContext context);
+
   //===--------------------------------------------------------------------===//
   // Type conversion helpers.
 

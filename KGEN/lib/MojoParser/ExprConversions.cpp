@@ -1818,3 +1818,51 @@ CValue IREmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
       requiredType,
       CallOperands(CallSyntax::kImplicitConvert, expr, {valueExpr}), dest);
 }
+
+TypedAttr IREmitter::emitStringExprAsDataToStr(CValue val, ExprNode *expr,
+                                               SMLoc loc, ExprContext context) {
+  if (!val)
+    return {};
+
+  // If the value is a t-string, convert it to String first. TString cannot be
+  // implicitly converted to StringSlice, but String has an explicit constructor
+  // that accepts TString.
+  if (isa<TStringExprNode>(expr)) {
+    auto stringType = shared.lookupBuiltinType("String", declScope, loc)
+                          .getWithoutParameters(shared);
+    if (val.getType().getDecl(shared) != stringType.getDecl(shared)) {
+      ValueDest dest(context);
+      val = emitConstructorCall(
+          stringType, CallOperands(CallSyntax::kTypeCall, expr, {{val, expr}}),
+          dest);
+      if (!val)
+        return {};
+    }
+  }
+
+  // Convert to StringSlice if not already.
+  auto stringSliceType = shared.lookupBuiltinType("StringSlice", declScope, loc)
+                             .getWithoutParameters(shared);
+  if (val.getType().getDecl(shared) != stringSliceType.getDecl(shared)) {
+    if (!canImplicitlyConvertToType({val, expr}, stringSliceType, declScope)) {
+      emitError(expr->getLoc()) << "cannot implicitly convert " << val.getType()
+                                << " to a `StringSlice`";
+      return {};
+    }
+
+    ValueDest dest(context);
+    val = emitConstructorCall(
+        stringSliceType,
+        CallOperands(CallSyntax::kTypeCall, expr, {{val, expr}}), dest);
+    if (!val)
+      return {};
+  }
+
+  // Emit as a parameter value and wrap in DataToStr.
+  PValue pval = emitPValue({val, expr}, context);
+  if (!pval)
+    return {};
+  return ParamOperatorAttr::get(
+      POC::DataToStr,
+      {pval, ParamListAttr::get({}, ParamListType::get(pval.getType()))});
+}
