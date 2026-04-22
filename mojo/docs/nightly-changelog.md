@@ -76,6 +76,13 @@ This version is still a work in progress.
   def foo(*args: *SomeTypeList[Copyable]) -> Int: ...
   ```
 
+- T-strings can now be used in `comptime assert` messages:
+
+  ```mojo
+    def foo[i: Int]():
+        comptime assert i > 5, t"expected i > 5, got {i}"
+  ```
+
 ## Language changes
 
 - Variadic parameters lists are now passed instead of `ParameterList` and
