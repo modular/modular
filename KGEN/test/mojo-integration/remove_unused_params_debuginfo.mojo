@@ -13,8 +13,8 @@
 def agnostic_user[
     T: AnyType, dt: DType
 ](b: UnsafePointer[T, _], dp: UnsafePointer[Scalar[dt], _]):
-    print(Bool(b.bitcast[UInt32]()))
-    print(Bool(dp.bitcast[UInt32]()))
+    print(b.bitcast[UInt32]())
+    print(dp.bitcast[UInt32]())
 
 
 # In line-tables mode, type stripping makes all specializations identical,

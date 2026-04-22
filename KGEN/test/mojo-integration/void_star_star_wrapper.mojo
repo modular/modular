@@ -39,7 +39,7 @@ struct KernelArgPack[kernel: KernelFunction[_]]:
 
     def __init__(out self):
         self.pointers = type_of(self.pointers)(
-            fill=MutOpaquePointer[MutExternalOrigin]()
+            fill=MutOpaquePointer[MutExternalOrigin].unsafe_dangling()
         )
 
 
@@ -59,13 +59,14 @@ def wrapped_entry_point[
 ) -> kernel.declared_ret_type:
     comptime to_unsafe_pointer_mapper[
         T: AnyType
-    ]: Movable & Defaultable & ImplicitlyCopyable = UnsafePointer[
-        T, MutExternalOrigin
-    ]
+    ]: Movable & ImplicitlyCopyable = UnsafePointer[T, MutExternalOrigin]
     comptime UnsafePointerTupleType = Tuple[
         *kernel.declared_arg_types.map[to_unsafe_pointer_mapper]()
     ]
-    var ptr_tuple: UnsafePointerTupleType = {}
+    var ptr_tuple: UnsafePointerTupleType
+    __mlir_op.`lit.ownership.mark_initialized`(
+        __get_mvalue_as_litref(ptr_tuple)
+    )
 
     comptime for i in range(kernel.declared_arg_types.size):
         comptime ArgType = kernel.declared_arg_types[i]
