@@ -125,7 +125,7 @@ class Qwen3Attention(Module, Shardable):
         self.qkv_proj = StackedLinear(
             in_dim=hidden_size,
             out_dims=[q_weight_dim, kv_weight_dim, kv_weight_dim],
-            names=["q", "k", "v"],
+            names=["q_proj", "k_proj", "v_proj"],
             dtype=dtype,
             device=devices[0],
             stacked=False,

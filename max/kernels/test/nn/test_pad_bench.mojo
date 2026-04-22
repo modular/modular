@@ -135,7 +135,7 @@ def test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
         # and the center contains the input values
         for i in range(out_size):
             # Just verify no crash occurs and values are set
-            _ = output.ptr[i]
+            _ = output.raw_load(i)
 
     input_ptr.free()
     output_ptr.free()
@@ -202,7 +202,7 @@ def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     if verify:
         # Simple verification: check that values are set
         for i in range(out_size):
-            _ = output.ptr[i]
+            _ = output.raw_load(i)
 
     input_ptr.free()
     output_ptr.free()
