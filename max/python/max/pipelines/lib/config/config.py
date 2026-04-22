@@ -879,11 +879,6 @@ class PipelineConfig(ConfigFileModel):
                 and self._is_eligible_for_overlap_serve_optimizations()
                 # Device graph capture is not supported for prefill-only workers.
                 and self.runtime.pipeline_role != "prefill_only"
-                # TODO: Support device graph capture for num_speculative_tokens > 1
-                and (
-                    self.speculative is None
-                    or self.speculative.num_speculative_tokens == 1
-                )
             ):
                 self.runtime.device_graph_capture = True
                 logger.info(
