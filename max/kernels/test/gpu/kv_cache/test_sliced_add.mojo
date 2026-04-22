@@ -52,9 +52,9 @@ def test_sliced_add[
     for i in range(rows):
         for j in range(cols):
             var idx = a_host.layout(Coord(IndexList[2](i, j)))
-            a_host.ptr[idx] = 1.0
-            b_host.ptr[idx] = 2.0
-            c_host.ptr[idx] = 0.0
+            a_host.raw_store(idx, 1.0)
+            b_host.raw_store(idx, 2.0)
+            c_host.raw_store(idx, 0.0)
 
     # Keep lora_end_idx on host; sliced_add reads this scalar on host.
     var lora_end_idx = ManagedLayoutTensor[DType.int64, Layout.row_major[1]()](
@@ -65,7 +65,7 @@ def test_sliced_add[
         lora_end_idx.tensor[update=False]().ptr,
         row_major(Coord(IndexList[1](1))),
     )
-    lora_end_idx_host.ptr[0] = Int64(batch_end_idx)
+    lora_end_idx_host.raw_store(0, Int64(batch_end_idx))
 
     var a_device_tensor = TileTensor(a.device_tensor().ptr, layout)
     var b_device_tensor = TileTensor(b.device_tensor().ptr, layout)
@@ -95,7 +95,7 @@ def test_sliced_add[
                 expected = 1.0
 
             var idx = c_host.layout(Coord(IndexList[2](i, j)))
-            var actual = c_host.ptr[idx]
+            var actual = c_host.raw_load(idx)
             if actual != expected:
                 raise Error(
                     "Mismatch at ["

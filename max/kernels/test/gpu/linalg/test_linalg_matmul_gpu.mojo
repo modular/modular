@@ -21,7 +21,7 @@ from std.testing import assert_almost_equal
 
 def _linspace_fill[dtype: DType](mut buff: TileTensor[mut=True, dtype, ...]):
     for i in range(buff.num_elements()):
-        buff.ptr[i] = Scalar[dtype](i)
+        buff.raw_store(i, Scalar[dtype](i))
 
 
 def _get_test_name[

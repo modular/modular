@@ -10,8 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Pixtral vision-language architecture for multimodal text generation."""
 
 from .arch import pixtral_modulev3_arch
 from .model import PixtralModel
+from .model_config import PixtralConfig
 
-__all__ = ["PixtralModel", "pixtral_modulev3_arch"]
+__all__ = ["PixtralConfig", "PixtralModel", "pixtral_modulev3_arch"]
