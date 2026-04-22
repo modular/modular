@@ -24,8 +24,7 @@ def _rebuild_wheel(rctx):
             ),
         )
     for name in _WHEELS:
-        version_prefix = "0." if name.startswith("mojo") else ""
-        version = version_prefix + rctx.attr.version
+        version = rctx.attr.mojo_version if name.startswith("mojo") else rctx.attr.max_version
         rctx.download_and_extract(
             url = "{}/{}/{}-{}-py3-none-{}.whl".format(
                 rctx.attr.base_url,
@@ -113,7 +112,10 @@ cc_import(
 rebuild_wheel = repository_rule(
     implementation = _rebuild_wheel,
     attrs = {
-        "version": attr.string(
+        "max_version": attr.string(
+            mandatory = True,
+        ),
+        "mojo_version": attr.string(
             mandatory = True,
         ),
         "platform": attr.string(
@@ -182,7 +184,7 @@ py_binary(
         requirement("tomli"),
     ],
 )
-""")
+""")  # buildifier: disable=canonical-repository
 
 modular_wheel_repository = repository_rule(
     implementation = _modular_wheel_repository_impl,
