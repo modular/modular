@@ -378,29 +378,6 @@ evaluateLinkageName(GeneratorOp gen, SymbolConstantAttr symbol,
   return failure();
 }
 
-/// Compute the final name for a @__name-decorated generator in the given
-/// context. Two cases:
-///   sanitize=false  → resolved verbatim (host-side lookup)
-///   sanitize=true   → applyGPULinkageName (single-sourced with
-///   renameFunctions)
-static StringAttr applyLinkageName(StringAttr resolved, LinkageNameAttr lna,
-                                   SymbolConstantAttr symbol,
-                                   GeneratorOp generator, bool sanitize) {
-  if (!sanitize)
-    return resolved;
-  // symName is the auto-mangled wrapper symbol used as a hash input
-  // (mangle=true). Always use mangleParameterValues so the host and GPU paths
-  // hash the same seed. renameFunctions (GPU side) calls applyGPULinkageName
-  // with func.getSymName() — the concrete function's MLIR sym — which equals
-  // mangleParameterValues for both constant and parametric @__name. Using the
-  // @__name literal here instead would produce a different hash whenever
-  // sym_name != literal, causing a runtime kernel-launch failure.
-  std::string symName =
-      mangleParameterValues(generator, symbol.getParamValues());
-  return applyGPULinkageName(resolved, lna, symName,
-                             symbol.getType().getBody().getValues());
-}
-
 /// Evaluate the mangled name of a function. Returns an empty StringAttr to
 /// signal "not ready yet" (caller should retry).
 ErrorTreeOr<StringAttr>
@@ -454,8 +431,19 @@ IREvaluatorContext::evaluateMangledName(TypedAttr symCst, bool sanitize,
                          symbol.getSymbol().getLeafReference().getValue() +
                          "'"});
     }
+    // symName is the auto-mangled wrapper symbol used as a hash input
+    // (mangle=true). Always use mangleParameterValues so the host and GPU paths
+    // hash the same seed. renameFunctions calls applyLinkageName with
+    // func.getSymName() - the concrete function's MLIR sym - which equals
+    // mangleParameterValues for both constant and parametric linkage names.
+    // Using the linkage name literal here instead would produce a different
+    // hash whenever sym_name != literal, causing a runtime kernel-launch
+    // failure.
+    std::string symName =
+        mangleParameterValues(generator, symbol.getParamValues());
     auto lna = cast<LinkageNameAttr>(generator.getLinkageNameAttr());
-    return applyLinkageName(resolved, lna, symbol, generator, sanitize);
+    return applyLinkageName(resolved, lna, sanitize, symName,
+                            symbol.getType().getBody().getValues());
   }
 
   // No @__name: use the auto-mangled sym_name, optionally sanitized.
