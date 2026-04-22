@@ -14,6 +14,29 @@ using namespace M::MLRT;
 
 namespace {
 
+TEST(AllocatorTest, DefaultFactories_ReportNoNumaAffinity) {
+  EXPECT_EQ(createMallocAllocator()->getNumaPlacement(),
+            Allocator::kAnyNumaNode);
+  EXPECT_EQ(createTCMallocAllocator()->getNumaPlacement(),
+            Allocator::kAnyNumaNode);
+}
+
+TEST(AllocatorTest, TCMallocNumaFactory_StoresNumaPlacement) {
+  auto allocator = createTCMallocAllocator(/*numaPlacement=*/3);
+  EXPECT_EQ(allocator->getNumaPlacement(), 3);
+
+  // Allocation still works; node is stored but tc_new is not yet NUMA-aware.
+  int *ptr = allocator->allocate<int>();
+  *ptr = 7;
+  EXPECT_EQ(*ptr, 7);
+  allocator->deallocate(ptr);
+}
+
+TEST(AllocatorTest, TCMallocNumaFactory_AcceptsAnyNumaNodeSentinel) {
+  auto allocator = createTCMallocAllocator(Allocator::kAnyNumaNode);
+  EXPECT_EQ(allocator->getNumaPlacement(), Allocator::kAnyNumaNode);
+}
+
 TEST(AllocatorTest, Use_TCMalloc) {
   auto allocator = createTCMallocAllocator();
   int *ptr1 = allocator->allocate<int>();

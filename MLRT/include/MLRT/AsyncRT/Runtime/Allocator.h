@@ -34,6 +34,9 @@ using MemAllocFreeProfilerEntry =
 ///
 class Allocator {
 public:
+  /// Sentinel NUMA placement value meaning no NUMA affinity.
+  static constexpr int kAnyNumaNode = -1;
+
   virtual ~Allocator() = default;
 
   /// Allocate the specified number of bytes with the specified alignment.
@@ -41,6 +44,11 @@ public:
 
   /// Deallocate the specified pointer that had the specified size.
   virtual void deallocateBytes(void *ptr, size_t size = 0) = 0;
+
+  /// Returns the NUMA node this allocator is bound to, and will therefore place
+  /// memory in, or returns `kAnyNumaNode` if the allocator has no NUMA
+  /// affinity.
+  int getNumaPlacement() const { return numaPlacement; }
 
   /// Allocate memory for one or more entries of type T.
   template <typename T>
@@ -79,10 +87,12 @@ public:
 
 protected:
   Allocator() = default;
+  explicit Allocator(int numaPlacement) : numaPlacement(numaPlacement) {}
   Allocator(const Allocator &) = delete;
   void operator=(const Allocator &) = delete;
 
 private:
+  int numaPlacement = kAnyNumaNode;
   virtual void vtableAnchor();
 };
 
@@ -91,6 +101,9 @@ std::unique_ptr<Allocator> createMallocAllocator();
 
 /// Create an allocator that uses tcmalloc
 std::unique_ptr<Allocator> createTCMallocAllocator();
+
+/// Create a TCMalloc-backed allocator bound to a specified NUMA node.
+std::unique_ptr<Allocator> createTCMallocAllocator(int numaPlacement);
 
 /// Create a wrapper allocator that checks to make sure all memory is
 /// deallocated when the allocator itself is destroyed.
