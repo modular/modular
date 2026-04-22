@@ -274,7 +274,7 @@ def max_pool_cpu[
 
     @always_inline
     def max_pool_compute[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
@@ -284,13 +284,13 @@ def max_pool_cpu[
 
     @always_inline
     def max_pool_compute_finalize[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
     ) unified {output, mut}:
         var i = output.layout(Coord(point))
-        output.ptr.store(i, val)
+        output.raw_store(i, val)
 
     @always_inline
     def dilation_fn(dim: Int) unified {dilations, mut} -> Int:
@@ -449,7 +449,7 @@ def max_pool_gpu[
     } -> SIMD[dtype, simd_width]:
         var i = input.layout(Coord(point))
         return rebind[SIMD[dtype, simd_width]](
-            input.ptr.load[width=simd_width](i)
+            input.raw_load[width=simd_width](i)
         )
 
     @always_inline
@@ -460,7 +460,7 @@ def max_pool_gpu[
 
     @always_inline
     def max_pool_compute[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
@@ -470,13 +470,13 @@ def max_pool_gpu[
 
     @always_inline
     def max_pool_compute_finalize[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
     ) unified register_passable {output, mut}:
         var i = output.layout(Coord(point))
-        output.ptr.store(i, val)
+        output.raw_store(i, val)
 
     @always_inline
     def dilation_fn(
@@ -637,7 +637,7 @@ def avg_pool_cpu[
     ]:
         var i = input.layout(Coord(point))
         return rebind[SIMD[dtype, simd_width]](
-            input.ptr.load[width=simd_width](i)
+            input.raw_load[width=simd_width](i)
         )
 
     @always_inline
@@ -648,7 +648,7 @@ def avg_pool_cpu[
 
     @always_inline
     def avg_pool_compute[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
@@ -669,7 +669,7 @@ def avg_pool_cpu[
 
     @always_inline
     def avg_pool_compute_finalize_exclude_boundary[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
@@ -699,11 +699,11 @@ def avg_pool_cpu[
         var coord = Coord(point)
         var i = output.layout(coord)
 
-        output.ptr.store(i, res)
+        output.raw_store(i, res)
 
     @always_inline
     def avg_pool_compute_finalize[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
@@ -714,7 +714,7 @@ def avg_pool_cpu[
     }:
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
         var i = output.layout(Coord(point))
-        output.ptr.store(i, res)
+        output.raw_store(i, res)
 
     def dilation_fn(dim: Int) unified {dilations, mut} -> Int:
         return Int(dilations[dim])
@@ -930,7 +930,7 @@ def avg_pool_gpu[
     } -> SIMD[dtype, simd_width]:
         var i = input.layout(Coord(point))
         return rebind[SIMD[dtype, simd_width]](
-            input.ptr.load[width=simd_width](i)
+            input.raw_load[width=simd_width](i)
         )
 
     @always_inline
@@ -941,7 +941,7 @@ def avg_pool_gpu[
 
     @always_inline
     def avg_pool_compute[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
@@ -962,7 +962,7 @@ def avg_pool_gpu[
 
     @always_inline
     def avg_pool_compute_finalize_exclude_boundary[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
@@ -990,11 +990,11 @@ def avg_pool_gpu[
         var res = val / Scalar[dtype](window_h * window_w)
 
         var i = output.layout(Coord(point))
-        output.ptr.store(i, res)
+        output.raw_store(i, res)
 
     @always_inline
     def avg_pool_compute_finalize[
-        simd_width: Int
+        simd_width: SIMDSize
     ](
         point: IndexList[output.rank, ...],
         val: SIMD[dtype, simd_width],
@@ -1006,7 +1006,7 @@ def avg_pool_gpu[
         var res = val / Scalar[dtype](pool_window_h * pool_window_w)
 
         var i = output.layout(Coord(point))
-        output.ptr.store(i, res)
+        output.raw_store(i, res)
 
     @always_inline
     def dilation_fn(

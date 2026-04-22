@@ -73,7 +73,7 @@ def get_ep_local_sync_counters_size(n_experts: int) -> int:
 
     Memory Layout (all sizes in Int32 elements):
     - dispatch_async: 2 * n_experts + MAX_GPUS_PER_NODE
-    - dispatch_wait/combine_async: 2 * n_experts + MAX_GPUS_PER_NODE
+    - dispatch_wait/combine_async: 4 * n_experts + 4
     - combine_wait: 2 * n_experts
 
     Args:
@@ -85,7 +85,7 @@ def get_ep_local_sync_counters_size(n_experts: int) -> int:
     MAX_GPUS_PER_NODE = 8
 
     dispatch_async_size = 2 * n_experts + MAX_GPUS_PER_NODE
-    dispatch_wait_size = 2 * n_experts + MAX_GPUS_PER_NODE
+    dispatch_wait_size = 4 * n_experts + 4
     combine_wait_size = 2 * n_experts
     return dispatch_async_size + dispatch_wait_size + combine_wait_size
 

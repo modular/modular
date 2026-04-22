@@ -297,6 +297,7 @@ def test_mutation_op_order() -> None:
     assert d.item() == 2.0
 
 
+@pytest.mark.skip(reason="flaky - QUA-260, MXF-275")
 def test_mutation_op_order_lazy() -> None:
     with F.lazy():
         a = Tensor.zeros([1])

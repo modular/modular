@@ -177,7 +177,7 @@ def index_tensor[
             batch_dims,
             target=target,
             single_thread_blocking_override=single_thread_blocking_override,
-        ](data, indices, output)
+        ](data, indices, output, ctx.get_optional_device_context())
     else:
         return _index_tensor_impl[
             batch_dims,
@@ -265,11 +265,12 @@ def _index_tensor_1d[
                     )
 
                 var rd_coord = Coord(data_coord)
-                output.ptr[i * Int(indices.dim(0)) + j] = reshaped_data.load[
-                    width=1
-                ](rd_coord)
+                output.raw_store(
+                    i * Int(indices.dim(0)) + j,
+                    reshaped_data.load[width=1](rd_coord),
+                )
 
-    sync_parallelize[calc_batch_dim](num_tasks)
+    sync_parallelize[calc_batch_dim](num_tasks, ctx)
 
 
 def _index_tensor_impl[

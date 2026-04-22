@@ -42,7 +42,6 @@ from transformers.models.llama.modeling_llama import (
 )
 
 from testbed.harnesses.ragged_attention_harness import (
-    HF_TO_HARNESS_BASE,
     AttentionDynamicParams,
     AttentionStaticParams,
     RaggedAttentionHarness,
@@ -50,8 +49,6 @@ from testbed.harnesses.ragged_attention_harness import (
 from testbed.registry import register_harness
 
 _VARIANTS = {"bf16", "fp8", "fp4"}
-
-_HF_TO_HARNESS = HF_TO_HARNESS_BASE
 
 
 def wrap_fp8(tensor: torch.Tensor, name: str) -> WeightData:
@@ -220,6 +217,8 @@ class AttentionWithRopeHarness(
             **rope_kwargs,
         )
 
+        fuse_rope = p._fuse_rope_and_store
+
         layer_kwargs: dict[str, Any] = {
             "rope": rope,
             "num_attention_heads": n_heads,
@@ -230,6 +229,7 @@ class AttentionWithRopeHarness(
             "has_bias": False,
             "dtype": layer_dtype,
             "devices": [DeviceRef.GPU()],
+            "_fuse_rope_and_store": fuse_rope,
         }
         if quant_config is not None:
             layer_kwargs["quant_config"] = quant_config
@@ -246,13 +246,13 @@ class AttentionWithRopeHarness(
             # making MAX vs torch comparison unreliable.
             std = 0.02
             weights = {
-                "qkv_proj.q.weight": (
+                "q_proj.weight": (
                     torch.randn(q_dim, hidden_size, dtype=torch.bfloat16) * std
                 ),
-                "qkv_proj.k.weight": (
+                "k_proj.weight": (
                     torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * std
                 ),
-                "qkv_proj.v.weight": (
+                "v_proj.weight": (
                     torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * std
                 ),
                 "o_proj.weight": (
@@ -264,16 +264,16 @@ class AttentionWithRopeHarness(
             self._torch_weights = weights
         elif dtype == "fp8":
             state: dict[str, Any] = {}
-            state.update(_make_fp8_weights("qkv_proj.q", q_dim, hidden_size))
-            state.update(_make_fp8_weights("qkv_proj.k", kv_dim, hidden_size))
-            state.update(_make_fp8_weights("qkv_proj.v", kv_dim, hidden_size))
+            state.update(_make_fp8_weights("q_proj", q_dim, hidden_size))
+            state.update(_make_fp8_weights("k_proj", kv_dim, hidden_size))
+            state.update(_make_fp8_weights("v_proj", kv_dim, hidden_size))
             state.update(_make_fp8_weights("o_proj", hidden_size, q_dim))
             layer.load_state_dict(state)
         elif dtype == "fp4":
             state = {}
-            state.update(_make_fp4_weights("qkv_proj.q", q_dim, hidden_size))
-            state.update(_make_fp4_weights("qkv_proj.k", kv_dim, hidden_size))
-            state.update(_make_fp4_weights("qkv_proj.v", kv_dim, hidden_size))
+            state.update(_make_fp4_weights("q_proj", q_dim, hidden_size))
+            state.update(_make_fp4_weights("k_proj", kv_dim, hidden_size))
+            state.update(_make_fp4_weights("v_proj", kv_dim, hidden_size))
             state.update(_make_fp4_weights("o_proj", hidden_size, q_dim))
             layer.load_state_dict(state)
 
@@ -353,9 +353,8 @@ class AttentionWithRopeHarness(
             device=device, dtype=torch.bfloat16
         )
         for name, param in layer.named_parameters():
-            harness_name = _HF_TO_HARNESS.get(name, name)
-            if harness_name in self._torch_weights:
-                param.data = self._torch_weights[harness_name].to(
+            if name in self._torch_weights:
+                param.data = self._torch_weights[name].to(
                     device=device, dtype=torch.bfloat16
                 )
 
