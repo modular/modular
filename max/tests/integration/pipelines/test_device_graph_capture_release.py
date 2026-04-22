@@ -128,9 +128,9 @@ def test_warmup_pre_ready_releases_capture_outputs(
     runner.warmup_pre_ready()
 
     assert sorted(runner.graph_entries) == [
-        (1, 1, 1),
-        (2, 1, 1),
-        (3, 1, 1),
+        (1, 1, 1, 0),
+        (2, 1, 1, 0),
+        (3, 1, 1, 0),
     ]
     for _inputs, outputs in runner.graph_entries.values():
         assert outputs.logits.num_elements == output_bytes

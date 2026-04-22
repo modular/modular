@@ -15,8 +15,10 @@
 Flow:
 - Model worker creates the runner and executes pre-ready warmup.
 - Warmup captures hot decode buckets, largest-first.
-- Serving path replays by (batch_token_count, num_partitions, q_max_seq_len)
-  key. Only ``q_max_seq_len=1 + num_speculative_tokens`` graphs are captured;
+- Serving path replays by
+  ``(batch_token_count, num_partitions, q_max_seq_len, draft_num_partitions)``
+  key (``draft_num_partitions`` is 0 without speculative decoding). Only
+  ``q_max_seq_len=1 + num_speculative_tokens`` graphs are captured;
   a ``RuntimeError`` is raised for any other value.
 """
 
@@ -47,7 +49,7 @@ KVCacheInputs = _KVCacheInputs[Buffer, Buffer]
 logger = logging.getLogger("max.pipelines")
 
 
-GraphKey = tuple[int, int, int]
+GraphKey = tuple[int, int, int, int]
 GraphEntry = tuple[tuple[Buffer, ...], ModelOutputs]
 WarmupModelInputs = Callable[[int], AbstractContextManager[ModelInputs]]
 
@@ -90,7 +92,9 @@ class AttentionMetadataProbeStrategy(ABC):
     """Determines which num_partitions values to capture during warmup."""
 
     @abstractmethod
-    def probe_lengths(self, max_cache_length: int) -> list[int]:
+    def probe_lengths(
+        self, max_cache_length: int, q_max_seq_len: int = 1
+    ) -> list[int]:
         """Returns cache lengths to probe for distinct num_partitions."""
         ...
 
@@ -108,8 +112,11 @@ class MHAProbeStrategy(AttentionMetadataProbeStrategy):
 
     granularity = 256
 
-    def probe_lengths(self, max_cache_length: int) -> list[int]:
+    def probe_lengths(
+        self, max_cache_length: int, q_max_seq_len: int = 1
+    ) -> list[int]:
         """Probes at ``granularity`` intervals from 1 to ``max_cache_length``."""
+        del q_max_seq_len  # unused
         return (
             [1]
             + list(range(self.granularity, max_cache_length, self.granularity))
@@ -122,13 +129,27 @@ class MLAProbeStrategy(AttentionMetadataProbeStrategy):
 
     granularity = 64
 
-    def probe_lengths(self, max_cache_length: int) -> list[int]:
+    def probe_lengths(
+        self, max_cache_length: int, q_max_seq_len: int = 1
+    ) -> list[int]:
         """Probes at ``granularity`` intervals from 1 to ``max_cache_length``."""
-        return (
+        probe_lengths = (
             [1]
             + list(range(self.granularity, max_cache_length, self.granularity))
             + [max_cache_length]
         )
+        if q_max_seq_len > 1:
+            # With spec decoding, we need to probe a few more entries to hit all
+            # viable (num_partition, draft_num_partition) pairs. This was determined
+            # experimentally and is highly fragile. The alternative is to brute
+            # force capture all 11 x 11 = 121 pairs but that would increase graph
+            # capture time significantly. In practice, I only noticed that we used
+            # ~20 of the 121 combos for Kimi.
+            additional_probes = list(
+                range(self.granularity - 1, max_cache_length, self.granularity)
+            )
+            probe_lengths.extend(additional_probes)
+        return probe_lengths
 
     def bucket_num_partitions(
         self,
@@ -160,19 +181,27 @@ def _pack_model_graph_key(key: GraphKey) -> int:
     return hash(key) & 0xFFFFFFFFFFFFFFFF
 
 
-def _unpack_dispatch_metadata(metadata: Buffer) -> tuple[int, int]:
+def _unpack_dispatch_metadata(metadata: Buffer | None) -> tuple[int, int]:
     """Returns ``(num_partitions, q_max_seq_len)`` from packed metadata."""
+    if metadata is None:
+        return 0, 0
     metadata_np = metadata.to_numpy()
     return int(metadata_np[2]), int(metadata_np[1])
 
 
 def _unpack_replay_metadata(
     kv: KVCacheInputsPerDevice,
+    is_draft: bool = False,
 ) -> tuple[int, int]:
     """Returns ``(num_partitions, q_max_seq_len)`` from replay metadata."""
-    metadata = kv.attention_dispatch_metadata
-    if metadata is None:
-        raise ValueError("Expected attention_dispatch_metadata in KV inputs.")
+    if not is_draft:
+        metadata = kv.attention_dispatch_metadata
+        if metadata is None:
+            raise ValueError(
+                "Expected attention_dispatch_metadata in KV inputs."
+            )
+    else:
+        metadata = kv.draft_attention_dispatch_metadata
     return _unpack_dispatch_metadata(metadata)
 
 
@@ -180,6 +209,7 @@ def _create_model_inputs_with_dispatch_metadata(
     model_inputs: ModelInputs,
     source_ragged: Sequence[KVCacheInputsPerDevice],
     dispatch_metadata: Buffer,
+    draft_dispatch_metadata: Buffer | None,
     max_cache_valid_length: int,
     is_mla: bool = False,
 ) -> ModelInputs:
@@ -194,11 +224,19 @@ def _create_model_inputs_with_dispatch_metadata(
             if is_mla
             else dispatch_metadata
         )
+        if draft_dispatch_metadata is not None:
+            if is_mla:
+                draft_metadata = draft_dispatch_metadata.to(kv.kv_blocks.device)
+            else:
+                draft_metadata = draft_dispatch_metadata
+        else:
+            draft_metadata = None
         capture_ragged.append(
             replace(
                 kv,
                 max_lengths=Buffer.from_numpy(ml),
                 attention_dispatch_metadata=metadata,
+                draft_attention_dispatch_metadata=draft_metadata,
             )
         )
     result = copy.copy(model_inputs)
@@ -280,22 +318,39 @@ class ServeGraphCaptureRunner:
 
     def dispatch_metadata(
         self, batch_size: int, q_max_seq_len: int
-    ) -> list[tuple[int, Buffer]]:
+    ) -> list[tuple[int, Buffer, Buffer | None]]:
         """Returns capture metadata selected by the probe strategy.
 
         Probes at regular cache-length intervals to discover distinct
-        num_partitions modes, then delegates to the strategy to select
+        ``(num_partitions, draft_num_partitions)`` modes (without speculative
+        decode, ``draft_num_partitions`` is ``0`` and draft buffers are not
+        captured), then delegates to the strategy to select
         which modes to actually capture.
         """
         probe_lengths = self._probe_strategy.probe_lengths(
-            self._max_cache_length_upper_bound
+            self._max_cache_length_upper_bound,
+            q_max_seq_len,
         )
-        metadata_by_num_partitions = {}
+        metadata_by_dispatch_key: dict[
+            tuple[int, int], tuple[int, Buffer, Buffer | None]
+        ] = {}
         for length in probe_lengths:
             metadata = self._resolver(batch_size, q_max_seq_len, length)
+            if q_max_seq_len > 1:
+                # draft speculation steps 1-N will use q_max_seq_len = 1
+                metadata_draft = self._resolver(batch_size, 1, length)
+                draft_np, _ = _unpack_dispatch_metadata(metadata_draft)
+            else:
+                metadata_draft = None
+                draft_np = 0
             num_partitions, _ = _unpack_dispatch_metadata(metadata)
-            metadata_by_num_partitions[num_partitions] = (length, metadata)
-        return list(metadata_by_num_partitions.values())
+            dispatch_key = (num_partitions, draft_np)
+            metadata_by_dispatch_key[dispatch_key] = (
+                length,
+                metadata,
+                metadata_draft,
+            )
+        return list(metadata_by_dispatch_key.values())
 
     @traced
     def warmup_pre_ready(self) -> None:
@@ -318,7 +373,10 @@ class ServeGraphCaptureRunner:
         ):
             dispatch_entries = sorted(
                 self.dispatch_metadata(batch_size, q_max_seq_len),
-                key=lambda entry: _unpack_dispatch_metadata(entry[1])[0],
+                key=lambda entry: (
+                    _unpack_dispatch_metadata(entry[1])[0],
+                    _unpack_dispatch_metadata(entry[2])[0],
+                ),
                 reverse=True,
             )
             with self._warmup_model_inputs(batch_size) as model_inputs:
@@ -329,14 +387,19 @@ class ServeGraphCaptureRunner:
                 for (
                     max_cache_valid_length,
                     dispatch_metadata,
+                    draft_dispatch_metadata,
                 ) in dispatch_entries:
                     num_partitions, _ = _unpack_dispatch_metadata(
                         dispatch_metadata
                     )
+                    draft_num_partitions = _unpack_dispatch_metadata(
+                        draft_dispatch_metadata
+                    )[0]
                     key = (
                         batch_token_count,
                         num_partitions,
                         self._num_speculative_tokens + 1,
+                        draft_num_partitions,
                     )
                     assert key not in self.graph_entries, (
                         "unexpected duplicate key"
@@ -347,6 +410,7 @@ class ServeGraphCaptureRunner:
                             model_inputs,
                             source_ragged,
                             dispatch_metadata,
+                            draft_dispatch_metadata,
                             max_cache_valid_length,
                             is_mla=self._is_mla,
                         )
@@ -409,11 +473,16 @@ class ServeGraphCaptureRunner:
         self,
         ragged_inputs: Sequence[KVCacheInputsPerDevice],
         num_partitions: int,
+        is_draft: bool = False,
     ) -> None:
         """Overwrites num_partitions in every shard's packed metadata buffer."""
         cpu_buf: Buffer | None = None
         for kv in ragged_inputs:
-            metadata = kv.attention_dispatch_metadata
+            metadata = (
+                kv.attention_dispatch_metadata
+                if not is_draft
+                else kv.draft_attention_dispatch_metadata
+            )
             assert metadata is not None
             if cpu_buf is None:
                 metadata_np = metadata.to_numpy().copy()
@@ -426,10 +495,12 @@ class ServeGraphCaptureRunner:
         ragged_inputs: Sequence[KVCacheInputsPerDevice],
         batch_token_count: int,
     ) -> GraphKey:
-        """Resolves graph key for DP by syncing num_partitions across replicas.
+        """Resolves graph key for DP by syncing dispatch metadata across replicas.
 
-        Takes the max num_partitions/q_max_seq_len across all shards,
-        buckets if MLA, then broadcasts the final value to all shards once.
+        Takes the max ``num_partitions`` / ``q_max_seq_len`` (and draft
+        ``num_partitions`` when speculative) across all shards, buckets main
+        ``num_partitions`` if MLA, then broadcasts the final values to all
+        shards once.
         """
         all_metadata = [_unpack_replay_metadata(kv) for kv in ragged_inputs]
         synced_np = max(num_partitions for num_partitions, _ in all_metadata)
@@ -441,24 +512,43 @@ class ServeGraphCaptureRunner:
                 f"only q_max_seq_len=1 + {self._num_speculative_tokens} graphs are captured."
             )
 
+        synced_draft_np = max(
+            _unpack_dispatch_metadata(kv.draft_attention_dispatch_metadata)[0]
+            for kv in ragged_inputs
+        )
         final_np = self._bucket_num_partitions(
-            batch_token_count, synced_np, q_max_seq_len
+            batch_token_count, synced_np, q_max_seq_len, synced_draft_np
         )
         if any(np != final_np for np, _ in all_metadata):
             self._broadcast_num_partitions(ragged_inputs, final_np)
-        return (batch_token_count, final_np, q_max_seq_len)
+        if any(
+            _unpack_dispatch_metadata(kv.draft_attention_dispatch_metadata)[0]
+            != synced_draft_np
+            for kv in ragged_inputs
+        ):
+            self._broadcast_num_partitions(
+                ragged_inputs, synced_draft_np, is_draft=True
+            )
+        return (batch_token_count, final_np, q_max_seq_len, synced_draft_np)
 
     def _bucket_num_partitions(
         self,
         batch_token_count: int,
         num_partitions: int,
         q_max_seq_len: int,
+        draft_num_partitions: int,
     ) -> int:
         """Buckets num_partitions to nearest captured value for MLA.
 
-        For MHA, requires an exact match and raises on miss.
+        For MHA, requires an exact match and raises on miss. MLA bucketing
+        considers only captures that share the same ``draft_num_partitions``.
         """
-        key = (batch_token_count, num_partitions, q_max_seq_len)
+        key = (
+            batch_token_count,
+            num_partitions,
+            q_max_seq_len,
+            draft_num_partitions,
+        )
         if key in self.graph_entries:
             return num_partitions
 
@@ -472,7 +562,9 @@ class ServeGraphCaptureRunner:
             {
                 k[1]
                 for k in self.graph_entries
-                if k[0] == batch_token_count and k[2] == q_max_seq_len
+                if k[0] == batch_token_count
+                and k[2] == q_max_seq_len
+                and k[3] == draft_num_partitions
             }
         )
         bucketed_np = self._probe_strategy.bucket_num_partitions(
@@ -512,12 +604,14 @@ class ServeGraphCaptureRunner:
                 f"only q_max_seq_len=1 + {self._num_speculative_tokens} graphs are captured."
             )
 
+        draft_np, _ = _unpack_replay_metadata(ragged_inputs[0], is_draft=True)
+
         final_np = self._bucket_num_partitions(
-            batch_token_count, num_partitions, q_max_seq_len
+            batch_token_count, num_partitions, q_max_seq_len, draft_np
         )
         if final_np != num_partitions:
             self._broadcast_num_partitions(ragged_inputs, final_np)
-        return (batch_token_count, final_np, q_max_seq_len)
+        return (batch_token_count, final_np, q_max_seq_len, draft_np)
 
     @traced
     def replay(

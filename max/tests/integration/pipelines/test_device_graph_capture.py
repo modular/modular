@@ -93,7 +93,7 @@ def _mock_graph_key() -> Any:
     with patch.object(
         ServeGraphCaptureRunner,
         "_resolve_replay_key",
-        side_effect=lambda mi: (int(mi.buffers[0].shape[0]), 1, 1),
+        side_effect=lambda mi: (int(mi.buffers[0].shape[0]), 1, 1, 0),
     ):
         yield
 
@@ -127,7 +127,7 @@ def test_pipeline_model_capture_replay(
     runner = _make_runner(capture_model, max_batch_size=1)
 
     trace_inputs = inputs.buffers
-    runner.graph_entries[(1, 1, 1)] = (
+    runner.graph_entries[(1, 1, 1, 0)] = (
         trace_inputs,
         ModelOutputs(*capture_model.model.capture(1, *trace_inputs)),
     )
@@ -161,7 +161,7 @@ def test_pipeline_model_debug_verify_uses_runtime_inputs(
     runner = _make_runner(capture_model, max_batch_size=1)
 
     trace_inputs = replay_inputs.buffers
-    runner.graph_entries[(1, 1, 1)] = (
+    runner.graph_entries[(1, 1, 1, 0)] = (
         trace_inputs,
         ModelOutputs(*capture_model.model.capture(1, *trace_inputs)),
     )
@@ -186,7 +186,7 @@ def test_pipeline_model_debug_verify_rejects_mismatched_graph_keys(
     runner = _make_runner(capture_model, max_batch_size=1)
 
     trace_inputs = replay_inputs.buffers
-    runner.graph_entries[(1, 1, 1)] = (
+    runner.graph_entries[(1, 1, 1, 0)] = (
         trace_inputs,
         ModelOutputs(*capture_model.model.capture(1, *trace_inputs)),
     )
@@ -215,6 +215,8 @@ def _make_kv_per_device(
     q_max_seq_len: int = 1,
     *,
     is_mla: bool = False,
+    draft_num_partitions: int | None = None,
+    draft_q_max_seq_len: int = 1,
 ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
     """Creates a ``KVCacheInputsPerDevice`` with configurable metadata."""
     max_lengths = np.array([[0, max_cache_len]], dtype=np.uint32)
@@ -226,12 +228,21 @@ def _make_kv_per_device(
         + ([] if is_mla else [max_cache_len]),
         dtype=np.int64,
     )
+    draft_metadata: Buffer | None = None
+    if draft_num_partitions is not None:
+        draft_dispatch = np.array(
+            [1, draft_q_max_seq_len, draft_num_partitions]
+            + ([] if is_mla else [max_cache_len]),
+            dtype=np.int64,
+        )
+        draft_metadata = Buffer.from_numpy(draft_dispatch)
     return KVCacheInputsPerDevice(
         kv_blocks=Buffer.zeros((1,), dtype=DType.float32),
         cache_lengths=Buffer.from_numpy(np.array([0], dtype=np.uint32)),
         lookup_table=Buffer.from_numpy(np.array([0], dtype=np.uint32)),
         max_lengths=Buffer.from_numpy(max_lengths),
         attention_dispatch_metadata=Buffer.from_numpy(dispatch),
+        draft_attention_dispatch_metadata=draft_metadata,
     )
 
 
@@ -277,17 +288,17 @@ def _make_runner_for_resolve(
 def test_resolve_replay_key_single_device() -> None:
     runner = _make_runner_for_resolve()
     dummy_buf = Buffer.zeros((1,), dtype=DType.float32)
-    runner.graph_entries[(1, 5, 1)] = ((), ModelOutputs(logits=dummy_buf))
+    runner.graph_entries[(1, 5, 1, 0)] = ((), ModelOutputs(logits=dummy_buf))
 
     kv = _make_kv_per_device(max_cache_len=100, num_partitions=5)
     inputs = _make_mock_inputs_with_kv(1, [kv])
-    assert runner._resolve_replay_key(inputs) == (1, 5, 1)
+    assert runner._resolve_replay_key(inputs) == (1, 5, 1, 0)
 
 
 def test_resolve_replay_key_dp_syncs_metadata() -> None:
     runner = _make_runner_for_resolve(data_parallel_degree=2)
     dummy_buf = Buffer.zeros((4,), dtype=DType.float32)
-    runner.graph_entries[(1, 7, 1)] = ((), ModelOutputs(logits=dummy_buf))
+    runner.graph_entries[(1, 7, 1, 0)] = ((), ModelOutputs(logits=dummy_buf))
 
     kv0 = _make_kv_per_device(max_cache_len=50, num_partitions=3)
     kv1 = _make_kv_per_device(max_cache_len=100, num_partitions=7)
@@ -296,7 +307,7 @@ def test_resolve_replay_key_dp_syncs_metadata() -> None:
     key = runner._resolve_replay_key(inputs)
 
     # np should be max(3, 7) = 7
-    assert key == (1, 7, 1)
+    assert key == (1, 7, 1, 0)
 
 
 def test_resolve_replay_key_mha_miss_raises() -> None:
@@ -312,13 +323,13 @@ def test_resolve_replay_key_mla_buckets_up() -> None:
     runner = _make_runner_for_resolve(is_mla=True)
     output_buf = Buffer.zeros((4,), dtype=DType.float32)
     # Capture graphs for np=5 and np=10.
-    runner.graph_entries[(1, 5, 1)] = ((), ModelOutputs(logits=output_buf))
-    runner.graph_entries[(1, 10, 1)] = ((), ModelOutputs(logits=output_buf))
+    runner.graph_entries[(1, 5, 1, 0)] = ((), ModelOutputs(logits=output_buf))
+    runner.graph_entries[(1, 10, 1, 0)] = ((), ModelOutputs(logits=output_buf))
 
     # Runtime np=7 should bucket up to 10.
     kv = _make_kv_per_device(max_cache_len=100, num_partitions=7, is_mla=True)
     inputs = _make_mock_inputs_with_kv(1, [kv])
-    assert runner._resolve_replay_key(inputs) == (1, 10, 1)
+    assert runner._resolve_replay_key(inputs) == (1, 10, 1, 0)
 
 
 def test_replay_mla_buckets_to_captured_graph() -> None:
@@ -331,7 +342,7 @@ def test_replay_mla_buckets_to_captured_graph() -> None:
         max_cache_len=100, num_partitions=10, is_mla=True
     )
     capture_inputs = _make_mock_inputs_with_kv(1, [kv_capture])
-    runner.graph_entries[(1, 10, 1)] = (
+    runner.graph_entries[(1, 10, 1, 0)] = (
         capture_inputs.buffers,
         ModelOutputs(logits=output_buf),
     )
@@ -350,7 +361,7 @@ def test_resolve_replay_key_mla_miss_raises() -> None:
     runner = _make_runner_for_resolve(is_mla=True)
     output_buf = Buffer.zeros((4,), dtype=DType.float32)
     # Only np=5 captured — runtime np=99 has no bucket >= 99.
-    runner.graph_entries[(1, 5, 1)] = ((), ModelOutputs(logits=output_buf))
+    runner.graph_entries[(1, 5, 1, 0)] = ((), ModelOutputs(logits=output_buf))
 
     kv = _make_kv_per_device(max_cache_len=200, num_partitions=99, is_mla=True)
     inputs = _make_mock_inputs_with_kv(1, [kv])
@@ -363,7 +374,7 @@ def test_replay_mha_miss_raises() -> None:
     output_buf = Buffer.zeros((4,), dtype=DType.float32)
     kv_capture = _make_kv_per_device(max_cache_len=100, num_partitions=5)
     capture_inputs = _make_mock_inputs_with_kv(1, [kv_capture])
-    runner.graph_entries[(1, 5, 1)] = (
+    runner.graph_entries[(1, 5, 1, 0)] = (
         capture_inputs.buffers,
         ModelOutputs(logits=output_buf),
     )
@@ -382,7 +393,7 @@ def test_replay_mha_miss_raises() -> None:
 def test_resolve_replay_key_q_seq_len_skip() -> None:
     runner = _make_runner_for_resolve()
     dummy_buf = Buffer.zeros((1,), dtype=DType.float32)
-    runner.graph_entries[(1, 5, 1)] = ((), ModelOutputs(logits=dummy_buf))
+    runner.graph_entries[(1, 5, 1, 0)] = ((), ModelOutputs(logits=dummy_buf))
 
     # q_max_seq_len=2 (anything != 1) raises RuntimeError.
     kv = _make_kv_per_device(
@@ -396,14 +407,14 @@ def test_resolve_replay_key_q_seq_len_skip() -> None:
 def test_resolve_replay_key_q_seq_len_only_1_captured() -> None:
     runner = _make_runner_for_resolve()
     dummy_buf = Buffer.zeros((1,), dtype=DType.float32)
-    runner.graph_entries[(1, 5, 1)] = ((), ModelOutputs(logits=dummy_buf))
+    runner.graph_entries[(1, 5, 1, 0)] = ((), ModelOutputs(logits=dummy_buf))
 
     # q_max_seq_len=1 resolves successfully.
     kv = _make_kv_per_device(
         max_cache_len=100, num_partitions=5, q_max_seq_len=1
     )
     inputs = _make_mock_inputs_with_kv(1, [kv])
-    assert runner._resolve_replay_key(inputs) == (1, 5, 1)
+    assert runner._resolve_replay_key(inputs) == (1, 5, 1, 0)
 
     # q_max_seq_len > 1 raises RuntimeError.
     for q in (2, 3, 4, 5):
@@ -420,41 +431,158 @@ def test_resolve_replay_key_q_seq_len_only_1_captured() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_resolve_replay_key_with_spec_tokens() -> None:
-    """With num_speculative_tokens=1, q_max_seq_len=2 resolves; =1 raises."""
-    runner = _make_runner_for_resolve(num_speculative_tokens=1)
+def test_resolve_replay_key_multi_spec_tokens() -> None:
+    """Eagle with num_speculative_tokens>1 uses q_max_seq_len=1+N and draft key."""
+    num_spec = 3
+    runner = _make_runner_for_resolve(num_speculative_tokens=num_spec)
     dummy_buf = Buffer.zeros((1,), dtype=DType.float32)
-    expected_q = 2  # 1 + num_speculative_tokens
-    runner.graph_entries[(1, 5, expected_q)] = (
+    expected_q = 1 + num_spec
+    draft_np = 11
+    runner.graph_entries[(1, 5, expected_q, draft_np)] = (
         (),
         ModelOutputs(logits=dummy_buf),
     )
 
     kv_ok = _make_kv_per_device(
-        max_cache_len=100, num_partitions=5, q_max_seq_len=expected_q
+        max_cache_len=100,
+        num_partitions=5,
+        q_max_seq_len=expected_q,
+        draft_num_partitions=draft_np,
     )
     inputs_ok = _make_mock_inputs_with_kv(1, [kv_ok])
-    assert runner._resolve_replay_key(inputs_ok) == (1, 5, expected_q)
+    assert runner._resolve_replay_key(inputs_ok) == (1, 5, expected_q, draft_np)
+
+    kv_bad_q = _make_kv_per_device(
+        max_cache_len=100,
+        num_partitions=5,
+        q_max_seq_len=2,
+        draft_num_partitions=draft_np,
+    )
+    inputs_bad_q = _make_mock_inputs_with_kv(1, [kv_bad_q])
+    with pytest.raises(RuntimeError, match=r"q_max_seq_len=2 != 1"):
+        runner._resolve_replay_key(inputs_bad_q)
+
+
+def test_resolve_replay_key_with_spec_tokens() -> None:
+    """With num_speculative_tokens=1, q_max_seq_len=2 resolves; =1 raises."""
+    runner = _make_runner_for_resolve(num_speculative_tokens=1)
+    dummy_buf = Buffer.zeros((1,), dtype=DType.float32)
+    expected_q = 2  # 1 + num_speculative_tokens
+    draft_np = 5
+    runner.graph_entries[(1, 5, expected_q, draft_np)] = (
+        (),
+        ModelOutputs(logits=dummy_buf),
+    )
+
+    kv_ok = _make_kv_per_device(
+        max_cache_len=100,
+        num_partitions=5,
+        q_max_seq_len=expected_q,
+        draft_num_partitions=draft_np,
+    )
+    inputs_ok = _make_mock_inputs_with_kv(1, [kv_ok])
+    assert runner._resolve_replay_key(inputs_ok) == (1, 5, expected_q, draft_np)
 
     kv_bad = _make_kv_per_device(
-        max_cache_len=100, num_partitions=5, q_max_seq_len=1
+        max_cache_len=100,
+        num_partitions=5,
+        q_max_seq_len=1,
+        draft_num_partitions=draft_np,
     )
     inputs_bad = _make_mock_inputs_with_kv(1, [kv_bad])
     with pytest.raises(RuntimeError, match=r"q_max_seq_len=1 != 1"):
         runner._resolve_replay_key(inputs_bad)
 
 
+def test_resolve_replay_key_dp_syncs_draft_metadata() -> None:
+    """DP replay syncs draft_num_partitions across shards (max + broadcast)."""
+    runner = _make_runner_for_resolve(
+        data_parallel_degree=2,
+        num_speculative_tokens=1,
+    )
+    dummy_buf = Buffer.zeros((4,), dtype=DType.float32)
+    expected_q = 2
+    draft_hi = 7
+    draft_lo = 3
+    runner.graph_entries[(1, 5, expected_q, draft_hi)] = (
+        (),
+        ModelOutputs(logits=dummy_buf),
+    )
+
+    kv0 = _make_kv_per_device(
+        max_cache_len=50,
+        num_partitions=5,
+        q_max_seq_len=expected_q,
+        draft_num_partitions=draft_lo,
+    )
+    kv1 = _make_kv_per_device(
+        max_cache_len=100,
+        num_partitions=5,
+        q_max_seq_len=expected_q,
+        draft_num_partitions=draft_hi,
+    )
+    inputs = _make_mock_inputs_with_kv(1, [kv0, kv1])
+
+    key = runner._resolve_replay_key(inputs)
+    assert key == (1, 5, expected_q, draft_hi)
+
+    assert kv0.draft_attention_dispatch_metadata is not None
+    assert kv1.draft_attention_dispatch_metadata is not None
+    lo_np = kv0.draft_attention_dispatch_metadata.to_numpy()
+    hi_np = kv1.draft_attention_dispatch_metadata.to_numpy()
+    assert int(lo_np[2]) == draft_hi
+    assert int(hi_np[2]) == draft_hi
+
+
+def test_resolve_replay_key_mla_buckets_respects_draft_partitions() -> None:
+    """MLA bucketing only considers captures with the same draft_num_partitions."""
+    runner = _make_runner_for_resolve(is_mla=True, num_speculative_tokens=1)
+    output_buf = Buffer.zeros((4,), dtype=DType.float32)
+    expected_q = 2
+    draft_np = 5
+    runner.graph_entries[(1, 10, expected_q, draft_np)] = (
+        (),
+        ModelOutputs(logits=output_buf),
+    )
+
+    kv_match = _make_kv_per_device(
+        max_cache_len=100,
+        num_partitions=7,
+        q_max_seq_len=expected_q,
+        is_mla=True,
+        draft_num_partitions=draft_np,
+    )
+    inputs_match = _make_mock_inputs_with_kv(1, [kv_match])
+    assert runner._resolve_replay_key(inputs_match) == (
+        1,
+        10,
+        expected_q,
+        draft_np,
+    )
+
+    kv_wrong_draft = _make_kv_per_device(
+        max_cache_len=100,
+        num_partitions=7,
+        q_max_seq_len=expected_q,
+        is_mla=True,
+        draft_num_partitions=99,
+    )
+    inputs_wrong_draft = _make_mock_inputs_with_kv(1, [kv_wrong_draft])
+    with pytest.raises(RuntimeError, match=r"No captured device graph for"):
+        runner._resolve_replay_key(inputs_wrong_draft)
+
+
 def test_resolve_replay_key_zero_spec_tokens_backward_compat() -> None:
     """Default (num_speculative_tokens=0) keeps original q_max_seq_len=1 behavior."""
     runner = _make_runner_for_resolve(num_speculative_tokens=0)
     dummy_buf = Buffer.zeros((1,), dtype=DType.float32)
-    runner.graph_entries[(1, 5, 1)] = ((), ModelOutputs(logits=dummy_buf))
+    runner.graph_entries[(1, 5, 1, 0)] = ((), ModelOutputs(logits=dummy_buf))
 
     kv = _make_kv_per_device(
         max_cache_len=100, num_partitions=5, q_max_seq_len=1
     )
     inputs = _make_mock_inputs_with_kv(1, [kv])
-    assert runner._resolve_replay_key(inputs) == (1, 5, 1)
+    assert runner._resolve_replay_key(inputs) == (1, 5, 1, 0)
 
     kv_bad = _make_kv_per_device(
         max_cache_len=100, num_partitions=5, q_max_seq_len=2
@@ -533,6 +661,7 @@ def test_warmup_eagle_outputs_vs_model_outputs() -> None:
                 f"got {type(outputs).__name__}"
             )
             assert key[2] == 1 + num_spec
+            assert key[3] >= 0
 
 
 def test_replay_returns_correct_output_type() -> None:
@@ -546,17 +675,24 @@ def test_replay_returns_correct_output_type() -> None:
         next_draft_tokens=buf,
     )
 
+    draft_np = 5
     kv = _make_kv_per_device(
-        max_cache_len=100, num_partitions=5, q_max_seq_len=expected_q
+        max_cache_len=100,
+        num_partitions=5,
+        q_max_seq_len=expected_q,
+        draft_num_partitions=draft_np,
     )
     capture_inputs = _make_mock_inputs_with_kv(1, [kv])
-    runner.graph_entries[(1, 5, expected_q)] = (
+    runner.graph_entries[(1, 5, expected_q, draft_np)] = (
         capture_inputs.buffers,
         eagle_outputs,
     )
 
     replay_kv = _make_kv_per_device(
-        max_cache_len=100, num_partitions=5, q_max_seq_len=expected_q
+        max_cache_len=100,
+        num_partitions=5,
+        q_max_seq_len=expected_q,
+        draft_num_partitions=draft_np,
     )
     replay_inputs = _make_mock_inputs_with_kv(1, [replay_kv])
     output = runner.replay(model_inputs=replay_inputs)

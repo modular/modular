@@ -167,23 +167,3 @@ def test_prefill_and_decode_gets_overlap_pipeline() -> None:
     )
     result = get_pipeline_for_task(PipelineTask.TEXT_GENERATION, config)
     assert result is OverlapTextGenerationPipeline[TextContext]
-
-
-def test_warmup_raises_for_multi_spec_tokens() -> None:
-    """_graph_capture_warmup_inputs raises ValueError when num_speculative_tokens > 1."""
-    pipeline = OverlapTextGenerationPipeline.__new__(
-        OverlapTextGenerationPipeline
-    )
-    pipeline._pipeline_config = MagicMock()
-    pipeline._pipeline_config.model.data_parallel_degree = 1
-
-    spec_state = MagicMock()
-    spec_state.num_speculative_tokens = 3
-    pipeline._spec_decode_state = spec_state
-
-    with pytest.raises(
-        ValueError,
-        match=r"Speculative decoding with multiple tokens is not supported with Device Graph Capture",
-    ):
-        with pipeline._warmup_model_inputs(batch_size=1):
-            pass

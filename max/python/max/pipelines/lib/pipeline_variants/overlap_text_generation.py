@@ -1269,10 +1269,6 @@ class OverlapTextGenerationPipeline(
             if self._spec_decode_state is not None
             else 0
         )
-        if num_speculative_tokens > 1:
-            raise ValueError(
-                "Speculative decoding with multiple tokens is not supported with Device Graph Capture."
-            )
 
         # For unified Eagle/MTP models, the graph merges prompt tokens with
         # draft tokens internally. Each request contributes 1 decode token
