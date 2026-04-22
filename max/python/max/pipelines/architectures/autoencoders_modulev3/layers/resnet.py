@@ -163,6 +163,17 @@ class ResnetBlock2D(Module[[Tensor, Tensor | None], Tensor]):
 
         h = F.silu(self.norm1(x))
         h = self.conv1(h)
+        # TODO(GEX-3544): Remove once the compiler-fusion NaN bug is fixed.
+        # `fusion_barrier` is a non-fusable identity op (see MOGGKernelAPI.mojo)
+        # that prevents the compiler from fusing across this boundary; a
+        # fusion that crosses conv1's output produces NaN on non-square
+        # (H*W)*512 inputs in the FLUX.2 VAE encoder.
+        h = F.custom(
+            "fusion_barrier",
+            device=h.device,
+            values=[h],
+            out_types=[h.type],
+        )[0]
 
         h = F.silu(self.norm2(h))
 
