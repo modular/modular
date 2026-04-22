@@ -1,0 +1,160 @@
+[project]
+name = "modular"
+version = "0"
+requires-python = ">= 3.10"
+
+
+# TODO: restrict utils/packaging/tests to only test_format.mojo
+[tool.black]
+include = '\.mojo$'
+line-length = 80
+preview = true
+fast = true
+force-exclude = '''
+(
+  /(
+      third-party/llvm-project
+    | third-party/vllm-benchmarks
+    | \.derived
+    | venv
+    | utils/mblack
+    | KGEN/test/mojo-parser
+    | KGEN/test/mojo-tool/format
+    | max/python/max/serve/schemas
+    | utils/packaging/tests
+  )/
+)
+'''
+
+[tool.ruff]
+line-length = 80  # Must match above
+src = ["something-that-doesnt-exist"] # Stop ruff from assuming any root directory is a python module
+extend-exclude = [
+  "**/lit.cfg.py", # Globals that aren't imported
+  "*.ipynb",
+  "*_pb2.py", # Generated protobuf stubs
+  "*_pb2.pyi", # Generated protobuf stubs
+  "*max/serve/schemas/openai.py", # Generated file
+  "third-party",
+  "bazel/internal/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
+  "utils/mblack/tests",
+]
+
+[tool.ruff.lint]
+ignore = [
+  "ANN002", # TODO: Missing type annotation for *args
+  "ANN003", # TODO: Missing type annotation for **kwargs
+  "ANN204", # TODO: Missing return type annotation for special method
+  "ANN401", # TODO: Dynamically typed expressions (typing.Any) are disallowed in `**kwargs`
+  "B008", # Do not perform function call in argument defaults
+  "B017", # Do not assert blind exception: `Exception`
+  "B028", # No explicit `stacklevel` keyword argument found
+  "D105", # undocumented-magic-method
+  "D107", # Missing docstring in __init__ (constructor args go in class docstring)
+  "E402", # TODO: import top of file
+  "E722", # bare except
+  "E731", # TODO: Don't assign lambda
+  "E741", # TODO: Ambiguous variable name
+  "F403", # glob imports
+  "F405", # TODO: glob imports undefined
+  "F821", # TODO: Undefined names, means script is invalid
+  "FURB122", # Questionable readability improvement
+  "RUF005", # Consider iterable unpacking instead of concatenation
+  "RUF010", # Use explicit conversion flag
+  "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
+  "RUF015", # Prefer `next(iter(iterable))` over single element slice
+  "SIM102", # Collapsible if
+  "SIM105", # Suppressible exception
+  "SIM108", # Use ternary operator
+  "SIM114", # Combine arms with or
+  "SIM115", # Use context manager for opening files
+  "SIM117", # Merge with statements
+  "SIM300", # YODA conditions
+  "SIM905", # Use a list literal instead of str.split
+]
+extend-select = [
+  "ANN", # Require function type annotations
+  "B", # Bugbear lints
+  "D", # Pydocstyle lints
+  "FURB", # Refurb lints for modernization
+  "I", # Import sorting lints
+  "RUF", # Ruff specific lints
+  "SIM", # Simplify lints
+  "T10", # Checks for the presence of debugger calls and imports.
+  "UP", # Type annotations should not use Union, Optional, etc
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"] # Ignore unused imports being re-exported
+# Enforce pydocstyle only for MAX API:
+# NOTE: Ruff skips all "missing docstring" (D10X) rules for *.pyi files
+"!max/python/max/**/{*.py,*.pyi}" = ["D"]
+# With exceptions for these packages:
+"max/python/max/benchmark/**/*" = ["D"]
+"max/python/max/config/**/*" = ["D"]
+"max/python/max/entrypoints/**/*" = ["D"]
+"max/python/max/kv_cache/connectors/**/*" = ["D"]
+"max/python/max/mlir/**/*" = ["D"]
+"max/python/max/nn/**/*" = ["D"]
+"max/python/max/pipelines/architectures/**/*" = ["D"]
+"max/python/max/pipelines/pipelines.py" = ["D"]
+"max/python/max/serve/**/*" = ["D"]
+"max/python/max/support/**/*" = ["D"]
+# Exclude private packages and modules (NOTE: this allows max/_core/*.pyi files):
+"max/python/max/_core_mojo/**/*" = ["D"]
+"max/python/max/_core_types/**/*" = ["D"]
+"max/python/max/_interpreter_ops/**/*" = ["D"]
+"max/python/max/_mlir/**/*" = ["D"]
+"max/python/max/_core/dialects/**/*" = ["D"]
+"max/python/max/_core/internal/**/*" = ["D"]
+"max/python/max/**/_*.py" = ["D"]
+# Ignore ANN001 (function argument missing type annotation) for auto-generated
+# stubfiles
+"*.pyi" = ["ANN001", "ANN201", "ANN202", "ANN205", "ANN206", "D200", "D212", "D418"]
+# Ignore type annotations for the llm-book tutorial files
+"oss/llm-book/**/*.py" = ["ANN001", "ANN201", "ANN202"]
+# Disable lints which complain about weird unicode characters in files that include
+# a large number of LLM test prompts.
+"max/tests/integration/test_common/test_data.py" = ["RUF001", "RUF003"]
+
+[tool.mypy]
+color_output = true
+ignore_missing_imports = false
+pretty = true
+python_version = "3.10"
+
+check_untyped_defs = true
+warn_unused_ignores = true
+disallow_any_generics = true
+
+follow_imports = "silent"
+follow_imports_for_stubs = true
+
+plugins = "pydantic.mypy"
+
+[[tool.mypy.overrides]]
+module = "torch.*"
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "transformers.*"
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "absl.*"
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "cyclopts.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "lmcache.*"
+follow_imports = "skip"
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true

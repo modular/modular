@@ -1,0 +1,53 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from max.graph.weights import WeightsFormat
+from max.interfaces import InputModality, PipelineTask
+from max.pipelines.core import TextAndVisionContext
+from max.pipelines.core.context_validators import (
+    validate_requires_vision_context,
+)
+from max.pipelines.lib import (
+    SupportedArchitecture,
+    TextAndVisionTokenizer,
+)
+
+from . import weight_adapters
+from .model import PixtralModel
+from .model_config import PixtralConfig
+
+pixtral_arch = SupportedArchitecture(
+    name="LlavaForConditionalGeneration",
+    task=PipelineTask.TEXT_GENERATION,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
+    example_repo_ids=["mistral-community/pixtral-12b"],
+    default_encoding="bfloat16",
+    supported_encodings={
+        "bfloat16",
+    },
+    pipeline_model=PixtralModel,
+    tokenizer=TextAndVisionTokenizer,
+    context_type=TextAndVisionContext,
+    default_weights_format=WeightsFormat.safetensors,
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+    },
+    required_arguments={
+        "enable_prefix_caching": False,
+        "enable_chunked_prefill": False,
+    },
+    context_validators=[
+        validate_requires_vision_context,
+    ],
+    config=PixtralConfig,
+)

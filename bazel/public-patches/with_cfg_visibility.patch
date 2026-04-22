@@ -1,0 +1,12 @@
+diff --git a/with_cfg/private/select.bzl b/with_cfg/private/select.bzl
+index f1b1a67..cec684f 100644
+--- a/with_cfg/private/select.bzl
++++ b/with_cfg/private/select.bzl
+@@ -1,7 +1,5 @@
+ load(":utils.bzl", "is_dict", "is_select")
+ 
+-visibility(["//with_cfg/private/...", "//with_cfg/tests/..."])
+-
+ def map_attr(func, attribute):
+     if not is_select(attribute):
+         return func(attribute)

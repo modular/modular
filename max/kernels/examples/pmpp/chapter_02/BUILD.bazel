@@ -1,0 +1,43 @@
+load("//bazel:api.bzl", "mojo_test")
+
+package(default_visibility = ["//max:consumers"])
+
+_CPU_ONLY = [
+    "fig2_4.mojo",
+]
+
+_NO_MAIN = [
+    "fig2_8.mojo",
+    "fig2_10.mojo",
+    "fig2_12.mojo",
+    "fig2_13.mojo",
+]
+
+[
+    mojo_test(
+        name = src.removesuffix(".mojo") + ".test",
+        size = "medium",
+        srcs = [src],
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"],
+        deps = [
+            "@mojo//:std",
+        ],
+    )
+    for src in glob(
+        ["*.mojo"],
+        exclude = _CPU_ONLY + _NO_MAIN,
+    )
+]
+
+[
+    mojo_test(
+        name = src.removesuffix(".mojo") + ".test",
+        size = "small",
+        srcs = [src],
+        deps = [
+            "@mojo//:std",
+        ],
+    )
+    for src in _CPU_ONLY
+]

@@ -1,0 +1,285 @@
+---
+id: mojo-simple-statements
+title: Mojo simple statements reference
+sidebar_label: Simple statements
+sidebar_position: 5
+description: >
+  Complete reference for Mojo simple statements. Covers
+  import statements, expression statements, assignment statements,
+  and other simple statements.
+---
+
+<!-- VERIFIED: ParserStmts.cpp parseStmt(), parseImportStmt(),
+     parseFromImportStmt(), parseReturnStmt(), parseRaiseStmt(),
+     parseAssertStmt(), parseBreakOrContinueStmt(), parseVarStmt(),
+     parseComptimeCompoundStmt() -->
+
+A *simple statement* performs a single action on one logical line. Multiple
+simple statements can share a line when separated by semicolons.
+
+## Import statements
+
+*Import statements* expose modules and their members to the current scope.
+Imports can appear at module level, inside functions, or inside other scopes.
+They don't need to appear at the top of a file.
+
+```mojo
+import math
+from collections import Dict, Set
+```
+
+### Module imports
+
+```mojo
+import math
+import numpy as np            # Alias the module name to avoid collisions
+```
+
+### Selective imports
+
+```mojo
+from math import sqrt, pi
+from collections import Dict as Dictionary   # Alias the imported name
+```
+
+### Wildcard imports
+
+```mojo
+from math import *  # Imports all public names from the math module
+```
+
+## Expression statements
+
+An *expression statement* evaluates an expression for its side effects.
+When the result is unused (other than `None`), the compiler warns:
+
+```mojo
+x + y              # Warning: result is unused
+```
+
+The compiler does not warn when the result is `None`, which is common for
+functions called for their side effects:
+
+```mojo
+print("hello")     # Side effect: prints
+trigger()          # Side effect: called for behavior
+```
+
+Assign the result to `_` to explicitly discard it and silence the warning:
+
+```mojo
+_ = update()       # Explicitly discard the result
+```
+
+Expressions are not valid at module scope or in struct bodies outside
+of methods.
+
+## Assignment statements
+
+*Assignment statements* bind values to names with `=`:
+
+```mojo
+var x = 42
+var name = "Alice"
+var result = compute()
+```
+
+Using `var` is optional when the type can be inferred from the initializer,
+as in Python, but is discouraged. Explicit `var` (and `ref`) declarations
+show your intent to declare a new variable and are easy to scan.
+
+```mojo
+x = 42          # Type inferred as Int
+name = "Alice"  # Type inferred as String
+```
+
+### Annotated assignment
+
+Annotated assignments bind a type to a name, with an optional initializer:
+
+```mojo
+x: Int = 42
+name: String = "Alice"
+values: List[Float64] = []
+```
+
+A `var` without both a type and an initializer is an error:
+
+```mojo
+var x        # Error: declaration must have either a type or an initializer
+var x: Int   # OK: type provided, value uninitialized
+var x = 42   # OK: type inferred from initializer
+```
+
+You don't need to type your variables, but it's a good practice to add type
+annotations for readability, to show intent, and to catch errors:
+
+```mojo
+var x: Int16 = 42
+var name: String = "Alice"
+```
+
+When types are complex and long to write, you can use comptime aliases to
+keep your code concise:
+
+```mojo
+comptime Vec3 = List[Float64]
+var position: Vec3 = [0.0, 0.0, 0.0]
+```
+
+### Multiple assignment
+
+```mojo
+x = y = z = 0        # Assign the same value to multiple names
+a, b = 1, 2          # Destructuring assignment
+(a, b) = (1, 2)      # Equivalent destructuring, not "assign tuple to tuple"
+```
+
+### Augmented assignment
+
+Augmented assignment is syntactic sugar that combines an operation with
+assignment. The left-hand side is evaluated once:
+
+```mojo
+x += 5       # x = x + 5
+x -= 2       # x = x - 2
+x *= 3       # x = x * 3
+x /= 4       # x = x / 4
+x //= 2      # x = x // 2
+x %= 7       # x = x % 7
+x **= 2      # x = x ** 2
+x @= m       # x = x @ m  (matrix multiply)
+x &= mask    # x = x & mask
+x |= flags   # x = x | flags
+x ^= bits    # x = x ^ bits
+x <<= 1      # x = x << 1
+x >>= 1      # x = x >> 1
+```
+
+## The pass statement
+
+`pass` is a no-op. Use it as a placeholder where a statement is required
+but no action is needed:
+
+```mojo
+def not_ready():
+    pass
+
+struct Empty:
+    pass
+```
+
+`pass` is required in empty function and struct bodies to avoid syntax
+errors.
+
+:::note Ellipsis statement
+`...` is functionally equivalent to `pass` as a statement in most code.
+Prefer `pass` to `...` for readability.
+
+In trait definitions, `...` marks a method as required. Limiting your
+use of `...` to traits makes it easier to determine its role when
+reading code that uses it.
+:::
+
+## The return statement
+
+`return` exits a function and optionally returns a value:
+
+```mojo
+def greet(name: String):
+    if not name:  # String is falsy when empty
+        return
+    print(t"Hello, {name}!")
+
+def get_value() -> Int:
+    return 42
+
+def early_exit(items: List[Int], target: Int) -> Bool:
+    for item in items:
+        if item == target:
+            return True
+    return False
+```
+
+A function without an explicit `return` implicitly returns `None`. `return`
+is only valid inside a function:
+
+```mojo
+return 42    # Error: cannot return from this context
+```
+
+## The raise statement
+
+`raise` raises an error. The function must be declared with `raises` or
+included within a `try` block:
+
+```mojo
+def validate(value: Int) raises -> Bool:
+    if value < 0:
+        raise Error("value must be non-negative")
+    return True
+
+def mitigate_risk():
+    try:
+        if not perform_some_test():
+            raise Error("test failed")
+        # perform risky work, knowing test passed
+    except e:
+        log(e)
+```
+
+To propagate errors from a `try` block, use a bare `raise` to re-raise the
+current error:
+
+```mojo
+try:
+    validate(value)
+    # perform work, knowing value is valid
+except e:
+    raise  # Re-raises current error to the next handler
+```
+
+Raising outside a valid context is an error:
+
+```mojo
+raise Error("oops")   # Error: cannot raise error in this context
+                      # (surround with try, or mark function as raises)
+
+raise                 # Error: no contextual error to reraise
+                      # (bare raise requires an active except block)
+```
+
+## Control flow with break and continue statements
+
+`break` exits the innermost loop immediately. `continue` skips to the
+next iteration:
+
+```mojo
+for x in range(10):
+    if x == 5:
+        break        # Stop at 5
+    if x % 2 == 0:
+        continue     # Skip even numbers
+    print(x)         # Prints 1, 3
+```
+
+## Compile-time declarations
+
+`comptime` declares a compile-time constant. The value must be
+computable at compile time:
+
+```mojo
+comptime SIZE = 256
+comptime MAX = SIZE * 2
+```
+
+`comptime` assignments are also used to declare associated types
+in traits, and can be used to create type aliases and trait composition
+aliases:
+
+```mojo
+comptime Permissive = ImplicitlyCopyable & ImplicitlyDestructible
+
+trait SimpleTrait (Writable):  # `SimpleTrait` refines `Writable`
+    comptime Element = Permissive  # Associated type with a comptime alias
+```

@@ -1,0 +1,39 @@
+# InternVL integration tests that require network access.
+# These tests are tagged with AITLIB-293 and manual because they make HuggingFace API calls.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "tests",
+    size = "large",
+    srcs = glob(["test_*.py"]),
+    env_inherit = ["HF_TOKEN"],
+    ignore_extra_deps = [
+        # Transitive dep of transformers
+        requirement("jinja2"),
+    ],
+    tags = [
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/architectures",
+        requirement("pillow"),
+        requirement("pytest-asyncio"),
+        requirement("pytest-mock"),
+        requirement("transformers"),
+        requirement("jinja2"),
+    ],
+)

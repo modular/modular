@@ -1,0 +1,338 @@
+---
+title: Install Mojo
+description: You can install Mojo using pixi, uv, conda, pip, or other Python/Conda package managers.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import ConditionalVersionDocs from '@site/src/components/ConditionalVersionDocs'
+import Tooltip from '@site/src/components/Tooltip/tooltip';
+
+export const tooltipNightly = (<Tooltip
+  parent="nightly"
+  content="To get the stable build, change the version in the website header."
+/>);
+export const tooltipStable = (<Tooltip
+  parent="stable"
+  content="To get the nightly build, change the version in the website header."
+/>);
+
+You can install Mojo as a Python or Conda package. This page shows you how to
+install using `pixi` and `uv`, but you can use other tools.
+
+For a beginner's guide to Mojo, instead see the [get started
+tutorial](/mojo/manual/get-started), which includes installation steps.
+
+:::note System requirements
+
+You can use Mac, Linux, or Windows with WSL. For details, see the
+[system requirements](/mojo/requirements). For GPU programming, see
+[GPU compatibility](/mojo/requirements#gpu-compatibility).
+
+:::
+
+## Install
+
+To get the latest version, we recommend installing our nightly build. If you
+want a better tested but older version, install the stable build. Both
+options are shown below.
+
+:::tip
+
+For the most reliable experience, we recommend using
+[Pixi](https://pixi.sh/latest/). It's both a package manager and virtual
+environment manager—which alone makes development a lot easier—but it's also
+fast, language agnostic, and provides lock files for package dependencies. For
+more help with it, see our [Pixi basics guide](/pixi).
+
+:::
+
+<Tabs groupId="install">
+<TabItem value="pixi" label="pixi" default>
+
+1. If you don't have it, install `pixi`:
+
+    ```sh
+    curl -fsSL https://pixi.sh/install.sh | sh
+    ```
+
+2. Navigate to the directory where you want to create a project
+    and run this:
+
+    ```bash
+    pixi init hello-world \
+      -c https://conda.modular.com/max-nightly/ -c conda-forge \
+      && cd hello-world
+    ```
+
+    This creates a project directory named `hello-world`, adds the channel
+    for Modular conda packages, and enters the directory.
+
+    :::tip
+
+    **Tip:**
+    You can remove the `-c` options if you [specify default
+    channels](/pixi#create-a-project-and-virtual-environment).
+
+    :::
+
+<ConditionalVersionDocs version="nightly">
+
+3. Install Mojo ({tooltipNightly}):
+
+    ```sh
+    pixi add mojo
+    ```
+
+</ConditionalVersionDocs>
+<ConditionalVersionDocs version="stable">
+
+3. Install Mojo ({tooltipStable}):
+
+    ```sh
+    pixi add "mojo==0.26.2"
+    ```
+
+</ConditionalVersionDocs>
+
+4. Enter the virtual environment so you can access the `mojo` CLI:
+
+    ```sh
+    pixi shell
+    ```
+
+</TabItem>
+<TabItem value="uv" label="uv">
+
+1. If you don't have it, install `uv`:
+
+    ```sh
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
+
+    Then restart your terminal to make uv accessible.
+
+2. Create a project:
+
+    ```sh
+    uv init hello-world && cd hello-world
+    ```
+
+3. Create and start a virtual environment:
+
+    ```sh
+    uv venv && source .venv/bin/activate
+    ```
+
+<ConditionalVersionDocs version="nightly">
+
+4. Install Mojo ({tooltipNightly}):
+
+    ```sh
+    uv pip install mojo \
+      --index https://whl.modular.com/nightly/simple/ \
+      --prerelease allow
+    ```
+
+</ConditionalVersionDocs>
+<ConditionalVersionDocs version="stable">
+
+4. Install Mojo ({tooltipStable}):
+
+    ```sh
+    uv pip install mojo \
+      --extra-index-url https://modular.gateway.scarf.sh/simple/
+    ```
+
+</ConditionalVersionDocs>
+
+</TabItem>
+</Tabs>
+
+Verify your installation by printing the Mojo version:
+
+```sh
+mojo --version
+```
+
+### Add the VS Code extension
+
+If you're using [Visual Studio Code](https://code.visualstudio.com/) or another
+IDE derived from it (such as [Cursor](https://cursor.com/home)), we recommend
+installing the Mojo extension, which provides features like syntax highlighting,
+code completion, and debugging support. You can install it from either:
+
+- The
+  [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo),
+  for VS Code users
+- The
+  [Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo),
+  for users of Cursor and other editors that support VS Code extensions
+
+Or, open the Extensions view in your IDE and search for "Mojo"—make sure you
+install the extension from Modular.
+
+:::note
+
+Prior to the 0.25.6 Mojo release, there were two versions of the Mojo extension:
+a stable version for working with the stable build of Mojo and a nightly version
+for working with the nightly build of Mojo. Concurrent with the 0.25.6 Mojo
+release, we've consolidated the two versions into a single extension that works
+for both stable and nightly builds.
+
+The new extension replaces the old stable version, so if you have the stable
+version installed, you can simply update it to receive the new version. If you
+have the nightly version of the extension installed, you should uninstall it and
+install the regular (non-nightly) version.
+
+:::
+
+### Print "Hello world"
+
+If you followed the installation steps above, your terminal should be in an
+environment with `mojo` installed. To run some code, you just need a `.mojo`
+file with a `main()` function:
+
+1. Create a file named `hello.mojo` with this code:
+
+    ```mojo title="hello.mojo"
+    def main():
+        print("Hello, World!")
+    ```
+
+2. Run it with the [`mojo`](/mojo/cli) CLI:
+
+    ```sh
+    mojo hello.mojo
+    ```
+
+    ```output
+    Hello, World!
+    ```
+
+### Try Mojo agent skills
+
+Use [Mojo agent skills](/mojo/tools/skills) with your AI tools
+to generate more accurate Mojo code while learning Mojo:
+
+```bash
+npx skills add modular/skills
+```
+
+### Try some examples
+
+The
+[`examples/mojo/`](https://github.com/modular/modular/tree/main/mojo/examples)
+directory of our public [GitHub](https://github.com/modular/modular) repository
+contains several examples of Mojo code that you can use to learn more about the
+language and its standard library. Here's how to download and use them.
+
+1. Clone the repository:
+
+    ```sh
+    git clone https://github.com/modular/modular.git
+    ```
+
+2. Navigate to one of the Mojo example subdirectories, such as the subdirectory
+   containing the reference solution for the
+   [Get started with Mojo](/mojo/manual/get-started) tutorial project, which is
+   an implementation of [Conway's Game of
+   Life](https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life) cellular
+   automation:
+
+    ```sh
+    cd modular/mojo/examples/life
+    ```
+
+3. Use `pixi` to download and install the dependencies for the project and to
+   build and run the examples. For example, to run the reference solution for
+   the Game of Life tutorial project, use the following command:
+
+    ```sh
+    pixi run lifev1
+    ```
+
+    This displays a window that shows an initial random state for the grid and
+    then automatically updates it with subsequent generations. Quit the program
+    by pressing the <kbd>Q</kbd> or <kbd>Esc</kbd> key or by closing the window.
+
+    :::note
+
+    If you're using a package manager other than `pixi`, make sure `mojo` is
+    installed and accessible in your current shell environment. Consult the
+    `README.md` file in the example project subdirectory for information about
+    any other dependencies that need to be installed for that particular example
+    project. (The Game of Life example requires a compatible Python runtime and
+    the [pygame-ce](https://pyga.me/docs/index.html) library.) Then run the
+    example with the [`mojo`](/mojo/cli) CLI. For example, to run the reference
+    solution for the Game of Life tutorial project, use the following command:
+
+    ```sh
+    mojo lifev1.mojo
+    ```
+
+    :::
+
+## Update
+
+The following commands should update your local `mojo` package if a new version
+is available that's compatible with the version you specified when you
+installed it or added it as a package dependency. For more information about
+updating packages, see the docs for your package manager.
+
+<Tabs groupId="install">
+<TabItem value="pixi" label="pixi">
+
+```sh
+pixi update mojo
+```
+
+</TabItem>
+<TabItem value="uv" label="uv">
+
+```sh
+uv sync --upgrade-package mojo
+```
+
+</TabItem>
+</Tabs>
+
+## Uninstall
+
+Mojo is installed as a Python or Conda package, so the normal package removal
+process applies.
+
+<Tabs groupId="install">
+  <TabItem value="pixi" label="pixi">
+  This removes the package from your local project:
+
+  ```sh
+  pixi remove mojo
+  ```
+
+  This deactivates your virtual environment:
+
+  ```sh
+  exit
+  ```
+
+  </TabItem>
+  <TabItem value="uv" label="uv">
+  This removes the package from your local environment:
+
+  ```sh
+  uv pip uninstall mojo && uv sync
+  ```
+
+  This deactivates your virtual environment:
+
+  ```sh
+  deactivate
+  ```
+
+  </TabItem>
+</Tabs>
+
+## System requirements
+
+Relocated to the [system requirements](/mojo/requirements) page.

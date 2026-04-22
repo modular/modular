@@ -1,17 +1,29 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
 name: Documentation issue
-description: Report a problem with the Mojo docs
+description: Report a problem with the docs
 title: "[Docs]"
 labels:
-  - documentation
+  - "documentation,Needs Triage"
 body:
   - type: markdown
     attributes:
       value: |
-        Thank you for helping us improve the Mojo docs!
-
-        Please add a title above and fill in the following fields so we can understand the problem.
+        Please add a title above and fill in the following fields.
 
   - type: input
+    id: url
     attributes:
       label: Where is the problem?
       description: Provide a link to the problematic page (with a heading anchor).
@@ -34,4 +46,4 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you!
+        Thank you for helping us improve the docs!

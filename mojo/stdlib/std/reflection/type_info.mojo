@@ -1,0 +1,175 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Provides type and function name introspection utilities.
+
+This module provides compile-time introspection of type and function names:
+
+- `get_type_name[T]()` - returns the name of a type
+- `get_function_name[func]()` - returns the source name of a function
+- `get_linkage_name[func]()` - returns the symbol/linkage name of a function
+- `get_base_type_name[T]()` - returns the unqualified name of a type's base type
+
+Example:
+
+```mojo
+from std.reflection import get_type_name, get_function_name
+
+struct Point:
+    var x: Int
+    var y: Float64
+
+def my_function():
+    pass
+
+def main():
+    print(get_type_name[Point]())        # "Point"
+    print(get_function_name[my_function]())  # "my_function"
+```
+"""
+
+from std.sys.info import _current_target, _TargetType
+from std.collections.string.string_slice import get_static_string
+
+
+def get_linkage_name[
+    func_type: AnyType,
+    //,
+    func: func_type,
+    *,
+    target: _TargetType = _current_target(),
+]() -> StaticString:
+    """Returns `func`'s symbol name.
+
+    Parameters:
+        func_type: Type of func.
+        func: A mojo function.
+        target: The compilation target, defaults to the current target.
+
+    Returns:
+        Symbol name.
+    """
+    var res = __mlir_attr[
+        `#kgen.get_linkage_name<`,
+        target,
+        `,`,
+        func,
+        `> : !kgen.string`,
+    ]
+    return StaticString(res)
+
+
+def get_function_name[
+    func_type: AnyType, //, func: func_type
+]() -> StaticString:
+    """Returns `func`'s name as declared in the source code.
+
+    The returned name does not include any information about the function's
+    parameters, arguments, or return type, just the name as declared in the
+    source code.
+
+    Parameters:
+        func_type: Type of func.
+        func: A mojo function.
+
+    Returns:
+        The function's name as declared in the source code.
+    """
+    var res = __mlir_attr[`#kgen.get_source_name<`, func, `> : !kgen.string`]
+    return StaticString(res)
+
+
+def get_type_name[
+    type: AnyType,
+    *,
+    qualified_builtins: Bool = False,
+]() -> StaticString:
+    """Returns the struct name of the given type parameter.
+
+    Parameters:
+        type: A mojo type.
+        qualified_builtins: Whether to print fully qualified builtin type names
+            (e.g. `std.builtin.int.Int`) or shorten them (e.g. `Int`).
+
+    Returns:
+        Type name.
+    """
+    var res = __mlir_attr[
+        `#kgen.get_type_name<`,
+        type,
+        `, `,
+        qualified_builtins._mlir_value,
+        `> : !kgen.string`,
+    ]
+    return StaticString(res)
+
+
+# TODO: This currently does not strip the module name from the inner type name.
+# For example, Generic[Foo] should return "Generic[Foo]" but currently returns
+# "Generic[module_name.Foo]".
+def _unqualified_type_name[type: AnyType]() -> StaticString:
+    comptime name = get_type_name[type]()
+    comptime parameter_list_start = name.find("[")
+    if parameter_list_start == -1:
+        # HACK: Split is evaluated twice because `List[StringSlice]` cannot
+        # be materialized to runtime from a comptime context.
+        comptime n = len(name.split("."))
+        return name.split(".")[n - 1]
+    else:
+        comptime split = name[byte=:parameter_list_start].split(".")
+        comptime base_name = split[len(split) - 1]
+        comptime parameters = name[byte=parameter_list_start:]
+        return get_static_string[base_name, parameters]()
+
+
+# ===----------------------------------------------------------------------=== #
+# Base Type Reflection APIs
+# ===----------------------------------------------------------------------=== #
+#
+# These APIs enable comparing parameterized types by their base (unparameterized)
+# type. This is useful for serialization frameworks and other reflection-based
+# code that needs to special-case collection types like List and Dict.
+# ===----------------------------------------------------------------------=== #
+
+
+def get_base_type_name[T: AnyType]() -> StaticString:
+    """Returns the name of the base type of a parameterized type.
+
+    For parameterized types like `List[Int]`, this returns `"List"`.
+    For non-parameterized types, it returns the type's simple name.
+
+    Unlike `get_type_name`, this function strips type parameters and returns
+    only the unqualified base type name.
+
+    Parameters:
+        T: The type to get the base name of.
+
+    Returns:
+        The unqualified name of the base type as a `StaticString`.
+
+    Example:
+        ```mojo
+        from std.collections import List, Dict
+        from std.reflection.type_info import get_base_type_name
+
+        def main():
+            print(get_base_type_name[List[Int]]())  # "List"
+            print(get_base_type_name[Dict[String, Int]]())  # "Dict"
+            print(get_base_type_name[Int]())  # "Int"
+        ```
+    """
+    var res = __mlir_attr[
+        `#kgen.get_base_type_name<`,
+        T,
+        `> : !kgen.string`,
+    ]
+    return StaticString(res)

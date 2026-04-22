@@ -1,0 +1,25 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""SM100 matmul configuration - re-exports from sm100_structured.
+
+This module re-exports configuration types from sm100_structured for backward
+compatibility. New code should import directly from sm100_structured.config.
+"""
+
+from ..sm100_structured.structured_kernels.config import (
+    MatmulConfig,
+    BlockScaledMatmulConfig,
+    GEMMKind,
+    choose_config,
+    build_sm100_matmul_configs,
+)

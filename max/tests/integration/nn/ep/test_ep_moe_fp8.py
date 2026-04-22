@@ -1,0 +1,314 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from __future__ import annotations
+
+import os
+
+import pytest
+import torch
+from max.driver import Accelerator, Buffer, accelerator_count
+from max.dtype import DType
+from max.engine import InferenceSession
+from max.graph import (
+    DeviceRef,
+    Graph,
+    Shape,
+    ShardingStrategy,
+    TensorType,
+    TensorValue,
+)
+from max.graph.weights import WeightData
+from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.moe import MoEGate, MoEQuantized
+from max.nn.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
+from test_common.graph_utils import is_b100_b200, is_h100_h200
+
+MOE_DIM = 2048
+HIDDEN_DIM = 7168
+NUM_EXPERTS = 64
+
+
+def torch_moe(
+    input_token: torch.Tensor,
+    moe_weights: dict[str, torch.Tensor],
+    topk_indices: torch.Tensor,
+    topk_scores: torch.Tensor,
+) -> torch.Tensor:
+    assert input_token.shape[0] == 1, (
+        "The naive MoE implementation only supports a single token at a time"
+    )
+
+    top_k = topk_indices.shape[1]
+
+    result = torch.zeros_like(input_token)
+
+    for i in range(top_k):
+        scores = topk_scores[0, i]
+        expert_idx = topk_indices[0, i].item()
+        gate_weight = moe_weights[f"experts.{expert_idx}.gate_proj.weight"]
+        up_weight = moe_weights[f"experts.{expert_idx}.up_proj.weight"]
+        down_weight = moe_weights[f"experts.{expert_idx}.down_proj.weight"]
+
+        expert_gate = input_token @ gate_weight.T
+        expert_up = input_token @ up_weight.T
+        expert_output = (
+            torch.nn.functional.silu(expert_gate) * expert_up
+        ) @ down_weight.T
+
+        result += expert_output * scores
+
+    shared_gate_weight = moe_weights["shared_experts.gate_proj.weight"]
+    shared_up_weight = moe_weights["shared_experts.up_proj.weight"]
+    shared_down_weight = moe_weights["shared_experts.down_proj.weight"]
+    shared_expert_gate = input_token @ shared_gate_weight.T
+    shared_expert_up = input_token @ shared_up_weight.T
+    shared_expert_output = (
+        torch.nn.functional.silu(shared_expert_gate) * shared_expert_up
+    ) @ shared_down_weight.T
+    result += shared_expert_output
+
+    return result
+
+
+@pytest.mark.skipif(
+    not (is_h100_h200() or is_b100_b200()),
+    reason="NVSHMEM library requires H100 or H200 or B200",
+)
+@pytest.mark.parametrize("n_devices", [2])
+def test_ep_moe_fp8(
+    n_devices: int,
+    moe_weights_fp8: dict[str, torch.Tensor],
+) -> None:
+    assert n_devices <= accelerator_count(), (
+        "Devices are not enough to run EP test"
+    )
+
+    # Configuration parameters
+    top_k = 8
+    max_tokens_per_rank = 128
+    dtype = DType.float8_e4m3fn
+
+    # Copy weights to CPU for session.load (moe_weights_fp8 lives on GPU).
+    moe_weights_fp8_cpu = {k: v.cpu() for k, v in moe_weights_fp8.items()}
+
+    wrapped_moe_weights_fp8: dict[str, WeightData | torch.Tensor] = {}
+    for key, value in moe_weights_fp8_cpu.items():
+        if value.dtype == torch.float8_e4m3fn:
+            wrapped_moe_weights_fp8[key] = WeightData(
+                Buffer.from_dlpack(value.view(torch.uint8)).view(
+                    DType.float8_e4m3fn
+                ),
+                key,
+                dtype,
+                Shape(value.shape),
+            )
+        else:
+            wrapped_moe_weights_fp8[key] = value
+
+    # Initialize devices
+    devices = [Accelerator(id) for id in range(n_devices)]
+    devices_ref = [DeviceRef(d.label, d.id) for d in devices]
+    session = InferenceSession(devices=devices)
+
+    # Create fp8 config
+    fp8_input_config = InputScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        origin=ScaleOrigin.DYNAMIC,
+        dtype=DType.float32,
+        block_size=(1, 128),
+    )
+
+    fp8_weight_config = WeightScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        dtype=DType.float32,
+        block_size=(128, 128),
+    )
+
+    fp8_config = QuantConfig(
+        input_scale=fp8_input_config,
+        weight_scale=fp8_weight_config,
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
+        embedding_output_dtype=None,
+        format=QuantFormat.BLOCKSCALED_FP8,
+    )
+
+    # Create EP configuration
+    ep_config = EPConfig(
+        dispatch_dtype=dtype,
+        combine_dtype=DType.bfloat16,
+        hidden_size=HIDDEN_DIM,
+        top_k=top_k,
+        n_experts=NUM_EXPERTS,
+        max_tokens_per_rank=max_tokens_per_rank,
+        n_gpus_per_node=n_devices,
+        n_nodes=int(os.environ.get("SHMEM_TOTAL_NODES", "1")),
+        dispatch_quant_config=fp8_config,
+    )
+
+    # Initialize EP communication
+    ep_comm_init = EPCommInitializer(ep_config)
+    ep_batch_manager = EPBatchManager(ep_config)
+
+    # Create MoE module with EP support
+    moe = MoEQuantized(
+        devices=[DeviceRef.CPU()] + devices_ref,
+        hidden_dim=HIDDEN_DIM,
+        num_experts=NUM_EXPERTS,
+        num_experts_per_token=top_k,
+        moe_dim=MOE_DIM,
+        has_shared_experts=True,
+        shared_experts_dim=MOE_DIM,
+        ep_size=n_devices,
+        dtype=dtype,
+        apply_router_weight_first=False,
+        ep_batch_manager=ep_batch_manager,
+        quant_config=fp8_config,
+    )
+    moe.sharding_strategy = ShardingStrategy.expert_parallel(n_devices)
+    moe_shards = moe.shard(devices_ref)
+
+    # Load weights
+    moe.load_state_dict(wrapped_moe_weights_fp8)
+
+    # Initialize EP communication infrastructure
+    ep_comm_init.ep_init(session)
+
+    per_device_input_types: list[TensorType] = [
+        TensorType(
+            DType.bfloat16,
+            (f"input_len_{i}", HIDDEN_DIM),
+            DeviceRef.GPU(i),
+        )
+        for i in range(n_devices)
+    ]
+    input_lengths = torch.randint(1, max_tokens_per_rank, (n_devices,))
+    per_device_inputs_torch = [
+        torch.randn(
+            input_lengths[i],
+            HIDDEN_DIM,
+            dtype=torch.bfloat16,
+            device="cpu",
+        )
+        for i in range(n_devices)
+    ]
+
+    per_device_inputs = [
+        Buffer.from_dlpack(input).to(devices[i])
+        for i, input in enumerate(per_device_inputs_torch)
+    ]
+
+    with Graph(
+        "EPMoE_FP8",
+        input_types=[
+            *per_device_input_types,
+            *ep_batch_manager.input_types(),
+        ],
+    ) as graph:
+        inputs_tensors = [x.tensor for x in graph.inputs[:n_devices]]
+
+        ep_batch_manager.fetch_buffers(graph.inputs[n_devices:])
+
+        outputs = forward_moe_sharded_layers(moe_shards, inputs_tensors)
+
+        graph.output(*outputs)
+
+    # Compile and execute
+    compiled = session.load(graph, weights_registry=moe.state_dict())
+    result = compiled.execute(*per_device_inputs, *ep_comm_init.model_inputs())
+    torch_result = [torch.from_dlpack(x).to("cpu") for x in result]
+
+    # We use MoEGate to get the topk indices and scores, as the output of MoE
+    # is sensitive to the expert selection.
+    moe_gate = MoEGate(
+        devices=devices_ref,
+        hidden_dim=HIDDEN_DIM,
+        num_experts=NUM_EXPERTS,
+        num_experts_per_token=top_k,
+        dtype=DType.bfloat16,
+    )
+    moe_gate.sharding_strategy = ShardingStrategy.replicate(n_devices)
+    moe_gate_shards = moe_gate.shard(devices_ref)
+
+    gate_weight_dict = {
+        "gate_score.weight": moe_weights_fp8_cpu["gate.gate_score.weight"]
+    }
+    moe_gate.load_state_dict(gate_weight_dict)
+
+    with Graph(
+        "MoEGate",
+        input_types=per_device_input_types,
+    ) as gate_graph:
+        gate_inputs = [x.tensor for x in gate_graph.inputs[:n_devices]]
+
+        gate_outputs: list[TensorValue] = []
+        for moe_gate_shard, input in zip(
+            moe_gate_shards, gate_inputs, strict=False
+        ):
+            gate_outputs.extend(moe_gate_shard(input))
+
+        gate_graph.output(*gate_outputs)
+
+    gate_compiled = session.load(
+        gate_graph, weights_registry=moe_gate.state_dict()
+    )
+    gate_result = gate_compiled.execute(*per_device_inputs)
+    topk_idxs_weights = [torch.from_dlpack(x).to("cpu") for x in gate_result]
+
+    # Dequantize FP8 -> BF16 on GPU for torch reference.
+    # Process one weight at a time and delete GPU fp8 tensors to stay
+    # within the PyTorch memory budget.
+    gpu = moe_weights_fp8["gate.gate_score.weight"].device
+    moe_weights_gpu: dict[str, torch.Tensor] = {}
+    moe_weights_gpu["gate.gate_score.weight"] = moe_weights_fp8.pop(
+        "gate.gate_score.weight"
+    )
+    scale_keys = [k for k in moe_weights_fp8 if k.endswith(".weight_scale")]
+    for key in scale_keys:
+        weights_key = key.replace(".weight_scale", ".weight")
+        scale = moe_weights_fp8.pop(key)
+        fp8_val = moe_weights_fp8.pop(weights_key)
+        expanded = scale.repeat_interleave(128, dim=0).repeat_interleave(
+            128, dim=1
+        )
+        moe_weights_gpu[weights_key] = (fp8_val.to(scale.dtype) * expanded).to(
+            torch.bfloat16
+        )
+        del scale, fp8_val, expanded
+    all_outputs = torch.cat(torch_result, dim=0).to(gpu)
+    all_inputs = torch.cat(per_device_inputs_torch, dim=0).to(gpu)
+    all_topk_idxs = torch.cat(topk_idxs_weights[::2], dim=0).to(gpu)
+    all_topk_weights = torch.cat(topk_idxs_weights[1::2], dim=0).to(gpu)
+
+    for tok_idx in range(all_inputs.shape[0]):
+        torch_output = torch_moe(
+            all_inputs[tok_idx : tok_idx + 1],
+            moe_weights_gpu,
+            all_topk_idxs[tok_idx : tok_idx + 1],
+            all_topk_weights[tok_idx : tok_idx + 1],
+        )
+        torch.testing.assert_close(
+            all_outputs[tok_idx : tok_idx + 1],
+            torch_output,
+            rtol=8e-2,
+            atol=8e-2,
+        )

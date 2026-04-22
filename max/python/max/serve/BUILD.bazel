@@ -1,0 +1,65 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "config",
+    srcs = ["config.py"],
+    deps = [
+        requirement("pydantic"),
+        requirement("pydantic-settings"),
+        "//max/python/max/support",
+    ],
+)
+
+modular_py_library(
+    name = "process_control",
+    srcs = ["process_control.py"],
+    deps = [
+        requirement("taskgroup"),  # only for python < 3.11
+        requirement("exceptiongroup"),  # only for python < 3.11
+    ],
+)
+
+modular_py_library(
+    name = "exceptions",
+    srcs = ["exceptions.py"],
+)
+
+modular_py_library(
+    name = "serve",
+    srcs = glob(
+        ["*.py"],
+        exclude = [
+            "process_control.py",
+            "config.py",
+            "debug.py",
+            "exceptions.py",
+        ],
+    ),
+    deps = [
+        ":config",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/core",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/serve/pipelines",
+        "//max/python/max/serve/recordreplay",
+        "//max/python/max/serve/router",
+        "//max/python/max/serve/telemetry",
+        "//max/python/max/serve/worker_interface",
+        requirement("fastapi"),
+        requirement("prometheus-client"),
+        requirement("uvicorn"),
+    ],
+)
+
+modular_py_library(
+    name = "debug",
+    srcs = ["debug.py"],
+    deps = [
+        requirement("fastapi"),
+        requirement("pydantic"),
+        requirement("pydantic-settings"),
+        requirement("pyinstrument"),
+    ],
+)

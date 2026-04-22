@@ -1,0 +1,336 @@
+[project]
+name = "bazel-pyproject"
+version = "0"
+requires-python = ">=3.10" # NOTE: Must be kept in sync with other global settings
+dependencies = [
+  "levenshtein",
+  "aioboto3",
+  "aiofiles",
+  "aiohttp",
+  "anyio>=4.12.1",
+  "asgiref",
+  "async-asgi-testclient",
+  "boto3",
+  "botocore",
+  "click>=8.1",
+  "cachetools",
+  "clickhouse-connect",
+  "codeowners",
+  "cyclopts",
+  "datasets",
+  "device-smi",
+  "diffusers==0.37.0",
+  "docutils",
+  "einops",
+  "einx",
+  "exceptiongroup",
+  "expandvars",
+  "fastapi[standard]>=0.115.3", # >=0.115.3 is required for resolving CVE-2024-47874
+  "flask",
+  "fire ", # For mistral-evals.
+  "gguf",
+  "hf-transfer",
+  "httpx==0.27.2",
+  "huggingface-hub[hf_xet]>=0.27.1",
+  "hypothesis==6.108.4",
+  "ipython",
+  "jinja2",
+  "jiwer",
+  "kaleido==0.2.1",
+  "kepler",
+  "libcst",
+  "logbar",
+  "markupsafe",
+  "matplotlib",
+  "msgspec",
+  "munch",
+  "mypy",
+  "notebook",
+  "numpy==2.2.6; python_version < '3.11'",
+  "numpy>=2.3.0; python_version >= '3.11'",
+  "nvitop",
+  "onnxruntime", # Needed by faster_whisper
+  "opentelemetry-api",
+  "opentelemetry-exporter-otlp-proto-http>=1.28.2",
+  "opentelemetry-exporter-prometheus",
+  "opentelemetry-sdk",
+  "packaging",
+  "prometheus-client",
+  "protobuf==6.33.5 ", # Must match bazel protobuf version
+  "psutil>=5.9.0", # needed for setting `--timeout` for llvm-lit
+  "pyarrow",
+  "pydantic",
+  "pydantic_core",
+  "pydantic-settings==2.3.4",
+  "pygame-ce",
+  "pygments",
+  "pyinstrument",
+  "pytest-asyncio==0.23.7",
+  "pytest-benchmark",
+  "pytest-mock",
+  "pytest-xdist",
+  "pytest>=7.2",
+  "python-json-logger",
+  "PyGithub>=2.1.0",
+  "PyYAML",
+  "pyzmq",
+  "plotext",
+  "plotly",
+  "requests>=2.28",
+  "regex",
+  "ruamel.yaml",
+  "safetensors",
+  "sentencepiece",
+  "setuptools",
+  "slack-sdk",
+  "tiktoken",
+  "simpy",
+  "sphinx==8.1.3",
+  "sse-starlette",
+  "starlette>=0.47.2", # transitively included by sse-starlette, >=0.47.2 is required for resolving CVE-2025-54121
+  "taskgroup",
+  "termcolor",
+  "threadpoolctl",
+  "tiktoken",
+  "tokenicer",
+  "tomli",
+  "tqdm",
+  "transformers>=4.57",
+  "types-aioboto3[essential]",
+  "types-boto3[essential,sts]",
+  "typing-extensions",
+  "uvloop>=0.21.0",
+  "uvicorn",
+  "wheel",
+
+  # modeltool
+  "google-auth>=2.48.0",
+  "google-cloud-bigquery>=3.40.1",
+  "pandas>=1.4.2",
+  "requests>=2.28.0",
+  "rich>=12.4.4",
+  "scipy>=1.10.1",
+  "tabulate>=0.8.9",
+
+  # benchmarks
+  "schema==0.7.5",
+
+  # Blackwell external baseline benchmarks (flashinfer runtime deps)
+  "apache-tvm-ffi>=0.1,<0.2",
+  "ninja",  # JIT compilation at runtime
+
+  # nsight-sql-tool
+  "sqlalchemy>=2.0.29",
+
+  #accuracy_testing_framework
+  "ml_dtypes",
+
+  # perfsect
+  "responses>=0.23.3",
+
+  # mblack
+  "mypy-extensions>=0.4.3",
+  "pathspec>=0.9.0",
+  "platformdirs>=2",
+
+  # pillow is required to get the torch tests configured correctly
+  # in the wheel build.
+  "pillow>=10.0.0",
+  "locust",
+  "openai==2.11.0",
+  "librosa==0.10.2",
+  "soundfile==0.13.1",
+
+  # mypy types
+  "types-protobuf",
+  "types-PyYAML",
+  "types-setuptools",
+  "types-tabulate",
+
+  # tts
+  "zhon",
+  "zhconv",
+
+  # Video processing
+  "av",
+  "opencv-python",
+
+  # Have torch dependencies, but are otherwise not platform specific
+  "accelerate",
+  "lm-eval[api,ifeval,math]>=0.4.11",
+  "mteb",
+  "optimum",
+  "peft", # For LoRA adapter support
+  "qwen-vl-utils",
+  "timm==1.0.16",
+  "torchmetrics",
+]
+
+[dependency-groups]
+# Common dependencies for amd/nvidia/cpu groups that conflict with vllm or sglang's deps
+common = [
+  "llguidance==1.3.0",
+]
+
+amd = [
+  {include-group = "common"},
+  "torch==2.10.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torchaudio; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torchvision==0.25.0",
+  "triton==3.6.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+
+  "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
+
+  "lmcache>=0.4.2; sys_platform == 'linux' and platform_machine == 'x86_64'",  # External KV cache integration (v1 API required)
+]
+
+cpu = [
+  {include-group = "common"},
+  "torch==2.10.0",
+  "torchaudio",
+  "torchvision==0.25.0+cpu; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torchvision==0.25.0; platform_machine != 'x86_64'",
+  "triton==3.6.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
+
+nvidia = [
+  {include-group = "common"},
+  "torch==2.10.0; sys_platform == 'linux'",
+  "torchaudio",
+  "torchvision==0.25.0",
+  "triton==3.6.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "tilelang==0.1.8",
+  "gptqmodel; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "compressed-tensors==0.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+
+  "flashinfer-cubin==0.6.7.post3",  # Pin to match sglang's version
+  "flashinfer-python>=0.6.4; sys_platform == 'linux'",
+
+  "nvidia-cudnn-frontend>=1.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "nvidia-cutlass-dsl>=4.4.1; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "lmcache>=0.4.2; sys_platform == 'linux' and platform_machine == 'x86_64'",  # External KV cache integration (v1 API required)
+]
+
+# Separate dependency groups for large dependencies used in a few places,
+# to avoid conflicts with the other groups (mainly torch versions).
+nvidia-vllm = [
+  "vllm==0.17.0; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
+  "torch",
+  "torchaudio",
+  "torchvision",
+  "triton; sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
+
+nvidia-sglang = [
+  "sglang==0.5.10.post1; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torch",
+  "torchaudio",
+  "torchvision",
+  "triton; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  # Need an explicit pin to avoid requiring `--prerelease=allow`
+  "flash-attn-4==4.0.0b4",
+  # Need to override the URL below
+  "outlines-core",
+]
+
+[tool.uv]
+default-groups = ["cpu"]
+conflicts = [
+  [
+    { group = "amd" },
+    { group = "cpu" },
+    { group = "nvidia" },
+    { group = "nvidia-vllm" },
+    { group = "nvidia-sglang" },
+  ],
+  [
+    { group = "common" },
+    { group = "nvidia-vllm" },
+    { group = "nvidia-sglang" },
+  ]
+]
+
+environments = [
+    "sys_platform == 'darwin'",
+    "sys_platform == 'linux'",
+]
+
+override-dependencies = [
+  "numba==0.63.1",
+  # Override lmcache's numpy<=2.2.6 constraint to allow our numpy>=2.3.0
+  "numpy>=2.2.0",
+  # Override vllm's `transformers` constraint.
+  # Pin <5.3.0: v5.3.0 has a tokenizer regression where LlamaTokenizer
+  # overwrites the ByteLevel decoder from tokenizer.json with Metaspace,
+  # breaking decode for Llama/DeepSeek models (huggingface/transformers#44462).
+  "transformers>=5.0.0,<5.3.0",
+  # Pin packages to avoid duplicates after vllm 0.16.0 update
+  "aiohttp==3.13.3",
+  "apache-tvm-ffi==0.1.9",
+  "flashinfer-python==0.6.3",
+  "nvidia-cutlass-dsl==4.4.1",
+
+  # Various duplicates between groups
+  "xgrammar==0.1.32",
+  "openai==2.11.0",
+  "openai-harmony==0.0.8",
+  "grpcio==1.80.0",
+  "grpcio-reflection==1.80.0",
+  "cuda-python==12.9.4",
+]
+
+[tool.uv.sources]
+torch = [
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torch-2.10.0%2Brocm7.1.1.lw.gitd9556b05-cp313-cp313-linux_x86_64.whl" , group = "amd" },
+  { index = "pytorch-cpu", group = "cpu" },
+  { index = "pytorch-nvidia", group = "nvidia" },
+  { index = "pytorch-nvidia", group = "nvidia-vllm" },
+  { index = "pytorch-nvidia", group = "nvidia-sglang" },
+]
+torchvision = [
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torchvision-0.25.0%2Brocm7.1.1.git82df5f59-cp313-cp313-linux_x86_64.whl" , group = "amd" },
+  { index = "pytorch-cpu", group = "cpu" },
+  { index = "pytorch-nvidia", group = "nvidia" },
+  { index = "pytorch-nvidia", group = "nvidia-vllm" },
+  { index = "pytorch-nvidia", group = "nvidia-sglang" },
+]
+torchaudio = [
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/torchaudio-2.10.0%2Brocm7.1.1.git5047768f-cp313-cp313-linux_x86_64.whl" , group = "amd" },
+  { index = "pytorch-cpu", group = "cpu" },
+  { index = "pytorch-nvidia", group = "nvidia" },
+  { index = "pytorch-nvidia", group = "nvidia-vllm" },
+  { index = "pytorch-nvidia", group = "nvidia-sglang" },
+]
+triton = [
+  { url = "https://repo.radeon.com/rocm/manylinux/rocm-rel-7.1.1/triton-3.6.0%2Brocm7.1.1.gitba5c1517-cp313-cp313-linux_x86_64.whl" , group = "amd" },
+  { index = "pytorch-cpu", group = "cpu" },
+  { index = "pytorch-nvidia", group = "nvidia" },
+  { index = "pytorch-nvidia", group = "nvidia-vllm" },
+  { index = "pytorch-nvidia", group = "nvidia-sglang" },
+]
+gptqmodel = [
+  { url = "https://github.com/ModelCloud/GPTQModel/releases/download/v2.0.0/gptqmodel-2.0.0+cu126torch2.6-cp313-cp313-linux_x86_64.whl" },
+]
+outlines-core = [
+  # Needs to be built from source (on outlines-core 0.1.26 tag)
+  # uv venv --python 3.13
+  # source .venv/bin/activate
+  # sudo apt install libssl-dev
+  # make dist
+  { url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/outlines-core-cp13-linux/0.1.26/5901b765baabe86cd79ed72e087b8175a287ad55f448110003285e6a9cf06877/outlines_core-0.1.26-cp313-cp313-linux_x86_64.whl", group = "nvidia-sglang" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-amd"
+url = "https://download.pytorch.org/whl/rocm7.1"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-nvidia"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true

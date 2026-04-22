@@ -1,0 +1,41 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_reduce
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_reduce.mojo
+
+params:
+# baby-replit-CE/TG-kernels
+- shape: [1x1024x3072]
+  dtype: [DType.bfloat16, DType.float32, DType.float16]
+  axis: 2
+
+# baby-llama-LPTG-kernels
+- shape: [1x1x4096]
+  dtype: [DType.bfloat16, DType.float32, DType.float16]
+  axis: 2
+
+# baby-llama-CE-kernels
+- shape: [1x256x4096]
+  dtype: [DType.bfloat16, DType.float32, DType.float16]
+  axis: 2
+
+# External model
+- shape: [ 4x128x6x4x256 ]
+  dtype: [ DType.float16, DType.bfloat16 ]
+  axis: [4, 3, 2]
+
+# Large/Large problem
+- shape: [ 32x1024x256x1024 ]
+  dtype: [ DType.float16, DType.bfloat16 ]
+  axis: [3, 2, 1, 0]

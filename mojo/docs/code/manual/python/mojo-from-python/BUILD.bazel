@@ -1,0 +1,24 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test")
+
+package(default_visibility = ["//oss/modular/docs:__subpackages__"])
+
+modular_py_binary(
+    name = "factorial",
+    srcs = ["main.py"],
+    data = ["mojo_module.mojo"],
+    imports = ["."],
+    main = "main.py",
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:ubsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "@mojo//:python",
+    ],
+)
+
+modular_run_binary_test(
+    name = "factorial_test",
+    binary = "factorial",
+)

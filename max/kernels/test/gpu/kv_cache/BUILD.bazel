@@ -1,0 +1,96 @@
+load("//bazel:api.bzl", "mojo_test")
+
+package(default_visibility = ["//max:consumers"])
+
+_GPU_MEMORY = {
+    "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo": "8",
+}
+
+_APPLE_GPU_INCOMPATIBLE = select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
+_EXTRA_CONSTRAINTS = {
+    "test_batch_kv_cache_flash_attention.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
+    "test_kv_cache_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
+    "test_kv_cache_ragged_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
+    "test_batch_kv_cache_flash_attention_causal_mask.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
+    "test_kv_cache_ragged_matmul_scale.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2318
+    "test_kv_cache_radd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
+    "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
+    "test_kv_cache_store_ragged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
+    "test_kv_cache_2m_iadd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
+}
+
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [
+            src,
+            "kv_cache_test_utils.mojo",
+        ],
+        # KERN-2339: Several tests disabled due to bounds check failures
+        enable_assertions = select({
+            "//:b200_gpu": True,
+            "//conditions:default": src not in [
+                "test_kv_cache_matmul.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
+                "test_kv_cache_ragged_matmul.mojo",  # MSTDL-1147: fails with asserts on H100/AMD
+                "test_mha_mixed_ce_tg.mojo",  # KERN-2339: accessing idx=4 in dimension of size 4
+                "test_batch_kv_cache_flash_attention_causal_mask_ragged.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
+                "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
+                "test_batch_kv_cache_flash_attention.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
+                "test_batch_kv_cache_flash_attention_causal_mask.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
+            ],
+        }),
+        exec_properties = {
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, "5"),
+        },
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
+            "@mojo//:std",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = [
+            "kv_cache_test_utils.mojo",  # Imported source, not a test
+            "test_mha_inflight_batching_gemma3_hang.mojo",  # KERN-2734: manual repro test
+        ],
+    )
+]
+
+# TODO(KERN-2734): Remove "manual" tag once the FA4 TMA barrier deadlock is fixed.
+mojo_test(
+    name = "test_mha_inflight_batching_gemma3_hang.mojo.test",
+    size = "large",
+    srcs = [
+        "test_mha_inflight_batching_gemma3_hang.mojo",
+    ],
+    enable_assertions = True,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "test_mha_inflight_batching_gemma3_hang.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "@mojo//:std",
+    ],
+)

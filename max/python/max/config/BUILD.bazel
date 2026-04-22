@@ -1,0 +1,12 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "config",
+    srcs = glob(["**/*.py"]),
+    deps = [
+        requirement("pydantic"),
+        requirement("pyyaml"),
+    ],
+)

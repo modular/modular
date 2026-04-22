@@ -1,0 +1,107 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "pkg_files", "requirement", "strip_prefix")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "benchmark_serving_lib",
+    srcs = glob(
+        ["*.py"],
+        exclude = [
+            "serve_replay.py",
+            "benchmark_throughput.py",
+            "sweep_benchmark_serving.py",
+        ],
+    ),
+    data = [
+        ":benchmark_config_yaml_files",
+    ],
+    # Transformers secretly depends on jinja2
+    ignore_extra_deps = [
+        requirement("jinja2"),
+        requirement("tiktoken"),
+    ],
+    deps = [
+        "//max/python/max/benchmark/benchmark_shared",
+        "//max/python/max/diagnostics",
+        requirement("cyclopts"),
+        requirement("jinja2"),
+        requirement("numpy"),
+        requirement("pyyaml"),
+        requirement("tqdm"),
+        requirement("tiktoken"),
+        requirement("transformers"),
+        requirement("taskgroup"),
+        requirement("requests"),
+        requirement("typing-extensions"),
+    ],
+)
+
+modular_py_binary(
+    name = "sweep_benchmark_serving",
+    srcs = ["sweep_benchmark_serving.py"],
+    deps = [
+        ":benchmark_serving_lib",
+        "//max/python/max/benchmark/benchmark_shared",
+        requirement("pyyaml"),
+    ],
+)
+
+modular_py_binary(
+    name = "benchmark_throughput",
+    srcs = ["benchmark_throughput.py"],
+    data = [
+        ":yaml_files",
+    ],
+    imports = ["../.."],
+    deps = [
+        "//max/python/max/benchmark/benchmark_shared",
+        "//max/python/max/config",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/serve:config",
+        "//max/python/max/serve/pipelines",
+        "//max/python/max/serve/telemetry",
+        "//max/python/max/serve/worker_interface",
+        requirement("cyclopts"),
+        requirement("huggingface-hub"),
+        requirement("pydantic"),
+        requirement("pyarrow"),
+        requirement("tqdm"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_binary(
+    name = "serve_replay",
+    srcs = ["serve_replay.py"],
+    visibility = [":__subpackages__"],
+    deps = [
+        "//max/python/max/entrypoints:pipelines",
+        "//max/python/max/entrypoints:replay_recording",
+        requirement("click"),
+        requirement("httpx"),
+    ],
+)
+
+# TODO: This is maybe redundant since we already have yaml_files?
+pkg_files(
+    name = "benchmark_config_yaml_files",
+    srcs = glob(["configs/*.yaml"]),
+)
+
+pkg_files(
+    name = "python_files",
+    srcs = glob(["**/*.py"]) + ["//max/python/max/benchmark/benchmark_shared:python_files"],
+    prefix = "benchmark",
+    strip_prefix = strip_prefix.from_pkg(""),
+)
+
+pkg_files(
+    name = "yaml_files",
+    srcs = glob(
+        ["**/*.yaml"],
+        exclude = ["serving-benchmarking/**"],
+    ),
+    prefix = "benchmark",
+)

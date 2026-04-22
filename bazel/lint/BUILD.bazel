@@ -1,0 +1,212 @@
+load("@buildifier_prebuilt//:rules.bzl", "buildifier")
+load("@rules_multirun//:defs.bzl", "command", "multirun")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("//bazel:api.bzl", "modular_py_binary", "mojo_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+_BUILDIFIER_IGNORES = [
+    "./.derived/*",
+    "./.git/*",
+    "./CloudInfra/go/pkg/*",
+    "./third-party/llvm-project/*",
+    "./oss/max-llm-book/.pixi/*",
+]
+
+buildifier(
+    name = "buildifier.check",
+    exclude_patterns = _BUILDIFIER_IGNORES,
+    lint_mode = "warn",
+    mode = "diff",
+)
+
+buildifier(
+    name = "buildifier.fix",
+    exclude_patterns = _BUILDIFIER_IGNORES,
+    lint_mode = "fix",
+    mode = "fix",
+)
+
+sh_binary(
+    name = "ruff-wrapper",
+    srcs = ["ruff-wrapper.sh"],
+    data = select({
+        "//:linux_x86_64": ["@ruff-x86_64-unknown-linux-gnu//:ruff"],
+        "//:linux_aarch64": ["@ruff-aarch64-unknown-linux-gnu//:ruff"],
+        "@platforms//os:macos": ["@ruff-aarch64-apple-darwin//:ruff"],
+    }),
+)
+
+command(
+    name = "ruff.check",
+    arguments = ["check"],
+    command = ":ruff-wrapper",
+)
+
+command(
+    name = "ruff.fix",
+    arguments = ["fix"],
+    command = ":ruff-wrapper",
+)
+
+alias(
+    name = "rumdl",
+    actual = select({
+        "//:linux_x86_64": "@rumdl-x86_64-unknown-linux-musl//:rumdl",
+        "//:linux_aarch64": "@rumdl-aarch64-unknown-linux-musl//:rumdl",
+        "@platforms//os:macos": "@rumdl-aarch64-apple-darwin//:rumdl",
+    }),
+    tags = ["maybe-unused"],  # TODO: Remove when used
+)
+
+command(
+    name = "rumdl.check",
+    arguments = [
+        "check",
+        ".",
+        "--config",
+        "$(location :.rumdl.toml)",
+    ],
+    command = ":rumdl",
+    data = [":.rumdl.toml"],
+    run_from_workspace_root = True,
+)
+
+command(
+    name = "rumdl.fix",
+    arguments = [
+        "fmt",
+        ".",
+        "--config",
+        "$(location :.rumdl.toml)",
+    ],
+    command = ":rumdl",
+    data = [":.rumdl.toml"],
+    run_from_workspace_root = True,
+)
+
+modular_py_binary(
+    name = "mblack-wrapper",
+    srcs = ["mblack-wrapper.py"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    deps = ["@mblack"],
+)
+
+command(
+    name = "mblack.check",
+    arguments = [
+        "--quiet",
+        "--check",
+        "--diff",
+        ".",
+    ],
+    command = ":mblack-wrapper",
+)
+
+command(
+    name = "mblack.fix",
+    arguments = [
+        "--quiet",
+        ".",
+    ],
+    command = ":mblack-wrapper",
+)
+
+command(
+    name = "mblack.fix-fast",
+    arguments = [
+        "--quiet",
+    ],
+    command = ":mblack-wrapper",
+    environment = {"FAST": "1"},
+)
+
+mojo_binary(
+    name = "check_licenses",
+    srcs = [":check_licenses.mojo"],
+    deps = ["@mojo//:std"],
+)
+
+command(
+    name = "check_licenses.check",
+    command = ":check_licenses",
+    run_from_workspace_root = True,
+)
+
+command(
+    name = "check_licenses.fix",
+    arguments = ["--fix"],
+    command = ":check_licenses",
+    run_from_workspace_root = True,
+)
+
+alias(
+    name = "shellcheck",
+    actual = select({
+        "//:linux_x86_64": "@shellcheck-linux.x86_64//:shellcheck",
+        "//:linux_aarch64": "@shellcheck-linux.aarch64//:shellcheck",
+        "@platforms//os:macos": "@shellcheck-darwin.aarch64//:shellcheck",
+    }),
+)
+
+sh_binary(
+    name = "shellcheck-wrapper",
+    srcs = ["shellcheck-wrapper.sh"],
+    data = [":shellcheck"],
+)
+
+command(
+    name = "shellcheck.check",
+    command = ":shellcheck-wrapper",
+)
+
+multirun(
+    name = "lint",
+    buffer_output = True,
+    commands = [
+        ":buildifier.check",
+        ":check_licenses.check",
+        ":mblack.check",
+        ":ruff.check",
+        ":rumdl.check",
+        ":shellcheck.check",
+    ],
+    jobs = 0,
+)
+
+COMMON_FIX_COMMANDS = [
+    ":buildifier.fix",
+    ":check_licenses.fix",
+    ":ruff.fix",
+    ":rumdl.fix",
+]
+
+multirun(
+    name = "fix-fast",
+    buffer_output = True,
+    commands = COMMON_FIX_COMMANDS + [
+        ":mblack.fix-fast",
+    ],
+    jobs = 0,
+)
+
+multirun(
+    name = "fix",
+    buffer_output = True,
+    commands = COMMON_FIX_COMMANDS + [
+        ":mblack.fix",
+    ],
+    jobs = 0,
+)
+
+sh_binary(
+    name = "format",
+    srcs = ["format-wrapper.sh"],
+    data = ["//bazel/lint:fix"],
+)
+
+sh_binary(
+    name = "format-fast",
+    srcs = ["format-fast-wrapper.sh"],
+    data = ["//bazel/lint:fix-fast"],
+)

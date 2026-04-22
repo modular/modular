@@ -1,0 +1,159 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from std.memory import ArcPointer
+from test_utils import ObservableDel, check_write_to
+from std.testing import assert_equal, assert_false, assert_true, TestSuite
+
+
+def test_basic() raises:
+    var p = ArcPointer(4)
+    var p2 = p
+    p2[] = 3
+    assert_equal(3, p[])
+
+
+def test_is() raises:
+    var p = ArcPointer(3)
+    var p2 = p
+    var p3 = ArcPointer(3)
+    assert_true(p is p2)
+    assert_false(p is not p2)
+    assert_false(p is p3)
+    assert_true(p is not p3)
+
+
+def test_deleter_not_called_until_no_references() raises:
+    var deleted = False
+    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted).as_any_origin()))
+    var p2 = p
+    _ = p^
+    assert_false(deleted)
+
+    var vec = List[type_of(p)]()
+    vec.append(p2)
+    _ = p2^
+    assert_false(deleted)
+    _ = vec^
+    assert_true(deleted)
+
+
+def test_deleter_not_called_until_no_references_explicit_copy() raises:
+    var deleted = False
+    var p = ArcPointer(ObservableDel(UnsafePointer(to=deleted).as_any_origin()))
+    var p2 = p.copy()
+    _ = p^
+    assert_false(deleted)
+
+    var vec = List[type_of(p)]()
+    vec.append(p2.copy())
+    _ = p2^
+    assert_false(deleted)
+    _ = vec^
+    assert_true(deleted)
+
+
+def test_count() raises:
+    var a = ArcPointer(10)
+    var b = a.copy()
+    var c = a
+    assert_equal(UInt64(3), a.count())
+    _ = b^
+    assert_equal(UInt64(2), a.count())
+    _ = c
+    assert_equal(UInt64(1), a.count())
+
+
+def test_steal_data_and_construct_from_raw_ptr() raises:
+    var deleted = False
+    var leaked = ArcPointer(
+        ObservableDel(UnsafePointer(to=deleted).as_any_origin())
+    )
+
+    var raw = leaked^.steal_data()
+    assert_false(deleted)
+
+    var p = ArcPointer(unsafe_from_raw_pointer=raw)
+    _ = p^
+    assert_true(deleted)
+
+
+def test_steal_data_does_not_decrement_refcount() raises:
+    var leaked = ArcPointer(42)
+    var copy = leaked.copy()
+
+    assert_equal(UInt64(2), copy.count())
+    var raw = leaked^.steal_data()
+
+    # since we leaked the data, the refcount was not decremented
+    assert_equal(UInt64(2), copy.count())
+
+    _ = copy^
+
+    var p = ArcPointer(unsafe_from_raw_pointer=raw)
+    assert_equal(UInt64(1), p.count())
+
+
+def test_write_to() raises:
+    check_write_to(ArcPointer(42), expected="42", is_repr=False)
+    check_write_to(ArcPointer("hello"), expected="hello", is_repr=False)
+
+
+def test_write_repr_to() raises:
+    check_write_to(
+        ArcPointer(42), expected="ArcPointer[Int](Int(42))", is_repr=True
+    )
+    check_write_to(
+        ArcPointer("hello"),
+        expected="ArcPointer[String]('hello')",
+        is_repr=True,
+    )
+
+
+def test_hash() raises:
+    var p = ArcPointer(42)
+    var q = p  # same allocation
+
+    # Two pointers to the same object hash identically.
+    assert_equal(hash(p), hash(q))
+
+    # Distinct allocations with the same value hash identically (value-based).
+    var r = ArcPointer(42)
+    assert_equal(hash(p), hash(r))
+
+    # Different values produce different hashes.
+    var s = ArcPointer(99)
+    assert_true(hash(p) != hash(s))
+
+
+def test_eq() raises:
+    var p = ArcPointer(42)
+    var q = p  # same allocation
+
+    # Same allocation: equal.
+    assert_true(p == q)
+    assert_false(p != q)
+
+    # Different allocations, same value: equal (value-based).
+    var r = ArcPointer(42)
+    assert_true(p == r)
+    assert_false(p != r)
+
+    # Different values: not equal.
+    var s = ArcPointer(99)
+    assert_false(p == s)
+    assert_true(p != s)
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

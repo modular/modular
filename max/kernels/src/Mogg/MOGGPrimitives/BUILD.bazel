@@ -1,0 +1,19 @@
+load("//bazel:api.bzl", "mojo_library")
+
+package(default_visibility = ["//max:consumers"])
+
+mogg_primitives_lib_deps = [
+    "//max:nn",
+    "//max:pipeline",
+    "//max:register",
+    "//max:structured_kernels",
+    "@mojo//:std",
+    "//max:weights_registry",
+]
+
+mojo_library(
+    name = "MOGGPrimitives",
+    srcs = glob(["**/*.mojo"]),
+    validate_missing_docs = False,
+    deps = mogg_primitives_lib_deps,
+)

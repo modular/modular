@@ -1,0 +1,319 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+from std.sys.info import CompilationTarget, is_64bit
+
+from std.testing import (
+    TestSuite,
+    assert_almost_equal,
+    assert_equal,
+    assert_false,
+    assert_true,
+)
+
+from std.utils.numerics import (
+    FPUtils,
+    get_accum_type,
+    inf,
+    isfinite,
+    isinf,
+    isnan,
+    max_finite,
+    max_or_inf,
+    min_finite,
+    min_or_neg_inf,
+    nan,
+    neg_inf,
+    nextafter,
+)
+
+
+# TODO: improve coverage and organization of these tests
+def test_FPUtils() raises:
+    assert_equal(FPUtils[DType.float32].mantissa_width(), 23)
+    assert_equal(FPUtils[DType.float32].exponent_bias(), 127)
+
+    comptime FPU64 = FPUtils[DType.float64]
+
+    assert_equal(FPU64.mantissa_width(), 52)
+    assert_equal(FPU64.exponent_bias(), 1023)
+
+    assert_equal(FPU64.get_exponent(FPU64.set_exponent(1, 2)), 2)
+    assert_equal(FPU64.get_mantissa(FPU64.set_mantissa(1, 3)), 3)
+    assert_equal(FPU64.get_exponent(FPU64.set_exponent(-1, 4)), 4)
+    assert_equal(FPU64.get_mantissa(FPU64.set_mantissa(-1, 5)), 5)
+    assert_true(FPU64.get_sign(FPU64.set_sign(0, True)))
+    assert_false(FPU64.get_sign(FPU64.set_sign(0, False)))
+    assert_true(FPU64.get_sign(FPU64.set_sign(-0, True)))
+    assert_false(FPU64.get_sign(FPU64.set_sign(-0, False)))
+    assert_false(FPU64.get_sign(1))
+    assert_true(FPU64.get_sign(-1))
+    assert_false(FPU64.get_sign(FPU64.pack(False, 6, 12)))
+    assert_equal(FPU64.get_exponent(FPU64.pack(False, 6, 12)), 6)
+    assert_equal(FPU64.get_mantissa(FPU64.pack(False, 6, 12)), 12)
+    assert_true(FPU64.get_sign(FPU64.pack(True, 6, 12)))
+    assert_equal(FPU64.get_exponent(FPU64.pack(True, 6, 12)), 6)
+    assert_equal(FPU64.get_mantissa(FPU64.pack(True, 6, 12)), 12)
+
+
+def test_get_accum_type() raises:
+    assert_equal(get_accum_type[DType.float32](), DType.float32)
+    assert_equal(get_accum_type[DType.float64](), DType.float64)
+    assert_equal(get_accum_type[DType.bfloat16](), DType.float32)
+    assert_equal(get_accum_type[DType.int8](), DType.int8)
+    assert_equal(get_accum_type[DType.int16](), DType.int16)
+    assert_equal(get_accum_type[DType.int32](), DType.int32)
+    assert_equal(get_accum_type[DType.int64](), DType.int64)
+    assert_equal(get_accum_type[DType.uint8](), DType.uint8)
+    assert_equal(get_accum_type[DType.uint16](), DType.uint16)
+    assert_equal(get_accum_type[DType.uint32](), DType.uint32)
+    assert_equal(get_accum_type[DType.uint64](), DType.uint64)
+
+
+def test_isfinite() raises:
+    assert_true(isfinite(Float32(33)))
+
+    assert_false(isfinite(inf[DType.bfloat16]()))
+    assert_false(isfinite(neg_inf[DType.bfloat16]()))
+    assert_false(isfinite(nan[DType.bfloat16]()))
+
+    assert_false(isfinite(inf[DType.float16]()))
+    assert_false(isfinite(inf[DType.float32]()))
+    assert_false(isfinite(inf[DType.float64]()))
+    assert_false(isfinite(neg_inf[DType.float16]()))
+    assert_false(isfinite(neg_inf[DType.float32]()))
+    assert_false(isfinite(neg_inf[DType.float64]()))
+    assert_false(isfinite(nan[DType.float16]()))
+    assert_false(isfinite(nan[DType.float32]()))
+    assert_false(isfinite(nan[DType.float64]()))
+
+
+def test_isinf() raises:
+    assert_false(isinf(Float32(33)))
+
+    assert_true(isinf(inf[DType.bfloat16]()))
+    assert_true(isinf(neg_inf[DType.bfloat16]()))
+    assert_false(isinf(nan[DType.bfloat16]()))
+
+    assert_true(isinf(inf[DType.float16]()))
+    assert_true(isinf(inf[DType.float32]()))
+    assert_true(isinf(inf[DType.float64]()))
+    assert_true(isinf(neg_inf[DType.float16]()))
+    assert_true(isinf(neg_inf[DType.float32]()))
+    assert_true(isinf(neg_inf[DType.float64]()))
+    assert_false(isinf(nan[DType.float16]()))
+    assert_false(isinf(nan[DType.float32]()))
+    assert_false(isinf(nan[DType.float64]()))
+
+
+def test_isnan() raises:
+    assert_false(isnan(Float32(33)))
+
+    assert_false(isnan(inf[DType.bfloat16]()))
+    assert_false(isnan(neg_inf[DType.bfloat16]()))
+    assert_true(isnan(nan[DType.bfloat16]()))
+
+    assert_false(isnan(inf[DType.float16]()))
+    assert_false(isnan(inf[DType.float32]()))
+    assert_false(isnan(inf[DType.float64]()))
+    assert_false(isnan(neg_inf[DType.float16]()))
+    assert_false(isnan(neg_inf[DType.float32]()))
+    assert_false(isnan(neg_inf[DType.float64]()))
+    assert_true(isnan(nan[DType.float16]()))
+    assert_true(isnan(nan[DType.float32]()))
+    assert_true(isnan(nan[DType.float64]()))
+
+
+def overflow_int[dtype: DType]() -> Bool:
+    comptime assert (
+        dtype.is_integral()
+    ), "comparison only valid on integral types"
+    return max_finite[dtype]() + 1 < max_finite[dtype]()
+
+
+def overflow_fp[dtype: DType]() -> Bool:
+    comptime assert (
+        dtype.is_floating_point()
+    ), "comparison only valid on floating point types"
+    return max_finite[dtype]() + 1 == max_finite[dtype]()
+
+
+def test_max_finite() raises:
+    assert_almost_equal(max_finite[DType.float32](), 3.4028235e38)
+    assert_almost_equal(max_finite[DType.float64](), 1.7976931348623157e308)
+
+    assert_true(max_finite[DType.bool]())
+
+    assert_true(overflow_int[DType.int8]())
+    assert_true(overflow_int[DType.uint8]())
+    assert_true(overflow_int[DType.int16]())
+    assert_true(overflow_int[DType.uint16]())
+    assert_true(overflow_int[DType.int32]())
+    assert_true(overflow_int[DType.uint32]())
+    assert_true(overflow_int[DType.int64]())
+    assert_true(overflow_int[DType.uint64]())
+    assert_true(overflow_int[DType.int]())
+    assert_true(overflow_int[DType.uint]())
+
+    assert_true(overflow_fp[DType.float32]())
+    assert_true(overflow_fp[DType.float64]())
+
+    assert_equal(max_finite[DType.int8](), 127)
+    assert_equal(max_finite[DType.uint8](), 255)
+    assert_equal(max_finite[DType.int16](), 32767)
+    assert_equal(max_finite[DType.uint16](), 65535)
+    assert_equal(max_finite[DType.int32](), 2147483647)
+    assert_equal(max_finite[DType.uint32](), 4294967295)
+    assert_equal(max_finite[DType.int64](), 9223372036854775807)
+    assert_equal(max_finite[DType.uint64](), 18446744073709551615)
+    # FIXME(#5214): uncomment once it is closed
+    # assert_equal(
+    #     max_finite[DType.int128](), 0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF
+    # )
+    # assert_equal(
+    #     max_finite[DType.uint128](), 0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF
+    # )
+    # assert_equal(
+    #     max_finite[DType.int256](),
+    #     0x7FFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF,
+    # )
+    # assert_equal(
+    #     max_finite[DType.uint256](),
+    #     0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF,
+    # )
+
+    comptime if is_64bit():
+        assert_equal(max_finite[DType.int](), 9223372036854775807)
+        assert_equal(max_finite[DType.uint](), 18446744073709551615)
+    else:
+        assert_equal(max_finite[DType.int](), 2147483647)
+        assert_equal(max_finite[DType.uint](), 4294967295)
+
+
+def underflow_int[dtype: DType]() -> Bool:
+    comptime assert (
+        dtype.is_integral()
+    ), "comparison only valid on integral types"
+    return min_finite[dtype]() - 1 > min_finite[dtype]()
+
+
+def underflow_fp[dtype: DType]() -> Bool:
+    comptime assert (
+        dtype.is_floating_point()
+    ), "comparison only valid on floating point types"
+    return min_finite[dtype]() - 1 == min_finite[dtype]()
+
+
+def test_min_finite() raises:
+    assert_almost_equal(min_finite[DType.float32](), -3.4028235e38)
+    assert_almost_equal(min_finite[DType.float64](), -1.7976931348623157e308)
+
+    assert_false(min_finite[DType.bool]())
+
+    assert_true(underflow_int[DType.int8]())
+    assert_true(underflow_int[DType.uint8]())
+    assert_true(underflow_int[DType.int16]())
+    assert_true(underflow_int[DType.uint16]())
+    assert_true(underflow_int[DType.int32]())
+    assert_true(underflow_int[DType.uint32]())
+    assert_true(underflow_int[DType.int64]())
+    assert_true(underflow_int[DType.uint64]())
+    assert_true(underflow_int[DType.int]())
+    assert_true(underflow_int[DType.uint]())
+
+    assert_true(underflow_fp[DType.float32]())
+    assert_true(underflow_fp[DType.float64]())
+
+    assert_equal(min_finite[DType.int8](), -128)
+    assert_equal(min_finite[DType.int16](), -32768)
+    assert_equal(min_finite[DType.int32](), -2147483648)
+    assert_equal(min_finite[DType.int64](), -9223372036854775808)
+    # FIXME(#5214): uncomment once it is closed
+    # assert_equal(
+    #     min_finite[DType.int128](), -0x8000_0000_0000_0000_0000_0000_0000_0000
+    # )
+    # assert_equal(
+    #     min_finite[DType.int256](),
+    #     -0x8000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000,
+    # )
+
+    comptime if is_64bit():
+        assert_equal(min_finite[DType.int](), -9223372036854775808)
+        assert_equal(min_finite[DType.uint](), 0)
+    else:
+        assert_equal(min_finite[DType.int](), -2147483648)
+        assert_equal(min_finite[DType.uint](), 0)
+
+
+def test_max_or_inf() raises:
+    assert_almost_equal(max_or_inf[DType.float32](), inf[DType.float32]())
+    assert_almost_equal(max_or_inf[DType.float64](), inf[DType.float64]())
+    assert_true(max_or_inf[DType.bool]())
+
+
+def test_min_or_neg_inf() raises:
+    assert_almost_equal(
+        min_or_neg_inf[DType.float32](), neg_inf[DType.float32]()
+    )
+    assert_almost_equal(
+        min_or_neg_inf[DType.float64](), neg_inf[DType.float64]()
+    )
+    assert_false(min_or_neg_inf[DType.bool]())
+
+
+def test_neg_inf() raises:
+    assert_false(isfinite(neg_inf[DType.float32]()))
+    assert_false(isfinite(neg_inf[DType.float64]()))
+    assert_true(isinf(neg_inf[DType.float32]()))
+    assert_true(isinf(neg_inf[DType.float64]()))
+    assert_false(isnan(neg_inf[DType.float32]()))
+    assert_false(isnan(neg_inf[DType.float64]()))
+    assert_equal(-inf[DType.float32](), neg_inf[DType.float32]())
+    assert_equal(-inf[DType.float64](), neg_inf[DType.float64]())
+
+
+def test_nextafter() raises:
+    assert_true(isnan(nextafter(nan[DType.float32](), nan[DType.float32]())))
+    assert_true(isinf(nextafter(inf[DType.float32](), inf[DType.float32]())))
+    assert_true(isinf(nextafter(-inf[DType.float32](), -inf[DType.float32]())))
+    assert_almost_equal(nextafter(Float64(0), Float64(0)), 0)
+    assert_almost_equal(nextafter(Float64(0), Float64(1)), 5e-324)
+    assert_almost_equal(nextafter(Float64(0), Float64(-1)), -5e-324)
+    assert_almost_equal(nextafter(Float64(1), Float64(0)), 0.99999999999999988)
+    assert_almost_equal(
+        nextafter(Float64(-1), Float64(0)), -0.99999999999999988
+    )
+    assert_almost_equal(
+        nextafter(SIMD[DType.float64, 2](0, 1), SIMD[DType.float64, 2](0, 1)),
+        SIMD[DType.float64, 2](0, 1),
+    )
+    assert_almost_equal(
+        nextafter(SIMD[DType.float64, 2](0, 1), SIMD[DType.float64, 2](1, 1)),
+        SIMD[DType.float64, 2](5e-324, 1),
+    )
+    assert_almost_equal(
+        nextafter(SIMD[DType.float64, 2](0, 1), SIMD[DType.float64, 2](-1, 1)),
+        SIMD[DType.float64, 2](-5e-324, 1),
+    )
+    assert_almost_equal(
+        nextafter(SIMD[DType.float64, 2](1, 1), SIMD[DType.float64, 2](0, 0)),
+        SIMD[DType.float64, 2](0.99999999999999988, 0.99999999999999988),
+    )
+    assert_almost_equal(
+        nextafter(SIMD[DType.float64, 2](-1, -1), SIMD[DType.float64, 2](0, 0)),
+        SIMD[DType.float64, 2](-0.99999999999999988, -0.99999999999999988),
+    )
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

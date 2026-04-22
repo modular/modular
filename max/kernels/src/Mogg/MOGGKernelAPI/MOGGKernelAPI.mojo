@@ -1,0 +1,12481 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+# ===-----------------------------------------------------------------------===#
+# General imports
+# ===-----------------------------------------------------------------------===#
+
+from std.collections import OptionalReg
+from std.math import (
+    acos,
+    atanh,
+    ceil,
+    ceildiv,
+    cos,
+    erf,
+    exp,
+    floor,
+    gcd,
+    iota,
+    rsqrt,
+    log,
+    log1p,
+    sin,
+    sqrt,
+    tanh,
+)
+from std.random import seed
+from std.sys import align_of, get_defined_bool, llvm_intrinsic
+from std.sys.info import (
+    simd_width_of,
+    size_of,
+    _current_target,
+    _accelerator_arch,
+)
+import compiler_internal as compiler
+
+# ===-----------------------------------------------------------------------===#
+# Kernel imports
+# ===-----------------------------------------------------------------------===#
+from std.algorithm import max as reduce_max
+from std.algorithm import mean
+from std.algorithm import min as reduce_min
+from std.algorithm import elementwise, product, sum
+from std.algorithm.reduction import _reduce_generator
+from std.builtin.simd import _pow
+from comm.allgather import allgather
+from comm.allreduce import allreduce
+
+from comm.allreduce_residual_rmsnorm_fp8 import allreduce_residual_rmsnorm_fp8
+from comm.reducescatter import reducescatter
+from comm.broadcast import broadcast
+from comm.scatter import scatter
+from comm import MAX_GPUS, Signal
+import comm.vendor.ccl as vendor_ccl
+from compiler_internal import StaticTensorSpec
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import is_cpu, is_gpu, is_valid_target
+from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
+from layout import (
+    ComptimeInt,
+    Coord,
+    CoordLike,
+    Idx,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeInt,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    coord_to_index_list,
+    row_major,
+)
+from layout.coord import DynamicCoord, _IntTupleToCoordLike
+from layout.tile_layout import Layout as TileLayout
+from linalg.bmm import batched_matmul, batched_matmul_shape
+from linalg.bmm import (
+    elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
+)
+from linalg.fp8_quantization import (
+    batched_quantize_dynamic_scaled_fp8,
+    convert_e4m3fn_to_e4m3fnuz,
+    matmul_dynamic_scaled_fp8,
+    quantize_dynamic_scaled_fp8,
+    quantize_static_scaled_fp8,
+    quantize_tensor_dynamic_scaled_fp8,
+)
+from linalg.fp4_quantization import (
+    block_scaled_matmul,
+    quantize_dynamic_block_scaled,
+    grouped_quantize_dynamic_scaled_fp4_async,
+    block_scales_interleave,
+    quantize_mxfp4_amd,
+    quantize_dynamic_block_scaled_mxfp4,
+    matmul_dynamic_block_scaled_mxfp4,
+    grouped_matmul_block_scaled_mxfp4,
+)
+from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
+from linalg.mxfp4_dequant import dequant_mxfp4
+from linalg.grouped_matmul_sm100_blockwise_fp8 import (
+    grouped_matmul_dynamic_scaled_fp8,
+)
+from linalg.grouped_matmul_block_scaled_dispatch import (
+    grouped_matmul_block_scaled_dispatch,
+)
+from linalg.bmm import batched_matmul_dynamic_scaled_fp8
+from linalg.grouped_matmul import grouped_matmul
+from linalg.lora import shrink_qkv_permute_3mn_sm100
+from linalg.matmul import matmul
+from linalg.matrix_band_part import matrix_band_part
+from linalg.packing import _pack_b_ndbuffer_impl, pack_matmul_b_shape_func
+from linalg.utils import (
+    elementwise_compute_lambda_type as matmul_elementwise_compute_lambda_type,
+)
+from linalg.utils import (
+    elementwise_epilogue_type as matmul_elementwise_epilogue_type,
+)
+from nn import arg_nonzero
+from nn._ragged_utils import (
+    get_batch_from_row_offsets,
+    merge_ragged_tensors,
+    eagle_prefill_shift_tokens,
+)
+from nn.activations import relu
+from nn.arange import arange_shape
+from nn.argmaxmin import argmax, argmin
+from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
+from nn.argsort import argsort
+from nn.bicubic import resize_bicubic
+from nn.concat import concat, fused_concat
+from nn.conv.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
+from nn.conv.conv import pack_filter as _pack_conv_filter
+from nn.conv.conv import pack_filter_from_fcrs as _pack_conv_filter_from_fcrs
+from nn.conv.conv import pack_filter_shape as pack_filter_shape_conv
+from nn.conv.conv_transpose import (
+    conv_transpose_shape,
+    conv_transposed_cpu,
+    conv_transposed_gpu,
+)
+from nn.conv.conv_transpose import pack_filter as _pack_conv_transpose_filter
+from nn.conv.conv_transpose import (
+    pack_filter_shape as pack_filter_shape_conv_transpose,
+)
+from nn.conv.conv_utils import elementwise_simd_epilogue_type
+from nn.cumsum import cumsum
+from nn.attention.cpu.mha import flash_attention as nn_flash_attention
+from nn.attention.cpu.mha import flash_attention_split_kv
+from nn.fold import fold, fold_shape
+from nn.gather_scatter import (
+    Axis,
+    ScatterOobIndexStrategy,
+    _unsafe_normalize_neg_index,
+    gather,
+    gather_nd,
+    gather_nd_shape,
+    gather_reduce,
+    gather_shape,
+    normalize_neg_index,
+    scatter_elements,
+    scatter_elements_shape,
+    scatter_nd,
+    scatter_nd_generator,
+    scatter_nd_shape,
+    scatter_set_constant,
+)
+from nn.index_tensor import (
+    advanced_indexing_getitem,
+    advanced_indexing_getitem_shape,
+    advanced_indexing_setitem_inplace,
+    index_tensor,
+)
+from nn.irfft import irfft
+from kv_cache.lmcache_transfer import lmcache_offload, lmcache_onload
+from nn.kv_cache import (
+    copy_kv_pages_d2h,
+    generic_flash_attention_kv_cache_padded,
+    generic_fused_qk_rope_bshd_paged,
+    generic_fused_qkv_matmul_kv_cache_bshd_paged,
+    generic_get_paged_cache,
+    generic_get_paged_cache_with_scales,
+    print_kv_cache_paged_generic_cpu,
+    print_kv_cache_paged_generic_gpu,
+    rms_norm_kv_cache_ragged_paged,
+    rms_norm_value_cache_ragged_paged,
+)
+from nn.rope_split_store import (
+    rope_split_store_paged_ragged,
+    rope_split_store_paged_ragged_with_position_ids,
+)
+from nn.kv_cache_ragged import (
+    generic_cross_attention_kv_cache,
+    generic_flare_mla_decode_kv_cache_ragged,
+    generic_flare_mla_decompress_k_cache_ragged_paged,
+    generic_flare_mla_prefill_kv_cache_ragged,
+    generic_flare_mla_prefill_ragged_paged_plan,
+    generic_flash_attention_kv_cache_ragged,
+    generic_flash_attention_kv_cache_ragged_sink,
+    generic_fused_qk_rope_bshd_paged_ragged,
+    generic_fused_qkv_matmul_kv_cache_paged_ragged,
+    generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
+    generic_fused_qkv_matmul_kv_cache_paged_ragged_scale,
+    generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4,
+    generic_kv_cache_radd_dispatch,
+    k_matmul_ragged_paged,
+    k_matmul_ragged_paged_scale,
+    kv_cache_2m_iadd_dispatch,
+    kv_cache_store_ragged,
+    kv_cache_store_padded,
+    kv_matmul_ragged_paged,
+    unfused_qkv_matmul_ragged_paged_gguf_quantized,
+)
+from nn.attention.gpu.mha import (
+    MHADecodeDispatchMetadata,
+    flash_attention,
+    flash_attention_ragged,
+)
+from nn.attention.gpu.mha_decode_partition_heuristic import (
+    mha_decoding_num_partitions,
+)
+from nn.attention.mha_mask import MHAMask
+from nn.attention.mha_utils import as_dynamic_row_major_1d, dispatch_mask
+from nn.attention.gpu.mla_graph import (
+    mla_prefill_branch_fp8,
+    mla_prefill_branch_bf16,
+    mla_decode_branch_fp8,
+    mla_decode_branch_bf16,
+    mla_prefill_decode_graph_fp8,
+    mla_prefill_decode_graph_bf16,
+)
+from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
+from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
+    compute_mla_dispatch_scalars,
+)
+from nn.moe import moe_create_indices, router_group_limited, single_group_router
+from nn.nms import non_max_suppression, non_max_suppression_shape_func
+from nn.normalization import (
+    group_norm,
+    layer_norm,
+    rms_norm,
+    rms_norm_fused_fp8,
+    rms_norm_fused_residual_add,
+    rms_norm_rope_gpu,
+)
+from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
+from nn.pad_gpu import pad_constant as pad_constant_gpu
+from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
+from nn.rand_normal import random_normal
+from nn.rand_uniform import random_uniform
+from nn.repeat_interleave import repeat_interleave, repeat_interleave_shape
+from nn.reshape import reshape, reshape_shape
+from nn.resize import (
+    CoordinateTransformationMode,
+    RoundMode,
+    resize_linear,
+    resize_nearest_neighbor,
+)
+from nn.roi_align import roi_align_nhwc
+from nn.rope import rope_ragged
+from nn.sampling import apply_penalties_to_logits, update_frequency_data
+from nn.slice import (
+    copy_to_slice,
+    slice_as_view,
+    slice_shape,
+    sliced_add,
+)
+from nn.shard_and_stack import shard_and_stack
+from nn.softmax import logsoftmax, softmax
+from nn.split import split
+from nn.tile import tile, tile_shape
+from nn.topk import fused_token_sampling_cpu as _fused_token_sampling_cpu
+from nn.topk import fused_token_sampling_gpu as _fused_token_sampling_gpu
+from nn.topk import top_k, top_k_shape_impl
+from nn.toppminp import min_p_sampling as min_p_sampling_cpu
+from nn.toppminp_gpu import min_p_sampling_gpu
+from quantization import (
+    Q4sym,
+    block_Q4_K,
+    block_Q6_K,
+    block_QK_K,
+    q4_k_dequantize_impl,
+    q6_k_dequantize_impl,
+)
+from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
+from quantization.qmatmul_gpu import (
+    gpu_qint4_repack_GPTQ,
+    gpu_qint4_repack_Q4_0,
+    matmul_gpu_qint4,
+)
+from quantization.qmatmul_k import (
+    matmul_Q4_K,
+    matmul_Q4_K_pack_b,
+    matmul_Q6_K,
+    matmul_Q6_K_pack_b,
+)
+from std.ffi import external_call
+from std.runtime.asyncrt import (
+    DeviceContextPtr,
+    DeviceContextPtrList,
+    TaskGroup,
+)
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from tensor import (
+    DynamicTensor,
+    ElementwiseBinaryComparisonOp,
+    ElementwiseBinaryOp,
+    ElementwiseUnaryMixedOp,
+    ElementwiseUnaryOp,
+    InputTensor,
+    InputVariadicTensors,
+    IOSpec,
+    ManagedTensorSlice,
+    OutputTensor,
+    OutputVariadicTensors,
+    VariadicTensors,
+    foreach,
+    simd_load_from_managed_tensor_slice,
+    simd_store_into_managed_tensor_slice,
+    view_copy_impl,
+)
+from tensor.managed_tensor_slice import _FusedComputeOutputTensor
+from tensor.managed_tensor_slice import (
+    _FusedInputTensor as FusedInputTensor,
+)
+from tensor.managed_tensor_slice import (
+    _FusedInputVariadicTensors as FusedInputVariadicTensors,
+)
+from tensor.managed_tensor_slice import (
+    _FusedOutputTensor as FusedOutputTensor,
+)
+from tensor.managed_tensor_slice import (
+    _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
+)
+from tensor.managed_tensor_slice import (
+    _MutableInputTensor as MutableInputTensor,
+)
+from tensor.managed_tensor_slice import (
+    _MutableInputVariadicTensors as MutableInputVariadicTensors,
+)
+from std.time import sleep
+from std.logger import Logger
+
+comptime logger = Logger()
+
+from std.utils import IndexList, StaticTuple
+from std.utils.index import Index
+from std.utils.numerics import isinf, isnan
+from nn.learnable_2d_interp_pos_emb import learnable_2d_interp_pos_emb
+from nn.spatial_merge import spatial_merge
+from nn.tpool_patch_merger import (
+    tpool_patch_merger as nn_tpool_patch_merger,
+)
+
+# ===-----------------------------------------------------------------------===#
+# Helpers
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+def reduce_shape[
+    input_rank: Int, input_type: DType, //
+](
+    input_buf: ManagedTensorSlice[dtype=input_type, rank=input_rank, ...],
+    axis: Int,
+) raises -> IndexList[input_rank]:
+    """
+    Compute the output shape of a `reduce` operation, and assert the inputs are
+    compatible.
+
+    Parameters:
+        input_rank: Input_rank of the input tensor.
+        input_type: Type of the input tensor.
+
+    Args:
+        input_buf: The input tensor.
+        axis: The axis tensor.
+
+    Returns:
+        The output shape.
+    """
+
+    # compute and return the output shape
+    var output_shape = input_buf.shape()
+    output_shape[normalize_neg_index(axis, input_rank)] = 1
+    return output_shape
+
+
+@always_inline
+def _unsafe_str_to_coord[
+    str_slice: StaticString
+]() -> DynamicCoord[DType.int64, len(str_slice.split("_"))]:
+    """
+    Convert a string of integers separated by "_" to an IntTuple.
+
+    Parameters:
+        str_slice: The string of integers separated by "_".
+
+    Returns:
+        The IntTuple.
+    """
+    comptime size = len(str_slice.split("_"))
+    var coord = DynamicCoord[DType.int64, size]()
+
+    comptime for i in range(size):
+        comptime sub_string = str_slice.split("_")[i]
+        comptime str_len = sub_string.byte_length()
+        var result = 0
+
+        comptime for pos in range(str_len):
+            result = result * 10 + (ord(sub_string[byte=pos]) - ord("0"))
+        coord[i] = rebind[coord.element_types[i]](Int64(result))
+
+    return coord
+
+
+# TODO(MOCO-1413): remove this need to keep imported exported funcs alive.
+@export
+def export():
+    comptime _simd_load_from_managed_tensor_slice = simd_load_from_managed_tensor_slice
+    comptime _simd_store_into_managed_tensor_slice = simd_store_into_managed_tensor_slice
+
+
+# ===-----------------------------------------------------------------------===#
+# Elementwise Kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.range")
+struct Range:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        target: StaticString,
+        _trace_name: StaticString,
+        use_blocking_impl: Bool = False,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=1, ...],
+        start: Scalar[dtype],
+        stop: Scalar[dtype],
+        step: Scalar[dtype],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def func[
+            width: Int, element_alignment: Int
+        ](idx: IndexList[1]) -> SIMD[dtype, width]:
+            return start + step * (iota[dtype, width](Scalar[dtype](idx[0])))
+
+        foreach[
+            func,
+            target=target,
+            _trace_name=_trace_name,
+            use_blocking_impl=use_blocking_impl,
+        ](output, ctx)
+
+    @staticmethod
+    def shape[
+        dtype: DType
+    ](
+        start: Scalar[dtype],
+        stop: Scalar[dtype],
+        step: Scalar[dtype],
+    ) raises -> IndexList[1]:
+        return arange_shape(start, stop, step)
+
+
+# ===-----------------------------------------------------------------------===#
+# Binary Elementwise Kernels
+# ===-----------------------------------------------------------------------===#
+
+
+# useful for testing --> identity op that simply copies input into output
+@compiler.register("copy")
+struct Copy:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def func[
+            width: Int, element_alignment: Int
+        ](idx: IndexList[rank]) -> SIMD[dtype, width]:
+            return input._fused_load[
+                width, element_alignment=element_alignment
+            ](idx)
+
+        foreach[func](output, ctx)
+
+
+# TODO(GEX-3544): Remove once the FLUX.2 VAE encoder compiler-fusion
+# NaN bug is fixed. Identity copy with non-fused InputTensor and
+# non-fused OutputTensor so the compiler cannot fuse through the op's
+# boundary. Used as a fusion barrier in ResnetBlock2D.forward.
+@compiler.register("fusion_barrier")
+struct FusionBarrier:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def func[
+            width: Int, element_alignment: Int
+        ](idx: IndexList[rank]) -> SIMD[dtype, width]:
+            return input.load[width](idx)
+
+        foreach[func, target=target](output, ctx)
+
+
+@compiler.register("nan_check_count")
+struct NanCheckCountOp:
+    """Counts NaN/Inf values in a floating-point tensor.
+
+    See nn.nan_check for implementation details.
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString = "",
+    ](
+        nan_count_out: OutputTensor[dtype=DType.int32, rank=1, ...],
+        inf_count_out: OutputTensor[dtype=DType.int32, rank=1, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        from .nan_check import nan_check_count
+
+        nan_check_count[dtype, rank, target](
+            nan_count_out, inf_count_out, input, ctx
+        )
+
+
+@compiler.register("nan_check_raise")
+struct NanCheckRaiseOp:
+    """Raises an error if NaN or Inf counts are non-zero.
+
+    See nn.nan_check for implementation details.
+    """
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString = "",
+        label: StaticString = "",
+        type_str: StaticString = "",
+    ](
+        nan_count: InputTensor[dtype=DType.int32, rank=1, ...],
+        inf_count: InputTensor[dtype=DType.int32, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        from .nan_check import nan_check_raise
+
+        nan_check_raise[label, type_str](nan_count, inf_count)
+
+
+@compiler.register("mo.add")
+struct Add(ElementwiseBinaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return lhs + rhs
+
+
+@compiler.register("mo.sub")
+struct Sub(ElementwiseBinaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return lhs - rhs
+
+
+@compiler.register("mo.mul")
+struct Mul(ElementwiseBinaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return lhs * rhs
+
+
+@compiler.register("mo.div")
+struct Div(ElementwiseBinaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return lhs / rhs
+
+
+@compiler.register("mo.mod")
+struct Mod(ElementwiseBinaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return lhs % rhs
+
+
+@compiler.register("mo.equal")
+struct Equal(ElementwiseBinaryComparisonOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+        DType.bool, width
+    ]:
+        return lhs.eq(rhs)
+
+
+@compiler.register("mo.greater")
+struct Greater(ElementwiseBinaryComparisonOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+        DType.bool, width
+    ]:
+        return lhs.gt(rhs)
+
+
+@compiler.register("mo.greater_equal")
+struct GreaterEqual(ElementwiseBinaryComparisonOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+        DType.bool, width
+    ]:
+        return lhs.ge(rhs)
+
+
+@compiler.register("mo.not_equal")
+struct NotEqual(ElementwiseBinaryComparisonOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+        DType.bool, width
+    ]:
+        return lhs.ne(rhs)
+
+
+@compiler.register("mo.and")
+struct And(ElementwiseBinaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime assert dtype == DType.bool, "expected bool operands for mo.and"
+        return lhs & rhs
+
+
+@compiler.register("mo.or")
+struct Or(ElementwiseBinaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime assert dtype == DType.bool, "expected bool operands for mo.oor"
+        return lhs | rhs
+
+
+@compiler.register("mo.xor")
+struct Xor(ElementwiseBinaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime assert dtype == DType.bool, "expected bool operands for mo.xor"
+        return lhs ^ rhs
+
+
+@compiler.register("mo.pow")
+struct Pow:
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        pow_dtype: DType,
+        width: SIMDSize,
+    ](lhs: SIMD[dtype, width], rhs: SIMD[pow_dtype, width]) -> SIMD[
+        dtype, width
+    ]:
+        return _pow(lhs, rhs)
+
+
+@compiler.register("mo.max")
+struct Max(ElementwiseBinaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return max(lhs, rhs)
+
+
+@compiler.register("mo.min")
+struct Min(ElementwiseBinaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return min(lhs, rhs)
+
+
+# ===-----------------------------------------------------------------------===#
+# Unary Elementwise Kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.cast")
+struct Cast(ElementwiseUnaryMixedOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        out_dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
+        return x.cast[out_dtype]()
+
+
+@compiler.register("mo.negative")
+struct Negative(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return -x
+
+
+@compiler.register("mo.relu")
+struct ReLU(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return relu(x)
+
+
+@compiler.register("mo.ceil")
+struct Ceil(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return ceil(x)
+
+
+@compiler.register("mo.floor")
+struct Floor(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return floor(x)
+
+
+@compiler.register("mo.tanh")
+struct Tanh(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
+        return tanh(x)
+
+
+@compiler.register("mo.acos")
+struct ACos(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
+        return acos(x)
+
+
+@compiler.register("mo.atanh")
+struct ATanh(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
+        return atanh(x)
+
+
+@compiler.register("mo.cos")
+struct Cos(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
+        return cos(x)
+
+
+@compiler.register("mo.sin")
+struct Sin(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
+        return sin(x)
+
+
+@compiler.register("mo.erf")
+struct Erf(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
+        return erf(x)
+
+
+@compiler.register("mo.exp")
+struct Exp(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
+        return exp(x)
+
+
+@compiler.register("mo.round")
+struct Round(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return round(x)
+
+
+@compiler.register("mo.sqrt")
+struct Sqrt(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return sqrt(x)
+
+
+@compiler.register("mo.rsqrt")
+struct Rsqrt(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return rsqrt(x)
+
+
+@compiler.register("mo.select")
+struct Select:
+    @staticmethod
+    def elementwise[
+        cond_dtype: DType,
+        dtype: DType,
+        width: SIMDSize,
+    ](
+        cond: SIMD[cond_dtype, width],
+        tc: SIMD[dtype, width],
+        fc: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
+        return cond.select(tc, fc)
+
+
+@compiler.register("mo.trunc")
+struct Trunc(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return llvm_intrinsic["llvm.trunc", type_of(x), has_side_effect=False](
+            x
+        )
+
+
+@compiler.register("mo.log")
+struct Log(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
+        return log(x)
+
+
+@compiler.register("mo.log1p")
+struct Log1p(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime assert (
+            dtype.is_floating_point()
+        ), "dtype must be floating point"
+        return log1p(x)
+
+
+@compiler.register("mo.is_nan")
+struct IsNan(ElementwiseUnaryMixedOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        out_dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
+        comptime assert (
+            out_dtype == DType.bool
+        ), "expected bool output type for mo.is_nan"
+        return rebind[SIMD[out_dtype, width]](isnan(x))
+
+
+@compiler.register("mo.is_inf")
+struct IsInf(ElementwiseUnaryMixedOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        out_dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
+        comptime assert (
+            out_dtype == DType.bool
+        ), "expected bool output type for mo.is_inf"
+        return rebind[SIMD[out_dtype, width]](isinf(x))
+
+
+@compiler.register("mo.not")
+struct Not(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        comptime assert dtype == DType.bool, "expected bool operands for mo.not"
+        return ~x
+
+
+@compiler.register("mo.abs")
+struct Abs(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return abs(x)
+
+
+@compiler.register("mo.convert_e4m3fn_to_e4m3fnuz")
+struct ConvertE4M3FNToE4M3FNUZ:
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.float8_e4m3fnuz, rank=2, ...],
+        input: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        convert_e4m3fn_to_e4m3fnuz(
+            input.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+            ctx.get_device_context(),
+        )
+
+    @staticmethod
+    def shape(
+        input: InputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
+    ) -> IndexList[2]:
+        return IndexList[2](input.dim_size[0](), input.dim_size[1]())
+
+
+@compiler.register("mo.squeeze_shape")
+struct SqueezeShape:
+    @staticmethod
+    def execute[
+        target: StaticString,
+        dtype: DType,
+        indices_type: DType,
+    ](
+        output_shape: OutputTensor[dtype=dtype, rank=1, ...],
+        input_shape: InputTensor[dtype=dtype, rank=1, ...],
+        remove_indices: InputTensor[dtype=indices_type, rank=1, ...],
+    ) capturing:
+        # remove_indices may not be sorted so our strategy is to use -1 to
+        # represent removed dimensions in a copied version of our input shape buffer
+        var num_input_dims = input_shape.dim_size[0]()
+        var num_remove_indices = remove_indices.dim_size[0]()
+        var final_rank = num_input_dims - num_remove_indices
+
+        assert (
+            final_rank == output_shape.dim_size[0]()
+        ), "Incorrect output shape."
+
+        comptime MAX_VECTOR_LIMIT = 12
+        assert (
+            num_input_dims <= MAX_VECTOR_LIMIT
+        ), "Only support shape vectors up to rank-12."
+        var input_shape_copy = IndexList[MAX_VECTOR_LIMIT]()
+        for i in range(num_input_dims):
+            input_shape_copy[i] = Int(input_shape[i])
+
+        # Mark every squeezed dimension as -1 in our copy of the shape tensor
+        for remove_index_index in range(num_remove_indices):
+            var remove_index = Int(remove_indices[remove_index_index])
+            var remove_index_normalize = remove_index + num_input_dims * Int(
+                remove_indices[remove_index_index] < 0
+            )
+            input_shape_copy[remove_index_normalize] = -1
+
+        # # Copy over the non -1 dimensions
+        var output_shape_index = 0
+        for input_shape_index in range(num_input_dims):
+            if input_shape_copy[input_shape_index] == -1:
+                continue
+            output_shape[output_shape_index] = Scalar[dtype](
+                input_shape_copy[input_shape_index]
+            )
+            output_shape_index += 1
+
+    @staticmethod
+    def shape[
+        dtype: DType, indices_type: DType
+    ](
+        input_shape: InputTensor[dtype=dtype, rank=1, ...],
+        remove_indices: InputTensor[dtype=indices_type, rank=1, ...],
+    ) raises -> IndexList[1]:
+        var out_dim = input_shape.dim_size[0]() - remove_indices.dim_size[0]()
+
+        if out_dim < 0:
+            raise Error(
+                "[squeeze_shape] cannot remove more dimensions than there"
+                " exists"
+            )
+
+        return IndexList[1](out_dim)
+
+
+@compiler.register("mo.unsqueeze_shape")
+struct UnsqueezeShape:
+    @staticmethod
+    def execute[
+        target: StaticString,
+        dtype: DType,
+        indices_type: DType,
+    ](
+        output_shape: OutputTensor[dtype=dtype, rank=1, ...],
+        input_shape: InputTensor[dtype=dtype, rank=1, ...],
+        padding_indices: InputTensor[dtype=indices_type, rank=1, ...],
+    ) capturing:
+        # represent uninitialized dimensions, add the padding dimensions, and copy
+        # over the remaining dimensions later.
+        var num_input_dims = input_shape.dim_size[0]()
+        var num_padding_indices = padding_indices.dim_size[0]()
+        var final_rank = num_input_dims + num_padding_indices
+        assert (
+            final_rank == output_shape.dim_size[0]()
+        ), "Incorrect output shape."
+        for output_index in range(final_rank):
+            output_shape[output_index] = -1
+
+        for padding_index_index in range(num_padding_indices):
+            var padding_index = Int(padding_indices[padding_index_index])
+            var padding_index_normalize = padding_index + final_rank * Int(
+                padding_indices[padding_index_index] < 0
+            )
+
+            assert (
+                padding_index_normalize >= 0
+                and padding_index_normalize < final_rank
+            ), (
+                "Padding indices must be between [-r, r-1] where r is the"
+                " final output rank."
+            )
+            assert output_shape[padding_index_normalize] == -1, (
+                "Duplicate padding indices point to the same dimension in"
+                " the final output shape."
+            )
+            output_shape[padding_index_normalize] = 1
+
+        # Copy over the remaining shapes
+        var orig_shape_index = 0
+        for output_shape_index in range(final_rank):
+            if output_shape[output_shape_index] != -1:
+                continue
+            output_shape[output_shape_index] = input_shape[orig_shape_index]
+            orig_shape_index += 1
+
+    @staticmethod
+    def shape[
+        dtype: DType, indices_type: DType
+    ](
+        input_shape: InputTensor[dtype=dtype, rank=1, ...],
+        remove_indices: InputTensor[dtype=indices_type, rank=1, ...],
+    ) -> IndexList[1]:
+        var out_dim = input_shape.dim_size[0]() + remove_indices.dim_size[0]()
+        return IndexList[1](out_dim)
+
+
+# ===-----------------------------------------------------------------------===#
+# ScatterND kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.scatter_nd")
+struct ScatterND:
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, ...],
+        indices: InputTensor[...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        # Existing implementations do not require static shape information
+        scatter_nd[target=target](
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+            context=ctx,
+        )
+
+    @staticmethod
+    def shape[](
+        input: InputTensor[...],
+        updates: InputTensor[dtype=input.dtype, ...],
+        indices: InputTensor[...],
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            scatter_nd_shape(
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
+            )
+        )
+
+
+@compiler.register("mo.scatter_nd.skip_neg_indices")
+struct ScatterNDSkipNegIndices:
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, ...],
+        indices: InputTensor[...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        # This is identical to mo.scatter_nd except in how we handle negative indices.
+        # In mo.scatter_nd, it is well defined to pass indices between [-dim_size, dim_size).
+        # Negative indices will be normalized by incrementing them by dim_size.
+        # This allows the kernel to support negative relative indexing.
+        # eg: x[-1] == x[dim_size - 1]
+        #
+        # In mo.scatter_nd.skip_neg_indices, we handle negative indices by skipping
+        # the update for that index instead.
+        scatter_nd_generator[
+            oob_index_strategy=ScatterOobIndexStrategy.SKIP,
+            target=target,
+            reduce_fn=None,
+            _trace_description="scatter_nd.skip_neg_indices",
+        ](
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+            context=ctx,
+        )
+
+
+@compiler.register("mo.scatter_nd.add")
+struct ScatterNDAdd:
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, ...],
+        indices: InputTensor[...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        @always_inline
+        @parameter
+        def reduce_fn[
+            dtype: DType, width: SIMDSize
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+            dtype, width
+        ]:
+            return lhs + rhs
+
+        scatter_nd_generator[
+            target=target,
+            reduce_fn=reduce_fn,
+            _trace_description="scatter_nd.add",
+        ](
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+            context=ctx,
+        )
+
+    @staticmethod
+    def shape[](
+        input: InputTensor[...],
+        updates: InputTensor[dtype=input.dtype, ...],
+        indices: InputTensor[...],
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            scatter_nd_shape(
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
+            )
+        )
+
+
+@compiler.register("mo.scatter_nd.mul")
+struct ScatterNDMul:
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, ...],
+        indices: InputTensor[...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        @always_inline
+        @parameter
+        def reduce_fn[
+            dtype: DType, width: SIMDSize
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+            dtype, width
+        ]:
+            return lhs * rhs
+
+        scatter_nd_generator[
+            target=target,
+            reduce_fn=reduce_fn,
+            _trace_description="scatter_nd.mul",
+        ](
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+            context=ctx,
+        )
+
+    @staticmethod
+    def shape[](
+        input: InputTensor[...],
+        updates: InputTensor[dtype=input.dtype, ...],
+        indices: InputTensor[...],
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            scatter_nd_shape(
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
+            )
+        )
+
+
+@compiler.register("mo.scatter_nd.min")
+struct ScatterNDMin:
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, ...],
+        indices: InputTensor[...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        @always_inline
+        @parameter
+        def reduce_fn[
+            dtype: DType, width: SIMDSize
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+            dtype, width
+        ]:
+            return min(lhs, rhs)
+
+        scatter_nd_generator[
+            target=target,
+            reduce_fn=reduce_fn,
+            _trace_description="scatter_nd.min",
+        ](
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+            context=ctx,
+        )
+
+    @staticmethod
+    def shape(
+        input: InputTensor[...],
+        updates: InputTensor[dtype=input.dtype, ...],
+        indices: InputTensor[...],
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            scatter_nd_shape(
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
+            )
+        )
+
+
+@compiler.register("mo.scatter_nd.max")
+struct ScatterNDMax:
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, ...],
+        indices: InputTensor[...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        @always_inline
+        @parameter
+        def reduce_fn[
+            dtype: DType, width: SIMDSize
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+            dtype, width
+        ]:
+            return max(lhs, rhs)
+
+        scatter_nd_generator[
+            target=target,
+            reduce_fn=reduce_fn,
+            _trace_description="scatter_nd.max",
+        ](
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            updates.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+            context=ctx,
+        )
+
+    @staticmethod
+    def shape[](
+        input: InputTensor[...],
+        updates: InputTensor[dtype=input.dtype, ...],
+        indices: InputTensor[...],
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            scatter_nd_shape(
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
+            )
+        )
+
+
+@compiler.register("mo.scatter_set_constant")
+struct ScatterSetConstant:
+    @staticmethod
+    def execute[
+        data_type: DType,
+        index_type: DType,
+        //,
+        target: StaticString,
+    ](
+        data: MutableInputTensor[dtype=data_type, rank=2, ...],
+        indices: InputTensor[dtype=index_type, rank=2, ...],
+        fill_value: Scalar[data_type],
+        ctx: DeviceContextPtr,
+    ) raises:
+        scatter_set_constant[target](
+            data.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            fill_value,
+            ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Scatter kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.scatter")
+struct Scatter:
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        indices: InputTensor[rank=output.rank, ...],
+        axis: Scalar,
+        ctx: DeviceContextPtr,
+    ) raises:
+        @always_inline
+        @parameter
+        def reduce_func[
+            dtype: DType, width: SIMDSize
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+            dtype, width
+        ]:
+            return rhs  # always return the latest update element
+
+        scatter_elements[reduce_func](
+            input,
+            indices,
+            updates,
+            normalize_neg_index(Int(axis), output.rank),
+            output,
+        )
+
+    @staticmethod
+    def shape(
+        input: InputTensor[...],
+        updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
+        indices: InputTensor[rank=input.rank, ...],
+        axis: Scalar,
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            scatter_elements_shape(
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
+                Int(axis),
+            )
+        )
+
+
+@compiler.register("mo.scatter.add")
+struct ScatterAdd:
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        indices: InputTensor[rank=output.rank, ...],
+        axis: Scalar,
+        ctx: DeviceContextPtr,
+    ) raises:
+        @always_inline
+        @parameter
+        def reduce_func[
+            dtype: DType, width: SIMDSize
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+            dtype, width
+        ]:
+            return lhs + rhs
+
+        scatter_elements[reduce_func](
+            input,
+            indices,
+            updates,
+            normalize_neg_index(Int(axis), output.rank),
+            output,
+        )
+
+    @staticmethod
+    def shape(
+        input: InputTensor[...],
+        updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
+        indices: InputTensor[rank=input.rank, ...],
+        axis: Scalar,
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            scatter_elements_shape(
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
+                Int(axis),
+            )
+        )
+
+
+@compiler.register("mo.scatter.max")
+struct ScatterMax:
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        indices: InputTensor[rank=output.rank, ...],
+        axis: Scalar,
+        ctx: DeviceContextPtr,
+    ) raises:
+        @always_inline
+        @parameter
+        def reduce_func[
+            dtype: DType, width: SIMDSize
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+            dtype, width
+        ]:
+            return max(lhs, rhs)
+
+        scatter_elements[reduce_func](
+            input,
+            indices,
+            updates,
+            normalize_neg_index(Int(axis), output.rank),
+            output,
+        )
+
+    @staticmethod
+    def shape(
+        input: InputTensor[...],
+        updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
+        indices: InputTensor[rank=input.rank, ...],
+        axis: Scalar,
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            scatter_elements_shape(
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
+                Int(axis),
+            )
+        )
+
+
+@compiler.register("mo.scatter.min")
+struct ScatterMin:
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        indices: InputTensor[rank=output.rank, ...],
+        axis: Scalar,
+        ctx: DeviceContextPtr,
+    ) raises:
+        @always_inline
+        @parameter
+        def reduce_func[
+            dtype: DType, width: SIMDSize
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+            dtype, width
+        ]:
+            return min(lhs, rhs)
+
+        scatter_elements[reduce_func](
+            input,
+            indices,
+            updates,
+            normalize_neg_index(Int(axis), output.rank),
+            output,
+        )
+
+    @staticmethod
+    def shape(
+        input: InputTensor[...],
+        updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
+        indices: InputTensor[rank=input.rank, ...],
+        axis: Scalar,
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            scatter_elements_shape(
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
+                Int(axis),
+            )
+        )
+
+
+@compiler.register("mo.scatter.mul")
+struct ScatterMul:
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        indices: InputTensor[rank=output.rank, ...],
+        axis: Scalar,
+        ctx: DeviceContextPtr,
+    ) raises:
+        @always_inline
+        @parameter
+        def reduce_func[
+            dtype: DType, width: SIMDSize
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+            dtype, width
+        ]:
+            return lhs * rhs
+
+        scatter_elements[reduce_func](
+            input,
+            indices,
+            updates,
+            normalize_neg_index(Int(axis), output.rank),
+            output,
+        )
+
+    @staticmethod
+    def shape(
+        input: InputTensor[...],
+        updates: InputTensor[dtype=input.dtype, rank=input.rank, ...],
+        indices: InputTensor[rank=input.rank, ...],
+        axis: Scalar,
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            scatter_elements_shape(
+                input.to_tile_tensor[DType.int64](),
+                updates.to_tile_tensor[DType.int64](),
+                indices.to_tile_tensor[DType.int64](),
+                Int(axis),
+            )
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# View kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.broadcast_to")
+struct BroadcastTo:
+    # The `execute` method should never be used in the graph compiler.
+    # We expect `mo.broadcast_to` to always simplify to `mo.static.broadcast_to`
+    #
+    # Sometimes with a call to the below shape function.
+    @staticmethod
+    def execute(input: InputTensor[...], shape: InputTensor) raises:
+        raise Error("Should never be called!")
+
+    @staticmethod
+    def shape_impl[
+        input_rank: Int, output_rank: Int
+    ](
+        input: InputTensor[rank=input_rank, ...],
+        shape: InputTensor[rank=1, ...],
+    ) raises -> IndexList[output_rank]:
+        if output_rank != shape.dim_size[0]():
+            raise Error(
+                "[broadcast_to] requires (len(target_shape) == output_rank)"
+            )
+        if input_rank > output_rank:
+            raise Error("[broadcast_to] requires (input_rank <= output_rank)")
+
+        # move the output shape from buffer into a static int tuple
+        var output_shape = IndexList[output_rank]()
+
+        for axis in range(output_rank):
+            output_shape[axis] = Int(shape[axis])
+
+        # Validate the compatibility between input and output shapes
+        # NOTE we don't need to check the padded dims
+        for i in range(input_rank):
+            var input_axis = input_rank - i - 1
+            var output_axis = output_rank - i - 1
+            var input_dim = input.dim_size(input_axis)
+            var output_dim = output_shape[output_axis]
+            if input_dim != 1 and input_dim != output_dim:
+                raise Error(
+                    "[broadcast_to] input dimension at index ",
+                    input_axis,
+                    " (",
+                    input_dim,
+                    ") must be either 1 or equal to output dimension at index ",
+                    output_axis,
+                    " (",
+                    output_dim,
+                    ")",
+                )
+        return output_shape
+
+    @staticmethod
+    def shape[
+        input_rank: Int, output_rank: Int
+    ](
+        input: InputTensor[rank=input_rank, ...],
+        shape: InputTensor[rank=1, ...],
+    ) raises -> IndexList[output_rank]:
+        return BroadcastTo.shape_impl[output_rank=output_rank](input, shape)
+
+
+@compiler.register("mo.broadcast_shape")
+struct BroadcastShape:
+    @always_inline
+    @staticmethod
+    def broadcast_shape_impl(
+        out_buf: ManagedTensorSlice[rank=1, ...],
+        lhs_buf: ManagedTensorSlice[rank=1, ...],
+        rhs_buf: ManagedTensorSlice[rank=1, ...],
+    ):
+        # Ensure lhs is always the smaller shape
+        var lhs_rank = lhs_buf.size()
+        var rhs_rank = rhs_buf.size()
+        assert lhs_rank <= rhs_rank, "lhs shape must be the smaller one"
+
+        # lhs_buf =      [l0, l1, ...]
+        # rhs_buf = [..., r0, r1, ...]
+        # out_buf = [..., o0, o1, ...]
+        var size_diff = rhs_rank - lhs_rank
+        for i in range(size_diff):
+            out_buf[i] = rhs_buf[i].cast[out_buf.dtype]()
+
+        for lhs_idx in range(lhs_rank):
+            var rhs_idx = lhs_idx + size_diff
+            var lhs_dim = Int(lhs_buf[lhs_idx])
+            var rhs_dim = Int(rhs_buf[rhs_idx])
+            if lhs_dim == rhs_dim:
+                out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_buf.dtype]()
+
+            elif lhs_dim != 1 and rhs_dim != 1:
+                assert rhs_dim == 1, "one of the differing dimensions must be 1"
+
+            elif lhs_dim != 1:
+                out_buf[rhs_idx] = lhs_buf[lhs_idx].cast[out_buf.dtype]()
+
+            elif rhs_dim != 1:
+                out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_buf.dtype]()
+
+    # The `execute` method should never be used in the graph compiler.
+    # We expect `mo.broadcast_to` to always simplify to `mo.static.broadcast_to`
+    #
+    # Sometimes with a call to the below shape function.
+    @staticmethod
+    def execute(
+        out_buf: OutputTensor[rank=1, ...],
+        lhs_buf: InputTensor[rank=1, ...],
+        rhs_buf: InputTensor[rank=1, ...],
+    ):
+        var lhs_size = lhs_buf.size()
+        var rhs_size = rhs_buf.size()
+        if lhs_size > rhs_size:
+            return BroadcastShape.broadcast_shape_impl(
+                out_buf, rhs_buf, lhs_buf
+            )
+        return BroadcastShape.broadcast_shape_impl(out_buf, lhs_buf, rhs_buf)
+
+    @staticmethod
+    def shape(
+        lhs_buf: InputTensor[rank=1, ...], rhs_buf: InputTensor[rank=1, ...]
+    ) raises -> IndexList[1]:
+        var lhs_dim = lhs_buf.dim_size[0]()
+        var rhs_dim = rhs_buf.dim_size[0]()
+        return IndexList[1](max(lhs_dim, rhs_dim))
+
+
+@compiler.register("mo.static.broadcast_to")
+@compiler.view_kernel
+struct StaticBroadcastTo:
+    @always_inline
+    @staticmethod
+    def build_view[
+        out_rank: Int,
+    ](x: InputTensor[...],) -> IndexList[out_rank]:
+        var new_strides = IndexList[out_rank]()
+        comptime delta = out_rank - x.rank
+
+        comptime for i in range(out_rank):
+            comptime if i < delta:
+                new_strides[i] = 0
+            else:
+                if x.dim_size[i - delta]() <= 1:
+                    new_strides[i] = 0
+                else:
+                    new_strides[i] = x.stride_length[i - delta]()
+
+        return new_strides
+
+    @staticmethod
+    def get_view_strides_list[
+        out_rank: Int,
+        in_rank: Int,
+        input_shape: IntTuple,
+        input_strides: IntTuple,
+    ]() -> IndexList[out_rank]:
+        var new_strides = IndexList[out_rank]()
+        comptime delta = out_rank - in_rank
+
+        comptime for i in range(out_rank):
+            comptime if i < delta:
+                new_strides[i] = 0
+            else:
+                if Int(input_shape[i - delta]) == UNKNOWN_VALUE:
+                    new_strides[i] = -1
+                elif Int(input_shape[i - delta]) <= 1:
+                    new_strides[i] = 0
+                else:
+                    new_strides[i] = Int(input_strides[i - delta])
+        return new_strides
+
+    @staticmethod
+    def update_input_view[
+        dtype: DType,
+        in_rank: Int,
+        out_rank: Int,
+        //,
+        output_static_shape: IntTuple,
+    ](
+        x: InputTensor[dtype=dtype, rank=in_rank, ...],
+        output_shape: IndexList[out_rank],
+        out result: InputTensor[
+            static_spec=x.static_spec.with_int_tuple_layout[
+                out_rank,
+                output_static_shape,
+                Self.get_view_strides_list[
+                    out_rank,
+                    x.rank,
+                    x._static_shape_tuple,
+                    x._static_strides_tuple,
+                ](),
+            ]()
+        ],
+    ):
+        var x_runtime_strides = Self.build_view[out_rank](x)
+        return {x.unsafe_ptr(), output_shape, x_runtime_strides}
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+        dtype: DType,
+        in_rank: Int,
+        out_rank: Int,
+        _trace_name: StaticString,
+        use_blocking_impl: Bool = False,
+    ](
+        z: OutputTensor[dtype=dtype, rank=out_rank, ...],
+        x: InputTensor[dtype=dtype, rank=in_rank, ...],
+        output_shape: IndexList[out_rank],
+        ctx: DeviceContextPtr,
+    ) raises:
+        # We need the extra output_shape argument.
+        # Using `z.shape` instead will prevent the compiler from fusing the kernels.
+
+        var x_view = Self.update_input_view[z._static_shape_tuple](
+            x, output_shape
+        )
+
+        view_copy_impl[
+            _trace_name=_trace_name,
+            target=target,
+            use_blocking_impl=use_blocking_impl,
+        ](z, x_view, ctx)
+
+
+@compiler.register("mo.static.reshape")
+@compiler.view_kernel
+struct StaticReshape:
+    @staticmethod
+    def update_input_view[
+        dtype: DType,
+        output_rank: Int,
+        //,
+        output_static_shape: IntTuple,
+    ](
+        input: InputTensor[dtype=dtype, ...],
+        shape: IndexList[output_rank],
+        out result: InputTensor[
+            static_spec=input.static_spec.with_row_major_int_tuple_layout[
+                output_rank, output_static_shape
+            ]()
+        ],
+    ):
+        var view_buffer = reshape(
+            input.to_tile_tensor[DType.int64](),
+            shape,
+        )
+
+        return {
+            view_buffer.ptr,
+            rebind[IndexList[output_rank]](
+                coord_to_index_list(view_buffer.layout.shape_coord())
+            ),
+            rebind[IndexList[output_rank]](
+                coord_to_index_list(view_buffer.layout.stride_coord())
+            ),
+        }
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+        dtype: DType,
+        output_rank: Int,
+    ](
+        output: OutputTensor[dtype=dtype, rank=output_rank, ...],
+        input: InputTensor[dtype=dtype, ...],
+        shape: IndexList[output_rank],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var view_tensor = Self.update_input_view[output._static_shape_tuple](
+            input, shape
+        )
+
+        view_copy_impl[
+            _trace_name=_trace_name,
+            target=target,
+        ](output, view_tensor, ctx)
+
+
+@compiler.register("mo.reshape")
+struct Reshape:
+    # The `execute` method should never be used in the graph compiler.
+    # We expect `mo.reshape` to always simplify to `mo.static.reshape`
+    #
+    # Sometimes with a call to the below shape function.
+    @staticmethod
+    def execute(input: InputTensor[...], shape: InputTensor) raises:
+        raise Error("Should never be called!")
+
+    @staticmethod
+    def shape[
+        output_rank: Int
+    ](
+        input: InputTensor[...], shape: InputTensor[rank=1, ...]
+    ) raises -> IndexList[output_rank]:
+        return reshape_shape[output_rank=output_rank](
+            input.to_tile_tensor[DType.int64](),
+            shape.to_tile_tensor[DType.int64](),
+        )
+
+
+# Type-level transpose stride computation.  Permute input stride CoordLike types
+# according to a permutation IntTuple.  This avoids the interpreter heap limit
+# that prevents direct IntTuple element access in comptime-for loops.
+comptime _TransposeStrideTypesTabulator[
+    permutations: IntTuple,
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: CoordLike = RuntimeInt[] if Int(
+    permutations[idx]
+) == UNKNOWN_VALUE else input_stride_types[
+    Int(permutations[idx])
+]
+
+
+comptime _TransposeStrideTypes[
+    permutations: IntTuple,
+    rank: Int,
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+] = TypeList.tabulate[
+    rank, _TransposeStrideTypesTabulator[permutations, input_stride_types, _]
+]()
+
+
+@compiler.register("mo.transpose")
+@compiler.view_kernel
+struct Transpose:
+    @always_inline
+    @staticmethod
+    def transpose_in_place(
+        input: InputTensor[...],
+        permutations: InputTensor[rank=1, ...],
+        out result: Tuple[IndexList[input.rank], IndexList[input.rank]],
+    ):
+        var new_shape = IndexList[input.rank]()
+        var new_stride = IndexList[input.rank]()
+
+        comptime for i in range(input.rank):
+            var dim = Int(permutations[i])
+            new_shape[i] = input.dim_size(dim)
+            new_stride[i] = input.stride_length(dim)
+
+        return {new_shape, new_stride}
+
+    @staticmethod
+    def update_input_view[
+        dtype: DType,
+        rank: Int,
+        //,
+        output_static_shape: IntTuple,
+        static_permutations: IntTuple,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        permutations: InputTensor[rank=1, ...],
+        out result: InputTensor[
+            static_spec=input.static_spec.with_tile_layout[
+                rank,
+                TileLayout[
+                    shape_types=_IntTupleToCoordLike[
+                        DType.int, output_static_shape
+                    ],
+                    stride_types=_TransposeStrideTypes[
+                        static_permutations,
+                        rank,
+                        input.static_spec.static_layout._stride_types,
+                    ],
+                ],
+            ]()
+        ],
+    ):
+        shape, strides = Self.transpose_in_place(input, permutations)
+        return {input.unsafe_ptr(), shape, strides}
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+        static_permutations: IntTuple,
+        dtype: DType,
+        rank: Int,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        permutations: InputTensor[rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var view = Self.update_input_view[
+            output._static_shape_tuple, static_permutations
+        ](input, permutations)
+
+        view_copy_impl[
+            _trace_name=_trace_name,
+            target=target,
+        ](output, view, ctx)
+
+    # TODO(GEX-1033) Make it possible to have multiple raises.
+    @no_inline
+    @staticmethod
+    def shape_impl(
+        input: InputTensor[...],
+        permutations: InputTensor[rank=1, ...],
+    ) raises -> IndexList[input.rank]:
+        if permutations.dim_size[0]() != input.rank:
+            raise Error("[transpose] permutation size must match input rank")
+
+        comptime for i in range(input.rank):
+            var perm = Int(permutations[i])
+            if perm < 0 or input.rank <= perm:
+                raise Error(
+                    "[transpose] each permutation must be within range [0,"
+                    " rank)"
+                )
+
+        shape, _ = Self.transpose_in_place(input, permutations)
+        var out = IndexList[input.rank]()
+
+        comptime for i in range(input.rank):
+            out[i] = shape[i]
+
+        return out
+
+    @staticmethod
+    def shape(
+        input: InputTensor[...],
+        permutations: InputTensor[rank=1, ...],
+    ) raises -> IndexList[input.rank]:
+        return Self.shape_impl(input, permutations)
+
+
+# Type-level slice stride computation: multiplies input stride types by step
+# types element-wise.
+comptime _SliceStrideTypesTabulator[
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+    step_types: TypeList[Trait=CoordLike, ...],
+    idx: Int,
+]: CoordLike = ComptimeInt[
+    input_stride_types[idx].static_value * step_types[idx].static_value
+] if input_stride_types[
+    idx
+].is_static_value and step_types[
+    idx
+].is_static_value else RuntimeInt[]
+
+comptime _SliceStrideTypes[
+    rank: Int,
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+    step_types: TypeList[Trait=CoordLike, ...],
+] = TypeList.tabulate[
+    rank, _SliceStrideTypesTabulator[input_stride_types, step_types, _]
+]()
+
+
+@compiler.register("mo.slice")
+@compiler.view_kernel
+struct Slice:
+    @staticmethod
+    def get_view_alignment[
+        rank: Int,
+        dtype: DType,
+        input_strides: IntTuple,
+        static_starts: IntTuple,
+        static_steps: IntTuple,
+    ](input_alignment: Int) -> Int:
+        # Convert IntTuples to CoordLike types at the MLIR level, then
+        # use type-level access (no interpreter heap allocation).
+        comptime stride_types = _IntTupleToCoordLike[DType.int, input_strides]
+        comptime start_types = _IntTupleToCoordLike[DType.int, static_starts]
+        comptime step_types = _IntTupleToCoordLike[DType.int, static_steps]
+
+        var alignment = input_alignment
+        comptime for i in range(rank):
+            # Bail if step is unknown or negative.
+            comptime if not step_types[i].is_static_value or step_types[
+                i
+            ].static_value < 0:
+                return 1
+
+            # The offset for dimension `i` is `start[i] * strides[i]`
+            comptime if not start_types[i].is_static_value or not stride_types[
+                i
+            ].is_static_value:
+                return 1
+            alignment = gcd(
+                alignment,
+                start_types[i].static_value
+                * stride_types[i].static_value
+                * align_of[dtype](),
+            )
+
+        return alignment
+
+    @staticmethod
+    def update_input_view[
+        dtype: DType,
+        rank: Int,
+        //,
+        output_static_shape: IntTuple,
+        static_starts: IntTuple,
+        static_steps: IntTuple,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        starts: InputTensor[rank=1, ...],
+        stops: InputTensor[rank=1, ...],
+        steps: InputTensor[rank=1, ...],
+        out result: InputTensor[
+            static_spec=input.static_spec.with_tile_layout_and_alignment[
+                rank,
+                TileLayout[
+                    shape_types=_IntTupleToCoordLike[
+                        DType.int, output_static_shape
+                    ],
+                    stride_types=_SliceStrideTypes[
+                        rank,
+                        input.static_spec.static_layout._stride_types,
+                        _IntTupleToCoordLike[DType.int, static_steps],
+                    ],
+                ],
+            ](
+                Self.get_view_alignment[
+                    rank,
+                    dtype,
+                    input._static_strides_tuple,
+                    static_starts,
+                    static_steps,
+                ](input.alignment),
+            )
+        ],
+    ):
+        var view_buffer = slice_as_view(
+            input.to_tile_tensor[DType.int64](),
+            starts.to_tile_tensor[DType.int64](),
+            stops.to_tile_tensor[DType.int64](),
+            steps.to_tile_tensor[DType.int64](),
+        )
+
+        result = {
+            view_buffer.ptr,
+            rebind[IndexList[rank]](
+                coord_to_index_list(view_buffer.layout.shape_coord())
+            ),
+            rebind[IndexList[rank]](
+                coord_to_index_list(view_buffer.layout.stride_coord())
+            ),
+        }
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+        static_starts: IntTuple,
+        static_steps: IntTuple,
+        dtype: DType,
+        rank: Int,
+        use_blocking_impl: Bool = False,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        starts: InputTensor[rank=1, ...],
+        stops: InputTensor[rank=1, ...],
+        steps: InputTensor[rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var view_tensor = Self.update_input_view[
+            output._static_shape_tuple, static_starts, static_steps
+        ](input, starts, stops, steps)
+
+        view_copy_impl[
+            _trace_name=_trace_name,
+            target=target,
+            use_blocking_impl=use_blocking_impl,
+        ](output, view_tensor, ctx)
+
+    @staticmethod
+    def shape(
+        input: InputTensor[...],
+        starts: InputTensor[rank=1, ...],
+        stops: InputTensor[rank=1, ...],
+        steps: InputTensor[rank=1, ...],
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            slice_shape(
+                input.to_tile_tensor[DType.int64](),
+                starts.to_tile_tensor[DType.int64](),
+                stops.to_tile_tensor[DType.int64](),
+                steps.to_tile_tensor[DType.int64](),
+            )
+        )
+
+
+@compiler.register("mo.mutable.store")
+struct MutableStore(ElementwiseUnaryOp):
+    @staticmethod
+    def elementwise[
+        dtype: DType,
+        width: SIMDSize,
+    ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+        return val
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        buffer: MutableInputTensor[...],
+        tensor: FusedInputTensor[...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        # TODO: Remove the execute method (GEX-2453).
+        raise Error("exec should never be called !")
+
+
+@compiler.register("mo.mutable.store.slice")
+struct MutableStoreSlice:
+    @staticmethod
+    def execute[
+        target: StaticString,
+        dtype: DType,
+        rank: Int,
+    ](
+        to_buffer: MutableInputTensor[dtype=dtype, rank=rank, ...],
+        in_slice: InputTensor[dtype=dtype, rank=rank, ...],
+        starts: InputTensor[rank=1, ...],
+        stops: InputTensor[rank=1, ...],
+        steps: InputTensor[rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        copy_to_slice[target=target](
+            to_buffer.to_tile_tensor[DType.int64](),
+            in_slice.to_tile_tensor[DType.int64](),
+            starts.to_tile_tensor[DType.int64](),
+            stops.to_tile_tensor[DType.int64](),
+            steps.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+    # No shape function as we just directly embed the logic to check the shape
+    # of the 'slice' operand of the MO op directly in the kernel.
+
+
+# ===-----------------------------------------------------------------------===#
+# Data dependent kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.reduce.arg_max")
+struct ArgMax:
+    @staticmethod
+    def execute[
+        target: StaticString,
+        rank: Int,
+        _trace_name: StaticString,
+    ](
+        output: OutputTensor[rank=rank, ...],
+        input: InputTensor[rank=rank, ...],
+        axis: Scalar,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var axis_val = normalize_neg_index(Int(axis), rank)
+
+        comptime if target == "cpu":
+            argmax(
+                input.to_tile_tensor[DType.int64](),
+                axis_val,
+                output.to_tile_tensor[DType.int64](),
+                ctx.get_optional_device_context(),
+            )
+        else:
+            if axis_val != rank - 1:
+                raise Error("axis other than -1 not supported on GPU")
+
+            # Has no static shape info
+
+            # TODO(KERN-1045): Add support for taking advantage of static_shapes
+            var cuda_ctx = ctx.get_device_context()
+            argmax_gpu(
+                cuda_ctx,
+                input.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[DType.int64](),
+            )
+
+
+@compiler.register("mo.reduce.arg_min")
+struct ArgMin:
+    @staticmethod
+    def execute[
+        target: StaticString,
+        rank: Int,
+        _trace_name: StaticString,
+    ](
+        output: OutputTensor[rank=rank, ...],
+        input: InputTensor[rank=rank, ...],
+        axis: Scalar,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var axis_val = normalize_neg_index(Int(axis), rank)
+
+        comptime if target == "cpu":
+            argmin(
+                input.to_tile_tensor[DType.int64](),
+                axis_val,
+                output.to_tile_tensor[DType.int64](),
+                ctx.get_optional_device_context(),
+            )
+        else:
+            if axis_val != rank - 1:
+                raise Error("axis other than -1 not supported on GPU")
+
+            # TODO(KERN-1045): Add support for taking advantage of static_shapes
+            var cuda_ctx = ctx.get_device_context()
+            argmin_gpu(
+                cuda_ctx,
+                input.to_tile_tensor[DType.int64](),
+                output.to_tile_tensor[DType.int64](),
+            )
+
+
+@compiler.register("mo.arg_nonzero")
+struct ArgNonZero:
+    @staticmethod
+    def execute(
+        output_buffer: OutputTensor[rank=2, ...],
+        input_buffer: InputTensor[...],
+    ) raises:
+        arg_nonzero.arg_nonzero(
+            input_buffer.to_tile_tensor[DType.int64](),
+            output_buffer.to_tile_tensor[DType.int64](),
+        )
+
+    @staticmethod
+    def shape(input_buffer: InputTensor) -> IndexList[2]:
+        return arg_nonzero.arg_nonzero_shape(
+            input_buffer.to_tile_tensor[DType.int64]()
+        )
+
+
+@compiler.register("mo.reduce.mean")
+struct Mean:
+    @staticmethod
+    def execute[
+        target: StaticString
+    ](
+        output: FusedOutputTensor[...],
+        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
+        axis: Scalar,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: SIMDSize, rank: Int
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+            output._lambda_store[width=width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        var axis_val = Int(axis)
+
+        mean[
+            output.dtype,
+            input_fn,
+            output_fn,
+            target=target,
+        ](input.shape(), axis_val, output.shape(), ctx)
+
+    @staticmethod
+    def shape[
+        input_rank: Int,
+        input_type: DType,
+    ](
+        input: InputTensor[dtype=input_type, rank=input_rank, ...],
+        axis: Scalar,
+    ) raises -> IndexList[input_rank]:
+        return reduce_shape(input, Int(axis))
+
+
+@compiler.register("mo.reduce.add")
+struct ReduceAdd:
+    @staticmethod
+    def execute[
+        target: StaticString, _trace_name: StaticString
+    ](
+        output: FusedOutputTensor[...],
+        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
+        axis: Scalar,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: SIMDSize, rank: Int
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+            output._lambda_store[width=width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        var axis_val = Int(axis)
+
+        sum[
+            output.dtype,
+            input_fn,
+            output_fn,
+            target=target,
+        ](input.shape(), axis_val, ctx)
+
+    @staticmethod
+    def shape[
+        input_rank: Int,
+        input_type: DType,
+    ](
+        input: InputTensor[dtype=input_type, rank=input_rank, ...],
+        axis: Scalar,
+    ) raises -> IndexList[input_rank]:
+        return reduce_shape(input, Int(axis))
+
+
+@compiler.register("mo.reduce.mul")
+struct ReduceMul:
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: FusedOutputTensor[...],
+        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
+        axis: Scalar,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: SIMDSize, rank: Int
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+            output._lambda_store[width=width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        var axis_val = Int(axis)
+
+        product[
+            output.dtype,
+            input_fn,
+            output_fn,
+            target=target,
+        ](input.shape(), axis_val, ctx)
+
+    @staticmethod
+    def shape[
+        input_rank: Int,
+        input_type: DType,
+    ](
+        input: InputTensor[dtype=input_type, rank=input_rank, ...],
+        axis: Scalar,
+    ) raises -> IndexList[input_rank]:
+        return reduce_shape(input, Int(axis))
+
+
+@compiler.register("mo.reduce.max")
+struct ReduceMax:
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: FusedOutputTensor[...],
+        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
+        axis: Scalar,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: SIMDSize, rank: Int
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+            output._lambda_store[width=width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        var axis_val = Int(axis)
+
+        reduce_max[
+            output.dtype,
+            input_fn,
+            output_fn,
+            target=target,
+        ](input.shape(), axis_val, ctx)
+
+    @staticmethod
+    def shape[
+        input_rank: Int,
+        input_type: DType,
+    ](
+        input: InputTensor[dtype=input_type, rank=input_rank, ...],
+        axis: Scalar,
+    ) raises -> IndexList[input_rank]:
+        return reduce_shape(input, Int(axis))
+
+
+@compiler.register("mo.reduce.min")
+struct ReduceMin:
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: FusedOutputTensor[...],
+        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
+        axis: Scalar,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: SIMDSize, rank: Int
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+            output._lambda_store[width=width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        var axis_val = Int(axis)
+
+        reduce_min[
+            output.dtype,
+            input_fn,
+            output_fn,
+            target=target,
+        ](input.shape(), axis_val, ctx)
+
+    @staticmethod
+    def shape[
+        input_rank: Int,
+        input_type: DType,
+    ](
+        input: InputTensor[dtype=input_type, rank=input_rank, ...],
+        axis: Scalar,
+    ) raises -> IndexList[input_rank]:
+        return reduce_shape(input, Int(axis))
+
+
+# ===-----------------------------------------------------------------------===#
+# Pooling kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.avg_pool")
+struct AvgPool:
+    @staticmethod
+    def execute[
+        count_boundary: Bool,
+        dtype: DType,
+        int_type: DType,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=4, ...],
+        input: InputTensor[dtype=dtype, rank=4, ...],
+        filter: InputTensor[dtype=int_type, rank=1, ...],
+        strides: InputTensor[dtype=int_type, rank=1, ...],
+        dilations: InputTensor[dtype=int_type, rank=1, ...],
+        paddings: InputTensor[dtype=int_type, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        avg_pool[count_boundary=count_boundary, target=target](
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+            False,
+            ctx,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        int_type: DType,
+    ](
+        input: InputTensor[dtype=dtype, rank=4, ...],
+        filter: InputTensor[dtype=int_type, rank=1, ...],
+        strides: InputTensor[dtype=int_type, rank=1, ...],
+        dilations: InputTensor[dtype=int_type, rank=1, ...],
+        paddings: InputTensor[dtype=int_type, rank=1, ...],
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            pool_shape(
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
+            )
+        )
+
+
+@compiler.register("mo.avg_pool_ceil_mode_true")
+struct AvgPoolCeilModeTrue:
+    @staticmethod
+    def execute[
+        count_boundary: Bool,
+        dtype: DType,
+        int_type: DType,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=4, ...],
+        input: InputTensor[dtype=dtype, rank=4, ...],
+        filter: InputTensor[dtype=int_type, rank=1, ...],
+        strides: InputTensor[dtype=int_type, rank=1, ...],
+        dilations: InputTensor[dtype=int_type, rank=1, ...],
+        paddings: InputTensor[dtype=int_type, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        avg_pool[count_boundary=count_boundary, target=target](
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+            True,
+            ctx,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        int_type: DType,
+    ](
+        input: InputTensor[dtype=dtype, rank=4, ...],
+        filter: InputTensor[dtype=int_type, rank=1, ...],
+        strides: InputTensor[dtype=int_type, rank=1, ...],
+        dilations: InputTensor[dtype=int_type, rank=1, ...],
+        paddings: InputTensor[dtype=int_type, rank=1, ...],
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            pool_shape_ceil(
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
+            )
+        )
+
+
+@compiler.register("mo.max_pool")
+struct MaxPool:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        int_type: DType,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=4, ...],
+        input: InputTensor[dtype=dtype, rank=4, ...],
+        filter: InputTensor[dtype=int_type, rank=1, ...],
+        strides: InputTensor[dtype=int_type, rank=1, ...],
+        dilations: InputTensor[dtype=int_type, rank=1, ...],
+        paddings: InputTensor[dtype=int_type, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        max_pool[target=target](
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+            False,
+            ctx,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        int_type: DType,
+    ](
+        input: InputTensor[dtype=dtype, rank=4, ...],
+        filter: InputTensor[dtype=int_type, rank=1, ...],
+        strides: InputTensor[dtype=int_type, rank=1, ...],
+        dilations: InputTensor[dtype=int_type, rank=1, ...],
+        paddings: InputTensor[dtype=int_type, rank=1, ...],
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            pool_shape(
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
+            )
+        )
+
+
+@compiler.register("mo.max_pool_ceil_mode_true")
+struct MaxPoolCeilModeTrue:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        int_type: DType,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=4, ...],
+        input: InputTensor[dtype=dtype, rank=4, ...],
+        filter: InputTensor[dtype=int_type, rank=1, ...],
+        strides: InputTensor[dtype=int_type, rank=1, ...],
+        dilations: InputTensor[dtype=int_type, rank=1, ...],
+        paddings: InputTensor[dtype=int_type, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        max_pool[target=target](
+            input.to_tile_tensor[DType.int64](),
+            filter.to_tile_tensor[DType.int64](),
+            strides.to_tile_tensor[DType.int64](),
+            dilations.to_tile_tensor[DType.int64](),
+            paddings.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+            True,
+            ctx,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        int_type: DType,
+    ](
+        input: InputTensor[dtype=dtype, rank=4, ...],
+        filter: InputTensor[dtype=int_type, rank=1, ...],
+        strides: InputTensor[dtype=int_type, rank=1, ...],
+        dilations: InputTensor[dtype=int_type, rank=1, ...],
+        paddings: InputTensor[dtype=int_type, rank=1, ...],
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            pool_shape_ceil(
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
+            )
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Padding kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.pad.constant")
+struct PadConstant:
+    @staticmethod
+    def execute[
+        dtype: DType, rank: Int, target: StaticString
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        padding: InputTensor[rank=1, ...],
+        constant: Scalar[dtype=dtype],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var paddings_ptr = padding._ptr
+
+        comptime if is_cpu[target]():
+            pad_constant(
+                output.to_tile_tensor[DType.int64](),
+                input.to_tile_tensor[DType.int64](),
+                paddings_ptr,
+                constant,
+            )
+        elif is_gpu[target]():
+            pad_constant_gpu(
+                output._ptr,
+                output.shape(),
+                input._ptr,
+                input.shape(),
+                paddings_ptr,
+                constant,
+                ctx.get_device_context(),
+            )
+        else:
+            comptime assert False, "Unknown target " + target
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        padding: InputTensor[rank=1, ...],
+        constant: Scalar[dtype=dtype],
+    ) raises -> IndexList[rank]:
+        # rebind is required because mojo can't figure out that
+        # input.static_spec.to_layout_tensor().rank == input.rank
+        return rebind[IndexList[rank]](
+            pad_shape(
+                input.to_tile_tensor[DType.int64](),
+                padding.to_tile_tensor[DType.int64](),
+            )
+        )
+
+
+@compiler.register("mo.pad.repeat")
+struct PadRepeat:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        padding: InputTensor[rank=1, ...],
+    ):
+        var paddings_ptr = padding._ptr
+        pad_repeat(
+            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            paddings_ptr,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        padding: InputTensor[rank=1, ...],
+    ) raises -> IndexList[rank]:
+        return rebind[IndexList[rank]](
+            pad_shape(
+                input.to_tile_tensor[DType.int64](),
+                padding.to_tile_tensor[DType.int64](),
+            )
+        )
+
+
+@compiler.register("mo.pad.reflect")
+struct PadReflect:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        padding: InputTensor[rank=1, ...],
+    ):
+        var paddings_ptr = padding._ptr
+        pad_reflect(
+            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            paddings_ptr,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        padding: InputTensor[rank=1, ...],
+    ) raises -> IndexList[rank]:
+        return rebind[IndexList[rank]](
+            pad_shape(
+                input.to_tile_tensor[DType.int64](),
+                padding.to_tile_tensor[DType.int64](),
+            )
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Gather kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.gather_nd")
+struct GatherND:
+    @staticmethod
+    def execute[
+        batchDims: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: OutputTensor[...],
+        data: InputTensor[dtype=output.dtype, ...],
+        indices: InputTensor[...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        gather_nd[batch_dims=batchDims, target=target](
+            data.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+    @staticmethod
+    def shape[
+        batch_dims: Int, output_rank: Int
+    ](
+        data: InputTensor[...],
+        indices: InputTensor[...],
+    ) raises -> IndexList[
+        output_rank
+    ]:
+        return gather_nd_shape[
+            batch_dims=batch_dims,
+            output_rank=output_rank,
+        ](
+            data.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+        )
+
+
+@compiler.register("mo.gather")
+struct Gather:
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: FusedOutputTensor[...],
+        input: FusedInputTensor[dtype=output.dtype, ...],
+        indices: FusedInputTensor[...],
+        axis: Scalar,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[output.dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def indices_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[indices.dtype, width]:
+            return indices._fused_load[width=width](
+                rebind[IndexList[indices.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: SIMDSize, _rank: Int
+        ](coords: IndexList[_rank], val: SIMD[output.dtype, width]):
+            output._lambda_store[width=width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        gather[
+            dtype=output.dtype,
+            indices_type=indices.dtype,
+            input_fn=input_fn,
+            indices_fn=indices_fn,
+            output_fn=output_fn,
+            target=target,
+        ](
+            Axis(Int(axis), input.rank),
+            input.shape(),
+            indices.shape(),
+            output.shape(),
+            context=ctx,
+        )
+
+    @staticmethod
+    def shape[
+        output_rank: Int,
+    ](
+        input: InputTensor[...],
+        indices: InputTensor[...],
+        axis: Scalar,
+    ) raises -> IndexList[output_rank]:
+        return gather_shape[output_rank=output_rank](
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            Int(axis),
+        )
+
+
+@compiler.register("mo.gather_sum")
+struct GatherSum:
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[...],
+        input: InputTensor[dtype=output.dtype, ...],
+        indices: InputTensor[dtype=DType.int32, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
+
+        def add[
+            dtype: DType, simd_width: SIMDSize
+        ](x: SIMD[dtype, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
+            dtype, simd_width
+        ]:
+            return x + y
+
+        gather_reduce[output.dtype, 0, 1, simd_width_of[output.dtype](), add](
+            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            0,
+            ctx.get_optional_device_context(),
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Normalization kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.reduce.layer_norm")
+struct LayerNorm:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        gamma: FusedInputTensor[dtype=dtype, rank=1, ...],
+        beta: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def gamma_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return gamma._lambda_load[width=width](rebind[IndexList[1]](coords))
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: SIMDSize, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            output._lambda_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        layer_norm[dtype, rank, input_fn, gamma_fn, output_fn, target=target](
+            input.shape(),
+            gamma.shape(),
+            beta.to_tile_tensor[DType.int64](),
+            epsilon,
+            ctx,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        beta: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("rms_norm_fused_quantize_dynamic_scaled_fp8")
+struct RMSNormFusedQuantizeDynamicScaledFP8:
+    @staticmethod
+    def execute[
+        input_dtype: DType,
+        output_dtype: DType,
+        scale_dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_dtype, rank=rank, ...],
+        scales: OutputTensor[dtype=scale_dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=input_dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=input_dtype, rank=1, ...],
+        epsilon: Scalar[dtype=input_dtype],
+        weight_offset: Scalar[dtype=input_dtype],
+        scale_ub: Float32,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[input_dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        rms_norm_fused_fp8[
+            input_dtype,
+            output_dtype,
+            scale_dtype,
+            rank,
+            input_fn,
+            target=target,
+        ](
+            input.shape(),
+            output.to_tile_tensor[DType.int64](),
+            gamma.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            ctx,
+            scale_ub,
+            scales.to_tile_tensor[DType.int64](),
+        )
+
+    @staticmethod
+    def shape[
+        input_dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=input_dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=input_dtype, rank=1, ...],
+        epsilon: Scalar[dtype=input_dtype],
+        weight_offset: Scalar[dtype=input_dtype],
+        scale_ub: Float32,
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("mo.reduce.rms_norm")
+struct ReduceRMSNorm:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        multiply_before_cast: Bool = True,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: SIMDSize, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            output._lambda_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        rms_norm[
+            dtype,
+            rank,
+            input_fn,
+            output_fn,
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            input.shape(),
+            gamma.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            ctx,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("mo.reduce.rms_norm.RoPE")
+struct ReduceRMSNormRoPE:
+    """Fuses RMS normalization and Rotary Position Embedding (RoPE) into one operation.
+
+    Computes per-row RMS normalization scaled by `weight`, then applies RoPE to
+    the normalized values using the provided cosine and sine tables.  The last
+    dimension of the input must be an even number.
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        cos_sin_dtype: DType,
+        rank: Int,
+        target: StaticString,
+        multiply_before_cast: Bool = True,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        weight: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        cos_vals: FusedInputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+        sin_vals: FusedInputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def cos_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
+            return cos_vals._fused_load[width=width](
+                rebind[IndexList[cos_vals.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def sin_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
+            return sin_vals._fused_load[width=width](
+                rebind[IndexList[sin_vals.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: Int, alignment: Int
+        ](coords: IndexList[rank], val: SIMD[dtype, width]):
+            output._lambda_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        rms_norm_rope_gpu[
+            input_fn,
+            cos_fn,
+            sin_fn,
+            output_fn,
+            multiply_before_cast,
+        ](
+            input.shape(),
+            weight.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            cos_vals.to_tile_tensor[DType.int64](),
+            sin_vals.to_tile_tensor[DType.int64](),
+            ctx.get_device_context(),
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        cos_sin_dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        weight: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        cos_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+        sin_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("mo.reduce.group_norm")
+struct ReduceGroupNorm:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        gamma: FusedInputTensor[dtype=dtype, rank=1, ...],
+        beta: FusedInputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        num_groups: Int32,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def gamma_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+            return gamma._lambda_load[width=width](coords)
+
+        @parameter
+        @always_inline
+        def beta_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+            return beta._lambda_load[width=width](coords)
+
+        group_norm[dtype, rank, input_fn, gamma_fn, beta_fn, target](
+            shape=input.shape(),
+            epsilon=epsilon,
+            groups=num_groups,
+            output=output.to_tile_tensor[DType.int64](),
+            ctx=ctx,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        beta: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        num_groups: Int32,
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("mo.reduce.reduce_min_and_max")
+struct ReduceMinAndMax:
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+        dtype: DType,
+        rank: Int,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        axis0: Scalar,
+        ctx: DeviceContextPtr,
+    ) raises:
+        """Given a tensor of shape [A, B, C, D] and reducing along dimension 'C'
+        writes to a tensor of shape [A, B, 2, D] where [:, :, 0, :] contains
+        the minimum reduction and [:, :, 1, :] contains the maximum reduction.
+        """
+
+        comptime num_reductions = 2
+        var axis = normalize_neg_index(Int(axis0), rank)
+
+        @parameter
+        @always_inline
+        def input_0_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
+            return input._fused_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_0_fn[
+            width: SIMDSize, rank: Int
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+            output._fused_store[width=width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        @always_inline
+        @parameter
+        def input_0_fn_wrapper[
+            _type: DType, width: Int, rank: Int
+        ](idx: IndexList[rank]) -> SIMD[_type, width]:
+            return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
+
+        @always_inline
+        @parameter
+        def output_0_fn_wrapper[
+            _type: DType,
+            width: SIMDSize,
+            rank: Int,
+        ](
+            indices: IndexList[rank],
+            val: StaticTuple[SIMD[_type, width], num_reductions],
+        ):
+            # TODO: once we support multiple outputs, change this to route to
+            # TODO: multiple output tensors.
+            var indices_min = indices
+            indices_min[axis] = 0
+            output_0_fn[width, rank](
+                indices_min, rebind[SIMD[dtype, width]](val[0])
+            )
+
+            var indices_max = indices
+            indices_max[axis] = 1
+            output_0_fn[width, rank](
+                indices_max, rebind[SIMD[dtype, width]](val[1])
+            )
+
+        @always_inline
+        @parameter
+        def reduce_fn[
+            ty: DType,
+            width: SIMDSize,
+            reduction_idx: Int,
+        ](left: SIMD[ty, width], right: SIMD[ty, width]) -> SIMD[ty, width]:
+            comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
+
+            comptime if reduction_idx == 0:
+                return min(left, right)
+            else:
+                return max(left, right)
+
+        var init_min = Scalar[dtype].MAX
+        var init_max = Scalar[dtype].MIN
+        var init = StaticTuple[Scalar[dtype], num_reductions](
+            init_min, init_max
+        )
+
+        _reduce_generator[
+            num_reductions,
+            dtype,
+            input_0_fn_wrapper,
+            output_0_fn_wrapper,
+            reduce_fn,
+            target=target,
+        ](
+            input.shape(),
+            init=init,
+            reduce_dim=axis,
+            context=ctx,
+        )
+        _ = axis
+
+    @staticmethod
+    def shape(input: InputTensor[...], axis: Scalar) -> IndexList[input.rank]:
+        var new_shape = input.shape()
+        new_shape[_unsafe_normalize_neg_index(Int(axis), input.rank)] = 2
+
+        return new_shape
+
+
+@compiler.register("mo.reduce.rms_norm_fused_residual_add")
+struct ReduceRMSNormFusedResidualAdd:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        multiply_before_cast: Bool = True,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        residual_output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        residual_input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        gamma1: InputTensor[dtype=dtype, rank=1, ...],
+        gamma2: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon1: Scalar[dtype=dtype],
+        epsilon2: Scalar[dtype=dtype],
+        weight_offset1: Scalar[dtype=dtype],
+        weight_offset2: Scalar[dtype=dtype],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        if input.shape() != residual_input.shape():
+            raise Error("Input and residual input buffers are not same shape")
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def residual_input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return residual_input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: SIMDSize, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            output._fused_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        @parameter
+        @always_inline
+        def residual_output_fn[
+            width: SIMDSize, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            residual_output._fused_store[
+                width=width, element_alignment=alignment
+            ](
+                rebind[IndexList[residual_output.rank]](coords),
+                rebind[SIMD[residual_output.dtype, width]](val),
+            )
+
+        rms_norm_fused_residual_add[
+            input_fn,
+            residual_input_fn,
+            output_fn,
+            residual_output_fn,
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            input.shape(),
+            gamma1.to_tile_tensor[DType.int64](),
+            epsilon1,
+            weight_offset1,
+            gamma2.to_tile_tensor[DType.int64](),
+            epsilon2,
+            weight_offset2,
+            ctx,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        residual_input: InputTensor[dtype=dtype, rank=rank, ...],
+        gamma1: InputTensor[dtype=dtype, rank=1, ...],
+        gamma2: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon1: Scalar[dtype=dtype],
+        epsilon2: Scalar[dtype=dtype],
+        weight_offset1: Scalar[dtype=dtype],
+        weight_offset2: Scalar[dtype=dtype],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+# ===-----------------------------------------------------------------------===#
+# TopK kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.bottom_k")
+struct BottomK:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        values: OutputTensor[dtype=dtype, rank=rank, ...],
+        indices: OutputTensor[dtype=DType.int64, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        k: Scalar,
+        axis: Scalar,
+        sorted: Scalar[DType.bool],
+        ctx: DeviceContextPtr,
+    ) raises:
+        top_k[largest=False, target=target](
+            input.to_tile_tensor[DType.int64](),
+            Int(k),
+            Int(axis),
+            values.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            sorted,
+            ctx,
+        )
+
+    @staticmethod
+    def shape(
+        input: InputTensor[...],
+        k: Scalar,
+        axis: Scalar,
+        sorted: Scalar[DType.bool],
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            top_k_shape_impl(
+                input.to_tile_tensor[DType.int64](),
+                Int(k),
+                Int(axis),
+            )
+        )
+
+
+@compiler.register("mo.top_k")
+struct TopK:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        values: OutputTensor[dtype=dtype, rank=rank, ...],
+        indices: OutputTensor[dtype=DType.int64, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        k: Scalar,
+        axis: Scalar,
+        sorted: Scalar[DType.bool],
+        ctx: DeviceContextPtr,
+    ) raises:
+        top_k[largest=True, target=target](
+            input.to_tile_tensor[DType.int64](),
+            Int(k),
+            Int(axis),
+            values.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            sorted,
+            ctx,
+        )
+
+    @staticmethod
+    def shape(
+        input: InputTensor[...],
+        k: Scalar,
+        axis: Scalar,
+        sorted: Scalar[DType.bool],
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            top_k_shape_impl(
+                input.to_tile_tensor[DType.int64](),
+                Int(k),
+                Int(axis),
+            )
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Non maximum suppression kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.non_maximum_suppression")
+struct NonMaximumSuppression:
+    @staticmethod
+    def execute[
+        dtype: DType
+    ](
+        output: OutputTensor[dtype=DType.int64, rank=2, ...],
+        boxes: InputTensor[dtype=dtype, rank=3, ...],
+        scores: InputTensor[dtype=dtype, rank=3, ...],
+        max_output_boxes_per_class: Int64,
+        iou_threshold: Float32,
+        score_threshold: Float32,
+    ):
+        var max_output_boxes_int = Int(max_output_boxes_per_class)
+        var iou_threshold_float = iou_threshold
+        var score_threshold_float = score_threshold
+
+        non_max_suppression(
+            boxes.to_tile_tensor[DType.int64](),
+            scores.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+            max_output_boxes_int,
+            iou_threshold_float,
+            score_threshold_float,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType
+    ](
+        boxes: InputTensor[dtype=dtype, rank=3, ...],
+        scores: InputTensor[dtype=dtype, rank=3, ...],
+        max_output_boxes_per_class: Int64,
+        iou_threshold: Float32,
+        score_threshold: Float32,
+    ) -> IndexList[2]:
+        var max_output_boxes_int = Int(max_output_boxes_per_class)
+        var iou_threshold_float = iou_threshold
+        var score_threshold_float = score_threshold
+
+        return non_max_suppression_shape_func(
+            boxes.to_tile_tensor[DType.int64](),
+            scores.to_tile_tensor[DType.int64](),
+            max_output_boxes_int,
+            iou_threshold_float,
+            score_threshold_float,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Linalg kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.matmul")
+struct Matmul:
+    @staticmethod
+    def execute[
+        transpose_b: Bool,
+        packed_b: Bool,
+        lambdas_have_fusion: Bool,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        c: _FusedComputeOutputTensor[rank=2, ...],
+        a: InputTensor[rank=2, ...],
+        b: InputTensor[rank=2, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        comptime assert not (packed_b and transpose_b), (
+            "transpose_b and b_packed cannot both be true because"
+            " pre-packing transposes B"
+        )
+
+        comptime transposed_a = False
+
+        @parameter
+        @always_inline
+        def epilogue_fn[
+            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]):
+            c._lambda_store[width=_width, element_alignment=alignment](
+                coords,
+                rebind[SIMD[c.dtype, _width]](val),
+            )
+
+        @parameter
+        @always_inline
+        def output_compute_fn[
+            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
+            _dtype, _width
+        ]:
+            return rebind[SIMD[_dtype, _width]](
+                c._fused_compute_output_lambda(
+                    coords, rebind[SIMD[c.dtype, _width]](val)
+                )
+            )
+
+        comptime has_compute_lambda = type_of(c)._has_compute_fusion
+
+        comptime elementwise_lambda = Optional[
+            matmul_elementwise_epilogue_type
+        ](
+            epilogue_fn
+        ) if lambdas_have_fusion and not has_compute_lambda else None
+
+        comptime compute_lambda = Optional[
+            matmul_elementwise_compute_lambda_type
+        ](
+            output_compute_fn
+        ) if lambdas_have_fusion and has_compute_lambda else None
+
+        matmul[
+            transposed_a,
+            transpose_b,
+            packed_b,
+            elementwise_lambda,
+            compute_lambda,
+            target=target,
+            _trace_description=_trace_name,
+        ](
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+
+@compiler.register("mo.batch_matmul")
+struct BatchMatmul:
+    @staticmethod
+    def execute[
+        lambdas_have_fusion: Bool,
+        rank: Int,
+        transpose_b: Bool,
+        target: StaticString,
+    ](
+        c: _FusedComputeOutputTensor[rank=rank, ...],
+        a: InputTensor[rank=rank, ...],
+        b: InputTensor[rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        comptime transpose_a = False
+
+        var a_tile = a.to_tile_tensor[DType.int64]()
+        var b_tile = b.to_tile_tensor[DType.int64]()
+        var c_tile = c.to_tile_tensor[DType.int64]()
+
+        @parameter
+        @always_inline
+        def output_fn[
+            _type: DType, _width: SIMDSize, _rank: Int, *, alignment: Int = 1
+        ](coords: IndexList[_rank], val: SIMD[_type, _width]):
+            comptime has_compute_lambda = type_of(c)._has_compute_fusion
+
+            comptime if has_compute_lambda:
+                var output = c._fused_compute_output_lambda(
+                    rebind[IndexList[c.rank]](coords),
+                    rebind[SIMD[c.dtype, _width]](val),
+                )
+                c.store[element_alignment=alignment](
+                    rebind[IndexList[c.rank]](coords), output
+                )
+            else:
+                c._lambda_store[width=_width, element_alignment=alignment](
+                    rebind[IndexList[c.rank]](coords),
+                    rebind[SIMD[c.dtype, _width]](val),
+                )
+
+        batched_matmul[
+            transpose_a=transpose_a,
+            transpose_b=transpose_b,
+            elementwise_epilogue_fn=Optional[
+                batched_matmul_elementwise_epilogue_type
+            ](output_fn) if lambdas_have_fusion else None,
+            target=target,
+        ](c_tile, a_tile, b_tile, context=ctx)
+
+    @staticmethod
+    def shape[
+        rank: Int,
+        a_type: DType,
+        b_type: DType,
+    ](
+        a: InputTensor[dtype=a_type, rank=rank, ...],
+        b: InputTensor[dtype=b_type, rank=rank, ...],
+    ) raises -> IndexList[rank]:
+        return batched_matmul_shape[rank](
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+        )
+
+
+@compiler.register("mo.linalg.band_part")
+struct LinalgBandPart:
+    @staticmethod
+    def execute[
+        target: StaticString,
+        dtype: DType,
+        int_type: DType,
+        rank: Int,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        num_lower: InputTensor[dtype=int_type, rank=1, ...],
+        num_upper: InputTensor[dtype=int_type, rank=1, ...],
+        exclude: InputTensor[rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[output.dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        matrix_band_part[
+            input_0_fn=input_fn,
+            simd_width=simd_width_of[dtype](),
+            single_thread_blocking_override=False,
+            target=target,
+        ](
+            input.shape(),
+            num_lower.to_tile_tensor[int_type](),
+            num_upper.to_tile_tensor[int_type](),
+            exclude.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[dtype](),
+            ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Resize kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.resize.nearest")
+struct ResizeNearest:
+    @staticmethod
+    def execute[
+        coordinate_transform_mode: Int,
+        round_mode: Int,
+        rank: Int,
+        dtype: DType,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        size: InputTensor[rank=1, ...],
+    ) raises:
+        resize_nearest_neighbor[
+            CoordinateTransformationMode(coordinate_transform_mode),
+            RoundMode(round_mode),
+        ](
+            input.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+        )
+
+    @staticmethod
+    def shape[
+        rank: Int
+    ](
+        input: InputTensor[rank=rank, ...],
+        size: InputTensor[rank=1, ...],
+    ) -> IndexList[rank]:
+        var shape = IndexList[rank]()
+        for i in range(rank):
+            shape[i] = Int(size[i])
+
+        return shape
+
+
+@compiler.register("mo.resize.linear")
+struct ResizeLinear:
+    @staticmethod
+    def execute[
+        coordinate_transform_mode: Int,
+        antialias: Bool,
+        rank: Int,
+        dtype: DType,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        size: InputTensor[rank=1, ...],
+    ):
+        resize_linear[
+            CoordinateTransformationMode(coordinate_transform_mode), antialias
+        ](
+            input.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+        )
+
+    @staticmethod
+    def shape[
+        rank: Int
+    ](
+        input: InputTensor[rank=rank, ...],
+        size: InputTensor[rank=1, ...],
+    ) -> IndexList[rank]:
+        var shape = IndexList[rank]()
+        for i in range(rank):
+            shape[i] = Int(size[i])
+
+        return shape
+
+
+@compiler.register("mo.resize.bicubic")
+struct ResizeBicubic:
+    @staticmethod
+    def execute[
+        rank: Int,
+        dtype: DType,
+        target: StaticString,
+        //,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        size: InputTensor[rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        resize_bicubic[dtype=dtype, target=target](
+            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+    @staticmethod
+    def shape[
+        rank: Int
+    ](
+        input: InputTensor[rank=rank, ...], size: InputTensor[rank=1, ...]
+    ) -> IndexList[rank]:
+        var shape = IndexList[rank]()
+        for i in range(rank):
+            shape[i] = Int(size[i])
+
+        return shape
+
+
+# ===-----------------------------------------------------------------------===#
+# ROI align kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.roi_align")
+struct ROIAlign:
+    @staticmethod
+    def execute[
+        aligned: Bool,
+        mode: StaticString,
+        dtype: DType,
+    ](
+        output: OutputTensor[dtype=dtype, rank=4, ...],
+        input: InputTensor[dtype=dtype, rank=4, ...],
+        rois: InputTensor[dtype=dtype, rank=2, ...],
+        output_height: Int64,
+        output_width: Int64,
+        spatial_scale: Scalar,
+        sampling_ratio: Scalar,
+    ):
+        roi_align_nhwc[aligned, mode](
+            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            rois.to_tile_tensor[DType.int64](),
+            Int(output_height),
+            Int(output_width),
+            spatial_scale,
+            sampling_ratio,
+        )
+
+    @staticmethod
+    def shape(
+        input: InputTensor[rank=4, ...],
+        rois: InputTensor[rank=2, ...],
+        output_height: Int64,
+        output_width: Int64,
+        spatial_scale: Scalar,
+        sampling_ratio: Scalar,
+    ) -> IndexList[4]:
+        var shape = IndexList[4]()
+        # input shape is [N, H, W, C]
+        # rois shape is [M, 5]
+        # output shape is [M, output_height, output_width, C]
+        shape[0] = rois.dim_size[0]()
+        shape[1] = Int(output_height)
+        shape[2] = Int(output_width)
+        shape[3] = input.dim_size[3]()
+
+        return shape
+
+
+# ===-----------------------------------------------------------------------===#
+# Tile kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.tile")
+struct Tile:
+    @staticmethod
+    def execute[
+        dtype: DType, rank: Int
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        repeats: InputTensor[...],
+    ) raises:
+        tile(
+            input.to_tile_tensor[DType.int64](),
+            repeats.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+        )
+
+    @staticmethod
+    def shape(
+        input: InputTensor[...],
+        repeats: InputTensor[rank=1, ...],
+    ) raises -> IndexList[input.rank]:
+        # rebind is required because mojo can't figure out that
+        # input.static_spec.to_layout_tensor().rank == input.rank
+        return rebind[IndexList[input.rank]](
+            tile_shape(
+                input.to_tile_tensor[DType.int64](),
+                repeats.to_tile_tensor[DType.int64](),
+            )
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Repeat Interleave kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("repeat_interleave")
+struct RepeatInterleave:
+    @staticmethod
+    def execute(
+        output: OutputTensor[...],
+        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        repeats: InputTensor[rank=1, ...],
+        axis: Scalar,
+    ) raises:
+        comptime assert (
+            axis.dtype.is_integral()
+        ), "axis value must be integer type"
+
+        repeat_interleave(
+            input.to_tile_tensor[DType.int64](),
+            repeats.to_tile_tensor[DType.int64](),
+            Int(normalize_neg_index(axis, input.rank)),
+            output.to_tile_tensor[DType.int64](),
+        )
+
+    @staticmethod
+    def shape(
+        input: InputTensor[...], repeats: InputTensor[rank=1, ...], axis: Scalar
+    ) raises -> IndexList[input.rank]:
+        comptime assert (
+            axis.dtype.is_integral()
+        ), "axis value must be integer type"
+
+        var interleave_shape = repeat_interleave_shape(
+            input.to_tile_tensor[DType.int64](),
+            repeats.to_tile_tensor[DType.int64](),
+            Int(normalize_neg_index(axis, input.rank)),
+        )
+
+        return rebind[IndexList[input.rank]](interleave_shape)
+
+
+# ===-----------------------------------------------------------------------===#
+# Random kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.random.normal")
+struct RandomNormal:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        target: StaticString,
+    ](
+        output: FusedOutputTensor[dtype=dtype, ...],
+        shape: InputTensor[rank=1, ...],
+        mean: Float32,
+        variance: Float32,
+        seed_value: Scalar,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def output_fn[
+            _width: SIMDSize,
+            _rank: Int,
+        ](coords: IndexList[_rank], val: SIMD[dtype, _width]):
+            output._lambda_store[width=_width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, _width]](val),
+            )
+
+        random_normal[output_fn, target=target](
+            output.shape(), mean, variance, UInt64(seed_value), ctx
+        )
+
+    @staticmethod
+    def shape[
+        output_rank: Int
+    ](
+        shape: InputTensor[rank=1, ...],
+        mean: Scalar,
+        variance: Scalar,
+        seed_value: Scalar,
+    ) -> IndexList[output_rank]:
+        var unrolled_shape = IndexList[output_rank]()
+        for i in range(output_rank):
+            unrolled_shape[i] = Int(shape[i])
+
+        return unrolled_shape
+
+
+@compiler.register("mo.random.uniform")
+struct RandomUniform:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        target: StaticString,
+    ](
+        output: FusedOutputTensor[dtype=dtype, ...],
+        shape: InputTensor[rank=1, ...],
+        lower_bound: Scalar[dtype],
+        upper_bound: Scalar[dtype],
+        seed_value: Scalar,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def output_fn[
+            _width: SIMDSize,
+            _rank: Int,
+        ](coords: IndexList[_rank], val: SIMD[dtype, _width]):
+            output._lambda_store[width=_width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, _width]](val),
+            )
+
+        random_uniform[output_fn, target=target](
+            output.shape(), lower_bound, upper_bound, UInt64(seed_value), ctx
+        )
+
+    @staticmethod
+    def shape[
+        output_rank: Int
+    ](
+        shape: InputTensor[rank=1, ...],
+        mean: Scalar,
+        variance: Scalar,
+        seed_value: Scalar,
+    ) -> IndexList[output_rank]:
+        assert shape.dim_size[0]() == output_rank
+
+        var unrolled_shape = IndexList[output_rank]()
+        for i in range(output_rank):
+            unrolled_shape[i] = Int(shape[i])
+
+        return unrolled_shape
+
+
+# ===-----------------------------------------------------------------------===#
+# Softmax kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.reduce.softmax")
+struct Softmax:
+    @staticmethod
+    def execute[
+        target: StaticString
+    ](
+        output: OutputTensor[...],
+        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
+        axis: Scalar,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        # For adapting input fusion lambda required by call
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[output.dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        softmax[
+            output.dtype,
+            simd_width_of[output.dtype](),
+            output.rank,
+            input_fn,
+            target,
+        ](
+            output.shape(),
+            output.to_tile_tensor[DType.int64](),
+            Int(axis),
+            context=ctx,
+        )
+
+
+@compiler.register("mo.reduce.logsoftmax")
+struct LogSoftmax:
+    @staticmethod
+    def execute[
+        target: StaticString
+    ](
+        output: OutputTensor[...],
+        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
+        axis: Scalar,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        # For adapting input fusion lambda required by call
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[output.dtype, width]:
+            return input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        logsoftmax[
+            output.dtype,
+            simd_width_of[output.dtype](),
+            output.rank,
+            input_fn,
+            target,
+        ](
+            output.shape(),
+            output.to_tile_tensor[DType.int64](),
+            Int(axis),
+            context=ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Cumsum kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.cumsum")
+struct CumSum:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        exclusive: Int,
+        reverse: Int,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        axis: Scalar,
+        ctx: DeviceContextPtr,
+    ):
+        cumsum[dtype, Bool(exclusive), Bool(reverse)](
+            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            _unsafe_normalize_neg_index(Int(axis), rank),
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Concat kernels
+# ===-----------------------------------------------------------------------===#
+
+
+def concat_shape_impl[
+    dtype: DType, rank: Int, size: Int, io_spec: IOSpec
+](
+    axis0: Int,
+    inputs: VariadicTensors[dtype=dtype, rank=rank, size, io_spec=io_spec, ...],
+) raises -> IndexList[rank]:
+    var axis = normalize_neg_index(axis0, rank)
+
+    @parameter
+    @always_inline
+    def shape_equal_ignore_axis(
+        s1: IndexList[rank], s2: IndexList[rank]
+    ) -> Bool:
+        comptime for i in range(rank):
+            if i != axis and s1[i] != s2[i]:
+                return False
+        return True
+
+    var concat_axis_dim_sum = 0
+
+    comptime for i in range(inputs.size):
+        concat_axis_dim_sum += inputs[i].dim_size(axis)
+        if not shape_equal_ignore_axis(
+            inputs[0].shape(),
+            inputs[i].shape(),
+        ):
+            raise Error(
+                "[concat] input shapes must match except at concat axis"
+            )
+
+    # compute and return the output shape
+    var output_shape = inputs[0].shape()
+    output_shape[axis] = concat_axis_dim_sum
+    return output_shape
+
+
+@compiler.register("mo.shard_and_stack")
+struct ShardWeights:
+    @staticmethod
+    def execute[
+        axis: Int,
+    ](
+        outputs: OutputVariadicTensors,
+        inputs: InputVariadicTensors[
+            dtype=outputs.dtype,
+            rank=outputs.rank - 1,
+            ...,
+        ],
+        dev_ctxs_input: DeviceContextPtrList,
+    ) raises:
+        shard_and_stack[axis](outputs, inputs, dev_ctxs_input)
+
+
+@compiler.register("mo.concat")
+struct Concat:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        axis: Scalar,
+        inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
+
+        comptime for i in range(inputs.size):
+            input_shapes[i] = inputs[i].shape()
+
+        @always_inline
+        @parameter
+        def inputs_lambda[
+            input_index: Int, width: Int, _rank: Int, alignment: Int = 1
+        ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
+            comptime assert (
+                input_index < inputs.size
+            ), "tensor index out of bounds"
+            return inputs[input_index]._lambda_load[
+                width=width, element_alignment=alignment
+            ](rebind[IndexList[rank]](indices))
+
+        @always_inline
+        @parameter
+        def epilogue_wrapper[
+            _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
+        ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
+            output._lambda_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](indices),
+                rebind[SIMD[output.dtype, width]](value),
+            )
+
+        fused_concat[
+            dtype,
+            rank,
+            False,
+            inputs_lambda,
+            epilogue_wrapper,
+            target=target,
+        ](
+            normalize_neg_index(Int(axis), rank),
+            input_shapes,
+            output.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        axis: Scalar, inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...]
+    ) raises -> IndexList[rank]:
+        return concat_shape_impl(Int(axis), inputs)
+
+
+@compiler.register("mo.fused_concat_slice")
+struct FusedConcatSlice:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        static_starts: IntTuple,
+        static_steps: IntTuple,
+    ](
+        concat_output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        slice_output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        axis: Scalar,
+        inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
+
+        comptime for i in range(inputs.size):
+            input_shapes[i] = inputs[i].shape()
+
+        @always_inline
+        @parameter
+        def inputs_lambda[
+            input_index: Int,
+            width: Int,
+            _rank: Int,
+            alignment: Int = 1,
+        ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
+            comptime assert (
+                input_index < inputs.size
+            ), "tensor index out of bounds"
+            return inputs[input_index]._lambda_load[
+                width=width, element_alignment=alignment
+            ](rebind[IndexList[rank]](indices))
+
+        @always_inline
+        @parameter
+        def epilogue_wrapper[
+            _dtype: DType, _rank: Int, width: Int, *, alignment: Int = 1
+        ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
+            var concat_indices = rebind[IndexList[rank]](indices)
+
+            # Write to the full concat output.
+            concat_output._lambda_store[
+                width=width, element_alignment=alignment
+            ](
+                concat_indices,
+                rebind[SIMD[concat_output.dtype, width]](value),
+            )
+
+            # Check if the current position falls within the slice range.
+            # The inner dimension is guaranteed not to be sliced by the pattern,
+            # so we only check the outer rank-1 dimensions.
+            var slice_indices = IndexList[rank]()
+
+            comptime for i in range(rank - 1):
+                comptime start = Int(static_starts[i])
+                comptime step = Int(static_steps[i])
+                var start_norm = (
+                    start if start >= 0 else start + concat_output.dim_size[i]()
+                )
+                if (indices[i] - start_norm) % step != 0:
+                    return
+                var slice_idx = (indices[i] - start_norm) // step
+                if slice_idx < 0 or slice_idx >= slice_output.dim_size[i]():
+                    return
+                slice_indices[i] = slice_idx
+
+            # Inner dimension is not sliced: index passes through directly.
+            slice_indices[rank - 1] = concat_indices[rank - 1]
+            slice_output._lambda_store[
+                width=width, element_alignment=alignment
+            ](
+                slice_indices,
+                rebind[SIMD[slice_output.dtype, width]](value),
+            )
+
+        fused_concat[
+            dtype,
+            rank,
+            False,
+            inputs_lambda,
+            epilogue_wrapper,
+            target=target,
+        ](
+            normalize_neg_index(Int(axis), rank),
+            input_shapes,
+            concat_output.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+
+# NOTE: there are a lot of similarities between this and the shape func
+# for mo.concat.
+def concat_from_list_shape_impl[
+    dtype: DType, rank: Int
+](
+    axis0: Int,
+    inputs: List[
+        InputTensor[
+            static_spec=StaticTensorSpec[dtype, rank, ...].get_unknown(),
+        ]
+    ],
+) raises -> IndexList[rank]:
+    var axis = normalize_neg_index(axis0, rank)
+
+    @parameter
+    @always_inline
+    def shape_equal_ignore_axis(
+        s1: IndexList[rank], s2: IndexList[rank]
+    ) -> Bool:
+        for i in range(rank):
+            if i != axis and s1[i] != s2[i]:
+                return False
+        return True
+
+    var concat_axis_dim_sum = 0
+    for i in range(len(inputs)):
+        concat_axis_dim_sum += inputs[i].dim_size(axis)
+        if not shape_equal_ignore_axis(
+            inputs[0].shape(),
+            inputs[i].shape(),
+        ):
+            raise Error(
+                "[concat] input shapes must match except at concat axis"
+            )
+
+    # compute and return the output shape
+    var output_shape = inputs[0].shape()
+    output_shape[axis] = concat_axis_dim_sum
+    return output_shape
+
+
+# ===-----------------------------------------------------------------------===#
+# Split kernels
+# ===-----------------------------------------------------------------------===#
+
+
+# The shape function for split is special and there is special
+# handling in the graph compiler to make things work.
+@compiler.register("mo.split")
+struct Split:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        split_sizes: InputTensor[rank=1, ...],
+        axis: Scalar,
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime shape_types = DynamicCoord[DType.int64, rank].element_types
+        # Use RuntimeInt for strides as well since make_dynamic produces all
+        # runtime strides.
+        comptime stride_types = DynamicCoord[DType.int64, rank].element_types
+
+        var output_bufs = StaticTuple[
+            TileTensor[
+                output.dtype,
+                TileLayout[shape_types=shape_types, stride_types=stride_types],
+                MutAnyOrigin,
+            ],
+            output.size,
+        ]()
+
+        comptime for i in range(output.size):
+            output_bufs[i] = rebind[output_bufs.element_type](
+                TileTensor(
+                    output[i].unsafe_ptr().as_any_origin(),
+                    output[i]
+                    .to_tile_tensor[DType.int64]()
+                    .layout.make_dynamic[DType.int64](),
+                ),
+            )
+
+        split[dtype, target=target, trace_description=_trace_name](
+            input.to_tile_tensor[DType.int64](),
+            normalize_neg_index(Int(axis), rank),
+            output_bufs,
+            ctx.get_device_context(),
+        )
+
+
+# In practice this is how it's done. The graph compiler has additional logic
+# to properly dispatch this function.
+@compiler.register("split_ith_output_shape")
+struct SplitOutputShapeHelper:
+    @staticmethod
+    def execute(
+        input_buf: InputTensor[...],
+        split_sizes_buf: InputTensor[...],
+        split_axis: Scalar,
+        output_idx: Scalar,
+    ) raises:
+        raise Error("Should not be called directly.")
+
+    @staticmethod
+    @always_inline
+    def shape[
+        rank: Int,
+        input_type: DType,
+        split_size_type: DType,
+    ](
+        input_buf: InputTensor[dtype=input_type, rank=rank, ...],
+        split_sizes_buf: InputTensor[dtype=split_size_type, rank=1, ...],
+        split_axis: Scalar,
+        output_idx: Scalar,
+    ) raises -> IndexList[rank]:
+        # extract relevant hyper parameters
+        if not (0 <= Int(output_idx) < split_sizes_buf.size()):
+            raise Error(
+                "[split] output index must be within range [0,"
+                " len(split_sizes))"
+            )
+        var output_split_size = Int(split_sizes_buf[Int(output_idx)])
+
+        var normalized_split_axis = normalize_neg_index(Int(split_axis), rank)
+
+        var split_sizes_sum = 0
+
+        for i in range(split_sizes_buf.dim_size[0]()):
+            split_sizes_sum += Int(split_sizes_buf[i])
+        if split_sizes_sum != input_buf.dim_size(normalized_split_axis):
+            raise Error(
+                "[split] sum of split sizes must match input dimension at split"
+                " axis"
+            )
+
+        # compute and return the output shape
+        var output_shape = input_buf.shape()
+        output_shape[normalized_split_axis] = output_split_size
+        return output_shape
+
+
+# ===-----------------------------------------------------------------------===#
+# Convolution kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.conv")
+struct Conv:
+    @staticmethod
+    def execute[
+        input_layout: StaticString,
+        filter_layout: StaticString,
+        lambdas_have_fusion: Bool,
+        static_strides: IntTuple,
+        static_dilations: IntTuple,
+        static_padding: IntTuple,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: FusedOutputTensor[...],
+        input: InputTensor[rank=output.rank, ...],
+        filter: InputTensor[...],
+        strides: InputTensor[...],
+        dilation: InputTensor[...],
+        paddings: InputTensor[...],
+        num_groups: Scalar,
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        @__copy_capture(output)
+        def output_fn[
+            _dtype: DType, _rank: Int, _width: SIMDSize
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+            output._lambda_store[width=_width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, _width]](val),
+            )
+
+        comptime assert (
+            strides.dtype.is_integral() and dilation.dtype.is_integral()
+        ), "stride and dilation must have integral type"
+
+        comptime assert (
+            input_layout == "NHWC"
+        ), "only NHWC input layout is supported"
+
+        if strides.size() != input.rank - 2:
+            raise Error("(input_rank-2) values expected in conv strides")
+
+        if dilation.size() != input.rank - 2:
+            raise Error("(input_rank-2) values expected in conv dilation")
+
+        if paddings.size() != 2 * (input.rank - 2):
+            raise Error("(2*(input_rank-2)) value expected in conv paddings")
+
+        var stride_tuple = IndexList[input.rank - 2](0)
+        var dilation_tuple = IndexList[input.rank - 2](0)
+
+        comptime for i in range(input.rank - 2):
+            stride_tuple[i] = Int(strides._ptr[i])
+            dilation_tuple[i] = Int(dilation._ptr[i])
+
+        if dilation_tuple != IndexList[input.rank - 2](1):
+            raise Error("Non-unit dilation is not supported yet.")
+
+        var pad_d_tuple = IndexList[2](0)
+        var pad_h_tuple = IndexList[2](0)
+        var pad_w_tuple = IndexList[2](0)
+
+        comptime if input.rank == 3:
+            pad_w_tuple = Index(paddings._ptr[0], paddings._ptr[1])
+        elif input.rank == 4:
+            pad_h_tuple = Index(paddings._ptr[0], paddings._ptr[1])
+            pad_w_tuple = Index(paddings._ptr[2], paddings._ptr[3])
+        elif input.rank == 5:
+            pad_d_tuple = Index(paddings._ptr[0], paddings._ptr[1])
+            pad_h_tuple = Index(paddings._ptr[2], paddings._ptr[3])
+            pad_w_tuple = Index(paddings._ptr[4], paddings._ptr[5])
+
+        comptime input_shape_val = Int(
+            input._static_shape_tuple[input.rank - 1]
+        )  # input C, NHWC
+        comptime filter_shape_val = Int(
+            filter._static_shape_tuple[filter.rank - 2]
+        )  # filter C, RSCF or FRSCf
+        comptime conv_attr = ConvInfoStatic[input.rank - 2](
+            static_padding,
+            static_strides,
+            static_dilations,
+            input_shape_val,
+            filter_shape_val,
+        )
+
+        comptime filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
+        comptime filter_is_fcrs = filter_layout == "FCRS"
+
+        var input_tt = input.to_tile_tensor[DType.int64]()
+        var filter_tt = filter.to_tile_tensor[DType.int64]()
+        var output_tt = output.to_tile_tensor[DType.int64]()
+
+        comptime if is_cpu[target]():
+            comptime assert (
+                not filter_is_fcrs
+            ), "Filter layout FCRS is not supported on CPU"
+            # Pass LayoutTensor layouts explicitly so ConvDirectNHWC gets the
+            # same compile-time shape/stride info as before the TileTensor
+            # migration.
+            comptime _input_layout = input.static_spec.to_layout()
+            comptime _filter_layout = filter.static_spec.to_layout()
+            comptime _output_layout = output.static_spec.to_layout()
+            conv_nhwc_direct[
+                _input_layout,
+                _filter_layout,
+                _output_layout,
+                input.dtype,
+                filter.dtype,
+                output.dtype,
+                filter_packed,
+                conv_attr,
+                lambdas_have_fusion,
+                output_fn,
+            ](
+                input_tt,
+                filter_tt,
+                output_tt,
+                stride_tuple,
+                dilation_tuple,
+                pad_d_tuple,
+                pad_h_tuple,
+                pad_w_tuple,
+                Int(num_groups),
+                ctx.get_optional_device_context(),
+            )
+        else:
+            comptime assert (input.rank == 4 and filter.rank == 4) or (
+                input.rank == 5 and filter.rank == 5
+            ), "only rank 4 or 5 tensor is supported on cuda gpu"
+            comptime assert (
+                filter_packed == False
+            ), "only unpacked filter is supported on cuda gpu"
+
+            var cuda_ctx = ctx.get_device_context()
+
+            var pad_tuple = IndexList[2 * (input.rank - 2)](0)
+
+            comptime for i in range(2 * (input.rank - 2)):
+                pad_tuple[i] = Int(paddings._ptr[i])
+
+            conv_gpu[
+                input.dtype,
+                filter.dtype,
+                output.dtype,
+                output_fn,
+                filter_is_fcrs,
+            ](
+                input_tt,
+                filter_tt,
+                output_tt,
+                stride_tuple,
+                dilation_tuple,
+                pad_tuple,
+                Int(num_groups),
+                cuda_ctx,
+            )
+
+    @staticmethod
+    def shape(
+        input: InputTensor[...],
+        filter: InputTensor[...],
+        strides: InputTensor[rank=1, ...],
+        dilations: InputTensor[rank=1, ...],
+        paddings: InputTensor[rank=1, ...],
+        num_groups: Scalar,
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            conv_shape(
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
+                num_groups,
+            )
+        )
+
+
+@compiler.register("conv2d_residual_add")
+struct Conv2dResidualAdd:
+    """Fused conv2d + TMA residual add + bias for SM100 (Blackwell).
+
+    Computes: D = Conv(input, filter) + bias + source
+    The residual (source) is loaded via TMA pre-fetch overlapped with MMA,
+    and the bias is applied in the epilogue.
+
+    This op is intended for ResNet-style skip connections where a residual
+    tensor is added to the convolution output.
+    """
+
+    @staticmethod
+    def execute[
+        stride_h: Int,
+        stride_w: Int,
+        pad_top: Int,
+        pad_bottom: Int,
+        pad_left: Int,
+        pad_right: Int,
+        has_bias: Bool,
+        target: StaticString,
+    ](
+        output: FusedOutputTensor[...],
+        input: InputTensor[dtype=output.dtype, rank=4, ...],
+        filter: InputTensor[rank=4, ...],
+        source: InputTensor[dtype=output.dtype, rank=4, ...],
+        bias: InputTensor[dtype=output.dtype, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        @__copy_capture(output, bias)
+        def output_fn[
+            _dtype: DType, _rank: Int, _width: SIMDSize
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+            var result = val
+
+            comptime if has_bias:
+                var c_idx = coords[_rank - 1]
+                var bias_vec = (bias.unsafe_ptr() + c_idx).load[width=_width]()
+                result = val + bias_vec.cast[_dtype]()
+
+            output._lambda_store[width=_width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, _width]](result),
+            )
+
+        comptime assert not is_cpu[
+            target
+        ](), "conv2d_residual_add is only supported on GPU"
+
+        var cuda_ctx = ctx.get_device_context()
+        var input_tt = input.to_tile_tensor[DType.int64]()
+        var filter_tt = filter.to_tile_tensor[DType.int64]()
+        var output_tt = output.to_tile_tensor[DType.int64]()
+
+        var pad_tuple = IndexList[4](pad_top, pad_bottom, pad_left, pad_right)
+        var stride_tuple = IndexList[2](stride_h, stride_w)
+        var dilation_tuple = IndexList[2](1, 1)
+
+        conv_gpu[
+            input.dtype,
+            filter.dtype,
+            output.dtype,
+            output_fn,
+            True,  # filter_is_fcrs
+            has_residual=True,
+        ](
+            input_tt,
+            filter_tt,
+            output_tt,
+            stride_tuple,
+            dilation_tuple,
+            pad_tuple,
+            1,  # num_groups
+            cuda_ctx,
+            source.unsafe_ptr().as_any_origin(),
+            Float32(1.0),  # beta
+        )
+
+    @staticmethod
+    def shape(
+        input: InputTensor[rank=4, ...],
+        filter: InputTensor[rank=4, ...],
+        source: InputTensor[rank=4, ...],
+        bias: InputTensor[rank=1, ...],
+    ) raises -> IndexList[4]:
+        # Output shape is the same as source shape (residual tensor).
+        return source.shape()
+
+
+@compiler.register("mo.conv_transpose")
+struct ConvTranspose:
+    @staticmethod
+    def execute[
+        input_layout: StaticString,
+        filter_layout: StaticString,
+        lambdas_have_fusion: Bool,
+        target: StaticString,
+    ](
+        output: FusedOutputTensor[...],
+        input: InputTensor[rank=output.rank, ...],
+        filter: InputTensor[...],
+        strides: InputTensor[rank=1, ...],
+        dilation: InputTensor[rank=1, ...],
+        paddings: InputTensor[rank=1, ...],
+        output_paddings: InputTensor[rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        comptime assert (
+            strides.dtype.is_integral()
+            and dilation.dtype.is_integral()
+            and output_paddings.dtype.is_integral()
+        )
+
+        if strides.size() != input.rank - 2:
+            raise Error(
+                "(input_rank-2) values expected in convTranspose stride"
+            )
+
+        if dilation.size() != input.rank - 2:
+            raise Error(
+                "(input_rank-2) values expected in convTranspose dilation"
+            )
+
+        if output_paddings.size() != input.rank - 2:
+            raise Error(
+                "(input_rank-2) values expected in convTranspose output"
+                " paddings"
+            )
+
+        if paddings.size() != 2 * (input.rank - 2):
+            raise Error(
+                "(2*(input_rank-2)) value expected in convTranspose paddings"
+            )
+
+        var stride_tuple = IndexList[
+            type_of(input.to_tile_tensor[DType.int64]()).rank - 2
+        ](0)
+        var dilation_tuple = IndexList[
+            type_of(input.to_tile_tensor[DType.int64]()).rank - 2
+        ](0)
+
+        comptime for i in range(input.rank - 2):
+            stride_tuple[i] = Int(strides._ptr[i])
+            dilation_tuple[i] = Int(dilation._ptr[i])
+
+        var pad_d = IndexList[2](0)
+        var pad_h = IndexList[2](0)
+        var pad_w = IndexList[2](0)
+
+        comptime if input.rank == 3:
+            pad_w = Index(paddings[0], paddings[1])
+        elif input.rank == 4:
+            pad_h = Index(paddings[0], paddings[1])
+            pad_w = Index(paddings[2], paddings[3])
+        elif input.rank == 5:
+            pad_d = Index(paddings[0], paddings[1])
+            pad_h = Index(paddings[2], paddings[3])
+            pad_w = Index(paddings[4], paddings[5])
+
+        @parameter
+        @always_inline
+        def output_fn[
+            _dtype: DType, _rank: Int, _width: SIMDSize
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+            output._lambda_store[width=_width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, _width]](val),
+            )
+
+        comptime filter_packed = filter_layout == "FRSCf" or filter_layout == "FQRSCf"
+        comptime filter_is_cfrs = filter_layout == "CFRS"
+
+        comptime if is_cpu[target]():
+            conv_transposed_cpu[
+                filter_packed,
+                filter_is_cfrs,
+                lambdas_have_fusion,
+                output_fn,
+            ](
+                output.to_tile_tensor[DType.int64](),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                stride_tuple,
+                dilation_tuple,
+                pad_d,
+                pad_h,
+                pad_w,
+                ctx.get_optional_device_context(),
+            )
+        else:
+            comptime assert (
+                input.rank == 4 and filter.rank == 4
+            ), "only rank 4 tensor is supported on cuda gpu"
+            comptime assert (
+                filter_packed == False
+            ), "only unpacked filter is supported on cuda gpu"
+
+            var cuda_ctx = ctx.get_device_context()
+            var pad_tuple = IndexList[
+                type_of(input.to_tile_tensor[DType.int64]()).rank - 2
+            ](0)
+
+            comptime if input.rank == 4:
+                pad_tuple[0] = pad_h[0]
+                pad_tuple[1] = pad_w[0]
+
+            conv_transposed_gpu[
+                input.dtype,
+                filter.dtype,
+                output.dtype,
+                elementwise_epilogue=Optional[elementwise_simd_epilogue_type](
+                    output_fn
+                ) if lambdas_have_fusion else Optional[
+                    elementwise_simd_epilogue_type
+                ](),
+            ](
+                output.to_tile_tensor[DType.int64](),
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                stride_tuple,
+                dilation_tuple,
+                pad_tuple,
+                cuda_ctx,
+            )
+
+    @staticmethod
+    def shape[
+        dtype: DType
+    ](
+        input: InputTensor[dtype=dtype, ...],
+        filter: InputTensor[dtype=dtype, ...],
+        strides: InputTensor[rank=1, ...],
+        dilations: InputTensor[rank=1, ...],
+        paddings: InputTensor[rank=1, ...],
+        output_paddings: InputTensor[rank=1, ...],
+    ) raises -> IndexList[input.rank]:
+        return rebind[IndexList[input.rank]](
+            conv_transpose_shape(
+                input.to_tile_tensor[DType.int64](),
+                filter.to_tile_tensor[DType.int64](),
+                strides.to_tile_tensor[DType.int64](),
+                dilations.to_tile_tensor[DType.int64](),
+                paddings.to_tile_tensor[DType.int64](),
+                output_paddings.to_tile_tensor[DType.int64](),
+            )
+        )
+
+
+@compiler.register("fold")
+struct Fold:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        stride_h: Int,
+        stride_w: Int,
+        dilation_h: Int,
+        dilation_w: Int,
+        padding_h: Int,
+        padding_w: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=4, ...],
+        input: InputTensor[dtype=dtype, rank=3, ...],
+        output_size: InputTensor[...],
+        kernel_size: InputTensor[...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert (
+            kernel_size.dtype.is_integral() and output_size.dtype.is_integral()
+        ), "kernel_size and output_size must have integral type"
+        var output_size_tuple = Index(output_size._ptr[0], output_size._ptr[1])
+        var kernel_size_tuple = Index(kernel_size._ptr[0], kernel_size._ptr[1])
+        var input_tensor = input.to_tile_tensor[DType.int64]()
+        var output_tensor = output.to_tile_tensor[DType.int64]()
+
+        fold[
+            stride=(stride_h, stride_w),
+            dilation=(dilation_h, dilation_w),
+            padding=(padding_h, padding_w),
+            target=target,
+        ](
+            input_tensor,
+            output_tensor,
+            output_size_tuple,
+            kernel_size_tuple,
+            ctx,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        stride_h: Int,
+        stride_w: Int,
+        dilation_h: Int,
+        dilation_w: Int,
+        padding_h: Int,
+        padding_w: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=3, ...],
+        output_size: InputTensor[...],
+        kernel_size: InputTensor[...],
+    ) raises -> IndexList[4]:
+        comptime assert (
+            kernel_size.dtype.is_integral() and output_size.dtype.is_integral()
+        ), "kernel_size and output_size must have integral type"
+        var output_size_tuple = Index(output_size._ptr[0], output_size._ptr[1])
+        var kernel_size_tuple = Index(kernel_size._ptr[0], kernel_size._ptr[1])
+        return fold_shape(
+            input.to_tile_tensor[DType.int64](),
+            output_size_tuple,
+            kernel_size_tuple,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# FFT kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("irfft")
+struct IRFFT:
+    @staticmethod
+    def execute[
+        target: StaticString,
+        dtype: DType,
+        rank: Int,
+        n: Int,
+        buffer_size_mb: Int,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        irfft(
+            input.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+            n,
+            buffer_size_mb,
+            ctx.get_device_context(),
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.mla.indexer.ragged.float8.paged")
+struct MLAIndexerRaggedFloat8Paged:
+    @staticmethod
+    def execute[
+        *,
+        num_heads: Int,
+        depth: Int,
+        k: Int,
+        quantization_granularity: Int,
+        mask_str: StaticString,
+    ](
+        output_indices: OutputTensor[dtype=DType.int32, rank=2, ...],
+        q: InputTensor[dtype=DType.float8_e4m3fn, rank=3, ...],
+        qs: InputTensor[dtype=DType.float32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        k_blocks: MutableInputTensor[dtype=DType.float8_e4m3fn, rank=6, ...],
+        k_cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        k_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        k_max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        k_scales: MutableInputTensor[dtype=DType.float32, rank=6, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        """Compute FP8 attention scores and return top-k key indices per token.
+
+        This kernel is designed for Multi-head Latent Attention (MLA) architectures.
+        It computes FP8 matmul between queries and cached keys (with scales), applies
+        masking, and returns the indices of the top-k highest-scoring keys per token.
+        Scores are aggregated (summed) across all attention heads.
+
+        Parameters:
+            num_heads: Number of query attention heads (must be 128).
+            depth: Head dimension (must be 128).
+            k: Number of top indices to return per token.
+            quantization_granularity: Quantization granularity for the K cache.
+            mask_str: Mask type - either MaskName.NULL (no mask) or MaskName.CAUSAL.
+
+        Args:
+            output_indices: Output tensor [total_seq_len, top_k] containing
+                top-k key indices per token. Invalid positions (where there are
+                fewer than top_k valid keys) are filled with -1.
+            q: Query tensor [total_seq_len, num_heads, depth] in FP8.
+            qs: Query scales [total_seq_len, num_heads] in float32.
+            input_row_offsets: Ragged row offsets [batch_size + 1] for queries.
+            k_blocks: Paged K cache blocks [num_blocks, 1, num_layers, page_size,
+                num_heads, head_size] in FP8.
+            k_cache_lengths: Cache lengths [batch_size] - number of cached tokens
+                per sequence.
+            k_lookup_table: Page lookup table [batch_size, pages_per_seq] mapping
+                sequence pages to block indices.
+            k_max_lengths: Max lengths tensor [1, 2] containing [max_seq_len,
+                max_cache_len].
+            k_scales: K scale blocks matching k_blocks shape with scale values.
+            layer_idx: Layer index for retrieving the correct cache layer.
+            ctx: Device context for GPU execution.
+        """
+        # Extract cache parameters from block shapes
+        comptime page_size = Int(k_blocks.static_spec.shape_tuple[3])
+        comptime head_dim = Int(k_blocks.static_spec.shape_tuple[5])
+        comptime k_num_heads = Int(k_blocks.static_spec.shape_tuple[4])
+        comptime is_mla = Int(k_blocks.static_spec.shape_tuple[1]) == 1
+        comptime kv_params = KVCacheStaticParams(k_num_heads, head_dim, is_mla)
+        comptime assert quantization_granularity >= depth, (
+            "quantization_granularity must be >= depth for MLA (one scale per"
+            " token per head)"
+        )
+
+        # K cache with scales (k_s values are stored in k_collection.scales)
+        var k_collection = generic_get_paged_cache_with_scales[
+            DType.float8_e4m3fn,
+            DType.float32,
+            kv_params,
+            page_size,
+            quantization_granularity,
+        ](
+            LayoutTensor[
+                DType.float8_e4m3fn, Layout.row_major[6](), MutAnyOrigin
+            ](
+                k_blocks.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    k_blocks.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+                k_cache_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                    k_cache_lengths.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                k_lookup_table.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    k_lookup_table.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                k_max_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    k_max_lengths.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
+                k_scales.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    k_scales.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+        )
+
+        mla_indexer_ragged_float8_paged[
+            DType.float8_e4m3fn,
+            type_of(k_collection),
+            num_heads,
+            depth,
+            k,
+            mask_str,
+        ](
+            output_indices.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            qs.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            k_collection,
+            layer_idx,
+            ctx.get_device_context(),
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Attention kernels
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("masked_flash_attention_gpu")
+struct MaskedFlashAttentionGPU:
+    @staticmethod
+    def execute[
+        target: StaticString, rank: Int
+    ](
+        output: OutputTensor[rank=rank, ...],
+        q: InputTensor[rank=rank, ...],
+        k: InputTensor[rank=rank, ...],
+        v: InputTensor[rank=rank, ...],
+        mask: InputTensor[...],
+        scale: Float32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        """`masked_flash_attention_gpu` is a hand-fused operator which does
+        something analogous to the following list of operations.
+
+        **Step 0:
+        Transpose:
+        query_processed = transpose(query) # BSHD --> BHSD
+        key_processed = transpose(key)     # BSHD --> BHDS
+        value_processed = transpose(value) # BSHD --> BHSD
+
+        **Step 1:
+        attentionMatrix = query_processed @ key_processed
+
+        **Step 2:
+        norm = broadcast_to(normScalar, shape_of(attentionMatrix))
+
+        **Step 3:
+        # Normalize and apply masking
+        attentionMatrixNorm = attentionMatrix * scale
+
+        # Note attention_mask is HSS and auto-broadcasts
+        attentionMatrixNormMasked = attentionMatrixNorm + attention_mask
+
+        **Step 4:
+        # Apply softmax and reproject result
+        attentionMatrixSoftMax = softmax(attentionMatrixNormMasked)
+        answer = attentionMatrixSoftMax @ value_processed
+        answer = transpose(answer) # BHSD --> BSHD
+
+        Compared to the CPU patterns the notable differences are:
+        1. The mask is rank 3 and is of shape BSS
+        2. The transposes are part of the kernel itself
+
+        Finally, this pattern supports grouped attention patterns. That is if we
+        have G groups, then let h = H / G. Key and value are allowed to be BShD
+        in these scenarios. Both key and value must be BShD if one is. If this is
+        true the following is equivalently run before Step 0:
+
+        ** Step -1:
+        key = concat(key, ...) # concat BShD --> BSHD
+        value = concat(value, ...) # concat BShD --> BSHD
+
+        The underlying fusion follows ideas taken from the 2022 FlashAttention paper
+        by Tri Dao et al.
+        """
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        flash_attention(
+            output.to_layout_tensor(),
+            q.to_layout_tensor(),
+            k.to_layout_tensor(),
+            v.to_layout_tensor(),
+            mask.to_layout_tensor(),
+            scale,
+            context=ctx,
+        )
+
+
+@compiler.register("mo.mha.no_cache")
+struct FlashAttentionGPU:
+    @staticmethod
+    def execute[
+        rank: Int,
+        //,
+        target: StaticString,
+        mask_str: StaticString,
+        local_window_size: Int = -1,
+    ](
+        output: OutputTensor[rank=rank, ...],
+        q: InputTensor[rank=rank, ...],
+        k: InputTensor[rank=rank, ...],
+        v: InputTensor[rank=rank, ...],
+        scale: Float32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        """`mo.mha.no_cache` is a hand-fused operator which does
+        something analogous to the following list of operations.
+
+        **Step 0:
+        Transpose:
+        query_processed = transpose(query) # BSHD --> BHSD
+        key_processed = transpose(key)     # BSHD --> BHDS
+        value_processed = transpose(value) # BSHD --> BHSD
+
+        **Step 1:
+        attentionMatrix = query_processed @ key_processed
+
+        **Step 2:
+        norm = broadcast_to(normScalar, shape_of(attentionMatrix))
+
+        **Step 3:
+        # Normalize and apply masking
+        attentionMatrixNormMasked = mask_functor(attentionMatrix * scale)
+
+        **Step 4:
+        # Apply softmax and reproject result
+        attentionMatrixSoftMax = softmax(attentionMatrixNormMasked)
+        answer = attentionMatrixSoftMax @ value_processed
+        answer = transpose(answer) # BHSD --> BSHD
+
+        Compared to the CPU patterns the notable differences are:
+        1. The transposes are part of the kernel itself
+
+        Finally, this pattern supports grouped attention patterns. That is if we
+        have G groups, then let h = H / G. Key and value are allowed to be BShD
+        in these scenarios. Both key and value must be BShD if one is. If this is
+        true the following is equivalently run before Step 0:
+
+        ** Step -1:
+        key = concat(key, ...) # concat BShD --> BSHD
+        value = concat(value, ...) # concat BShD --> BSHD
+
+        The underlying fusion follows ideas taken from the 2022 FlashAttention paper
+        by Tri Dao et al.
+        """
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        var output_buffer = output.to_layout_tensor()
+        var q_buffer = q.to_layout_tensor()
+        var k_buffer = k.to_layout_tensor()
+        var v_buffer = v.to_layout_tensor()
+
+        @parameter
+        @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
+        def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+            flash_attention[](
+                output_buffer,
+                q_buffer,
+                k_buffer,
+                v_buffer,
+                mask,
+                scale,
+                ctx[],
+            )
+
+        dispatch_mask[
+            mask_str,
+            _dispatch_flash_attention,
+            local_window_size,
+        ]()
+
+
+@compiler.register("mo.mha.padded.no_cache")
+struct PaddedFlashAttentionGPU:
+    @staticmethod
+    def execute[
+        rank: Int,
+        //,
+        target: StaticString,
+        mask_str: StaticString,
+        local_window_size: Int = -1,
+    ](
+        output: OutputTensor[rank=rank, ...],
+        q: InputTensor[rank=rank, ...],
+        k: InputTensor[rank=rank, ...],
+        v: InputTensor[rank=rank, ...],
+        valid_length: InputTensor[dtype=DType.uint32, rank=1, ...],
+        scale: Float32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        var output_buffer = output.to_layout_tensor()
+        var q_buffer = q.to_layout_tensor()
+        var k_buffer = k.to_layout_tensor()
+        var v_buffer = v.to_layout_tensor()
+
+        comptime valid_length_t = LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        ]
+        _valid_length = rebind[valid_length_t](valid_length.to_layout_tensor())
+
+        @parameter
+        @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
+        def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+            flash_attention[
+                _use_valid_length=True,
+                _padded_ndbuffer=True,
+            ](
+                output_buffer,
+                q_buffer,
+                k_buffer,
+                v_buffer,
+                mask,
+                scale,
+                ctx[],
+                valid_length=OptionalReg[valid_length_t](_valid_length),
+            )
+
+        dispatch_mask[
+            mask_str,
+            _dispatch_flash_attention,
+            local_window_size,
+        ]()
+
+
+@compiler.register("mo.mha.ragged.no_cache")
+struct RaggedFlashAttentionGPU:
+    @staticmethod
+    def execute[
+        rank: Int,
+        //,
+        target: StaticString,
+        mask_str: StaticString,
+        local_window_size: Int = -1,
+    ](
+        output: OutputTensor[rank=rank, ...],
+        q: InputTensor[rank=rank, ...],
+        k: InputTensor[rank=rank, ...],
+        v: InputTensor[rank=rank, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        q_max_seq_len: InputTensor[dtype=DType.uint32, rank=1, ...],
+        scale: Float32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        """`mo.mha.ragged.no_cache` computes flash attention for ragged inputs without KV cache.
+
+        The inputs q, k, v are in ragged format with shape [total_seq_len, num_heads, head_dim].
+        input_row_offsets indicates where each sequence starts and ends in the ragged tensors.
+        """
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        var output_buffer = output.to_layout_tensor()
+        var q_buffer = q.to_layout_tensor()
+        var k_buffer = k.to_layout_tensor()
+        var v_buffer = v.to_layout_tensor()
+
+        comptime input_row_offsets_t = LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+        ]
+        _input_row_offsets = rebind[input_row_offsets_t](
+            input_row_offsets.to_layout_tensor()
+        )
+
+        @parameter
+        @__copy_capture(output_buffer, q_buffer, k_buffer, v_buffer)
+        def _dispatch_flash_attention[mask_t: MHAMask](mask: mask_t) raises:
+            flash_attention_ragged[](
+                output_buffer,
+                q_buffer,
+                k_buffer,
+                v_buffer,
+                _input_row_offsets,
+                q_max_seq_len.to_layout_tensor(),
+                mask,
+                scale,
+                ctx[],
+            )
+
+        dispatch_mask[
+            mask_str,
+            _dispatch_flash_attention,
+            local_window_size,
+        ]()
+
+
+@compiler.register("no_mask_flash_attention_cpu")
+struct NoMaskFlashAttentionCPU:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        q: InputTensor[dtype=dtype, rank=rank, ...],
+        k: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        v: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        scale: Scalar[dtype=DType.float32],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
+
+        @parameter
+        @always_inline
+        def k_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[k.dtype, width]:
+            return k._lambda_load[width=width](
+                rebind[IndexList[k.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def v_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[v.dtype, width]:
+            return v._lambda_load[width=width](
+                rebind[IndexList[v.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def mask_input_fn[
+            width: Int, _rank: Int
+        ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
+            return SIMD[dtype, width](0)
+
+        nn_flash_attention[k_input_fn, v_input_fn, mask_input_fn](
+            q.to_layout_tensor(),
+            k.shape(),
+            v.shape(),
+            IndexList[0](),
+            output.to_layout_tensor(),
+            scale.cast[DType.float32](),
+            ctx=ctx.get_optional_device_context(),
+        )
+
+
+@compiler.register("with_mask_flash_attention_split_kv_cpu")
+struct WithMaskFlashAttentionSplitKVCPU:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        q: InputTensor[dtype=dtype, rank=rank, ...],
+        k: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        v: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        k_cache: FusedInputTensor[dtype=dtype, rank=rank + 1, ...],
+        v_cache: FusedInputTensor[dtype=dtype, rank=rank + 1, ...],
+        mask: FusedInputTensor[dtype=dtype, ...],
+        scale: Scalar[dtype=DType.float32],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
+
+        @parameter
+        @always_inline
+        def k_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[k.dtype, width]:
+            return k._lambda_load[width=width](
+                rebind[IndexList[k.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def v_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[v.dtype, width]:
+            return v._lambda_load[width=width](
+                rebind[IndexList[v.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def k_cache_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[k_cache.dtype, width]:
+            return k_cache._lambda_load[width=width](
+                rebind[IndexList[k_cache.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def v_cache_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[v_cache.dtype, width]:
+            return v_cache._lambda_load[width=width](
+                rebind[IndexList[v_cache.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def mask_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[mask.dtype, width]:
+            return mask._lambda_load[width=width](
+                rebind[IndexList[mask.rank]](coords)
+            )
+
+        flash_attention_split_kv[
+            k_input_fn,
+            v_input_fn,
+            k_cache_input_fn,
+            v_cache_input_fn,
+            mask_input_fn,
+        ](
+            q.to_layout_tensor(),
+            k.shape(),
+            v.shape(),
+            k_cache.shape(),
+            v_cache.shape(),
+            mask.shape(),
+            output.to_layout_tensor(),
+            scale.cast[DType.float32](),
+            ctx=ctx.get_optional_device_context(),
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        q: InputTensor[dtype=dtype, rank=rank, ...],
+        k: InputTensor[dtype=dtype, rank=rank, ...],
+        v: InputTensor[dtype=dtype, rank=rank, ...],
+        k_cache: InputTensor[dtype=dtype, rank=rank + 1, ...],
+        v_cache: InputTensor[dtype=dtype, rank=rank + 1, ...],
+        mask: InputTensor[dtype=dtype, ...],
+        scale: Scalar[dtype=DType.float32],
+    ) -> IndexList[q.rank]:
+        return q.shape()
+
+
+@compiler.register("with_mask_flash_attention_cpu")
+struct WithMaskFlashAttentionCPU:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        q: InputTensor[dtype=dtype, rank=rank, ...],
+        k: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        v: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        mask: FusedInputTensor[dtype=dtype, ...],
+        scale: Scalar[dtype=DType.float32],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
+
+        @parameter
+        @always_inline
+        def k_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[k.dtype, width]:
+            return k._lambda_load[width=width](
+                rebind[IndexList[k.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def v_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[v.dtype, width]:
+            return v._lambda_load[width=width](
+                rebind[IndexList[v.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def mask_input_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[mask.dtype, width]:
+            return mask._lambda_load[width=width](
+                rebind[IndexList[mask.rank]](coords)
+            )
+
+        nn_flash_attention[k_input_fn, v_input_fn, mask_input_fn](
+            q.to_layout_tensor(),
+            k.shape(),
+            v.shape(),
+            mask.shape(),
+            output.to_layout_tensor(),
+            scale.cast[DType.float32](),
+            ctx=ctx.get_optional_device_context(),
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Quantization for CPU
+# ===-----------------------------------------------------------------------===#
+
+######
+# Q4_0
+######
+
+
+@compiler.register("ggml_q4_0_dequantize")
+struct GGMLQ40Dequantize:
+    @staticmethod
+    @always_inline
+    def execute[
+        _trace_name: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.float32, rank=2, ...],
+        input: InputTensor[dtype=DType.uint8, rank=2, ...],
+    ) raises:
+        var input_tt = input.to_tile_tensor[DType.int64]()
+        var output_tt = output.to_tile_tensor[DType.int64]()
+        Q4sym[group_size=32].dequantize_and_write_to_tensor(
+            input_tt,
+            output_tt,
+            output.shape(),
+        )
+
+    @staticmethod
+    @always_inline
+    def shape(
+        input: InputTensor[dtype=DType.uint8, rank=2, ...]
+    ) -> IndexList[2]:
+        comptime block_nbytes = size_of[Q4sym[group_size=32]]()
+        comptime quants_per_block = 32
+        var num_block_per_batch = (
+            input.size() // input.dim_size[0]()
+        ) // block_nbytes
+        return (input.dim_size[0](), quants_per_block * num_block_per_batch)
+
+
+@compiler.register("vroom_q4_0_matmul")
+struct VroomQ40Matmul:
+    @staticmethod
+    @always_inline
+    def execute[
+        _trace_name: StaticString,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=DType.float32, rank=2, ...],
+        a: InputTensor[dtype=DType.float32, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
+        matmul_qint4[32](
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            c.to_tile_tensor[DType.int64](),
+            ctx.get_optional_device_context(),
+        )
+
+    @staticmethod
+    @always_inline
+    def shape(
+        a: InputTensor[dtype=DType.float32, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+    ) -> IndexList[2]:
+        return IndexList[2](a.dim_size[0](), b.dim_size[0]())
+
+
+@compiler.register("vroom_q4_0_repack_weights")
+struct VroomQ40RepackWeights:
+    @staticmethod
+    @always_inline
+    def execute[
+        _trace_name: StaticString,
+    ](
+        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+    ) raises:
+        matmul_qint4_pack_b[32](
+            b.to_tile_tensor[DType.int64](),
+            b_packed.to_tile_tensor[DType.int64](),
+        )
+
+    @staticmethod
+    @always_inline
+    def shape(b: InputTensor[dtype=DType.uint8, rank=2, ...]) -> IndexList[2]:
+        return b.shape()
+
+
+######
+# Q4_K
+######
+
+
+@compiler.register("ggml_q4_k_dequantize")
+struct GGMLQ4KDequantize:
+    @staticmethod
+    @always_inline
+    def execute[
+        _trace_name: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.float32, rank=2, ...],
+        input: InputTensor[dtype=DType.uint8, rank=2, ...],
+    ) raises:
+        q4_k_dequantize_impl(
+            input.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+        )
+
+    @staticmethod
+    @always_inline
+    def shape(
+        input: InputTensor[dtype=DType.uint8, rank=2, ...]
+    ) -> IndexList[2]:
+        comptime block_nbytes = size_of[block_Q4_K]()
+        comptime elements_per_block = block_QK_K.quantized_k
+
+        var num_block_per_batch = (
+            input.size() // input.dim_size[0]()
+        ) // block_nbytes
+
+        return (
+            input.dim_size[0](),
+            elements_per_block * num_block_per_batch,
+        )
+
+
+@compiler.register("vroom_q4_k_matmul")
+struct VroomQ4KMatmul:
+    @staticmethod
+    @always_inline
+    def execute[
+        _trace_name: StaticString,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=DType.float32, rank=2, ...],
+        a: InputTensor[dtype=DType.float32, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
+        matmul_Q4_K(
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            c.to_tile_tensor[DType.int64](),
+            ctx.get_optional_device_context(),
+        )
+
+    @staticmethod
+    @always_inline
+    def shape(
+        a: InputTensor[dtype=DType.float32, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+    ) -> IndexList[2]:
+        return IndexList[2](a.dim_size[0](), b.dim_size[0]())
+
+
+@compiler.register("vroom_q4_k_repack_weights")
+struct VroomQ4KRepackWeights:
+    @staticmethod
+    @always_inline
+    def execute[
+        _trace_name: StaticString,
+    ](
+        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+    ) raises:
+        matmul_Q4_K_pack_b(
+            b.to_tile_tensor[DType.int64](),
+            b_packed.to_tile_tensor[DType.int64](),
+        )
+
+    @staticmethod
+    @always_inline
+    def shape(
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+    ) -> IndexList[2]:
+        return b.shape()
+
+
+######
+# Q6_K
+######
+
+
+@compiler.register("ggml_q6_k_dequantize")
+struct GGMLQ6KDequantize:
+    @staticmethod
+    @always_inline
+    def execute[
+        _trace_name: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.float32, rank=2, ...],
+        input: InputTensor[dtype=DType.uint8, rank=2, ...],
+    ) raises:
+        var input_tt = input.to_tile_tensor[DType.int64]()
+        var output_tt = output.to_tile_tensor[DType.int64]()
+        q6_k_dequantize_impl(
+            input_tt,
+            output_tt,
+            output.shape(),
+        )
+
+    @staticmethod
+    @always_inline
+    def shape(
+        input: InputTensor[dtype=DType.uint8, rank=2, ...]
+    ) -> IndexList[2]:
+        comptime block_nbytes = size_of[block_Q6_K]()
+        comptime elements_per_block = block_QK_K.quantized_k
+
+        var num_block_per_batch = (
+            input.size() // input.dim_size[0]()
+        ) // block_nbytes
+
+        return (
+            input.dim_size[0](),
+            elements_per_block * num_block_per_batch,
+        )
+
+
+@compiler.register("vroom_q6_k_matmul")
+struct VroomQ6KMatmul:
+    @staticmethod
+    @always_inline
+    def execute[
+        _trace_name: StaticString,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=DType.float32, rank=2, ...],
+        a: InputTensor[dtype=DType.float32, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
+        matmul_Q6_K(
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            c.to_tile_tensor[DType.int64](),
+            ctx.get_optional_device_context(),
+        )
+
+    @staticmethod
+    @always_inline
+    def shape(
+        a: InputTensor[dtype=DType.float32, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+    ) -> IndexList[2]:
+        return IndexList[2](a.dim_size[0](), b.dim_size[0]())
+
+
+@compiler.register("vroom_q6_k_repack_weights")
+struct VroomQ6KRepackWeights:
+    @staticmethod
+    @always_inline
+    def execute[
+        _trace_name: StaticString,
+    ](
+        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+    ) raises:
+        matmul_Q6_K_pack_b(
+            b.to_tile_tensor[DType.int64](),
+            b_packed.to_tile_tensor[DType.int64](),
+        )
+
+    @staticmethod
+    @always_inline
+    def shape(
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+    ) -> IndexList[2]:
+        return b.shape()
+
+
+######
+# 4-bit quant GPU implementation
+######
+
+
+@compiler.register("qmatmul_b4_g32")
+struct QMatmulGPU_b4_g32:
+    @staticmethod
+    @always_inline
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        c: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        a: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        matmul_gpu_qint4[32, target](
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+    @staticmethod
+    @always_inline
+    def shape(
+        a: InputTensor[dtype=DType.float32, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+    ) -> IndexList[2]:
+        return IndexList[2](a.dim_size[0](), b.dim_size[0]())
+
+
+@compiler.register("qmatmul_b4_g128")
+struct QMatmulGPU_b4_g128:
+    @staticmethod
+    @always_inline
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        c: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        a: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        matmul_gpu_qint4[128, target](
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+    @staticmethod
+    @always_inline
+    def shape(
+        a: InputTensor[dtype=DType.float32, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+    ) -> IndexList[2]:
+        return IndexList[2](a.dim_size[0](), b.dim_size[0]())
+
+
+@compiler.register("GGUF_gpu_repack_q4_0")
+struct QMatmulGPURepackGGUF:
+    @staticmethod
+    @always_inline
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        gpu_qint4_repack_Q4_0[target](
+            b.to_layout_tensor(), b_packed.to_layout_tensor(), ctx
+        )
+
+    @staticmethod
+    @always_inline
+    def shape(
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+    ) -> IndexList[2]:
+        return b.shape()
+
+
+@compiler.register("GPTQ_gpu_repack_b4_g128")
+struct QMatmulGPURepackGPTQ_b4_g128:
+    @staticmethod
+    @always_inline
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        gpu_qint4_repack_GPTQ[128, target](
+            b.to_layout_tensor(), b_packed.to_layout_tensor(), ctx=ctx
+        )
+
+    @staticmethod
+    @always_inline
+    def shape(
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+    ) -> IndexList[2]:
+        return IndexList[2](b.dim_size[1](), b.dim_size[0]())
+
+
+@compiler.register("GPTQ_gpu_repack_b4_g128_desc_act")
+struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
+    @staticmethod
+    @always_inline
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        b_packed: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        perm_idx: InputTensor[dtype=DType.int32, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        var perm_idx_lt = perm_idx.to_layout_tensor()
+        gpu_qint4_repack_GPTQ[128, target](
+            b.to_layout_tensor(),
+            b_packed.to_layout_tensor(),
+            LayoutTensor[DType.int32, Layout.row_major(UNKNOWN_VALUE)](
+                perm_idx_lt.ptr,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    perm_idx_lt.runtime_layout.shape.value.canonicalize()
+                ),
+            ).get_immutable(),
+            ctx=ctx,
+        )
+
+    @staticmethod
+    @always_inline
+    def shape(
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        perm_idx: InputTensor[dtype=DType.int32, rank=1, ...],
+    ) -> IndexList[2]:
+        return IndexList[2](b.dim_size(1), b.dim_size(0))
+
+
+# ===----------------------------------------------------------------------===#
+# KV Cache
+# ===-----------------------------------------------------------------------===#
+
+
+# ===-----------------------------------------------------------------------===#
+# Fused QKV matmul
+#
+# Expected kernel name format:
+# mo.fused_qkv_matmul.<padded/ragged>.<continuous_batching/paged>
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
+    dtype: DType,
+    weight_type: DType,
+    target: StaticString,
+    group_size: Optional[Int] = None,
+    has_zp: Optional[Bool] = None,
+](
+    hidden_state: ManagedTensorSlice[dtype=dtype, rank=2, ...],
+    input_row_offsets: ManagedTensorSlice[dtype=DType.uint32, rank=1, ...],
+    weight: ManagedTensorSlice[dtype=weight_type, rank=2, ...],
+    kv_collection: PagedKVCacheCollection[dtype, ...],
+    layer_idx: UInt32,
+    output: ManagedTensorSlice[dtype=dtype, rank=2, ...],
+    ctx: DeviceContextPtr,
+) raises:
+    generic_fused_qkv_matmul_kv_cache_paged_ragged[
+        target=target,
+        group_size=group_size,
+        has_zp=has_zp,
+    ](
+        hidden_state.to_layout_tensor(),
+        input_row_offsets.to_layout_tensor(),
+        weight.to_layout_tensor(),
+        kv_collection,
+        layer_idx,
+        output.to_layout_tensor(),
+        ctx,
+    )
+
+
+@always_inline
+def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
+    dtype: DType,
+    weight_type: DType,
+    target: StaticString,
+    group_size: Optional[Int] = None,
+    has_zp: Optional[Bool] = None,
+](
+    hidden_state: ManagedTensorSlice[dtype=dtype, rank=2, ...],
+    input_row_offsets: ManagedTensorSlice[dtype=DType.uint32, rank=1, ...],
+    weight: ManagedTensorSlice[dtype=weight_type, rank=2, ...],
+    kv_collection: PagedKVCacheCollection[dtype, ...],
+    layer_idx: UInt32,
+    output: ManagedTensorSlice[dtype=dtype, rank=2, ...],
+    bias: ManagedTensorSlice[dtype=dtype, rank=1, ...],
+    ctx: DeviceContextPtr,
+) raises:
+    generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
+        target=target,
+        group_size=group_size,
+        has_zp=has_zp,
+    ](
+        hidden_state.to_layout_tensor(),
+        input_row_offsets.to_layout_tensor(),
+        weight.to_layout_tensor(),
+        kv_collection,
+        layer_idx,
+        output.to_layout_tensor(),
+        bias.to_layout_tensor(),
+        ctx,
+    )
+
+
+@always_inline
+def generic_fused_qkv_matmul_kv_cache_bshd_paged_kernel_api[
+    dtype: DType,
+    target: StaticString,
+](
+    hidden_state: ManagedTensorSlice[dtype=dtype, rank=3, ...],
+    weight: ManagedTensorSlice[dtype=dtype, rank=2, ...],
+    kv_collection: PagedKVCacheCollection[dtype, ...],
+    layer_idx: UInt32,
+    valid_lengths: LayoutTensor[
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    ],
+    output: ManagedTensorSlice[dtype=dtype, rank=3, ...],
+    ctx: DeviceContextPtr,
+) raises:
+    generic_fused_qkv_matmul_kv_cache_bshd_paged[target=target,](
+        hidden_state.to_layout_tensor(),
+        weight.to_layout_tensor(),
+        kv_collection,
+        layer_idx,
+        valid_lengths,
+        output.to_layout_tensor(),
+        ctx,
+    )
+
+
+@compiler.register("mo.fused_qkv_matmul.padded.paged")
+struct Struct_fused_qkv_matmul_padded_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        hidden_state: InputTensor[dtype=dtype, rank=3, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        valid_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        var valid_lengths_lt = valid_lengths.to_layout_tensor()
+        generic_fused_qkv_matmul_kv_cache_bshd_paged[target=target](
+            hidden_state.to_layout_tensor(),
+            weight.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            LayoutTensor[
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+            ](
+                valid_lengths_lt.ptr,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    valid_lengths_lt.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            output.to_layout_tensor(),
+            ctx,
+        )
+
+
+@compiler.register("mo.fused_qkv_matmul.ragged.paged")
+struct Struct_fused_qkv_matmul_padded_ragged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
+            target=target
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            ctx,
+        )
+
+
+@compiler.register("mo.rope_split_store.ragged.paged")
+struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        freq_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        qkv: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        return rope_split_store_paged_ragged[
+            target=target,
+            interleaved=Self.interleaved,
+        ](
+            qkv.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            freqs_cis.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            output.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+
+@compiler.register("mo.rope_split_store.ragged.paged.with_position_id")
+struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        freq_dtype: DType,
+        //,
+        mrope_section: StaticString,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        qkv: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        position_ids: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        comptime if mrope_section == "":
+            return rope_split_store_paged_ragged_with_position_ids[
+                target=target,
+                interleaved=Self.interleaved,
+            ](
+                qkv.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_collection,
+                position_ids.to_tile_tensor[DType.int64](),
+                layer_idx,
+                output.to_tile_tensor[DType.int64](),
+                ctx,
+            )
+        else:
+            comptime mrope = _unsafe_str_to_coord[mrope_section]()
+            return rope_split_store_paged_ragged_with_position_ids[
+                target=target,
+                interleaved=Self.interleaved,
+                mrope_types=mrope.element_types,
+                mrope_section=mrope,
+            ](
+                qkv.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_collection,
+                position_ids.to_tile_tensor[DType.int64](),
+                layer_idx,
+                output.to_tile_tensor[DType.int64](),
+                ctx,
+            )
+
+
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.quantized")
+struct Struct_fused_qkv_matmul_padded_ragged_quantized:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        weight_type: DType,
+        group_size: Int,
+        has_zp_int: Int,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        weight: InputTensor[dtype=weight_type, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        # In the group-wise quantization scheme, every `group_size` quantized weights
+        # share the same scale. If `has_zp_int` is non-zero, there is also a group-wise
+        # zero point that need to be subtracted from the quantized weights.
+        comptime has_zp = True if has_zp_int == 1 else False
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
+            target=target,
+            group_size=group_size,
+            has_zp=has_zp,
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            ctx,
+        )
+
+
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.bias")
+struct Struct_fused_qkv_matmul_padded_ragged_bias:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        bias: InputTensor[dtype=dtype, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
+            target=target
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            bias,
+            ctx,
+        )
+
+
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.scale")
+struct Struct_fused_qkv_matmul_padded_ragged_scale:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        scale_type: DType,
+        output_type: DType,
+        kv_type: DType,
+        //,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=2, ...],
+        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        input_scale: InputTensor[dtype=scale_type, rank=2, ...],
+        weight_scale: InputTensor[dtype=scale_type, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
+            scales_granularity_mnk=IndexList[3](
+                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            ),
+            target=target,
+        ](
+            hidden_state.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            weight.to_layout_tensor(),
+            input_scale.to_layout_tensor(),
+            weight_scale.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            output.to_layout_tensor(),
+            ctx,
+            OptionalReg[
+                LayoutTensor[
+                    mut=False,
+                    output_type,
+                    Layout.row_major(UNKNOWN_VALUE),
+                    ImmutAnyOrigin,
+                    address_space=AddressSpace.GENERIC,
+                ]
+            ](),
+        )
+
+
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.scale.float4")
+struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        scale_type: DType,
+        output_type: DType,
+        kv_type: DType,
+        //,
+        SF_VECTOR_SIZE: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=2, ...],
+        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        input_scale: InputTensor[dtype=scale_type, rank=5, ...],
+        weight_scale: InputTensor[dtype=scale_type, rank=5, ...],
+        tensor_sf: Float32,
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            target=target,
+        ](
+            hidden_state.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            weight.to_layout_tensor(),
+            input_scale.to_layout_tensor(),
+            weight_scale.to_layout_tensor(),
+            tensor_sf,
+            kv_collection,
+            layer_idx,
+            output.to_layout_tensor(),
+            ctx,
+        )
+
+
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.scale.bias")
+struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        scale_type: DType,
+        output_type: DType,
+        kv_type: DType,
+        //,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=2, ...],
+        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        input_scale: InputTensor[dtype=scale_type, rank=2, ...],
+        weight_scale: InputTensor[dtype=scale_type, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        bias: InputTensor[dtype=output_type, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        comptime ExpectedBiasType = LayoutTensor[
+            mut=False,
+            output_type,
+            Layout.row_major(UNKNOWN_VALUE),
+            ImmutAnyOrigin,
+            address_space=AddressSpace.GENERIC,
+        ]
+        var bias_tensor = bias.to_layout_tensor()
+        var rebound_bias = rebind[ExpectedBiasType](bias_tensor)
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
+            scales_granularity_mnk=IndexList[3](
+                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            ),
+            target=target,
+        ](
+            hidden_state.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            weight.to_layout_tensor(),
+            input_scale.to_layout_tensor(),
+            weight_scale.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            output.to_layout_tensor(),
+            ctx,
+            OptionalReg[ExpectedBiasType](rebound_bias),
+        )
+
+
+@compiler.register("mo.fused_qkv_matmul.ragged.paged.bias.quantized")
+struct Struct_fused_qkv_matmul_padded_ragged_bias_quantized:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        weight_type: DType,
+        group_size: Int,
+        has_zp_int: Int,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        weight: InputTensor[dtype=weight_type, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        bias: InputTensor[dtype=dtype, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        # In the group-wise quantization scheme, every `group_size` quantized weights
+        # share the same scale. If `has_zp_int` is non-zero, there is also a group-wise
+        # zero point that need to be subtracted from the quantized weights.
+        comptime has_zp = True if has_zp_int == 1 else False
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
+            target=target,
+            group_size=group_size,
+            has_zp=has_zp,
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            bias,
+            ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Fused QK Rope Ragged
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
+    dtype: DType,
+    freq_dtype: DType,
+    cache_dtype: DType,
+    //,
+    *,
+    interleaved: Bool,
+    has_position_ids: Bool,
+    target: StaticString,
+    mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
+        Trait=CoordLike
+    ](),
+    mrope_section: Optional[Coord[*mrope_types]] = None,
+](
+    q_proj: ManagedTensorSlice[dtype=dtype, rank=3, ...],
+    input_row_offsets: ManagedTensorSlice[dtype=DType.uint32, rank=1, ...],
+    kv_collection: PagedKVCacheCollection[cache_dtype, ...],
+    freqs_cis: ManagedTensorSlice[dtype=freq_dtype, rank=2, ...],
+    position_ids: ManagedTensorSlice[dtype=DType.uint32, rank=2, ...],
+    layer_idx: UInt32,
+    output: ManagedTensorSlice[dtype=dtype, rank=3, ...],
+    context: DeviceContextPtr,
+) raises:
+    generic_fused_qk_rope_bshd_paged_ragged[
+        interleaved=interleaved,
+        has_position_ids=has_position_ids,
+        target=target,
+        mrope_types=mrope_types,
+        mrope_section=mrope_section,
+    ](
+        q_proj.to_tile_tensor[DType.int64](),
+        input_row_offsets.to_tile_tensor[DType.int64](),
+        kv_collection,
+        freqs_cis.to_tile_tensor[DType.int64](),
+        position_ids.to_tile_tensor[DType.int64](),
+        layer_idx,
+        output.to_tile_tensor[DType.int64](),
+        context,
+    )
+
+
+@compiler.register("mo.fused_qk_rope.ragged.paged.with_position_id")
+struct Struct_fused_qk_rope_ragged_paged_with_position_id[interleaved: Bool]:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        freq_dtype: DType,
+        //,
+        mrope_section: StaticString,
+        target: StaticString,
+        cache_dtype: DType = dtype,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q_proj: InputTensor[dtype=dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        position_ids: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        context: DeviceContextPtr = DeviceContextPtr(),
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        comptime mrope = _unsafe_str_to_coord[mrope_section]()
+        generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
+            interleaved=Self.interleaved,
+            has_position_ids=True,
+            target=target,
+            mrope_types=mrope.element_types,
+            mrope_section=mrope,
+        ](
+            q_proj,
+            input_row_offsets,
+            kv_collection,
+            freqs_cis,
+            position_ids,
+            layer_idx,
+            output,
+            context,
+        )
+
+
+@compiler.register("mo.fused_qk_rope.ragged.paged")
+struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        freq_dtype: DType,
+        //,
+        target: StaticString,
+        cache_dtype: DType = dtype,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q_proj: InputTensor[dtype=dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        layer_idx: UInt32,
+        context: DeviceContextPtr = DeviceContextPtr(),
+    ) raises:
+        # Dummy position_ids - won't be used since has_position_ids=False
+        var dummy_position_ids = DynamicTensor[dtype=DType.uint32, rank=2, ...](
+            None, IndexList[2](0)
+        )
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
+            interleaved=Self.interleaved,
+            has_position_ids=False,
+            target=target,
+        ](
+            q_proj,
+            input_row_offsets,
+            kv_collection,
+            freqs_cis,
+            dummy_position_ids,
+            layer_idx,
+            output,
+            context,
+        )
+
+
+@compiler.register("mo.fused_qk_rope.padded.paged")
+struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=4, ...],
+        q_proj: InputTensor[dtype=dtype, rank=4, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        freqs_cis: InputTensor[dtype=dtype, rank=2, ...],
+        layer_idx: UInt32,
+        valid_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        context: DeviceContextPtr = DeviceContextPtr(),
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        generic_fused_qk_rope_bshd_paged[
+            interleaved=Self.interleaved,
+            target=target,
+        ](
+            q_proj.to_tile_tensor[DType.int64](),
+            kv_collection,
+            freqs_cis.to_tile_tensor[DType.int64](),
+            layer_idx,
+            valid_lengths.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# RoPE Ragged
+#
+# Expected kernel name format:
+# mo.rope.ragged
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.rope.ragged")
+struct Struct_rope_ragged_paged[interleaved: Bool]:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        freq_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=3, ...],
+        x: InputTensor[dtype=dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        start_pos: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @always_inline
+        @parameter
+        def description_fn() -> String:
+            return String(";").join(
+                Span(
+                    [
+                        trace_arg("output", output.shape()),
+                        trace_arg("x", x.shape()),
+                        trace_arg(
+                            "input_row_offsets", input_row_offsets.shape()
+                        ),
+                        trace_arg("start_pos", start_pos.shape()),
+                        trace_arg("freqs_cis", freqs_cis.shape()),
+                        "interleaved=" + String(Self.interleaved),
+                        "target=" + String(target),
+                    ]
+                )
+            )
+
+        @always_inline
+        @parameter
+        def output_fn[
+            width: SIMDSize, alignment: Int
+        ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
+            output._lambda_store[width=width, element_alignment=alignment](
+                idx,
+                rebind[SIMD[dtype, width]](val),
+            )
+
+        var device_ctx: Optional[DeviceContext] = None
+
+        comptime if is_gpu[target]():
+            device_ctx = ctx.get_device_context()
+
+        var x_tensor = x.to_tile_tensor[DType.int64]()
+        var row_offsets_tensor = input_row_offsets.to_tile_tensor[DType.int64]()
+        var start_tensor = start_pos.to_tile_tensor[DType.int64]()
+        var freqs_cis_tensor = freqs_cis.to_tile_tensor[DType.int64]()
+        comptime assert row_offsets_tensor.flat_rank == 1
+        comptime assert start_tensor.flat_rank == 1
+        comptime assert freqs_cis_tensor.flat_rank == 2
+
+        rope_ragged[
+            interleaved=Self.interleaved,
+            target=target,
+            output_fn=output_fn,
+        ](
+            x_tensor,
+            row_offsets_tensor,
+            start_tensor,
+            freqs_cis_tensor,
+            device_ctx,
+        )
+
+
+@compiler.register("mo.rope.ragged.with_position_id")
+struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        freq_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=3, ...],
+        x: InputTensor[dtype=dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        start_pos: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        position_ids: InputTensor[dtype=DType.uint32, rank=2, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @always_inline
+        @parameter
+        def description_fn() -> String:
+            return String(";").join(
+                Span(
+                    [
+                        trace_arg("output", output.shape()),
+                        trace_arg("x", x.shape()),
+                        trace_arg(
+                            "input_row_offsets", input_row_offsets.shape()
+                        ),
+                        trace_arg("start_pos", start_pos.shape()),
+                        trace_arg("freqs_cis", freqs_cis.shape()),
+                        trace_arg("position_ids", position_ids.shape()),
+                        "interleaved=" + String(Self.interleaved),
+                        "target=" + String(target),
+                    ]
+                )
+            )
+
+        @always_inline
+        @parameter
+        def output_fn[
+            width: SIMDSize, alignment: Int
+        ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
+            output._lambda_store[width=width, element_alignment=alignment](
+                idx,
+                rebind[SIMD[dtype, width]](val),
+            )
+
+        var device_ctx: Optional[DeviceContext] = None
+
+        comptime if is_gpu[target]():
+            device_ctx = ctx.get_device_context()
+
+        var x_tensor = x.to_tile_tensor[DType.int64]()
+        var row_offsets_tensor = input_row_offsets.to_tile_tensor[DType.int64]()
+        var start_tensor = start_pos.to_tile_tensor[DType.int64]()
+        var freqs_cis_tensor = freqs_cis.to_tile_tensor[DType.int64]()
+        var position_ids_tensor = position_ids.to_tile_tensor[DType.int64]()
+        comptime assert row_offsets_tensor.flat_rank == 1
+        comptime assert start_tensor.flat_rank == 1
+        comptime assert freqs_cis_tensor.flat_rank == 2
+        comptime assert position_ids_tensor.flat_rank == 2
+
+        rope_ragged[
+            interleaved=Self.interleaved,
+            target=target,
+            output_fn=output_fn,
+        ](
+            x_tensor,
+            row_offsets_tensor,
+            start_tensor,
+            freqs_cis_tensor,
+            device_ctx,
+            position_ids=position_ids_tensor.as_any_origin().as_immut(),
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# MHA
+#
+# Expected kernel name format:
+# mo.mha.<padded/ragged>.<continuous_batching/paged>
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.mha.padded.paged")
+struct Struct_mha_padded_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+        mask_str: StaticString,
+        local_window_size: Int = -1,
+    ](
+        output: OutputTensor[dtype=dtype, rank=4, ...],
+        q: InputTensor[dtype=dtype, rank=4, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        valid_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        scale: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        var valid_lengths_lt = valid_lengths.to_layout_tensor()
+        generic_flash_attention_kv_cache_padded[
+            target=target,
+            mask_str=mask_str,
+            local_window_size=local_window_size,
+        ](
+            q.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            LayoutTensor[
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+            ](
+                valid_lengths_lt.ptr,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    valid_lengths_lt.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            scale,
+            output.to_layout_tensor(),
+            context,
+        )
+
+
+@always_inline
+def _unmarshal_mha_decode_dispatch_metadata(
+    mha_decode_dispatch_metadata: InputTensor[dtype=DType.int64, rank=1, ...],
+) -> MHADecodeDispatchMetadata:
+    return MHADecodeDispatchMetadata(
+        Int(mha_decode_dispatch_metadata.unsafe_ptr()[0]),
+        Int(mha_decode_dispatch_metadata.unsafe_ptr()[1]),
+        Int(mha_decode_dispatch_metadata.unsafe_ptr()[2]),
+        Int(mha_decode_dispatch_metadata.unsafe_ptr()[3]),
+    )
+
+
+@compiler.register("mo.mha.decode.get_num_partitions")
+struct Struct_mha_decode_num_partitions:
+    @always_inline
+    @staticmethod
+    def execute[
+        *, n_kv_heads: Int
+    ](
+        num_partitions: OutputTensor[dtype=DType.int64, rank=1, ...],
+        decode_num_partitions_request: InputTensor[
+            dtype=DType.int64, rank=1, ...
+        ],
+        context: DeviceContextPtr,
+    ) raises:
+        if decode_num_partitions_request.dim_size[0]() != 2:
+            raise Error(
+                "Expected decode_num_partitions_request to have shape [2]."
+            )
+
+        var request_ptr = decode_num_partitions_request.unsafe_ptr()
+        var batch_size = Int(request_ptr[0])
+        var max_cache_valid_length = Int(request_ptr[1])
+
+        if batch_size < 1:
+            raise Error(
+                "decode_num_partitions_request[0] (batch size) must be "
+                "positive."
+            )
+
+        if max_cache_valid_length < 0:
+            raise Error(
+                "decode_num_partitions_request[1] (max cache length) must be "
+                "non-negative."
+            )
+
+        num_partitions[0] = Int64(
+            mha_decoding_num_partitions(
+                batch_size,
+                max_cache_valid_length,
+                n_kv_heads,
+                context.get_device_context(),
+            )
+        )
+
+
+@always_inline
+def _execute_mha_ragged_paged_scalar_args[
+    dtype: DType,
+    //,
+    target: StaticString,
+    mask_str: StaticString,
+    sink: Bool = False,
+    local_window_size: Int = -1,
+](
+    output: OutputTensor[dtype=dtype, rank=3, ...],
+    q: InputTensor[dtype=dtype, rank=3, ...],
+    input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+    kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+    cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+    kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+    max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+    layer_idx: UInt32,
+    scale: Float32,
+    mha_decode_dispatch_metadata: InputTensor[dtype=DType.int64, rank=1, ...],
+    context: DeviceContextPtr,
+    sink_weights: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+    ] = None,
+) raises:
+    var decode_dispatch_metadata = _unmarshal_mha_decode_dispatch_metadata(
+        mha_decode_dispatch_metadata
+    )
+    var kv_collection = generic_get_paged_cache(
+        kv_blocks,
+        cache_lengths,
+        kv_lookup_table,
+        max_lengths,
+    )
+    var input_row_offsets_lt = as_dynamic_row_major_1d(
+        input_row_offsets.to_layout_tensor().get_immutable()
+    )
+
+    comptime if sink:
+        generic_flash_attention_kv_cache_ragged_sink[
+            target=target,
+            mask_str=mask_str,
+            local_window_size=local_window_size,
+        ](
+            q.to_layout_tensor(),
+            input_row_offsets_lt,
+            kv_collection,
+            layer_idx,
+            scale,
+            output.to_layout_tensor(),
+            context,
+            sink_weights.value(),
+            decode_dispatch_metadata,
+        )
+    else:
+        generic_flash_attention_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+            local_window_size=local_window_size,
+        ](
+            q.to_layout_tensor(),
+            input_row_offsets_lt,
+            kv_collection,
+            layer_idx,
+            scale,
+            output.to_layout_tensor(),
+            context,
+            decode_dispatch_metadata,
+        )
+
+
+@compiler.register("mo.mha.ragged.paged")
+struct Struct_mha_ragged_paged_scalar_args:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+        mask_str: StaticString,
+        local_window_size: Int = -1,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        mha_decode_dispatch_metadata: InputTensor[
+            dtype=DType.int64, rank=1, ...
+        ],
+        context: DeviceContextPtr,
+    ) raises:
+        _execute_mha_ragged_paged_scalar_args[
+            target=target,
+            mask_str=mask_str,
+            local_window_size=local_window_size,
+        ](
+            output,
+            q,
+            input_row_offsets,
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+            layer_idx,
+            scale,
+            mha_decode_dispatch_metadata,
+            context,
+        )
+
+
+@compiler.register("mo.mha.ragged.paged.sink_weights")
+struct Struct_mha_ragged_paged_sink_weights_scalar_args:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+        mask_str: StaticString,
+        local_window_size: Int = -1,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        sink_weights: InputTensor[dtype=dtype, rank=1, ...],
+        mha_decode_dispatch_metadata: InputTensor[
+            dtype=DType.int64, rank=1, ...
+        ],
+        context: DeviceContextPtr,
+    ) raises:
+        var sink_weights_lt = sink_weights.to_layout_tensor()
+        var sink_weights_rebound = as_dynamic_row_major_1d(sink_weights_lt)
+        _execute_mha_ragged_paged_scalar_args[
+            target=target,
+            mask_str=mask_str,
+            sink=True,
+            local_window_size=local_window_size,
+        ](
+            output,
+            q,
+            input_row_offsets,
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+            layer_idx,
+            scale,
+            mha_decode_dispatch_metadata,
+            context,
+            OptionalReg[
+                LayoutTensor[
+                    dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+                ]
+            ](sink_weights_rebound),
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# MLA
+#
+# Expected kernel name format:
+# mo.mla.<prefill/decode>.ragged.paged
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.mla.decode.ragged.paged")
+struct Struct_mla_decode_ragged_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        q_dtype: DType,
+        kv_dtype: DType,
+        //,
+        mask_str: StaticString,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=q_dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert (
+            Int(kv_blocks.static_spec.shape_tuple[1]) == 1
+        ), "Only support only_k=True for MLA decompress"
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        generic_flare_mla_decode_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+        ](
+            q.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            scale,
+            output.to_tile_tensor[DType.int64](),
+            scalar_args.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
+@compiler.register("mo.mla.decode.ragged.paged.scaled")
+struct Struct_mla_decode_ragged_paged_scaled:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        q_dtype: DType,
+        kv_dtype: DType,
+        //,
+        mask_str: StaticString,
+        target: StaticString,
+        per_token_scale_rope_aware: Int = 0,
+        quantization_granularity: Int = 640,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=q_dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        kv_scales: MutableInputTensor[dtype=DType.float32, rank=6, ...],
+        q_scales: InputTensor[dtype=DType.float32, rank=1, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert (
+            Int(kv_blocks.static_spec.shape_tuple[1]) == 1
+        ), "Only support only_k=True for MLA decompress"
+
+        comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+        comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
+        comptime kv_num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
+        comptime kv_params = KVCacheStaticParams(kv_num_heads, head_dim, True)
+
+        var kv_collection = generic_get_paged_cache_with_scales[
+            kv_dtype,
+            DType.float32,
+            kv_params,
+            page_size,
+            quantization_granularity,
+        ](
+            LayoutTensor[kv_dtype, Layout.row_major[6](), MutAnyOrigin](
+                kv_blocks.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    kv_blocks.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+                cache_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
+                    cache_lengths.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                kv_lookup_table.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    kv_lookup_table.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                max_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    max_lengths.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.float32, Layout.row_major[6](), MutAnyOrigin](
+                kv_scales.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    kv_scales.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+        )
+
+        # Get the q_scales raw pointer for per-token Q scaling.
+        var q_scale_ptr = UnsafePointer[
+            Scalar[DType.float32], origin=MutAnyOrigin
+        ](q_scales.to_layout_tensor().ptr)
+
+        generic_flare_mla_decode_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+            per_token_scale_rope_aware=per_token_scale_rope_aware != 0,
+        ](
+            q.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            scale,
+            output.to_tile_tensor[DType.int64](),
+            scalar_args.to_tile_tensor[DType.int64](),
+            context,
+            q_scale_ptr,
+        )
+
+
+@compiler.register("mo.mla.prefill.ragged.paged")
+struct Struct_mla_prefill_ragged_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+        mask_str: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=dtype, rank=3, ...],
+        k: InputTensor[dtype=dtype, rank=3, ...],
+        v: InputTensor[dtype=dtype, rank=3, ...],
+        buffer_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        generic_flare_mla_prefill_kv_cache_ragged[
+            target=target,
+            mask_str=mask_str,
+        ](
+            q.to_tile_tensor[DType.int64](),
+            k.to_tile_tensor[DType.int64](),
+            v.to_tile_tensor[DType.int64](),
+            buffer_row_offsets.to_tile_tensor[DType.int64](),
+            cache_offsets.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            scale,
+            output.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
+@compiler.register("mo.mla.prefill.ragged.plan")
+struct Struct_mla_prefill_ragged_plan:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        buffer_row_offsets: OutputTensor[dtype=DType.uint32, rank=2, ...],
+        cache_offsets: OutputTensor[dtype=DType.uint32, rank=2, ...],
+        buffer_lengths: OutputTensor[dtype=DType.int32, rank=1, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        buffer_tok_size: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert Int(kv_blocks.static_spec.shape_tuple[1]) == 1, (
+            "Expected is_mla=True for MLA decompress, but found both k and"
+            " v dimensions."
+        )
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        generic_flare_mla_prefill_ragged_paged_plan[target=target](
+            input_row_offsets.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            buffer_tok_size,
+            buffer_row_offsets.to_layout_tensor(),
+            cache_offsets.to_layout_tensor(),
+            buffer_lengths.to_layout_tensor(),
+            context,
+        )
+
+
+@compiler.register("mo.mla.decompress.k.cache.ragged.paged")
+struct Struct_mla_decompress_k_cache_ragged_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        k_latent_buffer: OutputTensor[dtype=dtype, rank=2, ...],
+        k_buffer: OutputTensor[dtype=dtype, rank=2, ...],
+        buffer_row_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        buffer_length: Int32,
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        generic_flare_mla_decompress_k_cache_ragged_paged[target=target](
+            buffer_row_offsets_1d.to_layout_tensor(),
+            cache_offsets_1d.to_layout_tensor(),
+            buffer_length,
+            weight.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            k_latent_buffer.to_layout_tensor(),
+            k_buffer.to_layout_tensor(),
+            context,
+        )
+
+
+@compiler.register("mo.mla.graph.prefill.paged.fp8")
+struct Struct_mla_prefill_graph_paged:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
+        fp8_dtype: DType,
+        fp8_scale_dtype: DType,
+        //,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
+        mask_str: StaticString,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=dtype, rank=3, ...],
+        kv: FusedInputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
+        buffer_row_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        buffer_length: Int32,
+        w_k: InputTensor[dtype=fp8_dtype, rank=2, ...],
+        w_uv: InputTensor[dtype=fp8_dtype, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        epsilon: Float32,
+        w_k_scale: InputTensor[dtype=fp8_scale_dtype, rank=2, ...],
+        w_uv_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.graph.prefill.paged.fp8 is only supported on GPU"
+
+        @parameter
+        @always_inline
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        mla_prefill_branch_fp8[
+            m_scale_granularity=m_scale_granularity,
+            n_scale_granularity=n_scale_granularity,
+            k_scale_granularity=k_scale_granularity,
+            mask_str=mask_str,
+            kv_input_fn=kv_input_fn,
+            target=target,
+        ](
+            output.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            freqs_cis.to_tile_tensor[DType.int64](),
+            kv_norm_gamma.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            scale,
+            epsilon,
+            buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+            cache_offsets_1d.to_tile_tensor[DType.int64](),
+            Int(buffer_length),
+            w_k.to_tile_tensor[DType.int64](),
+            w_k_scale.to_tile_tensor[DType.int64](),
+            w_uv.to_tile_tensor[DType.int64](),
+            w_uv_scale.to_tile_tensor[DType.int64](),
+            context.get_device_context(),
+        )
+
+
+@compiler.register("mo.mla.compute_dispatch_args.scalar")
+struct Struct_mla_compute_dispatch_args_scalar:
+    @always_inline
+    @staticmethod
+    def execute[
+        num_heads: Int,
+        is_fp8_kv: Bool,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.int64, rank=1, ...],
+        batch_size_tensor: InputTensor[dtype=DType.int64, rank=1, ...],
+        max_cache_valid_length_tensor: InputTensor[
+            dtype=DType.int64, rank=1, ...
+        ],
+        q_max_seq_len_tensor: InputTensor[dtype=DType.int64, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.compute_dispatch_args.scalar is only supported on GPU"
+
+        var ctx = context.get_device_context()
+        var batch_size = Int(batch_size_tensor.unsafe_ptr()[0])
+        var max_cache_valid_length = Int(
+            max_cache_valid_length_tensor.unsafe_ptr()[0]
+        )
+        var q_max_seq_len = Int(q_max_seq_len_tensor.unsafe_ptr()[0])
+
+        if batch_size < 0:
+            raise Error("batch_size must be non-negative.")
+        if batch_size == 0:
+            output[0] = Int64(0)
+            output[1] = Int64(q_max_seq_len)
+            output[2] = Int64(1)
+            return
+
+        comptime sm_count = ctx.default_device_info.sm_count
+        comptime _half_sms = sm_count // 2
+        var scalars = compute_mla_dispatch_scalars[
+            num_heads=num_heads,
+            is_fp8_kv=is_fp8_kv,
+            half_sms=_half_sms,
+        ](
+            batch_size,
+            max_cache_valid_length,
+            q_max_seq_len,
+            sm_count,
+        )
+
+        output[0] = Int64(scalars[0])
+        output[1] = Int64(scalars[1])
+        output[2] = Int64(scalars[2])
+
+
+@compiler.register("mo.mla.graph.decode.paged.fp8")
+struct Struct_mla_decode_graph_paged_fp8:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
+        fp8_dtype: DType,
+        fp8_scale_dtype: DType,
+        //,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
+        mask_str: StaticString,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=dtype, rank=3, ...],
+        kv: FusedInputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
+        w_uk: InputTensor[dtype=fp8_dtype, rank=3, ...],
+        w_uv: InputTensor[dtype=fp8_dtype, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        epsilon: Float32,
+        w_uk_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
+        w_uv_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
+        scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.graph.decode.paged.fp8 is only supported on GPU"
+
+        @parameter
+        @always_inline
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.graph.decode.paged.fp8",
+            task_id=get_safe_task_id(context),
+        ):
+            mla_decode_branch_fp8[
+                m_scale_granularity=m_scale_granularity,
+                n_scale_granularity=n_scale_granularity,
+                k_scale_granularity=k_scale_granularity,
+                mask_str=mask_str,
+                kv_input_fn=kv_input_fn,
+                target=target,
+            ](
+                output.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_norm_gamma.to_tile_tensor[DType.int64](),
+                kv_collection,
+                layer_idx,
+                scale,
+                epsilon,
+                w_uk.to_tile_tensor[DType.int64](),
+                w_uk_scale.to_tile_tensor[DType.int64](),
+                w_uv.to_tile_tensor[DType.int64](),
+                w_uv_scale.to_tile_tensor[DType.int64](),
+                scalar_args.to_tile_tensor[DType.int64](),
+                context.get_device_context(),
+            )
+
+
+@compiler.register("mo.mla.graph.prefill.paged")
+struct Struct_mla_prefill_graph_bf16_paged:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        kv_dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
+        //,
+        mask_str: StaticString,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
+        q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        kv: FusedInputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
+        buffer_row_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        buffer_length: Int32,
+        w_k: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        w_uv: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        epsilon: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.graph.prefill.paged is only supported on GPU"
+
+        @parameter
+        @always_inline
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        mla_prefill_branch_bf16[
+            mask_str=mask_str,
+            kv_input_fn=kv_input_fn,
+            target=target,
+        ](
+            output.to_tile_tensor[DType.int64](),
+            q.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            freqs_cis.to_tile_tensor[DType.int64](),
+            kv_norm_gamma.to_tile_tensor[DType.int64](),
+            kv_collection,
+            layer_idx,
+            scale,
+            epsilon,
+            buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+            cache_offsets_1d.to_tile_tensor[DType.int64](),
+            Int(buffer_length),
+            w_k.to_tile_tensor[DType.int64](),
+            w_uv.to_tile_tensor[DType.int64](),
+            context.get_device_context(),
+        )
+
+
+@compiler.register("mo.mla.graph.decode.paged")
+struct Struct_mla_decode_graph_bf16_paged:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        kv_dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
+        //,
+        mask_str: StaticString,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
+        q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        kv: FusedInputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
+        w_uk: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        w_uv: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        epsilon: Float32,
+        scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.graph.decode.paged is only supported on GPU"
+
+        @parameter
+        @always_inline
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.graph.decode.paged",
+            task_id=get_safe_task_id(context),
+        ):
+            mla_decode_branch_bf16[
+                mask_str=mask_str,
+                kv_input_fn=kv_input_fn,
+                target=target,
+            ](
+                output.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_norm_gamma.to_tile_tensor[DType.int64](),
+                kv_collection,
+                layer_idx,
+                scale,
+                epsilon,
+                w_uk.to_tile_tensor[DType.int64](),
+                w_uv.to_tile_tensor[DType.int64](),
+                scalar_args.to_tile_tensor[DType.int64](),
+                context.get_device_context(),
+            )
+
+
+@compiler.register("mo.mla.graph.prefill.decode.paged.fp8")
+struct Struct_mla_prefill_graph_decode_paged_fp8:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
+        fp8_dtype: DType,
+        fp8_scale_dtype: DType,
+        cache_dtype: DType,
+        //,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
+        mask_str: StaticString,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=dtype, rank=3, ...],
+        kv: FusedInputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
+        buffer_row_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        buffer_length: Int32,
+        w_k: InputTensor[dtype=fp8_dtype, rank=2, ...],
+        w_uk: InputTensor[dtype=fp8_dtype, rank=3, ...],
+        w_uv: InputTensor[dtype=fp8_dtype, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        epsilon: Float32,
+        w_k_scale: InputTensor[dtype=fp8_scale_dtype, rank=2, ...],
+        w_uk_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
+        w_uv_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
+        scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.graph.prefill.decode.paged.fp8 is only supported on GPU"
+
+        @parameter
+        @always_inline
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.graph.prefill.decode.paged.fp8",
+            task_id=get_safe_task_id(context),
+        ):
+            mla_prefill_decode_graph_fp8[
+                m_scale_granularity=m_scale_granularity,
+                n_scale_granularity=n_scale_granularity,
+                k_scale_granularity=k_scale_granularity,
+                mask_str=mask_str,
+                kv_input_fn=kv_input_fn,
+                target=target,
+            ](
+                output.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_norm_gamma.to_tile_tensor[DType.int64](),
+                kv_collection,
+                layer_idx,
+                scale,
+                epsilon,
+                buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+                cache_offsets_1d.to_tile_tensor[DType.int64](),
+                Int(buffer_length),
+                Int(kv_collection.max_seq_length),
+                w_k.to_tile_tensor[DType.int64](),
+                w_k_scale.to_tile_tensor[DType.int64](),
+                w_uk.to_tile_tensor[DType.int64](),
+                w_uk_scale.to_tile_tensor[DType.int64](),
+                w_uv.to_tile_tensor[DType.int64](),
+                w_uv_scale.to_tile_tensor[DType.int64](),
+                scalar_args.to_tile_tensor[DType.int64](),
+                context.get_device_context(),
+            )
+
+
+@compiler.register("mo.mla.graph.prefill.decode.paged")
+struct Struct_mla_prefill_graph_decode_bf16_paged:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        kv_dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
+        //,
+        mask_str: StaticString,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
+        q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        kv: FusedInputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
+        buffer_row_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        buffer_length: Int32,
+        w_k: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        w_uk: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        w_uv: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        epsilon: Float32,
+        scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.graph.prefill.decode.paged is only supported on GPU"
+
+        @parameter
+        @always_inline
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.graph.prefill.decode.paged",
+            task_id=get_safe_task_id(context),
+        ):
+            mla_prefill_decode_graph_bf16[
+                mask_str=mask_str,
+                kv_input_fn=kv_input_fn,
+                target=target,
+            ](
+                output.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_norm_gamma.to_tile_tensor[DType.int64](),
+                kv_collection,
+                layer_idx,
+                scale,
+                epsilon,
+                buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+                cache_offsets_1d.to_tile_tensor[DType.int64](),
+                Int(buffer_length),
+                Int(kv_collection.max_seq_length),
+                w_k.to_tile_tensor[DType.int64](),
+                w_uk.to_tile_tensor[DType.int64](),
+                w_uv.to_tile_tensor[DType.int64](),
+                scalar_args.to_tile_tensor[DType.int64](),
+                context.get_device_context(),
+            )
+
+
+@compiler.register("mo.mla.graph.prefill.decode.paged.quantized")
+struct Struct_mla_prefill_graph_decode_bf16_paged_quantized:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        kv_dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
+        scales_dtype: DType,
+        //,
+        mask_str: StaticString,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.bfloat16, rank=3, ...],
+        q: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        kv: FusedInputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
+        buffer_row_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        buffer_length: Int32,
+        w_k: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        w_uk: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        w_uv: InputTensor[dtype=DType.bfloat16, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        kv_scales: MutableInputTensor[dtype=scales_dtype, rank=6, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        epsilon: Float32,
+        scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        comptime assert is_gpu[target](), (
+            "mo.mla.graph.prefill.decode.paged.quantized is only supported"
+            " on GPU"
+        )
+
+        @parameter
+        @always_inline
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.graph.prefill.decode.paged.quantized",
+            task_id=get_safe_task_id(context),
+        ):
+            mla_prefill_decode_graph_bf16[
+                mask_str=mask_str,
+                kv_input_fn=kv_input_fn,
+                target=target,
+            ](
+                output.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_norm_gamma.to_tile_tensor[DType.int64](),
+                kv_collection,
+                layer_idx,
+                scale,
+                epsilon,
+                buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+                cache_offsets_1d.to_tile_tensor[DType.int64](),
+                Int(buffer_length),
+                Int(kv_collection.max_seq_length),
+                w_k.to_tile_tensor[DType.int64](),
+                w_uk.to_tile_tensor[DType.int64](),
+                w_uv.to_tile_tensor[DType.int64](),
+                scalar_args.to_tile_tensor[DType.int64](),
+                context.get_device_context(),
+            )
+
+
+# ===-----------------------------------------------------------------------===#
+# Cross attention
+#
+# Expected kernel name format:
+# mo.cross_attention.<padded/ragged>.<continuous_batching/paged>
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.cross_attention.ragged.paged")
+struct Struct_cross_attention_ragged_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        mask_str: StaticString,
+        target: StaticString,
+        local_window_size: Int = -1,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=dtype, rank=3, ...],
+        q_input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        q_max_seq_len: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        generic_cross_attention_kv_cache[
+            mask_str=mask_str,
+            local_window_size=local_window_size,
+            target=target,
+        ](
+            q.to_layout_tensor(),
+            q_input_row_offsets.to_layout_tensor(),
+            q_max_seq_len.to_layout_tensor(),
+            kv_input_row_offsets.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            scale,
+            output.to_layout_tensor(),
+            context,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Mixture of Experts
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.moe.create.indices")
+struct Struct_moe_create_indices:
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        token_expert_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_start_indices: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        restore_token_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
+        expert_usage_stats: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        topk_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        moe_create_indices[target=target](
+            token_expert_order.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            restore_token_order.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            expert_usage_stats.to_tile_tensor[DType.int64](),
+            topk_ids.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
+@compiler.register("mo.moe.create.indices.with.scales.offset")
+struct Struct_moe_create_indices_with_scales_offset:
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        token_expert_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_start_indices: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        restore_token_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
+        expert_usage_stats: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        scales_offset: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        topk_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        moe_create_indices[target=target](
+            token_expert_order.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            restore_token_order.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            expert_usage_stats.to_tile_tensor[DType.int64](),
+            topk_ids.to_tile_tensor[DType.int64](),
+            context,
+            scales_offset_p=scales_offset._ptr,
+        )
+
+
+@compiler.register("mo.moe.router.group.limited")
+struct Struct_moe_router_group_limited:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        scores_type: DType,
+        bias_type: DType,
+        //,
+        n_routed_experts: Int,
+        n_experts_per_tok: Int,
+        n_groups: Int,
+        topk_group: Int,
+        norm_weights: Bool,
+        target: StaticString,
+    ](
+        expert_indices: OutputTensor[dtype=DType.int32, rank=2, ...],
+        expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
+        expert_scores: FusedInputTensor[dtype=scores_type, rank=2, ...],
+        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
+        routed_scaling_factor: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        @parameter
+        @always_inline
+        def scores_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[scores_type, width]:
+            return expert_scores._lambda_load[width=width](coords)
+
+        router_group_limited[
+            n_routed_experts,
+            n_experts_per_tok,
+            n_groups,
+            topk_group,
+            norm_weights,
+            target=target,
+            scores_input_fn=OptionalReg[
+                def[
+                    width: Int
+                ](IndexList[2]) capturing -> SIMD[scores_type, width]
+            ](scores_input_fn),
+        ](
+            expert_indices.to_tile_tensor[DType.int64](),
+            expert_weights.to_tile_tensor[DType.int64](),
+            expert_scores.to_tile_tensor[DType.int64]().as_immut(),
+            expert_bias.to_tile_tensor[DType.int64]().as_immut(),
+            routed_scaling_factor,
+            context,
+        )
+
+
+@compiler.register("mo.moe.single.group.router")
+struct Struct_moe_single_group_router:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        scores_type: DType,
+        bias_type: DType,
+        //,
+        n_routed_experts: Int,
+        n_experts_per_tok: Int,
+        norm_weights: Bool,
+        target: StaticString,
+    ](
+        expert_indices: OutputTensor[dtype=DType.int32, rank=2, ...],
+        expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
+        expert_scores: FusedInputTensor[dtype=scores_type, rank=2, ...],
+        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
+        routed_scaling_factor: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        @parameter
+        @always_inline
+        def scores_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[scores_type, width]:
+            return expert_scores._lambda_load[width=width](coords)
+
+        single_group_router[
+            n_routed_experts,
+            n_experts_per_tok,
+            norm_weights=norm_weights,
+            target=target,
+            scores_input_fn=OptionalReg[
+                def[
+                    width: Int
+                ](IndexList[2]) capturing -> SIMD[scores_type, width]
+            ](scores_input_fn),
+        ](
+            expert_indices.to_tile_tensor[DType.int64](),
+            expert_weights.to_tile_tensor[DType.int64](),
+            expert_scores.to_tile_tensor[DType.int64]().as_immut(),
+            expert_bias.to_tile_tensor[DType.int64]().as_immut(),
+            routed_scaling_factor,
+            context,
+        )
+
+
+@compiler.register("mo.grouped.matmul.ragged")
+struct Struct_grouped_matmul_ragged:
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=3, ...],
+        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        max_num_tokens_per_expert: UInt32,
+        num_active_experts: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "grouped matmul only support GPUs"
+        cuda_ctx = context.get_device_context()
+        grouped_matmul(
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            Int(max_num_tokens_per_expert),
+            Int(num_active_experts),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.grouped.matmul.block.scaled")
+struct Struct_grouped_matmul_block_scaled:
+    """MOGG wrapper for grouped block-scaled matrix multiplication.
+
+    Provides graph compiler integration for block-scaled grouped matmul
+    operations used in Mixture of Experts (MoE) layers on SM100 GPUs.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        scales_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=3, ...],
+        a_scales: InputTensor[dtype=scales_type, rank=5, ...],
+        b_scales: InputTensor[dtype=scales_type, rank=6, ...],
+        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        a_scale_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_scales: InputTensor[dtype=DType.float32, rank=1, ...],
+        estimated_total_m: UInt32,
+        num_active_experts: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        """Executes grouped block-scaled matrix multiplication.
+
+        Computes C = A @ B^T for multiple expert groups where A and B are
+        block-scaled (e.g. NVFP4: 4-bit floating point packed as uint8).
+
+        Parameters:
+            c_type: The output tensor data type.
+            a_type: The input A data type. Constraints: Must be `uint8`.
+            b_type: The input B data type. Constraints: Must be `uint8`.
+            scales_type: The scale factor data type.
+                Constraints: Must be `float8_e4m3fn`.
+            target: The target GPU device.
+
+        Args:
+            c: The output tensor of shape (total_tokens, N).
+            a: The input tensor of shape (total_tokens, K // 2).
+            b: The weight tensor of shape (num_experts, N, K // 2).
+            a_scales: The A scale factors in tcgen05 5D layout.
+            b_scales: The B scale factors in tcgen05 6D layout.
+            expert_start_indices: The starting token index for each expert.
+            expert_ids: The expert ID for each group.
+            a_scale_offsets: The starting scale index for each expert.
+            expert_scales: The per-expert scaling factors for the epilogue.
+            estimated_total_m: The estimated total number of tokens.
+            num_active_experts: The number of active experts.
+            context: The device context pointer.
+        """
+        comptime assert is_gpu[
+            target
+        ](), "grouped block-scaled matmul only supports GPUs"
+        if num_active_experts == 0:
+            return
+        var cuda_ctx = context.get_device_context()
+        grouped_matmul_block_scaled_dispatch[transpose_b=True, target=target](
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            a_scale_offsets.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            expert_scales.to_tile_tensor[DType.int64](),
+            Int(num_active_experts),
+            Int(estimated_total_m),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.grouped.matmul.dynamic.scaled.fp8")
+struct Struct_grouped_matmul_dynamic_scaled_fp8:
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        a_scales_type: DType,
+        b_scales_type: DType,
+        //,
+        input_scale_granularity: StaticString,
+        weight_scale_granularity: StaticString,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
+        tokens_padded_per_expert: Bool,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=3, ...],
+        a_scales: InputTensor[dtype=a_scales_type, rank=2, ...],
+        b_scales: InputTensor[dtype=b_scales_type, rank=3, ...],
+        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        max_num_tokens_per_expert: UInt32,
+        num_active_experts: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), (
+            "grouped dynamic scaled matmul only support GPUs with native"
+            " FP8 support"
+        )
+        cuda_ctx = context.get_device_context()
+        grouped_matmul_dynamic_scaled_fp8[
+            input_scale_granularity,
+            weight_scale_granularity,
+            m_scale_granularity,
+            n_scale_granularity,
+            k_scale_granularity,
+            transpose_b=True,
+            tokens_padded_per_expert=tokens_padded_per_expert,
+            target=target,
+        ](
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            Int(max_num_tokens_per_expert),
+            Int(num_active_experts),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.grouped.matmul.block.scaled.mxfp4")
+struct Struct_grouped_matmul_block_scaled_mxfp4:
+    """MOGG wrapper for grouped block-scaled matrix multiplication.
+
+    Provides graph compiler integration for block-scaled grouped matmul
+    operations used in Mixture of Experts (MoE) layers on AMD GPUs.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=3, ...],
+        a_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        b_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=3, ...],
+        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        num_active_experts: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        """Executes grouped block-scaled matrix multiplication.
+
+        Computes C = A @ B^T for multiple expert groups where A and B are
+        block-scaled (e.g. MXFP4: 4-bit floating point packed as uint8).
+
+        Parameters:
+            c_type: The output tensor data type.
+            target: The target GPU device.
+
+        Args:
+            c: The output tensor of shape (total_tokens, N).
+            a: The input tensor of shape (total_tokens, K // 2).
+            b: The weight tensor of shape (num_experts, N, K // 2).
+            a_scales: The A scale factors in 2D layout.
+            b_scales: The B scale factors in 3D layout.
+            expert_start_indices: The starting token index for each expert.
+            expert_ids: The expert ID for each group.
+            num_active_experts: The number of active experts.
+            context: The device context pointer.
+        """
+        comptime assert is_gpu[
+            target
+        ](), "grouped block-scaled matmul only supports GPUs"
+        if num_active_experts == 0:
+            return
+        grouped_matmul_block_scaled_mxfp4(
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            Int(num_active_experts),
+            context.get_device_context(),
+        )
+
+
+@compiler.register("mo.batched.matmul.dynamic.scaled.fp8")
+struct Struct_batched_matmul_dynamic_scaled_fp8:
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        a_scales_type: DType,
+        b_scales_type: DType,
+        //,
+        input_scale_granularity: StaticString,
+        weight_scale_granularity: StaticString,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=3, ...],
+        a: InputTensor[dtype=a_type, rank=3, ...],
+        b: InputTensor[dtype=b_type, rank=3, ...],
+        a_scales: InputTensor[dtype=a_scales_type, rank=3, ...],
+        b_scales: InputTensor[dtype=b_scales_type, rank=3, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), (
+            "batched dynamic scaled matmul only support GPUs with native"
+            " FP8 support"
+        )
+
+        if a.dim_size(1) == 0:
+            return
+        cuda_ctx = context.get_device_context()
+        batched_matmul_dynamic_scaled_fp8[
+            input_scale_granularity,
+            weight_scale_granularity,
+            m_scale_granularity,
+            n_scale_granularity,
+            k_scale_granularity,
+            transpose_b=True,
+            target=target,
+        ](
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.matmul.dynamic.block.scaled")
+struct Struct_matmul_dynamic_block_scaled:
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        scales_type: DType,
+        //,
+        lambdas_have_fusion: Bool,
+        SF_VECTOR_SIZE: Int,
+        target: StaticString,
+    ](
+        c: _FusedComputeOutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=2, ...],
+        a_scales: InputTensor[dtype=scales_type, rank=5, ...],
+        b_scales: InputTensor[dtype=scales_type, rank=5, ...],
+        tensor_sf: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), (
+            "dynamic block scaled matmul only support GPUs with native"
+            " block scaled support"
+        )
+
+        @parameter
+        @always_inline
+        def epilogue_fn[
+            _dtype: DType, _width: Int, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]):
+            c._lambda_store[width=_width, element_alignment=alignment](
+                coords,
+                rebind[SIMD[c.dtype, _width]](val),
+            )
+
+        @parameter
+        @always_inline
+        def output_compute_fn[
+            _dtype: DType, _width: Int, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
+            _dtype, _width
+        ]:
+            return rebind[SIMD[_dtype, _width]](
+                c._fused_compute_output_lambda(
+                    coords, rebind[SIMD[c.dtype, _width]](val)
+                )
+            )
+
+        comptime has_compute_lambda = type_of(c)._has_compute_fusion
+
+        comptime elementwise_lambda = Optional[
+            matmul_elementwise_epilogue_type
+        ](
+            epilogue_fn
+        ) if lambdas_have_fusion and not has_compute_lambda else None
+
+        comptime compute_lambda = Optional[
+            matmul_elementwise_compute_lambda_type
+        ](
+            output_compute_fn
+        ) if lambdas_have_fusion and has_compute_lambda else None
+
+        cuda_ctx = context.get_device_context()
+        block_scaled_matmul[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            transpose_b=True,
+            elementwise_lambda_fn=elementwise_lambda,
+            elementwise_compute_lambda_fn=compute_lambda,
+            target=target,
+        ](
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            tensor_sf,
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.matmul.dynamic.block.scaled.mxfp4")
+struct Struct_matmul_dynamic_block_scaled_mxfp4:
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        a_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        b_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), (
+            "dynamic block scaled matmul only support GPUs with native"
+            " block scaled support"
+        )
+
+        matmul_dynamic_block_scaled_mxfp4(
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            context.get_device_context(),
+        )
+
+
+@compiler.register("mo.quantize.dynamic.block.scaled")
+struct Struct_quantize_dynamic_block_scaled:
+    @always_inline
+    @staticmethod
+    def execute[
+        out_dtype: DType,
+        scales_type: DType,
+        in_dtype: DType,
+        //,
+        scales_rank: Int,
+        SF_VECTOR_SIZE: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=out_dtype, rank=2, ...],
+        scales: OutputTensor[dtype=scales_type, rank=scales_rank, ...],
+        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        tensor_sf: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), (
+            "quantize dynamic block scaled only support GPUs with native"
+            " block scaled support"
+        )
+
+        cuda_ctx = context.get_device_context()
+        quantize_dynamic_block_scaled[
+            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+            target=target,
+        ](
+            output.to_tile_tensor[DType.int64](),
+            scales.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            tensor_sf,
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.grouped.quantize.dynamic.block.scaled")
+struct Struct_grouped_quantize_dynamic_block_scaled:
+    @always_inline
+    @staticmethod
+    def execute[
+        out_dtype: DType,
+        scales_type: DType,
+        in_dtype: DType,
+        //,
+        scales_rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=out_dtype, rank=2, ...],
+        scales: OutputTensor[dtype=scales_type, rank=scales_rank, ...],
+        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        scales_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        sf_tensor: InputTensor[dtype=DType.float32, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "grouped quantize dynamic block scaled only supports GPUs"
+
+        cuda_ctx = context.get_device_context()
+        grouped_quantize_dynamic_scaled_fp4_async(
+            output.to_tile_tensor[DType.int64](),
+            scales.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            row_offsets.to_tile_tensor[DType.int64](),
+            scales_offsets.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            sf_tensor.to_tile_tensor[DType.int64](),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.quantize.dynamic.block.scaled.mxfp4")
+struct Struct_quantize_dynamic_block_scaled_mxfp4:
+    @always_inline
+    @staticmethod
+    def execute[
+        in_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        scales: OutputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), (
+            "quantize dynamic block scaled only support GPUs with native"
+            " block scaled support"
+        )
+
+        quantize_dynamic_block_scaled_mxfp4(
+            output.to_tile_tensor[DType.int64](),
+            scales.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            context.get_device_context(),
+        )
+
+
+@compiler.register("mo.matmul.mxfp4.dequant.fp8")
+struct Struct_matmul_mxfp4_dequant_fp8:
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        b_scales_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=2, ...],
+        b_scales: InputTensor[dtype=b_scales_type, rank=2, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "MXFP4 dequant-to-FP8 matmul only supports GPUs"
+        comptime assert (
+            "sm_90" in _accelerator_arch()
+        ), "MXFP4 dequant-to-FP8 matmul requires SM90"
+        comptime assert (
+            c_type == DType.bfloat16
+        ), "MXFP4 matmul output must be bfloat16"
+        comptime assert (
+            a_type == DType.bfloat16
+        ), "MXFP4 matmul activations must be bfloat16"
+        comptime assert (
+            b_type == DType.uint8
+        ), "MXFP4 matmul weights must be uint8 (packed FP4)"
+        comptime assert (
+            b_scales_type == DType.float8_e8m0fnu
+        ), "MXFP4 matmul scales must be float8_e8m0fnu"
+
+        cuda_ctx = context.get_device_context()
+        mxfp4_matmul_sm90(
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.dequant.mxfp4")
+struct Struct_dequant_mxfp4:
+    @always_inline
+    @staticmethod
+    def execute[
+        out_type: DType,
+        in_type: DType,
+        scales_type: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=out_type, rank=2, ...],
+        input: InputTensor[dtype=in_type, rank=2, ...],
+        scales: InputTensor[dtype=scales_type, rank=2, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "MXFP4 dequant only supports GPUs"
+        comptime assert out_type in (
+            DType.bfloat16,
+            DType.float8_e4m3fn,
+        ), "MXFP4 dequant output must be bfloat16 or float8_e4m3fn"
+        comptime assert (
+            in_type == DType.uint8
+        ), "MXFP4 dequant input must be uint8 (packed FP4)"
+        comptime assert (
+            scales_type == DType.float8_e8m0fnu
+        ), "MXFP4 dequant scales must be float8_e8m0fnu"
+
+        cuda_ctx = context.get_device_context()
+
+        var in_tt = input.to_tile_tensor[DType.int64]()
+        var scales_tt = scales.to_tile_tensor[DType.int64]()
+        var out_tt = output.to_tile_tensor[DType.int64]()
+
+        var num_rows = Int(in_tt.dim[0]())
+        # num_cols is the unpacked column count (2x packed)
+        var num_cols = Int(in_tt.dim[1]()) * 2
+
+        dequant_mxfp4(
+            cuda_ctx,
+            out_tt,
+            in_tt,
+            scales_tt,
+            num_rows=num_rows,
+            num_cols=num_cols,
+        )
+
+
+@compiler.register("mo.interleave.block.scales")
+struct Struct_interleave_block_scales:
+    @always_inline
+    @staticmethod
+    def execute[
+        scales_type: DType,
+        //,
+        SF_VECTOR_SIZE: Int,
+        target: StaticString,
+    ](
+        output_scales: OutputTensor[dtype=scales_type, rank=5, ...],
+        input_scales: InputTensor[dtype=scales_type, rank=2, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), (
+            "quantize dynamic block scaled only support GPUs with native"
+            " block scaled support"
+        )
+
+        cuda_ctx = context.get_device_context()
+        block_scales_interleave[SF_VECTOR_SIZE=SF_VECTOR_SIZE, target=target](
+            output_scales.to_tile_tensor[DType.int64](),
+            input_scales.to_tile_tensor[DType.int64](),
+            cuda_ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# KV Cache Store
+#
+# Expected kernel name format:
+# mo.kv_cache.store.<continuous_batching/paged>.<ragged/padded>
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.kv_cache.store.paged.ragged")
+struct Struct_kv_cache_store_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType, target: StaticString, key_or_value: Int
+    ](
+        inputs: FusedInputTensor[dtype=dtype, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        context: DeviceContextPtr,
+    ) capturing raises:
+        var paged_kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        comptime KVCacheT = paged_kv_collection.CacheType
+        var cache: KVCacheT
+
+        comptime if key_or_value == 0:
+            cache = paged_kv_collection.get_key_cache(Int(layer_idx))
+        else:
+            cache = paged_kv_collection.get_value_cache(Int(layer_idx))
+
+        var cuda_ctx: Optional[DeviceContext] = None
+
+        comptime if is_gpu[target]():
+            cuda_ctx = context.get_device_context()
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, alignment: Int
+        ](idx: IndexList[3]) capturing -> SIMD[dtype, width]:
+            return inputs._lambda_load[
+                width=width, element_alignment=alignment
+            ](
+                idx,
+            )
+
+        kv_cache_store_ragged[input_fn=input_fn, target=target](
+            cache,
+            inputs.shape(),
+            input_row_offsets.to_layout_tensor(),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.kv_cache.store_k_scales.paged.ragged")
+struct Struct_kv_cache_store_k_scales_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        cache_dtype: DType,
+        scale_dtype: DType,
+        target: StaticString,
+        //,
+        quantization_granularity: Int,
+    ](
+        input_k_scales: FusedInputTensor[dtype=scale_dtype, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        k_scales_blocks: MutableInputTensor[dtype=scale_dtype, rank=6, ...],
+        layer_idx: UInt32,
+        context: DeviceContextPtr,
+    ) capturing raises:
+        comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
+        comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
+        comptime num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
+        comptime is_mla = Int(kv_blocks.static_spec.shape_tuple[1]) == 1
+        comptime kv_params = KVCacheStaticParams(num_heads, head_dim, is_mla)
+
+        var k_collection = generic_get_paged_cache_with_scales[
+            cache_dtype,
+            scale_dtype,
+            kv_params,
+            page_size,
+            quantization_granularity,
+        ](
+            LayoutTensor[cache_dtype, Layout.row_major[6](), MutAnyOrigin](
+                kv_blocks.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    kv_blocks.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
+                cache_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout(UNKNOWN_VALUE)](
+                    cache_lengths.to_layout_tensor().runtime_layout.shape.value,
+                    cache_lengths.to_layout_tensor().runtime_layout.stride.value,
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                kv_lookup_table.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    kv_lookup_table.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.uint32, Layout.row_major[2](), ImmutAnyOrigin](
+                max_lengths.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[2]()].row_major(
+                    max_lengths.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[scale_dtype, Layout.row_major[6](), MutAnyOrigin](
+                k_scales_blocks.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    k_scales_blocks.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+        )
+
+        var k_cache = k_collection.get_key_cache(Int(layer_idx))
+
+        var cuda_ctx: Optional[DeviceContext] = None
+
+        comptime if is_gpu[target]():
+            cuda_ctx = context.get_device_context()
+
+        var input_row_offsets_tt = input_row_offsets.to_tile_tensor[
+            DType.int64
+        ]()
+
+        @parameter
+        @__copy_capture(k_cache, input_row_offsets_tt, input_row_offsets)
+        def write_scale_to_cache[
+            width: Int,
+            rank: Int,
+            alignment: Int = 1,
+        ](idx: IndexList[rank]) capturing:
+            var loaded_val = input_k_scales._lambda_load[
+                width=width, element_alignment=alignment
+            ](
+                rebind[IndexList[3]](idx),
+            )
+            var batch_idx = get_batch_from_row_offsets(
+                input_row_offsets_tt, idx[0]
+            )
+            var token_idx = Int(UInt32(idx[0]) - input_row_offsets[batch_idx])
+            var h_idx = idx[1]
+            var hd_idx = idx[2]
+            var cache_length = k_cache.cache_length(batch_idx)
+            var cache_token_idx = token_idx + cache_length
+            k_cache.store_scale(
+                batch_idx,
+                h_idx,
+                cache_token_idx,
+                hd_idx,
+                loaded_val,
+            )
+
+        comptime if is_gpu[target]():
+            if cuda_ctx is None:
+                raise Error("ctx is None")
+            comptime compile_target = get_gpu_target()
+            comptime simd_width = simd_width_of[
+                scale_dtype, target=compile_target
+            ]()
+
+            elementwise[write_scale_to_cache, simd_width, target=target](
+                input_k_scales.shape(), cuda_ctx.value()
+            )
+        else:
+            comptime compile_target = _current_target()
+            comptime simd_width = simd_width_of[
+                scale_dtype, target=compile_target
+            ]()
+
+            elementwise[write_scale_to_cache, simd_width, target=target](
+                input_k_scales.shape()
+            )
+
+
+@compiler.register("mo.kv_cache.store.paged.padded")
+struct Struct_kv_cache_store_padded:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType, target: StaticString, key_or_value: Int
+    ](
+        inputs: FusedInputTensor[dtype=dtype, rank=4, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        valid_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        context: DeviceContextPtr,
+    ) capturing raises:
+        var paged_kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        comptime KVCacheT = paged_kv_collection.CacheType
+        var cache: KVCacheT
+
+        comptime if key_or_value == 0:
+            cache = paged_kv_collection.get_key_cache(Int(layer_idx))
+        else:
+            cache = paged_kv_collection.get_value_cache(Int(layer_idx))
+
+        var cuda_ctx: Optional[DeviceContext] = None
+
+        comptime if is_gpu[target]():
+            cuda_ctx = context.get_device_context()
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, alignment: Int
+        ](idx: IndexList[4]) capturing -> SIMD[dtype, width]:
+            return inputs._lambda_load[
+                width=width, element_alignment=alignment
+            ](
+                idx,
+            )
+
+        kv_cache_store_padded[input_fn=input_fn, target=target](
+            cache,
+            inputs.shape(),
+            valid_lengths.to_layout_tensor(),
+            cuda_ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# LayoutTransforms
+# ===-----------------------------------------------------------------------===#
+
+
+# TODO(GEX-1492): use filter_rank+1 instead of packed_filter_rank
+def layout_transform_conv_transpose_filter_common[
+    dtype: DType,
+    filter_rank: Int,
+    packed_filter_rank: Int,
+](
+    packed_filter: ManagedTensorSlice[
+        dtype=dtype, rank=packed_filter_rank, ...
+    ],
+    filter: ManagedTensorSlice[dtype=dtype, rank=filter_rank, ...],
+):
+    comptime assert filter_rank + 1 == packed_filter_rank
+    # last param is num_groups which is currently not an available
+    # arg for the MO level op
+    _pack_conv_transpose_filter(
+        filter.to_tile_tensor[DType.int64](),
+        packed_filter.to_tile_tensor[DType.int64](),
+        1,
+    )
+
+
+@compiler.register("layout_transform_RSFC_to_FRSCf")
+struct LayoutTransformRSFC2FRSCf:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType, filter_rank: Int, packed_filter_rank: Int
+    ](
+        packed_filter: OutputTensor[dtype=dtype, rank=packed_filter_rank, ...],
+        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
+    ):
+        layout_transform_conv_transpose_filter_common(packed_filter, filter)
+
+
+@compiler.register("layout_transform_QRSFC_to_FQRSCf")
+struct LayoutTransformQRSFC2FQRSCf:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType, filter_rank: Int, packed_filter_rank: Int
+    ](
+        packed_filter: OutputTensor[dtype=dtype, rank=packed_filter_rank, ...],
+        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
+    ):
+        layout_transform_conv_transpose_filter_common(packed_filter, filter)
+
+
+@compiler.register("pack_conv_filter_shape")
+struct PackConvFilterShape:
+    @always_inline
+    @staticmethod
+    def execute(filter_buf: InputTensor) raises:
+        raise Error("Only meant to be used for shape function!")
+
+    @always_inline
+    @staticmethod
+    def shape[
+        rank: Int,
+        filter_type: DType,
+        input_shape: IntTuple,
+        filter_shape: IntTuple,
+        output_shape: IntTuple,
+        strides: IntTuple,
+        dilations: IntTuple,
+        paddings: IntTuple,
+        num_groups: Int,
+    ](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) -> IndexList[
+        rank + 1
+    ]:
+        """
+        Compute the output shape of convolution filter packing.
+
+        Parameters:
+            rank: Rank of the un-packed filter.
+            filter_type: Type of the filter.
+            input_shape: NHWC layout.
+            filter_shape: Filter shape.
+            output_shape: NHWC layout.
+            strides: Should be rank 1 size 2.
+            dilations: Should be rank 1 size 2.
+            paddings: Should be rank 1 size 4.
+            num_groups: The number of groups in the convolution.
+
+        Args:
+            filter_buf: The filter to be packed.
+
+        Returns:
+            The output shape.
+        """
+
+        return rebind[IndexList[rank + 1]](
+            pack_filter_shape_conv[
+                filter_type,
+                input_shape,
+                filter_shape,
+                output_shape,
+                strides,
+                dilations,
+                paddings,
+                num_groups,
+            ](filter_buf.to_tile_tensor[DType.int64]())
+        )
+
+
+@compiler.register("pack_conv_transpose_filter_shape")
+struct PackConvTransposeFilterShape:
+    @always_inline
+    @staticmethod
+    def execute[
+        rank: Int,
+        filter_type: DType,
+    ](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) raises:
+        raise Error("Only meant to be used for shape function!")
+
+    @always_inline
+    @staticmethod
+    def shape[
+        rank: Int,
+        filter_type: DType,
+    ](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) -> IndexList[
+        rank + 1
+    ]:
+        return rebind[IndexList[rank + 1]](
+            pack_filter_shape_conv_transpose(
+                filter_buf.to_tile_tensor[DType.int64](), 1
+            )
+        )
+
+
+# Wrapper that take `num_groups` as a parameter.
+# This is required unti `mo.layout.transform` passes `num_groups` as a runtime
+# value.
+def layout_transform_conv_filter_common[
+    dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+](
+    packed_filter: ManagedTensorSlice[dtype=dtype, rank=packed_rank, ...],
+    filter: ManagedTensorSlice[dtype=dtype, rank=filter_rank, ...],
+):
+    comptime assert packed_rank == filter_rank + 1
+
+    # last param is num_groups which is currently not an available
+    # arg for the MO level op
+    _pack_conv_filter(
+        filter.to_tile_tensor[DType.int64](),
+        packed_filter.to_tile_tensor[DType.int64](),
+        num_groups,
+    )
+
+
+def _layout_transform_conv_filter_from_fcrs[
+    dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+](
+    packed_filter: ManagedTensorSlice[dtype=dtype, rank=packed_rank, ...],
+    filter: ManagedTensorSlice[dtype=dtype, rank=filter_rank, ...],
+):
+    comptime assert packed_rank == filter_rank + 1
+
+    # With the compiler-level FCRS→RSCF transpose in PatternFusion,
+    # this kernel should no longer be called. But keep it as a fallback
+    # using int64 convention (same as the RSCF path).
+    _pack_conv_filter_from_fcrs(
+        filter.to_tile_tensor[DType.int64](),
+        packed_filter.to_tile_tensor[DType.int64](),
+        num_groups,
+    )
+
+
+@compiler.register("layout_transform_QRSCF_to_FQRSCf")
+struct LayoutTransformQRSCF2FQRSCf:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+    ](
+        packed_filter: OutputTensor[dtype=dtype, rank=packed_rank, ...],
+        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
+    ):
+        layout_transform_conv_filter_common[num_groups=num_groups](
+            packed_filter, filter
+        )
+
+
+@compiler.register("layout_transform_RSCF_to_FRSCf")
+struct LayoutTransformRSCF2FRSCf:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+    ](
+        packed_filter: OutputTensor[dtype=dtype, rank=packed_rank, ...],
+        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
+    ):
+        layout_transform_conv_filter_common[num_groups=num_groups](
+            packed_filter, filter
+        )
+
+
+# Note: These FCRS/FCQRS kernels are currently unused — the compiler
+# transposes FCRS to RSCF in PatternFusion before packing, so only the
+# RSCF kernels above are invoked. Kept as fallback; can be removed in cleanup.
+@compiler.register("layout_transform_FCRS_to_FRSCf")
+struct LayoutTransformFCRS2FRSCf:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+    ](
+        packed_filter: OutputTensor[dtype=dtype, rank=packed_rank, ...],
+        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
+    ):
+        _layout_transform_conv_filter_from_fcrs[num_groups=num_groups](
+            packed_filter, filter
+        )
+
+
+@compiler.register("layout_transform_FCQRS_to_FQRSCf")
+struct LayoutTransformFCQRS2FQRSCf:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+    ](
+        packed_filter: OutputTensor[dtype=dtype, rank=packed_rank, ...],
+        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
+    ):
+        _layout_transform_conv_filter_from_fcrs[num_groups=num_groups](
+            packed_filter, filter
+        )
+
+
+@compiler.register("layout_transform_KN_to_KNkni")
+struct LayoutTransformMatmulKN2KNkni:
+    @always_inline
+    @staticmethod
+    def execute[
+        a_type: DType,
+        a_shape: IntTuple,
+        b_type: DType,
+        b_shape: IntTuple,
+        c_type: DType,
+        c_shape: IntTuple,
+    ](
+        output_buffer: OutputTensor[dtype=b_type, rank=2, ...],
+        b_input: InputTensor[dtype=b_type, rank=2, ...],
+    ) raises:
+        # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
+        var kernel_type_m = 0
+
+        comptime if a_shape[0] != UNKNOWN_VALUE:
+            kernel_type_m = Int(a_shape[0])
+        _pack_b_ndbuffer_impl[
+            a_type=a_type,
+            c_type=c_type,
+            transposed=False,
+        ](
+            b_input.to_tile_tensor[DType.int64](),
+            output_buffer.to_tile_tensor[DType.int64](),
+            kernel_type_m,
+        )
+
+
+@compiler.register("layout_transform_NK_to_KNkni")
+struct LayoutTransformMatmulNK2KNkni:
+    @always_inline
+    @staticmethod
+    def execute[
+        a_type: DType,
+        a_shape: IntTuple,
+        b_type: DType,
+        b_shape: IntTuple,
+        c_type: DType,
+        c_shape: IntTuple,
+    ](
+        output_buffer: OutputTensor[dtype=b_type, rank=2, ...],
+        b_input: InputTensor[dtype=b_type, rank=2, ...],
+    ) raises:
+        # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
+        var kernel_type_m = 0
+
+        comptime if a_shape[0] != UNKNOWN_VALUE:
+            kernel_type_m = Int(a_shape[0])
+        _pack_b_ndbuffer_impl[
+            a_type=a_type,
+            c_type=c_type,
+            transposed=True,
+        ](
+            b_input.to_tile_tensor[DType.int64](),
+            output_buffer.to_tile_tensor[DType.int64](),
+            kernel_type_m,
+        )
+
+
+@compiler.register("pack_matmul_b_shape_func")
+struct PackMatmulBShapeFunc:
+    @always_inline
+    @staticmethod
+    def execute(b_input: InputTensor) raises:
+        raise Error("Only meant to be used for shape function!")
+
+    @always_inline
+    @staticmethod
+    def shape[
+        a_type: DType,
+        a_shape: IntTuple,
+        b_type: DType,
+        b_shape: IntTuple,
+        c_type: DType,
+        c_shape: IntTuple,
+        transpose_in_0: Bool,
+    ](b_input: InputTensor[dtype=b_type, rank=2, ...]) -> IndexList[2]:
+        var kernel_type_m = 0
+        comptime if a_shape[0] != UNKNOWN_VALUE:
+            kernel_type_m = Int(a_shape[0])
+        return pack_matmul_b_shape_func[
+            a_type,
+            c_type,
+            transpose_in_0,
+        ](b_input.to_tile_tensor[DType.int64]().as_immut(), kernel_type_m)
+
+
+# ===-----------------------------------------------------------------------===#
+# RMSNorm
+#
+# Expected kernel name format:
+# mo.rms_norm_kv_cache.<padded/ragged>.<continuous_batching/paged>
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.rms_norm_kv_cache.ragged.paged")
+struct Struct_rms_norm_kv_cache_ragged_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        multiply_before_cast: Bool,
+        per_head_norm: Bool,
+        cache_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype],
+        layer_idx: UInt32,
+        total_seq_len: UInt32,
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        weight_offset: Scalar[dtype=dtype],
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        rms_norm_kv_cache_ragged_paged[
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+            per_head_norm=per_head_norm,
+        ](
+            kv_collection,
+            gamma.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            layer_idx,
+            total_seq_len,
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
+@compiler.register("mo.rms_norm_value_cache.ragged.paged")
+struct Struct_rms_norm_value_cache_ragged_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        multiply_before_cast: Bool,
+        per_head_norm: Bool,
+        cache_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype],
+        layer_idx: UInt32,
+        total_seq_len: UInt32,
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        weight_offset: Scalar[dtype=dtype],
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        rms_norm_value_cache_ragged_paged[
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+            per_head_norm=per_head_norm,
+        ](
+            kv_collection,
+            gamma.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            layer_idx,
+            total_seq_len,
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            context,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Print KV Cache
+#
+# Expected kernel name format:
+# mo.print_kv_cache.paged
+# ===-----------------------------------------------------------------------===#
+
+
+def print_kv_cache_paged_generic_kernel_api[
+    dtype: DType,
+    //,
+    target: StaticString,
+    kv_params: KVCacheStaticParams,
+    page_size: Int,
+](
+    valid_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+    kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size],
+    layer_idx: UInt32,
+    is_print_compact: InputTensor[dtype=DType.bool, rank=1, ...],
+    context: DeviceContextPtr,
+) raises:
+    comptime if is_gpu[target]():
+        print_kv_cache_paged_generic_gpu[target](
+            valid_lengths.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            True,
+            context,
+        )
+    elif is_cpu[target]():
+        print_kv_cache_paged_generic_cpu[target](
+            valid_lengths.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            is_print_compact[0],
+            context,
+        )
+
+
+@compiler.register("mo.print_kv_cache.paged")
+struct Struct_print_kv_cache_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        valid_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        is_print_compact: InputTensor[dtype=DType.bool, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        print_kv_cache_paged_generic_kernel_api[target](
+            valid_lengths,
+            kv_collection,
+            layer_idx,
+            is_print_compact,
+            context,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Matmul KV cache
+#
+# Expected kernel name format:
+# mo.kv_matmul.ragged.<continuous_batching/paged>
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.kv_matmul.ragged.paged")
+struct Struct_kv_matmul_ragged_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        kv_matmul_ragged_paged[target=target](
+            hidden_state.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            weight.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Matmul K cache
+#
+# Expected kernel name format:
+# mo.k_matmul.ragged.<continuous_batching/paged>
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.k_matmul.ragged.paged")
+struct Struct_k_matmul_ragged_paged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        k_matmul_ragged_paged[target=target](
+            hidden_state.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            weight.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            ctx,
+        )
+
+
+@compiler.register("mo.k_matmul.ragged.paged.scale")
+struct Struct_k_matmul_ragged_paged_scale:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        scale_dtype: DType,
+        kv_cache_t: DType,
+        //,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
+        target: StaticString,
+    ](
+        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        input_scale: InputTensor[dtype=scale_dtype, rank=2, ...],
+        weight_scale: InputTensor[dtype=scale_dtype, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_cache_t, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        k_matmul_ragged_paged_scale[
+            target=target,
+            scales_granularity_mnk=IndexList[3](
+                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            ),
+        ](
+            hidden_state.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            weight.to_layout_tensor(),
+            input_scale.to_layout_tensor(),
+            weight_scale.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            ctx,
+        )
+
+
+@compiler.register("mo.unfused_qkv_matmul.ragged.paged.gguf_quantized")
+struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
+    @always_inline
+    @staticmethod
+    def execute[
+        quantization_encoding_q: StaticString,
+        quantization_encoding_k: StaticString,
+        quantization_encoding_v: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.float32, rank=2, ...],
+        hidden_state: InputTensor[dtype=DType.float32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        q_weight: InputTensor[dtype=DType.uint8, rank=2, ...],
+        k_weight: InputTensor[dtype=DType.uint8, rank=2, ...],
+        v_weight: InputTensor[dtype=DType.uint8, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=DType.float32, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+        unfused_qkv_matmul_ragged_paged_gguf_quantized[
+            quantization_encoding_q,
+            quantization_encoding_k,
+            quantization_encoding_v,
+        ](
+            hidden_state.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            q_weight.to_layout_tensor(),
+            k_weight.to_layout_tensor(),
+            v_weight.to_layout_tensor(),
+            kv_collection,
+            layer_idx,
+            output.to_layout_tensor(),
+            ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Sampling Operations
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("sampler.fused_token_sampling")
+struct Struct_fused_token_sampling:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        out_idx_type: DType,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        out_idxs: OutputTensor[dtype=out_idx_type, rank=rank, ...],
+        K: InputTensor[dtype=DType.int64, rank=1, ...],
+        max_k: Scalar,
+        temperature: InputTensor[dtype=DType.float32, rank=1, ...],
+        top_p: InputTensor[dtype=DType.float32, rank=1, ...],
+        min_top_p: Float32,
+        min_p: InputTensor[dtype=DType.float32, rank=1, ...],
+        seed: InputTensor[dtype=DType.uint64, rank=1, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_valid_target[target](), "not a valid target"
+
+        comptime if is_cpu[target]():
+            # When top_k == 1, argmax is equivalent to our topk_fused_sampling with k == 1
+            # However, switching to just using our topk_fused_sampling leads to a -37% perf
+            # drop in q4_k benchmarking for llama 3.
+            if max_k == 1:
+                argmax(
+                    input.to_tile_tensor[DType.int64](),
+                    rank - 1,
+                    out_idxs.to_tile_tensor[DType.int64](),
+                    ctx.get_optional_device_context(),
+                )
+                return
+            _fused_token_sampling_cpu(
+                Int(max_k),
+                input.to_tile_tensor[DType.int64](),
+                out_idxs.to_tile_tensor[DType.int64](),
+                k=K.to_tile_tensor[DType.int64]().as_any_origin().as_immut(),
+                temperature=temperature.to_tile_tensor[DType.int64]()
+                .as_any_origin()
+                .as_immut(),
+                top_p=top_p.to_tile_tensor[DType.int64]()
+                .as_any_origin()
+                .as_immut(),
+                seed=seed.to_tile_tensor[DType.int64]()
+                .as_any_origin()
+                .as_immut(),
+            )
+        else:
+            var cuda_ctx = ctx.get_device_context()
+            _fused_token_sampling_gpu(
+                cuda_ctx,
+                Int(max_k),
+                min_top_p,
+                input.to_tile_tensor[DType.int64](),
+                out_idxs.to_tile_tensor[DType.int64](),
+                k=K.to_tile_tensor[DType.int64]().as_any_origin().as_immut(),
+                temperature=temperature.to_tile_tensor[DType.int64]()
+                .as_any_origin()
+                .as_immut(),
+                top_p=top_p.to_tile_tensor[DType.int64]()
+                .as_any_origin()
+                .as_immut(),
+                min_p=min_p.to_tile_tensor[DType.int64]()
+                .as_any_origin()
+                .as_immut(),
+                seed=seed.to_tile_tensor[DType.int64]()
+                .as_any_origin()
+                .as_immut(),
+            )
+
+
+@compiler.register("min_p_sampling")
+struct Struct_min_p_sampling:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        out_idx_type: DType,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        out_token_ids: OutputTensor[dtype=out_idx_type, rank=rank, ...],
+        min_ps: InputTensor[dtype=dtype, rank=1, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        temperature: Scalar[dtype],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_valid_target[target](), "not a valid target"
+
+        comptime if is_cpu[target]():
+            min_p_sampling_cpu(
+                min_ps.to_tile_tensor[DType.int64](),
+                input.to_tile_tensor[DType.int64](),
+                out_token_ids.to_tile_tensor[DType.int64](),
+                temperature,
+            )
+        else:
+            var cuda_ctx = ctx.get_device_context()
+            min_p_sampling_gpu(
+                cuda_ctx,
+                min_ps.to_tile_tensor[DType.int64](),
+                input.to_tile_tensor[DType.int64](),
+                out_token_ids.to_tile_tensor[DType.int64](),
+                temperature,
+            )
+
+
+@compiler.register("sampler.apply_penalties")
+struct Struct_sampler_apply_penalties:
+    @always_inline
+    @staticmethod
+    def execute[
+        logit_type: DType,
+        penalty_type: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        logits: MutableInputTensor[dtype=logit_type, rank=rank, ...],
+        compressed_frequency_data: InputTensor[dtype=DType.int32, rank=2, ...],
+        frequency_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        frequency_penalty: InputTensor[dtype=penalty_type, rank=1, ...],
+        presence_penalty: InputTensor[dtype=penalty_type, rank=1, ...],
+        repetition_penalty: InputTensor[dtype=penalty_type, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_valid_target[target](), "not a valid target"
+
+        apply_penalties_to_logits[target=target](
+            logits.to_tile_tensor[DType.int64](),
+            compressed_frequency_data.to_tile_tensor[DType.int64](),
+            frequency_offsets.to_tile_tensor[DType.int64](),
+            frequency_penalty.to_tile_tensor[DType.int64](),
+            presence_penalty.to_tile_tensor[DType.int64](),
+            repetition_penalty.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+
+@compiler.register("sampler.update_frequency_data")
+struct Struct_sampler_update_frequency_data:
+    @always_inline
+    @staticmethod
+    def execute[
+        token_type: DType,
+        //,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        compressed_frequency_data: MutableInputTensor[
+            dtype=DType.int32, rank=2, ...
+        ],
+        frequency_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        new_tokens: InputTensor[dtype=token_type, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_valid_target[target](), "not a valid target"
+
+        update_frequency_data[target=target](
+            compressed_frequency_data.to_tile_tensor[DType.int64](),
+            frequency_offsets.to_tile_tensor[DType.int64](),
+            new_tokens.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Misc Operations
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def _check_signal_buffer_size(
+    signal_buffer_size: Int, input_size_bytes: Int
+) raises:
+    # The signal buffer has to be large enough to hold the entire input buffer.
+    var min_signal_buffer_size = size_of[Signal]() + input_size_bytes
+    if signal_buffer_size < min_signal_buffer_size:
+        raise Error(
+            "Expected signal buffer to be at least ",
+            min_signal_buffer_size,
+            " bytes, but got ",
+            signal_buffer_size,
+            (
+                ". This error can appear when running large requests through"
+                " MAX serve without chunked prefill. If so, try enabling"
+                " chunked prefill with --enable-chunked-prefill. Otherwise,"
+                " consider increasing the signal buffer size."
+            ),
+        )
+
+
+@always_inline("nodebug")
+def task_id_for_device(device_id: Int) -> Int:
+    """Map from device ID to task ID for CPU affinity.
+
+    Delegates to the shared C++ implementation in DeviceAffinity.cpp which
+    handles explicit MODULAR_RUNTIME_DEVICE_TASK_CPU_IDS config,
+    NUMA-inferred GPU-to-CPU core mapping, and round-robin fallback.
+    """
+    return Int(
+        external_call["KGEN_CompilerRT_TaskIdForDevice", Int32](
+            Int32(device_id),
+        )
+    )
+
+
+@always_inline
+def _launch_device_collective[
+    num_devices: Int,
+    F: def[Int]() raises unified -> None,
+](func: F, dev_ctxs: DeviceContextPtrList) raises:
+    """Dispatch async tasks to call func[i]() for each device in dev_ctxs."""
+
+    comptime assert (
+        dev_ctxs.size == num_devices
+    ), "expected dev_ctxs to have the same number of elements as num_devices"
+
+    # One Optional[Error] slot per device; None means no error.
+    # Each task writes only to its own index, so there is no data race.
+    var errors = InlineArray[Optional[Error], num_devices](
+        fill=Optional[Error]()
+    )
+
+    # Wrap the launch function in a Mojo async function which does not raise.
+    @always_inline
+    @parameter
+    async def wrapper[index: Int]() -> None:
+        try:
+            func[index]()
+        except e:
+            errors[index] = e^
+
+    # Set up a task group to launch the tasks in parallel.
+    var tg = TaskGroup()
+    comptime for i in range(num_devices):
+        # Dispatch to the worker thread that has affinity for this device.
+        var worker_id = task_id_for_device(Int(dev_ctxs[i].id()))
+        tg._create_task(wrapper[i](), desired_worker_id=worker_id)
+
+    # Wait for all tasks to complete.
+    tg.wait()
+
+    # Re-raise the first error encountered.
+    comptime for i in range(num_devices):
+        if errors[i]:
+            raise errors[i].take()
+
+
+@compiler.register("mo.distributed.allreduce.sum")
+struct DistributedAllReduceSum:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        outputs: FusedOutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype=DType.uint8, rank=1, ...
+        ],
+        dev_ctxs_input: DeviceContextPtrList,
+    ) capturing raises:
+        """Distributed allreduce operation implementation for sum reduction.
+
+        Args:
+            outputs: Output tensors (one per GPU) to store reduced results.
+            inputs: Input tensors (one per GPU) containing values to reduce.
+            signal_buffers: Preallocated synchronization buffers for cross-GPU coordination.
+            dev_ctxs_input: Device contexts for participating GPUs.
+
+        Limitations:
+            - Maximum of 8 GPUs supported (matches MAX_GPUS in comm/sync.mojo)
+            - Tensor element count must be multiple of SIMD width (per allreduce.mojo)
+            - Requires identical tensor shapes across all participating GPUs
+        """
+        comptime num_devices = inputs.size
+        comptime assert signal_buffers.size == num_devices, (
+            "expected allreduce inputs and signal buffers to have"
+            " the same number of elements"
+        )
+
+        var input_size_bytes = inputs[0].size() * size_of[dtype]()
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+
+        # output_lambda writes each device's reduced output into the fused
+        # epilogue output tensor.  Defined at execute scope so that
+        # epilogue_wrapper in vendor_ccl.allreduce (also execute scope) can
+        # call it without triggering the MLIR 'kgen.param.declare.region must
+        # have subprogram scope' error that arises when parameterized functions
+        # are defined inside closures.
+        @always_inline
+        @parameter
+        def output_lambda[
+            output_index: Int,
+            _dtype: DType,
+            _width: SIMDSize,
+            *,
+            _alignment: Int,
+        ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
+            outputs[output_index]._lambda_store[
+                width=_width, element_alignment=_alignment
+            ](
+                rebind[IndexList[rank]](coord_to_index_list(coords)),
+                rebind[SIMD[dtype, _width]](val),
+            )
+
+        # Marshal signal buffers into the expected format.
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](uninitialized=True)
+        comptime for i in range(num_devices):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        comptime if get_defined_bool["MODULAR_USE_VENDOR_CCL", False]():
+            logger.info("Executing: Vendor CCL")
+            comptime InputTensorType = type_of(
+                inputs[0].to_tile_tensor[DType.int64]().as_immut()
+            )
+            var in_tensors = InlineArray[InputTensorType, num_devices](
+                uninitialized=True
+            )
+            comptime for i in range(num_devices):
+                in_tensors[i] = rebind[InputTensorType](
+                    inputs[i].to_tile_tensor[DType.int64]().as_immut()
+                )
+
+            @always_inline
+            def launch_vendor_allreduce[
+                index: Int
+            ]() raises unified {
+                read in_tensors,
+                read rank_sigs,
+                read dev_ctxs_input,
+                read outputs,
+            }:
+                # _get_global_comms has a check-then-create race: two
+                # threads seeing null simultaneously would both call
+                # ncclCommInitAll and leak one set of communicators.
+                # Only device 0 initializes; others spin-wait.
+                comptime if index == 0:
+                    vendor_ccl.init_comms(num_devices)
+                else:
+                    vendor_ccl.wait_for_comms(num_devices)
+
+                vendor_ccl.allreduce[
+                    ngpus=num_devices,
+                    output_lambda=output_lambda[output_index=index, ...],
+                ](
+                    in_tensors,
+                    outputs[index].to_tile_tensor[DType.int64](),
+                    rank_sigs,
+                    dev_ctxs_input[index],
+                )
+
+            _launch_device_collective[num_devices](
+                launch_vendor_allreduce, dev_ctxs_input
+            )
+            return
+
+        # Custom allreduce path.
+        comptime InputTensorType = type_of(
+            inputs[0].to_tile_tensor[DType.int64]().as_immut()
+        )
+        var in_tensors = InlineArray[InputTensorType, inputs.size](
+            uninitialized=True
+        )
+        comptime for i in range(num_devices):
+            in_tensors[i] = rebind[InputTensorType](
+                inputs[i].to_tile_tensor[DType.int64]().as_immut()
+            )
+
+        @always_inline
+        def launch_allreduce[
+            index: Int
+        ]() raises unified {
+            read in_tensors,
+            read rank_sigs,
+            read dev_ctxs_input,
+            read outputs,
+        }:
+            var out_buf = outputs[index].to_tile_tensor[DType.int64]()
+            allreduce[
+                ngpus=num_devices,
+                output_lambda=output_lambda[output_index=index, ...],
+            ](
+                in_tensors,
+                out_buf,
+                rank_sigs,
+                dev_ctxs_input[index],
+            )
+
+        _launch_device_collective[num_devices](launch_allreduce, dev_ctxs_input)
+
+
+@compiler.register("mo.bundled.allreduce.sum")
+struct BundledAllReduceSum:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype=DType.uint8, rank=1, ...
+        ],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        """Per-device allreduce sum, for use with mo.parallel dispatch.
+
+        Unlike DistributedAllReduceSum which dispatches to all GPUs internally,
+        this kernel handles a single GPU. The mo.parallel framework is
+        responsible for launching one instance per device and passing all N
+        input buffers to each launch.
+
+        Args:
+            output: Output tensor for THIS GPU.
+            inputs: Input tensors from ALL participating GPUs.
+            signal_buffers: Signal buffers for ALL participating GPUs.
+            ctx: Device context for THIS GPU.
+        """
+        comptime num_devices = inputs.size
+        comptime assert signal_buffers.size == num_devices, (
+            "expected allreduce inputs and signal buffers to have"
+            " the same number of elements"
+        )
+
+        var input_size_bytes = inputs[0].size() * size_of[dtype]()
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+
+        comptime InputTensorType = type_of(
+            inputs[0].to_tile_tensor[DType.int64]().as_immut()
+        )
+        var in_tensors = InlineArray[InputTensorType, num_devices](
+            uninitialized=True
+        )
+        var out_buf = output.to_tile_tensor[DType.int64]()
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](uninitialized=True)
+
+        comptime for i in range(num_devices):
+            in_tensors[i] = rebind[InputTensorType](
+                inputs[i].to_tile_tensor[DType.int64]().as_immut()
+            )
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        @always_inline
+        @parameter
+        def output_lambda[
+            _dtype: DType,
+            _width: SIMDSize,
+            *,
+            _alignment: Int,
+        ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
+            output._lambda_store[width=_width, element_alignment=_alignment](
+                rebind[IndexList[rank]](coord_to_index_list(coords)),
+                rebind[SIMD[dtype, _width]](val),
+            )
+
+        allreduce[
+            ngpus=num_devices,
+            output_lambda=output_lambda,
+        ](
+            in_tensors,
+            out_buf,
+            rank_sigs,
+            ctx[],
+        )
+
+
+@compiler.register("mo.distributed.reducescatter.sum")
+struct DistributedReduceScatterSum:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+        axis: Int = 0,
+    ](
+        outputs: FusedOutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype=DType.uint8, rank=1, ...
+        ],
+        dev_ctxs_input: DeviceContextPtrList,
+    ) capturing raises:
+        """Distributed reduce-scatter operation implementation for sum reduction.
+
+        Args:
+            outputs: Output tensors (one per GPU) to store scattered reduced results.
+            inputs: Input tensors (one per GPU) containing values to reduce.
+            signal_buffers: Preallocated synchronization buffers for cross-GPU coordination.
+            dev_ctxs_input: Device contexts for participating GPUs.
+
+        Limitations:
+            - Maximum of 8 GPUs supported (matches MAX_GPUS in comm/sync.mojo)
+            - Tensor element count must be multiple of SIMD width
+            - Requires identical tensor shapes across all participating GPUs
+        """
+        comptime num_devices = inputs.size
+        comptime assert (
+            signal_buffers.size == num_devices
+        ), "expected 1 signal buffer per device"
+
+        # Reduce-scatter doesn't use scratch storage, so
+        # only need enough signal_buffer space for Signal struct
+        _check_signal_buffer_size(signal_buffers[0].size(), 0)
+
+        # Marshal input tensors into TileTensors.
+        comptime InputTensorType = type_of(
+            inputs[0].to_tile_tensor[DType.int64]().as_immut()
+        )
+        var in_tensors = InlineArray[InputTensorType, inputs.size](
+            uninitialized=True
+        )
+
+        comptime for i in range(inputs.size):
+            in_tensors[i] = rebind[InputTensorType](
+                inputs[i].to_tile_tensor[DType.int64]().as_immut()
+            )
+
+        # Marshal signal buffers.
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](uninitialized=True)
+
+        comptime for i in range(num_devices):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        @always_inline
+        def launch_reducescatter[
+            index: Int
+        ]() raises unified {
+            read in_tensors,
+            read rank_sigs,
+            read dev_ctxs_input,
+            read outputs,
+        }:
+            @always_inline
+            @parameter
+            def output_lambda[
+                output_index: Int,
+                _dtype: DType,
+                _width: SIMDSize,
+                *,
+                _alignment: Int,
+            ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
+                outputs[output_index]._lambda_store[
+                    width=_width,
+                    element_alignment=_alignment,
+                ](
+                    rebind[IndexList[rank]](coord_to_index_list(coords)),
+                    rebind[SIMD[dtype, _width]](val),
+                )
+
+            var out_buf = outputs[index].to_tile_tensor[DType.int64]()
+            reducescatter[
+                ngpus=num_devices,
+                output_lambda=output_lambda[output_index=index, ...],
+                axis=axis,
+            ](
+                in_tensors,
+                out_buf.make_dynamic[DType.int64](),
+                rank_sigs,
+                dev_ctxs_input[index],
+            )
+
+        _launch_device_collective[num_devices](
+            launch_reducescatter, dev_ctxs_input
+        )
+
+
+@compiler.register("mo.distributed.allgather")
+struct DistributedAllGather:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype=DType.uint8, rank=1, ...
+        ],
+        dev_ctxs_input: DeviceContextPtrList,
+    ) capturing raises:
+        """Distributed allgather operation implementation.
+
+        Args:
+            outputs: Output tensors (one per GPU) to store gathered results.
+            inputs: Input tensors (one per GPU) containing values to gather.
+            signal_buffers: Device buffer values used for synchronization.
+            dev_ctxs_input: Device contexts for participating GPUs.
+        """
+        comptime num_devices = inputs.size
+        comptime assert (
+            signal_buffers.size == num_devices
+            and outputs.size == num_devices * num_devices
+        ), (
+            "expected allgather inputs, signal buffers to have the same"
+            " number of elements and outputs to have num_devices *"
+            " num_devices"
+        )
+
+        var input_size_bytes = inputs[0].size() * size_of[dtype]()
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+
+        # Build TileTensors directly using flattened 1D layouts. Inputs can
+        # have different sizes in uneven allgather; RuntimeInt dimensions give
+        # a homogeneous TileTensor type for the InlineArray.
+        comptime InputTensorType = type_of(
+            TileTensor(
+                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                    inputs[0]._ptr
+                ),
+                row_major(Idx(inputs[0].size())),
+            )
+        )
+        var in_tensors = InlineArray[InputTensorType, num_devices](
+            uninitialized=True
+        )
+        comptime OutputTensorType = type_of(
+            TileTensor(
+                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                    outputs[0]._ptr
+                ),
+                row_major(Idx(outputs[0].size())),
+            )
+        )
+        var out_tensors = InlineArray[
+            OutputTensorType, num_devices * num_devices
+        ](uninitialized=True)
+
+        # Marshal signal buffers.
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](uninitialized=True)
+
+        comptime for i in range(num_devices):
+            in_tensors[i] = TileTensor(
+                rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                    inputs[i]._ptr
+                ),
+                row_major(Idx(inputs[i].size())),
+            )
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        comptime for i in range(num_devices * num_devices):
+            out_tensors[i] = TileTensor(
+                rebind[UnsafePointer[Scalar[dtype], MutAnyOrigin]](
+                    outputs[i]._ptr
+                ),
+                row_major(Idx(outputs[i].size())),
+            )
+
+        @always_inline
+        def launch_allgather[
+            index: Int
+        ]() raises unified {
+            read in_tensors,
+            read out_tensors,
+            read rank_sigs,
+            read dev_ctxs_input,
+        }:
+            var device_out_tensors = InlineArray[OutputTensorType, num_devices](
+                uninitialized=True
+            )
+            comptime for src_idx in range(num_devices):
+                device_out_tensors[src_idx] = out_tensors[
+                    index * num_devices + src_idx
+                ]
+
+            allgather[ngpus=num_devices](
+                in_tensors,
+                device_out_tensors,
+                rank_sigs,
+                dev_ctxs_input[index],
+                index,
+            )
+
+        _launch_device_collective[num_devices](launch_allgather, dev_ctxs_input)
+
+
+@compiler.register("mo.distributed.broadcast")
+struct DistributedBroadcast:
+    """Distributed broadcast: copy tensor from root GPU to all GPUs.
+
+    A single instance of this op handles all participating GPUs. It receives:
+    - input: The source tensor from the root GPU (P2P accessible)
+    - outputs: Destination tensors, one per GPU
+    - signal_buffers: Synchronization buffers for all participating GPUs
+    - dev_ctxs_input: Device contexts for all participating GPUs
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        root: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype=DType.uint8, rank=1, ...
+        ],
+        dev_ctxs_input: DeviceContextPtrList,
+    ) capturing raises:
+        """Execute distributed broadcast operation.
+
+        Parameters:
+            dtype: Data type of the tensor.
+            rank: Tensor rank (number of dimensions).
+            root: Index of the root GPU (source of data).
+            target: Target device string for tracing.
+            _trace_name: Trace name for profiling.
+
+        Args:
+            outputs: Output tensors (one per GPU) to store broadcast results.
+            input: Input tensor from root GPU (P2P accessible from all GPUs).
+            signal_buffers: Synchronization buffers for cross-GPU coordination.
+            dev_ctxs_input: Device contexts for participating GPUs.
+
+        Limitations:
+            - Maximum of 8 GPUs supported (MAX_GPUS).
+            - Requires P2P access between GPUs (NVLink or PCIe P2P).
+        """
+        comptime num_devices = outputs.size
+        comptime assert (
+            signal_buffers.size == num_devices
+        ), "expected 1 signal buffer per device"
+        comptime assert (
+            root >= 0 and root < num_devices
+        ), "root GPU index must be in range [0, ngpus)"
+
+        # 2-stage broadcast stages 1/ngpus of input into each signal buffer payload.
+        # 1-stage broadcast doesn't use payload at all (direct P2P from root).
+        # Use 2-stage requirement as upper bound.
+        var input_size_bytes = input.size() * size_of[dtype]()
+        var payload_size = ceildiv(input_size_bytes, num_devices)
+        _check_signal_buffer_size(signal_buffers[0].size(), payload_size)
+
+        var in_buf = input.to_tile_tensor[DType.int64]()
+
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](uninitialized=True)
+
+        comptime for i in range(signal_buffers.size):
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        @always_inline
+        def launch_broadcast[
+            index: Int
+        ]() raises unified {
+            read in_buf,
+            read rank_sigs,
+            read dev_ctxs_input,
+            read outputs,
+        }:
+            var out_buf = TileTensor[mut=True](
+                outputs[index]
+                .to_tile_tensor[DType.int64]()
+                .make_dynamic[DType.int64]()
+                .ptr,
+                in_buf.layout,
+            )
+            broadcast[num_devices](
+                in_buf,
+                out_buf,
+                rank_sigs,
+                dev_ctxs_input[index],
+                root,
+            )
+
+        _launch_device_collective[num_devices](launch_broadcast, dev_ctxs_input)
+
+
+@compiler.register("mo.distributed.scatter")
+struct DistributedScatter:
+    """Distributed scatter: send different chunks to different device groups.
+
+    Each DP replica group receives a different input chunk from the root GPU.
+    All TP devices within the same replica get the same chunk via P2P pull.
+
+    This op receives ngpus input tensors (one per GPU, padded from dp_size
+    distinct chunks) plus ngpus signal buffers for synchronization. All GPUs
+    see all chunks so they compute the same grid size (avoiding barrier
+    deadlocks).
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        root: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        outputs: FusedOutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype=DType.uint8, rank=1, ...
+        ],
+        dev_ctxs_input: DeviceContextPtrList,
+    ) capturing raises:
+        comptime ngpus = signal_buffers.size
+        comptime assert (
+            root >= 0 and root < ngpus
+        ), "root GPU index must be in range [0, ngpus)"
+        comptime assert inputs.size == ngpus, (
+            "expected scatter inputs and signal buffers to have"
+            " the same number of elements"
+        )
+
+        # Scatter uses signal buffers for barriers only (no payload staging),
+        # so payload_size=0. This still validates the buffer holds a Signal.
+        _check_signal_buffer_size(signal_buffers[0].size(), 0)
+
+        # Inputs can have different static shapes, so use make_dynamic to
+        # produce a homogeneous fully-dynamic TileTensor type for InlineArray.
+        comptime InputTensorType = type_of(
+            inputs[0]
+            .to_tile_tensor[DType.int64]()
+            .make_dynamic[DType.int64]()
+            .as_immut()
+        )
+        var in_tensors = InlineArray[InputTensorType, ngpus](uninitialized=True)
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](uninitialized=True)
+
+        comptime for i in range(ngpus):
+            in_tensors[i] = rebind[InputTensorType](
+                inputs[i]
+                .to_tile_tensor[DType.int64]()
+                .make_dynamic[DType.int64]()
+                .as_immut()
+            )
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        @always_inline
+        @parameter
+        def launch_scatter[
+            index: Int
+        ]() raises unified {
+            read in_tensors,
+            read rank_sigs,
+            read dev_ctxs_input,
+            read outputs,
+        }:
+            var out_buf = outputs[index].to_tile_tensor[DType.int64]()
+            scatter[ngpus=ngpus, dp_size=ngpus](
+                in_tensors,
+                out_buf,
+                rank_sigs,
+                dev_ctxs_input[index],
+            )
+
+        _launch_device_collective[ngpus](launch_scatter, dev_ctxs_input)
+
+
+@compiler.register("mo.distributed.allreduce_add_rms_norm_quant_fp8")
+struct DistributedAllReduceAddRMSNormQuantFP8:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        output_type: DType,
+        scales_type: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        outputs: OutputVariadicTensors[dtype=output_type, rank=rank, ...],
+        outputs_scales: OutputVariadicTensors[
+            dtype=scales_type, rank=rank, ...
+        ],
+        outputs_residual: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype=DType.uint8, rank=1, ...
+        ],
+        residuals: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
+        epsilons: InputVariadicTensors[dtype=dtype, ...],
+        weight_offsets: InputVariadicTensors[dtype=dtype, ...],
+        scales_ub: InputVariadicTensors[dtype=DType.float32, ...],
+        dev_ctxs_input: DeviceContextPtrList,
+    ) capturing raises:
+        comptime num_devices = inputs.size
+        comptime assert signal_buffers.size == num_devices, (
+            "expected allreduce inputs and signal buffers to have"
+            " the same number of elements"
+        )
+
+        var input_size_bytes = inputs[0].size() * size_of[dtype]()
+        _check_signal_buffer_size(signal_buffers[0].size(), input_size_bytes)
+
+        # Filter the dev_ctxs_list to have only the GPU devices.
+        # The kernel also takes CPU operands, so CPU devices must be removed.
+        var gpu_ctxs_tuple = StaticTuple[DeviceContextPtr, num_devices]()
+        var dev_idx = 0
+        for i in range(dev_ctxs_input.size):
+            if dev_idx < num_devices and dev_ctxs_input[i].api() != "cpu":
+                gpu_ctxs_tuple[dev_idx] = dev_ctxs_input.ptrs[i]
+                dev_idx += 1
+        if dev_idx != num_devices:
+            raise Error("Invalid number of device contexts")
+        var dev_ctxs = DeviceContextPtrList[num_devices](gpu_ctxs_tuple)
+
+        # Marshal input tensors into TileTensors.
+        comptime InputTensorType = type_of(
+            inputs[0].to_tile_tensor[DType.int64]().as_immut()
+        )
+        var in_tensors = InlineArray[InputTensorType, inputs.size](
+            uninitialized=True
+        )
+
+        # Marshal signal buffers.
+        var rank_sigs = InlineArray[
+            UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
+        ](uninitialized=True)
+
+        comptime for i in range(inputs.size):
+            in_tensors[i] = rebind[InputTensorType](
+                inputs[i].to_tile_tensor[DType.int64]().as_immut()
+            )
+            rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
+
+        @always_inline
+        def launch_fused_allreduce[
+            index: Int
+        ]() raises unified {
+            read in_tensors,
+            read rank_sigs,
+            read dev_ctxs,
+            read gammas,
+            read epsilons,
+            read weight_offsets,
+            read scales_ub,
+            read outputs,
+            read outputs_scales,
+            read outputs_residual,
+            read residuals,
+        }:
+            # Marshal per-device outputs and residual as TileTensors.
+            var out_buf = outputs[index].to_tile_tensor[DType.int64]()
+            var out_scales_buf = outputs_scales[index].to_tile_tensor[
+                DType.int64
+            ]()
+            var out_residual_buf = outputs_residual[index].to_tile_tensor[
+                DType.int64
+            ]()
+            var residual_buf = (
+                residuals[index].to_tile_tensor[DType.int64]().as_immut()
+            )
+            var gamma_tensor = gammas[index].to_tile_tensor[DType.int64]()
+
+            # TODO: Add a new struct like `VariadicInputScalar`` to
+            # represent instead of manually loading the values in the
+            # kernel code.
+            var epsilon = epsilons[index].unsafe_ptr()[]
+            var weight_offset = weight_offsets[index].unsafe_ptr()[]
+            var scale_ub = scales_ub[index].unsafe_ptr()[]
+
+            allreduce_residual_rmsnorm_fp8(
+                in_tensors,
+                residual_buf,
+                out_buf,
+                out_residual_buf,
+                gamma_tensor,
+                epsilon,
+                weight_offset,
+                scale_ub,
+                out_scales_buf,
+                rank_sigs,
+                dev_ctxs[index],
+            )
+
+        _launch_device_collective[num_devices](launch_fused_allreduce, dev_ctxs)
+
+
+# Note: this is not a "real" index_tensor op that covers all cases, but rather
+# a stopgap measure for some important models (DLRM, CLIP-ViT, LLaMa2)
+@compiler.register("index_tensor")
+struct IndexTensor:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        indices_type: DType,
+        data_rank: Int,
+        indices_rank: Int,
+        output_rank: Int,
+        batch_dims: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=output_rank, ...],
+        data: InputTensor[dtype=dtype, rank=data_rank, ...],
+        indices: InputTensor[dtype=indices_type, rank=indices_rank, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        index_tensor[dtype, indices_type, batch_dims, target=target](
+            data.to_tile_tensor[DType.int64](),
+            indices.to_tile_tensor[DType.int64](),
+            output.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Advanced Indexing
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("advanced_indexing_getitem")
+struct AdvancedIndexingGetItem:
+    @always_inline
+    @staticmethod
+    def execute[
+        input_rank: Int,
+        index_rank: Int,
+        output_rank: Int,
+        input_type: DType,
+        index_type: DType,
+        num_index_tensors: Int,
+        //,
+        start_axis: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        out_tensor: OutputTensor[dtype=input_type, rank=output_rank, ...],
+        input_tensor: FusedInputTensor[dtype=input_type, rank=input_rank, ...],
+        indices: FusedInputVariadicTensors[
+            dtype=index_type,
+            rank=index_rank,
+            size=num_index_tensors,
+            ...,
+        ],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        comptime assert (
+            output_rank == input_rank + index_rank - num_index_tensors
+        )
+
+        @parameter
+        @always_inline
+        def input_tensor_fn[
+            width: Int
+        ](idx: IndexList[input_rank]) capturing -> SIMD[input_type, width]:
+            return input_tensor._fused_load[width](idx)
+
+        @always_inline
+        @parameter
+        def indices_fn[
+            indices_index: Int,
+        ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
+            comptime assert (
+                indices_index < num_index_tensors
+            ), "tensor index out of bounds"
+            return indices[indices_index]._fused_load[width=1](coordinates)
+
+        advanced_indexing_getitem[
+            input_rank=input_rank,
+            start_axis=start_axis,
+            num_index_tensors=num_index_tensors,
+            single_thread_blocking_override=False,
+            target=target,
+            trace_description=_trace_name,
+            input_tensor_fn=input_tensor_fn,
+            indices_fn=indices_fn,
+        ](
+            out_tensor.to_tile_tensor[DType.int64](),
+            input_tensor.strides(),
+            ctx,
+        )
+
+    @always_inline
+    @staticmethod
+    def shape[
+        input_rank: Int,
+        index_rank: Int,
+        input_type: DType,
+        index_type: DType,
+        num_index_tensors: Int,
+        //,
+        start_axis: Int,
+    ](
+        input_tensor: InputTensor[dtype=input_type, rank=input_rank, ...],
+        indices: InputVariadicTensors[
+            dtype=index_type, rank=index_rank, size=num_index_tensors, ...
+        ],
+    ) -> IndexList[input_rank + index_rank - num_index_tensors]:
+        return advanced_indexing_getitem_shape[
+            start_axis=start_axis, num_index_tensors=num_index_tensors
+        ](input_tensor.shape(), indices[0].shape())
+
+
+@compiler.register("advanced_indexing_setitem_inplace")
+struct AdvancedIndexingSetItemInplace:
+    @always_inline
+    @staticmethod
+    def execute[
+        input_rank: Int,
+        index_rank: Int,
+        updates_rank: Int,
+        input_type: DType,
+        index_type: DType,
+        num_index_tensors: Int,
+        //,
+        start_axis: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        input_tensor: MutableInputTensor[
+            dtype=input_type, rank=input_rank, ...
+        ],
+        updates: FusedInputTensor[dtype=input_type, rank=updates_rank, ...],
+        indices: FusedInputVariadicTensors[
+            dtype=index_type,
+            rank=index_rank,
+            size=num_index_tensors,
+            ...,
+        ],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def updates_tensor_fn[
+            width: Int
+        ](idx: IndexList[updates_rank]) capturing -> SIMD[input_type, width]:
+            return updates._fused_load[width](idx)
+
+        @always_inline
+        @parameter
+        def indices_fn[
+            indices_index: Int,
+        ](coordinates: IndexList[index_rank]) capturing -> Scalar[index_type]:
+            comptime assert (
+                indices_index < num_index_tensors
+            ), "tensor index out of bounds"
+            return indices[indices_index]._fused_load[width=1](coordinates)
+
+        advanced_indexing_setitem_inplace[
+            start_axis=start_axis,
+            num_index_tensors=num_index_tensors,
+            single_thread_blocking_override=False,
+            target=target,
+            trace_description=_trace_name,
+            updates_tensor_fn=updates_tensor_fn,
+            indices_fn=indices_fn,
+        ](
+            input_tensor.to_tile_tensor[DType.int64](),
+            indices[0].shape(),
+            updates.strides(),
+            ctx,
+        )
+
+
+@compiler.register("advanced_indexing_setitem")
+struct AdvancedIndexingSetItem:
+    @always_inline
+    @staticmethod
+    def execute[
+        input_rank: Int,
+        index_rank: Int,
+        updates_rank: Int,
+        input_type: DType,
+        index_type: DType,
+        num_index_tensors: Int,
+        //,
+        start_axis: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output_tensor: OutputTensor[dtype=input_type, rank=input_rank, ...],
+        input_tensor: FusedInputTensor[dtype=input_type, rank=input_rank, ...],
+        updates: FusedInputTensor[dtype=input_type, rank=updates_rank, ...],
+        indices: FusedInputVariadicTensors[
+            dtype=index_type,
+            rank=index_rank,
+            size=num_index_tensors,
+            ...,
+        ],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        """Implement basic numpy-style advanced indexing with assignment but returns a copy.
+        """
+
+        # First copy over input tensor into the output
+        @parameter
+        @always_inline
+        def func[
+            width: Int, element_alignment: Int
+        ](idx: IndexList[output_tensor.rank]) -> SIMD[
+            output_tensor.dtype, width
+        ]:
+            return input_tensor._fused_load[
+                width, element_alignment=element_alignment
+            ](idx)
+
+        foreach[
+            func,
+            target=target,
+            _trace_name=_trace_name + "_p1/2_copy",
+        ](output_tensor, ctx)
+
+        # Then run the updates in-place.
+        # For type checking
+        var tensor = MutableInputTensor[
+            dtype=input_type,
+            rank=input_rank,
+            static_spec=output_tensor.static_spec,
+        ](
+            output_tensor._ptr,
+            output_tensor._spec,
+            output_tensor._runtime_strides,
+        )
+        AdvancedIndexingSetItemInplace.execute[
+            target=target,
+            start_axis=start_axis,
+            _trace_name=_trace_name + "_p2/2_update",
+        ](tensor, updates, indices, ctx)
+
+
+# ===-----------------------------------------------------------------------===#
+# ArgSort
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mx.argsort")
+struct ArgSort[*, ascending: Bool]:
+    @staticmethod
+    def execute[
+        target: StaticString
+    ](
+        indices: OutputTensor[rank=1, ...],
+        input: InputTensor[rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var indices_tensor = indices.to_tile_tensor[DType.int64]()
+        var input_tensor = input.to_tile_tensor[DType.int64]()
+
+        comptime if target == "cpu":
+            argsort[ascending=Self.ascending](indices_tensor, input_tensor)
+        else:
+            var cuda_ctx = ctx.get_device_context()
+            argsort[ascending=Self.ascending, target=target](
+                indices_tensor, input_tensor, cuda_ctx
+            )
+
+
+# ===-----------------------------------------------------------------------===#
+# Float8
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.quantize_static_scaled_float8")
+struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
+    @always_inline
+    @staticmethod
+    def execute[
+        input_type: DType,
+        output_type: DType,
+        scale_type: DType,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=2, ...],
+        input: InputTensor[dtype=input_type, rank=2, ...],
+        scale: Scalar[scale_type],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime assert output_type in (
+            DType.float8_e4m3fn,
+            DType.float8_e4m3fnuz,
+        ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
+        var scale_loaded = scale.cast[DType.float32]()
+        quantize_static_scaled_fp8[scale_is_inverted=Self.scale_is_inverted](
+            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            scale_loaded,
+            ctx.get_device_context(),
+        )
+
+
+@compiler.register("mo.quantize_tensor_dynamic_scaled_float8")
+struct QuantizeTensorDynamicScaledFloat8:
+    @always_inline
+    @staticmethod
+    def execute[
+        input_type: DType,
+        scales_type: DType,
+        output_type: DType,
+        //,
+        group_size_or_per_token: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=2, ...],
+        scales: OutputTensor[dtype=scales_type, rank=2, ...],
+        input: FusedInputTensor[dtype=input_type, rank=2, ...],
+        scale_ub: Float32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, alignment: Int
+        ](row: Int, col: Int) capturing -> SIMD[input_type, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
+                Index(row, col)
+            )
+
+        quantize_tensor_dynamic_scaled_fp8[
+            out_dtype=output_type,
+            in_dtype=input_type,
+            scales_dtype=scales_type,
+            input_fn,
+            group_size_or_per_token,
+            num_cols=Int(input.static_spec.shape_tuple[1]),
+        ](
+            output.to_tile_tensor[DType.int64](),
+            scales.to_tile_tensor[DType.int64](),
+            scale_ub,
+            ctx.get_device_context(),
+            num_rows=input.dim_size(0),
+        )
+
+
+@compiler.register("mo.quantize_dynamic_scaled_float8")
+struct QuantizeDynamicScaledFloat8:
+    @parameter
+    @always_inline
+    @staticmethod
+    def execute[
+        input_type: DType,
+        scales_type: DType,
+        output_type: DType,
+        //,
+        group_size_or_per_token: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=2, ...],
+        scales: OutputTensor[dtype=scales_type, rank=2, ...],
+        input: FusedInputTensor[dtype=input_type, rank=2, ...],
+        scale_ub: Float32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, alignment: Int
+        ](row: Int, col: Int) capturing -> SIMD[input_type, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
+                Index(row, col)
+            )
+
+        quantize_dynamic_scaled_fp8[
+            out_dtype=output_type,
+            in_dtype=input_type,
+            scales_dtype=scales_type,
+            input_fn,
+            group_size_or_per_token,
+            num_cols=Int(input.static_spec.shape_tuple[1]),
+        ](
+            output.to_tile_tensor[DType.int64](),
+            scales.to_tile_tensor[DType.int64](),
+            scale_ub,
+            ctx.get_device_context(),
+            num_rows=input.dim_size(0),
+        )
+
+
+@compiler.register("mo.matmul_dynamic_scaled_fp8")
+struct MatmulDynamicScaledFloat8:
+    @always_inline
+    @staticmethod
+    def execute[
+        input_type: DType,
+        scales_type: DType,
+        output_type: DType,
+        //,
+        input_scale_granularity: StaticString,
+        weight_scale_granularity: StaticString,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=2, ...],
+        a: InputTensor[dtype=input_type, rank=2, ...],
+        b: InputTensor[dtype=input_type, rank=2, ...],
+        a_scales: InputTensor[dtype=scales_type, rank=2, ...],
+        b_scales: InputTensor[dtype=scales_type, rank=2, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        matmul_dynamic_scaled_fp8[
+            input_scale_granularity,
+            weight_scale_granularity,
+            m_scale_granularity,
+            n_scale_granularity,
+            k_scale_granularity,
+            transpose_b=True,
+            target=target,
+        ](
+            output.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            ctx.get_device_context(),
+        )
+
+
+@compiler.register("mo.matmul_static_scaled_float8")
+struct MatmulStaticScaledFloat8:
+    @always_inline
+    @staticmethod
+    def execute[
+        output_type: DType,
+        input_dtype: DType,
+        scale_type: DType,
+        target: StaticString,
+    ](
+        output_tensor: OutputTensor[dtype=output_type, rank=2, ...],
+        input_tensor: InputTensor[dtype=input_dtype, rank=2, ...],
+        weight_tensor: InputTensor[dtype=input_dtype, rank=2, ...],
+        input_scale: Scalar[scale_type],
+        weight_scale: Scalar[scale_type],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        var output_tt = output_tensor.to_tile_tensor[DType.int64]()
+        var input_tt = input_tensor.to_tile_tensor[DType.int64]()
+        var weight_tt = weight_tensor.to_tile_tensor[DType.int64]()
+
+        @parameter
+        @__copy_capture(output_tt, input_scale, weight_scale)
+        @always_inline
+        def scaled_output_fn[
+            dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        ](idx: IndexList[2], val: SIMD[dtype, width]):
+            var scale = input_scale.cast[dtype]() * weight_scale.cast[dtype]()
+            var scaled_val = val * scale
+
+            output_tt.store_linear[width=width, alignment=alignment](
+                idx, scaled_val.cast[output_type]()
+            )
+
+        # Allocate an fp32 scratch buffer for the matmul accumulator;
+        # the epilogue lambda reads from it, applies scaling, and writes
+        # the quantized result into the real output.
+        comptime N = type_of(weight_tt).static_shape[0]
+        var M = Int(input_tt.dim[0]())
+        var device_ctx = ctx.get_device_context()
+        var scratch_buffer = device_ctx.enqueue_create_buffer[DType.float32](
+            M * N
+        )
+        var output_scratch = TileTensor(
+            scratch_buffer.unsafe_ptr(),
+            row_major(Coord(RuntimeInt[DType.int64](Int64(M)), Idx[N]())),
+        )
+
+        matmul[
+            target=target,
+            transpose_b=True,
+            elementwise_lambda_fn=scaled_output_fn,
+        ](
+            output_scratch,
+            input_tt,
+            weight_tt,
+            Optional(device_ctx),
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Ragged Tensor Operations
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.merge_ragged_tensors")
+struct MergeRaggedTensors:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        output_row_offsets: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        a: InputTensor[dtype=dtype, rank=rank, ...],
+        a_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        b: InputTensor[dtype=dtype, rank=rank, ...],
+        b_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        merge_ragged_tensors[rank=rank, target=target](
+            output.to_tile_tensor[DType.int64](),
+            output_row_offsets.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            a_row_offsets.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            b_row_offsets.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Eagle Prefill Shift Tokens
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.eagle_prefill_shift_tokens")
+struct EaglePrefillShiftTokens:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        tokens: InputTensor[dtype=dtype, rank=rank, ...],
+        offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        shift_next_tokens: InputTensor[dtype=dtype, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        eagle_prefill_shift_tokens[target=target](
+            output.to_tile_tensor[DType.int64](),
+            tokens.to_tile_tensor[DType.int64](),
+            offsets.to_tile_tensor[DType.uint32](),
+            shift_next_tokens.to_tile_tensor[DType.int64](),
+            ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Ragged LoRA SGMV Kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.lora_sgmv.ragged")
+struct Struct_lora_sgmv_ragged:
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        lora_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        max_seq_length: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "SGMV only supported on GPUs"
+        cuda_ctx = context.get_device_context()
+        var a_tensor = a.to_tile_tensor[DType.int64]()
+
+        if a.dim_size[0]() == 0:
+            return
+
+        grouped_matmul(
+            c.to_tile_tensor[DType.int64](),
+            a_tensor,
+            b.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            lora_ids.to_tile_tensor[DType.int64](),
+            Int(max_seq_length),
+            lora_ids.dim_size[0](),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.lora_sgmv.qkv_shrink.ragged")
+struct Struct_lora_sgmv_qkv_shrink_ragged:
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        a_type: DType,
+        b_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=3, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        lora_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        max_seq_length: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "SGMV only supported on GPUs"
+        cuda_ctx = context.get_device_context()
+        var a_tensor = a.to_tile_tensor[DType.int64]()
+
+        if a.dim_size[0]() == 0:
+            return
+
+        shrink_qkv_permute_3mn_sm100(
+            c.to_tile_tensor[DType.int64](),
+            a_tensor,
+            b.to_tile_tensor[DType.int64](),
+            input_row_offsets.to_tile_tensor[DType.int64](),
+            lora_ids.to_tile_tensor[DType.int64](),
+            Int(max_seq_length),
+            lora_ids.dim_size[0](),
+            cuda_ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# KV Cache Ragged RAdd Kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.kv_cache.ragged.paged.radd")
+struct Struct_kv_cache_ragged_paged_radd:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        a: InputTensor[dtype=dtype, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        batch_offset: UInt32,
+        layer_idx: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        cuda_ctx: Optional[DeviceContext] = None
+        if is_gpu[target]():
+            cuda_ctx = context.get_device_context()
+
+        generic_kv_cache_radd_dispatch[target=target,](
+            a.to_layout_tensor(),
+            kv_collection,
+            input_row_offsets.to_layout_tensor(),
+            batch_offset,
+            layer_idx,
+            cuda_ctx,
+        )
+
+
+@compiler.register("learnable_2d_interp_pos_emb")
+struct Learnable2DInterpPosEmb:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        x: InputTensor[dtype=dtype, rank=2, ...],
+        weight: InputTensor[dtype=dtype, rank=3, ...],
+        grid_thws: InputTensor[dtype=DType.int64, rank=2, ...],
+        time_weight: InputTensor[dtype=DType.float32, rank=2, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "learnable_2d_interp_pos_emb only supported on GPUs"
+
+        var cuda_ctx = ctx.get_device_context()
+
+        learnable_2d_interp_pos_emb[dtype](
+            output.to_tile_tensor[DType.int64](),
+            x.to_tile_tensor[DType.int64](),
+            weight.to_tile_tensor[DType.int64](),
+            grid_thws.to_tile_tensor[DType.int64](),
+            time_weight.to_tile_tensor[DType.int64](),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.spatial_merge")
+struct SpatialMerge:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        input: InputTensor[dtype=dtype, rank=2, ...],
+        grid_thw: InputTensor[dtype=DType.int64, rank=2, ...],
+        hidden_size: Int32,
+        merge_size: Int32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), "spatial_merge only supported on GPUs"
+
+        var cuda_ctx = ctx.get_device_context()
+
+        spatial_merge[dtype](
+            output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            grid_thw.to_tile_tensor[DType.int64](),
+            Int(hidden_size),
+            Int(merge_size),
+            cuda_ctx,
+        )
+
+
+@compiler.register("tpool_patch_merger")
+struct TPoolPatchMerger:
+    @always_inline
+    @staticmethod
+    def shape(
+        input: InputTensor[rank=2, ...],
+        _grid_thws: InputTensor[dtype=DType.int64, rank=2, ...],
+        _kH: Int32,
+        _kW: Int32,
+        _max_h: Int32,
+        _max_w: Int32,
+        total_output_patches: Int32,
+    ) -> IndexList[2]:
+        return IndexList[2](Int(total_output_patches), Int(input.dim_size(1)))
+
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        input: InputTensor[dtype=dtype, rank=2, ...],
+        grid_thws: InputTensor[dtype=DType.int64, rank=2, ...],
+        kH: Int32,
+        kW: Int32,
+        max_h: Int32,
+        max_w: Int32,
+        _total_output_patches: Int32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "tpool_patch_merger only supported on GPUs"
+
+        var cuda_ctx = ctx.get_device_context()
+
+        var out_tt = output.to_tile_tensor[DType.int64]()
+        var in_tt = input.to_tile_tensor[DType.int64]()
+        var grid_tt = grid_thws.to_tile_tensor[DType.int64]()
+
+        nn_tpool_patch_merger[dtype](
+            TileTensor(
+                out_tt.ptr.unsafe_origin_cast[MutAnyOrigin](),
+                out_tt.layout,
+            ),
+            TileTensor(
+                in_tt.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+                in_tt.layout,
+            ),
+            TileTensor(
+                grid_tt.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+                grid_tt.layout,
+            ),
+            Int(kH),
+            Int(kW),
+            Int(max_h),
+            Int(max_w),
+            cuda_ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# KV Cache Ragged 2m IAdd Kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.kv_cache.ragged.paged.2m_iadd")
+struct Struct_kv_cache_ragged_paged_2m_iadd:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        kv: InputTensor[dtype=dtype, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        lora_end_idx: InputTensor[dtype=DType.int64, rank=1, ...],
+        batch_seq_len: InputTensor[dtype=DType.int64, rank=1, ...],
+        layer_idx: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        var kv_layout_tensor = kv.to_layout_tensor()
+
+        if kv_layout_tensor.shape[0]() == 0:
+            return
+
+        cuda_ctx: Optional[DeviceContext] = None
+        if is_gpu[target]():
+            cuda_ctx = context.get_device_context()
+
+        kv_cache_2m_iadd_dispatch[target=target,](
+            kv_layout_tensor,
+            kv_collection,
+            input_row_offsets.to_layout_tensor(),
+            lora_end_idx.to_layout_tensor(),
+            batch_seq_len.to_layout_tensor(),
+            layer_idx,
+            cuda_ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Slice IAdd Kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.sliced.add.ragged")
+struct Struct_sliced_add_ragged:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=dtype, rank=2, ...],
+        a: InputTensor[dtype=dtype, rank=2, ...],
+        b: InputTensor[dtype=dtype, rank=2, ...],
+        lora_end_idx: InputTensor[dtype=DType.int64, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        var c_tile_tensor = c.to_tile_tensor[DType.int64]()
+        var a_tile_tensor = a.to_tile_tensor[DType.int64]()
+        var b_tile_tensor = b.to_tile_tensor[DType.int64]()
+
+        comptime if is_gpu[target]():
+            ctx: Optional[DeviceContext] = context.get_device_context()
+            sliced_add[target=target](
+                c_tile_tensor,
+                a_tile_tensor,
+                b_tile_tensor,
+                lora_end_idx.to_tile_tensor[DType.int64](),
+                ctx,
+            )
+        else:
+            sliced_add[target=target](
+                c_tile_tensor,
+                a_tile_tensor,
+                b_tile_tensor,
+                lora_end_idx.to_tile_tensor[DType.int64](),
+                None,
+            )
+
+
+# ===-----------------------------------------------------------------------===#
+# KV Cache GPU→CPU Copy Operations
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.kv_cache.copy_pages_d2h")
+struct KVCacheCopyPagesD2H:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        device_kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        host_kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        src_page_ids: InputTensor[dtype=DType.int64, rank=1, ...],
+        dst_page_ids: InputTensor[dtype=DType.int64, rank=1, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var gpu_ctx = ctx.get_device_context()
+
+        copy_kv_pages_d2h(
+            LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+                device_kv_blocks.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    device_kv_blocks.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+                host_kv_blocks.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    host_kv_blocks.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.int64, Layout.row_major[1](), MutAnyOrigin](
+                src_page_ids.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[1]()].row_major(
+                    src_page_ids.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.int64, Layout.row_major[1](), MutAnyOrigin](
+                dst_page_ids.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[1]()].row_major(
+                    dst_page_ids.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            Int(layer_idx),
+            gpu_ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# KV Cache External Gather/Scatter Operations (for LMCache integration)
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.lmcache.offload")
+struct LMCacheOffload:
+    """Offload KV cache data from paged format to external contiguous format.
+
+    Used by LMCache connector to copy KV data from MAX's paged cache layout
+    to LMCache's contiguous KV_2LTD format for external storage.
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        page_size: Int,
+        num_kv_heads: Int,
+        head_dim: Int,
+        kv_dim: Int,
+        target: StaticString,
+    ](
+        output: MutableInputTensor[dtype=dtype, rank=4, ...],
+        paged_cache: InputTensor[dtype=dtype, rank=6, ...],
+        slot_mapping: InputTensor[dtype=DType.int64, rank=1, ...],
+        start_token: InputTensor[dtype=DType.int64, rank=1, ...],
+        end_token: InputTensor[dtype=DType.int64, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var gpu_ctx = ctx.get_device_context()
+        var start = Int(start_token[0])
+        var end = Int(end_token[0])
+
+        lmcache_offload[
+            dtype,
+            page_size,
+            num_kv_heads,
+            head_dim,
+            kv_dim,
+            target,
+        ](
+            LayoutTensor[dtype, Layout.row_major[4](), MutAnyOrigin](
+                output.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[4]()].row_major(
+                    output.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+                paged_cache.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    paged_cache.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.int64, Layout.row_major[1](), MutAnyOrigin](
+                slot_mapping.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[1]()].row_major(
+                    slot_mapping.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            start,
+            end,
+            gpu_ctx,
+        )
+
+
+@compiler.register("mo.lmcache.onload")
+struct LMCacheOnload:
+    """Onload KV cache data from external contiguous format to paged format.
+
+    Used by LMCache connector to copy KV data from LMCache's contiguous
+    KV_2LTD format into MAX's paged cache layout.
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        //,
+        page_size: Int,
+        num_kv_heads: Int,
+        head_dim: Int,
+        kv_dim: Int,
+        target: StaticString,
+    ](
+        paged_cache: MutableInputTensor[dtype=dtype, rank=6, ...],
+        input: InputTensor[dtype=dtype, rank=4, ...],
+        slot_mapping: InputTensor[dtype=DType.int64, rank=1, ...],
+        start_token: InputTensor[dtype=DType.int64, rank=1, ...],
+        end_token: InputTensor[dtype=DType.int64, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var gpu_ctx = ctx.get_device_context()
+        var start = Int(start_token[0])
+        var end = Int(end_token[0])
+
+        lmcache_onload[
+            dtype,
+            page_size,
+            num_kv_heads,
+            head_dim,
+            kv_dim,
+            target,
+        ](
+            LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+                paged_cache.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[6]()].row_major(
+                    paged_cache.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[dtype, Layout.row_major[4](), MutAnyOrigin](
+                input.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[4]()].row_major(
+                    input.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            LayoutTensor[DType.int64, Layout.row_major[1](), MutAnyOrigin](
+                slot_mapping.to_layout_tensor().ptr,
+                RuntimeLayout[Layout.row_major[1]()].row_major(
+                    slot_mapping.to_layout_tensor().runtime_layout.shape.value
+                ),
+            ),
+            start,
+            end,
+            gpu_ctx,
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# Sleep kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.sleep")
+struct Sleep:
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        # In order to prevent this kernel from being DCE'd, we pass in a mutable
+        # input buffer. A fix is tracked in GEX-3080.
+        duration_sec_buffer: MutableInputTensor[
+            dtype=DType.float64, rank=1, ...
+        ],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var duration_sec = duration_sec_buffer[0]
+        if duration_sec < 0:
+            raise Error(
+                "Sleep duration must be non-negative. Found: ", duration_sec
+            )
+
+        if is_gpu[target]():
+
+            @__name("sleep")
+            def sleep_kernel(duration_sec: Float64):
+                sleep(duration_sec)
+
+            var device_ctx = ctx.get_device_context()
+            device_ctx.enqueue_function[sleep_kernel, sleep_kernel](
+                duration_sec, grid_dim=(1,), block_dim=(1,)
+            )
+        else:
+            sleep(duration_sec)

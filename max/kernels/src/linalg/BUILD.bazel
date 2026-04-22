@@ -1,0 +1,21 @@
+load("//bazel:api.bzl", "mojo_library")
+
+package(default_visibility = ["//max:consumers"])
+
+mojo_library(
+    name = "linalg",
+    srcs = glob(["**/*.mojo"]),
+    docs_base_path = "kernels",
+    validate_missing_docs = False,
+    deps = [
+        "//max:_cublas",
+        "//max:_rocblas",
+        "//max:comm",
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:pipeline",
+        "//max:register",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)

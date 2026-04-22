@@ -1,0 +1,31 @@
+load("//bazel:api.bzl", "mojo_test")
+
+package(default_visibility = ["//max:consumers"])
+
+[
+    mojo_test(
+        name = src + ".test",
+        srcs = [src],
+        deps = [
+            "//max:quantization",
+            "@mojo//:std",
+        ],
+    )
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = ["test_per_channel_grouped_4bit.mojo"],
+    )
+]
+
+# TODO(KERN-1880): Re-enable this.
+mojo_test(
+    name = "test_per_channel_grouped_4bit.mojo.test",
+    srcs = ["test_per_channel_grouped_4bit.mojo"],
+    tags = [
+        "manual",
+    ],
+    deps = [
+        "//max:quantization",
+        "@mojo//:std",
+    ],
+)
