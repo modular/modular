@@ -93,7 +93,7 @@ struct Pipe:
     """Create a pipe for interprocess communication.
 
     Example usage:
-    ```
+    ```mojo
     pipe().write_bytes("TEST".as_bytes())
     ```
     """
@@ -210,7 +210,7 @@ struct Process:
     """Create and manage child processes from file executables.
 
     Example usage:
-    ```
+    ```mojo
     child_process = Process.run("ls", List[String]("-lha"))
     if child_process.interrupt():
         print("Successfully interrupted.")

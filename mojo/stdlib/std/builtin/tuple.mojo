@@ -493,7 +493,7 @@ struct Tuple[*element_types: Movable](
 
         Usage:
 
-        ```
+        ```mojo
         var rgb = Tuple[Int, Int, Int](0xFF, 0xF0, 0x0)
         var rgba = rgb.concat(Tuple[Int](0xFF)) # Adds alpha channel
         print(rgba[0], rgba[1], rgba[2], rgba[3]) # 255 240 0 255

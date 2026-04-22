@@ -17,7 +17,12 @@ style guide.
 
 ## Basics
 
-- Docstrings support Markdown formatting.
+- Docstrings support Markdown formatting, but do not use Markdown headings
+  (`#`, `##`, `###`) inside docstrings. Use only the standard Google-style
+  section labels (`Parameters:`, `Args:`, `Returns:`, `Raises:`,
+  `Constraints:`) and freeform section labels like `Examples:` and `Notes:`.
+  For other labeled subsections (for example, safety notes), use bold text
+  (`**Safety:**`) instead of a heading.
 
 - End all sentences with a period (including sentence fragments).
 

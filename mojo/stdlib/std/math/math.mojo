@@ -1209,11 +1209,11 @@ def isclose[
     For floating-point dtypes, the following criteria apply:
 
     - Symmetric (Python `math.isclose` style), when `symmetrical` is true:
-        ```
+        ```text
         |a - b| ≤ max(atol, rtol * max(|a|, |b|))
         ```
     - Asymmetric (NumPy style), when `symmetrical` is false:
-        ```
+        ```text
         |a - b| ≤ atol + rtol * |b|
         ```
 

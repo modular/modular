@@ -129,7 +129,7 @@ struct CodepointSliceIter[
             The next codepoint slice in the underlying string, or None if the
             string is empty.
 
-        # Examples
+        **Examples:**
 
         `peek_next()` does not advance the iterator, so repeated calls will
         return the same value:
@@ -172,7 +172,7 @@ struct CodepointSliceIter[
             The last codepoint slice in the underlying string, or None if the
             string is empty.
 
-        # Examples
+        **Examples:**
 
         `peek_back()` does not advance the iterator, so repeated calls will
         return the same value:
