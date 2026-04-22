@@ -23,6 +23,35 @@ TEST(UseAfterFreeAllocator, Detects) {
   EXPECT_DEATH(*ptr1 = 44, ".*");
   allocator->deallocate(ptr2);
 }
+
 #endif
+
+TEST(LeakCheckAllocator, ForwardsNumaPlacementFromBase) {
+  // TCMalloc base constructed with a NUMA placement — wrapper should report
+  // the same placement.
+  auto wrapped =
+      createLeakCheckAllocator(createTCMallocAllocator(/*numaPlacement=*/2));
+  EXPECT_EQ(wrapped->getNumaPlacement(), 2);
+
+  // Exercise an alloc/free so the leak-check bookkeeping stays balanced.
+  int *ptr = wrapped->allocate<int>();
+  *ptr = 1;
+  wrapped->deallocate(ptr);
+}
+
+TEST(LeakCheckAllocator, ReportsAnyNumaNodeForPlainBase) {
+  auto wrapped = createLeakCheckAllocator(createMallocAllocator());
+  EXPECT_EQ(wrapped->getNumaPlacement(), Allocator::kAnyNumaNode);
+}
+
+TEST(ProfilingAllocator, ForwardsNumaPlacementFromBase) {
+  auto wrapped =
+      createProfilingAllocator(createTCMallocAllocator(/*numaPlacement=*/5));
+  EXPECT_EQ(wrapped->getNumaPlacement(), 5);
+
+  int *ptr = wrapped->allocate<int>();
+  *ptr = 1;
+  wrapped->deallocate(ptr);
+}
 
 } // namespace

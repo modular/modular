@@ -47,7 +47,8 @@ namespace {
 class LeakCheckAllocator : public Allocator {
 public:
   explicit LeakCheckAllocator(std::unique_ptr<Allocator> baseAllocator)
-      : baseAllocator(std::move(baseAllocator)) {}
+      : Allocator(baseAllocator->getNumaPlacement()),
+        baseAllocator(std::move(baseAllocator)) {}
   ~LeakCheckAllocator() override { checkLeak(); }
 
   void *allocateBytes(size_t size, size_t alignment) override {
