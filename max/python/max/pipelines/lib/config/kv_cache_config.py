@@ -173,6 +173,7 @@ class KVCacheConfig(ConfigFileModel):
         is_mla: bool = False,
         num_q_heads: int | None = None,
         kvcache_quant_config: KVCacheQuantizationConfig | None = None,
+        num_eagle_speculative_tokens: int = 0,
     ) -> KVCacheParams:
         """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
 
@@ -187,6 +188,7 @@ class KVCacheConfig(ConfigFileModel):
             num_q_heads: Number of query attention heads. Required when
                 ``is_mla`` is True.
             kvcache_quant_config: KV cache quantization configuration.
+            num_eagle_speculative_tokens: Number of draft tokens to generate for EAGLE speculative decoding.
 
         Returns:
             The constructed KV cache parameters.
@@ -209,4 +211,5 @@ class KVCacheConfig(ConfigFileModel):
             num_q_heads=num_q_heads,
             data_parallel_degree=data_parallel_degree,
             kvcache_quant_config=kvcache_quant_config,
+            num_eagle_speculative_tokens=num_eagle_speculative_tokens,
         )
