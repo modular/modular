@@ -22,7 +22,7 @@ Pattern: A = sequential values, B = identity. D = A @ I = A widened to
 accumulator type. Verify D[i] is close to the original A[i].
 """
 
-from std.sys import CompilationTarget
+from std.sys.info import _accelerator_arch
 
 from std.gpu import WARP_SIZE
 from std.gpu.compute.arch.mma_apple import (
@@ -367,15 +367,17 @@ def _skip_all():
 
 
 def main() raises:
-    # SDLC-3462 More Specific Apple Silicon GPU Constraints are needed
-    comptime if not (
-        CompilationTarget.is_apple_m5()
-        and CompilationTarget._has_feature["metal4_0"]()
-    ):
+    # Compile-time: verify the compiler is targeting Metal 4+.
+    # _accelerator_arch() is "metal:4" (bazel) or "metal:5-metal4" (mojo).
+    comptime if "metal" not in _accelerator_arch():
         _skip_all()
         return
 
+    # Runtime: verify M5 hardware (compute_capability 5 == Apple M5).
     var ctx = DeviceContext()
+    if ctx.compute_capability() < 5:
+        _skip_all()
+        return
 
     # Float combos (tight tolerance for F16/BF16 hw rounding)
     run_mma_test[DType.float16, DType.float16, DType.float32](
