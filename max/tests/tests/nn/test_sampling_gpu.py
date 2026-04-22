@@ -23,11 +23,21 @@ from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.sampling import MinPSampler
+from max.nn.sampling import (
+    MinPSampler,
+    compute_synthetic_acceptance_base_rate,
+)
 from max.pipelines.lib.sampling import (
+    SyntheticRunner,
     build_greedy_acceptance_sampler_graph,
     build_stochastic_acceptance_sampler_graph,
+    build_synthetic_acceptance_sampler_graph,
 )
+
+
+def _seed_buffer(value: int) -> Buffer:
+    """Constructs a CPU int64 scalar Buffer matching ``ops.random.SeedType``."""
+    return Buffer.from_numpy(np.array(value, dtype=np.int64))
 
 
 # NOTE THAT ONLY RANK 2 TENSORS
@@ -211,3 +221,182 @@ def test_typical_acceptance_sampler(device: Device) -> None:
             *_make_inputs(1, vocab_size, draft_low, logits_low)
         )
         assert cast(Buffer, first_rejected).to_numpy()[0] == 0
+
+
+@pytest.mark.parametrize(
+    ("base_rate", "expected_first_rejected"),
+    [(1.0, "num_steps"), (0.0, 0)],
+    ids=["rate_1_all_accepted", "rate_0_all_rejected"],
+)
+def test_synthetic_acceptance_sampler_degenerate(
+    session: InferenceSession,
+    base_rate: float,
+    expected_first_rejected: int | str,
+) -> None:
+    """At rate=1.0 every draft token is accepted; at rate=0.0 none are.
+
+    Pins boundary behavior of the threshold comparison and
+    ``_find_first_rejected`` against off-by-one regressions.
+    """
+    device = session.devices[0]
+    num_steps = 4
+    graph = build_synthetic_acceptance_sampler_graph(
+        device=DeviceRef.from_device(device),
+        base_acceptance_rate=base_rate,
+        num_draft_steps=num_steps,
+    )
+    model = session.load(graph)
+
+    batch_size = 3
+    vocab_size = 6
+    target_logits = np.zeros(
+        (batch_size * (num_steps + 1), vocab_size), dtype=np.float32
+    )
+    for b in range(batch_size):
+        for s in range(num_steps + 1):
+            target_logits[b * (num_steps + 1) + s, 0] = 10.0
+
+    draft_tokens_np = np.ones((batch_size, num_steps), dtype=np.int64)
+
+    first_rejected, _, _ = model.execute(
+        Buffer.from_numpy(draft_tokens_np).to(device),
+        Buffer.from_numpy(target_logits).to(device),
+        _seed_buffer(1),
+    )
+    first_rejected_np = cast(Buffer, first_rejected).to_numpy()
+    expected = num_steps if expected_first_rejected == "num_steps" else 0
+    np.testing.assert_array_equal(first_rejected_np, [expected] * batch_size)
+
+
+def test_synthetic_acceptance_sampler_zero_draft_tokens(
+    session: InferenceSession,
+) -> None:
+    """With 0 draft tokens (prefill), first_rejected should be 0."""
+    device = session.devices[0]
+    num_steps = 4
+    graph = build_synthetic_acceptance_sampler_graph(
+        device=DeviceRef.from_device(device),
+        base_acceptance_rate=1.0,
+        num_draft_steps=num_steps,
+    )
+    model = session.load(graph)
+
+    batch_size = 2
+    vocab_size = 6
+    target_logits = np.zeros((batch_size * 1, vocab_size), dtype=np.float32)
+    target_logits[:, 0] = 10.0
+    draft_tokens_np = np.ones((batch_size, 0), dtype=np.int64)
+
+    first_rejected, _, _ = model.execute(
+        Buffer.from_numpy(draft_tokens_np).to(device),
+        Buffer.from_numpy(target_logits).to(device),
+        _seed_buffer(1),
+    )
+    first_rejected_np = cast(Buffer, first_rejected).to_numpy()
+    np.testing.assert_array_equal(first_rejected_np, [0] * batch_size)
+
+
+def test_synthetic_acceptance_sampler_mean_rate(
+    session: InferenceSession,
+) -> None:
+    """Calibrated synthetic sampling converges to the target mean rate.
+
+    Calibration solves for ``base_rate`` so the mean joint acceptance
+    probability equals ``target_rate``. The observed fraction of accepted
+    draft tokens — ``sum(first_rejected_idx) / (batch * K)`` — is exactly
+    that mean, so it should converge under Monte Carlo sampling.
+
+    A fresh seed is bound per call so RNG actually varies across runs;
+    otherwise the ensemble collapses to a single deterministic draw.
+    """
+    device = session.devices[0]
+    num_steps = 5
+    target_rate = 0.5
+    base_rate = compute_synthetic_acceptance_base_rate(target_rate, num_steps)
+    graph = build_synthetic_acceptance_sampler_graph(
+        device=DeviceRef.from_device(device),
+        base_acceptance_rate=base_rate,
+        num_draft_steps=num_steps,
+    )
+    model = session.load(graph)
+
+    batch_size = 64
+    vocab_size = 6
+    num_runs = 50
+    total_accepted = 0
+    total_tokens = 0
+
+    target_logits = np.zeros(
+        (batch_size * (num_steps + 1), vocab_size), dtype=np.float32
+    )
+    target_logits[:, 0] = 10.0
+    draft_tokens_np = np.ones((batch_size, num_steps), dtype=np.int64)
+
+    for run_idx in range(num_runs):
+        first_rejected, _, _ = model.execute(
+            Buffer.from_numpy(draft_tokens_np).to(device),
+            Buffer.from_numpy(target_logits).to(device),
+            _seed_buffer(run_idx + 1),
+        )
+        accepted = cast(Buffer, first_rejected).to_numpy()
+        total_accepted += accepted.sum()
+        total_tokens += batch_size * num_steps
+
+    observed_rate = total_accepted / total_tokens
+    assert abs(observed_rate - target_rate) < 0.02
+
+
+def test_synthetic_runner_mean_rate(
+    session: InferenceSession,
+) -> None:
+    """SyntheticRunner converges to the configured rate over many calls.
+
+    Exercises the full classical-Eagle integration path: calibration,
+    graph construction, per-call seed binding, and the
+    :class:`RejectionRunner` protocol.
+    """
+    device = session.devices[0]
+    num_steps = 3
+    target_rate = 0.5
+
+    runner = SyntheticRunner(
+        session=session,
+        device_ref=DeviceRef.from_device(device),
+        synthetic_acceptance_rate=target_rate,
+        num_speculative_tokens=num_steps,
+    )
+
+    batch_size = 32
+    vocab_size = 6
+    num_runs = 40
+
+    target_logits = np.zeros(
+        (batch_size * (num_steps + 1), vocab_size), dtype=np.float32
+    )
+    target_logits[:, 0] = 10.0
+    draft_tokens_np = np.ones((batch_size, num_steps), dtype=np.int64)
+
+    total_accepted = 0
+    total_tokens = 0
+    first_outputs: list[npt.NDArray[np.int64]] = []
+    for _ in range(num_runs):
+        first_rejected, _, _ = runner.run(
+            draft_tokens=Buffer.from_numpy(draft_tokens_np).to(device),
+            draft_logits=None,
+            target_logits=Buffer.from_numpy(target_logits).to(device),
+            target_logit_offsets=Buffer.from_numpy(
+                np.zeros(1, dtype=np.uint32)
+            ),
+            all_draft_logits=None,
+            context_batch=[],
+        )
+        accepted = cast(Buffer, first_rejected).to_numpy().astype(np.int64)
+        total_accepted += int(accepted.sum())
+        total_tokens += batch_size * num_steps
+        if len(first_outputs) < 2:
+            first_outputs.append(accepted.copy())
+
+    observed_rate = total_accepted / total_tokens
+    assert abs(observed_rate - target_rate) < 0.03
+
+    assert not np.array_equal(first_outputs[0], first_outputs[1])

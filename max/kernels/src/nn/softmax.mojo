@@ -74,8 +74,8 @@ from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 
 def reduce_add_simd[
-    simd_width: Int,
-    step_simd_width: Int,
+    simd_width: SIMDSize,
+    step_simd_width: SIMDSize,
     dtype: DType,
 ](
     mut scalar: Scalar[dtype],
@@ -288,10 +288,10 @@ def _softmax_3_pass_step_2[
     input_fn_1d: def[_simd_width: Int](Int) capturing[_] -> SIMD[
         dtype, _simd_width
     ],
-    pre_update_func: def[dtype: DType, width: Int](
+    pre_update_func: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
-    post_update_func: def[dtype: DType, width: Int](
+    post_update_func: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
 ](
@@ -336,10 +336,10 @@ def _softmax_3_pass_step_3[
     simd_width: Int,
     unroll_factor: Int,
     dtype: DType,
-    accum_proc_func: def[dtype: DType, width: Int](
+    accum_proc_func: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
-    accum_apply_func: def[dtype: DType, width: Int](
+    accum_apply_func: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width], SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
 ](output: TileTensor[mut=True, dtype, ...], accum: Scalar[dtype],):
@@ -373,16 +373,16 @@ def _softmax_3_pass_base[
     input_fn_1d: def[_simd_width: Int](Int) capturing[_] -> SIMD[
         dtype, _simd_width
     ],
-    step2_pre_update_func: def[dtype: DType, width: Int](
+    step2_pre_update_func: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
-    step2_post_update_func: def[dtype: DType, width: Int](
+    step2_post_update_func: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
-    step3_accum_proc_func: def[dtype: DType, width: Int](
+    step3_accum_proc_func: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
-    step3_accum_apply_func: def[dtype: DType, width: Int](
+    step3_accum_apply_func: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width], SIMD[dtype, width]
     ) thin -> SIMD[dtype, width],
 ](output: TileTensor[mut=True, dtype, ...]) raises:
@@ -411,7 +411,7 @@ def _softmax_3_pass_base[
     @always_inline
     @parameter
     def reduce_impl[
-        ty: DType, width: Int
+        ty: DType, width: SIMDSize
     ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return max(v1, v2)
 
@@ -430,7 +430,7 @@ def _softmax_3_pass_base[
     @parameter
     @always_inline
     def output_fn[
-        _dtype: DType, _width: Int, _rank: Int
+        _dtype: DType, _width: SIMDSize, _rank: Int
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         comptime assert _rank == 1
         max_buff[0] = val.reduce_max().cast[dtype]()
@@ -606,6 +606,7 @@ def _softmax_cpu[
     shape: IndexList[rank],
     output: TileTensor[mut=True, dtype, ...],
     axis: Int,
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     # TODO: Add rowwise generator to de-duplicate partitioning logic between
     # softmax and logsoftmax
@@ -652,7 +653,7 @@ def _softmax_cpu[
             ](output_buffer_view)
             _ = indices
 
-    sync_parallelize[task_func](num_workers)
+    sync_parallelize[task_func](num_workers, ctx)
 
 
 # Softmax (no input lambda)
@@ -721,14 +722,14 @@ def softmax_kernel[
     @parameter
     @always_inline
     def _max[
-        dtype: DType, width: Int
+        dtype: DType, width: SIMDSize
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return max(x, y)
 
     @parameter
     @always_inline
     def _sum[
-        dtype: DType, width: Int
+        dtype: DType, width: SIMDSize
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
@@ -909,7 +910,7 @@ def softmax[
                 origin_of()._mlir_origin,
                 input_fn,
                 logsoftmax=logsoftmax,
-            ](shape, output, axis)
+            ](shape, output, axis, context.get_optional_device_context())
         elif is_gpu[target]():
             _softmax_gpu[
                 dtype,
@@ -1003,7 +1004,7 @@ def _softmax_temperature_kernel[
                         @always_inline
                         def online_max_sum[
                             width: Int
-                        ](offset: Int) unified {input, mut}:
+                        ](offset: Int) unified {input, row_idx, mut}:
                             var v = input.load_linear[width=width](
                                 IndexList[2](row_idx, Int(lane_base) + offset)
                             ).cast[accum_type]()
@@ -1047,7 +1048,7 @@ def _softmax_temperature_kernel[
                         @always_inline
                         def normalize[
                             width: Int
-                        ](offset: Int) unified {input, output, mut}:
+                        ](offset: Int) unified {input, row_idx, output, mut}:
                             var logit = input.load_linear[width=width](
                                 IndexList[2](row_idx, Int(lane_base) + offset)
                             ).cast[accum_type]()

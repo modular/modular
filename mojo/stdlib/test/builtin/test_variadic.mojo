@@ -59,21 +59,21 @@ def test_variadic_reverse_even() raises:
 
 def test_variadic_concat_empty() raises:
     var _tup = ()
-    comptime ConcattedVariadic = Variadic.concat_types[
+    comptime ConcattedVariadic = TypeList._concat[
         type_of(_tup).element_types.values, type_of(_tup).element_types.values
-    ]
+    ]()
     assert_equal(_tup.element_types.size, 0)
-    assert_equal(TypeList[ConcattedVariadic].size, 0)
+    assert_equal(ConcattedVariadic.size, 0)
 
 
 def test_variadic_concat_singleton() raises:
     var _tup = (String("hi"), Int(42), Float32(3.14))
     var _tup2 = (Bool(True),)
-    comptime ConcattedVariadic = Variadic.concat_types[
+    comptime ConcattedVariadic = TypeList._concat[
         type_of(_tup).element_types.values, type_of(_tup2).element_types.values
-    ]
+    ]()
     assert_equal(_tup.element_types.size, 3)
-    assert_equal(TypeList[ConcattedVariadic].size, 4)
+    assert_equal(ConcattedVariadic.size, 4)
     assert_true(_type_is_eq[ConcattedVariadic[0], String]())
     assert_true(_type_is_eq[ConcattedVariadic[1], Int]())
     assert_true(_type_is_eq[ConcattedVariadic[2], Float32]())
@@ -83,11 +83,11 @@ def test_variadic_concat_singleton() raises:
 def test_variadic_concat_identity() raises:
     var _tup = (Int(1), String("a"))
     var _tup2 = ()
-    comptime ConcattedVariadic = Variadic.concat_types[
+    comptime ConcattedVariadic = TypeList._concat[
         type_of(_tup).element_types.values, type_of(_tup2).element_types.values
-    ]
+    ]()
     assert_equal(_tup.element_types.size, 2)
-    assert_equal(TypeList[ConcattedVariadic].size, 2)
+    assert_equal(ConcattedVariadic.size, 2)
     assert_true(_type_is_eq[ConcattedVariadic[0], Int]())
     assert_true(_type_is_eq[ConcattedVariadic[1], String]())
 
@@ -113,6 +113,11 @@ comptime IntToWithValue[*values: Int] = values.map_to_type[
 comptime _HasStaticToIntMapper[T: HasStaticValue]: Int = T.STATIC_VALUE
 
 
+comptime _WithValuePlusIdx[
+    T: HasStaticValue, idx: Int
+]: HasStaticValue = WithValue[T.STATIC_VALUE + idx]
+
+
 def test_type_list_map_to_values() raises:
     comptime pl = TypeList.of[
         Trait=HasStaticValue, WithValue[10], WithValue[20], WithValue[30]
@@ -128,6 +133,64 @@ def test_type_list_map_to_values_empty() raises:
         _HasStaticToIntMapper
     ]()
     assert_equal(pl.size, 0)
+
+
+comptime _KeepEvenIdx[T: HasStaticValue, idx: Int]: Bool = (idx & 1) == 0
+
+
+comptime _KeepAllIdx[T: HasStaticValue, idx: Int]: Bool = True
+
+
+def test_type_list_filter_idx_even_positions() raises:
+    comptime filtered = TypeList.of[
+        Trait=HasStaticValue,
+        WithValue[10],
+        WithValue[20],
+        WithValue[30],
+        WithValue[40],
+    ]().filter_idx[_KeepEvenIdx]()
+    assert_equal(filtered.size, 2)
+    assert_true(_type_is_eq[filtered[0], WithValue[10]]())
+    assert_true(_type_is_eq[filtered[1], WithValue[30]]())
+
+
+def test_type_list_filter_idx_keep_all() raises:
+    comptime filtered = TypeList.of[
+        Trait=HasStaticValue, WithValue[1], WithValue[2]
+    ]().filter_idx[_KeepAllIdx]()
+    assert_equal(filtered.size, 2)
+    assert_true(_type_is_eq[filtered[0], WithValue[1]]())
+    assert_true(_type_is_eq[filtered[1], WithValue[2]]())
+
+
+def test_type_list_filter_idx_empty() raises:
+    comptime filtered = TypeList.of[Trait=HasStaticValue]().filter_idx[
+        _KeepEvenIdx
+    ]()
+    assert_equal(filtered.size, 0)
+
+
+def test_type_list_filter_idx_even_positions_pair() raises:
+    comptime filtered = TypeList.of[
+        Trait=HasStaticValue, WithValue[7], WithValue[8]
+    ]().filter_idx[_KeepEvenIdx]()
+    assert_equal(filtered.size, 1)
+    assert_true(_type_is_eq[filtered[0], WithValue[7]]())
+
+
+comptime _KeepFirstTwo[T: HasStaticValue, idx: Int]: Bool = idx < 2
+
+
+def test_type_list_filter_idx_by_index() raises:
+    comptime filtered = TypeList.of[
+        Trait=HasStaticValue,
+        WithValue[100],
+        WithValue[200],
+        WithValue[300],
+    ]().filter_idx[_KeepFirstTwo]()
+    assert_equal(filtered.size, 2)
+    assert_true(_type_is_eq[filtered[0], WithValue[100]]())
+    assert_true(_type_is_eq[filtered[1], WithValue[200]]())
 
 
 def test_variadic_value_reducer() raises:
@@ -182,18 +245,18 @@ def test_parameter_list_splat_zero() raises:
 
 
 def test_variadic_contains() raises:
-    comptime variadic = TypeList.of[Trait=Writable, Int, String, Float32]()
-    assert_equal(variadic.size, 3)
-    assert_true(variadic.contains[Int]())
-    assert_true(variadic.contains[String]())
-    assert_true(variadic.contains[Float32]())
-    assert_false(variadic.contains[Bool]())
+    comptime types = TypeList.of[Trait=Writable, Int, String, Float32]()
+    assert_equal(types.size, 3)
+    assert_true(types.contains[Int]())
+    assert_true(types.contains[String]())
+    assert_true(types.contains[Float32]())
+    assert_false(types.contains[Bool]())
 
 
 def test_variadic_contains_empty() raises:
-    comptime variadic = TypeList.of[Trait=Writable]()
-    assert_equal(variadic.size, 0)
-    assert_false(variadic.contains[Bool]())
+    comptime types = TypeList.of[Trait=Writable]()
+    assert_equal(types.size, 0)
+    assert_false(types.contains[Bool]())
 
 
 def test_variadic_contains_value() raises:
@@ -211,116 +274,14 @@ def test_variadic_contains_value_empty() raises:
     assert_false(list.contains[1]())
 
 
-def test_zip_types_empty() raises:
-    comptime v1 = Variadic.empty_of_trait[Writable]
-    comptime v2 = Variadic.empty_of_trait[Writable]
-    comptime v_zip = Variadic.zip_types[v1, v2]()
-    assert_equal(v_zip.size, 1)
-    assert_equal(TypeList[v_zip[0]].size, 0)
-    assert_equal(TypeList[v_zip[1]].size, 0)
-
-
-def test_zip_types_uneven() raises:
-    comptime v1 = Variadic.types[T=Writable, String, Float32, Bool]
-    comptime v2 = Variadic.types[T=Writable, StaticString, Int]
-    comptime v_zip = Variadic.zip_types[v1, v2]()
-    assert_equal(v_zip.size, 2)
-    assert_true(_type_is_eq[v_zip[0][0], String]())
-    assert_true(_type_is_eq[v_zip[0][1], StaticString]())
-    assert_true(_type_is_eq[v_zip[1][0], Float32]())
-    assert_true(_type_is_eq[v_zip[1][1], Int]())
-
-
-def test_zip_types() raises:
-    comptime v1 = Variadic.types[T=Writable, String, Float32, Bool]
-    comptime v2 = Variadic.types[T=Writable, StaticString, Int, Float64]
-    comptime v_zip = Variadic.zip_types[v1, v2]()
-    assert_equal(v_zip.size, 3)
-    assert_true(_type_is_eq[v_zip[0][0], String]())
-    assert_true(_type_is_eq[v_zip[0][1], StaticString]())
-    assert_true(_type_is_eq[v_zip[1][0], Float32]())
-    assert_true(_type_is_eq[v_zip[1][1], Int]())
-    assert_true(_type_is_eq[v_zip[2][0], Bool]())
-    assert_true(_type_is_eq[v_zip[2][1], Float64]())
-
-
-def test_zip_types_triple() raises:
-    comptime v1 = Variadic.types[T=Writable, String, Float32, Bool]
-    comptime v2 = Variadic.types[T=Writable, StaticString, Int, Float64]
-    comptime v3 = Variadic.types[T=Writable, UInt8, UInt32, UInt64]
-    comptime v_zip = Variadic.zip_types[v1, v2, v3]()
-    assert_equal(v_zip.size, 3)
-    assert_true(_type_is_eq[v_zip[0][0], String]())
-    assert_true(_type_is_eq[v_zip[0][1], StaticString]())
-    assert_true(_type_is_eq[v_zip[0][2], UInt8]())
-    assert_true(_type_is_eq[v_zip[1][0], Float32]())
-    assert_true(_type_is_eq[v_zip[1][1], Int]())
-    assert_true(_type_is_eq[v_zip[1][2], UInt32]())
-    assert_true(_type_is_eq[v_zip[2][0], Bool]())
-    assert_true(_type_is_eq[v_zip[2][1], Float64]())
-    assert_true(_type_is_eq[v_zip[2][2], UInt64]())
-
-
-def test_zip_values_empty() raises:
-    comptime v1 = ParameterList.empty_of[Int]()
-    comptime v2 = ParameterList.empty_of[Int]()
-    comptime v_zip = Variadic.zip_values[v1.values, v2.values]()
-    assert_equal(v_zip.size, 1)
-    assert_equal(ParameterList[v_zip[0]].size, 0)
-    assert_equal(ParameterList[v_zip[1]].size, 0)
-
-
-def test_zip_values_uneven() raises:
-    comptime v1 = Variadic.values[1, 2, 3]
-    comptime v2 = Variadic.values[4, 5]
-    comptime v_zip = Variadic.zip_values[v1, v2]()
-    assert_equal(v_zip.size, 2)
-    assert_equal(v_zip[0][0], 1)
-    assert_equal(v_zip[0][1], 4)
-    assert_equal(v_zip[1][0], 2)
-    assert_equal(v_zip[1][1], 5)
-
-
-def test_zip_values() raises:
-    comptime v1 = Variadic.values[1, 2, 3]
-    comptime v2 = Variadic.values[4, 5, 6]
-    comptime v_zip = Variadic.zip_values[v1, v2]()
-    assert_equal(v_zip.size, 3)
-    assert_equal(v_zip[0][0], 1)
-    assert_equal(v_zip[0][1], 4)
-    assert_equal(v_zip[1][0], 2)
-    assert_equal(v_zip[1][1], 5)
-    assert_equal(v_zip[2][0], 3)
-    assert_equal(v_zip[2][1], 6)
-
-
-def test_zip_values_triple() raises:
-    comptime v1 = Variadic.values[1, 2, 3]
-    comptime v2 = Variadic.values[4, 5, 6]
-    comptime v3 = Variadic.values[7, 8, 9]
-    comptime v_zip = Variadic.zip_values[v1, v2, v3]()
-    assert_equal(v_zip.size, 3)
-    assert_equal(v_zip[0][0], 1)
-    assert_equal(v_zip[0][1], 4)
-    assert_equal(v_zip[0][2], 7)
-    assert_equal(v_zip[1][0], 2)
-    assert_equal(v_zip[1][1], 5)
-    assert_equal(v_zip[1][2], 8)
-    assert_equal(v_zip[2][0], 3)
-    assert_equal(v_zip[2][1], 6)
-    assert_equal(v_zip[2][2], 9)
-
-
 def test_slice_types_empty() raises:
-    comptime types = Variadic.slice_types[
-        Variadic.empty_of_trait[Writable], start=0, end=0
-    ]
+    comptime types = TypeList.of[Trait=Writable]().slice[start=0, end=0]()
     assert_equal(types.size, 0)
 
 
 def test_slice_types() raises:
-    comptime types = Variadic.slice_types[
-        Variadic.types[T=AnyType, Int, String, Float32], start=0, end=2
+    comptime types = TypeList.of[Trait=AnyType, Int, String, Float32]().slice[
+        start=0, end=2
     ]()
     assert_equal(types.size, 2)
     assert_true(_type_is_eq[types[0], Int]())

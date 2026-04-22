@@ -189,8 +189,8 @@ Each `Weight` in a `Module` must have a unique `name` argument. The module
 stores weights in a dictionary keyed by this name, so if two weights at the
 same level share a name, the second silently overwrites the first. Weights in
 different sub-modules don't conflict because MAX prepends the sub-module path
-automatically (for example, creating `fc1.weight` and `fc2.weight`). We'll
-explore this mechanism more in the following section.
+to the weight name automatically. We'll explore this mechanism more in the
+following section.
 
 :::
 
@@ -246,18 +246,16 @@ in the hierarchy and assemble fully-qualified names, mirroring how PyTorch's
 
 ## Turn a module into a graph
 
-The final step is to construct a graph. When the `Graph` constructor
-receives a callable as its
-`forward` argument (its second positional parameter), it traces that callable
-into a static computation graph. Because `Module` defines `__call__()`, you can
-pass a module instance directly to the constructor.
+The final step is to build the model graph. To do so, pass a callable to
+the forward argument of the `Graph` constructor along with a list of objects
+that describe the callable's parameters.
 
 ```python
 from max.graph import Graph, TensorType
 
 graph = Graph(
     "my_model",
-    model,
+    forward=model,
     input_types=[TensorType(DType.float32, shape=[1, 512], device=DeviceRef.GPU())],
 )
 ```
@@ -267,22 +265,32 @@ Here's what happens when you instantiate a `Graph`:
 1. The constructor opens a `Graph` context, or a scope that establishes
    an active graph.
 
-2. The constructor creates symbolic `TensorValue` objects from `input_types`
-   that define the shape, dtype, and device of the inputs.
+2. The constructor creates symbolic `TensorValue` object(s) from `input_types`.
+   The `input_types` argument accepts a list of `TensorTypes` that define the
+   shape, dtype, and device of corresponding `TensorValue` objects.
 
 3. The constructor passes the `TensorValue` objects to the callable
-   object. In this case, the callable is the `model` module.
+   (in this case, the `model` module).
 
 4. Each operation inside `__call__()` records itself as a node in the
    active graph. You can only call a module from inside a `Graph`
-   context, because there is no active graph to record into otherwise.
+   context, because there's no active graph to record into otherwise.
 
 5. The constructor records the return value of `__call__()` as the graph output.
 
-As you can see clearly here, the `__call__()` method does not perform a forward
-pass on tensors. It only records the operations into a graph. To perform a
-forward pass, you must first load the `Graph` instance into an inference
-session, which compiles the graph with hardware-specific optimizations.
+As you can see, the `__call__()` method doesn't perform a forward pass on
+tensors. It only records the operations into a graph. To perform a forward
+pass, you must first load the `Graph` instance into an inference session, which
+compiles the graph with hardware-specific optimizations.
+
+:::note
+
+The shape of each `TensorType` in `input_types` must match what your module
+expects. In this example, `model` is a `FeedForwardBlock(dim=512, ...)`, whose
+first `Linear` layer requires a last dimension of 512. That's why the input
+shape is `[1, 512]`.
+
+:::
 
 ## Run the model locally
 

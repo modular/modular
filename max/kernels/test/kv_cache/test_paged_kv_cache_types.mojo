@@ -307,7 +307,7 @@ def test_paged_kv_cache_offset_correctness() raises:
 
     # Access via the blocks TileTensor - this tests the layout offset computation
     var idx = coord[DType.int64](Tuple(1, 0, 1, 2))
-    var value = key_cache.blocks.ptr.load[width=1](key_cache.blocks.layout(idx))
+    var value = key_cache.blocks.raw_load[width=1](key_cache.blocks.layout(idx))
     var expected_value = Float32(expected_6d_offset)
 
     assert_true(

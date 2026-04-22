@@ -63,6 +63,7 @@ def register_all_models() -> None:
     from .llama3 import llama_arch
     from .llama3_modulev3 import llama_modulev3_arch
     from .mamba import mamba_arch
+    from .minimax_m2 import minimax_m2_arch
     from .mistral import mistral_arch
     from .mistral3 import mistral3_arch
     from .mpnet import mpnet_arch
@@ -121,6 +122,7 @@ def register_all_models() -> None:
         llama_arch,
         llama_modulev3_arch,
         mamba_arch,
+        minimax_m2_arch,
         bert_arch,
         mistral_arch,
         mistral3_arch,
