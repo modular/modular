@@ -101,6 +101,7 @@ _NVIDIA_ONLY = ["//:has_gpu"] + select({
 # Each generates a modular_py_test from test_<name>.py.
 _HARNESS_TESTS = {
     "harness_attention_with_rope_bf16": _GPU_CONSTRAINTS,
+    "harness_attention_unfused_rope": _GPU_CONSTRAINTS,
     "harness_attention_with_rope_fp4": ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//:amd_gpu": ["@platforms//:incompatible"],

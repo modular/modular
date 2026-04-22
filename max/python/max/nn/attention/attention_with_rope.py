@@ -76,6 +76,7 @@ class AttentionWithRope(Module, Shardable):
         clip_qkv: float | None = None,
         use_qk_norm: bool = False,
         rms_norm_eps: float = 1e-6,
+        _fuse_rope_and_store: bool = True,
     ) -> None:
         """Initializes the attention layer.
 
@@ -97,6 +98,9 @@ class AttentionWithRope(Module, Shardable):
             clip_qkv: If provided, clamp Q/K/V weights to [-clip_qkv, clip_qkv].
             use_qk_norm: Whether to use RMSNorm on Q/K.
             rms_norm_eps: Value to use for numerical stability in RMSNorm.
+            _fuse_rope_and_store: If True (default), emit a single fused
+                rope+split+store custom op. If False, emit separate rope, split,
+                and store ops to test graph compiler fusion.
         """
         super().__init__()
         self.rope = rope
@@ -116,6 +120,7 @@ class AttentionWithRope(Module, Shardable):
         self.stacked_qkv = stacked_qkv
         self.use_qk_norm = use_qk_norm
         self.rms_norm_eps = rms_norm_eps
+        self._fuse_rope_and_store = _fuse_rope_and_store
         self._sharding_strategy: ShardingStrategy | None = None
 
         if self.use_qk_norm:
@@ -519,6 +524,7 @@ class AttentionWithRope(Module, Shardable):
             layer_idx=layer_idx,
             n_heads=self.n_heads,
             interleaved=self.rope.interleaved,
+            fuse=self._fuse_rope_and_store,
         )
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 

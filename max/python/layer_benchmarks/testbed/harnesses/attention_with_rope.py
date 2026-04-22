@@ -220,6 +220,8 @@ class AttentionWithRopeHarness(
             **rope_kwargs,
         )
 
+        fuse_rope = p._fuse_rope_and_store
+
         layer_kwargs: dict[str, Any] = {
             "rope": rope,
             "num_attention_heads": n_heads,
@@ -230,6 +232,7 @@ class AttentionWithRopeHarness(
             "has_bias": False,
             "dtype": layer_dtype,
             "devices": [DeviceRef.GPU()],
+            "_fuse_rope_and_store": fuse_rope,
         }
         if quant_config is not None:
             layer_kwargs["quant_config"] = quant_config

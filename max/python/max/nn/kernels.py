@@ -311,7 +311,9 @@ def rope_split_store_ragged(
             f"expected freqs_cis to have rank 2, was {freqs_cis.rank}"
         )
 
-    output_dim = n_heads * kv_params.head_dim
+    head_dim = kv_params.head_dim
+    q_dim = n_heads * head_dim
+    kv_dim = kv_params.n_kv_heads * head_dim
 
     if not fuse:
         return _rope_split_store_ragged_unfused(
@@ -380,7 +382,7 @@ def rope_split_store_ragged(
         out_types=[
             TensorType(
                 dtype=qkv.dtype,
-                shape=qkv.shape[:-1] + [output_dim],
+                shape=qkv.shape[:-1] + [q_dim],
                 device=qkv.device,
             )
         ],
