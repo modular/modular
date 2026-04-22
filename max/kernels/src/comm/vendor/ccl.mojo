@@ -368,7 +368,7 @@ def allreduce[
             simd_width: Int, _rank: Int, alignment: Int = 1
         ](idx: IndexList[_rank]):
             var flat_idx = idx[0]
-            var val = output_tensor.ptr.load[
+            var val = output_tensor.raw_load[
                 width=simd_width,
                 alignment=alignment * size_of[dtype](),
             ](flat_idx)

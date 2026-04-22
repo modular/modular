@@ -140,7 +140,7 @@ def run_rms_norm_rope_gpu[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
-        return data_buf.ptr.load[width=width](idx)
+        return data_buf.raw_load[width=width](idx)
 
     @always_inline
     @__copy_capture(cos_vals)
@@ -149,7 +149,7 @@ def run_rms_norm_rope_gpu[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
         var idx = cos_vals.layout(Coord(coords))
-        return cos_vals.ptr.load[width=width](idx)
+        return cos_vals.raw_load[width=width](idx)
 
     @always_inline
     @__copy_capture(sin_vals)
@@ -158,7 +158,7 @@ def run_rms_norm_rope_gpu[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
         var idx = sin_vals.layout(Coord(coords))
-        return sin_vals.ptr.load[width=width](idx)
+        return sin_vals.raw_load[width=width](idx)
 
     @always_inline
     @__copy_capture(output_buf)
@@ -167,7 +167,7 @@ def run_rms_norm_rope_gpu[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = output_buf.layout(Coord(coords))
-        output_buf.ptr.store[width=width, alignment=alignment](idx, val)
+        output_buf.raw_store[width=width, alignment=alignment](idx, val)
 
     rms_norm_rope_gpu[
         input_fn, cos_fn, sin_fn, output_fn, multiply_before_cast=True

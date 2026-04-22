@@ -19,6 +19,7 @@ Helper functions for Expert Parallelism (EP) Communication Kernels.
 from std.collections import OptionalReg
 
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
+from std.gpu.host import FuncAttribute
 from std.gpu.host.info import is_gpu
 from layout import TensorLayout, TileTensor, Idx
 from layout.tile_tensor import row_major
@@ -138,6 +139,14 @@ def ep_dispatch_async_kernel_api[
     comptime assert (
         send_ptrs.flat_rank == 1
     ), "Send pointers must be a 1D tensor."
+
+    debug_assert[assert_mode="safe"](
+        Int(input_tokens.dim(0)) <= max_token_per_rank,
+        "Cannot dispatch EP kernel with ",
+        input_tokens.dim(0),
+        " input tokens when the maximum tokens per rank is ",
+        max_token_per_rank,
+    )
 
     var gpu_ctx = context.get_device_context()
 
@@ -353,6 +362,7 @@ def ep_dispatch_wait_kernel_api[
             )
         )
 
+        var smem_size = UInt32(token_fmt_type.dispatch_smem_size)
         gpu_ctx.enqueue_function[dispatch_wait, dispatch_wait](
             token_handler,
             row_offsets,
@@ -365,6 +375,10 @@ def ep_dispatch_wait_kernel_api[
             maybe_fused_shared_expert_input,
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
+            shared_mem_bytes=Int(smem_size),
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                smem_size
+            ),
         )
 
 
@@ -449,6 +463,14 @@ def ep_fused_dispatch_kernel_api[
         topk_ids.static_shape[1] == token_fmt_type.top_k
     ), "EP dispatch: topk ids shape doesn't match top k."
 
+    debug_assert[assert_mode="safe"](
+        Int(input_tokens.dim(0)) <= max_token_per_rank,
+        "Cannot dispatch EP kernel with ",
+        input_tokens.dim(0),
+        " input tokens when the maximum tokens per rank is ",
+        max_token_per_rank,
+    )
+
     var gpu_ctx = context.get_device_context()
     var gpu_id = Int(gpu_ctx.id())
     var my_rank = Int32(gpu_id)
@@ -497,7 +519,12 @@ def ep_fused_dispatch_kernel_api[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
         task_id=get_safe_task_id(context),
     ):
-        var func = gpu_ctx.compile_function[fused_dispatch, fused_dispatch]()
+        var smem_size = UInt32(token_fmt_type.dispatch_smem_size)
+        var func = gpu_ctx.compile_function[fused_dispatch, fused_dispatch](
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                smem_size
+            ),
+        )
 
         comptime if use_shmem:
             var cached_module_key = String(
@@ -541,6 +568,7 @@ def ep_fused_dispatch_kernel_api[
             my_rank,
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
+            shared_mem_bytes=Int(smem_size),
             attributes=pdl_launch_attributes(PDLLevel(1)),
         )
 

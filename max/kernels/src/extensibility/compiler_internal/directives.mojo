@@ -52,14 +52,10 @@ comptime _RowMajorTileLayout[
 ]
 """A TileLayout with row-major strides derived from the given shape types."""
 
-comptime _AsCoordLike[T: CoordLike] = T
-
 comptime _IndexListToCoordLikeTabulator[
     list: IndexList,
-    idx: Int,
-]: CoordLike = ComptimeInt[list[idx]] if list[idx] >= 0 else _AsCoordLike[
-    RuntimeInt[]
-]
+    idx: SIMDSize,
+]: CoordLike = ComptimeInt[list[idx]] if list[idx] >= 0 else RuntimeInt[]
 
 """Maps a single IndexList element to a CoordLike type.
 Negative values (-1 = dynamic) become RuntimeInt, others become ComptimeInt."""
@@ -169,7 +165,7 @@ trait OutputFusion(TrivialRegisterPassable):
     def store[
         dtype: DType,
         rank: Int,
-        simd_width: Int,
+        simd_width: SIMDSize,
         element_alignment: Int = 1,
     ](self, idx: IndexList[rank], val: SIMD[dtype, simd_width]):
         ...
@@ -182,7 +178,7 @@ trait ComputeOutputFusion(TrivialRegisterPassable):
     def compute[
         dtype: DType,
         rank: Int,
-        simd_width: Int,
+        simd_width: SIMDSize,
         element_alignment: Int = 1,
     ](self, idx: IndexList[rank], val: SIMD[dtype, simd_width]) -> SIMD[
         dtype, simd_width
@@ -227,7 +223,7 @@ struct _NoFusionOut(OutputFusion):
     def store[
         dtype: DType,
         rank: Int,
-        simd_width: Int,
+        simd_width: SIMDSize,
         element_alignment: Int = 1,
     ](self, idx: IndexList[rank], val: SIMD[dtype, simd_width]):
         comptime assert False, "store() not implemented for this OutputFusion"
@@ -242,7 +238,7 @@ struct _NoComputeFusion(ComputeOutputFusion):
     def compute[
         dtype: DType,
         rank: Int,
-        simd_width: Int,
+        simd_width: SIMDSize,
         element_alignment: Int = 1,
     ](self, idx: IndexList[rank], val: SIMD[dtype, simd_width]) -> SIMD[
         dtype, simd_width

@@ -96,21 +96,21 @@ def run_group_norm_gpu[
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
 
-        return data_buf.ptr.load[width=width](idx)
+        return data_buf.raw_load[width=width](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
     def gamma_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Coord(coords))
-        return gamma.ptr.load[width=width](idx)
+        return gamma.raw_load[width=width](idx)
 
     @__copy_capture(beta)
     @always_inline
     @parameter
     def beta_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
         var idx = beta.layout(Coord(coords))
-        return beta.ptr.load[width=width](idx)
+        return beta.raw_load[width=width](idx)
 
     group_norm[dtype, rank, input_fn, gamma_scalar_fn, beta_scalar_fn, "gpu"](
         shape, epsilon, Int32(num_groups), data_buf, ctx=ctx

@@ -684,7 +684,7 @@ def grouped_matmul_amd_kernel_launcher[
     @always_inline
     @parameter
     def elementwise_epilogue_fn_wrapper[
-        dtype: DType, width: Int, *, alignment: Int = 1
+        dtype: DType, width: SIMDSize, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]):
         comptime if elementwise_lambda_fn:
             comptime elementwise_epilogue = elementwise_lambda_fn.value()
@@ -1276,10 +1276,10 @@ def grouped_matmul_vendor[
         task_id=get_safe_task_id(ctx),
     ):
         for i in range(num_active_experts):
-            var expert_id = expert_ids.ptr[i]
+            var expert_id = expert_ids.raw_load(i)
 
-            var token_start = a_offsets.ptr[i]
-            var token_end = a_offsets.ptr[i + 1]
+            var token_start = a_offsets.raw_load(i)
+            var token_end = a_offsets.raw_load(i + 1)
             var num_tokens = Int(token_end - token_start)
 
             # Skip if no tokens for this expert
