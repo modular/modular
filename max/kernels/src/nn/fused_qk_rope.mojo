@@ -39,7 +39,7 @@ from std.utils import IndexList
 def rope_value[
     dtype: DType,
     freq_dtype: DType,
-    width: Int,
+    width: SIMDSize,
 ](val: SIMD[dtype, width], freq: SIMD[freq_dtype, width]) -> SIMD[dtype, width]:
     x_re, x_im = val.cast[freq_dtype]().deinterleave()
     f_re, f_im = freq.deinterleave()
@@ -69,11 +69,13 @@ def rope_q_proj[
     dtype: DType,
     freq_dtype: DType,
     rank: Int,
-    width: Int,
+    width: SIMDSize,
     output_dtype: DType,
     //,
     *,
     interleaved: Bool,
+    has_nope_prefix: Bool = False,
+    rope_dim: Int = 0,
     alignment: Int = align_of[SIMD[dtype, width]](),
 ](
     q_proj: TileTensor[dtype, ...],
@@ -88,25 +90,42 @@ def rope_q_proj[
     comptime assert q_proj.flat_rank >= coord.flat_rank
     comptime assert output.flat_rank >= coord.flat_rank
 
-    var indices = get_safetensors_idx(idx[rank - 1], head_size)
-    var pos_re = idx
-    var pos_im = idx
-    pos_re[rank - 1] = indices[0]
-    pos_im[rank - 1] = indices[1]
     comptime width_2 = width // 2
     comptime half_alignment = align_of[
         SIMD[dtype, width_2]
     ]() if alignment == align_of[SIMD[dtype, width]]() else alignment
 
-    var coord_re = Coord(pos_re)
-    var coord_im = Coord(pos_im)
-
-    var val: SIMD[dtype, width]
-
     comptime if interleaved:
-        val = q_proj.load[width=width, alignment=alignment](coord)
+        var val_inter = q_proj.load[width=width, alignment=alignment](coord)
+        var res_inter = rope_value(val_inter, freq_val).cast[output_dtype]()
+        output.store[alignment=alignment](coord, res_inter)
     else:
-        val = rebind[SIMD[dtype, width]](
+        comptime if has_nope_prefix:
+            if idx[rank - 1] >= rope_dim:
+                var val_pass = q_proj.load[width=width, alignment=alignment](
+                    coord
+                )
+                output.store[alignment=alignment](
+                    coord, val_pass.cast[output_dtype]()
+                )
+                return
+
+        var split_size: Int
+        comptime if has_nope_prefix:
+            split_size = rope_dim
+        else:
+            split_size = head_size
+
+        var indices = get_safetensors_idx(idx[rank - 1], split_size)
+        var pos_re = idx
+        var pos_im = idx
+        pos_re[rank - 1] = indices[0]
+        pos_im[rank - 1] = indices[1]
+
+        var coord_re = Coord(pos_re)
+        var coord_im = Coord(pos_im)
+
+        var val = rebind[SIMD[dtype, width]](
             q_proj.load[width=width_2, alignment=half_alignment](
                 coord_re
             ).interleave(
@@ -114,11 +133,7 @@ def rope_q_proj[
             )
         )
 
-    var res = rope_value(val, freq_val).cast[output_dtype]()
-
-    comptime if interleaved:
-        output.store[alignment=alignment](coord, res)
-    else:
+        var res = rope_value(val, freq_val).cast[output_dtype]()
         output_re, output_im = res.deinterleave()
         output.store[alignment=half_alignment](coord_re, output_re)
         output.store[alignment=half_alignment](coord_im, output_im)
@@ -126,7 +141,14 @@ def rope_q_proj[
 
 @always_inline
 def rope_k_cache[
-    freq_dtype: DType, cache_t: KVCacheT, width: Int, //, *, interleaved: Bool
+    freq_dtype: DType,
+    cache_t: KVCacheT,
+    width: SIMDSize,
+    //,
+    *,
+    interleaved: Bool,
+    has_nope_prefix: Bool = False,
+    rope_prefix_dim: Int = 0,
 ](
     k_cache: cache_t,
     b_idx: Int,
@@ -136,20 +158,27 @@ def rope_k_cache[
     freq_val: SIMD[freq_dtype, width],
     head_size: Int,
 ):
-    h_re, h_im = get_safetensors_idx(d_idx, head_size)
     comptime width_2 = width // 2
     comptime cache_type = cache_t.dtype
     # TODO: Remove this once FP8 KVCache is supported (KERN-2394).
     comptime accum_type = get_accum_type[cache_type]()
 
-    var val: SIMD[accum_type, width]
-
     comptime if interleaved:
-        val = k_cache.load[width=width](b_idx, h_idx, s_idx, d_idx).cast[
-            accum_type
-        ]()
+        var val_inter = k_cache.load[width=width](
+            b_idx, h_idx, s_idx, d_idx
+        ).cast[accum_type]()
+        var res_inter = rope_value(val_inter, freq_val).cast[cache_type]()
+        k_cache.store(b_idx, h_idx, s_idx, d_idx, res_inter)
     else:
-        val = rebind[SIMD[accum_type, width]](
+        var split_size: Int
+        comptime if has_nope_prefix:
+            split_size = rope_prefix_dim
+        else:
+            split_size = head_size
+
+        h_re, h_im = get_safetensors_idx(d_idx, split_size)
+
+        var val = rebind[SIMD[accum_type, width]](
             k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_re)
             .cast[accum_type]()
             .interleave(
@@ -159,11 +188,7 @@ def rope_k_cache[
             )
         )
 
-    var res = rope_value(val, freq_val).cast[cache_type]()
-
-    comptime if interleaved:
-        k_cache.store(b_idx, h_idx, s_idx, d_idx, res)
-    else:
+        var res = rope_value(val, freq_val).cast[cache_type]()
         output_re, output_im = res.deinterleave()
         k_cache.store(b_idx, h_idx, s_idx, h_re, output_re)
         k_cache.store(b_idx, h_idx, s_idx, h_im, output_im)
@@ -300,10 +325,10 @@ def fused_qk_rope_ragged[
     *,
     interleaved: Bool,
     target: StaticString,
-    mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
-        CoordLike
-    ],
-    mrope_section: Optional[Coord[*TypeList[mrope_types]()]] = None,
+    mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
+        Trait=CoordLike
+    ](),
+    mrope_section: Optional[Coord[*mrope_types]] = None,
     PositionIdsLayoutType: TensorLayout = RowMajorLayout[
         *Coord[RuntimeInt[DType.int64], RuntimeInt[DType.int64]].element_types
     ],
@@ -357,11 +382,11 @@ def fused_qk_rope_ragged[
         + " and head_size = "
         + String(k_head_size)
     )
-    comptime assert (
-        rope_dim == q_head_size and rope_dim == k_head_size
-    ) or interleaved, (
-        "Partial RoPE operation only supported for interleaved pattern"
-    )
+    comptime has_nope_prefix = has_nope and not interleaved
+    comptime if has_nope and not interleaved:
+        comptime assert (
+            rope_dim % 2 == 0
+        ), "prefix partial RoPE rope_dim must be even for split layout"
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
 
@@ -417,15 +442,21 @@ def fused_qk_rope_ragged[
             # WARN assumes head_size % simd_width == 0
             # guarded by constrained statement below
             var is_q_proj = head_idx < num_q_heads
-            var is_unroped_region = head_dim_idx < unroped_dim
             comptime _alignment = 1 if is_cpu[target]() else align_of[
                 SIMD[freq_dtype, width]
             ]()
 
             var f_c_temp: SIMD[freq_dtype, width]
 
-            comptime if has_nope:
-                if is_unroped_region:
+            comptime if has_nope_prefix:
+                if head_dim_idx >= rope_dim:
+                    f_c_temp = get_identity_rope_coeff[width, freq_dtype]()
+                else:
+                    f_c_temp = freqs_cis.load[
+                        width=width, alignment=_alignment
+                    ]((Idx(position_ids_idx), Idx(head_dim_idx)))
+            elif has_nope:
+                if head_dim_idx < unroped_dim:
                     f_c_temp = get_identity_rope_coeff[width, freq_dtype]()
                 else:
                     f_c_temp = freqs_cis.load[
@@ -437,18 +468,28 @@ def fused_qk_rope_ragged[
                 )
 
             if is_q_proj:
-                rope_q_proj[interleaved=interleaved, alignment=_alignment](
-                    q_proj, output, idx, f_c_temp, q_head_size
-                )
+                rope_q_proj[
+                    interleaved=interleaved,
+                    has_nope_prefix=has_nope_prefix,
+                    rope_dim=rope_dim,
+                    alignment=_alignment,
+                ](q_proj, output, idx, f_c_temp, q_head_size)
             else:
-                comptime if has_nope:
-                    if is_unroped_region:
+                comptime if has_nope_prefix:
+                    if head_dim_idx >= rope_dim:
+                        return
+                elif has_nope:
+                    if head_dim_idx < unroped_dim:
                         return
 
                 head_idx -= num_q_heads
                 # in case k_head_size != q_head_size
                 head_dim_idx += k_head_size - q_head_size
-                rope_k_cache[interleaved=interleaved](
+                rope_k_cache[
+                    interleaved=interleaved,
+                    has_nope_prefix=has_nope_prefix,
+                    rope_prefix_dim=rope_dim,
+                ](
                     k_cache,
                     batch_idx,
                     head_idx,

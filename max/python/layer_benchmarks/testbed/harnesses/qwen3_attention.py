@@ -52,18 +52,11 @@ from transformers.models.qwen3.modeling_qwen3 import (
 from transformers.models.qwen3.modeling_qwen3 import Qwen3RotaryEmbedding
 
 from testbed.harnesses.ragged_attention_harness import (
-    HF_TO_HARNESS_BASE,
     AttentionDynamicParams,
     AttentionStaticParams,
     RaggedAttentionHarness,
 )
 from testbed.registry import register_harness
-
-_HF_TO_HARNESS = {
-    **HF_TO_HARNESS_BASE,
-    "q_norm.weight": "q_norm.weight",
-    "k_norm.weight": "k_norm.weight",
-}
 
 
 @dataclass
@@ -135,15 +128,15 @@ class Qwen3AttentionHarness(RaggedAttentionHarness[Qwen3AttentionStaticParams]):
         kv_dim = n_kv_heads * head_dim
 
         weights: dict[str, torch.Tensor] = {
-            "qkv_proj.q.weight": torch.randn(
+            "q_proj.weight": torch.randn(
                 q_dim, hidden_size, dtype=torch.bfloat16
             )
             * 0.0344,
-            "qkv_proj.k.weight": torch.randn(
+            "k_proj.weight": torch.randn(
                 kv_dim, hidden_size, dtype=torch.bfloat16
             )
             * 0.0317,
-            "qkv_proj.v.weight": torch.randn(
+            "v_proj.weight": torch.randn(
                 kv_dim, hidden_size, dtype=torch.bfloat16
             )
             * 0.0316,
@@ -234,9 +227,8 @@ class Qwen3AttentionHarness(RaggedAttentionHarness[Qwen3AttentionStaticParams]):
 
         # Load matching weights.
         for name, param in layer.named_parameters():
-            harness_name = _HF_TO_HARNESS.get(name, name)
-            if harness_name in self._torch_weights:
-                param.data = self._torch_weights[harness_name].to(
+            if name in self._torch_weights:
+                param.data = self._torch_weights[name].to(
                     device=device, dtype=torch.bfloat16
                 )
 

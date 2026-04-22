@@ -537,7 +537,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         dst.context().enqueue_copy(dst, self)
 
     def enqueue_copy_to(
-        self, dst_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+        self, dst_ptr: OptionalUnsafePointer[mut=True, Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
@@ -587,7 +587,7 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         self.context().enqueue_copy(self, src)
 
     def enqueue_copy_from(
-        self, src_ptr: UnsafePointer[Scalar[Self.dtype], _]
+        self, src_ptr: OptionalUnsafePointer[Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
 
@@ -1183,7 +1183,7 @@ struct DeviceBuffer[dtype: DType](
         dst.context().enqueue_copy(dst, self)
 
     def enqueue_copy_to(
-        self, dst_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+        self, dst_ptr: OptionalUnsafePointer[mut=True, Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
@@ -1233,7 +1233,7 @@ struct DeviceBuffer[dtype: DType](
         self.context().enqueue_copy(self, src)
 
     def enqueue_copy_from(
-        self, src_ptr: UnsafePointer[Scalar[Self.dtype], _]
+        self, src_ptr: OptionalUnsafePointer[Scalar[Self.dtype], _]
     ) raises:
         """Enqueues an asynchronous copy to this buffer from host memory.
 
@@ -2595,7 +2595,9 @@ struct DeviceFunction[
         var num_translated_args = 0
 
         comptime for i in range(num_args):
-            comptime declared_arg_type = Self.declared_arg_types.value()[i]
+            comptime declared_arg_type = TypeList[
+                Self.declared_arg_types.value()
+            ]()[i]
             comptime actual_arg_type = Ts[i]
 
             def declared_arg_type_name() -> String:
@@ -5904,7 +5906,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     ](
         self,
         dst_buf: DeviceBuffer[dtype, ...],
-        src_ptr: UnsafePointer[Scalar[dtype], ...],
+        src_ptr: OptionalUnsafePointer[Scalar[dtype], ...],
     ) raises:
         """Enqueues an async copy from the host to the provided device
         buffer. The number of bytes copied is determined by the size of the
@@ -5925,13 +5927,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             external_call[
                 "AsyncRT_DeviceContext_HtoD_async",
                 _CString[],
-                _DeviceContextPtr[mut=True],
-                _DeviceBufferPtr[mut=True],
-                OpaquePointer[MutAnyOrigin],
             ](
                 self._handle,
                 dst_buf._handle,
-                OpaquePointer[MutAnyOrigin](unsafe_from_address=Int(src_ptr)),
+                src_ptr,
             )
         )
 
@@ -5941,7 +5940,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
     ](
         self,
         dst_buf: HostBuffer[dtype, ...],
-        src_ptr: UnsafePointer[Scalar[dtype], ...],
+        src_ptr: OptionalUnsafePointer[Scalar[dtype], ...],
     ) raises:
         """Enqueues an async copy from the host to the provided device
         buffer. The number of bytes copied is determined by the size of the
@@ -5962,13 +5961,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             external_call[
                 "AsyncRT_DeviceContext_HtoD_async",
                 _CString[],
-                _DeviceContextPtr[mut=True],
-                _DeviceBufferPtr[mut=True],
-                OpaquePointer[MutAnyOrigin],
             ](
                 self._handle,
                 dst_buf._handle,
-                OpaquePointer[MutAnyOrigin](unsafe_from_address=Int(src_ptr)),
+                src_ptr,
             )
         )
 
@@ -5977,7 +5973,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         dtype: DType
     ](
         self,
-        dst_ptr: UnsafePointer[Scalar[dtype], ...],
+        dst_ptr: OptionalUnsafePointer[mut=True, Scalar[dtype], ...],
         src_buf: DeviceBuffer[dtype, ...],
     ) raises:
         """Enqueues an async copy from the device to the host. The
@@ -5998,12 +5994,9 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             external_call[
                 "AsyncRT_DeviceContext_DtoH_async",
                 _CString[],
-                _DeviceContextPtr[mut=True],
-                OpaquePointer[MutAnyOrigin],
-                _DeviceBufferPtr[mut=True],
             ](
                 self._handle,
-                OpaquePointer[MutAnyOrigin](unsafe_from_address=Int(dst_ptr)),
+                dst_ptr,
                 src_buf._handle,
             )
         )
@@ -6013,7 +6006,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         dtype: DType
     ](
         self,
-        dst_ptr: UnsafePointer[Scalar[dtype], ...],
+        dst_ptr: OptionalUnsafePointer[mut=True, Scalar[dtype], ...],
         src_buf: HostBuffer[dtype, ...],
     ) raises:
         """Enqueues an async copy from the device to the host. The
@@ -6034,12 +6027,9 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
             external_call[
                 "AsyncRT_DeviceContext_DtoH_async",
                 _CString[],
-                _DeviceContextPtr[mut=True],
-                OpaquePointer[MutAnyOrigin],
-                _DeviceBufferPtr[mut=True],
             ](
                 self._handle,
-                OpaquePointer[MutAnyOrigin](unsafe_from_address=Int(dst_ptr)),
+                dst_ptr,
                 src_buf._handle,
             )
         )
@@ -6049,8 +6039,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         dtype: DType
     ](
         self,
-        dst_ptr: UnsafePointer[Scalar[dtype], ...],
-        src_ptr: UnsafePointer[Scalar[dtype], ...],
+        dst_ptr: OptionalUnsafePointer[mut=True, Scalar[dtype], ...],
+        src_ptr: OptionalUnsafePointer[Scalar[dtype], ...],
         size: Int,
     ) raises:
         """Enqueues an async copy of `size` elements from a device pointer to
@@ -6067,22 +6057,21 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         Raises:
             If the operation fails.
         """
-        # Not directly implemented on DeviceContext, wrap in buffers first
-        # Cast to the DeviceBuffer's expected pointer type via address
-        comptime _BufPtr = UnsafePointer[Scalar[dtype], MutAnyOrigin]
-        var dst_buf = DeviceBuffer[dtype](
-            self,
-            _BufPtr(unsafe_from_address=Int(dst_ptr)),
-            size,
-            owning=False,
-        )
-        var src_buf = DeviceBuffer[dtype](
-            self,
-            _BufPtr(unsafe_from_address=Int(src_ptr)),
-            size,
-            owning=False,
-        )
-        self.enqueue_copy(dst_buf, src_buf)
+
+        def to_device_buffer(
+            pointer: OptionalUnsafePointer[Scalar[dtype], ...]
+        ) unified {read} -> DeviceBuffer[dtype]:
+            if pointer:
+                return DeviceBuffer[dtype](
+                    self,
+                    pointer.unsafe_value(),
+                    size,
+                    owning=False,
+                )
+            else:
+                return DeviceBuffer[dtype].empty(self)
+
+        self.enqueue_copy(to_device_buffer(dst_ptr), to_device_buffer(src_ptr))
 
     @always_inline
     def enqueue_copy[
