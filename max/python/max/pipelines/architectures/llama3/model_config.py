@@ -272,7 +272,7 @@ class Llama3Config(ArchConfigWithKVCache):
         )
         rope_scaling_params: Llama3RopeScalingParams | None = None
         longrope_scaling_params: LongRoPEScalingParams | None = None
-        rope_scaling = huggingface_config.rope_scaling
+        rope_scaling = getattr(huggingface_config, "rope_scaling", None)
 
         if rope_scaling is not None:
             # Since "rope_type" huggingface config is not standardized, we need

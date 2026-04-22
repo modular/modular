@@ -1777,6 +1777,17 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
     "nvidia/Kimi-K2.5-NVFP4": KimiK2_5PipelineOracle("nvidia/Kimi-K2.5-NVFP4"),
+    "MiniMaxAI/MiniMax-M2.7": GenericOracle(
+        model_path="MiniMaxAI/MiniMax-M2.7",
+        config_params={
+            "max_length": 516,
+            "trust_remote_code": True,
+            "max_batch_input_tokens": 512,
+            "ep_size": 8,
+            "data_parallel_degree": 8,
+        },
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+    ),
     "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",
         config_params={

@@ -781,6 +781,19 @@ logit_verification_pipelines:
     cos_dist_threshold: 2.0e-03
     kl_div_threshold: 5.0e+00
 
+  MiniMaxAI/MiniMax-M2.7:
+    pre_submit_agents: []
+    post_submit_agents: [*b200_8x]
+    pipeline: "MiniMaxAI/MiniMax-M2.7"
+    compatible_with: [gpu]
+    encoding: float8_e4m3fn
+    tags: [nvidia-multi, 8xb200]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/MiniMaxAI_MiniMax-M2.7_golden/1/e39d1d7daf4680a1210384453df4bb2b85caf9063a86c5e588183146d209208d/MiniMaxAI_MiniMax-M2.7_golden.tar.gz"
+      json_file: "torch_MiniMaxAI_MiniMax-M2.7_float8_e4m3fn_golden.json"
+    cos_dist_threshold: 3.1e-01
+    kl_div_threshold: 1.0e-01
+
   deepseek-ai/DeepSeek-V3.1-Terminus:
     pre_submit_agents: []
     post_submit_agents: [*b200_8x]

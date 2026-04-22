@@ -450,6 +450,7 @@ def call_eval(
             "internvl3_5",
             "qwen3",
             "kimi-k2.5",
+            "minimax-m2",
         )
     )
     # Reasoning models needs extra tokens for .. reasoning
