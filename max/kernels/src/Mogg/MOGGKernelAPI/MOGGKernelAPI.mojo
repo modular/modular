@@ -4678,21 +4678,34 @@ struct FusedConcatSlice:
             # so we only check the outer rank-1 dimensions.
             var slice_indices = IndexList[rank]()
 
-            comptime for i in range(rank - 1):
+            comptime slice_in_shape = concat_output._static_shape_tuple
+            comptime slice_out_shape = slice_output._static_shape_tuple
+
+            comptime for i in range(rank):
                 comptime start = Int(static_starts[i])
                 comptime step = Int(static_steps[i])
-                var start_norm = (
-                    start if start >= 0 else start + concat_output.dim_size[i]()
-                )
-                if (indices[i] - start_norm) % step != 0:
-                    return
-                var slice_idx = (indices[i] - start_norm) // step
-                if slice_idx < 0 or slice_idx >= slice_output.dim_size[i]():
-                    return
-                slice_indices[i] = slice_idx
 
-            # Inner dimension is not sliced: index passes through directly.
-            slice_indices[rank - 1] = concat_indices[rank - 1]
+                comptime dim_not_sliced = i == rank - 1 or (
+                    start == 0
+                    and step == 1
+                    and Int(slice_in_shape[i]) != UNKNOWN_VALUE
+                    and Int(slice_in_shape[i]) == Int(slice_out_shape[i])
+                )
+
+                comptime if dim_not_sliced:
+                    slice_indices[i] = concat_indices[i]
+                else:
+                    var start_norm = (
+                        start if start
+                        >= 0 else start + concat_output.dim_size[i]()
+                    )
+                    if (indices[i] - start_norm) % step != 0:
+                        return
+                    var slice_idx = (indices[i] - start_norm) // step
+                    if slice_idx < 0 or slice_idx >= slice_output.dim_size[i]():
+                        return
+                    slice_indices[i] = slice_idx
+
             slice_output._lambda_store[
                 width=width, element_alignment=alignment
             ](
