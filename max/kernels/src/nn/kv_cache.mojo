@@ -330,7 +330,7 @@ def _fused_qkv_matmul_kv_cache_impl[
     @__copy_capture(q_dim, qk_offset, SEQ_LEN, k_cache, v_cache, valid_lengths)
     @always_inline
     def write_to_cache[
-        dtype_: DType, width: Int, *, alignment: Int = 1
+        dtype_: DType, width: SIMDSize, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype_, width]):
         var b_idx, t_idx = udivmod(idx[0], SEQ_LEN)
         if idx[1] < q_dim:
@@ -406,29 +406,38 @@ def _matmul_common[
     )
 
     comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
-    var c_nd: LayoutTensor[dtype, c_layout, MutAnyOrigin]
 
     comptime if is_cpu[target]():
         var c_ptr = alloc[Scalar[dtype]](BS * SEQ_LEN * N)
-
-        c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
+        var c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
             c_ptr,
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
+
+        matmul[
+            transpose_b=True,
+            target=target,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
+
+        c_nd.ptr.free()
     else:
-        c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
-            None,
+        # Allocate a device-local scratch for the matmul accumulator; the
+        # epilogue lambda reads from it and scatters Q/K/V to the real
+        # output and KV cache.
+        var c_device_buffer = context.value().enqueue_create_buffer[dtype](
+            BS * SEQ_LEN * N
+        )
+        var c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
+            c_device_buffer.unsafe_ptr(),
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
 
-    matmul[
-        transpose_b=True,
-        target=target,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
-
-    comptime if is_cpu[target]():
-        c_nd.ptr.free()
+        matmul[
+            transpose_b=True,
+            target=target,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1013,7 +1022,7 @@ def rms_norm_kv_cache_ragged_paged[
     @parameter
     @__copy_capture(k_cache)
     def key_cache_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(
@@ -1161,7 +1170,7 @@ def rms_norm_value_cache_ragged_paged[
     @parameter
     @__copy_capture(v_cache)
     def value_cache_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(

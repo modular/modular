@@ -61,9 +61,7 @@ def matmul[
     ctx: DeviceContextPtr = DeviceContextPtr(),
 ) raises:
     """TileTensor overload of `matmul` with DeviceContextPtr."""
-    var cuda_ctx = Optional[DeviceContext]() if is_cpu[
-        target
-    ]() else ctx.get_device_context()
+    var device_ctx = ctx.get_optional_device_context()
 
     return matmul[
         transpose_a=transpose_a,
@@ -74,7 +72,7 @@ def matmul[
         saturated_vnni=saturated_vnni,
         _trace_description=_trace_description,
         target=target,
-    ](c, a, b, cuda_ctx)
+    ](c, a, b, device_ctx)
 
 
 @always_inline
@@ -188,7 +186,7 @@ def matmul[
             @parameter
             @always_inline
             def compute_lambda_wrapper[
-                _type: DType, _width: Int, *, alignment: Int = 1
+                _type: DType, _width: SIMDSize, *, alignment: Int = 1
             ](coords: IndexList[2], val: SIMD[_type, _width]):
                 comptime if elementwise_compute_lambda_fn:
                     comptime compute_lambda = elementwise_compute_lambda_fn.value()
@@ -208,4 +206,4 @@ def matmul[
                 b_packed=b_packed,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
                 saturated_vnni=saturated_vnni,
-            ](c, a, b, kernel_type_m)
+            ](c, a, b, kernel_type_m, ctx=ctx)

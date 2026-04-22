@@ -20,12 +20,14 @@ from .kernels import (
     block_scales_interleave,
     convert_weights_to_fp8_fnuz_if_needed,
     dynamic_block_scaled_matmul_fp4,
+    dynamic_block_scaled_matmul_mxfp4,
     dynamic_scaled_matmul,
     grouped_dynamic_scaled_fp8_matmul,
     grouped_matmul_ragged,
     matmul_static_scaled_float8,
     mxfp4_dequant,
     quantize_dynamic_block_scaled_fp4,
+    quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
     quantize_static_scaled_float8,
     quantize_tensor_dynamic_scaled_float8,
@@ -107,6 +109,39 @@ def _matmul_float4(
         x_scales,
         weight_scale,
         tensor_sf=weight_scale_2 * input_scale,
+        out_type=DType.bfloat16,
+    )
+    return res
+
+
+def _matmul_float4_mxfp4(
+    x: TensorValue,
+    weight: TensorValue,
+    weight_scale: TensorValue,
+) -> TensorValue:
+    """Computes x @ weight.T with MXFP4 quantization.
+
+    Args:
+        x: The input tensor in bf16.
+        weight: The weight tensor in uint8 (float4-e2m1x2).
+        weight_scale: The weight scale tensor in float8_e8m0fnu.
+
+    Returns:
+        The output tensor in bf16.
+    """
+    x, x_scales = quantize_dynamic_block_scaled_mxfp4(
+        x,
+        scales_type=DType.float8_e8m0fnu,
+        out_type=DType.uint8,  # fp4-e2m1fnX2
+    )
+
+    weight_scale = weight_scale.to(x.device)
+
+    res = dynamic_block_scaled_matmul_mxfp4(
+        x,
+        weight,
+        x_scales,
+        weight_scale,
         out_type=DType.bfloat16,
     )
     return res
@@ -271,6 +306,12 @@ def quantized_matmul(
                 input_scale,
                 weight_scale_2,
                 scales_pre_interleaved=quant_config.scales_pre_interleaved,
+            )
+        case QuantFormat.MXFP4:
+            return _matmul_float4_mxfp4(
+                x,
+                weight,
+                weight_scale,
             )
         case (
             QuantFormat.COMPRESSED_TENSORS_FP8

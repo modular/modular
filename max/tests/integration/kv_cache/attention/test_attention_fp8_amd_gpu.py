@@ -118,9 +118,9 @@ def _create_attention_state_dict(
 
     # Common weight entries for all projections
     weights_info = [
-        ("qkv_proj.q", q_weight, num_heads * head_dim),
-        ("qkv_proj.k", k_weight, num_kv_heads * head_dim),
-        ("qkv_proj.v", v_weight, num_kv_heads * head_dim),
+        ("q_proj", q_weight, num_heads * head_dim),
+        ("k_proj", k_weight, num_kv_heads * head_dim),
+        ("v_proj", v_weight, num_kv_heads * head_dim),
         ("o_proj", o_weight, hidden_size),
     ]
 

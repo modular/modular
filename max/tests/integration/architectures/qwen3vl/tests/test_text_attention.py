@@ -221,20 +221,10 @@ def generate_qwen3_max_outputs(
     head_dim = text_config["head_dim"]
     num_kv_heads = text_config["num_key_value_heads"]
 
-    # Remap HuggingFace weight names to MAX StackedLinear names.
-    _HF_TO_MAX = {
-        "q_proj.": "qkv_proj.q.",
-        "k_proj.": "qkv_proj.k.",
-        "v_proj.": "qkv_proj.v.",
+    state_dict = {
+        weight_name: value.to(max_dtype_to_torch(dtype)).cpu()
+        for weight_name, value in attention_weights.items()
     }
-    state_dict = {}
-    for weight_name, value in attention_weights.items():
-        max_name = weight_name
-        for hf, mx in _HF_TO_MAX.items():
-            if max_name.startswith(hf):
-                max_name = mx + max_name[len(hf) :]
-                break
-        state_dict[max_name] = value.to(max_dtype_to_torch(dtype)).cpu()
 
     kv_cache_config = KVCacheConfig()
     kv_params = KVCacheParams(
