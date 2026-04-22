@@ -103,6 +103,15 @@ def ParamClosureType : DialectType<(type
   StringAttr:$name
 )>;
 
+def DeferredType : DialectType<(type)>;
+
+def NeverType : DialectType<(type)>;
+
+def ParamListSplatType : DialectType<(type
+  Type:$elementType,
+  TypedAttr:$count
+)>;
+
 def KGENDialectTypes : DialectTypes<"kgen"> {
   let elems = [
     WrappedParamRefType,
@@ -125,6 +134,9 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     WrappedVariantType,
     ClosureType,
     ParamClosureType,
+    DeferredType,
+    NeverType,
+    ParamListSplatType,
   ];
 }
 

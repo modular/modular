@@ -89,6 +89,10 @@ def MagicMLIROpType : DialectType<(type)>;
 
 def MagicMLIRTypeType : DialectType<(type)>;
 
+def MagicMLIRDeferredAttrType : DialectType<(type)>;
+
+def NameLookupArgWildcardType : DialectType<(type)>;
+
 def LITDialectTypes : DialectTypes<"lit"> {
   let elems = [
     TypeCheckErrorType,
@@ -106,7 +110,9 @@ def LITDialectTypes : DialectTypes<"lit"> {
     REPLResultRefType,
     MagicMLIRAttrType,
     MagicMLIROpType,
-    MagicMLIRTypeType
+    MagicMLIRTypeType,
+    MagicMLIRDeferredAttrType,
+    NameLookupArgWildcardType
   ];
 }
 
