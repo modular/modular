@@ -1369,7 +1369,7 @@ struct HopperMatmulSM90Kernel[
 
             @parameter
             def elementwise_epilogue_fn_wrapper[
-                dtype: DType, width: Int, *, alignment: Int = 1
+                dtype: DType, width: SIMDSize, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
                 comptime if Self.elementwise_lambda_fn:
                     comptime elementwise_epilogue = Self.elementwise_lambda_fn.value()

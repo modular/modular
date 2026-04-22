@@ -283,6 +283,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             else self.max_length,
             json_schema=json_schema,
             sampling_params=request.sampling_params,
+            target_endpoint=request.target_endpoint,
             images=[
                 ImageMetadata(
                     start_idx=start_idx,

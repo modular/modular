@@ -491,7 +491,7 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
     @parameter
     @always_inline
     def input_fn[
-        input_index: Int, width: Int, _rank: Int
+        input_index: Int, width: Int, _rank: Int, alignment: Int = 1
     ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
         comptime if input_index == 0:
             # First input: return constant 1.0
