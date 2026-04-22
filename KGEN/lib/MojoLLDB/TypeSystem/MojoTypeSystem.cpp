@@ -437,8 +437,15 @@ uint32_t MojoTypeSystem::GetTypeInfo(
   if (isa<FloatType>(astType))
     return lldb::eTypeIsFloat | lldb::eTypeHasValue | lldb::eTypeIsScalar;
 
-  if (isa<POP::SIMDType>(astType))
-    return lldb::eTypeHasChildren | lldb::eTypeIsVector;
+  if (auto simdTy = dyn_cast<POP::SIMDType>(astType)) {
+    uint32_t flags = lldb::eTypeHasChildren | lldb::eTypeIsVector;
+    // Scalar SIMD (size == 1) holds a single numeric value. Without
+    // eTypeHasValue, ValueObjectChild::UpdateValue() skips loading m_data but
+    // returns true, causing Checksum(null, 0) → UBSAN abort.
+    if (simdTy.isScalar())
+      flags |= lldb::eTypeHasValue;
+    return flags;
+  }
 
   if (isa<KGEN::StringType>(astType))
     return lldb::eTypeIsPointer | lldb::eTypeHasChildren | lldb::eTypeHasValue;
