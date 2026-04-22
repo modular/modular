@@ -48,13 +48,13 @@ private:
     return start;
   }
 
-  /// Add byval attributes to function declaration for indirect args.
-  /// On x86-64 System V, MEMORY class structs are passed by pointer with the
-  /// byval attribute so the callee knows to copy from stack.
-  void addByvalAttrsToFunc(LLVM::LLVMFuncOp func,
-                           ArrayRef<CoercionInfo> argClassifications,
-                           ExternalCallOp op, size_t numFixedArgs,
-                           bool usesSRet, bool isVariadic) const {
+  /// Overlay byval attributes for indirect args onto the given per-parameter
+  /// attribute lists. On x86-64 System V, MEMORY class structs are passed by
+  /// pointer with the byval attribute so the callee knows to copy from stack.
+  void overlayByvalAttrs(MutableArrayRef<mlir::NamedAttrList> paramAttrs,
+                         ArrayRef<CoercionInfo> argClassifications,
+                         ExternalCallOp op, size_t numFixedArgs, bool usesSRet,
+                         bool isVariadic) const {
     size_t numParams = isVariadic ? numFixedArgs : argClassifications.size();
     unsigned paramIdx = usesSRet ? 1 : 0;
     for (size_t idx = 0; idx < numParams; ++idx) {
@@ -62,8 +62,8 @@ private:
       if (coercion.useIndirect) {
         Type llvmArgType =
             getTypeConverter()->convertType(op.getOperandTypes()[idx]);
-        func.setArgAttr(paramIdx, LLVM::LLVMDialect::getByValAttrName(),
-                        mlir::TypeAttr::get(llvmArgType));
+        paramAttrs[paramIdx].set(LLVM::LLVMDialect::getByValAttrName(),
+                                 mlir::TypeAttr::get(llvmArgType));
       }
       if (coercion.isTwoRegister())
         paramIdx += 2;
@@ -94,39 +94,77 @@ private:
     }
   }
 
-  /// Remap argument attributes from POP-level indices to LLVM-level indices.
+  /// Seed per-parameter attribute lists with the op's POP-level argAttrs.
   /// ABI coercion can change the parameter list: sret prepends a hidden
   /// pointer, two-register args expand to two parameters, etc. The original
-  /// argAttrs from the POP op use POP-level indexing, so we must remap them
-  /// to match the LLVM function's parameter layout.
-  mlir::ArrayAttr remapArgAttrs(mlir::ArrayAttr argAttrs,
-                                ArrayRef<CoercionInfo> argClassifications,
-                                bool usesSRet,
-                                ConversionPatternRewriter &rewriter) const {
+  /// argAttrs from the POP op use POP-level indexing, so we seed the
+  /// LLVM-indexed list with user-provided attrs at the correct positions.
+  /// Only positions within [0, paramAttrs.size()) are filled, so variadic
+  /// callers can pass a list sized for fixed params only.
+  void seedUserArgAttrs(MutableArrayRef<mlir::NamedAttrList> paramAttrs,
+                        mlir::ArrayAttr argAttrs,
+                        ArrayRef<CoercionInfo> argClassifications,
+                        bool usesSRet) const {
     if (!argAttrs)
+      return;
+    unsigned paramIdx = usesSRet ? 1 : 0;
+    for (size_t popIdx = 0; popIdx < argClassifications.size(); ++popIdx) {
+      if (paramIdx >= paramAttrs.size())
+        break;
+      if (popIdx < argAttrs.size()) {
+        if (auto dict = dyn_cast<mlir::DictionaryAttr>(argAttrs[popIdx])) {
+          for (auto namedAttr : dict)
+            paramAttrs[paramIdx].set(namedAttr.getName(), namedAttr.getValue());
+        }
+      }
+      paramIdx += argClassifications[popIdx].isTwoRegister() ? 2 : 1;
+    }
+  }
+
+  /// Build the final LLVM-level per-parameter argAttrs that we expect on the
+  /// declaration: user-provided attrs remapped to LLVM indices, plus the sret
+  /// and byval overlays applied by the lowering. Returns null if no attrs
+  /// would be set. For variadic functions, the returned array is sized to
+  /// match the LLVM function's fixed parameter count only — variadic args
+  /// are not part of the function type and their attributes go on the call.
+  mlir::ArrayAttr buildLLVMArgAttrs(mlir::ArrayAttr argAttrs,
+                                    ArrayRef<CoercionInfo> argClassifications,
+                                    ExternalCallOp op, size_t numFixedArgs,
+                                    bool usesSRet, bool isVariadic,
+                                    bool addByval,
+                                    ConversionPatternRewriter &rewriter) const {
+    size_t numArgsForSig =
+        isVariadic ? numFixedArgs : argClassifications.size();
+    unsigned numLLVMParams = usesSRet ? 1 : 0;
+    for (size_t i = 0; i < numArgsForSig; ++i)
+      numLLVMParams += argClassifications[i].isTwoRegister() ? 2 : 1;
+
+    SmallVector<mlir::NamedAttrList> paramAttrs(numLLVMParams);
+    seedUserArgAttrs(paramAttrs, argAttrs, argClassifications, usesSRet);
+
+    if (usesSRet) {
+      Type llvmRetType =
+          getTypeConverter()->convertType(op.getResult().getType());
+      paramAttrs[0].set(LLVM::LLVMDialect::getStructRetAttrName(),
+                        mlir::TypeAttr::get(llvmRetType));
+    }
+
+    if (addByval) {
+      overlayByvalAttrs(paramAttrs, argClassifications, op, numFixedArgs,
+                        usesSRet, isVariadic);
+    }
+
+    bool anySet = llvm::any_of(paramAttrs, [](const mlir::NamedAttrList &nal) {
+      return !nal.empty();
+    });
+    if (!anySet)
       return nullptr;
 
-    // Count the total LLVM parameters
-    unsigned numLLVMParams = usesSRet ? 1 : 0;
-    for (const auto &c : argClassifications) {
-      numLLVMParams += c.isTwoRegister() ? 2 : 1;
-    }
-
-    // Build remapped attrs: empty dict for each LLVM param, then fill in
-    auto emptyDict = rewriter.getDictionaryAttr({});
-    SmallVector<Attribute> remapped(numLLVMParams, emptyDict);
-
-    unsigned llvmIdx = usesSRet ? 1 : 0;
-    for (size_t popIdx = 0; popIdx < argClassifications.size(); ++popIdx) {
-      // Copy the original attr if it exists for this POP arg
-      if (popIdx < argAttrs.size()) {
-        remapped[llvmIdx] = argAttrs[popIdx];
-      }
-      // Two-register args expand: second LLVM param gets empty attrs
-      llvmIdx += argClassifications[popIdx].isTwoRegister() ? 2 : 1;
-    }
-
-    return rewriter.getArrayAttr(remapped);
+    SmallVector<Attribute> dicts;
+    dicts.reserve(numLLVMParams);
+    for (auto &nal : paramAttrs)
+      dicts.push_back(nal.getDictionary(rewriter.getContext()));
+    return rewriter.getArrayAttr(dicts);
   }
 
 public:
@@ -222,15 +260,26 @@ public:
     const bool usesSRet = prep.usesSRet;
     const LLVM::LLVMFunctionType &signature = prep.signature;
 
-    // Step 4: Get passthrough attributes
+    // Step 4: Compute the final LLVM-level attributes we expect on the
+    // declaration. These include target-aware passthrough, arg attrs remapped
+    // to LLVM parameter indices with sret and byval overlays applied, and
+    // (when there is an LLVM-level return value) the op's resAttrs. Computing
+    // these once lets us both compare against an existing declaration and
+    // initialize a new one from the same source of truth.
     mlir::ArrayAttr passthrough = attachTargetPassthroughAttrs(
         rewriter, getTypeConverter()->getTarget(), op.getFuncAttrsAttr());
     mlir::ArrayAttr argAttrs = op.getArgAttrsAttr();
     mlir::DictionaryAttr resAttrs = op.getResAttrsAttr();
-    mlir::ArrayAttr resArrayAttrs;
-    if (resAttrs)
-      resArrayAttrs = rewriter.getArrayAttr(resAttrs);
     auto memory = dyn_cast_or_null<LLVM::MemoryEffectsAttr>(op.getMemoryAttr());
+    // byval is an x86-64 concern only; ARM64 doesn't use it.
+    bool addByval = triple.isX86();
+    mlir::ArrayAttr expectedArgAttrs =
+        buildLLVMArgAttrs(argAttrs, argClassifications, op, numFixedArgs,
+                          usesSRet, isVariadic, addByval, rewriter);
+    // resAttrs are dropped when sret is active (no LLVM-level return value).
+    mlir::ArrayAttr expectedResAttrs;
+    if (resAttrs && !usesSRet)
+      expectedResAttrs = rewriter.getArrayAttr(resAttrs);
 
     // Step 5: Lookup existing function (unified path - no early return!)
     auto func = symtab.lookup<LLVM::LLVMFuncOp>(op.getCallee().getValue());
@@ -244,7 +293,8 @@ public:
     if (func &&
         std::make_tuple(func.getPassthroughAttr(), func.getArgAttrsAttr(),
                         func.getResAttrsAttr(), func.getMemoryEffectsAttr()) !=
-            std::make_tuple(passthrough, argAttrs, resArrayAttrs, memory)) {
+            std::make_tuple(passthrough, expectedArgAttrs, expectedResAttrs,
+                            memory)) {
       return mlir::emitError(loc,
                              "existing function with conflicting attributes")
                  .attachNote(func.getLoc())
@@ -259,32 +309,10 @@ public:
                                       mlir::UnknownLoc::get(getContext()),
                                       op.getCallee(), signature);
       func.setPassthroughAttr(passthrough);
-
-      // Set arg attrs first (remapped to LLVM parameter indices), so that
-      // sret and byval attributes can overlay on top without being overwritten.
-      if (mlir::ArrayAttr remapped =
-              remapArgAttrs(argAttrs, argClassifications, usesSRet, rewriter)) {
-        func.setArgAttrsAttr(remapped);
-      }
-
-      // Add sret attribute on the hidden first parameter
-      if (usesSRet) {
-        Type llvmRetType =
-            getTypeConverter()->convertType(op.getResult().getType());
-        func.setArgAttr(0, LLVM::LLVMDialect::getStructRetAttrName(),
-                        mlir::TypeAttr::get(llvmRetType));
-      }
-
-      // Add byval attributes for indirect (MEMORY class) arguments.
-      // Only needed on x86-64 (ARM64 doesn't use byval).
-      if (triple.isX86()) {
-        addByvalAttrsToFunc(func, argClassifications, op, numFixedArgs,
-                            usesSRet, op.getFnType().has_value());
-      }
-
-      // resAttrs: skip when sret is active (no LLVM-level return value)
-      if (resAttrs && !usesSRet)
-        func.setResAttrsAttr(resArrayAttrs);
+      if (expectedArgAttrs)
+        func.setArgAttrsAttr(expectedArgAttrs);
+      if (expectedResAttrs)
+        func.setResAttrsAttr(expectedResAttrs);
       if (memory)
         func.setMemoryEffectsAttr(memory);
       symtab.insert(func);
@@ -306,8 +334,9 @@ public:
     LLVM::CallOp call = createLLVMCall(rewriter, loc, func, prep.callArgs);
 
     // Add byval on call for variadic indirect args (x86-64 only).
-    // Fixed-arg byval is on the function declaration (addByvalAttrsToFunc);
-    // variadic args aren't in the signature so they must go on the call.
+    // Fixed-arg byval is baked into the function declaration's argAttrs via
+    // buildLLVMArgAttrs; variadic args aren't in the signature, so they must
+    // go on the call itself.
     if (op.getFnType().has_value()) {
       SmallVector<Type> llvmArgTypes;
       for (Type t : op.getOperandTypes())
